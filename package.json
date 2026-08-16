@@ -6,6 +6,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "node build-all.mjs && node tests/fixture-build.mjs",
+    "dev": "node dev-server.mjs",
     "test": "node tests/all.cjs",
     "prod": "node prod.build.mjs",
     "smoke": "node tests/prod-smoke.mjs",
