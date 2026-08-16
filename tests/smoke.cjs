@@ -1,0 +1,12 @@
+const { render, allText, btnByText, click, reactInstToJson } = require("./harness.cjs");
+const r = render();
+console.log("root renders:", allText(r).slice(0, 120));
+const nav = btnByText(r, "Collector Network");
+console.log("nav buttons:", nav.length);
+click(nav[0]);
+console.log("after nav:", allText(r).includes("Alex Trinh"));
+const alex = btnByText(r, "Alex Trinh");
+console.log("alex rows:", alex.length);
+click(alex[0]);
+const t = allText(r);
+console.log("profile:", t.includes("Primary Goals"), "| binder?", t.includes("Trade Binder"));
