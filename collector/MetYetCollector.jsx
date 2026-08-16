@@ -284,6 +284,36 @@ const CSS = `
 .gs-ask { font-size: 13.5px; font-weight: 600; }
 .gs-offer { margin: 12px 14px 14px; }
 
+/* the receipt: the deal filling itself in. Subordinate to the card and the CTA. */
+.rc { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
+.rc-h { font-family: 'Archivo'; font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+  font-weight: 700; color: var(--muted); margin-bottom: 10px; }
+.rc-s { display: flex; gap: 11px; padding: 9px 0; border-bottom: 1px solid var(--line-soft); }
+.rc-s:last-child { border-bottom: 0; }
+.rc-n { flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%; font-size: 11px;
+  font-family: 'IBM Plex Mono', monospace; display: flex; align-items: center;
+  justify-content: center; border: 1px solid var(--line); color: var(--faint); }
+.rc-s.done .rc-n { background: var(--t1-bg); border-color: var(--accent-line); color: var(--t1); }
+.rc-s.current .rc-n { background: var(--t1); border-color: var(--t1); color: #04120F; font-weight: 700; }
+.rc-b { flex: 1; min-width: 0; }
+.rc-t { display: flex; align-items: baseline; gap: 8px; font-size: 13px; font-weight: 600;
+  flex-wrap: wrap; }
+.rc-s.pending .rc-t { color: var(--muted); font-weight: 500; }
+.rc-s.current .rc-t { color: var(--t1); }
+.rc-st { margin-left: auto; font-size: 10.5px; font-weight: 500; color: var(--faint);
+  text-transform: uppercase; letter-spacing: .06em; font-family: 'Archivo'; }
+.rc-f { display: grid; grid-template-columns: minmax(88px, auto) 1fr; gap: 2px 12px;
+  margin: 6px 0 0; font-size: 12.5px; }
+.rc-f dt { color: var(--faint); }
+.rc-f dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+.rc-s.pending .rc-f dd { color: var(--muted); }
+.rc-p { color: var(--faint); font-style: italic; }
+@media (max-width: 420px) {
+  .rc-f { grid-template-columns: 1fr; gap: 0 0; }
+  .rc-f dt { margin-top: 4px; font-size: 11.5px; }
+  .rc-st { margin-left: 0; }
+}
+
 /* deal progress: context under the action, never competing with it */
 .goal-prog { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
 .goal-prog-bar { display: flex; gap: 3px; }
@@ -397,9 +427,33 @@ const CSS = `
 
 /* ---- deal ---- */
 .dl-hero { padding: 22px; display: flex; gap: 20px; align-items: flex-start; margin-bottom: 16px; }
-.trk { display: flex; gap: 5px; margin: 16px 0 6px; }
-.trk i { flex: 1; height: 5px; border-radius: 3px; background: var(--line); transition: background .2s ease; }
-.trk i.done { background: var(--t2); } .trk i.now { background: var(--t1); }
+/* the named stage rail — horizontal where it fits, a vertical stepper when it
+   doesn't. Never anonymous bars. */
+.sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.rail { display: flex; gap: 4px; list-style: none; margin: 16px 0 0; padding: 0; }
+.rail-s { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center;
+  gap: 5px; padding-top: 12px; position: relative; border-top: 3px solid var(--line); }
+.rail-s.done { border-top-color: var(--t2); }
+.rail-s.current { border-top-color: var(--t1); }
+.rail-n { width: 20px; height: 20px; border-radius: 50%; font-size: 11px;
+  font-family: 'IBM Plex Mono', monospace; display: flex; align-items: center;
+  justify-content: center; border: 1px solid var(--line); color: var(--faint); }
+.rail-s.done .rail-n { background: var(--t1-bg); border-color: var(--accent-line); color: var(--t1); }
+.rail-s.current .rail-n { background: var(--t1); border-color: var(--t1); color: #04120F; font-weight: 700; }
+.rail-l { font-size: 10.5px; line-height: 1.25; text-align: center; color: var(--faint);
+  overflow-wrap: anywhere; }
+.rail-s.done .rail-l { color: var(--muted); }
+.rail-s.current .rail-l { color: var(--t1); font-weight: 700; }
+@media (max-width: 560px) {
+  /* Stack rather than shrink the labels past legibility. */
+  .rail { flex-direction: column; gap: 0; }
+  .rail-s { flex-direction: row; align-items: center; gap: 10px; padding: 8px 0 8px 0;
+    border-top: 0; border-left: 3px solid var(--line); padding-left: 12px; }
+  .rail-s.done { border-left-color: var(--t2); border-top-color: transparent; }
+  .rail-s.current { border-left-color: var(--t1); border-top-color: transparent; }
+  .rail-l { font-size: 13px; text-align: left; }
+}
 .stage-n { font-size: 12px; color: var(--t1); font-weight: 600; margin-bottom: 3px;
   font-family: 'Archivo'; letter-spacing: .06em; text-transform: uppercase; }
 .turn { padding: 17px 18px; border-radius: 14px; margin-bottom: 16px; }
@@ -541,17 +595,27 @@ function Sheet({ title, sub, onClose, children, footer }) {
 
 /* One row of the deal's progress. Read-only: stages advance when the required
    action happens, never because someone tapped ahead. */
-function Track({ stage }) {
-  const at = STAGE_IX[stage];
+/* The five stages, always named. A collector should never have to decode a bar:
+   each step carries its number, its label and its state, on every surface. The
+   states come from the same projection the receipt uses. */
+function Track({ stage, o, st }) {
+  const r = D.receiptForOpportunity(o || { stage, trade: { cards: [] } }, {
+    binderById: st && st.binderById, cardById: st && st.cardById,
+    partnerById: st && st.partnerById });
   return (
     <>
-      <div className="trk" role="img" aria-label={`Stage ${at + 1} of ${STAGES.length}: ${STAGE[stage].label}`}>
-        {STAGES.map((s, i) => (
-          <i key={s.id} className={i < at ? "done" : i === at ? "now" : ""} />
+      <ol className="rail" aria-label={`Stage ${r.stageIndex + 1} of 5: ${STAGE[stage].label}`}>
+        {r.stages.map((s2) => (
+          <li key={s2.id} className={"rail-s " + s2.state}
+            aria-current={s2.state === "current" ? "step" : undefined}>
+            <span className="rail-n" aria-hidden="true">{s2.n}</span>
+            <span className="rail-l">{s2.label}</span>
+            <span className="sr">{s2.state === "done" ? "complete"
+              : s2.state === "current" ? "current" : "not started"}</span>
+          </li>
         ))}
-      </div>
-      <div className="stage-n">{STAGE[stage].label}</div>
-      <div className="faint" style={{ fontSize: 13.5 }}>{STAGE_BLURB[stage]}</div>
+      </ol>
+      <div className="faint" style={{ fontSize: 13.5, marginTop: 10 }}>{STAGE_BLURB[stage]}</div>
     </>
   );
 }
@@ -674,6 +738,94 @@ function AddGoalPicker({ st, go, onClose }) {
         onResolved={(id) => setIdentity(st.resolveIdentity(id))}
       />
     </Sheet>
+  );
+}
+
+/* Renders the derived receipt. Every gating decision was made in the domain, so
+   this component only chooses how to say "not yet". */
+function Receipt({ o, st, expanded }) {
+  const r = D.receiptForOpportunity(o, {
+    binderById: st.binderById, cardById: st.cardById, partnerById: st.partnerById });
+  if (!r) return null;
+  const pend = (v, word) => (v == null || v === "" ? <span className="rc-p">{word}</span> : v);
+
+  return (
+    <div className={"rc" + (expanded ? " rc-x" : "")}>
+      <div className="rc-h">Deal receipt</div>
+      {r.stages.map((s2) => (
+        <div key={s2.id} className={"rc-s " + s2.state}>
+          <span className="rc-n" aria-hidden="true">{s2.n}</span>
+          <div className="rc-b">
+            <div className="rc-t">
+              {s2.label}
+              {/* State is named, never colour alone. */}
+              <span className="rc-st">{s2.state === "done" ? "Settled"
+                : s2.state === "current" ? "Deciding now" : "Not yet"}</span>
+            </div>
+
+            {s2.id === "agree-price" && (
+              <dl className="rc-f">
+                <dt>Partner</dt><dd>{pend(s2.partner, "—")}</dd>
+                <dt>Purchase price</dt>
+                <dd>{s2.price != null ? money(s2.price)
+                  : <span className="rc-p">{s2.state === "current" ? "Negotiating" : "Pending"}</span>}</dd>
+              </dl>
+            )}
+
+            {s2.id === "select-trade" && (
+              <dl className="rc-f">
+                <dt>Your cards</dt>
+                <dd>{s2.cards.length
+                  ? s2.cards.map((c) => c.name).join(", ")
+                  : <span className="rc-p">{s2.state === "pending" ? "Pending" : "Not selected"}</span>}</dd>
+              </dl>
+            )}
+
+            {s2.id === "value-trade" && (
+              <dl className="rc-f">
+                {s2.cards.length > 0 && s2.cards.some((c) => c.tradeValue != null)
+                  ? s2.cards.map((c) => (
+                    <React.Fragment key={c.binderId}>
+                      <dt>{c.name}</dt>
+                      <dd>{c.tradeValue != null
+                        ? `${money(c.agreedMarket)} × ${pct(c.agreedPercent)} = ${money(c.tradeValue)}`
+                        : <span className="rc-p">Not valued</span>}</dd>
+                    </React.Fragment>))
+                  : <><dt>Trade value</dt><dd><span className="rc-p">
+                      {s2.state === "pending" ? "Pending" : "Not valued"}</span></dd></>}
+                {s2.total != null && s2.total > 0 && (
+                  <><dt>Total</dt><dd>{money(s2.total)}</dd></>)}
+              </dl>
+            )}
+
+            {s2.id === "deal" && (
+              <dl className="rc-f">
+                <dt>Balance</dt>
+                <dd>{s2.balance != null ? money(Math.abs(s2.balance)) + (s2.balance >= 0 ? " to them" : " to you")
+                  : <span className="rc-p">{s2.state === "pending" ? "Pending" : "Not finalized"}</span>}</dd>
+                {s2.finalAdj != null && (<><dt>Final negotiation</dt><dd>{money(s2.finalAdj)}</dd></>)}
+              </dl>
+            )}
+
+            {s2.id === "fulfillment" && (
+              <dl className="rc-f">
+                <dt>How</dt><dd>{pend(s2.method, "Not scheduled")}</dd>
+                <dt>When</dt>
+                <dd>{s2.date ? fmtDate(s2.date) + (s2.time ? ` at ${s2.time}` : "")
+                  : <span className="rc-p">Not scheduled</span>}</dd>
+                <dt>Where</dt><dd>{pend(s2.location, "Not scheduled")}</dd>
+                <dt>Handoff</dt>
+                <dd>{s2.state === "pending" ? <span className="rc-p">Pending</span>
+                  : s2.collectorDone && s2.partnerDone ? "Both confirmed"
+                  : s2.collectorDone ? "You confirmed"
+                  : s2.partnerDone ? "They confirmed"
+                  : <span className="rc-p">Not confirmed</span>}</dd>
+              </dl>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -819,26 +971,11 @@ function GoalCard({ g, st, go }) {
         </div>
       )}
 
-      {/* LIFECYCLE PROGRESS. Context, not a CTA — it sits below the action and
-          reads straight off the canonical opportunity stage. */}
-      {live && DEAL_STEPS.includes(live.stage) && (
-        <div className="goal-prog" role="img"
-          aria-label={`Deal progress: ${STAGE[live.stage].label}, step ${DEAL_STEPS.indexOf(live.stage) + 1} of ${DEAL_STEPS.length}`}>
-          <div className="goal-prog-bar">
-            {DEAL_STEPS.map((id, i) => (
-              <span key={id} className={"gp-seg" + (i < DEAL_STEPS.indexOf(live.stage) ? " done"
-                : i === DEAL_STEPS.indexOf(live.stage) ? " now" : "")} />
-            ))}
-          </div>
-          <div className="goal-prog-l">
-            {DEAL_STEPS.map((id) => (
-              <span key={id} className={"gp-l" + (id === live.stage ? " on" : "")}>
-                {STAGE[id].label}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* THE RECEIPT. A deal fills itself in as it advances: settled stages show
+          what was agreed, the current stage shows what is being decided, and
+          later stages stay deliberately blank. Every value is a projection of
+          canonical opportunity state — see receiptForOpportunity. */}
+      {live && <Receipt o={live} st={st} />}
 
       <div className="goal-edit">
         <button className="link" onClick={() => setMenu(!menu)} aria-expanded={menu}>
@@ -1261,7 +1398,7 @@ function Deal({ oppId, st, go }) {
       </div>
 
       <div className="card sec">
-        <Track stage={o.stage} />
+        <Track stage={o.stage} o={o} st={st} />
       </div>
 
       <Turn o={o} st={st} />
@@ -1273,7 +1410,11 @@ function Deal({ oppId, st, go }) {
       {o.stage === "fulfillment" && <Fulfillment o={o} st={st} />}
       {o.stage === "completed" && <Completed o={o} />}
 
-      {STAGE_IX[o.stage] > STAGE_IX["agree-price"] && <Terms o={o} st={st} />}
+      {/* THE SAME RECEIPT the Goal card shows, expanded. One projection, two
+          densities — so the two surfaces cannot disagree. */}
+      <div className="card sec">
+        <Receipt o={o} st={st} expanded />
+      </div>
 
       {isOpen(o) && (
         <div style={{ textAlign: "center", padding: "6px 0 10px" }}>
@@ -1286,39 +1427,6 @@ function Deal({ oppId, st, go }) {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-/* Everything settled so far, in one place. Read-only by design: once a price,
-   a value or a percentage is agreed, no later stage can quietly change it. */
-function Terms({ o, st }) {
-  const cards = acceptedCards(o);
-  const settled = cards.filter(cardSettled);
-  return (
-    <div className="card sec">
-      <div className="sec-h">Agreed so far</div>
-      <div className="row"><span className="k">Their price</span><span className="mono">{money(o.listedPrice)}</span></div>
-      <div className="row"><span className="k">Price you agreed</span><span className="mono">{money(o.agreedPrice)}</span></div>
-      {settled.map((tcd) => {
-        const b = st.binderById(tcd.binderId);
-        return (
-          <div key={tcd.binderId} className="row">
-            <span className="k">{st.cardById(b.cardId).name}</span>
-            <span className="mono">
-              {money(tcd.agreedMarket)} × {pct(tcd.agreedPercent)} = {money(tradeValue(tcd))}
-            </span>
-          </div>
-        );
-      })}
-      {settled.length > 0 && (
-        <div className="row"><span className="k">Your cards are worth</span>
-          <span className="mono">{money(totalTradeValue(o))}</span></div>
-      )}
-      <div className="row tot">
-        <span>{calcBalance(o) >= 0 ? "You'd pay" : "They'd pay you"}</span>
-        <span className="mono">{money(Math.abs(calcBalance(o)))}</span>
-      </div>
     </div>
   );
 }
@@ -1819,32 +1927,49 @@ function StartOffer({ goalId, partnerId, st, go }) {
 /* ---- Adding to the binder. Both photos are required to create a copy, so the
        requirement is visible before committing and never asked for again. ---- */
 function AddCopy({ st, go }) {
-  const [cardId, setCardId] = useState("");
+  /* Two stages, matching the Trusted Partner's Add to Inventory: identify the
+     exact card, then describe the copy. The identity half is literally the same
+     component, so the two personas cannot resolve a card differently. */
+  const [identity, setIdentity] = useState(null);
   const [mine, setMine] = useState("");
+  const [cert, setCert] = useState("");
   const [ph, setPh] = useState({ front: null, back: null });
-  const ready = cardId && ph.front && ph.back;
-  const owned = new Set(st.binder.map((b) => b.cardId));
-  /* The shared catalog, not a local card list. */
-  const options = st.catalog.filter((c) => !owned.has(c.id));
+  const ready = !!identity && ph.front && ph.back;
 
+  if (!identity) {
+    return (
+      <Sheet title="Add a card to your binder"
+        sub="Find the exact card, then describe the copy you'd trade."
+        onClose={() => go({ v: "binder" })}>
+        <CardIdentityPicker
+          catalog={st.catalog}
+          Art={Art}
+          confirmLabel="Continue"
+          searchPlaceholder="Search by card name, set, or number..."
+          onCancel={() => go({ v: "binder" })}
+          onResolved={(id) => setIdentity(st.resolveIdentity(id))}
+        />
+      </Sheet>
+    );
+  }
+
+  const c = identity.card;
   return (
-    <Sheet title="Add a card to your binder"
-      sub="Cards here are what partners can trade against."
+    <Sheet title="Describe your copy" sub={cardFull(c)}
       onClose={() => go({ v: "binder" })}
       footer={<>
-        <button className="btn" onClick={() => go({ v: "binder" })}>Cancel</button>
+        <button className="btn" onClick={() => setIdentity(null)}>Back</button>
         <button className="btn pri" style={{ flex: 1 }} disabled={!ready}
-          onClick={() => { st.addCopy(cardId, mine, ph); go({ v: "binder" }); }}>
+          onClick={() => { st.addCopy(identity.id, mine, ph, cert); go({ v: "binder" }); }}>
           Add to binder
         </button>
       </>}>
-      <label style={{ display: "block", fontSize: 13.5, fontWeight: 600, marginBottom: 6 }}>Which card?</label>
-      <select className="inp" value={cardId} onChange={(e) => setCardId(e.target.value)}>
-        <option value="">Choose…</option>
-        {options.map((c) => <option key={c.id} value={c.id}>{cardFull(c)}</option>)}
-      </select>
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
+        <Art card={c} size="lg" />
+      </div>
 
-      <label style={{ display: "block", fontSize: 13.5, fontWeight: 600, margin: "18px 0 6px" }}>
+      {/* The collector's own note. Never sent to a partner. */}
+      <label style={{ display: "block", fontSize: 13.5, fontWeight: 600, marginBottom: 6 }}>
         What do you think it's worth? <span className="faint" style={{ fontWeight: 400 }}>optional</span>
       </label>
       <input className="inp" inputMode="decimal" value={mine} placeholder="$"
@@ -1852,6 +1977,16 @@ function AddCopy({ st, go }) {
       <div className="faint" style={{ fontSize: 12.5, marginTop: 6 }}>
         Just for you. Partners never see it.
       </div>
+
+      {/* Graded copies carry a cert; raw ones do not, exactly as on the TP side. */}
+      {!D.isRaw(c) && (
+        <>
+          <label style={{ display: "block", fontSize: 13.5, fontWeight: 600, margin: "18px 0 6px" }}>
+            Certification number <span className="faint" style={{ fontWeight: 400 }}>optional</span>
+          </label>
+          <input className="inp" value={cert} onChange={(e) => setCert(e.target.value)} />
+        </>
+      )}
 
       <div style={{ fontSize: 13.5, fontWeight: 600, margin: "20px 0 8px" }}>
         Photos — both sides, so partners can actually look at it
@@ -1872,7 +2007,7 @@ function AddCopy({ st, go }) {
           </div>
         ))}
       </div>
-      {!ready && cardId && (
+      {!ready && (
         <div className="faint" style={{ fontSize: 12.5, marginTop: 10 }}>
           Both photos are needed before this can go in your binder.
         </div>
@@ -1946,9 +2081,10 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
         A.addGoal({ collectorId, cardId: resolved.id, tier, at: AT }),
       setTier: (goalId, tier) => A.updateGoalTier(goalId, tier),
       removeGoal: (goalId) => A.removeGoal(goalId),
-      addCopy: (cardId, mine, photos) => A.addBinderCopy({
+      addCopy: (cardId, mine, photos, cert) => A.addBinderCopy({
         id: "b" + Date.now().toString(36), collectorId, cardId,
-        market: mine === "" ? null : Number(mine), cert: null, addedAt: AT, photos }),
+        market: mine === "" ? null : Number(mine),
+        cert: cert && cert.trim() ? cert.trim() : null, addedAt: AT, photos }),
       reachOut: (goalId, partnerId, cardId) =>
         A.reachOut({ collectorId, partnerId, goalId, cardId, at: AT }),
       /* Returns null when the one-negotiation invariant refuses it. The refusal

@@ -933,4 +933,158 @@ describe("Secondary goal gating", () => {
   });
 });
 
+/* ============================================================================
+   THE DEAL RECEIPT
+
+   A projection, never a mutation. Each stage's terms become readable only when
+   the opportunity reaches that stage, so the collector is never told something
+   has been agreed when it has not.
+   ========================================================================= */
+describe("Progressive deal receipt", () => {
+  const { buildCanonicalSeed } = require("../dist/MetYet.cjs");
+  const seed = () => buildCanonicalSeed();
+  const ctxFor = (s2) => ({
+    binderById: (id) => s2.binder.find((b) => b.id === id),
+    cardById: (id) => s2.catalog.find((c) => c.id === id),
+    partnerById: (id) => s2.partners.find((p) => p.id === id),
+  });
+  const receipt = (o, s2) => D.receiptForOpportunity(o, ctxFor(s2));
+  const at = (r, n) => r.stages[n - 1];
+  /* Every value a stage can carry, ignoring labels and booleans-by-default. */
+  const values = (st) => Object.entries(st).filter(([k, v]) =>
+    !["n", "id", "label", "state", "submitted", "collectorDone", "partnerDone"].includes(k)
+    && v != null && (!Array.isArray(v) || v.length > 0));
+
+  test("1. five stages, numbered, in canonical order", () => {
+    const s2 = seed();
+    const r = receipt(s2.opportunities.find((o) => o.stage === "select-trade"), s2);
+    eq(r.stages.map((x) => x.n).join(), "1,2,3,4,5", "numbered 1-5");
+    eq(r.stages.map((x) => x.id).join(),
+      "agree-price,select-trade,value-trade,deal,fulfillment", "canonical order");
+    eq(r.stages.map((x) => x.id).join(), D.RECEIPT_STAGES.join(),
+      "and the order comes from the shared lifecycle");
+  });
+
+  test("2-6. the current stage marks everything before it done and after it pending", () => {
+    const s2 = seed();
+    D.RECEIPT_STAGES.forEach((stage, i) => {
+      const o = s2.opportunities.find((x) => x.stage === stage);
+      if (!o) return;
+      const r = receipt(o, s2);
+      eq(at(r, i + 1).state, "current", stage + " is current");
+      for (let k = 1; k <= 5; k++) {
+        if (k < i + 1) eq(at(r, k).state, "done", `stage ${k} settled at ${stage}`);
+        if (k > i + 1) eq(at(r, k).state, "pending", `stage ${k} pending at ${stage}`);
+      }
+    });
+  });
+
+  test("9. future stages carry NO values, even when state holds them", () => {
+    const s2 = seed();
+    D.RECEIPT_STAGES.forEach((stage, i) => {
+      const o = s2.opportunities.find((x) => x.stage === stage);
+      if (!o) return;
+      const r = receipt(o, s2);
+      for (let k = i + 2; k <= 5; k++) {
+        eq(values(at(r, k)).length, 0,
+          `stage ${k} leaks nothing at ${stage}: ` + JSON.stringify(values(at(r, k))));
+      }
+    });
+  });
+
+  test("9. an explicitly back-dated opportunity still hides its later terms", () => {
+    const s2 = seed();
+    /* Take a fully-populated late-stage record and rewind ONLY its stage. Every
+       downstream field is still present in the object. */
+    const rich = s2.opportunities.find((o) => o.stage === "fulfillment"
+      && o.fulfillment && o.fulfillment.location);
+    assert(rich, "a fulfilment record with real logistics");
+    const rewound = { ...rich, stage: "agree-price" };
+    const r = receipt(rewound, s2);
+    eq(at(r, 1).state, "current", "it now reads as an early deal");
+    [2, 3, 4, 5].forEach((k) => eq(values(at(r, k)).length, 0,
+      `stage ${k} shows nothing: ` + JSON.stringify(values(at(r, k)))));
+    /* The underlying record is untouched — this is a projection. */
+    eq(rich.fulfillment.location, s2.opportunities.find((o) => o.id === rich.id).fulfillment.location,
+      "no mutation occurred");
+    assert(rewound.fulfillment.location, "the data is still there, just not shown");
+  });
+
+  test("7-8. fulfillment shows canonical logistics, and blanks what is unset", () => {
+    const s2 = seed();
+    const full = s2.opportunities.find((o) => o.stage === "fulfillment"
+      && o.fulfillment && o.fulfillment.location);
+    const f = at(receipt(full, s2), 5);
+    eq(f.method, full.fulfillment.method, "method from canonical state");
+    eq(f.date, full.fulfillment.date, "date");
+    eq(f.time, full.fulfillment.time, "time");
+    eq(f.location, full.fulfillment.location, "location");
+
+    const sparse = s2.opportunities.find((o) => o.stage === "fulfillment"
+      && o.fulfillment && !o.fulfillment.location);
+    if (sparse) {
+      const g = at(receipt(sparse, s2), 5);
+      eq(g.location, null, "an unset field is blank rather than invented");
+      eq(g.state, "current", "and the section is still shown");
+    }
+  });
+
+  test("10. the stage comes only from the canonical opportunity", () => {
+    const src = require("fs").readFileSync(
+      require("path").join(__dirname, "..", "domain", "metyet-domain.js"), "utf8");
+    const fn = src.slice(src.indexOf("function receiptForOpportunity"));
+    assert(/RECEIPT_STAGES\.indexOf\(o\.stage\)/.test(fn), "read from o.stage");
+    assert(!/goal\.|receiptStage|receiptStatus/.test(fn), "never from a goal or a stored status");
+  });
+
+  test("11. no receipt state is stored anywhere", () => {
+    const s2 = seed();
+    s2.goals.forEach((g) => {
+      ["receipt", "receiptStage", "receiptStatus", "terms"].forEach((k) =>
+        assert(!(k in g), "goals store no receipt state: " + k));
+    });
+    const src = require("fs").readFileSync(
+      require("path").join(__dirname, "..", "domain", "metyet-domain.js"), "utf8");
+    const fn = src.slice(src.indexOf("function receiptForOpportunity"));
+    assert(!/\bset[A-Z]|\.push\(|store\.set/.test(fn), "the projection mutates nothing");
+  });
+
+  test("12/14. receipt numbers reconcile to the existing deal math", () => {
+    const s2 = seed();
+    s2.opportunities.filter((o) => ["deal", "fulfillment", "completed"].includes(o.stage))
+      .forEach((o) => {
+        const r = receipt(o, s2);
+        eq(at(r, 1).price, o.agreedPrice, o.id + " price matches agreedPrice");
+        eq(at(r, 3).total, D.totalTradeValue(o), o.id + " total matches the domain");
+        eq(at(r, 4).balance, D.finalBalance(o), o.id + " balance matches the domain");
+        eq(at(r, 4).calculated, D.calculatedBalance(o), o.id + " calculated balance matches");
+      });
+  });
+
+  test("13. accepted cards are the exact canonical binder-copy ids", () => {
+    const s2 = seed();
+    s2.opportunities.filter((o) => D.acceptedTradeCards(o).length
+      && D.RECEIPT_STAGES.indexOf(o.stage) >= 1).forEach((o) => {
+        const r = receipt(o, s2);
+        eq(at(r, 2).cards.map((c) => c.binderId).join(),
+          D.acceptedTradeCards(o).map((c) => c.binderId).join(),
+          o.id + " uses exact binder ids");
+      });
+  });
+
+  test("15. completion resolves every stage, in the same record", () => {
+    const s2 = seed();
+    const done = s2.opportunities.find((o) => o.stage === "completed");
+    assert(done, "a completed opportunity exists");
+    const r = receipt(done, s2);
+    assert(r.complete, "the receipt knows it is complete");
+    r.stages.forEach((st) => eq(st.state, "done", st.label + " is settled"));
+    eq(at(r, 1).price, done.agreedPrice, "and its terms are the same record's");
+  });
+
+  test("17. a goal with no opportunity has no receipt", () => {
+    eq(D.receiptForOpportunity(null, {}), null, "nothing to project");
+  });
+});
+
 require("./run.cjs").run();

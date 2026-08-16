@@ -258,3 +258,86 @@ module.exports.printKey = printKey;
 module.exports.printedCards = printedCards;
 module.exports.identityGaps = identityGaps;
 module.exports.identityFrom = identityFrom;
+
+/* ------------------------------------------------------- THE DEAL RECEIPT
+
+   A deal fills itself in as it advances. Each stage establishes particular
+   terms, and until a stage is reached its terms are genuinely undecided — so
+   the receipt shows them blank rather than hiding the row.
+
+   THE GATING RULE: a stage's values are readable only once the opportunity has
+   reached that stage. Seed data and object shape routinely carry later-stage
+   fields already; showing them early would tell the collector something has
+   been agreed when it has not. This is a projection, never a mutation — nothing
+   here deletes or writes anything.
+
+   Reconciliation is guaranteed by construction: every number comes from the
+   same helpers the Opportunity workspace uses. */
+
+const RECEIPT_STAGES = ["agree-price", "select-trade", "value-trade", "deal", "fulfillment"];
+
+function receiptForOpportunity(o, { binderById, cardById, partnerById } = {}) {
+  if (!o) return null;
+  const at = RECEIPT_STAGES.indexOf(o.stage);
+  /* A completed opportunity has passed every stage. */
+  const reached = (i) => (isCompleted(o) ? true : at >= i);
+  const state = (i) => (isCompleted(o) ? "done"
+    : at > i ? "done" : at === i ? "current" : "pending");
+  const partner = partnerById ? partnerById(o.partnerId) : null;
+  const accepted = acceptedTradeCards(o);
+
+  const card = (tc) => {
+    const b = binderById ? binderById(tc.binderId) : null;
+    const c = b && cardById ? cardById(b.cardId) : null;
+    return {
+      binderId: tc.binderId,
+      name: c ? c.name : tc.binderId,
+      /* Value terms belong to stage 3; blank until it is reached. */
+      agreedMarket: reached(2) ? tc.agreedMarket : null,
+      agreedPercent: reached(2) ? tc.agreedPercent : null,
+      tradeValue: reached(2) ? tradeValueOf(tc) : null,
+    };
+  };
+
+  return {
+    stage: o.stage,
+    stageIndex: at,
+    complete: isCompleted(o),
+    stages: [
+      { n: 1, id: "agree-price", label: "Agree on Price", state: state(0),
+        partner: partner ? partner.name : null,
+        /* The price is only established once both sides agree it. */
+        price: reached(0) ? o.agreedPrice : null,
+        listed: reached(0) ? o.listedPrice : null },
+
+      { n: 2, id: "select-trade", label: "Select Trade", state: state(1),
+        /* Which copies are included — no values here, by design. */
+        cards: reached(1) ? accepted.map((tc) => ({
+          binderId: tc.binderId,
+          name: card(tc).name,
+        })) : [],
+        submitted: reached(1) ? !!(o.trade && o.trade.submitted) : false },
+
+      { n: 3, id: "value-trade", label: "Value Trade", state: state(2),
+        cards: reached(2) ? accepted.map(card) : [],
+        total: reached(2) ? totalTradeValue(o) : null },
+
+      { n: 4, id: "deal", label: "Deal", state: state(3),
+        calculated: reached(3) ? calculatedBalance(o) : null,
+        /* A final negotiated figure, only when one was actually agreed. */
+        finalAdj: reached(3) && o.deal ? o.deal.agreedAdj : null,
+        balance: reached(3) ? finalBalance(o) : null },
+
+      { n: 5, id: "fulfillment", label: "Fulfillment", state: state(4),
+        method: reached(4) ? (o.fulfillment && o.fulfillment.method) || null : null,
+        date: reached(4) ? (o.fulfillment && o.fulfillment.date) || null : null,
+        time: reached(4) ? (o.fulfillment && o.fulfillment.time) || null : null,
+        location: reached(4) ? (o.fulfillment && o.fulfillment.location) || null : null,
+        collectorDone: reached(4) ? !!(o.fulfillment && o.fulfillment.collectorReceipt) : false,
+        partnerDone: reached(4) ? !!(o.fulfillment && o.fulfillment.tpHandoff) : false },
+    ],
+  };
+}
+
+module.exports.RECEIPT_STAGES = RECEIPT_STAGES;
+module.exports.receiptForOpportunity = receiptForOpportunity;

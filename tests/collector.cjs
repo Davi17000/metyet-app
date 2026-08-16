@@ -290,8 +290,8 @@ describe("Select Trade", () => {
           .test(txt(x).trim()))[i];
       if (!b) break;
       click(b);
-      const stage = cls(r, "stage-n")[0];
-      if (stage && txt(stage) === "Select Trade") return r;
+      const cur = cls(r, "rail-s").find((n) => String(n.props.className).includes("current"));
+      if (cur && txt(cur).includes("Select Trade")) return r;
     }
     throw new Error("no Select Trade opportunity in the seed");
   };
@@ -932,39 +932,46 @@ describe("Goals shares the MetYet palette", () => {
 describe("The Primary Goal surfaces real activity", () => {
   const rayquaza = (r) => cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
 
-  test("4. an active deal renders lifecycle progress from the canonical stage", () => {
+  test("4. an active deal renders a numbered receipt from the canonical stage", () => {
     const r = mk();
     const card = rayquaza(r);
-    const segs = byClassIn(card, "gp-seg");
-    eq(segs.length, 5, "one segment per deal stage");
-    const current = byClassIn(card, "gp-l").filter((n) =>
-      String(n.props.className).includes("on")).map(txt);
-    eq(current.join(), "Select Trade", "the canonical stage is marked");
-    eq(segs.filter((n) => String(n.props.className).includes("done")).length, 1,
-      "with Agree on Price behind it");
+    const rows = byClassIn(card, "rc-s");
+    eq(rows.length, 5, "one row per deal stage");
+    eq(byClassIn(card, "rc-n").map(txt).join(","), "1,2,3,4,5", "numbered 1-5");
+    const current = rows.filter((n) => String(n.props.className).includes("current"));
+    eq(current.length, 1, "exactly one current stage");
+    assert(txt(current[0]).includes("Select Trade"), "the canonical stage is current");
+    eq(rows.filter((n) => String(n.props.className).includes("done")).length, 1,
+      "with Agree on Price settled behind it");
+    /* Settled terms are shown; later terms are not. */
+    assert(txt(rows[0]).includes("$9,310"), "the agreed price is on the receipt");
+    assert(/Pending|Not/.test(txt(rows[3])), "the Deal stage is still blank");
   });
 
-  test("5. changing the canonical stage moves the bar, with no goal-side state", () => {
+  test("5. changing the canonical stage moves the receipt, with no goal-side state", () => {
     const r = mk();
     TR.act(() => { __store.get().actions.patchOpportunity("o9", (o) => ({ ...o, stage: "deal" })); });
-    const current = byClassIn(rayquaza(r), "gp-l").filter((n) =>
-      String(n.props.className).includes("on")).map(txt);
-    eq(current.join(), "Deal", "the bar follows the opportunity");
-    const g = __store.get().get().goals.find((x) => x.id === "o9".replace("o9", "g20"));
-    assert(!("stage" in g), "and the Goal record stores no stage");
+    const rows = byClassIn(rayquaza(r), "rc-s");
+    const current = rows.filter((n) => String(n.props.className).includes("current"));
+    assert(txt(current[0]).includes("Deal"), "the receipt follows the opportunity");
+    eq(rows.filter((n) => String(n.props.className).includes("done")).length, 3,
+      "three stages settled behind it");
+    const g = __store.get().get().goals.find((x) => x.id === "g20");
+    assert(!("stage" in g) && !("receipt" in g), "and the Goal record stores nothing");
   });
 
-  test("4. the bar derives from the shared lifecycle, not a local list", () => {
+  test("4. the receipt derives from the shared lifecycle, not a local list", () => {
     const src = readSrc("collector/MetYetCollector.jsx");
-    assert(/const DEAL_STEPS = D\.STAGES\.filter/.test(src),
-      "the steps come from the canonical STAGES");
-    assert(!/DEAL_STEPS = \["agree-price"/.test(src), "not a hand-written copy");
+    assert(/D\.receiptForOpportunity\(/.test(src), "the projection is canonical");
+    const rc = src.slice(src.indexOf("function Receipt("), src.indexOf("/* A secondary goal"));
+    assert(!/agree-price"[\s\S]{0,40}"select-trade"/.test(rc), "no hand-written stage order");
+    assert(!/o\.fulfillment\.|o\.deal\./.test(rc), "and it reads no raw opportunity fields");
   });
 
   test("no active deal means no lifecycle bar at all", () => {
     const r = mk();
     TR.act(() => { __store.get().actions.endOpportunity("o9", "collector", "2026-08-14"); });
-    eq(byClassIn(rayquaza(r), "goal-prog").length, 0, "no empty progress treatment");
+    eq(byClassIn(rayquaza(r), "rc").length, 0, "no empty receipt treatment");
   });
 
   test("6/8. with no active deal, every matching partner is listed", () => {
@@ -1079,6 +1086,169 @@ describe("Dark mode holds up", () => {
 
   test("card artwork keeps its aspect ratio", () => {
     assert(/object-fit: contain/.test(css()), "art is never stretched");
+  });
+});
+
+/* ============================================================================
+   ONE LIFECYCLE LANGUAGE, EVERYWHERE
+
+   The Goal card and the Opportunity workspace are two densities of one receipt.
+   A collector should never have to decode an anonymous bar.
+   ========================================================================= */
+describe("The stage rail names every stage", () => {
+  const openDeal = (r) => {
+    const card = cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
+    click(card.findAllByType("button").find((b) => txt(b).trim() === "Choose trade cards"));
+    return r;
+  };
+
+  test("1-3. five stages, numbered, canonically labelled and ordered", () => {
+    const r = openDeal(mk());
+    const steps = cls(r, "rail-s");
+    eq(steps.length, 5, "five stages");
+    eq(cls(r, "rail-n").map(txt).join(","), "1,2,3,4,5", "numbered 1-5");
+    eq(cls(r, "rail-l").map(txt).join(" | "),
+      "Agree on Price | Select Trade | Value Trade | Deal | Fulfillment",
+      "canonical labels, in canonical order");
+  });
+
+  test("4. anonymous segment-only progress is gone", () => {
+    const src = readSrc("collector/MetYetCollector.jsx");
+    assert(!/className="trk"/.test(src), "the unlabelled bar markup is removed");
+    assert(!/\.trk i\b/.test(src), "and its styles with it");
+    const r = openDeal(mk());
+    cls(r, "rail-s").forEach((n) => assert(txt(n).length > 3,
+      "every step carries a number and a label: " + txt(n)));
+  });
+
+  test("5-8. state comes from the canonical stage", () => {
+    const r = openDeal(mk());
+    const steps = cls(r, "rail-s");
+    const stateOf = (n) => String(n.props.className).replace("rail-s ", "").trim();
+    eq(steps.map(stateOf).join(","), "done,current,pending,pending,pending",
+      "Select Trade is current, with one settled behind it");
+    const cur = steps.find((n) => stateOf(n) === "current");
+    eq(cur.props["aria-current"], "step", "and it is announced as the current step");
+  });
+
+  test("state is never colour alone", () => {
+    const r = openDeal(mk());
+    cls(r, "rail-s").forEach((n) =>
+      assert(/complete|current|not started/.test(txt(n)),
+        "each step states its status in words: " + txt(n)));
+  });
+});
+
+describe("Goal card and Opportunity detail agree", () => {
+  const goalReceipt = (r) => {
+    const card = cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
+    return byClassIn(card, "rc-s").map((n) => txt(n));
+  };
+  const dealReceipt = (r) => {
+    const card = cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
+    click(card.findAllByType("button").find((b) => txt(b).trim() === "Choose trade cards"));
+    return cls(r, "rc-s").map((n) => txt(n));
+  };
+
+  test("9/10. the same opportunity reads identically on both surfaces", () => {
+    const a = goalReceipt(mk());
+    const b = dealReceipt(mk());
+    eq(a.length, 5, "the compact receipt has five stages");
+    eq(b.length, 5, "so does the expanded one");
+    eq(a.join("~"), b.join("~"),
+      "and every established value matches:\n  goal: " + a[0] + "\n  deal: " + b[0]);
+  });
+
+  test("both surfaces mark the same current stage", () => {
+    const cur = (rows) => rows.findIndex((t) => /Deciding now/.test(t));
+    eq(cur(goalReceipt(mk())), cur(dealReceipt(mk())), "same numbered stage is current");
+  });
+
+  test("11/12. neither surface leaks a future stage", () => {
+    [goalReceipt(mk()), dealReceipt(mk())].forEach((rows, i) => {
+      const where = i === 0 ? "goal card" : "opportunity detail";
+      /* At Select Trade, nothing downstream is settled. */
+      assert(/Pending|Not/.test(rows[2]), where + ": Value Trade is blank");
+      assert(/Pending|Not/.test(rows[3]), where + ": Deal is blank");
+      assert(/Pending|Not/.test(rows[4]), where + ": Fulfillment is blank");
+      assert(!/Dreamers|18:00|meetup/.test(rows.join()), where + ": no fulfillment logistics");
+    });
+  });
+
+  test("16. the working controls still call the canonical actions", () => {
+    const r = mk();
+    const before = JSON.stringify(__store.get().get().opportunities.find((o) => o.id === "o9"));
+    dealReceipt(r);
+    eq(JSON.stringify(__store.get().get().opportunities.find((o) => o.id === "o9")), before,
+      "opening the workspace mutates nothing");
+    assert(r.root.findAllByType("button").some((b) => /Send .* for review/.test(txt(b))),
+      "and the stage's own control is still present");
+  });
+
+  test("17. a secondary goal renders no receipt", () => {
+    const r = mk();
+    cls(r, "gwatch-r").forEach((n) =>
+      eq(byClassIn(n, "rc-s").length, 0, "watchlist rows carry no receipt"));
+  });
+});
+
+describe("Trade Binder add uses the shared identity flow", () => {
+  test("it uses the same picker as Trusted Partner inventory", () => {
+    const r = mk();
+    nav(r, "Trade Binder");
+    click(btn(r, "Add a card"));
+    assert(cls(r, "cip-q")[0], "the shared search field");
+    assert(!r.root.findAllByType("select").length, "not a simplified dropdown");
+    const src = readSrc("collector/MetYetCollector.jsx");
+    const fn = src.slice(src.indexOf("function AddCopy"), src.indexOf("function AddCopy") + 1400);
+    assert(/<CardIdentityPicker/.test(fn), "it renders the shared component");
+  });
+
+  test("identity is resolved before the copy is described", () => {
+    const r = mk();
+    nav(r, "Trade Binder");
+    click(btn(r, "Add a card"));
+    assert(!btn(r, "Add to binder"), "no copy fields until a card is chosen");
+    TR.act(() => { cls(r, "cip-q")[0].props.onChange({ target: { value: "charizard base set" } }); });
+    click(cls(r, "cip-row")[0]);
+    const flds = cls(r, "cip-fld");
+    assert(flds.length > 0, "the same copy-identity questions the TP answers");
+    flds.forEach((f) => click(f.findAllByType("button")[1] || f.findAllByType("button")[0]));
+    click(btn(r, "Continue"));
+    assert(btn(r, "Add to binder"), "only then are the collector's own fields asked");
+  });
+
+  test("it asks for collector fields, never TP commercial ones", () => {
+    const src = readSrc("collector/MetYetCollector.jsx");
+    const fn = src.slice(src.indexOf("function AddCopy"), src.indexOf("function AddCopy") + 3200);
+    assert(/What do you think it's worth/.test(fn), "the collector's private note");
+    assert(/Photos/.test(fn), "and both photos");
+    ["acquired", "Cost", "Asking", "ask:"].forEach((f) =>
+      assert(!new RegExp(f).test(fn), f + " is inventory business data and stays TP-only"));
+  });
+
+  test("the same identity resolves to the same canonical cardId", () => {
+    const r = mk();
+    const before = __store.get().get().catalog.length;
+    nav(r, "Trade Binder");
+    click(btn(r, "Add a card"));
+    TR.act(() => { cls(r, "cip-q")[0].props.onChange({ target: { value: "charizard base set" } }); });
+    click(cls(r, "cip-row")[0]);
+    /* Choose an identity the Trusted Partner already stocks. */
+    const eds = cls(r, "cip-fld")[0].findAllByType("button");
+    click(eds.find((b) => txt(b) === "Unlimited") || eds[0]);
+    const gr = cls(r, "cip-fld")[1].findAllByType("button");
+    click(gr.find((b) => txt(b) === "9"));
+    click(btn(r, "Continue"));
+    const photos = () => r.root.findAllByType("button").filter((b) => /Tap to add|Added/.test(txt(b)));
+    click(photos()[0]); click(photos()[1]);
+    click(btn(r, "Add to binder"));
+
+    const s2 = __store.get().get();
+    eq(s2.catalog.length, before, "no duplicate catalog identity was created");
+    const copy = s2.binder[s2.binder.length - 1];
+    const card = s2.catalog.find((c) => c.id === copy.cardId);
+    eq(card.id, "i1", "it resolved to the canonical record the TP already uses");
   });
 });
 

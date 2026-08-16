@@ -155,14 +155,7 @@ describe("C. Collector Binder -> TP Network Supply", () => {
     const before = S(r).binder.length;
 
     click(cls(r, "nav-i").find((b) => txt(b).includes("Trade Binder")));
-    click(btn(r, "Add a card"));
-    const sel = r.root.findAllByType("select")[0];
-    const owned = new Set(casey(r).myBinder().map((b) => b.cardId));
-    const pick = S(r).catalog.find((c) => !owned.has(c.id));
-    TR.act(() => { sel.props.onChange({ target: { value: pick.id } }); });
-    const photos = () => r.root.findAllByType("button").filter((b) => /Tap to add|Added/.test(txt(b)));
-    click(photos()[0]); click(photos()[1]);
-    click(btn(r, "Add to binder"));
+    addBinderCopy(r);
 
     eq(S(r).binder.length, before + 1, "one BinderCopy created");
     const copy = S(r).binder[S(r).binder.length - 1];
@@ -386,6 +379,30 @@ const supplyOrReach = (node) => supplyRouteIn(node) || reachOutIn(node);
 const goalNodes = (r) => cls(r, "goal").concat(cls(r, "gwatch-r"));
 const goalWithSupply = (r) => goalNodes(r).find((n) => supplyOrReach(n));
 
+/* Add a binder copy through the staged flow: identify the exact card, then
+   describe the copy. Mirrors the Trusted Partner's Add to Inventory. */
+const addBinderCopy = (r, term) => {
+  click(btn(r, "Add a card"));
+  const q = cls(r, "cip-q")[0];
+  assert(q, "the shared identity search");
+  TR.act(() => { q.props.onChange({ target: { value: term || "charizard base set" } }); });
+  const hit = cls(r, "cip-row")[0];
+  assert(hit, "a printed card to choose");
+  click(hit);
+  let guard = 0;
+  while (guard++ < 4) {
+    const open = cls(r, "cip-fld").filter((f) =>
+      !f.findAllByType("button").some((b) => String(b.props.className).includes("on")));
+    if (!open.length) break;
+    const bs = open[0].findAllByType("button");
+    click(bs[1] || bs[0]);
+  }
+  click(btn(r, "Continue"));
+  const photos = () => r.root.findAllByType("button").filter((b) => /Tap to add|Added/.test(txt(b)));
+  click(photos()[0]); click(photos()[1]);
+  click(btn(r, "Add to binder"));
+};
+
 /* The Goals redesign replaced the generic "Continue" with task-oriented labels
    derived from opportunity stage. */
 const CTA = /^(Choose trade cards|Agree card values|Check the balance|Confirm the handoff|Review their price|Make your offer)$/;
@@ -432,8 +449,9 @@ const enterStage = (stage) => {
     const b = r.root.findAllByType("button").filter((x) => CTA.test(txt(x).trim()))[i];
     if (!b) break;
     click(b);
-    const st = cls(r, "stage-n")[0];
-    if (st && txt(st) === stage) return r;
+    /* The stage is now named on the rail rather than in a lone label. */
+    const cur = cls(r, "rail-s").find((n) => String(n.props.className).includes("current"));
+    if (cur && txt(cur).includes(stage)) return r;
   }
   return null;
 };
@@ -725,14 +743,7 @@ describe("The shell never chooses which reality exists", () => {
     /* Collector acts again */
     switchTo(r, "Collector");
     click(cls(r, "nav-i").find((b) => txt(b).includes("Trade Binder")));
-    click(btn(r, "Add a card"));
-    const sel = r.root.findAllByType("select")[0];
-    const owned = new Set(casey(r).myBinder().map((b) => b.cardId));
-    const pick = S(r).catalog.find((c) => !owned.has(c.id));
-    TR.act(() => { sel.props.onChange({ target: { value: pick.id } }); });
-    const photos = () => r.root.findAllByType("button").filter((b) => /Tap to add|Added/.test(txt(b)));
-    click(photos()[0]); click(photos()[1]);
-    click(btn(r, "Add to binder"));
+    addBinderCopy(r);
 
     /* Everything both sides did is still there, together. */
     switchTo(r, "Trusted Partner");

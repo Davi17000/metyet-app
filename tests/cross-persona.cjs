@@ -34,6 +34,30 @@ const click = (b) => TR.act(() => b.props.onClick({ stopPropagation() {}, preven
 const btn = (r, s) => r.root.findAllByType("button").find((b) => txt(b).trim() === s);
 const nav = (r, l) => click(cls(r, "nav-i").find((b) => txt(b).includes(l)));
 
+/* Add a binder copy through the staged flow: identify the exact card, then
+   describe the copy. Mirrors the Trusted Partner's Add to Inventory. */
+const addBinderCopy = (r, term) => {
+  click(btn(r, "Add a card"));
+  const q = cls(r, "cip-q")[0];
+  assert(q, "the shared identity search");
+  TR.act(() => { q.props.onChange({ target: { value: term || "charizard base set" } }); });
+  const hit = cls(r, "cip-row")[0];
+  assert(hit, "a printed card to choose");
+  click(hit);
+  let guard = 0;
+  while (guard++ < 4) {
+    const open = cls(r, "cip-fld").filter((f) =>
+      !f.findAllByType("button").some((b) => String(b.props.className).includes("on")));
+    if (!open.length) break;
+    const bs = open[0].findAllByType("button");
+    click(bs[1] || bs[0]);
+  }
+  click(btn(r, "Continue"));
+  const photos = () => r.root.findAllByType("button").filter((b) => /Tap to add|Added/.test(txt(b)));
+  click(photos()[0]); click(photos()[1]);
+  click(btn(r, "Add to binder"));
+};
+
 const st0 = () => __store.get().get();          // the one canonical state object
 const acts = () => __store.get().actions;
 /* A goal exposes its matching partners through one of three treatments, decided
@@ -132,14 +156,7 @@ describe("3. Collector adds a Binder copy -> TP sees the same copy id", () => {
     const before = partnerView().networkSupply.length;
     const r = collector();
     nav(r, "Trade Binder");
-    click(btn(r, "Add a card"));
-    const sel = r.root.findAllByType("select")[0];
-        const owned = new Set(cv().myBinder().map((b) => b.cardId));
-    const pick = st0().catalog.find((c) => !owned.has(c.id));
-    TR.act(() => { sel.props.onChange({ target: { value: pick.id } }); });
-    const photos = () => r.root.findAllByType("button").filter((b) => /Tap to add|Added/.test(txt(b)));
-    click(photos()[0]); click(photos()[1]);
-    click(btn(r, "Add to binder"));
+    addBinderCopy(r);
 
     const supply = partnerView().networkSupply;
     eq(supply.length, before + 1, "the TP network supply gained exactly one copy");
@@ -270,8 +287,8 @@ describe("8. Collector proposes a Binder copy -> TP reviews that same id", () =>
           .test(txt(x).trim()))[i];
       if (!b) break;
       click(b);
-      const stg = cls(r, "stage-n")[0];
-      if (stg && txt(stg) === "Select Trade") { sel = r; break; }
+      const cur = cls(r, "rail-s").find((n) => String(n.props.className).includes("current"));
+      if (cur && txt(cur).includes("Select Trade")) { sel = r; break; }
       fresh();
     }
     assert(sel, "reached Select Trade");
