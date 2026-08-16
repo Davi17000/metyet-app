@@ -6,7 +6,8 @@ import { collectorView } from "../domain/collector-view.js";
 /* THE CANONICAL SEED. The Collector runs on the same universe the Trusted
    Partner does — same cards, same collectors, same inventory copies. Casey Lin
    (c12) is a collector in that network, not a fixture. */
-import { buildCanonicalSeed } from "../src/MetYet.jsx";
+import { buildCanonicalSeed, Icon } from "../src/MetYet.jsx";
+import CardIdentityPicker from "../shared/CardIdentityPicker.jsx";
 
 const SELF_COLLECTOR = "c12";
 
@@ -54,6 +55,48 @@ const artUrl = (id) => {
   const i = id.lastIndexOf("-");
   return `https://images.pokemontcg.io/${id.slice(0, i)}/${id.slice(i + 1)}_hires.png`;
 };
+
+/* What the collector must actually DO next, derived from canonical opportunity
+   state. A stage name is context, not an instruction: "Select Trade" tells you
+   where the deal is, "Choose trade cards" tells you what to do. Every label here
+   comes from the shared lifecycle, so no stage is special-cased. */
+function nextActionFor(o, st) {
+  const t = st.turnFor(o);
+  const partner = st.partnerById(o.partnerId);
+  const them = partner ? partner.name : "them";
+  const mine = t.who === "me";
+  const agreed = o.agreedPrice != null
+    ? `Price agreed at ${money(o.agreedPrice)} with ${them}` : null;
+
+  switch (o.stage) {
+    case "agree-price": {
+      const last = D.lastEntry(o.priceThread);
+      return { cta: mine ? (last && last.by !== "collector" ? "Review their price" : "Make your offer") : null,
+        context: last ? `${last.by === "collector" ? "You offered" : them + " countered"} ${money(last.amount)}`
+          : `Listed at ${money(o.listedPrice)}`,
+        waiting: mine ? null : `Waiting on ${them}` };
+    }
+    case "select-trade":
+      return { cta: mine ? "Choose trade cards" : null, context: agreed,
+        waiting: mine ? null : `${them} is reviewing your cards` };
+    case "value-trade":
+      return { cta: mine ? "Agree card values" : null, context: agreed,
+        waiting: mine ? null : `Waiting on ${them} to value your cards` };
+    case "deal":
+      return { cta: mine ? "Check the balance" : null, context: agreed,
+        waiting: mine ? null : `Waiting on ${them} to agree` };
+    case "fulfillment":
+      return { cta: mine ? "Confirm the handoff" : null, context: agreed,
+        waiting: mine ? null : `Waiting on ${them} to confirm` };
+    default:
+      return { cta: null, context: agreed, waiting: null };
+  }
+}
+
+/* The deal stages a collector actually moves through. Derived from the shared
+   lifecycle — the intent stages are not part of a deal, and Completed is the end
+   rather than a step. No Goal-specific stage state exists. */
+const DEAL_STEPS = D.STAGES.filter((s) => s.group === "deal").map((s) => s.id);
 
 /* Consumer wording for the canonical goal states. */
 const lastEntry = D.lastEntry;
@@ -121,8 +164,11 @@ const CSS = `
   --t1: #0B5D66;
   --t2: #4E8C93;
   --t1-bg: #E6F0F1;
-  --accent: #6C5CE0;
-  --accent-bg: #F0EDFC;
+  /* MetYet's action colour, shared with the Trusted Partner workspace. The
+     Collector composition differs; the palette should not. */
+  --accent: #0B5D66;
+  --accent-bg: #E6F0F1;
+  --accent-line: #CFE0E2;
   --amber: #9A6408;
   --amber-bg: #FBF3E3;
   --danger: #98302C;
@@ -155,7 +201,7 @@ const CSS = `
 .btn:active { transform: translateY(1px); }
 .btn:hover { border-color: #C9D2DB; }
 .btn.pri { background: var(--accent); border-color: var(--accent); color: #FFF;
-  box-shadow: 0 2px 8px rgba(108,92,224,.28); }
+  box-shadow: 0 2px 8px rgba(11,93,102,.24); }
 .btn.pri:hover { background: #5B4BD0; }
 .btn.deep { background: var(--t1); border-color: var(--t1); color: #FFF;
   box-shadow: 0 2px 8px rgba(11,93,102,.24); }
@@ -210,8 +256,100 @@ const CSS = `
 .goal-live { display: flex; align-items: center; gap: 12px; margin-top: 18px; padding: 14px 16px;
   background: var(--accent-bg); border-radius: 13px; }
 .goal-live-t { flex: 1; min-width: 0; font-size: 14px; }
-.goal-note { font-size: 13.5px; color: var(--muted); font-style: italic; margin-top: 11px;
-  padding-left: 11px; border-left: 2px solid var(--line); }
+/* the partners who can actually help — a compact row each, not a card each */
+.goal-supply { margin-top: 16px; border: 1px solid var(--line); border-radius: 12px;
+  overflow: hidden; }
+.goal-supply-h { font-family: 'Archivo'; font-size: 10px; letter-spacing: .09em;
+  text-transform: uppercase; font-weight: 700; color: var(--muted);
+  padding: 11px 14px; background: var(--line-soft); }
+.gs-row { display: flex; align-items: center; gap: 11px; padding: 11px 14px;
+  border-top: 1px solid var(--line-soft); flex-wrap: wrap; }
+.gs-b { flex: 1; min-width: 0; }
+.gs-n { font-size: 14px; font-weight: 600; text-align: left; }
+.gs-c { font-size: 12px; color: var(--faint); }
+.gs-a { display: flex; align-items: center; gap: 10px; }
+.gs-ask { font-size: 13.5px; font-weight: 600; }
+.gs-offer { margin: 12px 14px 14px; }
+
+/* deal progress: context under the action, never competing with it */
+.goal-prog { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
+.goal-prog-bar { display: flex; gap: 3px; }
+.gp-seg { flex: 1; height: 4px; border-radius: 2px; background: var(--line); }
+.gp-seg.done { background: var(--t2); }
+.gp-seg.now { background: var(--accent); }
+.goal-prog-l { display: flex; gap: 3px; margin-top: 7px; }
+.gp-l { flex: 1; font-size: 9.5px; line-height: 1.25; color: var(--faint); text-align: center;
+  overflow: hidden; text-overflow: ellipsis; }
+.gp-l.on { color: var(--accent); font-weight: 700; }
+@media (max-width: 520px) { .gp-l { font-size: 0; } .gp-l.on { font-size: 10px; } }
+
+/* ---- the shared card identity picker, in the Collector's visual language.
+   Same questions as the Trusted Partner asks; consumer spacing and targets. */
+.cip-q { margin-bottom: 4px; }
+.cip-results { margin-top: 12px; max-height: 340px; overflow-y: auto; }
+.cip-row { display: flex; gap: 12px; align-items: center; width: 100%; text-align: left;
+  background: none; border: 0; border-bottom: 1px solid var(--line-soft); padding: 10px 4px; }
+.cip-row:hover { background: var(--line-soft); }
+.cip-main { display: flex; flex-direction: column; min-width: 0; }
+.cip-name { font-size: 14.5px; font-weight: 600; line-height: 1.25; }
+.cip-sub { font-size: 12.5px; color: var(--muted); }
+.cip-var { font-size: 11.5px; color: var(--faint); }
+.cip-hint { font-size: 12px; padding: 10px 4px; }
+.cip-none { padding: 22px 4px; }
+.cip-picked { display: flex; gap: 14px; align-items: flex-start; padding-bottom: 16px;
+  border-bottom: 1px solid var(--line-soft); margin-bottom: 16px; }
+.cip-fld { margin-bottom: 16px; }
+.cip-lbl { display: block; font-size: 13px; font-weight: 600; margin-bottom: 7px; }
+.cip-lbl .req { color: var(--danger); font-weight: 700; }
+.cip-seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.cip-opt { border: 1px solid var(--line); background: #FFF; border-radius: 9px;
+  padding: 8px 12px; font-size: 13px; font-weight: 500; min-width: 42px; }
+.cip-opt:hover { border-color: #C9D2DB; }
+.cip-opt.on { background: var(--accent); border-color: var(--accent); color: #FFF; }
+.cip-opt.wide { min-width: 62px; }
+
+/* ---- goals: two sections doing two different jobs --------------------------
+   Primary is the working area — full cards, deal state, next action.
+   Secondary is a watchlist — compact rows, no deal machinery. The difference
+   should read even with the words "Primary" and "Secondary" removed. */
+.gsec-h { display: flex; align-items: baseline; gap: 9px; margin: 0 0 14px; }
+.gsec-t { font-family: 'Archivo'; font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
+.gsec-n { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; color: var(--faint); }
+.gsec-s { margin-left: auto; font-size: 12.5px; color: var(--faint); }
+.gsec-empty { padding: 26px 22px; text-align: center; }
+.gsec-none { font-size: 13px; padding: 2px 2px 4px; }
+
+/* the live deal: the most consequential thing on a primary goal */
+.goal-live { margin-top: 16px; padding: 15px 16px; background: var(--accent-bg);
+  border: 1px solid var(--accent-line); border-radius: 12px; }
+.goal-live-h { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; }
+.goal-live-stage { font-family: 'Archivo'; font-size: 9.5px; letter-spacing: .1em;
+  text-transform: uppercase; font-weight: 700; color: var(--accent); }
+.goal-live-c { font-size: 14px; margin-top: 7px; font-weight: 500; }
+.goal-live-w { font-size: 13.5px; color: var(--muted); margin-top: 10px; }
+
+/* supply stays reachable even mid-negotiation */
+.goal-holders { display: flex; align-items: center; gap: 12px; width: 100%;
+  background: none; border: 0; padding: 10px 0 0; text-align: left; }
+.goal-holders-t { flex: 1; font-size: 13.5px; color: var(--t1); font-weight: 500; }
+.goal-holders:hover .goal-holders-t { text-decoration: underline; }
+.goal-holders-c { color: var(--faint); font-size: 17px; }
+
+/* the watchlist: one row per card, deliberately light */
+.gwatch { padding: 4px 0; }
+.gwatch-r { display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+  border-bottom: 1px solid var(--line-soft); flex-wrap: wrap; }
+.gwatch-r:last-child { border-bottom: 0; }
+.gwatch-b { flex: 1; min-width: 0; }
+.gwatch-n { font-size: 14px; font-weight: 600; line-height: 1.25; }
+.gwatch-i { font-size: 12px; color: var(--faint); margin-top: 1px; }
+.gwatch-a { display: flex; align-items: center; gap: 10px; }
+.gwatch-h { font-size: 12.5px; }
+.gwatch-live { padding: 4px 10px; font-size: 12px; }
+.gwatch-m { background: none; border: 0; color: var(--faint); font-size: 16px;
+  line-height: 1; padding: 4px 6px; border-radius: 6px; }
+.gwatch-m:hover { background: var(--line-soft); color: var(--text); }
+.gwatch-menu { flex: 0 0 100%; display: flex; gap: 8px; padding: 4px 0 6px; }
 
 /* ---- trade binder: a digital binder, not a table ---- */
 .bnd { display: grid; grid-template-columns: repeat(auto-fill, minmax(156px, 1fr)); gap: 16px; }
@@ -295,6 +433,7 @@ const CSS = `
 .nav-i { flex: 1; background: none; border: 0; display: flex; flex-direction: column;
   align-items: center; gap: 4px; padding: 5px 0; color: var(--faint); }
 .nav-i.on { color: var(--accent); }
+.nav-ic { display: flex; }
 .nav-l { font-size: 11px; font-weight: 600; }
 .nav-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 
@@ -411,7 +550,8 @@ function Turn({ o, st }) {
    normal state, not a gap to be filled, so it reads calmly rather than nagging. */
 
 function Goals({ st, go }) {
-  const { goals, opps } = st;
+  const { goals } = st;
+  const [adding, setAdding] = useState(false);
   const primary = goals.filter((g) => g.tier === "primary");
   const secondary = goals.filter((g) => g.tier === "secondary");
 
@@ -420,20 +560,142 @@ function Goals({ st, go }) {
       <div className="pg-h">
         <div>
           <h1 className="pg-t disp">Goals</h1>
-          <div className="pg-s">
-            {primary.length} primary · {secondary.length} secondary
-          </div>
+          <div className="pg-s">What you're looking for, and where each one stands.</div>
+        </div>
+        {/* Stating a want must not require finding supply first. */}
+        <div className="pg-act">
+          <button className="btn sm pri" onClick={() => setAdding(true)}>Add goal</button>
         </div>
       </div>
 
-      {goals.length === 0 && <div className="card empty">Nothing on your list yet.</div>}
+      {/* PRIMARY — the working area. Full cards, deal progress, next action. */}
+      <div className="gsec-h">
+        <span className="gsec-t">Primary</span>
+        <span className="gsec-n">{primary.length}</span>
+        <span className="gsec-s">Actively chasing</span>
+      </div>
+      {primary.length === 0 ? (
+        <div className="card gsec-empty">
+          <div style={{ fontWeight: 600, fontSize: 15 }}>Nothing on your active list</div>
+          <div className="faint" style={{ fontSize: 13.5, marginTop: 6, lineHeight: 1.5 }}>
+            A primary goal is a card you're actively trying to get. It's where your
+            partners' attention goes, and where deals start.
+          </div>
+          <button className="btn pri" style={{ marginTop: 14 }} onClick={() => setAdding(true)}>
+            Add your first goal
+          </button>
+        </div>
+      ) : primary.map((g) => <GoalCard key={g.id} g={g} st={st} go={go} />)}
 
-      {primary.map((g) => <GoalCard key={g.id} g={g} st={st} go={go} />)}
-
-      {secondary.length > 0 && (
-        <div className="sec-h" style={{ margin: "26px 0 12px" }}>Also looking for</div>
+      {/* SECONDARY — a watchlist. Compact rows, no deal machinery. */}
+      <div className="gsec-h" style={{ marginTop: 30 }}>
+        <span className="gsec-t">Also looking for</span>
+        <span className="gsec-n">{secondary.length}</span>
+        <span className="gsec-s">Keeping an eye out</span>
+      </div>
+      {secondary.length === 0 ? (
+        <div className="faint gsec-none">Nothing here yet.</div>
+      ) : (
+        <div className="card gwatch">
+          {secondary.map((g) => <WatchRow key={g.id} g={g} st={st} go={go} />)}
+        </div>
       )}
-      {secondary.map((g) => <GoalCard key={g.id} g={g} st={st} go={go} />)}
+
+      {adding && <AddGoalPicker st={st} go={go} onClose={() => setAdding(false)} />}
+    </div>
+  );
+}
+
+/* Search the canonical catalog and state a want. Supply is irrelevant here —
+   a goal is the collector's intent, not a shopping selection. Creation itself
+   is delegated to AddGoalSheet, so there is one goal-creation path. */
+function AddGoalPicker({ st, go, onClose }) {
+  const [identity, setIdentity] = useState(null);
+
+  /* Stage two: intent. Only asked once MetYet knows exactly which card this is —
+     a tier is meaningless until the target is unambiguous. */
+  if (identity) {
+    const c = identity.card;
+    const add = (tier) => { st.addGoalForIdentity(identity, tier); onClose(); };
+    return (
+      <Sheet title="How much are you chasing this one?" sub={cardFull(c)} onClose={onClose}
+        footer={<button className="btn wide" onClick={() => setIdentity(null)}>Back</button>}>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
+          <Art card={c} size="lg" />
+        </div>
+        <button className="btn pri wide" style={{ marginBottom: 10 }}
+          onClick={() => add("primary")}>Primary — actively looking</button>
+        <button className="btn wide" onClick={() => add("secondary")}>
+          Secondary — keeping an eye out
+        </button>
+        <div className="faint" style={{ fontSize: 12.5, marginTop: 14 }}>
+          We'll check every one of your partners for this exact card, and tell you
+          when one of them has it.
+        </div>
+      </Sheet>
+    );
+  }
+
+  /* Stage one: the SAME identity search the Trusted Partner uses. A goal is
+     defined by the same criteria as any other card in MetYet. */
+  return (
+    <Sheet title="Add a goal"
+      sub="Find the exact card you're after — a partner doesn't need to have it yet."
+      onClose={onClose}>
+      <CardIdentityPicker
+        catalog={st.catalog}
+        Art={Art}
+        confirmLabel="Continue"
+        searchPlaceholder="Search by card name, set, or number..."
+        onCancel={onClose}
+        onResolved={(id) => setIdentity(st.resolveIdentity(id))}
+      />
+    </Sheet>
+  );
+}
+
+/* A secondary goal is a watchlist entry: identity, coverage, and the ability to
+   promote it. Deliberately no deal block — a secondary goal is not being worked. */
+function WatchRow({ g, st, go }) {
+  const c = st.cardById(g.cardId);
+  const holders = st.partnersWith(g.cardId);
+  const live = st.openOppForGoal(g.id);
+  const [menu, setMenu] = useState(false);
+
+  return (
+    <div className="gwatch-r">
+      <Art card={c} size="xs" />
+      <div className="gwatch-b">
+        <div className="gwatch-n">{c.name}</div>
+        <div className="gwatch-i">{cardLine(c)} · {gradeLine(c)}</div>
+      </div>
+      <div className="gwatch-a">
+        {/* A secondary goal is not a working area, but a live negotiation must
+            never be stranded: show a compact route into it. */}
+        {live && (
+          <button className="btn sm pri gwatch-live"
+            onClick={() => go({ v: "deal", oppId: live.id })}>
+            {nextActionFor(live, st).cta || "Open deal"}
+          </button>
+        )}
+        {holders.length > 0 ? (
+          <button className="link gwatch-h" onClick={() => go({ v: "start", goalId: g.id })}>
+            {holders.length} {holders.length === 1 ? "partner" : "partners"}
+          </button>
+        ) : <span className="faint gwatch-h">No one has it</span>}
+        <button className="gwatch-m" aria-label={"Edit " + c.name}
+          aria-expanded={menu} onClick={() => setMenu(!menu)}>&#8943;</button>
+      </div>
+      {menu && (
+        <div className="gwatch-menu">
+          <button className="btn sm" onClick={() => st.setTier(g.id, "primary")}>
+            Move to Primary
+          </button>
+          <button className="btn sm" disabled={!!live}
+            title={live ? "Finish or stop the negotiation first" : undefined}
+            onClick={() => st.removeGoal(g.id)}>Remove</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -445,6 +707,7 @@ function GoalCard({ g, st, go }) {
   const partner = live ? st.partnerById(live.partnerId) : null;
   const state = st.stateOf(g.id);
   const [menu, setMenu] = useState(false);
+  const act = live ? nextActionFor(live, st) : null;
 
   return (
     <div className="card goal">
@@ -452,10 +715,7 @@ function GoalCard({ g, st, go }) {
         <Art card={c} size="lg" />
         <div className="goal-b">
           <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" }}>
-            <span className={"tier " + (g.tier === "primary" ? "p" : "s")}>
-              {g.tier === "primary" ? "Primary" : "Secondary"}
-            </span>
-            {/* Derived from the opportunities, never stored. */}
+            <span className="tier p">Primary</span>
             <span className={"state " + state}>{GOAL_STATE[state]}</span>
           </div>
           <div className="goal-n disp">{c.name}</div>
@@ -467,41 +727,95 @@ function GoalCard({ g, st, go }) {
         </div>
       </div>
 
-      {g.note && <div className="goal-note">{g.note}</div>}
-
-      {/* Who can actually help — the question a collector really has. */}
-      <div className="goal-avail">
-        {holders.length === 0 ? (
-          <span className="faint">None of your partners have this right now.</span>
-        ) : (
-          <>
-            <b>{holders.length}</b> trusted partner{holders.length === 1 ? " has" : "s have"} this
-            <div className="faces">
-              {holders.slice(0, 4).map((h) => <Face key={h.partner.id} partner={h.partner} />)}
-              {holders.length > 4 && <span className="chip" style={{ marginLeft: 14 }}>+{holders.length - 4}</span>}
-            </div>
-          </>
-        )}
-      </div>
-
-      {live ? (
-        /* One negotiation per goal. Because it exists, the app offers to continue
-           it rather than to start another. */
+      {/* THE ACTIVE DEAL. Stage is context; the CTA names the actual next action,
+          derived from canonical opportunity state. Navigation only. */}
+      {live && (
         <div className="goal-live">
-          <div className="goal-live-t">
-            <div className="faint" style={{ fontSize: 12 }}>{STAGE[live.stage].label}</div>
-            <div style={{ fontWeight: 600 }}>with {partner.name}</div>
+          <div className="goal-live-h">
+            <span className="goal-live-stage">{STAGE[live.stage].label}</span>
+            <span className="faint">with {partner.name}</span>
           </div>
-          <button className="btn pri sm" onClick={() => go({ v: "deal", oppId: live.id })}>
-            Continue
+          {act.context && <div className="goal-live-c">{act.context}</div>}
+          {act.cta ? (
+            <button className="btn pri wide" style={{ marginTop: 11 }}
+              onClick={() => go({ v: "deal", oppId: live.id })}>
+              {act.cta}
+            </button>
+          ) : (
+            <div className="goal-live-w">{act.waiting}</div>
+          )}
+        </div>
+      )}
+
+      {/* SUPPLY. With no deal running, the partners who can help ARE the action:
+          list them all, each contactable. With a deal running, they stay one tap
+          away, because a negotiation with one partner must not hide the others. */}
+      {holders.length === 0 ? (
+        <div className="goal-avail faint">
+          None of your partners have this yet. They'll see you're looking.
+        </div>
+      ) : live ? (
+        <button className="goal-holders" onClick={() => go({ v: "start", goalId: g.id })}>
+          <span className="faces">
+            {holders.slice(0, 4).map((h) => <Face key={h.partner.id} partner={h.partner} />)}
+          </span>
+          <span className="goal-holders-t">
+            See all {holders.length} partner{holders.length === 1 ? "" : "s"} with this card
+          </span>
+          <span className="goal-holders-c" aria-hidden="true">&#8250;</span>
+        </button>
+      ) : (
+        <div className="goal-supply">
+          <div className="goal-supply-h">
+            {holders.length} {holders.length === 1 ? "partner has" : "partners have"} this card
+          </div>
+          {holders.map((h) => {
+            const talked = st.contactsFor(g.id, h.partner.id).length > 0;
+            return (
+              <div key={h.partner.id} className="gs-row">
+                <Face partner={h.partner} size={30} />
+                <div className="gs-b">
+                  <button className="link gs-n"
+                    onClick={() => go({ v: "partner", partnerId: h.partner.id })}>
+                    {h.partner.name}
+                  </button>
+                  <div className="gs-c">{h.partner.city}</div>
+                </div>
+                <div className="gs-a">
+                  <span className="gs-ask mono">{money(h.ask)}</span>
+                  <button className="btn sm" onClick={() => st.reachOut(g.id, h.partner.id, g.cardId)}>
+                    {talked ? "Continue chatting" : "Reach out"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+          <button className="btn sm pri gs-offer" onClick={() => go({ v: "start", goalId: g.id })}>
+            Make an offer
           </button>
         </div>
-      ) : holders.length > 0 ? (
-        <button className="btn wide" style={{ marginTop: 15 }}
-          onClick={() => go({ v: "start", goalId: g.id })}>
-          See who has it
-        </button>
-      ) : null}
+      )}
+
+      {/* LIFECYCLE PROGRESS. Context, not a CTA — it sits below the action and
+          reads straight off the canonical opportunity stage. */}
+      {live && DEAL_STEPS.includes(live.stage) && (
+        <div className="goal-prog" role="img"
+          aria-label={`Deal progress: ${STAGE[live.stage].label}, step ${DEAL_STEPS.indexOf(live.stage) + 1} of ${DEAL_STEPS.length}`}>
+          <div className="goal-prog-bar">
+            {DEAL_STEPS.map((id, i) => (
+              <span key={id} className={"gp-seg" + (i < DEAL_STEPS.indexOf(live.stage) ? " done"
+                : i === DEAL_STEPS.indexOf(live.stage) ? " now" : "")} />
+            ))}
+          </div>
+          <div className="goal-prog-l">
+            {DEAL_STEPS.map((id) => (
+              <span key={id} className={"gp-l" + (id === live.stage ? " on" : "")}>
+                {STAGE[id].label}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="goal-edit">
         <button className="link" onClick={() => setMenu(!menu)} aria-expanded={menu}>
@@ -509,9 +823,9 @@ function GoalCard({ g, st, go }) {
         </button>
         {menu && (
           <div className="act-2" style={{ marginTop: 10 }}>
-            {g.tier === "secondary"
-              ? <button className="btn sm" onClick={() => st.setTier(g.id, "primary")}>Move to Primary</button>
-              : <button className="btn sm" onClick={() => st.setTier(g.id, "secondary")}>Move to Secondary</button>}
+            <button className="btn sm" onClick={() => st.setTier(g.id, "secondary")}>
+              Move to Secondary
+            </button>
             <button className="btn sm" disabled={!!live}
               title={live ? "Finish or stop the negotiation first" : undefined}
               onClick={() => st.removeGoal(g.id)}>Remove</button>
@@ -1508,10 +1822,12 @@ function AddCopy({ st, go }) {
 }
 
 /* ============================ ROOT ============================ */
+/* The same icon set the Trusted Partner workspace uses — crosshairs for what
+   you're targeting, a binder for what you'd trade, people for who can help. */
 const NAV = [
-  { id: "goals", label: "Goals", icon: "◎" },
-  { id: "binder", label: "Trade Binder", icon: "▤" },
-  { id: "partners", label: "Trusted Partners", icon: "◍" },
+  { id: "goals", label: "Goals", icon: "target" },
+  { id: "binder", label: "Trade Binder", icon: "binder" },
+  { id: "partners", label: "Trusted Partners", icon: "people" },
 ];
 
 /* The one shared store. Both persona apps in this prototype construct it from
@@ -1552,6 +1868,22 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
              here mutates a local array. ---- */
       addGoal: (cardId, tier) =>
         A.addGoal({ collectorId, cardId, tier, at: AT }),
+      /* Resolve an exact identity to a canonical catalog record, creating one if
+         this printing/grade combination has never been seen. The SAME rule the
+         Trusted Partner uses when adding a copy — one catalog, one identityKey. */
+      resolveIdentity: (identity) => {
+        const key = D.identityKey(identity);
+        const hit = state.catalog.find((c) => D.identityKey(c) === key);
+        if (hit) return { id: hit.id, card: hit };
+        const id = "c" + key.replace(/[^a-z0-9]+/g, "").slice(0, 24) + "-" + state.catalog.length;
+        const card = { ...identity, id };
+        store.set({ ...store.get(), catalog: [...store.get().catalog, card] });
+        return { id, card };
+      },
+      /* A goal is intent at an exact identity. Creation still goes through the
+         one canonical action. */
+      addGoalForIdentity: (resolved, tier) =>
+        A.addGoal({ collectorId, cardId: resolved.id, tier, at: AT }),
       setTier: (goalId, tier) => A.updateGoalTier(goalId, tier),
       removeGoal: (goalId) => A.removeGoal(goalId),
       addCopy: (cardId, mine, photos) => A.addBinderCopy({
@@ -1617,7 +1949,7 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
           <button key={n.id} className={"nav-i" + (tab === n.id ? " on" : "")}
             aria-current={tab === n.id ? "page" : undefined}
             onClick={() => go({ v: n.id })}>
-            <span style={{ fontSize: 19, lineHeight: 1 }} aria-hidden="true">{n.icon}</span>
+            <span className="nav-ic" aria-hidden="true"><Icon n={n.icon} s={20} /></span>
             <span className="nav-l">{n.label}</span>
             {n.id === "goals" && liveCount > 0 && <span className="nav-dot" aria-label={`${liveCount} need you`} />}
           </button>

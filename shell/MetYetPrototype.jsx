@@ -65,7 +65,6 @@ const CSS = `
 .myp-cta { display: inline-flex; align-items: center; justify-content: center;
   border-radius: 10px; padding: 11px 16px; font-size: 14px; font-weight: 600;
   background: #0B5D66; border: 1px solid #0B5D66; color: #FFF; }
-.myp-card:nth-child(2) .myp-cta { background: #6C5CE0; border-color: #6C5CE0; }
 .myp-note { font-size: 12px; color: #8B95A3; margin-top: 22px; text-align: center; }
 
 /* ---- prototype strip: outside both product IAs, quiet by design ---- */

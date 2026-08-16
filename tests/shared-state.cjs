@@ -702,4 +702,105 @@ describe("Trusted Partner runtime is the shared store", () => {
   });
 });
 
+/* ============================================================================
+   ONE CARD IDENTITY EXPERIENCE, TWO PERSONAS
+
+   The persona may change what happens after a card is chosen. It must not
+   change how MetYet decides which card it is.
+   ========================================================================= */
+describe("Card identity search is shared, not duplicated", () => {
+  const tpSrc = () => require("fs").readFileSync(
+    require("path").join(__dirname, "..", "src", "MetYet.jsx"), "utf8");
+  const colSrc = () => require("fs").readFileSync(
+    require("path").join(__dirname, "..", "collector", "MetYetCollector.jsx"), "utf8");
+  const pickSrc = () => require("fs").readFileSync(
+    require("path").join(__dirname, "..", "shared", "CardIdentityPicker.jsx"), "utf8");
+  const { buildCanonicalSeed } = require("../dist/MetYet.cjs");
+
+  test("1/2. there is ONE definition of the search and the vocabularies", () => {
+    ["searchCards", "GRADED_VALUES", "CONDITION_VALUES", "printedCards", "identityGaps"]
+      .forEach((k) => assert(new RegExp("^(const|function) " + k, "m").test(
+        require("fs").readFileSync(require("path").join(__dirname, "..", "domain", "metyet-domain.js"), "utf8")),
+        k + " is defined in the domain"));
+    /* The TP must not carry its own copy any more. */
+    assert(/GRADED_VALUES = SharedID\.GRADED_VALUES/.test(tpSrc()), "TP reuses the shared grades");
+    assert(/CONDITION_VALUES = SharedID\.CONDITION_VALUES/.test(tpSrc()), "and conditions");
+    assert(/const searchCards = SharedID\.searchCards/.test(tpSrc()), "and the search");
+    assert(!/function searchCards\(cards, query\) \{/.test(tpSrc()), "no second implementation");
+    assert(!/const GRADED_VALUES = \["Raw"/.test(colSrc()), "the Collector defines no grades of its own");
+  });
+
+  test("3. every identity criterion the TP can specify is in the shared picker", () => {
+    const p = pickSrc();
+    ["Edition", "PSA Grade", "Condition"].forEach((f) =>
+      assert(p.includes(f), f + " is asked by the shared picker"));
+    assert(/D\.GRADED_VALUES/.test(p) && /D\.CONDITION_VALUES/.test(p),
+      "using the canonical vocabularies");
+  });
+
+  test("4. TP-only physical-copy fields do not leak into goal creation", () => {
+    const p = pickSrc();
+    ["cost", "ask", "acquired", "cert"].forEach((f) =>
+      assert(!new RegExp('"' + f + '"|\\b' + f + ':').test(p),
+        f + " describes a partner's own copy and stays out of the shared picker"));
+    const goal = colSrc().slice(colSrc().indexOf("function AddGoalPicker"),
+      colSrc().indexOf("/* A secondary goal"));
+    ["cost", "acquired", "asking"].forEach((f) =>
+      assert(!new RegExp("\\b" + f + "\\b", "i").test(goal), f + " is not asked of a collector"));
+  });
+
+  test("5. the same criteria resolve to the same canonical identity for both personas", () => {
+    const s2 = buildCanonicalSeed();
+    const printed = D.printedCards(s2.catalog);
+    const chz = D.searchCards(printed, "charizard base set").find((c) => c.num === "4/102");
+    assert(chz, "the printed card is findable");
+    const copy = { edition: "Unlimited", grade: "PSA 9", condition: "" };
+    const gaps = D.identityGaps(chz, copy);
+    const identity = D.identityFrom(chz, copy, gaps.edition);
+    /* Whichever persona built it, the key is the same, and it resolves to the
+       card the other persona already holds. */
+    const existing = s2.catalog.find((c) => c.id === "i1");
+    eq(D.identityKey(identity), D.identityKey(existing),
+      "one identityKey, regardless of who described it");
+  });
+
+  test("8. an ambiguous printing must be disambiguated before it resolves", () => {
+    const s2 = buildCanonicalSeed();
+    const printed = D.printedCards(s2.catalog);
+    const chz = D.searchCards(printed, "charizard base set").find((c) => c.num === "4/102");
+    const editions = [...new Set(chz.variants.map((v) => v.edition))];
+    assert(editions.length > 1, "this printing spans editions: " + editions.join(", "));
+    eq(D.identityGaps(chz, { grade: "PSA 9" }).resolved, false, "grade alone is not enough");
+    eq(D.identityGaps(chz, { edition: "Unlimited", grade: "PSA 9" }).resolved, true,
+      "edition plus grade resolves it");
+  });
+
+  test("9. raw copies still require a condition, exactly as for the TP", () => {
+    const s2 = buildCanonicalSeed();
+    const printed = D.printedCards(s2.catalog);
+    const c = D.searchCards(printed, "charizard base set")[0];
+    const withRaw = D.identityGaps(c, { edition: "Unlimited", grade: "Raw" });
+    eq(withRaw.resolved, false, "raw without a condition is incomplete");
+    eq(withRaw.needsCondition, true, "and says so");
+    eq(D.identityGaps(c, { edition: "Unlimited", grade: "Raw", condition: "Near Mint" }).resolved,
+      true, "with a condition it resolves");
+  });
+
+  test("search groups by printing, so a grade never splits a result", () => {
+    const s2 = buildCanonicalSeed();
+    const printed = D.printedCards(s2.catalog);
+    assert(printed.length < s2.catalog.length, "variants collapse into printings");
+    printed.forEach((p) => assert(p.variants.length >= 1, "each carries its variants"));
+    const chz = printed.find((c) => c.name === "Charizard" && c.num === "4/102");
+    assert(chz.variants.length > 1, "one row for several graded copies");
+  });
+
+  test("12. TP inventory creation is untouched", () => {
+    const tp = tpSrc();
+    assert(/addCopyToInventory\(\s*resolved\.id,/.test(tp), "still adds via the same action");
+    assert(/cost: d\.cost, ask: d\.ask, acquired: d\.acquired/.test(tp),
+      "with its own physical-copy fields intact");
+  });
+});
+
 require("./run.cjs").run();

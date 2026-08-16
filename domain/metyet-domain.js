@@ -155,3 +155,90 @@ module.exports = {
   lastEntry, nextActor,
   INVARIANTS,
 };
+
+/* ------------------------------------------------------- CARD IDENTITY SEARCH
+
+   How MetYet decides WHICH card someone means. Shared, because the answer must
+   not depend on who is asking: a Trusted Partner adding an inventory copy and a
+   collector stating a goal are describing the same thing, and must describe it
+   the same way.
+
+   The persona changes what happens AFTER a card is chosen. It must not change
+   how the card is defined. */
+
+const GRADED_VALUES = ["Raw", "PSA 1", "PSA 2", "PSA 3", "PSA 4", "PSA 5",
+  "PSA 6", "PSA 7", "PSA 8", "PSA 9", "PSA 10"];
+const CONDITION_VALUES = ["Near Mint", "Lightly Played", "Moderately Played",
+  "Heavily Played", "Damaged"];
+
+/* Free-text search over the canonical catalog. Every term must appear somewhere
+   in the record; name matches rank above set matches. */
+function searchCards(cards, query) {
+  const terms = String(query || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return [];
+  const scored = [];
+  for (const c of cards) {
+    const name = String(c.name).toLowerCase();
+    const hay = [c.name, c.set, c.num, c.year, c.grade, c.edition, c.print, c.language]
+      .filter(Boolean).join(" ").toLowerCase();
+    if (!terms.every((t) => hay.includes(t))) continue;
+    const inName = terms.filter((t) => name.includes(t)).length;
+    scored.push({ c, inName, pos: name.indexOf(terms[0]) });
+  }
+  return scored
+    .sort((a, b) => b.inName - a.inName
+      || (a.pos < 0 ? 99 : a.pos) - (b.pos < 0 ? 99 : b.pos)
+      || a.c.name.localeCompare(b.c.name)
+      || a.c.set.localeCompare(b.c.set))
+    .map((x) => x.c);
+}
+
+/* A PRINTED card — everything identity depends on except the copy-level facts
+   (edition, grade, condition). Search results are grouped on this, so choosing a
+   grade never splits one printing into several rows. */
+const PRINT_FIELDS = ["name", "set", "num", "print", "language"];
+const printKey = (c) => (c
+  ? PRINT_FIELDS.map((f) => String(c[f]).trim().toLowerCase()).join("|") : "");
+
+/* Group a catalog into printed cards, each carrying the variants beneath it, so
+   a picker can ask for edition only when the printing genuinely offers a choice. */
+function printedCards(cards) {
+  const groups = new Map();
+  for (const c of cards) {
+    const k = printKey(c);
+    if (!groups.has(k)) groups.set(k, { ...c, variants: [] });
+    groups.get(k).variants.push(c);
+  }
+  return [...groups.values()];
+}
+
+/* Which copy-level questions still need answering before MetYet can say which
+   exact card this is. The same three for both personas. */
+function identityGaps(printed, copy) {
+  const editions = printed ? [...new Set(printed.variants.map((v) => v.edition))] : [];
+  const edition = editions.length === 1 ? editions[0] : (copy.edition || "");
+  const needsEdition = editions.length > 1 && !copy.edition;
+  const raw = copy.grade === "Raw";
+  return {
+    editions, edition, needsEdition,
+    needsGrade: !copy.grade,
+    needsCondition: raw && !copy.condition,
+    raw,
+    resolved: !!printed && !!edition && !!copy.grade && (!raw || !!copy.condition),
+  };
+}
+
+/* The exact canonical identity a picker produces. Both personas end here. */
+const identityFrom = (printed, copy, edition) => {
+  const t = { ...printed, edition, grade: copy.grade, condition: copy.grade === "Raw" ? copy.condition : null };
+  delete t.variants;
+  return t;
+};
+
+module.exports.GRADED_VALUES = GRADED_VALUES;
+module.exports.CONDITION_VALUES = CONDITION_VALUES;
+module.exports.searchCards = searchCards;
+module.exports.printKey = printKey;
+module.exports.printedCards = printedCards;
+module.exports.identityGaps = identityGaps;
+module.exports.identityFrom = identityFrom;

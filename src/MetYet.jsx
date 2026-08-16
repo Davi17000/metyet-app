@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { createStore } from "../domain/metyet-store.js";
+import * as SharedID from "../domain/metyet-domain.js";
 
 /* ============================================================
    MetYet — Trusted Partner Experience (pilot prototype)
@@ -1022,9 +1023,16 @@ const Icon = ({ n, s = 16 }) => {
     x: <><path d="m4 4 8 8M12 4l-8 8" /></>,
     send: <><path d="M14 2 7 9M14 2l-4.5 12L7 9 2 6.5z" /></>,
     copy: <><rect x="5.5" y="5.5" width="8" height="8" rx="1.2" /><path d="M10.5 3.5h-8v8" /></>,
+    /* Collector navigation. Same 16px grid, same 1.4 stroke, same joins. */
+    target: <><circle cx="8" cy="8" r="5" /><circle cx="8" cy="8" r="1.4" /><path d="M8 1v2M8 13v2M1 8h2M13 8h2" /></>,
+    binder: <><rect x="3" y="2.5" width="10.5" height="11" rx="1.2" /><path d="M6 2.5v11" /><path d="M4.4 5.2h.9M4.4 8h.9M4.4 10.8h.9" /></>,
   };
   return <svg {...p}>{paths[n]}</svg>;
 };
+
+/* Shared so the Collector navigation uses the same marks, weight and grid as the
+   Trusted Partner workspace rather than a second icon vocabulary. */
+export { Icon };
 
 /* ------------------------------ MOCK DATA ------------------------------ */
 
@@ -2347,8 +2355,10 @@ const initials = (n) => n.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpp
    part of the key: a 1st Edition Charizard and an Unlimited Charizard are the same
    name/set/number and would otherwise collide. Condition participates only for Raw
    cards, because a PSA grade already expresses condition. Tags are never involved. */
-const GRADED_VALUES = ["Raw", "PSA 1", "PSA 2", "PSA 3", "PSA 4", "PSA 5", "PSA 6", "PSA 7", "PSA 8", "PSA 9", "PSA 10"];
-const CONDITION_VALUES = ["Near Mint", "Lightly Played", "Moderately Played", "Heavily Played", "Damaged"];
+/* One definition of the grade and condition vocabularies, shared with the
+   Collector so both personas describe a copy identically. */
+const GRADED_VALUES = SharedID.GRADED_VALUES;
+const CONDITION_VALUES = SharedID.CONDITION_VALUES;
 const PRINT_VALUES = ["Normal", "Holo", "Reverse Holo"];
 
 const isRaw = (c) => c && c.grade === "Raw";
@@ -6949,26 +6959,8 @@ const optionalMoneyState = (raw) => {
 /* Multi-term, case-insensitive match across the fields a TP would actually type.
    Every term must appear somewhere in the card's searchable text, so "Charizard Base"
    narrows to Base Set Charizards rather than returning either. */
-function searchCards(cards, query) {
-  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  if (!terms.length) return [];
-  const scored = [];
-  for (const c of cards) {
-    const name = String(c.name).toLowerCase();
-    const hay = [c.name, c.set, c.num, c.year, c.grade, c.edition, c.print, c.language]
-      .filter(Boolean).join(" ").toLowerCase();
-    if (!terms.every((t) => hay.includes(t))) continue;
-    // rank: name matches first, then earlier name position, then set then name
-    const inName = terms.filter((t) => name.includes(t)).length;
-    scored.push({ c, inName, pos: name.indexOf(terms[0]) });
-  }
-  return scored
-    .sort((a, b) => b.inName - a.inName
-      || (a.pos < 0 ? 99 : a.pos) - (b.pos < 0 ? 99 : b.pos)
-      || a.c.name.localeCompare(b.c.name)
-      || a.c.set.localeCompare(b.c.set))
-    .map((x) => x.c);
-}
+/* The canonical search, shared with the Collector's Add Goal. */
+const searchCards = SharedID.searchCards;
 
 /* Add Inventory: find the PRINTED card, then describe the physical copy you hold.
    Search and dedup run on printIdentityKey — grade never splits a search result. */

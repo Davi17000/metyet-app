@@ -36,6 +36,18 @@ const nav = (r, l) => click(cls(r, "nav-i").find((b) => txt(b).includes(l)));
 
 const st0 = () => __store.get().get();          // the one canonical state object
 const acts = () => __store.get().actions;
+/* A goal exposes its matching partners through one of three treatments, decided
+   by tier and by whether a deal is live:
+     primary + live deal  -> .goal-holders  (summary route into WhoHasIt)
+     primary + no deal    -> .gs-row        (every partner listed inline)
+     secondary            -> .gwatch-h      (compact count link)
+   Tests should not care which; they care that the partners are reachable. */
+const supplyRouteIn = (node) => cls(node, "goal-holders")[0] || cls(node, "gwatch-h")[0]
+  || (cls(node, "gs-row")[0] && cls(node, "gs-row")[0].findAllByType("button")
+      .find((b) => /Reach out|Continue chatting/.test(txt(b))));
+const goalNodes = (r) => cls(r, "goal").concat(cls(r, "gwatch-r"));
+const goalWithSupply = (r) => goalNodes(r).find((n) => supplyRouteIn(n));
+
 const fresh = () => { __store.reset(buildCanonicalSeed()); };
 const collector = () => { let r; TR.act(() => { r = TR.create(React.createElement(Collector)); }); return r; };
 
@@ -103,8 +115,8 @@ describe("2. TP adds matching inventory -> Collector Goal gains that partner", (
 
     eq(cv().partnersWith(unmet.cardId).length, 1, "the collector's goal now has supply");
     const r = collector();
-    const card = cls(r, "goal").find((n) => txt(n).includes(name));
-    assert(/1 trusted partner has this/.test(txt(card)),
+    const card = cls(r, "goal").concat(cls(r, "gwatch-r")).find((n) => txt(n).includes(name));
+    assert(/1 partner|See all 1 partner/.test(txt(card)),
       "and the Collector UI says so: " + txt(card).slice(0, 120));
   });
 });
@@ -171,8 +183,9 @@ describe("5. Collector Reach out -> TP sees the same Conversation", () => {
     const beforeOpps = st0().opportunities.length;
 
     const r = collector();
-    const goal = cls(r, "goal").find((n) => txt(n).includes("See who has it"));
-    click(goal.findAllByType("button").find((b) => txt(b) === "See who has it"));
+    const goal = cls(r, "goal").concat(cls(r, "gwatch-r"))
+      .find((n) => supplyRouteIn(n));
+    click(supplyRouteIn(goal));
     click(btn(r, "Reach out"));
 
     eq(st0().conversations.length, beforeConv + 1, "one Conversation created");
@@ -190,11 +203,14 @@ describe("6. Collector Make an offer -> TP sees the same Opportunity id", () => 
     const r = collector();
     /* A goal that is actually seeking — some seeded goals are already satisfied
        or negotiating, and those correctly offer no new offer path. */
-    const goal = cls(r, "goal").find((n) => txt(n).includes("See who has it")
-      && txt(cls(n, "state")[0] || { children: [] }) === "Seeking");
-    assert(goal, "a seeking goal with supply exists");
-    const name = txt(cls(goal, "goal-n")[0]);
-    click(goal.findAllByType("button").find((b) => txt(b) === "See who has it"));
+    const D3 = require("../domain/metyet-domain.js");
+    const sx = st0();
+    const g0 = cv().myGoals().find((g) => D3.goalState(g.id, sx.opportunities) === "seeking"
+      && cv().partnersWith(g.cardId).length > 0);
+    assert(g0, "a seeking goal with supply exists");
+    const name = cv().cardById(g0.cardId).name;
+    const goal = cls(r, "goal").concat(cls(r, "gwatch-r")).find((n) => txt(n).includes(name));
+    click(supplyRouteIn(goal));
     click(r.root.findAllByType("button").find((b) => txt(b) === "Make an offer"));
     click(btn(r, "Send offer"));
 
@@ -234,11 +250,13 @@ describe("8. Collector proposes a Binder copy -> TP reviews that same id", () =>
     let r, sel = null;
     for (let i = 0; i < 6; i++) {
       r = collector();
-      const b = r.root.findAllByType("button").filter((x) => txt(x) === "Continue")[i];
+      const b = r.root.findAllByType("button").filter((x) =>
+        /^(Choose trade cards|Agree card values|Check the balance|Confirm the handoff|Review their price|Make your offer)$/
+          .test(txt(x).trim()))[i];
       if (!b) break;
       click(b);
-      const st = cls(r, "stage-n")[0];
-      if (st && txt(st) === "Select Trade") { sel = r; break; }
+      const stg = cls(r, "stage-n")[0];
+      if (stg && txt(stg) === "Select Trade") { sel = r; break; }
       fresh();
     }
     assert(sel, "reached Select Trade");
@@ -275,8 +293,11 @@ describe("9. Completion -> TP history and Collector Satisfied", () => {
     eq(tp.stage, "completed", "the TP sees completed history");
 
     const r = collector();
-    const goal = cls(r, "goal").find((n) => txt(cls(n, "state")[0] || { children: [] }) === "Satisfied");
-    assert(goal, "and the Collector UI shows a Satisfied goal");
+    const D2 = require("../domain/metyet-domain.js");
+    const s2 = st0();
+    assert(s2.goals.some((g) => g.collectorId === SELF_COLLECTOR
+      && D2.goalState(g.id, s2.opportunities) === "satisfied"),
+      "and the Collector derives a Satisfied goal");
   });
 });
 
@@ -296,8 +317,8 @@ describe("10. Unsuccessful end -> terminal history, Goal back to Seeking", () =>
 
     const nm = st0().catalog.find((c) => c.id === opp.cardId).name;
     const r = collector();
-    const goal = cls(r, "goal").find((n) => txt(n).includes(nm));
-    if (goal) assert(/Seeking/.test(txt(goal)), "the Collector UI shows it seeking again");
+    const D2 = require("../domain/metyet-domain.js");
+    eq(D2.goalState(gid, st0().opportunities), "seeking", "the Collector derives Seeking again");
 
     /* And another partner may now receive an offer. */
     const second = acts().startOpportunity({ goalId: gid, collectorId: SELF_COLLECTOR,

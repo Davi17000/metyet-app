@@ -35,6 +35,11 @@ const btnHas = (r, s) => r.root.findAllByType("button").find((b) => txt(b).inclu
 const nav = (r, l) => click(cls(r, "nav-i").find((b) => txt(b).includes(l)));
 const all = (r) => txt(r.root);
 const partnerCard = (r, i) => cls(r, "pt")[i];
+/* After the Goals redesign a goal renders as a primary card OR a watchlist row. */
+const byClassIn = (node, c) => node.findAll((n) => typeof n.type === "string"
+  && String(n.props.className || "").split(/\s+/).includes(c));
+const allGoals = (r) => cls(r, "goal").concat(cls(r, "gwatch-r"));
+const goalNamed = (r, name) => allGoals(r).find((n) => txt(n).includes(name));
 const openPartner = (r, i) => click(partnerCard(r, i).findAllByType("button")
   .find((b) => txt(b) === "View collection"));
 /* Partners are ranked by relevance, so open by NAME rather than position — the
@@ -50,14 +55,14 @@ const tab = (r, label) => click(cls(r, "tabb").find((b) => txt(b).startsWith(lab
 describe("Goal CRUD", () => {
   test("a goal can be added from a partner's inventory", () => {
     const r = mk();
-    const before = cls(r, "goal").length;
+    const before = allGoals(r).length;
     nav(r, "Trusted Partners"); openPartner(r, 0); tab(r, "All Inventory");
     const add = btn(r, "Add to my goals");
     assert(add, "an un-goaled card offers to become one");
     click(add);
     click(btnHas(r, "Secondary — keeping an eye out"));
     nav(r, "Goals");
-    eq(cls(r, "goal").length, before + 1, "the goal was created");
+    eq(allGoals(r).length, before + 1, "the goal was created");
   });
 
   test("a new goal matches across ALL partners, not just where it was found", () => {
@@ -68,32 +73,29 @@ describe("Goal CRUD", () => {
     if (!add) return;
     click(add); click(btnHas(r, "Primary — actively looking"));
     nav(r, "Goals");
-    const g = cls(r, "goal").find((n) => /trusted partner/.test(txt(n)));
+    const g = allGoals(r).find((n) => /partner/.test(txt(n)));
     assert(g, "the new goal reports partner availability");
   });
 
   test("a goal can be promoted and demoted", () => {
     const r = mk();
-    const before = cls(r, "goal").filter((n) => txt(n).includes("Primary")).length;
-    const g = cls(r, "goal").find((n) => txt(n).includes("Secondary"));
-    click(g.findAllByType("button").find((b) => txt(b) === "Edit this goal"));
+    const before = cls(r, "goal").length;
+    click(byClassIn(cls(r, "gwatch-r")[0], "gwatch-m")[0]);
     click(btn(r, "Move to Primary"));
     const after = cls(r, "goal")[0];
     /* Verify by state rather than by card name — the canonical universe holds
        different cards than the old fixture. */
-    eq(cls(r, "goal").filter((n) => txt(n).includes("Primary")).length, before + 1,
-      "one more goal is now primary");
+    eq(cls(r, "goal").length, before + 1, "one more goal is now primary");
   });
 
   test("a goal can be removed when nothing is being negotiated", () => {
     const r = mk();
-    const before = cls(r, "goal").length;
-    const idle = cls(r, "goal").find((n) => txt(n).includes("Seeking"));
-    click(idle.findAllByType("button").find((b) => txt(b) === "Edit this goal"));
+    const before = allGoals(r).length;
+    click(byClassIn(cls(r, "gwatch-r")[0], "gwatch-m")[0]);
     const rm = btn(r, "Remove");
     eq(rm.props.disabled, false, "removable while idle");
     click(rm);
-    eq(cls(r, "goal").length, before - 1, "the goal is gone");
+    eq(allGoals(r).length, before - 1, "the goal is gone");
   });
 
   test("a goal being negotiated cannot be removed", () => {
@@ -107,9 +109,14 @@ describe("Goal CRUD", () => {
 
 describe("Goal lifecycle is derived, not stored", () => {
   test("all three states are visible and come from opportunities", () => {
-    const states = cls(mk(), "state").map(txt);
-    ["Seeking", "Negotiating", "Satisfied"].forEach((s) =>
-      assert(states.includes(s), `${s} is represented: ${states.join(",")}`));
+    /* Chips render on primary cards; the watchlist is deliberately lighter, so
+       assert the derived states themselves. */
+    const st = __store.get().get();
+    const D2 = require("../domain/metyet-domain.js");
+    const mine = st.goals.filter((g) => g.collectorId === "c12");
+    const states = new Set(mine.map((g) => D2.goalState(g.id, st.opportunities)));
+    ["seeking", "negotiating", "satisfied"].forEach((x) =>
+      assert(states.has(x), `${x} is represented: ${[...states].join(",")}`));
   });
 
   test("no goal record stores a status field", () => {
@@ -121,26 +128,30 @@ describe("Goal lifecycle is derived, not stored", () => {
   test("stopping a negotiation returns the goal to Seeking", () => {
     const r = mk();
     const live = cls(r, "goal").find((n) => txt(n).includes("Negotiating"));
-    const name = txt(cls(live, "goal-n")[0]);
-    click(live.findAllByType("button").find((b) => txt(b) === "Continue"));
+    const name = txt(byClassIn(live, "goal-n")[0]);
+    click(live.findAllByType("button").find((b) => byClassIn(live, "goal-live").length
+      && /Choose|Review|Agree|Check|Confirm|Make your/.test(txt(b))));
     click(btn(r, "Stop this negotiation"));
-    const after = cls(r, "goal").find((n) => txt(cls(n, "goal-n")[0]) === name);
+    const after = allGoals(r).find((n) => txt(n).includes(name));
     assert(txt(after).includes("Seeking"), "back to Seeking: " + txt(after).slice(0, 90));
     assert(!txt(after).includes("Negotiating"), "and no longer negotiating");
   });
 
   test("the goal survives a stopped negotiation", () => {
     const r = mk();
-    const before = cls(r, "goal").length;
+    const before = allGoals(r).length;
     const live = cls(r, "goal").find((n) => txt(n).includes("Negotiating"));
-    click(live.findAllByType("button").find((b) => txt(b) === "Continue"));
+    click(live.findAllByType("button").find((b) => /Choose|Review|Agree|Check|Confirm|Make your/.test(txt(b))));
     click(btn(r, "Stop this negotiation"));
-    eq(cls(r, "goal").length, before, "the card is still wanted");
+    eq(allGoals(r).length, before, "the card is still wanted");
   });
 
   test("a completed deal reads as Satisfied", () => {
     const r = mk();
-    const sat = cls(r, "goal").filter((n) => txt(n).includes("Satisfied"));
+    const st = __store.get().get();
+    const D2 = require("../domain/metyet-domain.js");
+    const sat = st.goals.filter((g) => g.collectorId === "c12"
+      && D2.goalState(g.id, st.opportunities) === "satisfied");
     assert(sat.length >= 1, "a completed opportunity produces Satisfied");
   });
 });
@@ -178,23 +189,31 @@ describe("One active negotiation per goal", () => {
 describe("Reach out never becomes a negotiation", () => {
   test("it creates no opportunity and does not change goal state", () => {
     const r = mk();
-    const seeking = cls(r, "goal").find((n) => txt(n).includes("Seeking")
-      && txt(n).includes("trusted partner"));
-    const name = txt(cls(seeking, "goal-n")[0]);
-    click(seeking.findAllByType("button").find((b) => txt(b) === "See who has it"));
+    const D0 = require("../domain/metyet-domain.js");
+    const s0 = __store.get().get();
+    const target = s0.goals.find((g) => g.collectorId === "c12"
+      && D0.goalState(g.id, s0.opportunities) === "seeking");
+    assert(target, "a Seeking goal exists");
+    const name = s0.catalog.find((c) => c.id === target.cardId).name;
+    const row = allGoals(r).find((n) => txt(n).includes(name));
+    const route = byClassIn(row, "gwatch-h")[0] || byClassIn(row, "goal-holders")[0];
+    if (!route) return;                       // that goal has no supply to contact
+    click(route);
     click(btn(r, "Reach out"));
     click(btn(r, "Close"));
-    const after = cls(r, "goal").find((n) => txt(cls(n, "goal-n")[0]) === name);
-    assert(txt(after).includes("Seeking"), "still Seeking after reaching out");
-    assert(!txt(after).includes("Continue"), "and no negotiation was opened");
+    const st = __store.get().get();
+    const D2 = require("../domain/metyet-domain.js");
+    const g = st.goals.find((x) => x.collectorId === "c12"
+      && st.catalog.find((c) => c.id === x.cardId).name === name);
+    eq(D2.goalState(g.id, st.opportunities), "seeking", "still Seeking after reaching out");
   });
 
   test("a collector may reach out to several partners at once", () => {
     const r = mk();
-    const seeking = cls(r, "goal").find((n) => txt(n).includes("Seeking")
-      && txt(n).includes("trusted partners"));
+    const seeking = allGoals(r).find((n) => byClassIn(n, "gwatch-h")[0]
+      && /[2-9] partners/.test(txt(byClassIn(n, "gwatch-h")[0])));
     if (!seeking) return;
-    click(seeking.findAllByType("button").find((b) => txt(b) === "See who has it"));
+    click(byClassIn(seeking, "gwatch-h")[0]);
     const outs = r.root.findAllByType("button").filter((b) => txt(b) === "Reach out");
     assert(outs.length >= 2, "multiple partners can be contacted");
     outs.forEach((b) => click(b));
@@ -212,8 +231,9 @@ describe("Reach out never becomes a negotiation", () => {
 
   test("the language says plainly that nothing is committed", () => {
     const r = mk();
-    const seeking = cls(r, "goal").find((n) => txt(n).includes("See who has it"));
-    click(seeking.findAllByType("button").find((b) => txt(b) === "See who has it"));
+    const seeking = allGoals(r).find((n) => byClassIn(n, "gwatch-h")[0]
+      && /\d+ partner/.test(txt(byClassIn(n, "gwatch-h")[0])));
+    click(byClassIn(seeking, "gwatch-h")[0]);
     assert(all(r).includes("doesn't start a negotiation"), "stated outright");
   });
 });
@@ -263,7 +283,9 @@ describe("Select Trade", () => {
   const atSelect = () => {
     for (let i = 0; i < 6; i++) {
       const r = mk();                                   // a fresh render each attempt
-      const b = r.root.findAllByType("button").filter((x) => txt(x) === "Continue")[i];
+      const b = r.root.findAllByType("button").filter((x) =>
+        /^(Choose trade cards|Agree card values|Check the balance|Confirm the handoff|Review their price|Make your offer)$/
+          .test(txt(x).trim()))[i];
       if (!b) break;
       click(b);
       const stage = cls(r, "stage-n")[0];
@@ -331,8 +353,11 @@ describe("Trusted Partner browsing", () => {
 describe("Who has it", () => {
   const supply = () => {
     const r = mk();
-    const g = cls(r, "goal").find((n) => txt(n).includes("See who has it"));
-    click(g.findAllByType("button").find((b) => txt(b) === "See who has it"));
+    const g = allGoals(r).find((n) => byClassIn(n, "gwatch-h")[0]
+      && /\d+ partner/.test(txt(byClassIn(n, "gwatch-h")[0])))
+      || cls(r, "goal").find((n) => byClassIn(n, "goal-holders")[0]);
+    const route = byClassIn(g, "gwatch-h")[0] || byClassIn(g, "goal-holders")[0];
+    click(route);
     return r;
   };
 
@@ -472,12 +497,12 @@ describe("Card artwork renders and degrades safely", () => {
 
   test("1. seeded goal cards render real images", () => {
     const r = mk();
-    const goals = cls(r, "goal");
+    const goals = allGoals(r);
     assert(goals.length > 0, "goals render");
     /* The canonical catalog contains some cards with no artwork reference; those
        correctly use the identity plate. Every card resolves to one or the other. */
     eq(imgs(r).length + plates(r).length, goals.length,
-      "every goal card resolves to artwork or an identity plate");
+      "every goal resolves to artwork or an identity plate");
     assert(imgs(r).length > 0, "and real images do render");
     imgs(r).forEach((i) => assert(/^https:\/\/images\./.test(i.props.src),
       "a real artwork URL: " + i.props.src));
@@ -582,6 +607,401 @@ const SEED = buildCanonicalSeed();
       assert(c, "catalog has " + id);
       if (c.csvId) assert(/-/.test(c.csvId), c.name + " has a resolvable csvId");
     });
+  });
+});
+
+/* Drive the staged Add Goal flow: search -> copy criteria -> tier. Centralised so
+   a change to the picker updates one place rather than every caller. */
+const addGoalSearch = (r, term) => {
+  const q = cls(r, "cip-q")[0];
+  assert(q, "the shared card identity search is present");
+  TR.act(() => { q.props.onChange({ target: { value: term } }); });
+  return cls(r, "cip-row");
+};
+const resolveIdentity = (r) => {
+  /* Answer every copy-level question the picker asks, whatever they are. */
+  let guard = 0;
+  while (guard++ < 4) {
+    const open = cls(r, "cip-fld").filter((f) =>
+      !f.findAllByType("button").some((b) => String(b.props.className).includes("on")));
+    if (!open.length) break;
+    const btns = open[0].findAllByType("button");
+    click(btns[1] || btns[0]);
+  }
+  const cont = btn(r, "Continue");
+  assert(cont && !cont.props.disabled, "the identity resolves and Continue enables");
+  click(cont);
+};
+
+/* ============================================================================
+   GOALS — the collector's planning surface
+
+   Primary Goals are the working area; Secondary is a watchlist. Adding a goal
+   is an act of intent and must not depend on supply existing. A live deal must
+   never hide who else has the card.
+   ========================================================================= */
+describe("Goals: add a goal from the Goals screen", () => {
+  test("1. there is a direct Add goal entry point", () => {
+    const r = mk();
+    assert(btn(r, "Add goal"), "an Add goal control on the Goals page itself");
+  });
+
+  test("2. a goal can be created without visiting any partner inventory", () => {
+    const r = mk();
+    const before = cls(r, "goal").length + cls(r, "gwatch-r").length;
+    click(btn(r, "Add goal"));
+    /* Stage one: the same identity search the Trusted Partner uses. */
+    const hits = addGoalSearch(r, "charizard base set");
+    assert(hits.length > 0, "the canonical catalog is searchable");
+    click(hits[0]);
+    /* Stage two: the copy-level criteria that decide WHICH card. */
+    resolveIdentity(r);
+    /* Stage three: intent, only once the identity is exact. */
+    click(btnHas(r, "Secondary"));
+    eq(cls(r, "goal").length + cls(r, "gwatch-r").length, before + 1, "the goal exists");
+    /* Never left the Goals screen. */
+    assert(cls(r, "pt").length === 0, "no partner browsing was required");
+  });
+
+  test("3. creation uses the canonical goal action, not a parallel model", () => {
+    const src = readSrc("collector/MetYetCollector.jsx");
+    const picker = src.slice(src.indexOf("function AddGoalPicker"), src.indexOf("/* A secondary goal"));
+    assert(/<CardIdentityPicker/.test(picker), "it uses the shared identity picker");
+    assert(/st\.addGoalForIdentity\(/.test(picker), "and delegates creation to the store action");
+    const store = src.slice(src.indexOf("addGoalForIdentity:"), src.indexOf("addGoalForIdentity:") + 200);
+    assert(/A\.addGoal\(/.test(store), "which routes through the canonical goal action");
+  });
+
+  test("a goal may be added when no partner stocks the card", () => {
+    const r = mk();
+    click(btn(r, "Add goal"));
+    assert(addGoalSearch(r, "charizard").length > 0, "results are not filtered by availability");
+    assert(all(r).includes("a partner doesn't need to have it yet"),
+      "and the copy says so outright");
+  });
+});
+
+describe("Goals: Primary and Secondary do different jobs", () => {
+  test("4. they render in structurally different treatments", () => {
+    const r = mk();
+    assert(cls(r, "goal").length > 0, "primary goals render as full cards");
+    assert(cls(r, "gwatch-r").length > 0, "secondary goals render as watchlist rows");
+    /* A watch row carries no deal machinery. */
+    cls(r, "gwatch-r").forEach((row) => {
+      eq(byClassIn(row, "goal-live").length, 0, "no deal block on a watch row");
+      eq(byClassIn(row, "state").length, 0, "and no lifecycle chip");
+    });
+    /* A primary card carries identity, coverage and the deal. */
+    const p = cls(r, "goal")[0];
+    assert(byClassIn(p, "goal-n")[0], "primary keeps a prominent name");
+    assert(byClassIn(p, "art")[0], "and large artwork");
+  });
+
+  test("the distinction survives hiding the words Primary and Secondary", () => {
+    const r = mk();
+    const primaryArt = byClassIn(cls(r, "goal")[0], "art")[0];
+    const watchArt = byClassIn(cls(r, "gwatch-r")[0], "art")[0];
+    const size = (n) => String(n.props.className).split(/\s+/).find((c) =>
+      ["xl", "lg", "md", "sm", "xs"].includes(c));
+    assert(size(primaryArt) !== size(watchArt),
+      "different artwork scale: " + size(primaryArt) + " vs " + size(watchArt));
+  });
+
+  test("11. promoting and demoting moves a goal cleanly between sections", () => {
+    const r = mk();
+    const p0 = cls(r, "goal").length;
+    const w0 = cls(r, "gwatch-r").length;
+
+    /* Promote a watchlist goal. */
+    click(byClassIn(cls(r, "gwatch-r")[0], "gwatch-m")[0]);
+    click(btn(r, "Move to Primary"));
+    eq(cls(r, "goal").length, p0 + 1, "it became a primary card");
+    eq(cls(r, "gwatch-r").length, w0 - 1, "and left the watchlist");
+
+    /* Demote it back. */
+    const card = cls(r, "goal")[cls(r, "goal").length - 1];
+    click(card.findAllByType("button").find((b) => txt(b) === "Edit this goal"));
+    click(btn(r, "Move to Secondary"));
+    eq(cls(r, "goal").length, p0, "back to where it started");
+    eq(cls(r, "gwatch-r").length, w0, "with nothing duplicated or lost");
+  });
+});
+
+describe("Goals: the live deal is legible and honest", () => {
+  const rayquaza = (r) => cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
+
+  test("5. Rayquaza remains o9 / select-trade at the agreed price", () => {
+    const o = __store.get().get().opportunities.find((x) => x.id === "o9");
+    eq(o.stage, "select-trade", "canonical stage");
+    eq(o.agreedPrice, 9310, "canonical agreed price");
+    eq(o.goalId, "g20", "and it references the goal");
+  });
+
+  test("6. the action is task-oriented, not a generic Continue", () => {
+    const r = mk();
+    const card = rayquaza(r);
+    const labels = card.findAllByType("button").map((b) => txt(b).trim());
+    assert(labels.includes("Choose trade cards"), "names the pending action: " + labels);
+    assert(!labels.includes("Continue"), "and does not say Continue");
+  });
+
+  test("the card states that price agreement already happened", () => {
+    const t = txt(rayquaza(mk()));
+    assert(t.includes("Price agreed at $9,310 with Northline Cards"),
+      "supporting context: " + t.slice(t.indexOf("Price"), t.indexOf("Price") + 60));
+    assert(t.includes("Select Trade"), "with the stage kept as context");
+  });
+
+  test("7. clicking the action only navigates — nothing mutates", () => {
+    const r = mk();
+    const before = JSON.stringify(__store.get().get().opportunities.find((x) => x.id === "o9"));
+    click(rayquaza(r).findAllByType("button").find((b) => txt(b).trim() === "Choose trade cards"));
+    eq(JSON.stringify(__store.get().get().opportunities.find((x) => x.id === "o9")), before,
+      "the opportunity is byte-identical after navigation");
+  });
+
+  test("next-action labels are derived from stage, not hard-coded", () => {
+    const src = readSrc("collector/MetYetCollector.jsx");
+    const fn = src.slice(src.indexOf("function nextActionFor"), src.indexOf("/* Consumer wording"));
+    ["agree-price", "select-trade", "value-trade", "deal", "fulfillment"].forEach((st2) =>
+      assert(fn.includes('"' + st2 + '"'), st2 + " has a derived label"));
+    assert(!/Rayquaza|i17|o9/.test(fn), "no card- or opportunity-specific behaviour");
+  });
+
+  test("a goal with no live deal shows no deal block", () => {
+    const r = mk();
+    const idle = cls(r, "goal").find((n) => !txt(n).includes("Negotiating"));
+    if (idle) eq(byClassIn(idle, "goal-live").length, 0, "nothing to continue");
+  });
+});
+
+describe("Goals: every holder stays reachable", () => {
+  const rayquaza = (r) => cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
+
+  test("8. the count remains accurate", () => {
+    const t = txt(rayquaza(mk()));
+    assert(/See all 3 partners with this card/.test(t), "three holders: " + t.slice(-90));
+  });
+
+  test("9. the route to all holders survives a live negotiation", () => {
+    const r = mk();
+    const card = rayquaza(r);
+    assert(byClassIn(card, "goal-live")[0], "a live deal is shown");
+    assert(byClassIn(card, "goal-holders")[0], "AND the supply route is still present");
+    click(byClassIn(card, "goal-holders")[0]);
+    const names = cls(r, "pick").map(txt).join(" ");
+    ["Northline Cards", "Complete Collectibles", "Ryan's Collectibles"].forEach((n) =>
+      assert(names.includes(n), n + " is reachable"));
+  });
+
+  test("10. alternatives are contactable, but a second offer is refused", () => {
+    const r = mk();
+    click(byClassIn(rayquaza(r), "goal-holders")[0]);
+    const outs = r.root.findAllByType("button").filter((b) => /Reach(ed)? out/.test(txt(b)));
+    eq(outs.length, 3, "every partner can be contacted");
+    eq(r.root.findAllByType("button").filter((b) => txt(b).trim() === "Make an offer").length, 0,
+      "and no second offer is offered while one is live");
+    assert(all(r).includes("you can only negotiate with one at a time"),
+      "with the reason stated");
+  });
+
+  test("the supply route reuses WhoHasIt rather than duplicating it", () => {
+    const src = readSrc("collector/MetYetCollector.jsx");
+    const card = src.slice(src.indexOf("function GoalCard"), src.indexOf("/* ==================== TRADE BINDER"));
+    assert(/go\(\{ v: "start", goalId: g\.id \}\)/.test(card), "it routes to the existing flow");
+    assert(!/partnersWith\(g\.cardId\)\.map\(\(h\) => \(\s*<div className="pick"/.test(card),
+      "and does not re-render the partner list itself");
+  });
+});
+
+describe("Goals: empty states", () => {
+  test("12. no primary goals explains the role and offers Add goal", () => {
+    const r = mk();
+    /* Demote every primary goal. */
+    let guard = 0;
+    while (cls(r, "goal").length > 0 && guard++ < 10) {
+      const card = cls(r, "goal")[0];
+      click(card.findAllByType("button").find((b) => txt(b) === "Edit this goal"));
+      click(btn(r, "Move to Secondary"));
+    }
+    eq(cls(r, "goal").length, 0, "none left");
+    assert(all(r).includes("A primary goal is a card you're actively trying to get"),
+      "the role is explained");
+    assert(btnHas(r, "Add your first goal"), "with a way to add one");
+  });
+
+  test("12. no secondary goals stays lightweight", () => {
+    const r = mk();
+    /* Promote every watch row; goals under negotiation cannot be removed, so
+       promotion is the reliable way to empty the section. */
+    let guard = 0;
+    while (cls(r, "gwatch-r").length > 0 && guard++ < 20) {
+      click(byClassIn(cls(r, "gwatch-r")[0], "gwatch-m")[0]);
+      const move = btn(r, "Move to Primary");
+      if (!move) break;
+      click(move);
+    }
+    eq(cls(r, "gwatch-r").length, 0, "none left");
+    eq(cls(r, "gsec-empty").length, 0, "no large empty card for the watchlist");
+    assert(all(r).includes("Nothing here yet."), "just a quiet line");
+  });
+
+  test("12. a goal nobody stocks is still valid and useful", () => {
+    const r = mk();
+    const orphan = cls(r, "goal").concat(cls(r, "gwatch-r"))
+      .find((n) => /No one has it|None of your partners have this/.test(txt(n)));
+    if (!orphan) return;
+    assert(!/invalid|cannot|unavailable/i.test(txt(orphan)), "it is not treated as broken");
+  });
+});
+
+/* ============================================================================
+   GOALS — visual system and activity surfacing
+
+   Goals should read as an active collecting workspace and should look like the
+   rest of MetYet, not like a second product with its own palette.
+   ========================================================================= */
+describe("Navigation uses the shared MetYet icon set", () => {
+  test("1-3. all three destinations render real SVG marks, not glyphs", () => {
+    const r = mk();
+    const ics = cls(r, "nav-ic");
+    eq(ics.length, 3, "one per destination");
+    ics.forEach((n) => eq(n.findAllByType("svg").length, 1, "an SVG icon"));
+    const t = cls(r, "nav-i").map(txt).join("");
+    ["\u25CE", "\u25A4", "\u25CD"].forEach((glyph) =>
+      assert(!t.includes(glyph), "the old text glyph is gone"));
+  });
+
+  test("1-3. the icons come from the Trusted Partner icon component", () => {
+    const src = readSrc("collector/MetYetCollector.jsx");
+    assert(/import \{ buildCanonicalSeed, Icon \} from "\.\.\/src\/MetYet\.jsx"/.test(src),
+      "the Collector imports the shared Icon");
+    assert(/icon: "target"/.test(src) && /icon: "binder"/.test(src) && /icon: "people"/.test(src),
+      "crosshairs, binder and people");
+    const tp = readSrc("src/MetYet.jsx");
+    ["target:", "binder:", "people:"].forEach((k) =>
+      assert(tp.includes(k), k + " is defined once, in the shared set"));
+  });
+});
+
+describe("Goals shares the MetYet palette", () => {
+  test("13. no Collector-only purple remains", () => {
+    ["collector/MetYetCollector.jsx", "shell/MetYetPrototype.jsx"].forEach((f) =>
+      assert(!/6C5CE0|108,92,224/i.test(readSrc(f)), f + " carries no purple"));
+  });
+
+  test("13. the action colour is MetYet's, and tokenised", () => {
+    const src = readSrc("collector/MetYetCollector.jsx");
+    assert(/--accent: #0B5D66/.test(src), "the shared teal");
+    assert(/--accent-bg: #E6F0F1/.test(src), "and its surface");
+    const tp = readSrc("src/MetYet.jsx");
+    assert(tp.includes("--t1: #0B5D66"), "the same value the TP uses");
+  });
+});
+
+describe("The Primary Goal surfaces real activity", () => {
+  const rayquaza = (r) => cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
+
+  test("4. an active deal renders lifecycle progress from the canonical stage", () => {
+    const r = mk();
+    const card = rayquaza(r);
+    const segs = byClassIn(card, "gp-seg");
+    eq(segs.length, 5, "one segment per deal stage");
+    const current = byClassIn(card, "gp-l").filter((n) =>
+      String(n.props.className).includes("on")).map(txt);
+    eq(current.join(), "Select Trade", "the canonical stage is marked");
+    eq(segs.filter((n) => String(n.props.className).includes("done")).length, 1,
+      "with Agree on Price behind it");
+  });
+
+  test("5. changing the canonical stage moves the bar, with no goal-side state", () => {
+    const r = mk();
+    TR.act(() => { __store.get().actions.patchOpportunity("o9", (o) => ({ ...o, stage: "deal" })); });
+    const current = byClassIn(rayquaza(r), "gp-l").filter((n) =>
+      String(n.props.className).includes("on")).map(txt);
+    eq(current.join(), "Deal", "the bar follows the opportunity");
+    const g = __store.get().get().goals.find((x) => x.id === "o9".replace("o9", "g20"));
+    assert(!("stage" in g), "and the Goal record stores no stage");
+  });
+
+  test("4. the bar derives from the shared lifecycle, not a local list", () => {
+    const src = readSrc("collector/MetYetCollector.jsx");
+    assert(/const DEAL_STEPS = D\.STAGES\.filter/.test(src),
+      "the steps come from the canonical STAGES");
+    assert(!/DEAL_STEPS = \["agree-price"/.test(src), "not a hand-written copy");
+  });
+
+  test("no active deal means no lifecycle bar at all", () => {
+    const r = mk();
+    TR.act(() => { __store.get().actions.endOpportunity("o9", "collector", "2026-08-14"); });
+    eq(byClassIn(rayquaza(r), "goal-prog").length, 0, "no empty progress treatment");
+  });
+
+  test("6/8. with no active deal, every matching partner is listed", () => {
+    const r = mk();
+    TR.act(() => { __store.get().actions.endOpportunity("o9", "collector", "2026-08-14"); });
+    const card = rayquaza(r);
+    const rows = byClassIn(card, "gs-row");
+    eq(rows.length, 3, "all three holders, not a summary");
+    const names = rows.map((n) => txt(byClassIn(n, "gs-n")[0]));
+    ["Northline Cards", "Complete Collectibles", "Ryan's Collectibles"].forEach((p) =>
+      assert(names.includes(p), p + " is listed"));
+    /* Derived from the canonical selector, not re-matched in the component. */
+    const src = readSrc("collector/MetYetCollector.jsx");
+    const from = src.indexOf("function GoalCard");
+    const fn = src.slice(from, src.indexOf("\nfunction ", from + 10));
+    assert(/st\.partnersWith\(g\.cardId\)/.test(fn), "it uses the shared matcher");
+    assert(!/identityKey|sameIdentity/.test(fn), "and does no matching of its own");
+  });
+
+  test("7/9. each partner is contactable, and contact creates no negotiation", () => {
+    const r = mk();
+    TR.act(() => { __store.get().actions.endOpportunity("o9", "collector", "2026-08-14"); });
+    const before = __store.get().get().opportunities.length;
+    const rows = byClassIn(rayquaza(r), "gs-row");
+    rows.forEach((n) => assert(n.findAllByType("button").some((b) => /Reach out|Continue chatting/.test(txt(b))),
+      "every partner exposes a conversation action"));
+    click(rows[0].findAllByType("button").find((b) => /Reach out/.test(txt(b))));
+    eq(__store.get().get().opportunities.length, before, "no Opportunity was created");
+    eq(__store.get().get().conversations.length, 1, "a Conversation was");
+  });
+
+  test("an existing conversation reads as continuing, not starting", () => {
+    const r = mk();
+    TR.act(() => { __store.get().actions.endOpportunity("o9", "collector", "2026-08-14"); });
+    click(byClassIn(rayquaza(r), "gs-row")[0].findAllByType("button")
+      .find((b) => /Reach out/.test(txt(b))));
+    const again = byClassIn(rayquaza(r), "gs-row")[0];
+    assert(/Continue chatting/.test(txt(again)), "the label acknowledges the history");
+  });
+
+  test("10. a goal nobody stocks still renders cleanly", () => {
+    const r = mk();
+    const none = cls(r, "goal").concat(cls(r, "gwatch-r"))
+      .find((n) => /None of your partners have this|No one has it/.test(txt(n)));
+    if (!none) return;
+    eq(byClassIn(none, "gs-row").length, 0, "no empty partner list");
+    assert(!/undefined|NaN/.test(txt(none)), "and nothing broken");
+  });
+
+  test("11/12. the goal note is hidden, and the data is untouched", () => {
+    const r = mk();
+    assert(!txt(rayquaza(r)).includes("first big purchase"), "the note is not rendered");
+    eq(cls(r, "goal-note").length, 0, "no note treatment at all");
+    const g = __store.get().get().goals.find((x) => x.id === "g20");
+    eq(g.note, "Rayquaza Gold Star — first big purchase", "but the record still carries it");
+  });
+
+  test("14/15. the next action and the Primary/Secondary split are intact", () => {
+    const r = mk();
+    assert(rayquaza(r).findAllByType("button").some((b) => txt(b).trim() === "Choose trade cards"),
+      "the task-oriented CTA survives");
+    assert(cls(r, "gwatch-r").length > 0, "secondary goals are still compact rows");
+    const pArt = byClassIn(cls(r, "goal")[0], "art")[0];
+    const sArt = byClassIn(cls(r, "gwatch-r")[0], "art")[0];
+    const size = (n) => String(n.props.className).split(/\s+/).find((c) =>
+      ["xl", "lg", "md", "sm", "xs"].includes(c));
+    assert(size(pArt) !== size(sArt), "with the hierarchy still visible");
   });
 });
 
