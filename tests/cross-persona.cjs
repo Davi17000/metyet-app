@@ -42,11 +42,16 @@ const acts = () => __store.get().actions;
      primary + no deal    -> .gs-row        (every partner listed inline)
      secondary            -> .gwatch-h      (compact count link)
    Tests should not care which; they care that the partners are reachable. */
-const supplyRouteIn = (node) => cls(node, "goal-holders")[0] || cls(node, "gwatch-h")[0]
-  || (cls(node, "gs-row")[0] && cls(node, "gs-row")[0].findAllByType("button")
-      .find((b) => /Reach out|Continue chatting/.test(txt(b))));
+const supplyRouteIn = (node) => cls(node, "goal-holders")[0] || cls(node, "gwatch-h")[0];
+/* When a primary goal has no live deal the partners are already listed inline,
+   so there is no route to open — the conversation action is right there. */
+const reachOutIn = (node) => (cls(node, "gs-row")[0] || {}).findAllByType
+  ? cls(node, "gs-row")[0].findAllByType("button")
+      .find((b) => /Reach out|Continue chatting/.test(txt(b)))
+  : null;
+const supplyOrReach = (node) => supplyRouteIn(node) || reachOutIn(node);
 const goalNodes = (r) => cls(r, "goal").concat(cls(r, "gwatch-r"));
-const goalWithSupply = (r) => goalNodes(r).find((n) => supplyRouteIn(n));
+const goalWithSupply = (r) => goalNodes(r).find((n) => supplyOrReach(n));
 
 const fresh = () => { __store.reset(buildCanonicalSeed()); };
 const collector = () => { let r; TR.act(() => { r = TR.create(React.createElement(Collector)); }); return r; };
@@ -184,8 +189,8 @@ describe("5. Collector Reach out -> TP sees the same Conversation", () => {
 
     const r = collector();
     const goal = cls(r, "goal").concat(cls(r, "gwatch-r"))
-      .find((n) => supplyRouteIn(n));
-    click(supplyRouteIn(goal));
+      .find((n) => supplyOrReach(n));
+    click(supplyOrReach(goal));
     click(btn(r, "Reach out"));
 
     eq(st0().conversations.length, beforeConv + 1, "one Conversation created");
@@ -205,12 +210,22 @@ describe("6. Collector Make an offer -> TP sees the same Opportunity id", () => 
        or negotiating, and those correctly offer no new offer path. */
     const D3 = require("../domain/metyet-domain.js");
     const sx = st0();
-    const g0 = cv().myGoals().find((g) => D3.goalState(g.id, sx.opportunities) === "seeking"
-      && cv().partnersWith(g.cardId).length > 0);
-    assert(g0, "a seeking goal with supply exists");
+    /* A deal can only begin on a goal the collector is actively pursuing, so
+       promote a watchlist goal first where the seed offers only those — exactly
+       what the promotion confirmation does in the UI. */
+    const has = (g) => D3.goalState(g.id, st0().opportunities) === "seeking"
+      && cv().partnersWith(g.cardId).length > 0;
+    let g0 = cv().myGoals().find((g) => g.tier === "primary" && has(g));
+    if (!g0) {
+      const watch = cv().myGoals().find(has);
+      assert(watch, "a seeking goal with supply exists");
+      TR.act(() => { acts().updateGoalTier(watch.id, "primary"); });
+      g0 = cv().myGoals().find((g) => g.id === watch.id);
+    }
     const name = cv().cardById(g0.cardId).name;
     const goal = cls(r, "goal").concat(cls(r, "gwatch-r")).find((n) => txt(n).includes(name));
-    click(supplyRouteIn(goal));
+    const inline = goal.findAllByType("button").find((b) => txt(b).trim() === "Make an offer");
+    click(inline || supplyOrReach(goal));
     click(r.root.findAllByType("button").find((b) => txt(b) === "Make an offer"));
     click(btn(r, "Send offer"));
 

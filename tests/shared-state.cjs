@@ -203,7 +203,7 @@ describe("H. One negotiation per goal", () => {
       cardId: "k1", listedPrice: 4300, amount: 3800, at: AT });
 
     assert(a, "the first is created");
-    eq(b, null, "the second is refused by the action itself");
+    eq(b && b.refused, "already-negotiating", "the second is refused by the action itself");
     eq(st.get().opportunities.length, 1, "and no second record exists");
   });
 
@@ -800,6 +800,136 @@ describe("Card identity search is shared, not duplicated", () => {
     assert(/addCopyToInventory\(\s*resolved\.id,/.test(tp), "still adds via the same action");
     assert(/cost: d\.cost, ask: d\.ask, acquired: d\.acquired/.test(tp),
       "with its own physical-copy fields intact");
+  });
+});
+
+/* ============================================================================
+   SECONDARY GOALS CANNOT ENTER THE DEAL FLOW
+
+   Secondary means watching and talking. Primary means actively pursuing. An
+   Opportunity is evidence of active pursuit, so a goal must be Primary before a
+   deal can begin against it — enforced in the action, not in a button.
+   ========================================================================= */
+describe("Secondary goal gating", () => {
+  const { createStore } = require("../domain/metyet-store.js");
+  const { buildCanonicalSeed } = require("../dist/MetYet.cjs");
+  const world = () => createStore({
+    catalog: [], collectors: [{ id: "c1" }], partners: [{ id: "p2" }], preferences: [],
+    goals: [{ id: "gs", collectorId: "c1", cardId: "k1", tier: "secondary" },
+      { id: "gp", collectorId: "c1", cardId: "k2", tier: "primary" }],
+    inventory: [], binder: [], interests: [], conversations: [], opportunities: [],
+  });
+  const offer = (st, goalId) => st.actions.startOpportunity({ goalId, collectorId: "c1",
+    partnerId: "p2", cardId: "k1", listedPrice: 100, amount: 90, at: "2026-08-14" });
+
+  test("1/2. the action refuses a Secondary goal, with a reason", () => {
+    const st = world();
+    const res = offer(st, "gs");
+    eq(res && res.refused, D.REFUSE.notPrimary, "refused because it is not pursued");
+    eq(st.get().opportunities.length, 0, "and nothing was created");
+  });
+
+  test("2. the rule lives in the domain, not in a component", () => {
+    const src = require("fs").readFileSync(
+      require("path").join(__dirname, "..", "domain", "metyet-store.js"), "utf8");
+    assert(/D\.INVARIANTS\.goalIsPursued\(goalId, s\.goals\)/.test(src),
+      "startOpportunity checks the invariant itself");
+    const dom = require("fs").readFileSync(
+      require("path").join(__dirname, "..", "domain", "metyet-domain.js"), "utf8");
+    assert(/goalIsPursued:/.test(dom), "and the invariant is canonical");
+  });
+
+  test("12. a direct caller cannot bypass it", () => {
+    const st = world();
+    /* No UI involved at all — straight at the action. */
+    eq(offer(st, "gs").refused, D.REFUSE.notPrimary, "still refused");
+  });
+
+  test("a Primary goal is unaffected", () => {
+    const st = world();
+    const id = offer(st, "gp");
+    assert(typeof id === "string", "an opportunity id came back");
+    eq(st.get().opportunities.length, 1, "and it was created");
+  });
+
+  test("8/9/10. promotion uses the same goal, and then the offer succeeds", () => {
+    const st = world();
+    eq(offer(st, "gs").refused, D.REFUSE.notPrimary, "refused while secondary");
+    const before = st.get().goals.length;
+    st.actions.updateGoalTier("gs", "primary");
+    eq(st.get().goals.length, before, "no duplicate goal was created");
+    eq(st.get().goals.find((g) => g.id === "gs").tier, "primary", "the SAME goal id was promoted");
+    const id = offer(st, "gs");
+    assert(typeof id === "string", "and only now does the offer succeed");
+    eq(st.get().opportunities[0].goalId, "gs", "against that same goal");
+  });
+
+  test("11. one-active-negotiation still applies after promotion", () => {
+    const st = world();
+    st.actions.updateGoalTier("gs", "primary");
+    offer(st, "gs");
+    eq(offer(st, "gs").refused, D.REFUSE.alreadyNegotiating, "a second is still refused");
+    eq(st.get().opportunities.length, 1, "one negotiation");
+  });
+
+  test("3/4/5. a Secondary goal may still have supply and conversations", () => {
+    const st = world();
+    st.actions.reachOut({ collectorId: "c1", partnerId: "p2", goalId: "gs", at: "2026-08-14" });
+    eq(st.get().conversations.length, 1, "reaching out works");
+    eq(st.get().opportunities.length, 0, "without creating a deal");
+    eq(st.get().goals.find((g) => g.id === "gs").tier, "secondary",
+      "and without promoting the goal");
+  });
+
+  test("13/14. a Trusted Partner cannot bypass the rule or promote a goal", () => {
+    const src = require("fs").readFileSync(
+      require("path").join(__dirname, "..", "src", "MetYet.jsx"), "utf8");
+    const fn = src.slice(src.indexOf("const collectorMakeOffer ="),
+      src.indexOf("const collectorMakeOffer =") + 900);
+    assert(/if \(g\.tier !== "primary"\) return;/.test(fn),
+      "the TP path refuses a non-primary goal");
+    assert(!/setGoals|updateGoalTier/.test(fn), "and never promotes on the collector's behalf");
+  });
+
+  test("17/18. every seeded active Opportunity belongs to a Primary goal", () => {
+    const seed = buildCanonicalSeed();
+    const bad = seed.goals.filter((g) => g.tier === "secondary"
+      && D.activeOppForGoal(g.id, seed.opportunities));
+    eq(bad.length, 0, "no seeded contradiction remains: " + bad.map((g) => g.id).join(","));
+  });
+
+  test("18. seed repair preserved every Opportunity id, stage and term", () => {
+    const seed = buildCanonicalSeed();
+    eq(seed.opportunities.length, 38, "no opportunity was added or removed");
+    /* Spot-check the records whose goals were promoted. */
+    const expect = { o9: ["select-trade", 9310], o13: ["value-trade", 1378],
+      o20: ["fulfillment", 399], o21: ["fulfillment", 9310], o6: ["agree-price", null] };
+    Object.entries(expect).forEach(([id, [stage, price]]) => {
+      const o = seed.opportunities.find((x) => x.id === id);
+      assert(o, id + " survives");
+      eq(o.stage, stage, id + " kept its stage");
+      eq(o.agreedPrice, price, id + " kept its agreed price");
+      assert(o.goalId, id + " still references its goal");
+    });
+  });
+
+  test("19. no goal status field was introduced", () => {
+    const seed = buildCanonicalSeed();
+    seed.goals.forEach((g) => {
+      assert(!("status" in g), "goals store no status");
+      assert(!("isPrimary" in g) && !("pursuing" in g) && !("canNegotiate" in g),
+        "and no second lifecycle flag");
+    });
+  });
+
+  test("20. both personas agree on the promoted tier and the same opportunity", () => {
+    const seed = buildCanonicalSeed();
+    const promoted = seed.goals.find((g) => g.id === "g66");
+    eq(promoted.tier, "primary", "the repaired goal is Primary");
+    const o = D.activeOppForGoal("g66", seed.opportunities);
+    assert(o, "its opportunity is still active");
+    eq(o.collectorId, "c12", "for the same collector");
+    assert(o.partnerId, "and names its partner");
   });
 });
 

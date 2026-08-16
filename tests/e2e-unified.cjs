@@ -61,8 +61,20 @@ const tpSees = (r) => ({
 
 /* A Collector goal that is genuinely Seeking and has supply, chosen by state
    rather than by name so the canonical seed can evolve. */
-const seekingGoalWithSupply = (r) => casey(r).myGoals().find((g) =>
-  casey(r).stateOf(g.id) === "seeking" && casey(r).partnersWith(g.cardId).length > 0);
+/* A deal can only begin on a goal the collector is actively pursuing. Where the
+   seed offers only a watchlist goal with supply, promote it first through the
+   canonical tier action — which is precisely what the promotion confirmation
+   does in the UI — so the scenario starts from a pursuable goal. */
+const seekingGoalWithSupply = (r) => {
+  const has = (g) => casey(r).stateOf(g.id) === "seeking"
+    && casey(r).partnersWith(g.cardId).length > 0;
+  const primary = casey(r).myGoals().find((g) => g.tier === "primary" && has(g));
+  if (primary) return primary;
+  const watch = casey(r).myGoals().find((g) => has(g));
+  if (!watch) return null;
+  TR.act(() => { store(r).actions.updateGoalTier(watch.id, "primary"); });
+  return casey(r).myGoals().find((g) => g.id === watch.id);
+};
 
 describe("A. Collector Goal -> TP demand", () => {
   test("a goal created in the Collector UI is the same record the TP sees", () => {
@@ -205,10 +217,9 @@ describe("E. Collector Reach out -> TP Conversation", () => {
     /* Through the rendered supply sheet. */
     const card = cls(r, "goal").concat(cls(r, "gwatch-r"))
       .find((n) => txt(n).includes(casey(r).cardById(g.cardId).name));
-    const route = cls(card, "gwatch-h")[0] || cls(card, "goal-holders")[0];
-    assert(route, "a route to the partners who have it");
-    click(route);
-    click(btn(r, "Reach out"));
+    const inline = reachOutIn(card);
+    if (inline) { click(inline); }                 // partners already listed
+    else { click(supplyRouteIn(card)); click(btn(r, "Reach out")); }
 
     eq(S(r).conversations.length, convBefore + 1, "one Conversation");
     eq(S(r).opportunities.length, oppsBefore, "and NO Opportunity");
@@ -248,18 +259,8 @@ describe("F. TP Reach out -> Collector Conversation", () => {
 });
 
 describe("G. Make an offer -> one shared Opportunity", () => {
-  const makeOffer = (r) => {
-    const g = seekingGoalWithSupply(r);
-    assert(g, "a Seeking goal with supply");
-    const card = cls(r, "goal").concat(cls(r, "gwatch-r"))
-      .find((n) => txt(n).includes(casey(r).cardById(g.cardId).name));
-    const route = cls(card, "gwatch-h")[0] || cls(card, "goal-holders")[0];
-    assert(route, "a route to the partners who have it");
-    click(route);
-    click(r.root.findAllByType("button").find((b) => txt(b).trim() === "Make an offer"));
-    click(btn(r, "Send offer"));
-    return g;
-  };
+  /* One offer flow, shared with the other scenarios. */
+  const makeOffer = (r) => openNegotiation(r).g;
 
   test("the canonical record carries every reference the Contract requires", () => {
     const r = shell();
@@ -296,7 +297,7 @@ describe("G. Make an offer -> one shared Opportunity", () => {
     TR.act(() => { result = store(r).actions.startOpportunity({ goalId: g.id,
       collectorId: CASEY, partnerId: "p2", cardId: g.cardId, listedPrice: 100,
       amount: 90, at: "2026-08-14" }); });
-    eq(result, null, "refused");
+    eq(result && result.refused, "already-negotiating", "refused, with a reason");
     eq(S(r).opportunities.length, n, "no second Opportunity exists");
   });
 });
@@ -305,15 +306,7 @@ describe("I (part). TP responds -> Collector sees it, turn flips", () => {
   test("a counter written by the TP reaches the Collector's perspective", () => {
     const r = shell();
     enter(r, "collector");
-    const g = seekingGoalWithSupply(r);
-    const card = cls(r, "goal").concat(cls(r, "gwatch-r"))
-      .find((n) => txt(n).includes(casey(r).cardById(g.cardId).name));
-    const route = cls(card, "gwatch-h")[0] || cls(card, "goal-holders")[0];
-    assert(route, "a route to the partners who have it");
-    click(route);
-    click(r.root.findAllByType("button").find((b) => txt(b).trim() === "Make an offer"));
-    click(btn(r, "Send offer"));
-    const o = S(r).opportunities[S(r).opportunities.length - 1];
+    const o = openNegotiation(r).o;
     eq(D.nextActor(o).actor, "partner", "it is the partner's move");
 
     switchTo(r, "Trusted Partner");
@@ -376,6 +369,23 @@ describe("M/N. Completion and failure derive Goal state", () => {
    asserts both perspectives derive the same terms from the same record.
    ========================================================================= */
 
+/* A goal exposes its matching partners through one of three treatments, decided
+   by tier and by whether a deal is live:
+     primary + live deal  -> .goal-holders  (summary route into WhoHasIt)
+     primary + no deal    -> .gs-row        (every partner listed inline)
+     secondary            -> .gwatch-h      (compact count link)
+   Tests should not care which; they care that the partners are reachable. */
+const supplyRouteIn = (node) => cls(node, "goal-holders")[0] || cls(node, "gwatch-h")[0];
+/* When a primary goal has no live deal the partners are already listed inline,
+   so there is no route to open — the conversation action is right there. */
+const reachOutIn = (node) => (cls(node, "gs-row")[0] || {}).findAllByType
+  ? cls(node, "gs-row")[0].findAllByType("button")
+      .find((b) => /Reach out|Continue chatting/.test(txt(b)))
+  : null;
+const supplyOrReach = (node) => supplyRouteIn(node) || reachOutIn(node);
+const goalNodes = (r) => cls(r, "goal").concat(cls(r, "gwatch-r"));
+const goalWithSupply = (r) => goalNodes(r).find((n) => supplyOrReach(n));
+
 /* The Goals redesign replaced the generic "Continue" with task-oriented labels
    derived from opportunity stage. */
 const CTA = /^(Choose trade cards|Agree card values|Check the balance|Confirm the handoff|Review their price|Make your offer)$/;
@@ -387,9 +397,19 @@ const openNegotiation = (r) => {
   const nm = casey(r).cardById(g.cardId).name;
   const card = cls(r, "goal").concat(cls(r, "gwatch-r")).find((n) => txt(n).includes(nm));
   assert(card, "the goal is on the Goals screen");
-  click(cls(card, "gwatch-h")[0] || cls(card, "goal-holders")[0]);
-  click(r.root.findAllByType("button").find((b) => txt(b).trim() === "Make an offer"));
-  click(btn(r, "Send offer"));
+  /* A primary goal with no live deal lists its partners inline and offers
+     "Make an offer" directly; otherwise open the supply route first. */
+  const inlineOffer = card.findAllByType("button").find((b) => txt(b).trim() === "Make an offer");
+  const route = inlineOffer || supplyRouteIn(card);
+  assert(route, "an offer route on " + nm + ": " + card.findAllByType("button").map((b) => txt(b).trim()).join("|"));
+  click(route);
+  /* Both routes land on the partner list; choose a partner, then send. */
+  const pick = r.root.findAllByType("button").find((b) => txt(b).trim() === "Make an offer");
+  assert(pick, "a partner to offer to");
+  click(pick);
+  const send = btn(r, "Send offer");
+  assert(send, "the send control: " + r.root.findAllByType("button").map((b) => txt(b).trim()).filter(Boolean).join("|"));
+  click(send);
   return { g, o: S(r).opportunities[S(r).opportunities.length - 1] };
 };
 /* Reopen a live opportunity's deal screen from the Collector's Goals list. */
@@ -655,11 +675,10 @@ describe("O. Privacy through actual persona switching", () => {
     const r = shell();
     enter(r, "collector");
     const g = seekingGoalWithSupply(r);
-    const card = cls(r, "goal").concat(cls(r, "gwatch-r"))
-      .find((n) => txt(n).includes(casey(r).cardById(g.cardId).name));
-    const route = cls(card, "gwatch-h")[0] || cls(card, "goal-holders")[0];
-    assert(route, "a route to the partners who have it");
-    click(route);
+    const nm = casey(r).cardById(g.cardId).name;
+    const card = cls(r, "goal").concat(cls(r, "gwatch-r")).find((n) => txt(n).includes(nm));
+    const inline = card.findAllByType("button").find((b) => txt(b).trim() === "Make an offer");
+    click(inline || supplyRouteIn(card));
     click(r.root.findAllByType("button").find((b) => txt(b).trim() === "Make an offer"));
     const oppsBefore = S(r).opportunities.length;
 
@@ -687,11 +706,13 @@ describe("The shell never chooses which reality exists", () => {
     const g = seekingGoalWithSupply(r);
     const card = cls(r, "goal").concat(cls(r, "gwatch-r"))
       .find((n) => txt(n).includes(casey(r).cardById(g.cardId).name));
-    const route = cls(card, "gwatch-h")[0] || cls(card, "goal-holders")[0];
-    assert(route, "a route to the partners who have it");
-    click(route);
-    click(btn(r, "Reach out"));
-    click(btn(r, "Close"));
+    const inline = reachOutIn(card);
+    if (inline) { click(inline); }                 // partners already listed
+    else {
+      click(supplyRouteIn(card));
+      click(btn(r, "Reach out"));
+      click(btn(r, "Close"));
+    }
 
     /* TP acts */
     switchTo(r, "Trusted Partner");

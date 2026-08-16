@@ -160,8 +160,10 @@ describe("Goal lifecycle is derived, not stored", () => {
 describe("One active negotiation per goal", () => {
   test("the rule lives in the action, not the button", () => {
     const fn = STORE().slice(STORE().indexOf("startOpportunity({"), STORE().indexOf("patchOpportunity("));
-    assert(/if \(!D\.INVARIANTS\.oneNegotiationPerGoal\(goalId, s\.opportunities\)\) return null;/.test(fn),
+    assert(/oneNegotiationPerGoal\(goalId, s\.opportunities\)\)/.test(fn),
       "the shared action refuses a second negotiation regardless of caller");
+    assert(/D\.INVARIANTS\.goalIsPursued\(goalId, s\.goals\)/.test(fn),
+      "and refuses a goal that is not being actively pursued");
   });
 
   test("the UI explains the rule instead of failing", () => {
@@ -890,12 +892,40 @@ describe("Goals shares the MetYet palette", () => {
       assert(!/6C5CE0|108,92,224/i.test(readSrc(f)), f + " carries no purple"));
   });
 
-  test("13. the action colour is MetYet's, and tokenised", () => {
+  test("13. the action colour stays in MetYet's teal family, and tokenised", () => {
     const src = readSrc("collector/MetYetCollector.jsx");
-    assert(/--accent: #0B5D66/.test(src), "the shared teal");
-    assert(/--accent-bg: #E6F0F1/.test(src), "and its surface");
+    /* The Collector runs dark, so the brand hue is lifted to carry on a
+       near-black surface. It must remain teal, never purple, and must stay a
+       token so no component hard-codes a colour. */
+    const accent = /--accent: (#[0-9A-Fa-f]{6})/.exec(src);
+    assert(accent, "the accent is a token");
+    const [, hex] = accent;
+    const [r2, g2, b2] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    assert(g2 > r2 && b2 > r2, "teal family — green and blue lead: " + hex);
+    assert(!/6C5CE0|purple/i.test(src), "and no purple anywhere");
     const tp = readSrc("src/MetYet.jsx");
-    assert(tp.includes("--t1: #0B5D66"), "the same value the TP uses");
+    assert(tp.includes("--t1: #0B5D66"), "the Trusted Partner keeps its own value");
+  });
+
+  test("13. the Collector surface is dark", () => {
+    const src = readSrc("collector/MetYetCollector.jsx");
+    const bg = /--bg: (#[0-9A-Fa-f]{6})/.exec(src);
+    assert(bg, "the page background is a token");
+    const lum = [1, 3, 5].map((i) => parseInt(bg[1].slice(i, i + 2), 16))
+      .reduce((a, c) => a + c, 0) / 3;
+    assert(lum < 60, "a genuinely dark page background: " + bg[1]);
+    const text = /--text: (#[0-9A-Fa-f]{6})/.exec(src);
+    const tlum = [1, 3, 5].map((i) => parseInt(text[1].slice(i, i + 2), 16))
+      .reduce((a, c) => a + c, 0) / 3;
+    assert(tlum > 190, "with light text on it: " + text[1]);
+  });
+
+  test("13. nothing hard-codes a light surface", () => {
+    const src = readSrc("collector/MetYetCollector.jsx");
+    const css = src.slice(src.indexOf("const CSS = `"), src.indexOf("/* ==========", src.indexOf("const CSS = `")));
+    /* White is legitimate only as text on a coloured avatar. */
+    const whites = (css.match(/background: #FFF/g) || []);
+    eq(whites.length, 0, "no white surfaces remain in the dark theme");
   });
 });
 
@@ -1002,6 +1032,53 @@ describe("The Primary Goal surfaces real activity", () => {
     const size = (n) => String(n.props.className).split(/\s+/).find((c) =>
       ["xl", "lg", "md", "sm", "xs"].includes(c));
     assert(size(pArt) !== size(sArt), "with the hierarchy still visible");
+  });
+});
+
+describe("Dark mode holds up", () => {
+  const css = () => {
+    const src = readSrc("collector/MetYetCollector.jsx");
+    return src.slice(src.indexOf("const CSS = `"), src.indexOf("`;", src.indexOf("const CSS = `")));
+  };
+
+  test("focus stays visible on a dark surface", () => {
+    assert(/:focus-visible \{[^}]*outline: 2px solid var\(--t1\)/.test(css()),
+      "a teal focus ring");
+    /* An element may swap the default outline for a stronger ring, but must
+       never leave focus invisible. */
+    const css2 = css();
+    (css2.match(/[^{}]*\{[^}]*outline: *none[^}]*\}/g) || []).forEach((rule) =>
+      assert(/box-shadow|border-color/.test(rule),
+        "outline removed only where a ring replaces it: " + rule.slice(0, 60)));
+  });
+
+  test("status is never communicated by colour alone", () => {
+    const r = mk();
+    /* Lifecycle chips carry words. */
+    cls(r, "state").forEach((n) => assert(txt(n).length > 0, "the state is named"));
+    /* The active tab carries a marker as well as a colour. */
+    assert(/\.nav-i\.on \.nav-ic::after/.test(css()), "the active tab has a marker");
+    /* Progress names its current stage. */
+    const on = cls(r, "gp-l").filter((n) => String(n.props.className).includes("on"));
+    if (on.length) assert(txt(on[0]).length > 0, "the current stage is named");
+  });
+
+  test("mobile keeps the stage readable and the layout single-column", () => {
+    const c = css();
+    assert(/@media \(max-width: 520px\)[^}]*\.gp-l \{ font-size: 0/.test(c.replace(/\n/g, "")),
+      "narrow screens show only the current stage label");
+    assert(/grid-template-columns: repeat\(auto-fill, minmax\(156px, 1fr\)\)/.test(c),
+      "the binder reflows rather than overflowing");
+  });
+
+  test("touch targets stay comfortable", () => {
+    const c = css();
+    assert(/\.btn \{[^}]*padding: 12px 17px/.test(c), "buttons are tappable");
+    assert(/\.tabb \{[^}]*padding: 8px 14px/.test(c), "so are filter chips");
+  });
+
+  test("card artwork keeps its aspect ratio", () => {
+    assert(/object-fit: contain/.test(css()), "art is never stretched");
   });
 });
 

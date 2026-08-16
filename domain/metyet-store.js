@@ -100,10 +100,15 @@ function createStore(seed) {
     },
 
     /* ---- opportunity: the one structured negotiation ---- */
+    /* Returns the new opportunity id, or a refusal a caller can act on. Both
+       invariants live HERE so no persona, route or direct caller can bypass
+       them — the UI explains the refusal, it does not enforce it. */
     startOpportunity({ goalId, collectorId, partnerId, cardId, invId, listedPrice, amount, at }) {
-      /* THE INVARIANT, enforced in the domain. No UI on either persona can
-         route around this, because there is no other way to create one. */
-      if (!D.INVARIANTS.oneNegotiationPerGoal(goalId, s.opportunities)) return null;
+      if (!s.goals.some((g) => g.id === goalId)) return { refused: D.REFUSE.noGoal };
+      /* A deal is evidence of active pursuit, so the goal must be Primary. */
+      if (!D.INVARIANTS.goalIsPursued(goalId, s.goals)) return { refused: D.REFUSE.notPrimary };
+      if (!D.INVARIANTS.oneNegotiationPerGoal(goalId, s.opportunities))
+        return { refused: D.REFUSE.alreadyNegotiating };
       const id = "o" + Math.random().toString(36).slice(2, 9);
       const opp = {
         id, goalId, collectorId, partnerId, cardId, invId,

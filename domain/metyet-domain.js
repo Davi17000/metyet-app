@@ -143,6 +143,22 @@ const INVARIANTS = {
   /* A binder copy is a physical thing a partner must be able to evaluate.
      Both faces or it does not exist. */
   binderCopyPhotographed: (photos) => !!(photos && photos.front && photos.back),
+  /* An Opportunity is evidence of active pursuit. A Secondary goal is a
+     watchlist entry — the collector is looking, not chasing — so a deal cannot
+     begin against one. Promotion to Primary is the collector's own statement
+     that this has become something they are actively pursuing. */
+  goalIsPursued: (goalId, goals) => {
+    const g = goals.find((x) => x.id === goalId);
+    return !!g && g.tier === "primary";
+  },
+};
+
+/* Why an Opportunity could not be created. Presentation layers read this to
+   offer the right next step rather than dead-ending the person. */
+const REFUSE = {
+  noGoal: "no-goal",
+  notPrimary: "goal-not-primary",
+  alreadyNegotiating: "already-negotiating",
 };
 
 module.exports = {
@@ -153,7 +169,7 @@ module.exports = {
   acceptedTradeCards, cardSettled, tradeValueOf, totalTradeValue,
   calculatedBalance, finalBalance,
   lastEntry, nextActor,
-  INVARIANTS,
+  INVARIANTS, REFUSE,
 };
 
 /* ------------------------------------------------------- CARD IDENTITY SEARCH

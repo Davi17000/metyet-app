@@ -154,24 +154,29 @@ const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
 .mc {
-  --bg: #F7F8FA;
-  --panel: #FFFFFF;
-  --line: #E4E8ED;
-  --line-soft: #F0F3F6;
-  --text: #131922;
-  --muted: #616B7A;
-  --faint: #8B95A3;
-  --t1: #0B5D66;
-  --t2: #4E8C93;
-  --t1-bg: #E6F0F1;
-  /* MetYet's action colour, shared with the Trusted Partner workspace. The
-     Collector composition differs; the palette should not. */
-  --accent: #0B5D66;
-  --accent-bg: #E6F0F1;
-  --accent-line: #CFE0E2;
-  --amber: #9A6408;
-  --amber-bg: #FBF3E3;
-  --danger: #98302C;
+  /* DARK MODE, on MetYet's teal family. The Trusted Partner workspace is a lit
+     room you work in; the Collector app is a case you look into, so the cards
+     carry the light and the surfaces recede behind them. Same brand hue —
+     #0B5D66 lifted to an aqua that reads on near-black. */
+  --bg: #0A1014;
+  --panel: #121B21;
+  --panel-2: #16212A;
+  --line: #22313B;
+  --line-soft: #1A2730;
+  --text: #EAF2F4;
+  --muted: #9FB2BC;
+  --faint: #6E8492;
+  --t1: #2FD4C4;
+  --t2: #1E8E88;
+  --t1-bg: #122A2E;
+  /* The action colour. Brighter than the TP's #0B5D66 because it has to carry
+     on a dark surface, but the same hue family. */
+  --accent: #17B3A6;
+  --accent-bg: #10262A;
+  --accent-line: #1E4A4C;
+  --amber: #E0A63C;
+  --amber-bg: #241C0E;
+  --danger: #E06B62;
   font-family: 'Public Sans', system-ui, sans-serif;
   color: var(--text);
   font-size: 15px;
@@ -183,52 +188,60 @@ const CSS = `
 }
 .mc * { box-sizing: border-box; }
 .mc button { font: inherit; color: inherit; cursor: pointer; }
+/* Focus must stay visible on a dark surface — a teal ring, never removed. */
+.mc :focus-visible { outline: 2px solid var(--t1); outline-offset: 2px; border-radius: 6px; }
+.mc ::selection { background: var(--accent); color: #04120F; }
+.mc ::placeholder { color: var(--faint); }
 .disp { font-family: 'Archivo', system-ui, sans-serif; letter-spacing: -0.015em; }
 .mono { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
 
 /* ---- page shell: generous, single column, mobile-first ---- */
 .pg { max-width: 580px; margin: 0 auto; padding: 26px 18px 10px; }
 .pg-h { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 24px; }
-.pg-t { font-size: 31px; font-weight: 700; line-height: 1.08; letter-spacing: -.025em; }
+.pg-t { font-size: 31px; font-weight: 700; line-height: 1.08; letter-spacing: -.025em;
+  display: flex; align-items: center; gap: 10px; }
+.pg-ic { color: var(--t1); display: flex; }
 .pg-s { font-size: 14px; color: var(--muted); margin-top: 4px; }
 .pg-act { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 
 /* ---- primitives, shared in spirit with the TP app ---- */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-  border: 1px solid var(--line); background: #FFF; border-radius: 11px;
+  border: 1px solid var(--line); background: var(--panel-2); border-radius: 11px;
   padding: 12px 17px; font-size: 14px; font-weight: 600; transition: all .14s ease;
   box-shadow: 0 1px 2px rgba(15,19,27,.05); }
 .btn:active { transform: translateY(1px); }
-.btn:hover { border-color: #C9D2DB; }
-.btn.pri { background: var(--accent); border-color: var(--accent); color: #FFF;
+.btn:hover { border-color: var(--t2); background: var(--panel); }
+.btn.pri { background: var(--accent); border-color: var(--accent); color: #04120F;
   box-shadow: 0 2px 8px rgba(11,93,102,.24); }
 .btn.pri:hover { background: #5B4BD0; }
-.btn.deep { background: var(--t1); border-color: var(--t1); color: #FFF;
+.btn.deep { background: var(--t1); border-color: var(--t1); color: #04120F;
   box-shadow: 0 2px 8px rgba(11,93,102,.24); }
 .btn.wide { width: 100%; }
 .btn.sm { padding: 7px 12px; font-size: 13px; border-radius: 8px; }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 .inp { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
-  font: inherit; font-size: 16px; background: #FFF; }
-.inp:focus { outline: none; border-color: var(--t2); box-shadow: 0 0 0 3px var(--t1-bg); }
+  font: inherit; font-size: 16px; background: var(--panel-2); color: var(--text); }
+/* The default outline is replaced by a brighter ring, never simply removed. */
+.inp:focus-visible { outline: 2px solid var(--t1); outline-offset: 1px; border-color: var(--t2); }
+.inp:focus { border-color: var(--t2); box-shadow: 0 0 0 3px var(--accent-bg); }
 .chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px;
   border-radius: 999px; font-size: 12px; background: var(--line-soft); color: var(--muted); }
-.chip.t { background: var(--t1-bg); color: var(--t1); font-weight: 600; }
-.chip.a { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+.chip.t { background: var(--t1-bg); color: var(--t1); font-weight: 600; border: 1px solid var(--accent-line); }
+.chip.a { background: var(--accent-bg); color: var(--t1); font-weight: 600; border: 1px solid var(--accent-line); }
 .link { background: none; border: 0; padding: 0; color: var(--t1); font-weight: 500; text-decoration: none; }
 .link:hover { text-decoration: underline; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 18px;
-  box-shadow: 0 1px 2px rgba(15,19,27,.04), 0 6px 18px rgba(15,19,27,.05); }
+  box-shadow: 0 1px 2px rgba(0,0,0,.30), 0 8px 24px rgba(0,0,0,.28); }
 .muted { color: var(--muted); } .faint { color: var(--faint); }
 .empty { text-align: center; color: var(--faint); font-size: 14px; padding: 34px 16px; }
 
 /* ---- card artwork: the largest thing on any screen ---- */
 .art { border-radius: 9px; flex: 0 0 auto; object-fit: contain; background: transparent;
-  filter: drop-shadow(0 3px 10px rgba(15,19,27,.16)); }
+  filter: drop-shadow(0 4px 14px rgba(0,0,0,.55)); }
 /* the fallback keeps the exact footprint, so a late image causes no shift */
 .art.ph { display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 2px; padding: 8px; text-align: center; overflow: hidden; filter: none;
-  background: #EEF1F4; border: 1px solid var(--line); }
+  background: var(--panel-2); border: 1px solid var(--line); }
 .ph-n { font-family: 'Archivo'; font-weight: 700; font-size: 12px; line-height: 1.15;
   color: var(--muted); overflow-wrap: anywhere; }
 .ph-s { font-size: 9.5px; color: var(--faint); line-height: 1.2; }
@@ -244,13 +257,13 @@ const CSS = `
 .goal-b { flex: 1; min-width: 0; }
 .tier { font-family: 'Archivo'; font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
   font-weight: 700; padding: 3px 8px; border-radius: 5px; display: inline-block; }
-.tier.p { background: var(--accent-bg); color: var(--accent); }
-.tier.s { background: var(--line-soft); color: var(--muted); }
+.tier.p { background: var(--accent-bg); color: var(--t1); }
+.tier.s { background: var(--panel-2); color: var(--muted); }
 .goal-n { font-size: 23px; font-weight: 700; line-height: 1.12; margin-top: 11px; letter-spacing: -.02em; }
 .goal-i { font-size: 14px; color: var(--muted); margin-top: 4px; }
 .goal-avail { font-size: 14px; margin-top: 12px; }
 .faces { display: flex; align-items: center; gap: -6px; margin-top: 8px; }
-.face { width: 30px; height: 30px; border-radius: 50%; border: 2px solid #FFF; margin-right: -8px;
+.face { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--panel); margin-right: -8px;
   display: flex; align-items: center; justify-content: center; color: #FFF;
   font-family: 'Archivo'; font-size: 11px; font-weight: 700; }
 .goal-live { display: flex; align-items: center; gap: 12px; margin-top: 18px; padding: 14px 16px;
@@ -261,7 +274,7 @@ const CSS = `
   overflow: hidden; }
 .goal-supply-h { font-family: 'Archivo'; font-size: 10px; letter-spacing: .09em;
   text-transform: uppercase; font-weight: 700; color: var(--muted);
-  padding: 11px 14px; background: var(--line-soft); }
+  padding: 11px 14px; background: var(--panel-2); }
 .gs-row { display: flex; align-items: center; gap: 11px; padding: 11px 14px;
   border-top: 1px solid var(--line-soft); flex-wrap: wrap; }
 .gs-b { flex: 1; min-width: 0; }
@@ -276,11 +289,11 @@ const CSS = `
 .goal-prog-bar { display: flex; gap: 3px; }
 .gp-seg { flex: 1; height: 4px; border-radius: 2px; background: var(--line); }
 .gp-seg.done { background: var(--t2); }
-.gp-seg.now { background: var(--accent); }
+.gp-seg.now { background: var(--t1); box-shadow: 0 0 8px rgba(47,212,196,.45); }
 .goal-prog-l { display: flex; gap: 3px; margin-top: 7px; }
 .gp-l { flex: 1; font-size: 9.5px; line-height: 1.25; color: var(--faint); text-align: center;
   overflow: hidden; text-overflow: ellipsis; }
-.gp-l.on { color: var(--accent); font-weight: 700; }
+.gp-l.on { color: var(--t1); font-weight: 700; }
 @media (max-width: 520px) { .gp-l { font-size: 0; } .gp-l.on { font-size: 10px; } }
 
 /* ---- the shared card identity picker, in the Collector's visual language.
@@ -289,7 +302,7 @@ const CSS = `
 .cip-results { margin-top: 12px; max-height: 340px; overflow-y: auto; }
 .cip-row { display: flex; gap: 12px; align-items: center; width: 100%; text-align: left;
   background: none; border: 0; border-bottom: 1px solid var(--line-soft); padding: 10px 4px; }
-.cip-row:hover { background: var(--line-soft); }
+.cip-row:hover { background: var(--panel-2); }
 .cip-main { display: flex; flex-direction: column; min-width: 0; }
 .cip-name { font-size: 14.5px; font-weight: 600; line-height: 1.25; }
 .cip-sub { font-size: 12.5px; color: var(--muted); }
@@ -302,10 +315,10 @@ const CSS = `
 .cip-lbl { display: block; font-size: 13px; font-weight: 600; margin-bottom: 7px; }
 .cip-lbl .req { color: var(--danger); font-weight: 700; }
 .cip-seg { display: flex; flex-wrap: wrap; gap: 6px; }
-.cip-opt { border: 1px solid var(--line); background: #FFF; border-radius: 9px;
+.cip-opt { border: 1px solid var(--line); background: var(--panel-2); border-radius: 9px;
   padding: 8px 12px; font-size: 13px; font-weight: 500; min-width: 42px; }
-.cip-opt:hover { border-color: #C9D2DB; }
-.cip-opt.on { background: var(--accent); border-color: var(--accent); color: #FFF; }
+.cip-opt:hover { border-color: var(--t2); }
+.cip-opt.on { background: var(--accent); border-color: var(--accent); color: #04120F; }
 .cip-opt.wide { min-width: 62px; }
 
 /* ---- goals: two sections doing two different jobs --------------------------
@@ -314,17 +327,20 @@ const CSS = `
    should read even with the words "Primary" and "Secondary" removed. */
 .gsec-h { display: flex; align-items: baseline; gap: 9px; margin: 0 0 14px; }
 .gsec-t { font-family: 'Archivo'; font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
-.gsec-n { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; color: var(--faint); }
+.gsec-n { font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: var(--t1);
+  background: var(--accent-bg); border: 1px solid var(--accent-line);
+  border-radius: 999px; padding: 1px 8px; }
 .gsec-s { margin-left: auto; font-size: 12.5px; color: var(--faint); }
 .gsec-empty { padding: 26px 22px; text-align: center; }
 .gsec-none { font-size: 13px; padding: 2px 2px 4px; }
 
 /* the live deal: the most consequential thing on a primary goal */
 .goal-live { margin-top: 16px; padding: 15px 16px; background: var(--accent-bg);
-  border: 1px solid var(--accent-line); border-radius: 12px; }
+  border: 1px solid var(--accent-line); border-left: 3px solid var(--t1);
+  border-radius: 12px; }
 .goal-live-h { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; }
 .goal-live-stage { font-family: 'Archivo'; font-size: 9.5px; letter-spacing: .1em;
-  text-transform: uppercase; font-weight: 700; color: var(--accent); }
+  text-transform: uppercase; font-weight: 700; color: var(--t1); }
 .goal-live-c { font-size: 14px; margin-top: 7px; font-weight: 500; }
 .goal-live-w { font-size: 13.5px; color: var(--muted); margin-top: 10px; }
 
@@ -348,14 +364,15 @@ const CSS = `
 .gwatch-live { padding: 4px 10px; font-size: 12px; }
 .gwatch-m { background: none; border: 0; color: var(--faint); font-size: 16px;
   line-height: 1; padding: 4px 6px; border-radius: 6px; }
-.gwatch-m:hover { background: var(--line-soft); color: var(--text); }
+.gwatch-m:hover { background: var(--panel-2); color: var(--text); }
 .gwatch-menu { flex: 0 0 100%; display: flex; gap: 8px; padding: 4px 0 6px; }
 
 /* ---- trade binder: a digital binder, not a table ---- */
 .bnd { display: grid; grid-template-columns: repeat(auto-fill, minmax(156px, 1fr)); gap: 16px; }
 .bnd-c { padding: 16px 12px 14px; display: flex; flex-direction: column; align-items: center;
   text-align: center; transition: transform .14s ease, box-shadow .14s ease; }
-.bnd-c:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(15,19,27,.06), 0 14px 30px rgba(15,19,27,.08); }
+.bnd-c:hover { transform: translateY(-2px); border-color: var(--t2);
+  box-shadow: 0 6px 14px rgba(0,0,0,.36), 0 18px 40px rgba(0,0,0,.32); }
 .bnd-n { font-size: 14px; font-weight: 600; margin-top: 11px; line-height: 1.25; overflow-wrap: anywhere; }
 .bnd-i { font-size: 12px; color: var(--faint); margin-top: 3px; }
 .bnd-int { margin-top: 10px; font-size: 12.5px; color: var(--t1); font-weight: 600; }
@@ -402,45 +419,50 @@ const CSS = `
 .row .k { color: var(--muted); }
 .row.tot { font-weight: 700; border-top: 1px solid var(--line); margin-top: 4px; padding-top: 12px; }
 .pick { display: flex; gap: 13px; align-items: center; padding: 12px; border: 1px solid var(--line);
-  border-radius: 13px; margin-bottom: 10px; width: 100%; text-align: left; background: #FFF;
+  border-radius: 13px; margin-bottom: 10px; width: 100%; text-align: left; background: var(--panel-2);
   transition: border-color .14s ease, background .14s ease; }
 .pick.on { border-color: var(--accent); background: var(--accent-bg); }
 .pick-b { flex: 1; min-width: 0; }
 
 /* ---- tabs: browsing one partner's shelf, or filtering your binder ---- */
 .tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 16px; }
-.tabb { flex: 0 0 auto; background: #FFF; border: 1px solid var(--line); border-radius: 999px;
+.tabb { flex: 0 0 auto; background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px;
   padding: 8px 14px; font-size: 13.5px; font-weight: 600; color: var(--muted); }
-.tabb.on { background: var(--accent); border-color: var(--accent); color: #FFF; }
+.tabb.on { background: var(--accent); border-color: var(--accent); color: #04120F; }
 .tabb.on .faint { color: rgba(255,255,255,.75); }
 .act-2 { display: flex; gap: 8px; margin-top: 10px; }
 .act-2 .btn { flex: 1; }
 .goal-edit { margin-top: 16px; padding-top: 13px; border-top: 1px solid var(--line-soft); }
 .rowb { width: 100%; background: none; border: 0; border-bottom: 1px solid var(--line-soft);
   text-align: left; }
-.rowb:hover { background: var(--line-soft); }
+.rowb:hover { background: var(--panel-2); }
 /* derived goal state — describes reality, never stored */
 .state { font-family: 'Archivo'; font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
   font-weight: 700; padding: 3px 8px; border-radius: 5px; }
-.state.seeking { background: var(--line-soft); color: var(--muted); }
-.state.negotiating { background: var(--t1-bg); color: var(--t1); }
-.state.satisfied { background: #E8F3EA; color: #2E6B3D; }
+.state.seeking { background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); }
+.state.negotiating { background: var(--t1-bg); color: var(--t1); border: 1px solid var(--accent-line); }
+.state.satisfied { background: #102A18; color: #57C97E; border: 1px solid #1E4A2C; }
 
 /* ---- bottom navigation: consumer, thumb-reachable ---- */
-.nav { position: fixed; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,.96);
+.nav { position: fixed; left: 0; right: 0; bottom: 0; background: rgba(10,16,20,.94);
   backdrop-filter: blur(8px); border-top: 1px solid var(--line); display: flex;
   padding: 8px 0 max(8px, env(safe-area-inset-bottom)); z-index: 30; }
 .nav-i { flex: 1; background: none; border: 0; display: flex; flex-direction: column;
   align-items: center; gap: 4px; padding: 5px 0; color: var(--faint); }
-.nav-i.on { color: var(--accent); }
+.nav-i.on { color: var(--t1); }
+/* Status is never colour alone: the active tab also carries a marker. */
+.nav-i.on .nav-ic { position: relative; }
+.nav-i.on .nav-ic::after { content: ""; position: absolute; left: 50%; bottom: -5px;
+  transform: translateX(-50%); width: 14px; height: 2px; border-radius: 1px;
+  background: var(--t1); }
 .nav-ic { display: flex; }
 .nav-l { font-size: 11px; font-weight: 600; }
 .nav-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 
 /* ---- sheet ---- */
-.ovl { position: fixed; inset: 0; background: rgba(15,19,27,.42); z-index: 40; display: flex;
+.ovl { position: fixed; inset: 0; background: rgba(0,0,0,.62); z-index: 40; display: flex;
   align-items: flex-end; justify-content: center; }
-.sheet { background: #FFF; width: 100%; max-width: 560px; border-radius: 20px 20px 0 0;
+.sheet { background: var(--panel); width: 100%; max-width: 560px; border-radius: 20px 20px 0 0;
   max-height: 90vh; overflow-y: auto; padding: 22px 18px calc(22px + env(safe-area-inset-bottom)); }
 .sheet-t { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
 .sheet-s { font-size: 14px; color: var(--muted); margin-bottom: 18px; }
@@ -450,10 +472,11 @@ const CSS = `
   .mc { padding-bottom: 0; display: flex; }
   .nav { position: sticky; top: 0; bottom: auto; height: 100vh; width: 232px; flex-direction: column;
     align-items: stretch; border-top: 0; border-right: 1px solid var(--line); padding: 26px 14px;
-    background: #FFF; backdrop-filter: none; }
+    background: var(--panel); backdrop-filter: none; }
   .nav-i { flex: 0 0 auto; flex-direction: row; gap: 12px; justify-content: flex-start;
     padding: 12px 14px; border-radius: 10px; font-size: 15px; }
   .nav-i.on { background: var(--accent-bg); }
+  .nav { border-right: 1px solid var(--line); }
   .nav-l { font-size: 15px; }
   .mc-main { flex: 1; min-width: 0; }
   .pg { max-width: 800px; padding: 46px 38px 70px; }
@@ -1695,6 +1718,7 @@ function WhoHasIt({ goalId, st, go }) {
 /* ---- Starting a negotiation. Deliberate, confirmed, and the one-at-a-time
        rule is stated BEFORE the collector commits, not after they try. ---- */
 function StartOffer({ goalId, partnerId, st, go }) {
+  const [promote, setPromote] = useState(null);
   const g = st.goals.find((x) => x.id === goalId);
   const c = st.cardById(g.cardId);
   const p = st.partnerById(partnerId);
@@ -1724,13 +1748,49 @@ function StartOffer({ goalId, partnerId, st, go }) {
     );
   }
 
+  if (promote != null) {
+    return (
+      <Sheet title="Make this a Primary Goal?" sub={`${c.name} · ${cardLine(c)}`}
+        onClose={() => setPromote(null)}
+        footer={<>
+          <button className="btn" onClick={() => setPromote(null)}>Not now</button>
+          <button className="btn pri" style={{ flex: 1 }}
+            onClick={() => {
+              /* Promote the SAME goal, then continue — no replacement record. */
+              st.setTier(goalId, "primary");
+              const res = st.startOffer(goalId, partnerId, promote);
+              if (res && res.refused) { setPromote(null); return; }
+              go({ v: "deal", oppId: res });
+            }}>
+            Make Primary &amp; continue
+          </button>
+        </>}>
+        <div style={{ fontSize: 14.5, lineHeight: 1.55 }}>
+          You've been keeping an eye on this one. Making an offer means you're
+          actively going after it, so MetYet will move it to your Primary goals.
+        </div>
+        <div className="faint" style={{ fontSize: 12.5, marginTop: 12 }}>
+          You can move it back to your watchlist any time.
+        </div>
+      </Sheet>
+    );
+  }
+
   return (
     <Sheet title="Make an offer" sub={`${c.name} · ${cardLine(c)} · ${gradeLine(c)}`}
       onClose={() => go({ v: "partner", partnerId })}
       footer={<>
         <button className="btn" onClick={() => go({ v: "partner", partnerId })}>Cancel</button>
         <button className="btn pri" style={{ flex: 1 }} disabled={!(n > 0)}
-          onClick={() => { const id = st.startOffer(goalId, partnerId, n); go({ v: "deal", oppId: id }); }}>
+          onClick={() => {
+            const res = st.startOffer(goalId, partnerId, n);
+            /* Refused because this is a watchlist goal — offer promotion rather
+               than a dead end. The collector decides; MetYet never promotes for
+               them. */
+            if (res && res.refused === D.REFUSE.notPrimary) { setPromote(n); return; }
+            if (res && res.refused) return;
+            go({ v: "deal", oppId: res });
+          }}>
           Send offer
         </button>
       </>}>
@@ -1802,7 +1862,7 @@ function AddCopy({ st, go }) {
             <button className="btn wide" style={{ height: 96, flexDirection: "column",
               borderStyle: ph[side] ? "solid" : "dashed",
               borderColor: ph[side] ? "var(--t2)" : "var(--line)",
-              background: ph[side] ? "var(--t1-bg)" : "#FFF" }}
+              background: ph[side] ? "var(--t1-bg)" : "var(--panel-2)" }}
               onClick={() => setPh({ ...ph, [side]: `${side}:new` })}>
               <span style={{ fontSize: 13, textTransform: "capitalize" }}>{side}</span>
               <span className="faint" style={{ fontSize: 12 }}>
@@ -1896,6 +1956,9 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
       startOffer: (goalId, partnerId, amount) => {
         const g = v.myGoals().find((x) => x.id === goalId);
         const inv = v.partnersWith(g.cardId).find((x) => x.partner.id === partnerId);
+        /* The domain may refuse — a Secondary goal is not being pursued, and a
+           goal already in a negotiation cannot start another. The refusal is
+           handed back so the UI can offer the right next step. */
         return A.startOpportunity({ goalId, collectorId, partnerId,
           cardId: g.cardId, invId: inv ? inv.inv.invId : null,
           listedPrice: inv ? inv.ask : amount, amount, at: AT });

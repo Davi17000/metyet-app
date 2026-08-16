@@ -43,6 +43,7 @@ const CSS = `
 /* ---- startup chooser: a prototype entry point, not a marketing page ---- */
 .myp-enter { min-height: 100vh; display: flex; align-items: center; justify-content: center;
   background: #F1F3F6; padding: 28px 20px; }
+.myp-body { background: #0A1014; }
 .myp-box { width: 100%; max-width: 760px; }
 .myp-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 26px; }
 .myp-mark { width: 30px; height: 30px; border-radius: 8px; background: #0B5D66; color: #FFF;
