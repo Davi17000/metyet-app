@@ -486,6 +486,33 @@ const CSS = `
 .tabb.on .faint { color: rgba(255,255,255,.75); }
 .act-2 { display: flex; gap: 8px; margin-top: 10px; }
 .act-2 .btn { flex: 1; }
+/* management sits in the header, out of the forward path */
+.goal-hd { display: flex; align-items: flex-start; gap: 10px; }
+.goal-hd > div:first-child { flex: 1; min-width: 0; }
+.goal-edit-b { background: none; border: 1px solid transparent; color: var(--faint);
+  font-size: 17px; line-height: 1; padding: 6px 9px; border-radius: 8px; flex: 0 0 auto; }
+.goal-edit-b:hover { background: var(--panel-2); border-color: var(--line); color: var(--text); }
+.goal-menu { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px;
+  padding: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 11px; }
+.goal-stop { color: var(--danger); border-color: var(--line); }
+.goal-stop:hover { border-color: var(--danger); }
+.btn.danger { background: var(--danger); border-color: var(--danger); color: #FFF; }
+
+/* the rail sits between the action and the receipt */
+.goal-rail { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
+
+/* the receipt, collapsed until asked for */
+.rc-wrap { margin-top: 14px; border-top: 1px solid var(--line-soft); }
+.rc-toggle { display: flex; align-items: center; gap: 10px; width: 100%; background: none;
+  border: 0; padding: 13px 0 4px; text-align: left; }
+.rc-toggle-t { font-family: 'Archivo'; font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; font-weight: 700; color: var(--muted); }
+.rc-toggle-s { font-size: 12px; margin-left: auto; }
+.rc-chev { color: var(--faint); font-size: 17px; transition: transform .16s ease;
+  display: inline-block; }
+.rc-chev.on { transform: rotate(90deg); color: var(--t1); }
+.rc-wrap .rc { border-top: 0; padding-top: 4px; margin-top: 0; }
+
 .goal-edit { margin-top: 16px; padding-top: 13px; border-top: 1px solid var(--line-soft); }
 .rowb { width: 100%; background: none; border: 0; border-bottom: 1px solid var(--line-soft);
   text-align: left; }
@@ -882,16 +909,29 @@ function GoalCard({ g, st, go }) {
   const partner = live ? st.partnerById(live.partnerId) : null;
   const state = st.stateOf(g.id);
   const [menu, setMenu] = useState(false);
+  /* Detail-on-demand, and purely local: a disclosure is not canonical state, and
+     it resets whenever Goals is re-entered. */
+  const [openReceipt, setOpenReceipt] = useState(false);
+  const [confirmStop, setConfirmStop] = useState(false);
   const act = live ? nextActionFor(live, st) : null;
+  const settled = live ? D.receiptForOpportunity(live, {
+    binderById: st.binderById, cardById: st.cardById, partnerById: st.partnerById })
+    .stages.filter((x) => x.state === "done").length : 0;
 
   return (
     <div className="card goal">
       <div className="goal-top">
         <Art card={c} size="lg" />
         <div className="goal-b">
-          <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" }}>
-            <span className="tier p">Primary</span>
-            <span className={"state " + state}>{GOAL_STATE[state]}</span>
+          <div className="goal-hd">
+            <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" }}>
+              <span className="tier p">Primary</span>
+              <span className={"state " + state}>{GOAL_STATE[state]}</span>
+            </div>
+            {/* Management, not forward progress: quiet, and out of the way. */}
+            <button className="goal-edit-b" aria-expanded={menu}
+              aria-label={"Edit goal: " + c.name}
+              onClick={() => setMenu(!menu)}>&#8943;</button>
           </div>
           <div className="goal-n disp">{c.name}</div>
           <div className="goal-i">{cardLine(c)}</div>
@@ -902,8 +942,23 @@ function GoalCard({ g, st, go }) {
         </div>
       </div>
 
-      {/* THE ACTIVE DEAL. Stage is context; the CTA names the actual next action,
-          derived from canonical opportunity state. Navigation only. */}
+      {menu && (
+        <div className="goal-menu">
+          <button className="btn sm" onClick={() => st.setTier(g.id, "secondary")}>
+            Move to Secondary
+          </button>
+          <button className="btn sm" disabled={!!live}
+            title={live ? "Finish or stop the negotiation first" : undefined}
+            onClick={() => st.removeGoal(g.id)}>Remove goal</button>
+          {live && (
+            <button className="btn sm goal-stop" onClick={() => { setMenu(false); setConfirmStop(true); }}>
+              {st.dealAgreed(live) ? "Cancel agreed deal" : "Stop negotiation"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 1. WHAT DO I NEED TO DO NOW? */}
       {live && (
         <div className="goal-live">
           <div className="goal-live-h">
@@ -922,9 +977,27 @@ function GoalCard({ g, st, go }) {
         </div>
       )}
 
-      {/* SUPPLY. With no deal running, the partners who can help ARE the action:
-          list them all, each contactable. With a deal running, they stay one tap
-          away, because a negotiation with one partner must not hide the others. */}
+      {/* 2. WHERE AM I IN THE DEAL? Glanceable, always visible. */}
+      {live && (
+        <div className="goal-rail">
+          <Track stage={live.stage} o={live} st={st} />
+        </div>
+      )}
+
+      {/* 3. WHAT HAS THIS DEAL ESTABLISHED? Collapsed until asked for. */}
+      {live && (
+        <div className="rc-wrap">
+          <button className="rc-toggle" aria-expanded={openReceipt}
+            onClick={() => setOpenReceipt(!openReceipt)}>
+            <span className="rc-toggle-t">Deal receipt</span>
+            <span className="faint rc-toggle-s">{settled} of 5 settled</span>
+            <span className={"rc-chev" + (openReceipt ? " on" : "")} aria-hidden="true">&#8250;</span>
+          </button>
+          {openReceipt && <Receipt o={live} st={st} />}
+        </div>
+      )}
+
+      {/* 4. WHO ELSE COULD HELP ME? Available, but subordinate. */}
       {holders.length === 0 ? (
         <div className="goal-avail faint">
           None of your partners have this yet. They'll see you're looking.
@@ -971,40 +1044,46 @@ function GoalCard({ g, st, go }) {
         </div>
       )}
 
-      {/* THE RECEIPT. A deal fills itself in as it advances: settled stages show
-          what was agreed, the current stage shows what is being decided, and
-          later stages stay deliberately blank. Every value is a projection of
-          canonical opportunity state — see receiptForOpportunity. */}
-      {live && <Receipt o={live} st={st} />}
-
-      <div className="goal-edit">
-        <button className="link" onClick={() => setMenu(!menu)} aria-expanded={menu}>
-          Edit this goal
-        </button>
-        {menu && (
-          <div className="act-2" style={{ marginTop: 10 }}>
-            <button className="btn sm" onClick={() => st.setTier(g.id, "secondary")}>
-              Move to Secondary
-            </button>
-            <button className="btn sm" disabled={!!live}
-              title={live ? "Finish or stop the negotiation first" : undefined}
-              onClick={() => st.removeGoal(g.id)}>Remove</button>
-          </div>
-        )}
-        {menu && live && (
-          <div className="faint" style={{ fontSize: 12, marginTop: 7 }}>
-            You're negotiating this one — finish or stop that first to remove it.
-          </div>
-        )}
-      </div>
+      {confirmStop && live && (
+        <StopDeal o={live} st={st} onClose={() => setConfirmStop(false)} />
+      )}
     </div>
   );
 }
 
-/* ============================ TRADE BINDER ============================
-   A digital binder: a grid of the collector's own cards, artwork first. The
-   private reference value lives here and nowhere else — it is the collector's
-   own note to self, never sent to a partner. */
+/* Ending a deal is deliberate. Opening this changes nothing; only the explicit
+   destructive action calls the canonical endOpportunity. The wording follows the
+   canonical distinction the Trusted Partner already makes: a mutually agreed
+   deal is CANCELLED, an unagreed one is simply STOPPED. */
+function StopDeal({ o, st, onClose }) {
+  const agreed = st.dealAgreed(o);
+  const partner = st.partnerById(o.partnerId);
+  const [busy, setBusy] = useState(false);
+  const them = partner ? partner.name : "your partner";
+  return (
+    <Sheet title={agreed ? "Cancel this agreed deal?" : "Stop this negotiation?"}
+      sub={`${STAGE[o.stage].label} with ${them}`}
+      onClose={onClose}
+      footer={<>
+        <button className="btn" style={{ flex: 1 }} onClick={onClose}>
+          {agreed ? "Keep the deal" : "Keep negotiating"}
+        </button>
+        <button className="btn danger" disabled={busy}
+          onClick={() => { if (busy) return; setBusy(true); st.endNegotiation(o.id); onClose(); }}>
+          {agreed ? "Cancel deal" : "Stop negotiation"}
+        </button>
+      </>}>
+      <div style={{ fontSize: 14.5, lineHeight: 1.55 }}>
+        {agreed
+          ? `You and ${them} had agreed this one. Cancelling keeps the whole record — every
+             price, value and message stays in your history.`
+          : `Everything agreed so far stays in your history, and your conversation with
+             ${them} is kept. The card goes back on your list, so you can pick it up with
+             another partner whenever you like.`}
+      </div>
+    </Sheet>
+  );
+}
 
 function Binder({ st, go }) {
   const { binder } = st;
@@ -2100,6 +2179,9 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
           listedPrice: inv ? inv.ask : amount, amount, at: AT });
       },
       endNegotiation: (oppId) => A.endOpportunity(oppId, "collector", AT),
+      /* The canonical distinction the Trusted Partner already makes: once both
+         sides agree, ending it is a CANCELLATION rather than a stop. */
+      dealAgreed: (o) => !!(o && o.deal && o.deal.tpAgreed && o.deal.collectorAgreed),
 
       priceRespond: (id, action, amount) => A.patchOpportunity(id, (o) => {
         if (action === "accept") {

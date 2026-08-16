@@ -39,6 +39,15 @@ const partnerCard = (r, i) => cls(r, "pt")[i];
 const byClassIn = (node, c) => node.findAll((n) => typeof n.type === "string"
   && String(n.props.className || "").split(/\s+/).includes(c));
 const allGoals = (r) => cls(r, "goal").concat(cls(r, "gwatch-r"));
+/* Goal management moved into a quiet header control; the receipt is collapsed
+   until asked for. Centralised so a future move updates one place. */
+const openGoalMenu = (r, card) => click(byClassIn(card, "goal-edit-b")[0]);
+const expandReceipt = (r, card) => {
+  const t = byClassIn(card, "rc-toggle")[0];
+  if (t) click(t);
+};
+
+
 const goalNamed = (r, name) => allGoals(r).find((n) => txt(n).includes(name));
 const openPartner = (r, i) => click(partnerCard(r, i).findAllByType("button")
   .find((b) => txt(b) === "View collection"));
@@ -92,7 +101,7 @@ describe("Goal CRUD", () => {
     const r = mk();
     const before = allGoals(r).length;
     click(byClassIn(cls(r, "gwatch-r")[0], "gwatch-m")[0]);
-    const rm = btn(r, "Remove");
+    const rm = btn(r, "Remove") || btn(r, "Remove goal");
     eq(rm.props.disabled, false, "removable while idle");
     click(rm);
     eq(allGoals(r).length, before - 1, "the goal is gone");
@@ -101,9 +110,11 @@ describe("Goal CRUD", () => {
   test("a goal being negotiated cannot be removed", () => {
     const r = mk();
     const live = cls(r, "goal").find((n) => txt(n).includes("Negotiating"));
-    click(live.findAllByType("button").find((b) => txt(b) === "Edit this goal"));
-    eq(btn(r, "Remove").props.disabled, true, "blocked while a negotiation is open");
-    assert(all(r).includes("finish or stop that first"), "and the reason is given");
+    openGoalMenu(r, live);
+    const rm2 = btn(r, "Remove goal");
+    eq(rm2.props.disabled, true, "blocked while a negotiation is open");
+    assert(/finish or stop/i.test(String(rm2.props.title || "")),
+      "and the reason is given: " + rm2.props.title);
   });
 });
 
@@ -722,7 +733,7 @@ describe("Goals: Primary and Secondary do different jobs", () => {
 
     /* Demote it back. */
     const card = cls(r, "goal")[cls(r, "goal").length - 1];
-    click(card.findAllByType("button").find((b) => txt(b) === "Edit this goal"));
+    openGoalMenu(r, card);
     click(btn(r, "Move to Secondary"));
     eq(cls(r, "goal").length, p0, "back to where it started");
     eq(cls(r, "gwatch-r").length, w0, "with nothing duplicated or lost");
@@ -823,7 +834,7 @@ describe("Goals: empty states", () => {
     let guard = 0;
     while (cls(r, "goal").length > 0 && guard++ < 10) {
       const card = cls(r, "goal")[0];
-      click(card.findAllByType("button").find((b) => txt(b) === "Edit this goal"));
+      openGoalMenu(r, card);
       click(btn(r, "Move to Secondary"));
     }
     eq(cls(r, "goal").length, 0, "none left");
@@ -935,9 +946,12 @@ describe("The Primary Goal surfaces real activity", () => {
   test("4. an active deal renders a numbered receipt from the canonical stage", () => {
     const r = mk();
     const card = rayquaza(r);
-    const rows = byClassIn(card, "rc-s");
+    /* Detail on demand: the receipt is collapsed until asked for. */
+    eq(byClassIn(card, "rc-s").length, 0, "collapsed by default");
+    expandReceipt(r, card);
+    const rows = byClassIn(rayquaza(r), "rc-s");
     eq(rows.length, 5, "one row per deal stage");
-    eq(byClassIn(card, "rc-n").map(txt).join(","), "1,2,3,4,5", "numbered 1-5");
+    eq(byClassIn(rayquaza(r), "rc-n").map(txt).join(","), "1,2,3,4,5", "numbered 1-5");
     const current = rows.filter((n) => String(n.props.className).includes("current"));
     eq(current.length, 1, "exactly one current stage");
     assert(txt(current[0]).includes("Select Trade"), "the canonical stage is current");
@@ -951,6 +965,7 @@ describe("The Primary Goal surfaces real activity", () => {
   test("5. changing the canonical stage moves the receipt, with no goal-side state", () => {
     const r = mk();
     TR.act(() => { __store.get().actions.patchOpportunity("o9", (o) => ({ ...o, stage: "deal" })); });
+    expandReceipt(r, rayquaza(r));
     const rows = byClassIn(rayquaza(r), "rc-s");
     const current = rows.filter((n) => String(n.props.className).includes("current"));
     assert(txt(current[0]).includes("Deal"), "the receipt follows the opportunity");
@@ -1142,7 +1157,9 @@ describe("The stage rail names every stage", () => {
 describe("Goal card and Opportunity detail agree", () => {
   const goalReceipt = (r) => {
     const card = cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
-    return byClassIn(card, "rc-s").map((n) => txt(n));
+    expandReceipt(r, card);
+    const again = cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
+    return byClassIn(again, "rc-s").map((n) => txt(n));
   };
   const dealReceipt = (r) => {
     const card = cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
@@ -1249,6 +1266,205 @@ describe("Trade Binder add uses the shared identity flow", () => {
     const copy = s2.binder[s2.binder.length - 1];
     const card = s2.catalog.find((c) => c.id === copy.cardId);
     eq(card.id, "i1", "it resolved to the canonical record the TP already uses");
+  });
+});
+
+/* ============================================================================
+   THE ACTIVE PRIMARY GOAL CARD
+
+   Forward progress first, then orientation, then detail on demand, then
+   alternatives. Stopping a deal is deliberate and never accidental.
+   ========================================================================= */
+describe("Active Primary Goal hierarchy", () => {
+  const ray = (r) => cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
+
+  test("1/2. Edit goal sits in the header and keeps its behaviour", () => {
+    const r = mk();
+    const card = ray(r);
+    const edit = byClassIn(card, "goal-edit-b")[0];
+    assert(edit, "a header control exists");
+    assert(/Edit goal/i.test(edit.props["aria-label"]), "labelled for assistive tech");
+    /* It is not part of the forward path. */
+    assert(byClassIn(card, "goal-edit").length === 0, "the old footer block is gone");
+    click(edit);
+    const menu = byClassIn(ray(r), "goal-menu")[0];
+    assert(menu, "it opens the management menu");
+    ["Move to Secondary", "Remove goal"].forEach((l) =>
+      assert(txt(menu).includes(l), l + " is still offered"));
+  });
+
+  test("3. the canonical next action is still the strongest control", () => {
+    const r = mk();
+    const cta = ray(r).findAllByType("button").find((b) => txt(b).trim() === "Choose trade cards");
+    assert(cta, "the derived CTA is present");
+    assert(String(cta.props.className).includes("pri"), "and styled as primary");
+  });
+
+  test("4/12. structural order: action, progress, receipt, alternatives", () => {
+    const r = mk();
+    const card = ray(r);
+    /* Compare document order of each region's first node. */
+    const flat = [];
+    const walk = (n) => {
+      if (typeof n.type === "string") {
+        const c = String(n.props.className || "").split(/\s+/);
+        ["goal-live", "goal-rail", "rc-wrap", "goal-holders"].forEach((k) => {
+          if (c.includes(k) && !flat.includes(k)) flat.push(k);
+        });
+      }
+      (n.children || []).forEach((x) => typeof x === "object" && walk(x));
+    };
+    walk(card);
+    eq(flat.join(" -> "), "goal-live -> goal-rail -> rc-wrap -> goal-holders",
+      "take action, then progress, then receipt, then other partners");
+  });
+
+  test("5. progress shows all five numbered, labelled stages", () => {
+    const r = mk();
+    const card = ray(r);
+    eq(byClassIn(card, "rail-s").length, 5, "five stages");
+    eq(byClassIn(card, "rail-n").map(txt).join(","), "1,2,3,4,5", "numbered");
+    eq(byClassIn(card, "rail-l").map(txt).join(" | "),
+      "Agree on Price | Select Trade | Value Trade | Deal | Fulfillment", "and labelled");
+  });
+
+  test("6/7. the receipt is collapsed by default", () => {
+    const r = mk();
+    const card = ray(r);
+    eq(byClassIn(card, "rc-s").length, 0, "no rows rendered");
+    const t = byClassIn(card, "rc-toggle")[0];
+    assert(t, "a disclosure control");
+    eq(t.props["aria-expanded"], false, "announced as collapsed");
+    assert(/Deal receipt/.test(txt(t)), "with a clear header");
+    assert(/of 5 settled/.test(txt(t)), "and a truthful summary");
+  });
+
+  test("8/9. expanding reveals the receipt, collapsing hides it again", () => {
+    const r = mk();
+    click(byClassIn(ray(r), "rc-toggle")[0]);
+    eq(byClassIn(ray(r), "rc-s").length, 5, "expanded");
+    assert(txt(ray(r)).includes("$9,310"), "showing established values");
+    click(byClassIn(ray(r), "rc-toggle")[0]);
+    eq(byClassIn(ray(r), "rc-s").length, 0, "collapsed again");
+  });
+
+  test("10. disclosure mutates nothing", () => {
+    const r = mk();
+    const snap = () => JSON.stringify(__store.get().get().opportunities.find((o) => o.id === "o9"));
+    const before = snap();
+    click(byClassIn(ray(r), "rc-toggle")[0]);
+    click(byClassIn(ray(r), "rc-toggle")[0]);
+    eq(snap(), before, "the opportunity is byte-identical");
+    const src = readSrc("collector/MetYetCollector.jsx");
+    assert(/const \[openReceipt, setOpenReceipt\] = useState\(false\)/.test(src),
+      "the state is local and defaults closed");
+  });
+
+  test("11. expanding does not leak a future stage", () => {
+    const r = mk();
+    click(byClassIn(ray(r), "rc-toggle")[0]);
+    const rows = byClassIn(ray(r), "rc-s").map(txt);
+    [2, 3, 4].forEach((i) => assert(/Pending|Not/.test(rows[i]),
+      "stage " + (i + 1) + " is still blank: " + rows[i]));
+    assert(!/Dreamers|18:00|meetup/.test(rows.join()), "no fulfilment logistics leak");
+  });
+
+  test("13/14. alternatives stay available and create no second deal", () => {
+    const r = mk();
+    const route = byClassIn(ray(r), "goal-holders")[0];
+    assert(route, "the supply route is present during a live deal");
+    const before = __store.get().get().opportunities.length;
+    click(route);
+    assert(cls(r, "pick").length >= 3, "all partners are reachable");
+    eq(r.root.findAllByType("button").filter((b) => txt(b).trim() === "Make an offer").length, 0,
+      "and no second offer is possible");
+    eq(__store.get().get().opportunities.length, before, "nothing was created");
+  });
+
+  test("22. secondary goals gain none of these controls", () => {
+    const r = mk();
+    cls(r, "gwatch-r").forEach((n) => {
+      eq(byClassIn(n, "rc-toggle").length, 0, "no receipt disclosure");
+      eq(byClassIn(n, "rail-s").length, 0, "no progress rail");
+      eq(byClassIn(n, "goal-live").length, 0, "no deal block");
+    });
+  });
+});
+
+describe("Stopping a deal is deliberate", () => {
+  const ray = (r) => cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
+  const snap = () => JSON.stringify(__store.get().get().opportunities.find((o) => o.id === "o9"))
+    + JSON.stringify(__store.get().get().goals.find((g) => g.id === "g20"));
+  const openStop = (r) => {
+    click(byClassIn(ray(r), "goal-edit-b")[0]);
+    click(ray(r).findAllByType("button").find((b) => /Stop negotiation|Cancel agreed deal/.test(txt(b))));
+  };
+
+  test("15. it opens a confirmation before anything changes", () => {
+    const r = mk();
+    const before = snap();
+    openStop(r);
+    assert(cls(r, "sheet")[0], "a confirmation appears");
+    assert(/Stop this negotiation\?/.test(txt(cls(r, "sheet-t")[0])), "asking plainly");
+    eq(snap(), before, "and nothing has changed yet");
+  });
+
+  test("16/17. closing or keeping leaves everything byte-identical", () => {
+    const r = mk();
+    const before = snap();
+    openStop(r);
+    click(btn(r, "Keep negotiating"));
+    eq(snap(), before, "Keep negotiating mutates nothing");
+    openStop(r);
+    click(cls(r, "ovl")[0]);
+    eq(snap(), before, "and neither does dismissing it");
+  });
+
+  test("18/20. only explicit confirmation ends it, preserving history", () => {
+    const r = mk();
+    const oppsBefore = __store.get().get().opportunities.length;
+    openStop(r);
+    click(btn(r, "Stop negotiation"));
+    const o = __store.get().get().opportunities.find((x) => x.id === "o9");
+    assert(o.declined, "the canonical terminal flag is set");
+    eq(o.agreedPrice, 9310, "and every agreed term is preserved");
+    eq(__store.get().get().opportunities.length, oppsBefore, "the record is kept, not deleted");
+    const Dm = require("../domain/metyet-domain.js");
+    eq(Dm.goalState("g20", __store.get().get().opportunities), "seeking",
+      "and the goal is available again");
+  });
+
+  test("18. repeated confirmation causes no duplicate terminal effect", () => {
+    const r = mk();
+    openStop(r);
+    click(btn(r, "Stop negotiation"));
+    const after = JSON.stringify(__store.get().get().opportunities.find((x) => x.id === "o9"));
+    /* Straight at the action, twice more. */
+    TR.act(() => { __store.get().actions.endOpportunity("o9", "collector", "2026-08-14"); });
+    TR.act(() => { __store.get().actions.endOpportunity("o9", "collector", "2026-08-14"); });
+    eq(JSON.stringify(__store.get().get().opportunities.find((x) => x.id === "o9")), after,
+      "a terminal opportunity is not re-terminated");
+  });
+
+  test("19. an agreed deal uses cancellation wording", () => {
+    const src = readSrc("collector/MetYetCollector.jsx");
+    assert(/st\.dealAgreed\(live\) \? "Cancel agreed deal" : "Stop negotiation"/.test(src),
+      "the control follows the canonical distinction");
+    assert(/agreed \? "Cancel this agreed deal\?" : "Stop this negotiation\?"/.test(src),
+      "and so does the confirmation");
+    const tp = readSrc("src/MetYet.jsx");
+    assert(/outcome: dealMutuallyAgreed\(o\) \? "cancelled" : "ended"/.test(tp),
+      "matching the Trusted Partner's own semantics");
+  });
+
+  test("21. stopping is never styled as forward progress", () => {
+    const r = mk();
+    const cta = ray(r).findAllByType("button").find((b) => txt(b).trim() === "Choose trade cards");
+    assert(String(cta.props.className).includes("pri"), "the CTA is primary");
+    click(byClassIn(ray(r), "goal-edit-b")[0]);
+    const stop = ray(r).findAllByType("button").find((b) => /Stop negotiation/.test(txt(b)));
+    assert(!String(stop.props.className).includes("pri"), "stopping is not");
+    assert(String(stop.props.className).includes("goal-stop"), "and is marked destructive");
   });
 });
 
