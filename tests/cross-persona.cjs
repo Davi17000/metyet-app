@@ -96,7 +96,9 @@ const partnerView = (partnerId = SELF_PARTNER) => {
     networkDemand: s.goals.filter((g) => g.collectorId !== null),
     myInterests: E.binderCopiesInterestedBy(s.interests, partnerId),
     myOpportunities: s.opportunities.filter((o) => o.partnerId === partnerId),
-    conversations: s.conversations.filter((c) => c.partnerId === partnerId),
+    /* Threads are keyed on collector + card identity; a partner participates in
+     every thread with a collector they serve. */
+  conversations: s.conversations,
     /* The TP's own action surface, same canonical path. */
     markInterested: (binderId, on) => acts().setInterest(partnerId, binderId, on, "2026-08-14"),
     addInventory: (copy) => acts().addInventoryCopy({ ...copy, partnerId }),
@@ -213,9 +215,10 @@ describe("5. Collector Reach out -> TP sees the same Conversation", () => {
     eq(st0().conversations.length, beforeConv + 1, "one Conversation created");
     eq(st0().opportunities.length, beforeOpps, "and NO Opportunity");
     const cvn = st0().conversations[st0().conversations.length - 1];
-    const seenByPartner = partnerView(cvn.partnerId).conversations;
+    const seenByPartner = partnerView().conversations;
     assert(seenByPartner.some((c) => c.id === cvn.id), "the partner sees the same conversation");
-    assert(cvn.goalId, "with goal context preserved");
+    assert(cvn.key, "keyed on collector and card identity");
+    assert(cvn.cardId, "with the card it is about");
   });
 });
 
@@ -283,7 +286,7 @@ describe("8. Collector proposes a Binder copy -> TP reviews that same id", () =>
     for (let i = 0; i < 6; i++) {
       r = collector();
       const b = r.root.findAllByType("button").filter((x) =>
-        /^(Choose trade cards|Agree card values|Check the balance|Confirm the handoff|Review their price|Make your offer)$/
+        /^(Continue Deal Flow|Choose trade cards|Agree card values|Check the balance|Confirm the handoff|Review their price|Make your offer)$/
           .test(txt(x).trim()))[i];
       if (!b) break;
       click(b);

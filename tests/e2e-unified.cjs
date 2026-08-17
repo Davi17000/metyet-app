@@ -218,13 +218,15 @@ describe("E. Collector Reach out -> TP Conversation", () => {
     eq(S(r).opportunities.length, oppsBefore, "and NO Opportunity");
     eq(casey(r).stateOf(g.id), stateBefore, "the Goal is still Seeking");
     const cv = S(r).conversations[S(r).conversations.length - 1];
-    eq(cv.goalId, g.id, "goal context preserved");
+    /* A goal identifies a card, so the goal's conversation IS that card's thread. */
+    eq(cv.cardId, g.cardId, "the thread is about the goal's card");
+    eq(cv.key, D.threadKey(CASEY, casey(r).cardById(g.cardId)), "keyed canonically");
     eq(cv.collectorId, CASEY, "correct collector");
 
     switchTo(r, "Trusted Partner");
     const seen = S(r).conversations.filter((c) => c.id === cv.id);
     eq(seen.length, 1, "the same Conversation id, once");
-    eq(seen[0].partnerId, cv.partnerId, "same partner participant");
+    eq(seen[0].key, cv.key, "the same thread key");
     eq(S(r).opportunities.length, oppsBefore, "still no negotiation was silently opened");
   });
 });
@@ -237,17 +239,18 @@ describe("F. TP Reach out -> Collector Conversation", () => {
     const oppsBefore = S(r).opportunities.length;
     const intBefore = S(r).interests.length;
 
-    TR.act(() => { store(r).actions.reachOut({ collectorId: CASEY, partnerId: SELF,
-      binderId: copy.id, at: "2026-08-14" }); });
+    TR.act(() => { store(r).actions.reachOut({ collectorId: CASEY, cardId: copy.cardId,
+      by: "tp", text: "Would you trade this?", at: "2026-08-14" }); });
     const cv = S(r).conversations[S(r).conversations.length - 1];
-    eq(cv.binderId, copy.id, "the exact copy is named");
+    eq(cv.cardId, copy.cardId, "about the exact card");
+    eq(cv.entries[cv.entries.length - 1].by, "tp", "sent by the partner");
     eq(S(r).opportunities.length, oppsBefore, "no Opportunity");
     eq(S(r).interests.length, intBefore, "and Interest is untouched — separate concepts");
 
     switchTo(r, "Collector");
-    const seen = casey(r).conversationsFor(null, SELF).filter((c) => c.id === cv.id);
-    eq(seen.length, 1, "Casey sees the same Conversation id");
-    eq(seen[0].binderId, copy.id, "with the same exact BinderCopy context");
+    const seen = casey(r).threadForCard(copy.cardId);
+    assert(seen && seen.id === cv.id, "Casey sees the same thread");
+    eq(seen.cardId, copy.cardId, "about the same card");
   });
 });
 
@@ -405,7 +408,9 @@ const addBinderCopy = (r, term) => {
 
 /* The Goals redesign replaced the generic "Continue" with task-oriented labels
    derived from opportunity stage. */
-const CTA = /^(Choose trade cards|Agree card values|Check the balance|Confirm the handoff|Review their price|Make your offer)$/;
+/* The Goal card now uses one consistent entry point into the deal; the
+   stage-specific wording lives inside the workspace. */
+const CTA = /^(Continue Deal Flow|Choose trade cards|Agree card values|Check the balance|Confirm the handoff|Review their price|Make your offer)$/;
 
 /* Drive a Seeking goal into a live negotiation through the rendered UI. */
 const openNegotiation = (r) => {

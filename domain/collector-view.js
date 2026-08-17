@@ -84,9 +84,23 @@ function collectorView(state, meId) {
   const stateOf = (goalId) => D.goalState(goalId, state.opportunities);
   const openOppForGoal = (goalId) => D.activeOppForGoal(goalId, state.opportunities);
   const goalFor = (cardId) => myGoals().find((g) => g.cardId === cardId);
-  const conversationsFor = (goalId, partnerId) => state.conversations.filter((c) =>
-    c.collectorId === meId && (!goalId || c.goalId === goalId)
-    && (!partnerId || c.partnerId === partnerId));
+  /* ONE thread per collector + card identity, shared with the Trusted Partner.
+     A goal identifies the card, so a goal's conversation IS that card's thread —
+     which is why it survives promotion and is inherited by the opportunity. */
+  const threadForCard = (cardId) => D.findThread(state.conversations, meId, cardById(cardId));
+  const threadForGoal = (goalId) => {
+    const g = state.goals.find((x) => x.id === goalId);
+    return g ? threadForCard(g.cardId) : null;
+  };
+  /* Two honest questions, deliberately different:
+       hasThreadAbout  — has contact been made at all (an event counts)
+       hasTalkedAbout  — has anyone actually said something (the TP's contract) */
+  const hasThreadAbout = (cardId) => !!threadForCard(cardId);
+  const hasTalkedAbout = (cardId) => D.hasConversation(state.conversations, meId, cardById(cardId));
+  const conversationsFor = (goalId) => {
+    const t = goalId ? threadForGoal(goalId) : null;
+    return t ? [t] : [];
+  };
 
   /* Select Trade eligibility: EVERY copy is eligible. Partner interest orders
      the two groups; it never gates them. */
@@ -131,6 +145,7 @@ function collectorView(state, meId) {
     myGoals, myBinder, myOpps, myPrefs,
     partnersWith, interestIn, interestCountFrom, forYou, partnerProfile,
     stateOf, openOppForGoal, goalFor, conversationsFor, tradeGroups, turnFor,
+    threadForCard, threadForGoal, hasTalkedAbout, hasThreadAbout,
   };
 }
 

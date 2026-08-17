@@ -144,14 +144,19 @@ describe("E. Collector Reach out -> TP conversation", () => {
     const st = world();
     st.actions.addInventoryCopy({ invId: "inv1", partnerId: "p2", cardId: "k1", ask: 4200 });
     const gid = st.actions.addGoal({ collectorId: "c1", cardId: "k1", tier: "primary", at: AT });
-    st.actions.reachOut({ collectorId: "c1", partnerId: "p2", goalId: gid, invId: "inv1", at: AT });
+    st.actions.reachOut({ collectorId: "c1", cardId: "k1", oppId: null,
+      text: "Is this still available?", at: AT });
 
     eq(st.get().conversations.length, 1, "exactly one Conversation");
-    eq(asCollector(st.get(), "c1").conversations.length, 1, "the collector sees it");
-    eq(asPartner(st.get(), "p2").conversations.length, 1, "the partner sees the same one");
     const cv = st.get().conversations[0];
-    eq(cv.goalId, gid, "goal context kept");
-    eq(cv.invId, "inv1", "exact inventory copy kept");
+    /* One thread per collector + card identity — the canonical TP contract. */
+    eq(cv.key, D.threadKey("c1", st.get().catalog.find((c) => c.id === "k1")),
+      "keyed on collector and card identity");
+    eq(cv.collectorId, "c1", "the collector participates");
+    eq(cv.cardId, "k1", "about the exact card");
+    eq(cv.entries.length, 1, "carrying the message");
+    eq(cv.entries[0].by, "collector", "sent by the collector");
+    assert(gid, "the goal exists and identifies the same card");
     eq(st.get().opportunities.length, 0, "NO Opportunity created");
     eq(D.goalState(gid, st.get().opportunities), "seeking", "the goal stays Seeking");
   });
@@ -162,12 +167,13 @@ describe("F. TP Reach out -> Collector conversation", () => {
     const st = world();
     st.actions.addBinderCopy({ id: "b1", collectorId: "c1", cardId: "k2", market: 700,
       addedAt: AT, photos: { front: "f", back: "b" } });
-    st.actions.reachOut({ collectorId: "c1", partnerId: "p-self", binderId: "b1", at: AT });
+    st.actions.reachOut({ collectorId: "c1", cardId: "k2", by: "tp",
+      text: "Would you trade this?", at: AT });
 
     eq(st.get().conversations.length, 1, "one Conversation");
-    eq(asPartner(st.get(), "p-self").conversations.length, 1, "the partner sees it");
-    eq(asCollector(st.get(), "c1").conversations.length, 1, "the collector sees it");
-    eq(st.get().conversations[0].binderId, "b1", "the exact copy is named");
+    const cv2 = st.get().conversations[0];
+    eq(cv2.entries[0].by, "tp", "sent by the partner");
+    eq(cv2.cardId, "k2", "about the exact card");
     eq(st.get().opportunities.length, 0, "and still no Opportunity");
   });
 });
@@ -216,7 +222,7 @@ describe("H. One negotiation per goal", () => {
       cardId: "k1", listedPrice: 4200, amount: 3700, at: AT });
 
     eq(asCollector(st.get(), "c1").supplyFor("k1").length, 2, "both partners remain visible");
-    st.actions.reachOut({ collectorId: "c1", partnerId: "p-self", goalId: gid, at: AT });
+    st.actions.reachOut({ collectorId: "c1", cardId: "k1", text: "Interested?", at: AT });
     eq(st.get().conversations.length, 1, "the alternative can still be contacted");
     eq(st.get().opportunities.length, 1, "without creating a second negotiation");
   });
@@ -388,7 +394,7 @@ describe("The governing rule holds", () => {
     st.actions.addBinderCopy({ id: "b1", collectorId: "c1", cardId: "k2", market: 700,
       addedAt: AT, photos: { front: "f", back: "b" } });
     st.actions.setInterest("p-self", "b1", true, AT);
-    st.actions.reachOut({ collectorId: "c1", partnerId: "p-self", goalId: gid, at: AT });
+    st.actions.reachOut({ collectorId: "c1", cardId: "k1", text: "hi", at: AT });
     st.actions.startOpportunity({ goalId: gid, collectorId: "c1", partnerId: "p2",
       cardId: "k1", listedPrice: 4200, amount: 3700, at: AT });
 
@@ -814,7 +820,12 @@ describe("Secondary goal gating", () => {
   const { createStore } = require("../domain/metyet-store.js");
   const { buildCanonicalSeed } = require("../dist/MetYet.cjs");
   const world = () => createStore({
-    catalog: [], collectors: [{ id: "c1" }], partners: [{ id: "p2" }], preferences: [],
+    /* A conversation is about a card, so the catalog must contain it. */
+    catalog: [{ id: "k1", name: "Charizard", set: "Base Set", num: "4/102", print: "Holo",
+      edition: "Unlimited", language: "English", grade: "PSA 9", condition: null },
+      { id: "k2", name: "Blastoise", set: "Base Set", num: "2/102", print: "Holo",
+        edition: "Unlimited", language: "English", grade: "PSA 9", condition: null }],
+    collectors: [{ id: "c1" }], partners: [{ id: "p2" }], preferences: [],
     goals: [{ id: "gs", collectorId: "c1", cardId: "k1", tier: "secondary" },
       { id: "gp", collectorId: "c1", cardId: "k2", tier: "primary" }],
     inventory: [], binder: [], interests: [], conversations: [], opportunities: [],
@@ -874,7 +885,8 @@ describe("Secondary goal gating", () => {
 
   test("3/4/5. a Secondary goal may still have supply and conversations", () => {
     const st = world();
-    st.actions.reachOut({ collectorId: "c1", partnerId: "p2", goalId: "gs", at: "2026-08-14" });
+    st.actions.reachOut({ collectorId: "c1", cardId: "k1", text: "Keeping an eye on this",
+      at: "2026-08-14" });
     eq(st.get().conversations.length, 1, "reaching out works");
     eq(st.get().opportunities.length, 0, "without creating a deal");
     eq(st.get().goals.find((g) => g.id === "gs").tier, "secondary",
@@ -1084,6 +1096,116 @@ describe("Progressive deal receipt", () => {
 
   test("17. a goal with no opportunity has no receipt", () => {
     eq(D.receiptForOpportunity(null, {}), null, "nothing to project");
+  });
+});
+
+/* ============================================================================
+   ONE SHARED CONVERSATION
+
+   The Trusted Partner's contract, now canonical for both personas: one thread
+   per collector + card identity, surviving goal promotion and inherited by the
+   opportunity. A message from either side lands in the same thread.
+   ========================================================================= */
+describe("Shared conversation", () => {
+  const { createStore } = require("../domain/metyet-store.js");
+  const { buildCanonicalSeed } = require("../dist/MetYet.cjs");
+  const world = () => createStore(buildCanonicalSeed());
+  const CARD = "i17";                       // Rayquaza Gold Star, Casey's primary goal
+
+  test("either side writes to the SAME thread", () => {
+    const st = world();
+    st.actions.reachOut({ collectorId: "c12", cardId: CARD, text: "Still available?", at: "2026-08-16" });
+    st.actions.sendMessage({ collectorId: "c12", cardId: CARD, by: "tp", text: "It is", at: "2026-08-16" });
+    st.actions.sendMessage({ collectorId: "c12", cardId: CARD, by: "collector", text: "Great", at: "2026-08-16" });
+
+    const mine = st.get().conversations.filter((t) => t.collectorId === "c12" && t.cardId === CARD);
+    eq(mine.length, 1, "exactly ONE thread, not one per message or per persona");
+    eq(mine[0].entries.length, 3, "carrying every entry");
+    eq(mine[0].entries.map((e) => e.by).join(","), "collector,tp,collector",
+      "with both senders, in order");
+  });
+
+  test("a collector message is visible to the partner, and vice versa", () => {
+    const st = world();
+    const card = st.get().catalog.find((c) => c.id === CARD);
+    st.actions.sendMessage({ collectorId: "c12", cardId: CARD, by: "collector", text: "From me", at: "2026-08-16" });
+    /* The TP reads by its own key function — the canonical one. */
+    const asTP = D.findThread(st.get().conversations, "c12", card);
+    assert(asTP && asTP.entries.some((e) => e.text === "From me"),
+      "the partner reads the collector's message");
+
+    st.actions.sendMessage({ collectorId: "c12", cardId: CARD, by: "tp", text: "From them", at: "2026-08-16" });
+    const asCollector = D.findThread(st.get().conversations, "c12", card);
+    assert(asCollector.entries.some((e) => e.text === "From them"),
+      "and the collector reads the partner's");
+    eq(asTP.key, asCollector.key, "because it is one thread");
+  });
+
+  test("the thread is keyed on collector and card identity", () => {
+    const st = world();
+    const card = st.get().catalog.find((c) => c.id === CARD);
+    st.actions.reachOut({ collectorId: "c12", cardId: CARD, text: "hi", at: "2026-08-16" });
+    eq(st.get().conversations[0].key, D.threadKey("c12", card), "canonical key");
+    /* A different grade is a different card, so a different conversation. */
+    const other = st.get().catalog.find((c) => c.name === card.name && c.grade !== card.grade);
+    if (other) assert(D.threadKey("c12", other) !== D.threadKey("c12", card),
+      "a different printing is a different thread");
+  });
+
+  test("one conversation spans goal promotion and the whole lifecycle", () => {
+    const st = world();
+    const goal = st.get().goals.find((g) => g.collectorId === "c12" && g.tier === "secondary");
+    st.actions.sendMessage({ collectorId: "c12", cardId: goal.cardId, by: "collector",
+      text: "before promotion", at: "2026-08-16" });
+    st.actions.updateGoalTier(goal.id, "primary");
+    st.actions.sendMessage({ collectorId: "c12", cardId: goal.cardId, by: "tp",
+      text: "after promotion", at: "2026-08-16" });
+
+    const threads = st.get().conversations.filter((t) => t.cardId === goal.cardId);
+    eq(threads.length, 1, "promotion did not fork the conversation");
+    eq(threads[0].entries.length, 2, "and both messages are in it");
+  });
+
+  test("the opportunity is inherited by the existing thread", () => {
+    const st = world();
+    const goal = st.get().goals.find((g) => g.collectorId === "c12" && g.tier === "primary"
+      && !D.activeOppForGoal(g.id, st.get().opportunities));
+    if (!goal) return;
+    st.actions.sendMessage({ collectorId: "c12", cardId: goal.cardId, by: "collector",
+      text: "first contact", at: "2026-08-16" });
+    st.actions.sendMessage({ collectorId: "c12", cardId: goal.cardId, by: "tp",
+      text: "in the deal", oppId: "oNEW", at: "2026-08-16" });
+    const t = st.get().conversations.find((x) => x.cardId === goal.cardId);
+    eq(t.oppId, "oNEW", "the thread picks up the opportunity");
+    eq(t.entries.length, 2, "without starting a new conversation");
+  });
+
+  test("lifecycle events and messages interleave chronologically", () => {
+    const st = world();
+    st.actions.sendMessage({ collectorId: "c12", cardId: CARD, by: "collector", text: "one", at: "2026-08-16" });
+    st.actions.logMilestone({ collectorId: "c12", cardId: CARD, text: "Price agreed", at: "2026-08-16" });
+    st.actions.sendMessage({ collectorId: "c12", cardId: CARD, by: "tp", text: "two", at: "2026-08-16" });
+    const t = st.get().conversations.find((x) => x.cardId === CARD);
+    eq(t.entries.map((e) => e.kind).join(","), "message,event,message",
+      "in the order they happened");
+    eq(t.entries[1].by, "system", "events are attributed to the system");
+  });
+
+  test("neither persona defines its own conversation shape", () => {
+    const tp = require("fs").readFileSync(
+      require("path").join(__dirname, "..", "src", "MetYet.jsx"), "utf8");
+    const col = require("fs").readFileSync(
+      require("path").join(__dirname, "..", "domain", "metyet-store.js"), "utf8");
+    assert(/SharedID\.appendThreadEntry/.test(tp), "the TP appends through the shared function");
+    assert(/D\.appendThreadEntry/.test(col), "and so does the collector's store");
+    assert(!/newConversation/.test(col), "the old per-reach-out record is gone");
+  });
+
+  test("reaching out still creates no opportunity", () => {
+    const st = world();
+    const before = st.get().opportunities.length;
+    st.actions.reachOut({ collectorId: "c12", cardId: CARD, text: "hello", at: "2026-08-16" });
+    eq(st.get().opportunities.length, before, "conversation is not negotiation");
   });
 });
 

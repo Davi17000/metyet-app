@@ -341,3 +341,59 @@ function receiptForOpportunity(o, { binderById, cardById, partnerById } = {}) {
 
 module.exports.RECEIPT_STAGES = RECEIPT_STAGES;
 module.exports.receiptForOpportunity = receiptForOpportunity;
+
+/* ---------------------------------------------------------- CONVERSATIONS
+
+   ONE THREAD PER COLLECTOR + CARD IDENTITY.
+
+   This is the Trusted Partner's original contract, lifted here so both personas
+   share it rather than each inventing a shape. The key deliberately excludes
+   goal and opportunity, so a single conversation survives Secondary -> Primary
+   promotion and is inherited by the Opportunity when a deal begins: "one
+   conversation, all stages".
+
+   Entries interleave chronologically and are of two kinds:
+     { kind: "message", by: "tp" | "collector", text }
+     { kind: "event",   by: "system",           text }
+
+   A thread is created by a real message or a lifecycle event — never by merely
+   opening a workspace — so "has this conversation started?" stays honest. */
+
+const threadKey = (collectorId, card) => collectorId + "::" + identityKey(card);
+
+const findThread = (threads, collectorId, card) => {
+  const k = threadKey(collectorId, card);
+  return (threads || []).find((t) => t.key === k) || null;
+};
+
+/* Returns the next threads array. Pure — callers decide how to store it. */
+function appendThreadEntry(threads, { collectorId, card, cardId, oppId, entry, at, id }) {
+  const k = threadKey(collectorId, card);
+  const stamped = {
+    id: id || "e" + Math.random().toString(36).slice(2, 10),
+    at: at || new Date().toISOString(),
+    ...entry,
+  };
+  const found = (threads || []).find((t) => t.key === k);
+  if (found) {
+    return (threads || []).map((t) => (t.key === k
+      ? { ...t, oppId: t.oppId || oppId || null, entries: [...t.entries, stamped] } : t));
+  }
+  return [...(threads || []), {
+    id: "t" + k, key: k, collectorId, cardId: cardId != null ? cardId : (card && card.id),
+    oppId: oppId || null, entries: [stamped],
+  }];
+}
+
+/* A conversation exists once somebody has actually said something. */
+const hasConversation = (threads, collectorId, card) => {
+  const t = findThread(threads, collectorId, card);
+  return !!t && t.entries.some((e) => e.kind === "message");
+};
+const messagesOf = (thread) => (thread ? thread.entries : []);
+
+module.exports.threadKey = threadKey;
+module.exports.findThread = findThread;
+module.exports.appendThreadEntry = appendThreadEntry;
+module.exports.hasConversation = hasConversation;
+module.exports.messagesOf = messagesOf;

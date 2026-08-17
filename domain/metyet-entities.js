@@ -24,23 +24,13 @@ const D = require("./metyet-domain.js");
 
 const SELF = "p-self";          // the Trusted Partner using the TP workspace
 
-/* ------------------------------------------------------------ CONVERSATION */
+/* ------------------------------------------------------------ CONVERSATION
 
-/* One contextual thread. Every field beyond the two participants is optional,
-   because a conversation may be about a goal, a specific copy, a live deal, or
-   simply about nothing in particular. Reaching out NEVER creates an
-   opportunity — that is the whole point of the distinction. */
-const newConversation = ({ collectorId, partnerId, goalId, invId, binderId, oppId, at }) => ({
-  id: "cv" + Math.random().toString(36).slice(2, 9),
-  collectorId, partnerId,
-  goalId: goalId || null,
-  invId: invId || null,
-  binderId: binderId || null,
-  oppId: oppId || null,
-  openedAt: at,
-  messages: [],
-});
-const newMessage = (by, text, at) => ({ by, text, at });   // by: 'collector' | 'partner'
+   The conversation model is canonical in metyet-domain: ONE thread per
+   collector + card identity, appended through appendThreadEntry, shared by both
+   personas. The per-reach-out record that used to live here created a second,
+   incompatible shape and has been removed.
+   See: threadKey, findThread, appendThreadEntry, hasConversation. */
 
 /* ---------------------------------------------------------------- INTEREST */
 
@@ -99,7 +89,6 @@ const submittedMarketOf = (tc, by) =>
 
 module.exports = {
   SELF,
-  newConversation, newMessage,
   interestKey, hasInterest, partnersInterestedIn, binderCopiesInterestedBy,
   inventoryOf, partnersHolding, goalsMatchingCard, demandForIdentity,
   binderCopyForPartner, binderCopiesForPartner, binderCopyForOwner,

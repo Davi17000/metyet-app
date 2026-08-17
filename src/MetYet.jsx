@@ -2677,21 +2677,17 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
 
 
   /* ---- actions ---- */
-  const threadKeyFor = useCallback((collectorId, cardId) => collectorId + "::" + identityKey(card(cardId)), [card]);
+  /* Thread semantics are canonical and shared — see metyet-domain. Both personas
+     append through the same function, so one conversation per collector + card
+     identity holds across both experiences. */
+  const threadKeyFor = useCallback((collectorId, cardId) => SharedID.threadKey(collectorId, card(cardId)), [card]);
   const threadFor = useCallback(
-    (collectorId, cardId) => threads.find((t) => t.key === threadKeyFor(collectorId, cardId)) || null,
-    [threads, threadKeyFor]
+    (collectorId, cardId) => SharedID.findThread(threads, collectorId, card(cardId)),
+    [threads, card]
   );
-  /* Opening the workspace never creates a thread. Only a real message or a lifecycle
-     event does, so "has this conversation started?" stays honest. */
   const appendEntry = (collectorId, cardId, entry) => {
-    const key = collectorId + "::" + identityKey(card(cardId));
-    const stamped = { id: "e" + Date.now() + Math.random().toString(36).slice(2, 6), at: new Date().toISOString(), ...entry };
-    setThreads((ts) => {
-      const found = ts.find((t) => t.key === key);
-      if (found) return ts.map((t) => (t.key === key ? { ...t, entries: [...t.entries, stamped] } : t));
-      return [...ts, { id: "t" + key, key, collectorId, cardId, oppId: null, entries: [stamped] }];
-    });
+    setThreads((ts) => SharedID.appendThreadEntry(ts, {
+      collectorId, card: card(cardId), cardId, entry }));
   };
   const sendMessage = (collectorId, cardId, by, text) => {
     appendEntry(collectorId, cardId, { kind: "message", by, text });
@@ -2700,8 +2696,8 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
   /* Structured lifecycle events land in the same thread, chronologically. */
   const logMilestone = (collectorId, cardId, text) => appendEntry(collectorId, cardId, { kind: "event", by: "system", text });
   const hasConversation = useCallback(
-    (collectorId, cardId) => { const t = threadFor(collectorId, cardId); return !!t && t.entries.some((e) => e.kind === "message"); },
-    [threadFor]
+    (collectorId, cardId) => SharedID.hasConversation(threads, collectorId, card(cardId)),
+    [threads, card]
   );
 
   const logActivity = (collectorId, type, text, date) =>

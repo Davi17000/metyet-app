@@ -30,7 +30,7 @@ function createStore(seed) {
     inventory: seed.inventory,             // {invId, partnerId, cardId, ask, cost, ...}
     binder: seed.binder,                   // {id, collectorId, cardId, market, photos, cert, addedAt}
     interests: seed.interests,             // {partnerId, binderId, at}
-    conversations: seed.conversations,     // see entities.newConversation
+    conversations: seed.conversations,     // shared threads; see domain.appendThreadEntry
     opportunities: seed.opportunities,
     preferences: seed.preferences,         // {collectorId, tags[]}
   };
@@ -88,15 +88,31 @@ function createStore(seed) {
         : s.interests.filter((i) => !(i.partnerId === partnerId && i.binderId === binderId)) });
     },
 
-    /* ---- conversation: reaching out. Creates NO opportunity, ever. ---- */
-    reachOut(ctx) {
-      const cv = E.newConversation(ctx);
-      set({ ...s, conversations: [...s.conversations, cv] });
-      return cv.id;
+    /* ---- conversation: ONE thread per collector + card identity, shared with
+       the Trusted Partner. Reaching out creates NO opportunity, ever. ---- */
+    reachOut({ collectorId, cardId, oppId, text, at, by = "collector" }) {
+      const card = cardById(cardId);
+      if (!card) return null;
+      const entry = text
+        ? { kind: "message", by, text }
+        : { kind: "event", by: "system", text: "Reached out" };
+      set({ ...s, conversations: D.appendThreadEntry(s.conversations, {
+        collectorId, card, cardId, oppId, entry, at }) });
+      return D.threadKey(collectorId, card);
     },
-    sendMessage(conversationId, by, text, at) {
-      set({ ...s, conversations: s.conversations.map((c) => (c.id === conversationId
-        ? { ...c, messages: [...c.messages, E.newMessage(by, text, at)] } : c)) });
+    sendMessage({ collectorId, cardId, by, text, oppId, at }) {
+      const card = cardById(cardId);
+      if (!card || !text || !text.trim()) return null;
+      set({ ...s, conversations: D.appendThreadEntry(s.conversations, {
+        collectorId, card, cardId, oppId, entry: { kind: "message", by, text: text.trim() }, at }) });
+      return D.threadKey(collectorId, card);
+    },
+    /* Lifecycle events land in the same thread, chronologically. */
+    logMilestone({ collectorId, cardId, text, oppId, at }) {
+      const card = cardById(cardId);
+      if (!card) return null;
+      set({ ...s, conversations: D.appendThreadEntry(s.conversations, {
+        collectorId, card, cardId, oppId, entry: { kind: "event", by: "system", text }, at }) });
     },
 
     /* ---- opportunity: the one structured negotiation ---- */

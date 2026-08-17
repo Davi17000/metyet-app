@@ -163,9 +163,12 @@ const CSS = `
   --panel-2: #16212A;
   --line: #22313B;
   --line-soft: #1A2730;
-  --text: #EAF2F4;
-  --muted: #9FB2BC;
-  --faint: #6E8492;
+  --text: #EEF5F7;
+  /* Readability pass: the old muted/faint pair sat too low against #0A1014.
+     Both lifted, and the ladder kept — primary, secondary, tertiary still read
+     as three distinct levels rather than one uniform white. */
+  --muted: #B8C9D2;
+  --faint: #92A7B2;
   --t1: #2FD4C4;
   --t2: #1E8E88;
   --t1-bg: #122A2E;
@@ -298,15 +301,16 @@ const CSS = `
 .rc-b { flex: 1; min-width: 0; }
 .rc-t { display: flex; align-items: baseline; gap: 8px; font-size: 13px; font-weight: 600;
   flex-wrap: wrap; }
-.rc-s.pending .rc-t { color: var(--muted); font-weight: 500; }
+.rc-s.pending .rc-t { color: var(--muted); font-weight: 600; }
 .rc-s.current .rc-t { color: var(--t1); }
-.rc-st { margin-left: auto; font-size: 10.5px; font-weight: 500; color: var(--faint);
+.rc-st { margin-left: auto; font-size: 10.5px; font-weight: 600; color: var(--muted);
   text-transform: uppercase; letter-spacing: .06em; font-family: 'Archivo'; }
 .rc-f { display: grid; grid-template-columns: minmax(88px, auto) 1fr; gap: 2px 12px;
   margin: 6px 0 0; font-size: 12.5px; }
-.rc-f dt { color: var(--faint); }
+.rc-f dt { color: var(--muted); }
 .rc-f dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
 .rc-s.pending .rc-f dd { color: var(--muted); }
+.rc-p { color: var(--faint); font-style: italic; }
 .rc-p { color: var(--faint); font-style: italic; }
 @media (max-width: 420px) {
   .rc-f { grid-template-columns: 1fr; gap: 0 0; }
@@ -438,12 +442,12 @@ const CSS = `
 .rail-s.current { border-top-color: var(--t1); }
 .rail-n { width: 20px; height: 20px; border-radius: 50%; font-size: 11px;
   font-family: 'IBM Plex Mono', monospace; display: flex; align-items: center;
-  justify-content: center; border: 1px solid var(--line); color: var(--faint); }
+  justify-content: center; border: 1px solid var(--line); color: var(--muted); }
 .rail-s.done .rail-n { background: var(--t1-bg); border-color: var(--accent-line); color: var(--t1); }
 .rail-s.current .rail-n { background: var(--t1); border-color: var(--t1); color: #04120F; font-weight: 700; }
-.rail-l { font-size: 10.5px; line-height: 1.25; text-align: center; color: var(--faint);
+.rail-l { font-size: 10.5px; line-height: 1.25; text-align: center; color: var(--muted);
   overflow-wrap: anywhere; }
-.rail-s.done .rail-l { color: var(--muted); }
+.rail-s.done .rail-l { color: var(--text); }
 .rail-s.current .rail-l { color: var(--t1); font-weight: 700; }
 @media (max-width: 560px) {
   /* Stack rather than shrink the labels past legibility. */
@@ -501,13 +505,52 @@ const CSS = `
 /* the rail sits between the action and the receipt */
 .goal-rail { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
 
+/* who the deal is with — stated once, at the top of the active block */
+.goal-with { display: flex; flex-direction: column; gap: 7px; padding-bottom: 13px;
+  margin-bottom: 12px; border-bottom: 1px solid var(--accent-line); }
+.goal-with-l { font-family: 'Archivo'; font-size: 9.5px; letter-spacing: .11em;
+  text-transform: uppercase; font-weight: 700; color: var(--t1); }
+.goal-with-p { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.goal-with-n { font-size: 16px; font-weight: 700; color: var(--text); }
+.goal-with-b { font-size: 10.5px; padding: 2px 8px; }
+
+/* development-only simulator — deliberately unlike a MetYet product control */
+.sim { margin: 6px 0 14px; border: 1px dashed var(--line); border-radius: 11px; }
+.sim-t { display: flex; align-items: center; gap: 9px; width: 100%; background: none;
+  border: 0; padding: 10px 13px; font-size: 12.5px; color: var(--muted); text-align: left; }
+.sim-tag { font-family: 'Archivo'; font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+  font-weight: 700; color: var(--amber); background: var(--amber-bg); padding: 2px 6px;
+  border-radius: 4px; }
+.sim-turn { margin-left: auto; font-size: 11.5px; }
+.sim-body { padding: 0 13px 13px; }
+.sim-note { font-size: 11.5px; margin-bottom: 9px; }
+.sim-acts { display: flex; flex-wrap: wrap; gap: 7px; }
+.sim-done { font-size: 12px; color: var(--t1); margin-top: 9px; }
+
+/* the shared conversation */
+.chat-scroll { max-height: 320px; overflow-y: auto; padding: 4px 0 10px; }
+.chat-empty { font-size: 13.5px; line-height: 1.5; padding: 18px 2px; }
+.chat-m { max-width: 84%; margin-bottom: 10px; }
+.chat-m.mine { margin-left: auto; }
+.chat-who { font-size: 11px; color: var(--faint); margin-bottom: 3px; }
+.chat-m.mine .chat-who { text-align: right; }
+.chat-body { font-size: 14px; line-height: 1.45; padding: 9px 12px; border-radius: 12px;
+  background: var(--panel-2); border: 1px solid var(--line); overflow-wrap: anywhere; }
+.chat-m.mine .chat-body { background: var(--accent-bg); border-color: var(--accent-line); }
+.chat-ev { display: flex; align-items: center; gap: 9px; margin: 12px 0; }
+.chat-ev-r { flex: 1; height: 1px; background: var(--line-soft); }
+.chat-ev-t { font-size: 11.5px; color: var(--muted); text-align: center; }
+.chat-composer { display: flex; flex-direction: column; gap: 8px; padding-top: 10px;
+  border-top: 1px solid var(--line-soft); }
+.chat-composer .btn { align-self: flex-end; }
+
 /* the receipt, collapsed until asked for */
 .rc-wrap { margin-top: 14px; border-top: 1px solid var(--line-soft); }
 .rc-toggle { display: flex; align-items: center; gap: 10px; width: 100%; background: none;
   border: 0; padding: 13px 0 4px; text-align: left; }
 .rc-toggle-t { font-family: 'Archivo'; font-size: 10px; letter-spacing: .1em;
   text-transform: uppercase; font-weight: 700; color: var(--muted); }
-.rc-toggle-s { font-size: 12px; margin-left: auto; }
+.rc-toggle-s { font-size: 12px; margin-left: auto; color: var(--muted); }
 .rc-chev { color: var(--faint); font-size: 17px; transition: transform .16s ease;
   display: inline-block; }
 .rc-chev.on { transform: rotate(90deg); color: var(--t1); }
@@ -770,7 +813,7 @@ function AddGoalPicker({ st, go, onClose }) {
 
 /* Renders the derived receipt. Every gating decision was made in the domain, so
    this component only chooses how to say "not yet". */
-function Receipt({ o, st, expanded }) {
+function Receipt({ o, st, expanded, inline }) {
   const r = D.receiptForOpportunity(o, {
     binderById: st.binderById, cardById: st.cardById, partnerById: st.partnerById });
   if (!r) return null;
@@ -778,7 +821,9 @@ function Receipt({ o, st, expanded }) {
 
   return (
     <div className={"rc" + (expanded ? " rc-x" : "")}>
-      <div className="rc-h">Deal receipt</div>
+      {/* The disclosure above already names this section; a second heading would
+          only repeat it. */}
+      {!inline && <div className="rc-h">Deal Flow</div>}
       {r.stages.map((s2) => (
         <div key={s2.id} className={"rc-s " + s2.state}>
           <span className="rc-n" aria-hidden="true">{s2.n}</span>
@@ -961,15 +1006,23 @@ function GoalCard({ g, st, go }) {
       {/* 1. WHAT DO I NEED TO DO NOW? */}
       {live && (
         <div className="goal-live">
+          {/* Who this deal is with, said once and unmistakably. The terms live in
+              the Deal Flow detail rather than being repeated here. */}
+          <div className="goal-with">
+            <span className="goal-with-l">Negotiating with</span>
+            <span className="goal-with-p">
+              <Face partner={partner} size={26} />
+              <span className="goal-with-n">{partner.name}</span>
+              <span className="chip t goal-with-b">Trusted Partner</span>
+            </span>
+          </div>
           <div className="goal-live-h">
             <span className="goal-live-stage">{STAGE[live.stage].label}</span>
-            <span className="faint">with {partner.name}</span>
           </div>
-          {act.context && <div className="goal-live-c">{act.context}</div>}
           {act.cta ? (
             <button className="btn pri wide" style={{ marginTop: 11 }}
               onClick={() => go({ v: "deal", oppId: live.id })}>
-              {act.cta}
+              Continue Deal Flow
             </button>
           ) : (
             <div className="goal-live-w">{act.waiting}</div>
@@ -989,11 +1042,11 @@ function GoalCard({ g, st, go }) {
         <div className="rc-wrap">
           <button className="rc-toggle" aria-expanded={openReceipt}
             onClick={() => setOpenReceipt(!openReceipt)}>
-            <span className="rc-toggle-t">Deal receipt</span>
+            <span className="rc-toggle-t">Deal Flow</span>
             <span className="faint rc-toggle-s">{settled} of 5 settled</span>
             <span className={"rc-chev" + (openReceipt ? " on" : "")} aria-hidden="true">&#8250;</span>
           </button>
-          {openReceipt && <Receipt o={live} st={st} />}
+          {openReceipt && <Receipt o={live} st={st} inline />}
         </div>
       )}
 
@@ -1018,7 +1071,7 @@ function GoalCard({ g, st, go }) {
             {holders.length} {holders.length === 1 ? "partner has" : "partners have"} this card
           </div>
           {holders.map((h) => {
-            const talked = st.contactsFor(g.id, h.partner.id).length > 0;
+            const talked = st.hasThreadAbout(g.cardId);
             return (
               <div key={h.partner.id} className="gs-row">
                 <Face partner={h.partner} size={30} />
@@ -1047,6 +1100,172 @@ function GoalCard({ g, st, go }) {
       {confirmStop && live && (
         <StopDeal o={live} st={st} onClose={() => setConfirmStop(false)} />
       )}
+    </div>
+  );
+}
+
+/* ============================================================================
+   TRUSTED PARTNER SIMULATOR — DEVELOPMENT ONLY
+
+   The Collector flow depends on the partner responding, which makes it awkward
+   to exercise without switching personas. This exposes the partner's side of
+   the CURRENT stage so a tester can stay in the Collector experience.
+
+   THE RULE: it exposes TP actions, it never implements TP behaviour. Every
+   button below calls the same canonical store action the real Trusted Partner
+   workspace calls. Nothing here writes a field directly to force a visual
+   state, and no action is offered that the partner could not actually take
+   right now — the options are derived from the opportunity itself.
+
+   Hidden unless explicitly enabled, so it cannot appear in a normal build. */
+const DEV = typeof process !== "undefined" && process.env
+  && process.env.METYET_DEV === "1";
+
+function SimulateTP({ o, st }) {
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState("");
+  if (!DEV) return null;
+
+  const A = st.simulate;
+  const partner = st.partnerById(o.partnerId);
+  const them = partner ? partner.name : "the partner";
+  const turn = D.nextActor(o);
+  const cards = D.acceptedTradeCards(o);
+  const did = (t) => { setNote(t); };
+
+  /* Only what the partner can genuinely do at this stage, in this state. */
+  const actions = [];
+  if (o.stage === "agree-price") {
+    const last = D.lastEntry(o.priceThread);
+    if (last && last.by === "collector") {
+      actions.push(["Counter at 96%", () => {
+        A.patchOpportunity(o.id, (x) => ({ ...x, priceThread: [...x.priceThread,
+          { by: "partner", type: "counter", amount: Math.round(x.listedPrice * 0.96), at: AT }] }));
+        did("Countered");
+      }]);
+      actions.push(["Accept the offer", () => {
+        A.patchOpportunity(o.id, (x) => ({ ...x, agreedPrice: last.amount, stage: "select-trade",
+          priceThread: [...x.priceThread, { by: "partner", type: "accept", amount: last.amount, at: AT }] }));
+        did("Accepted — moved to Select Trade");
+      }]);
+    }
+  }
+  if (o.stage === "select-trade" && o.trade && o.trade.submitted
+      && (o.trade.cards || []).some((c) => c.inclusion === "proposed")) {
+    actions.push(["Accept proposed cards", () => {
+      A.patchOpportunity(o.id, (x) => ({ ...x, trade: { ...x.trade,
+        cards: x.trade.cards.map((c) => (c.inclusion === "proposed"
+          ? { ...c, inclusion: "accepted" } : c)) } }));
+      did("Reviewed the cards");
+    }]);
+  }
+  if (o.stage === "value-trade") {
+    const open2 = cards.filter((c) => !D.cardSettled(c));
+    if (open2.length) actions.push([`Propose values for ${open2.length} card${open2.length === 1 ? "" : "s"}`, () => {
+      A.patchOpportunity(o.id, (x) => ({ ...x, trade: { ...x.trade,
+        cards: x.trade.cards.map((c) => (D.cardSettled(c) ? c
+          : { ...c, tpMarket: c.tpMarket != null ? c.tpMarket : 200, tpPercent: 0.8 })) } }));
+      did("Proposed values");
+    }]);
+  }
+  if (o.stage === "deal" && !(o.deal && o.deal.tpAgreed)) {
+    actions.push(["Agree the balance", () => {
+      A.patchOpportunity(o.id, (x) => ({ ...x, deal: { ...x.deal, tpAgreed: true } }));
+      did("Agreed");
+    }]);
+  }
+  if (o.stage === "fulfillment" && !(o.fulfillment && o.fulfillment.tpHandoff)) {
+    actions.push(["Confirm handoff", () => {
+      A.patchOpportunity(o.id, (x) => ({ ...x, fulfillment: { ...x.fulfillment, tpHandoff: true } }));
+      did("Handed over");
+    }]);
+  }
+  if (D.isActive(o)) {
+    actions.push(["Send a message", () => {
+      A.sendMessage({ collectorId: o.collectorId, cardId: o.cardId, by: "tp",
+        text: "Sounds good — let me know.", oppId: o.id, at: AT });
+      did("Message sent");
+    }]);
+    actions.push([st.dealAgreed(o) ? "Cancel the agreed deal" : "End the deal", () => {
+      A.endOpportunity(o.id, "partner", AT);
+      did("Ended");
+    }]);
+  }
+
+  return (
+    <div className="sim">
+      <button className="sim-t" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span className="sim-tag">Dev</span>
+        Simulate {them}
+        <span className="faint sim-turn">
+          {turn.actor === "partner" ? "their move" : turn.actor ? "waiting on you" : "settled"}
+        </span>
+      </button>
+      {open && (
+        <div className="sim-body">
+          <div className="faint sim-note">
+            Every action below calls the same canonical action the real Trusted
+            Partner workspace uses.
+          </div>
+          <div className="sim-acts">
+            {actions.length === 0
+              ? <span className="faint">Nothing for {them} to do at this stage.</span>
+              : actions.map(([label, run]) => (
+                <button key={label} className="btn sm" onClick={run}>{label}</button>
+              ))}
+          </div>
+          {note && <div className="sim-done">{note}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* THE SHARED CONVERSATION. The same thread the Trusted Partner reads and writes —
+   one per collector + card identity, spanning goals and the whole deal. Lifecycle
+   events sit inline with messages, so the record reads chronologically. */
+function DealChat({ o, st }) {
+  const [draft, setDraft] = useState("");
+  const partner = st.partnerById(o.partnerId);
+  const thread = st.threadForCard(o.cardId);
+  const entries = thread ? thread.entries : [];
+  const them = partner ? partner.name : "them";
+  const send = () => {
+    if (!draft.trim()) return;
+    st.sendMessage(o.cardId, draft, o.id);
+    setDraft("");
+  };
+
+  return (
+    <div className="card sec chat">
+      <div className="sec-h">Conversation</div>
+      <div className="chat-scroll">
+        {entries.length === 0 ? (
+          <div className="faint chat-empty">
+            Nothing here yet. Opening this deal doesn't count as reaching out — send
+            {" "}{them} a message to start the thread.
+          </div>
+        ) : entries.map((e) => (e.kind === "event" ? (
+          /* Lifecycle events, inline and chronological — the TP's contract. */
+          <div key={e.id} className="chat-ev">
+            <span className="chat-ev-r" /><span className="chat-ev-t">{e.text}</span>
+            <span className="chat-ev-r" />
+          </div>
+        ) : (
+          <div key={e.id} className={"chat-m " + (e.by === "collector" ? "mine" : "theirs")}>
+            <div className="chat-who">{e.by === "collector" ? "You" : them}</div>
+            <div className="chat-body">{e.text}</div>
+          </div>
+        )))}
+      </div>
+      <div className="chat-composer">
+        <textarea className="inp" rows={2} value={draft}
+          aria-label={"Message " + them + " about this card"}
+          placeholder={`Message ${them} about this card…`}
+          onChange={(ev) => setDraft(ev.target.value)}
+          onKeyDown={(ev) => { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) send(); }} />
+        <button className="btn pri sm" disabled={!draft.trim()} onClick={send}>Send</button>
+      </div>
     </div>
   );
 }
@@ -1495,6 +1714,11 @@ function Deal({ oppId, st, go }) {
         <Receipt o={o} st={st} expanded />
       </div>
 
+      {/* The shared conversation, available at every stage. */}
+      <DealChat o={o} st={st} />
+
+      <SimulateTP o={o} st={st} />
+
       {isOpen(o) && (
         <div style={{ textAlign: "center", padding: "6px 0 10px" }}>
           <button className="link" style={{ color: "var(--muted)" }}
@@ -1861,7 +2085,7 @@ function WhoHasIt({ goalId, st, go }) {
 
       {holders.map((h) => {
         const already = sent.includes(h.partner.id)
-          || st.contactsFor(goalId, h.partner.id).length > 0;
+          || st.hasThreadAbout(c.id);
         const openness = st.interestCountFrom(h.partner.id);
         return (
           <div key={h.partner.id} className="pick" style={{ cursor: "default", alignItems: "flex-start" }}>
@@ -2164,8 +2388,14 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
         id: "b" + Date.now().toString(36), collectorId, cardId,
         market: mine === "" ? null : Number(mine),
         cert: cert && cert.trim() ? cert.trim() : null, addedAt: AT, photos }),
-      reachOut: (goalId, partnerId, cardId) =>
-        A.reachOut({ collectorId, partnerId, goalId, cardId, at: AT }),
+      /* Reaching out writes to the SAME thread the Trusted Partner reads. */
+      reachOut: (goalId, partnerId, cardId, text) =>
+        A.reachOut({ collectorId, cardId, oppId: (v.openOppForGoal(goalId) || {}).id,
+          text: text || null, at: AT }),
+      sendMessage: (cardId, text, oppId) =>
+        A.sendMessage({ collectorId, cardId, by: "collector", text, oppId, at: AT }),
+      /* Development only — see SimulateTP. Every call is a canonical action. */
+      simulate: A,
       /* Returns null when the one-negotiation invariant refuses it. The refusal
          is the domain's, not this screen's. */
       startOffer: (goalId, partnerId, amount) => {
