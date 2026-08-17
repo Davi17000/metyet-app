@@ -1195,14 +1195,16 @@ describe("Dark mode holds up", () => {
    A collector should never have to decode an anonymous bar.
    ========================================================================= */
 describe("The stage rail names every stage", () => {
+  /* The Deal Flow now expands inside its Goal, so the Goals page stays mounted
+     and other active goals keep their own rails. Scope to the expanded card. */
   const openDeal = (r) => {
-    const card = cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
-    click(card.findAllByType("button").find((b) => txt(b).trim() === "Continue Deal Flow"));
-    return r;
+    const find = () => cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
+    click(find().findAllByType("button").find((b) => txt(b).trim() === "Continue Deal Flow"));
+    return find();
   };
 
   test("1-3. five stages, numbered, canonically labelled and ordered", () => {
-    const r = openDeal(mk());
+    const r = openDeal(mk());   // the expanded goal card
     const steps = cls(r, "rail-s");
     eq(steps.length, 5, "five stages");
     eq(cls(r, "rail-n").map(txt).join(","), "1,2,3,4,5", "numbered 1-5");
@@ -1215,13 +1217,13 @@ describe("The stage rail names every stage", () => {
     const src = readSrc("collector/MetYetCollector.jsx");
     assert(!/className="trk"/.test(src), "the unlabelled bar markup is removed");
     assert(!/\.trk i\b/.test(src), "and its styles with it");
-    const r = openDeal(mk());
+    const r = openDeal(mk());   // the expanded goal card
     cls(r, "rail-s").forEach((n) => assert(txt(n).length > 3,
       "every step carries a number and a label: " + txt(n)));
   });
 
   test("5-8. state comes from the canonical stage", () => {
-    const r = openDeal(mk());
+    const r = openDeal(mk());   // the expanded goal card
     const steps = cls(r, "rail-s");
     const stateOf = (n) => String(n.props.className).replace("rail-s ", "").trim();
     eq(steps.map(stateOf).join(","), "done,current,pending,pending,pending",
@@ -1781,9 +1783,15 @@ describe("Development-only TP simulator", () => {
    with chat one tap away and Deal Flow secondary.
    ========================================================================= */
 describe("Deal workspace mobile shell", () => {
+  /* This describes the STANDALONE page shell — its own context header, its own
+     progress rail, its back link. The Goal now expands the same workspace
+     inline and suppresses that duplicated chrome, so reach the page by the route
+     that still legitimately uses it: the alternative-partner list, where the
+     current deal's partner offers "View Deal". */
   const open = (r) => {
     const card = cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
-    click(card.findAllByType("button").find((b) => txt(b).trim() === "Continue Deal Flow"));
+    click(byClassIn(card, "goal-holders")[0]);
+    click(r.root.findAllByType("button").find((b) => txt(b).trim() === "View Deal"));
     return r;
   };
 

@@ -465,8 +465,11 @@ const enterStage = (stage) => {
     const b = r.root.findAllByType("button").filter((x) => CTA.test(txt(x).trim()))[i];
     if (!b) break;
     click(b);
-    /* The stage is now named on the rail rather than in a lone label. */
-    const cur = cls(r, "rail-s").find((n) => String(n.props.className).includes("current"));
+    /* The Deal Flow expands inside its Goal, so the Goals page stays mounted and
+       every other active goal keeps its own rail. Read the stage from the card
+       that actually expanded, not from whichever rail happens to come first. */
+    const host = cls(r, "goal").find((n) => cls(n, "goal-dw").length > 0) || r;
+    const cur = cls(host, "rail-s").find((n) => String(n.props.className).includes("current"));
     if (cur && txt(cur).includes(stage)) return r;
   }
   return null;

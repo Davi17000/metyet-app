@@ -389,6 +389,17 @@ const CSS = `
   color: var(--t1); font-weight: 700; }
 .goal-deal-p { font-size: 13px; font-weight: 600; }
 .goal-deal-t { margin-left: auto; font-size: 12px; color: var(--muted); }
+.goal-deal-c { font-size: 17px; line-height: 1; color: var(--muted); transition: transform .15s;
+  transform: rotate(90deg); }
+.goal-deal-c.on { transform: rotate(-90deg); }
+/* The Deal Flow expanded INSIDE the goal. One natural page scroll: no nested
+   scroll area, and the action bar sits in flow rather than pinned to the
+   viewport, since the workspace is no longer the whole page. */
+.goal-dw { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+.dw-inline { padding: 0; }
+.dw-inline .dw-bar { position: static; margin: 14px 0 0; padding: 10px 0 0;
+  border-top: 1px solid var(--line); background: none; box-shadow: none; }
+.dw-inline .chat-embed .chat-scroll { max-height: none; }
 /* Review harness — dev only, deliberately plain so it never reads as product. */
 .rvw { border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; }
 .rvw-h { font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 7px; }
@@ -913,6 +924,9 @@ function ReviewPanel({ st, go }) {
 function Goals({ st, go }) {
   const { goals } = st;
   const [adding, setAdding] = useState(false);
+  /* ONE EXPANDED DEAL AT A TIME. Presentation state, held here rather than in
+     each card so opening one collapses the other. Switching touches no deal. */
+  const [openDeal, setOpenDeal] = useState(null);
   const primary = goals.filter((g) => g.tier === "primary");
   const secondary = goals.filter((g) => g.tier === "secondary");
 
@@ -948,7 +962,10 @@ function Goals({ st, go }) {
             Add your first goal
           </button>
         </div>
-      ) : primary.map((g) => <GoalCard key={g.id} g={g} st={st} go={go} />)}
+      ) : primary.map((g) => (
+        <GoalCard key={g.id} g={g} st={st} go={go}
+          open={openDeal === g.id} onToggle={setOpenDeal} />
+      ))}
 
       {/* SECONDARY — a watchlist. Compact rows, no deal machinery. */}
       <div className="gsec-h" style={{ marginTop: 30 }}>
@@ -1153,7 +1170,7 @@ function WatchRow({ g, st, go }) {
   );
 }
 
-function GoalCard({ g, st, go }) {
+function GoalCard({ g, st, go, open, onToggle }) {
   const c = st.cardById(g.cardId);
   const holders = st.partnersWith(g.cardId);
   const live = st.openOppForGoal(g.id);
@@ -1225,35 +1242,39 @@ function GoalCard({ g, st, go }) {
           <div className="goal-live-h">
             <span className="goal-live-stage">{STAGE[live.stage].label}</span>
           </div>
-          {/* DIRECT ENTRY. Once an offer has been submitted the Goal's working
-              experience IS the Deal Flow, so the entry point opens it — no
-              intermediary detail step, whoever holds the turn. The stage shown
-              is the canonical opportunity stage, not a second indicator. */}
-          <button className="goal-deal" onClick={() => go({ v: "deal", oppId: live.id })}>
+          {/* THE GOAL BECOMES THE DEAL. Once an offer exists, the Goal's working
+              experience is the Deal Flow — so it opens HERE rather than sending
+              the collector somewhere else. Collapsed by default: stage, partner,
+              turn and the canonical five-stage track, and nothing further. The
+              stage shown is the canonical opportunity stage, not a second
+              indicator, and no future-stage terms are exposed. */}
+          <button className="goal-deal" aria-expanded={open}
+            onClick={() => onToggle(open ? null : g.id)}>
             {/* The partner is already named once above; repeating it here would
                 say the same thing twice in one callout. */}
             <span className="goal-deal-s">Deal Flow · {STAGE[live.stage].label}</span>
             <span className="goal-deal-t">
               {act.cta ? "Your move" : act.waiting || "Open"}
             </span>
+            <span className={"goal-deal-c" + (open ? " on" : "")} aria-hidden="true">&#8250;</span>
           </button>
-          {/* RE-ENTRY. An active deal is always reachable, whoever owns the turn.
-              Having no stage action means there is nothing to DO — not that the
-              deal, or the conversation inside it, becomes unreachable. Opening
-              it is a read: it mutates no stage, no nextActor, nothing. */}
-          {act.cta ? (
-            <button className="btn pri wide" style={{ marginTop: 11 }}
-              onClick={() => go({ v: "deal", oppId: live.id })}>
-              Continue Deal Flow
-            </button>
-          ) : (
-            <>
-              <div className="goal-live-w">{act.waiting}</div>
-              <button className="btn wide goal-live-view" style={{ marginTop: 9 }}
-                onClick={() => go({ v: "deal", oppId: live.id })}>
-                View Deal
-              </button>
-            </>
+          {/* RE-ENTRY, now in place. An active deal is always expandable, whoever
+              owns the turn: having no stage action means there is nothing to DO,
+              not that the deal or its conversation becomes unreachable.
+              Expanding is presentation only — it mutates nothing. */}
+          {!open && !act.cta && <div className="goal-live-w">{act.waiting}</div>}
+          {/* The disclosure keeps the CTA's meaning: on the collector's turn it
+              still says what the deal needs, while waiting it is an honest
+              invitation to look. Either way it opens the same workspace here. */}
+          <button className={"btn wide goal-live-view" + (act.cta && !open ? " pri" : "")}
+            style={{ marginTop: 9 }} aria-expanded={open}
+            onClick={() => onToggle(open ? null : g.id)}>
+            {open ? "Hide Deal Flow" : act.cta ? "Continue Deal Flow" : "View Deal Flow"}
+          </button>
+          {open && (
+            <div className="goal-dw">
+              <Deal oppId={live.id} st={st} go={go} inline />
+            </div>
           )}
         </div>
       )}
@@ -1953,7 +1974,12 @@ function AddGoalSheet({ cardId, st, onClose, onAdded }) {
    them: each stage registers its primary action here, and the bar renders that
    same handler. One definition, two places it can be pressed.
    ========================================================================= */
-function Deal({ oppId, st, go }) {
+/* THE ONE ACTIVE-DEAL WORKSPACE. Rendered either as its own page or, when
+   `inline`, inside the Primary Goal it belongs to. The prop suppresses page
+   chrome only — the back link and the card/partner context the Goal already
+   states. Every stage component, action registration, conversation, receipt and
+   simulator below is the same code in both cases; nothing is cloned. */
+function Deal({ oppId, st, go, inline }) {
   const o = st.opps.find((x) => x.id === oppId);
   const [chat, setChat] = useState(false);
   const [flow, setFlow] = useState(false);
@@ -1971,26 +1997,32 @@ function Deal({ oppId, st, go }) {
   const stageProps = { o, st, register };
 
   return (
-    <div className="pg dw">
-      <button className="link" onClick={() => go({ v: "goals" })}>← Goals</button>
+    <div className={inline ? "dw dw-inline" : "pg dw"}>
+      {!inline && <button className="link" onClick={() => go({ v: "goals" })}>← Goals</button>}
 
-      {/* 1. DEAL CONTEXT — compact, and always the first thing read. */}
-      <div className="card dw-ctx">
-        <Art card={c} size="sm" />
-        <div className="dw-ctx-b">
-          <div className="dw-ctx-n">{c.name}</div>
-          <div className="dw-ctx-i">{cardLine(c)} · {gradeLine(c)}</div>
-          <div className="dw-ctx-p">
-            <Face partner={p} size={22} />
-            <span className="dw-ctx-pn">{them}</span>
+      {/* 1. DEAL CONTEXT — compact, and always the first thing read. Inline, the
+          Goal has already said which card and which partner this is. */}
+      {!inline && (
+        <div className="card dw-ctx">
+          <Art card={c} size="sm" />
+          <div className="dw-ctx-b">
+            <div className="dw-ctx-n">{c.name}</div>
+            <div className="dw-ctx-i">{cardLine(c)} · {gradeLine(c)}</div>
+            <div className="dw-ctx-p">
+              <Face partner={p} size={22} />
+              <span className="dw-ctx-pn">{them}</span>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* 2. PROGRESS — the same canonical five stages, compact. */}
-      <div className="card dw-prog">
-        <Track stage={o.stage} o={o} st={st} compact />
-      </div>
+      {/* 2. PROGRESS — the same canonical five stages, compact. Inline, the
+          collapsed summary already carries the track. */}
+      {!inline && (
+        <div className="card dw-prog">
+          <Track stage={o.stage} o={o} st={st} compact />
+        </div>
+      )}
 
       {/* 3. GUIDANCE — canonical turn logic, in plain language. */}
       <div className={"dw-guide " + (t.who || "none")}>

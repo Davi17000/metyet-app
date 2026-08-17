@@ -84,7 +84,7 @@ describe("Active deal re-entry", () => {
 
     const r2 = remount();
     /* The deal must still be openable — waiting is not a locked door. */
-    assert(btn(r2, "View Deal"), "View Deal is offered while waiting");
+    assert(btn(r2, "View Deal Flow"), "the Deal Flow can still be opened while waiting");
     assert(txt(r2.root).includes("Waiting on"), "and the wait is stated plainly");
     r.unmount(); r2.unmount();
   });
@@ -96,7 +96,7 @@ describe("Active deal re-entry", () => {
 
     const r = remount();
     const before = dealShape(liveOpp());
-    click(btn(r, "View Deal"));
+    click(btn(r, "View Deal Flow"));
     const after = dealShape(liveOpp());
     eq(after, before, "opening the deal changed nothing at all");
     eq(D.nextActor(liveOpp()).actor, "partner", "nextActor is untouched");
@@ -109,7 +109,7 @@ describe("Active deal re-entry", () => {
 
     const r = remount();
     const before = dealShape(liveOpp());
-    click(btn(r, "View Deal"));
+    click(btn(r, "View Deal Flow"));
     /* Conversation is part of the workspace now: nothing to open, nothing to tap. */
     const chat = cls(r, "chat-embed")[0];
     assert(chat, "the conversation is present inline");
@@ -124,7 +124,7 @@ describe("Active deal re-entry", () => {
     handToPartner(o.id);
 
     const r = remount();
-    click(btn(r, "View Deal"));
+    click(btn(r, "View Deal Flow"));
     const before = dealShape(liveOpp());
     const panel = cls(r, "chat-embed")[0];
     const ta = panel.findAllByType("textarea")[0];

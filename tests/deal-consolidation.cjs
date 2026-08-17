@@ -98,8 +98,9 @@ describe("A. Primary Goal becomes the Deal Flow once an offer exists", () => {
     click(entry);
     assert(cls(r, "dw-stage")[0], "the Deal Flow workspace is open");
     assert(cls(r, "chat-embed")[0], "with its conversation");
-    /* Nothing resembling a second detail page was required on the way. */
-    eq(cls(r, "goal-deal").length, 0, "the Goals list is no longer showing");
+    /* It opened IN PLACE: the Goal is still on screen, now containing the deal. */
+    assert(cls(r, "goal-dw")[0], "the workspace is inside the Goal");
+    assert(cls(r, "goal")[0], "and the Goals list never went away");
   });
 
   test("direct entry works on the collector's turn and on the partner's", () => {
