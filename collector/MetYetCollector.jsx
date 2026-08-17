@@ -377,6 +377,16 @@ const CSS = `
   text-transform: uppercase; font-weight: 700; color: var(--t1); }
 .goal-live-c { font-size: 14px; margin-top: 7px; font-weight: 500; }
 .goal-live-w { font-size: 13.5px; color: var(--muted); margin-top: 10px; }
+/* Review harness — dev only, deliberately plain so it never reads as product. */
+.rvw { border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; }
+.rvw-h { font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 7px; }
+.rvw-tag { font-size: 10px; letter-spacing: .06em; background: var(--t1-bg); color: var(--t1);
+  border-radius: 4px; padding: 1px 5px; margin-right: 7px; text-transform: uppercase; }
+.rvw-r { display: flex; align-items: baseline; gap: 9px; padding: 2px 0; font-size: 12.5px; }
+.rvw-stage { min-width: 108px; color: var(--t1); font-weight: 600; }
+.rvw-w { font-size: 11.5px; }
+.rvw-a { margin-top: 9px; display: flex; align-items: center; gap: 9px; }
+.rvw-note { font-size: 11.5px; }
 /* Re-entry while the partner holds the turn: present, but plainly secondary to
    the primary action it replaces. */
 .goal-live-view { }
@@ -813,6 +823,81 @@ function Turn({ o, st }) {
    identity beneath, tier as a quiet label. A goal with nothing happening is a
    normal state, not a gap to be filled, so it reads calmly rather than nagging. */
 
+/* ------------------------------------------------------- REVIEW HARNESS (dev)
+
+   A compact index of the seeded review scenarios: one Primary Goal at each
+   active stage, the goal meant to be driven through the lifecycle, and the
+   promotion case. Renders ONLY under METYET_DEV=1, so the production Collector
+   experience is untouched — there is no gated-off markup in a normal build
+   because the component returns null before rendering anything.
+
+   It navigates and resets; it does not edit state. Stage names shown here are
+   read from the canonical derivation, never stored on the harness. */
+function ReviewPanel({ st, go }) {
+  const [note, setNote] = useState("");
+  if (!DEV) return null;
+  /* Index every stage example, not just the seeded ones: Select Trade and
+     Fulfillment are covered by Casey's pre-existing deals, and a stage index
+     that silently omitted them would defeat the point. Review-noted goals are
+     always listed; other goals appear when they are the example for a stage
+     nothing else covers. */
+  const noted = st.goals.filter((g) => REVIEW_ANY_NOTE.test(g.note || ""));
+  const covered = new Set(noted.map((g) => {
+    const o = st.openOppForGoal(g.id); return o && o.stage;
+  }).filter(Boolean));
+  const fill = st.goals.filter((g) => {
+    if (REVIEW_ANY_NOTE.test(g.note || "")) return false;
+    const o = st.openOppForGoal(g.id);
+    if (!o || covered.has(o.stage)) return false;
+    covered.add(o.stage);
+    return true;
+  });
+  const mine = [...noted, ...fill].sort((a, b) => {
+    const oa = st.openOppForGoal(a.id), ob = st.openOppForGoal(b.id);
+    return DEAL_STEPS.indexOf(oa && oa.stage) - DEAL_STEPS.indexOf(ob && ob.stage);
+  });
+  if (!mine.length) return null;
+
+  const row = (g) => {
+    const o = st.openOppForGoal(g.id);
+    const c = st.cardById(g.cardId);
+    const t = o ? st.turnFor(o) : null;
+    return (
+      <div key={g.id} className="rvw-r">
+        <span className="rvw-stage">{o ? STAGE[o.stage].label : g.tier === "secondary" ? "Secondary" : "No deal"}</span>
+        <button className="link rvw-n" onClick={() => (o
+          ? go({ v: "deal", oppId: o.id })
+          : go({ v: "start", goalId: g.id }))}>
+          {c.name}
+        </button>
+        {t && <span className="faint rvw-w">{t.who === "me" ? "your move" : t.who === "partner" ? "waiting" : ""}</span>}
+      </div>
+    );
+  };
+
+  const rd = st.reviewGoal();
+  return (
+    <div className="rvw">
+      <div className="rvw-h">
+        <span className="rvw-tag">Dev</span>
+        Review scenarios
+      </div>
+      <div className="rvw-b">
+        {mine.map(row)}
+      </div>
+      {rd && (
+        <div className="rvw-a">
+          <button className="btn sm" onClick={() => {
+            const id = st.resetReviewDeal();
+            setNote(id ? "Review deal restored to Agree on Price." : "Could not restore.");
+          }}>Reset review deal</button>
+          {note && <span className="faint rvw-note">{note}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Goals({ st, go }) {
   const { goals } = st;
   const [adding, setAdding] = useState(false);
@@ -831,6 +916,8 @@ function Goals({ st, go }) {
           <button className="btn sm pri" onClick={() => setAdding(true)}>Add goal</button>
         </div>
       </div>
+
+      <ReviewPanel st={st} go={go} />
 
       {/* PRIMARY — the working area. Full cards, deal progress, next action. */}
       <div className="gsec-h">
@@ -1239,6 +1326,14 @@ function GoalCard({ g, st, go }) {
    Hidden unless explicitly enabled, so it cannot appear in a normal build. */
 const DEV = typeof process !== "undefined" && process.env
   && process.env.METYET_DEV === "1";
+
+/* Which seeded goal is which review scenario. Matched on the seed note rather
+   than an index-derived id, so appending to the seed cannot break the harness.
+   Nothing here renders unless DEV is on, so no internal vocabulary can reach a
+   production surface. */
+const REVIEW_DEAL_NOTE = /^Review deal/;
+const REVIEW_PROMOTE_NOTE = /^Review promotion/;
+const REVIEW_ANY_NOTE = /^Review (deal|fixture|promotion)/;
 
 function SimulateTP({ o, st }) {
   const [open, setOpen] = useState(false);
@@ -2698,6 +2793,36 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
           listedPrice: inv ? inv.ask : amount, amount, at: AT });
       },
       endNegotiation: (oppId) => A.endOpportunity(oppId, "collector", AT),
+
+      /* ---- REVIEW HARNESS (development only) --------------------------------
+         Scoped restore of the designated review deal to its canonical starting
+         fixture. This is a FIXTURE swap, not a state editor: the replacement
+         record is rebuilt by buildCanonicalSeed/buildOpps, the same code that
+         produces it at hydration, so no stage is set by hand and no field is
+         edited individually. Everything outside the review scenario is left
+         exactly as it was. */
+      reviewGoal: () => v.myGoals().find((g) => REVIEW_DEAL_NOTE.test(g.note || "")),
+      reviewPromoteGoal: () => v.myGoals().find((g) => REVIEW_PROMOTE_NOTE.test(g.note || "")),
+      resetReviewDeal: () => {
+        if (!DEV) return null;
+        const fixture = buildCanonicalSeed({ review: true });
+        const fg = fixture.goals.find((g) => g.collectorId === collectorId
+          && REVIEW_DEAL_NOTE.test(g.note || ""));
+        if (!fg) return null;
+        const fo = fixture.opportunities.find((o) => o.goalId === fg.id);
+        const cur = store.get();
+        const mine = cur.goals.find((g) => g.collectorId === collectorId
+          && g.cardId === fg.cardId);
+        if (!mine || !fo) return null;
+        /* Drop every opportunity on that goal, then reinstate the fixture one
+           under a stable id. Other goals, deals and conversations untouched. */
+        store.set({ ...cur,
+          goals: cur.goals.map((g) => (g.id === mine.id ? { ...fg, id: mine.id } : g)),
+          opportunities: [...cur.opportunities.filter((o) => o.goalId !== mine.id),
+            { ...fo, id: "o-review", goalId: mine.id }],
+        });
+        return "o-review";
+      },
       /* The canonical distinction the Trusted Partner already makes: once both
          sides agree, ending it is a CANCELLATION rather than a stop. */
       dealAgreed: (o) => !!(o && o.deal && o.deal.tpAgreed && o.deal.collectorAgreed),

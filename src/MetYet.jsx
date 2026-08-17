@@ -1299,7 +1299,57 @@ const GOALS_SEED = [
   ["c12", "i21", "primary", "", "2026-05-11", "2026-05-11", "2026-05-11"], ["c12", "i23", "secondary", "", "2026-06-23", "2026-06-23", "2026-08-09"], ["c12", "i16", "secondary", "", "2026-07-09", "2026-07-09", "2026-08-08"], ["c12", "u6", "secondary", "", "2026-04-27", "2026-04-27", "2026-08-07"],
   ["c13", "i20", "primary", "", "2026-02-06", "2026-02-06", "2026-08-06"], ["c13", "i18", "secondary", "", "2026-03-30", "2026-03-30", "2026-08-04"], ["c13", "i29", "secondary", "", "2026-04-25", "2026-04-25", "2026-08-03"], ["c13", "u12", "secondary", "", "2026-05-06", "2026-05-06", "2026-07-31"],
   ["c8", "i34", "secondary", "", "2026-08-06", "2026-08-06", "2026-08-06"], ["c5", "u13", "secondary", "", "2026-05-14", "2026-05-14", "2026-07-24"],
+
 ];
+
+/* ============================================================ REVIEW HARNESS
+
+   Development/demo scaffolding for reviewing the Collector experience. OFF by
+   default: the canonical demo world is frozen by several suites (exact
+   opportunity counts, exact TP nav badges), and a review fixture is not product
+   data, so these rows are only appended when the harness is explicitly asked
+   for — `buildCanonicalSeed({ review: true })`, or METYET_DEV=1.
+
+   They are APPENDED rather than inserted so every existing record keeps its
+   "g"+index / "o"+index id. buildOpps resolves goals by index and the suites
+   reference g20 / o9 / o33 directly, so inserting above would silently
+   renumber the world.
+
+   Casey (c12) is the Collector persona, so the review scenarios are hers. With
+   her existing Select Trade (i17) and Fulfillment (i21) deals these give one
+   Primary Goal at every active stage, plus a separate goal for driving the
+   lifecycle by hand, plus one for testing promotion.
+
+   REVIEW_NOTE is the marker the dev-only UI keys off: no internal vocabulary
+   reaches a production surface, because none of this exists without the flag. */
+const REVIEW_NOTE = "Review";
+const REVIEW_GOALS_SEED = [
+  ["c12", "i8",  "primary",   "Review fixture \u2014 Agree on Price", "2026-08-04", "2026-08-04", "2026-08-09"],
+  ["c12", "i5",  "primary",   "Review fixture \u2014 Value Trade",    "2026-07-28", "2026-07-28", "2026-08-09"],
+  ["c12", "i13", "primary",   "Review fixture \u2014 Deal",           "2026-07-30", "2026-07-30", "2026-08-09"],
+  /* The one goal meant to be DRIVEN through the lifecycle, not looked at. Kept
+     distinct from the five static examples so progressing it never destroys the
+     stage coverage they exist to provide. */
+  ["c12", "i1",  "primary",   "Review deal \u2014 walk the full lifecycle", "2026-08-09", "2026-08-09", "2026-08-09"],
+  /* Promotion scenario: starts Secondary, with supply and a conversation
+     already in place, so what survives graduation is observable. */
+  ["c12", "i11", "secondary", "Review promotion \u2014 Secondary to Primary", "2026-08-09", "2026-08-09", "2026-08-09"],
+];
+
+/* Stage validity is NOT asserted here: each row goes through buildOpps, which
+   derives the upstream terms the stage requires — a settled price before Select
+   Trade, reviewed cards before Value Trade, and so on. No stage is manufactured
+   by setting the field alone. The review deal starts where the lifecycle does. */
+const REVIEW_OPPS_SEED = [
+  ["c12", "i8",  "agree-price", "2026-08-04", 1150],
+  ["c12", "i5",  "value-trade", "2026-07-28", 1450],
+  ["c12", "i13", "deal",        "2026-07-30", 900],
+  ["c12", "i1",  "agree-price", "2026-08-09", 4200],
+];
+/* The goal the harness drives, and the one it promotes, identified by card so
+   no test or screen has to hardcode an index-derived id. */
+const REVIEW_DEAL_CARD = "i1";
+const REVIEW_PROMOTE_CARD = "i11";
 
 const STAGES = [
   { id: "secondary", label: "Secondary Goal", group: "intent" },
@@ -2053,7 +2103,15 @@ function nextAction(opp) {
    before either persona mounts. Same records, same ids, same order — this is a
    relocation, not a re-seed.
    ========================================================================== */
-export function buildCanonicalSeed() {
+/* The harness is opt-in. Default OFF so the canonical demo world — which several
+   suites freeze by exact count — is untouched by review scaffolding. */
+const REVIEW_ON = typeof process !== "undefined" && process.env
+  && process.env.METYET_DEV === "1";
+
+export function buildCanonicalSeed(opts) {
+  const review = opts && opts.review != null ? !!opts.review : REVIEW_ON;
+  const goalsSeed = review ? [...GOALS_SEED, ...REVIEW_GOALS_SEED] : GOALS_SEED;
+  const oppsSeed = review ? [...OPPS_SEED, ...REVIEW_OPPS_SEED] : OPPS_SEED;
   return {
     catalog: CARDS_SEED,
     collectors: COLLECTORS_SEED,
@@ -2076,14 +2134,14 @@ export function buildCanonicalSeed() {
       { invId: "inv-p2-2", partnerId: "p2", cardId: "i23", ask: 1290, cost: 990, acquired: "2026-07-11", archived: false, cert: null, photos: { front: null, back: null } },
       { invId: "inv-p4-1", partnerId: "p4", cardId: "u6", ask: 1380, cost: 1050, acquired: "2026-07-29", archived: false, cert: null, photos: { front: null, back: null } },
     ]),
-    goals: GOALS_SEED.map((g, i) => ({
+    goals: goalsSeed.map((g, i) => ({
       id: "g" + i, collectorId: g[0], cardId: g[1], tier: g[2], note: g[3],
       since: g[4],        // when the CURRENT priority began
       createdAt: g[5],    // when the goal first existed
       confirmedAt: g[6],  // when the collector last said it's still accurate
       secondarySince: g[2] === "primary" ? g[5] : null,
     })),
-    opportunities: buildOpps(OPPS_SEED),
+    opportunities: buildOpps(oppsSeed, goalsSeed),
     binder: COLLECTOR_CARDS_SEED.map((r, i) => ({ id: "cc" + i, cardId: r[0], collectorId: r[1], market: r[3], photos: r[4], cert: r[5], addedAt: r[6] })),
     /* CANONICAL INTEREST: TrustedPartner -> exact BinderCopy. */
     interests: (() => {
@@ -2098,7 +2156,20 @@ export function buildCanonicalSeed() {
     /* One thread per Trusted Partner x Collector x card identity. Keyed on identity
        rather than goalId or oppId so it survives Secondary -> Primary and is
        inherited by the Opportunity when the collector makes an offer. */
-    conversations: [],
+    /* Only the review scenario seeds a conversation: it is the thing promotion
+       must be shown to preserve. Keyed canonically (collector + partner + card)
+       through the same identity function the domain uses. */
+    conversations: review ? [{
+      id: "t-review-promote",
+      key: SharedID.threadKey("c12", SELF_PARTNER, CARDS_SEED.find((c) => c.id === REVIEW_PROMOTE_CARD)),
+      collectorId: "c12", partnerId: SELF_PARTNER, cardId: REVIEW_PROMOTE_CARD, oppId: null,
+      entries: [
+        { id: "e-rev-1", at: "2026-08-08", kind: "message", by: "collector",
+          text: "Watching this one for now \u2014 is the price flexible?" },
+        { id: "e-rev-2", at: "2026-08-08", kind: "message", by: "tp",
+          text: "Some room, yes. Tell me when you're ready to move on it." },
+      ],
+    }] : [],
   };
 }
 
@@ -2115,11 +2186,11 @@ function useShared(store, key) {
   return [state[key], set];
 }
 
-function buildOpps(seed) {
+function buildOpps(seed, goalsSeed = GOALS_SEED) {
   /* A collector holds at most one goal per card identity, so (collectorId,
      cardId) resolves the goal unambiguously. Resolved ONCE, at hydration. */
   const goalIdFor = (collectorId, cardId) => {
-    const ix = GOALS_SEED.findIndex((g) => g[0] === collectorId && g[1] === cardId);
+    const ix = goalsSeed.findIndex((g) => g[0] === collectorId && g[1] === cardId);
     return ix < 0 ? null : "g" + ix;
   };
   const binder = (cid) => COLLECTOR_CARDS_SEED.filter((r) => r[1] === cid && r[2] && r[4].front && r[3] != null);
@@ -2299,6 +2370,7 @@ const OPPS_SEED = [
   ["c11", "x2", "completed", "2026-04-11", 300], ["c12", "x6", "completed", "2026-03-29", 380],
   ["c13", "x10", "completed", "2026-07-02", 700], ["c13", "x7", "completed", "2025-12-15", 900],
   ["c1", "x3", "completed", "2025-11-08", 350], ["c11", "x4", "completed", "2026-02-19", 220],
+
 ];
 
 const ACTIVITY_SEED = [
