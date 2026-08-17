@@ -61,9 +61,9 @@ const cardFor = (r, g) => {
 };
 const goalOf = (o) => S().goals.find((g) => g.id === o.goalId);
 const ALL_STAGES = ["agree-price", "select-trade", "value-trade", "deal", "fulfillment"];
-/* Value Trade is omitted: its Collector workspace crashes on seeded data for a
-   reason that predates this pass. See "KNOWN" below. */
-const RENDERABLE = ["agree-price", "select-trade", "deal", "fulfillment"];
+/* Value Trade is back: the seed defect that made it unrenderable — trade terms
+   pointing at BinderCopy ids that did not exist — has been repaired. */
+const RENDERABLE = ALL_STAGES;
 const cardForOpp = (r, o) => cardFor(r, goalOf(o));
 
 describe("A. Primary Goal becomes the Deal Flow once an offer exists", () => {
@@ -350,7 +350,7 @@ describe("C. The review harness still works after consolidation", () => {
     });
   });
 
-  test("each renderable example opens directly, with conversation embedded", () => {
+  test("all five examples open directly, with conversation embedded", () => {
     RENDERABLE.forEach((stage) => {
       const r = mk();
       const o = S().opportunities.find((x) => x.collectorId === ME && D.isActive(x)
@@ -363,27 +363,21 @@ describe("C. The review harness still works after consolidation", () => {
     });
   });
 
-  /* ------------------------------------------------------------ KNOWN DEFECT
-     The Collector's Value Trade workspace cannot render a seeded deal, because
-     buildOpps writes CARD ids into trade cards' binderId while BinderCopy ids
-     are "cc"+index. Every seeded value-trade/deal/fulfillment opportunity has
-     carried this since before this pass; it only became visible now that a
-     Collector has a Value Trade example of their own to open.
-
-     This is pre-existing seed data, NOT the consolidation, and the corrective
-     change is broad (165 suites failed on a trial fix), so it is reported
-     rather than smuggled into a framework pass. This test pins the defect so it
-     cannot be forgotten and will fail loudly the moment it is repaired. */
-  test("KNOWN: seeded trade terms reference binder copies that do not exist", () => {
+  /* --------------------------------------------------------- REPAIRED DEFECT
+     buildOpps used to write CARD ids into trade cards' binderId while BinderCopy
+     ids are "cc"+index, so every seeded trade term pointed at a copy that did
+     not exist and the Collector's Value Trade workspace could not render. The
+     seed now resolves the binder copy through the same lookup it reads photos,
+     cert and market value from. Fully covered in tests/seed-integrity.cjs. */
+  test("seeded trade terms resolve to real binder copies", () => {
     mk();
     const ids = new Set(S().binder.filter((b) => b.collectorId === ME).map((b) => b.id));
     const o = S().opportunities.find((x) => x.collectorId === ME && D.isActive(x)
       && x.stage === "value-trade");
     const cards = D.acceptedTradeCards(o);
     assert(cards.length >= 1, "the fixture has accepted trade cards");
-    assert(cards.some((c) => !ids.has(c.binderId)),
-      "STILL BROKEN: a trade term points at a non-existent BinderCopy — "
-      + "if this now fails, the seed was fixed and the skip below can be removed");
+    cards.forEach((c) => assert(ids.has(c.binderId),
+      "every trade term names a BinderCopy this collector actually owns"));
   });
 
   test("reset still restores the review deal, and promotion still works", () => {

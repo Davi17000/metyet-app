@@ -2196,6 +2196,16 @@ function buildOpps(seed, goalsSeed = GOALS_SEED) {
   const binder = (cid) => COLLECTOR_CARDS_SEED.filter((r) => r[1] === cid && r[2] && r[4].front && r[3] != null);
   const eligible = (cid) => binder(cid).map((r) => r[0]);
   const binderRow = (id) => COLLECTOR_CARDS_SEED.find((r) => r[0] === id);
+  /* A trade term references an exact BinderCopy, and a BinderCopy's canonical id
+     is "cc"+index — the same index buildCanonicalSeed assigns when it maps
+     COLLECTOR_CARDS_SEED into binder records. The seed previously wrote the CARD
+     id into binderId, so every seeded trade card pointed at a copy that does not
+     exist. Resolved through the SAME lookup binderRow uses, so the id names
+     precisely the row whose photos, cert and market value were read. */
+  const binderIdOf = (id) => {
+    const ix = COLLECTOR_CARDS_SEED.findIndex((r) => r[0] === id);
+    return ix < 0 ? null : "cc" + ix;
+  };
   const val = (id) => CARDS_SEED.find((c) => c.id === id)?.value || 0;
 
   return seed.map((t, i) => {
@@ -2229,7 +2239,7 @@ function buildOpps(seed, goalsSeed = GOALS_SEED) {
       o.trade = all.length
         ? { mode: "trade", submitted, cards: all.map((id, k) => {
             const b = binderRow(id);
-            const tc = emptyTradeCard(id, b[4], b[5], id);
+            const tc = emptyTradeCard(id, b[4], b[5], binderIdOf(id));
             // the last row always stays awaiting review so the stage never
             // seeds in an already-settled state it should have advanced out of
             if (submitted && k < all.length - 1) {
@@ -2266,7 +2276,7 @@ function buildOpps(seed, goalsSeed = GOALS_SEED) {
              6 collector withdrew over the economics */
         o.trade = { mode: "trade", submitted: true, cards: ids.map((id, k) => {
           const b = binderRow(id);
-          const tc = emptyTradeCard(id, b[4], b[5], id);
+          const tc = emptyTradeCard(id, b[4], b[5], binderIdOf(id));
           tc.inclusion = "accepted"; tc.reviewedAt = at;
           const ask = b[3];
           const slot = (k + i) % 7;
@@ -2301,7 +2311,7 @@ function buildOpps(seed, goalsSeed = GOALS_SEED) {
           const b = binderRow(id);
           const v = Math.round(b[3] * 0.9);
           const r = rates[(k + i) % rates.length];
-          const tc = emptyTradeCard(id, b[4], b[5], id);
+          const tc = emptyTradeCard(id, b[4], b[5], binderIdOf(id));
           tc.inclusion = "accepted"; tc.reviewedAt = at;
           tc.collectorMarket = v; tc.tpMarket = v; tc.agreedMarket = v;
           tc.valueThread = [
