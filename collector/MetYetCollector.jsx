@@ -377,6 +377,18 @@ const CSS = `
   text-transform: uppercase; font-weight: 700; color: var(--t1); }
 .goal-live-c { font-size: 14px; margin-top: 7px; font-weight: 500; }
 .goal-live-w { font-size: 13.5px; color: var(--muted); margin-top: 10px; }
+/* Conversation embedded in the deal: part of the workspace, never a second app
+   underneath it. The stage above stays visually dominant. */
+.chat-embed .chat-scroll { max-height: 300px; }
+.chat-more { display: block; font-size: 12.5px; margin: 0 0 8px; color: var(--muted); }
+/* Active goals read as deals at the entry point, and open straight into one. */
+.goal-deal { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+  background: var(--t1-bg); border: 1px solid var(--accent-line); border-radius: 10px;
+  padding: 9px 11px; margin-top: 10px; cursor: pointer; }
+.goal-deal-s { font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--t1); font-weight: 700; }
+.goal-deal-p { font-size: 13px; font-weight: 600; }
+.goal-deal-t { margin-left: auto; font-size: 12px; color: var(--muted); }
 /* Review harness — dev only, deliberately plain so it never reads as product. */
 .rvw { border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; }
 .rvw-h { font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 7px; }
@@ -1213,6 +1225,18 @@ function GoalCard({ g, st, go }) {
           <div className="goal-live-h">
             <span className="goal-live-stage">{STAGE[live.stage].label}</span>
           </div>
+          {/* DIRECT ENTRY. Once an offer has been submitted the Goal's working
+              experience IS the Deal Flow, so the entry point opens it — no
+              intermediary detail step, whoever holds the turn. The stage shown
+              is the canonical opportunity stage, not a second indicator. */}
+          <button className="goal-deal" onClick={() => go({ v: "deal", oppId: live.id })}>
+            {/* The partner is already named once above; repeating it here would
+                say the same thing twice in one callout. */}
+            <span className="goal-deal-s">Deal Flow · {STAGE[live.stage].label}</span>
+            <span className="goal-deal-t">
+              {act.cta ? "Your move" : act.waiting || "Open"}
+            </span>
+          </button>
           {/* RE-ENTRY. An active deal is always reachable, whoever owns the turn.
               Having no stage action means there is nothing to DO — not that the
               deal, or the conversation inside it, becomes unreachable. Opening
@@ -1444,13 +1468,20 @@ function SimulateTP({ o, st }) {
    alternative partner: the difference is whether an opportunity happens to be
    attached, never a second chat model. Sending a message NEVER touches deal
    state — it only appends to the thread. */
-function DealChat({ o, partnerId, cardId, st, bare }) {
+function DealChat({ o, partnerId, cardId, st, bare, embedded }) {
   const [draft, setDraft] = useState("");
+  const [full, setFull] = useState(false);
   const pid = partnerId != null ? partnerId : (o && o.partnerId);
   const cid = cardId != null ? cardId : (o && o.cardId);
   const partner = st.partnerById(pid);
   const thread = st.threadWith(pid, cid);
-  const entries = thread ? thread.entries : [];
+  const all = thread ? thread.entries : [];
+  /* Embedded in a deal, the conversation must not bury the stage work: show the
+     tail by default and expand IN PLACE. Chronology is never reordered — this
+     is a window onto the canonical thread, not a different ordering of it. */
+  const RECENT = 3;
+  const hidden = embedded && !full ? Math.max(0, all.length - RECENT) : 0;
+  const entries = hidden ? all.slice(all.length - RECENT) : all;
   const them = partner ? partner.name : "them";
   const send = () => {
     if (!draft.trim()) return;
@@ -1460,8 +1491,13 @@ function DealChat({ o, partnerId, cardId, st, bare }) {
   };
 
   return (
-    <div className={bare ? "chat chat-bare" : "card sec chat"}>
+    <div className={embedded ? "card sec chat chat-embed" : bare ? "chat chat-bare" : "card sec chat"}>
       {!bare && <div className="sec-h">Conversation</div>}
+      {hidden > 0 && (
+        <button className="link chat-more" onClick={() => setFull(true)}>
+          Earlier messages ({hidden})
+        </button>
+      )}
       <div className="chat-scroll">
         {entries.length === 0 ? (
           <div className="faint chat-empty">
@@ -1975,6 +2011,12 @@ function Deal({ oppId, st, go }) {
         {o.stage === "completed" && <Completed o={o} />}
       </div>
 
+      {/* 7. CONVERSATION, INLINE. The same canonical thread scoped to collector +
+          partner + card — read and written through the same component the
+          pre-deal surfaces use. Not a second messaging system, and no longer a
+          drawer: what was said and what was agreed belong to the deal. */}
+      <DealChat o={o} partnerId={o.partnerId} cardId={o.cardId} st={st} embedded />
+
       {/* 8. DEAL FLOW — inspectable, but secondary during active work. */}
       <div className="card sec dw-flow">
         <button className="rc-toggle" aria-expanded={flow} onClick={() => setFlow(!flow)}>
@@ -2002,13 +2044,12 @@ function Deal({ oppId, st, go }) {
         </div>
       )}
 
-      {/* 6. PERSISTENT ACTION BAR — chat always one tap away; the stage's own
-          primary action beside it, or an honest waiting state. */}
+      {/* 6. PERSISTENT ACTION BAR — the canonical stage action, or an honest
+          waiting state. The Chat button is gone: conversation is part of this
+          workspace now, not a destination to be sent to. The bar still presses
+          the handler each stage registers; no stage logic lives in the shell. */}
       {isOpen(o) && (
         <div className="dw-bar">
-          <button className="btn dw-bar-chat" onClick={() => setChat(true)}>
-            Chat with {short}
-          </button>
           {bar && bar.run ? (
             <button className="btn pri dw-bar-go" disabled={!!bar.disabled} onClick={bar.run}>
               {bar.label}
@@ -2018,20 +2059,6 @@ function Deal({ oppId, st, go }) {
               {t.who === "partner" ? `Waiting on ${short}` : "Nothing to send yet"}
             </span>
           )}
-        </div>
-      )}
-
-      {/* 7. CHAT AS A DRAWER — the canonical thread, without leaving the stage. */}
-      {chat && (
-        <div className="ovl dw-chat-ovl" onClick={() => setChat(false)}>
-          <div className="dw-chat" onClick={(e) => e.stopPropagation()}>
-            <div className="dw-chat-h">
-              <span>Chat with {them}</span>
-              <button className="dw-chat-x" aria-label="Close chat"
-                onClick={() => setChat(false)}>&times;</button>
-            </div>
-            <DealChat o={o} st={st} bare />
-          </div>
         </div>
       )}
     </div>

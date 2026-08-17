@@ -108,14 +108,14 @@ describe("Active deal re-entry", () => {
     handToPartner(o.id);
 
     const r = remount();
-    click(btn(r, "View Deal"));
-    const chat = btns(r, /^Chat with /)[0];
-    assert(chat, "the persistent action bar still offers chat");
-
     const before = dealShape(liveOpp());
-    click(chat);
-    assert(cls(r, "dw-chat").length > 0, "the chat drawer opens");
-    eq(dealShape(liveOpp()), before, "and opening it mutates no deal state");
+    click(btn(r, "View Deal"));
+    /* Conversation is part of the workspace now: nothing to open, nothing to tap. */
+    const chat = cls(r, "chat-embed")[0];
+    assert(chat, "the conversation is present inline");
+    assert(chat.findAllByType("textarea").length === 1, "with its composer");
+    eq(cls(r, "dw-chat").length, 0, "and no drawer exists");
+    eq(dealShape(liveOpp()), before, "reaching it mutated no deal state");
   });
 
   test("sending a message while waiting does not change the turn", () => {
@@ -125,11 +125,11 @@ describe("Active deal re-entry", () => {
 
     const r = remount();
     click(btn(r, "View Deal"));
-    click(btns(r, /^Chat with /)[0]);
     const before = dealShape(liveOpp());
-    const ta = cls(r, "dw-chat")[0].findAllByType("textarea")[0];
+    const panel = cls(r, "chat-embed")[0];
+    const ta = panel.findAllByType("textarea")[0];
     TR.act(() => { ta.props.onChange({ target: { value: "any news?" } }); });
-    click(cls(r, "dw-chat")[0].findAllByType("button").find((b) => txt(b).trim() === "Send"));
+    click(panel.findAllByType("button").find((b) => txt(b).trim() === "Send"));
 
     eq(dealShape(liveOpp()), before, "the deal is untouched by the message");
     const t = D.findThread(S().conversations, "c12", liveOpp().partnerId,

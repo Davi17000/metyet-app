@@ -1668,23 +1668,22 @@ describe("Collector shared chat", () => {
     click(card.findAllByType("button").find((b) => txt(b).trim() === "Continue Deal Flow"));
     return r;
   };
-  const openChat = (r) => {
-    if (!cls(r, "dw-chat")[0]) click(cls(r, "dw-bar")[0].findAllByType("button")[0]);
-    return cls(r, "dw-chat")[0];
-  };
+  /* Conversation is embedded in the workspace now — there is nothing to open. */
+  const openChat = (r) => cls(r, "chat-embed")[0];
   const compose = (r, text) => {
-    const drawer = openChat(r);
-    const ta = drawer.findAllByType("textarea")[0];
+    const panel = openChat(r);
+    const ta = panel.findAllByType("textarea")[0];
     TR.act(() => { ta.props.onChange({ target: { value: text } }); });
-    click(cls(r, "dw-chat")[0].findAllByType("button").find((b) => txt(b).trim() === "Send"));
+    click(panel.findAllByType("button").find((b) => txt(b).trim() === "Send"));
   };
 
   test("the workspace exposes a conversation", () => {
     const r = openDeal(mk());
     assert(cls(r, "dw-bar")[0], "a persistent action bar");
-    assert(/Chat with/.test(txt(cls(r, "dw-bar")[0])), "with chat one tap away");
+    assert(!/Chat with/.test(txt(cls(r, "dw-bar")[0])),
+      "and no separate chat destination — conversation is in the workspace");
     const drawer = openChat(r);
-    assert(drawer, "the drawer opens");
+    assert(drawer, "the conversation renders inline");
     assert(/Nothing here yet/.test(txt(cls(r, "chat-empty")[0])),
       "and says honestly that nothing has been said");
   });
@@ -1839,7 +1838,7 @@ describe("Persistent action bar", () => {
     const r = open(mk());
     const bar = cls(r, "dw-bar")[0];
     assert(bar, "the bar is present");
-    assert(/Chat with Northline/.test(txt(bar)), "naming the partner");
+    assert(!/Chat with/.test(txt(bar)), "the bar carries no separate chat destination");
   });
 
   test("the primary action reuses the stage's own handler", () => {
@@ -1857,7 +1856,8 @@ describe("Persistent action bar", () => {
 
   test("it drives the real mutation, and reflects the result", () => {
     const r = open(mk());
-    const go = () => cls(r, "dw-bar")[0].findAllByType("button")[1];
+    /* The bar now holds the stage action alone — chat is no longer a destination. */
+    const go = () => cls(r, "dw-bar")[0].findAllByType("button")[0];
     eq(go().props.disabled, true, "nothing to send yet");
     click(cls(r, "pick")[0]);
     assert(/Send 1 card for review/.test(txt(go())), "the label comes from the stage");
@@ -1869,38 +1869,42 @@ describe("Persistent action bar", () => {
   test("waiting shows no invalid action", () => {
     const r = open(mk());
     click(cls(r, "pick")[0]);
-    click(cls(r, "dw-bar")[0].findAllByType("button")[1]);
+    click(cls(r, "dw-bar")[0].findAllByType("button")[0]);
     const bar = cls(r, "dw-bar")[0];
     assert(byClassIn(bar, "dw-bar-wait")[0], "a waiting state replaces the action");
     assert(/Waiting on Northline/.test(txt(bar)), "naming who we wait on");
-    eq(bar.findAllByType("button").length, 1, "only chat remains pressable");
+    eq(bar.findAllByType("button").length, 0, "and nothing false is left pressable");
+    /* But the conversation is still right there, composer and all. */
+    const chat = cls(r, "chat-embed")[0];
+    assert(chat && chat.findAllByType("textarea").length === 1,
+      "the collector can still write while waiting");
   });
 });
 
-describe("Chat drawer", () => {
+describe("Embedded conversation", () => {
   const open = (r) => {
     const card = cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
     click(card.findAllByType("button").find((b) => txt(b).trim() === "Continue Deal Flow"));
     return r;
   };
-  const drawer = (r) => { click(cls(r, "dw-bar")[0].findAllByType("button")[0]); return cls(r, "dw-chat")[0]; };
+  const drawer = (r) => cls(r, "chat-embed")[0];
 
   test("it opens in one tap without mutating the deal", () => {
     const r = open(mk());
     const before = JSON.stringify(__store.get().get().opportunities.find((o) => o.id === "o9"));
     const d = drawer(r);
-    assert(d, "the drawer opened");
-    assert(/Chat with Northline Cards/.test(txt(byClassIn(d, "dw-chat-h")[0])), "titled");
+    assert(d, "the conversation is already there, no tap required");
+    assert(/Conversation/.test(txt(d)), "titled");
     eq(JSON.stringify(__store.get().get().opportunities.find((o) => o.id === "o9")), before,
       "the opportunity is untouched");
   });
 
   test("it reads and writes the canonical thread — no second conversation", () => {
     const r = open(mk());
-    drawer(r);
-    const ta = cls(r, "dw-chat")[0].findAllByType("textarea")[0];
+    const d = drawer(r);
+    const ta = d.findAllByType("textarea")[0];
     TR.act(() => { ta.props.onChange({ target: { value: "On my way" } }); });
-    click(cls(r, "dw-chat")[0].findAllByType("button").find((b) => txt(b).trim() === "Send"));
+    click(d.findAllByType("button").find((b) => txt(b).trim() === "Send"));
     const s2 = __store.get().get();
     const Dm = require("../domain/metyet-domain.js");
     const opp = s2.opportunities.find((o) => o.id === "o9");
@@ -1910,23 +1914,21 @@ describe("Chat drawer", () => {
     eq(s2.conversations.length, 1, "and only one conversation exists");
   });
 
-  test("a partner message stays visible in the drawer", () => {
+  test("a partner message stays visible inline", () => {
     const r = open(mk());
     const oppNow = __store.get().get().opportunities.find((o) => o.id === "o9");
     TR.act(() => { __store.get().actions.sendMessage({ collectorId: "c12",
       partnerId: oppNow.partnerId, cardId: "i17",
       by: "tp", text: "Looking forward to it", at: "2026-08-17" }); });
-    drawer(r);
-    assert(/Looking forward to it/.test(txt(cls(r, "dw-chat")[0])), "the partner's message shows");
+    assert(/Looking forward to it/.test(txt(drawer(r))), "the partner's message shows");
     assert(cls(r, "chat-m").some((n) => String(n.props.className).includes("theirs")),
       "distinguished from the collector's own");
   });
 
-  test("closing returns to the same stage context", () => {
+  test("the conversation never displaces the stage context", () => {
     const r = open(mk());
-    drawer(r);
-    click(cls(r, "dw-chat-x")[0]);
-    eq(cls(r, "dw-chat").length, 0, "the drawer closed");
+    assert(drawer(r), "the conversation is inline");
+    eq(cls(r, "dw-chat").length, 0, "and no drawer exists at all");
     const cur = cls(r, "rail-s").find((n) => String(n.props.className).includes("current"));
     assert(txt(cur).includes("Select Trade"), "still on the same stage");
     assert(cls(r, "dw-bar")[0], "with the action bar intact");
