@@ -344,13 +344,18 @@ module.exports.receiptForOpportunity = receiptForOpportunity;
 
 /* ---------------------------------------------------------- CONVERSATIONS
 
-   ONE THREAD PER COLLECTOR + CARD IDENTITY.
+   ONE THREAD PER COLLECTOR + TRUSTED PARTNER + CARD IDENTITY.
 
-   This is the Trusted Partner's original contract, lifted here so both personas
-   share it rather than each inventing a shape. The key deliberately excludes
-   goal and opportunity, so a single conversation survives Secondary -> Primary
-   promotion and is inherited by the Opportunity when a deal begins: "one
-   conversation, all stages".
+   A Conversation is *between* a Collector and a Trusted Partner (contract §1,
+   visibility "participants only"). The partner is therefore part of the
+   identity, not a passenger on it. Keying on collector + card alone merged
+   every partner holding that identity into one shared thread, which both broke
+   the privacy boundary and made the partner-scoped projections dead filters.
+
+   The key still deliberately excludes goal and opportunity, so a single
+   conversation survives Secondary -> Primary promotion and is inherited by the
+   Opportunity when a deal begins: "one conversation, all stages" — now scoped
+   to the collector-partner-card relationship it actually belongs to.
 
    Entries interleave chronologically and are of two kinds:
      { kind: "message", by: "tp" | "collector", text }
@@ -359,16 +364,26 @@ module.exports.receiptForOpportunity = receiptForOpportunity;
    A thread is created by a real message or a lifecycle event — never by merely
    opening a workspace — so "has this conversation started?" stays honest. */
 
-const threadKey = (collectorId, card) => collectorId + "::" + identityKey(card);
+/* A partnerless thread is precisely the defect this key replaces, so the
+   omission is a programming error rather than something to paper over. */
+const requirePartner = (partnerId, fn) => {
+  if (partnerId == null || partnerId === "") {
+    throw new Error(`${fn}: partnerId is required — a Conversation is between a Collector and a Trusted Partner`);
+  }
+  return partnerId;
+};
 
-const findThread = (threads, collectorId, card) => {
-  const k = threadKey(collectorId, card);
+const threadKey = (collectorId, partnerId, card) =>
+  collectorId + "::" + requirePartner(partnerId, "threadKey") + "::" + identityKey(card);
+
+const findThread = (threads, collectorId, partnerId, card) => {
+  const k = threadKey(collectorId, partnerId, card);
   return (threads || []).find((t) => t.key === k) || null;
 };
 
 /* Returns the next threads array. Pure — callers decide how to store it. */
-function appendThreadEntry(threads, { collectorId, card, cardId, oppId, entry, at, id }) {
-  const k = threadKey(collectorId, card);
+function appendThreadEntry(threads, { collectorId, partnerId, card, cardId, oppId, entry, at, id }) {
+  const k = threadKey(collectorId, partnerId, card);
   const stamped = {
     id: id || "e" + Math.random().toString(36).slice(2, 10),
     at: at || new Date().toISOString(),
@@ -380,20 +395,33 @@ function appendThreadEntry(threads, { collectorId, card, cardId, oppId, entry, a
       ? { ...t, oppId: t.oppId || oppId || null, entries: [...t.entries, stamped] } : t));
   }
   return [...(threads || []), {
-    id: "t" + k, key: k, collectorId, cardId: cardId != null ? cardId : (card && card.id),
+    id: "t" + k, key: k, collectorId, partnerId,
+    cardId: cardId != null ? cardId : (card && card.id),
     oppId: oppId || null, entries: [stamped],
   }];
 }
 
 /* A conversation exists once somebody has actually said something. */
-const hasConversation = (threads, collectorId, card) => {
-  const t = findThread(threads, collectorId, card);
+const hasConversation = (threads, collectorId, partnerId, card) => {
+  const t = findThread(threads, collectorId, partnerId, card);
   return !!t && t.entries.some((e) => e.kind === "message");
 };
 const messagesOf = (thread) => (thread ? thread.entries : []);
+
+/* The Collector's side of the same fact: every partner they have talked to
+   about one identity. Derived from the canonical threads — not a second model. */
+const threadsForCard = (threads, collectorId, card) => {
+  const suffix = "::" + identityKey(card);
+  return (threads || []).filter((t) => t.collectorId === collectorId
+    && typeof t.key === "string" && t.key.endsWith(suffix));
+};
+const partnersInConversation = (threads, collectorId, card) =>
+  threadsForCard(threads, collectorId, card).map((t) => t.partnerId).filter(Boolean);
 
 module.exports.threadKey = threadKey;
 module.exports.findThread = findThread;
 module.exports.appendThreadEntry = appendThreadEntry;
 module.exports.hasConversation = hasConversation;
 module.exports.messagesOf = messagesOf;
+module.exports.threadsForCard = threadsForCard;
+module.exports.partnersInConversation = partnersInConversation;

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useSyncExternalStore } from "react";
+import React, { useState, useMemo, useCallback, useEffect, useSyncExternalStore } from "react";
 import * as D from "../domain/metyet-domain.js";
 import * as E from "../domain/metyet-entities.js";
 import { createStore } from "../domain/metyet-store.js";
@@ -78,16 +78,16 @@ function nextActionFor(o, st) {
     }
     case "select-trade":
       return { cta: mine ? "Choose trade cards" : null, context: agreed,
-        waiting: mine ? null : `${them} is reviewing your cards` };
+        waiting: mine ? null : `Waiting on ${them} — reviewing your cards` };
     case "value-trade":
       return { cta: mine ? "Agree card values" : null, context: agreed,
-        waiting: mine ? null : `Waiting on ${them} to value your cards` };
+        waiting: mine ? null : `Waiting on ${them} — valuing your cards` };
     case "deal":
       return { cta: mine ? "Check the balance" : null, context: agreed,
-        waiting: mine ? null : `Waiting on ${them} to agree` };
+        waiting: mine ? null : `Waiting on ${them} — agreeing the balance` };
     case "fulfillment":
       return { cta: mine ? "Confirm the handoff" : null, context: agreed,
-        waiting: mine ? null : `Waiting on ${them} to confirm` };
+        waiting: mine ? null : `Waiting on ${them} — confirming the handoff` };
     default:
       return { cta: null, context: agreed, waiting: null };
   }
@@ -377,6 +377,16 @@ const CSS = `
   text-transform: uppercase; font-weight: 700; color: var(--t1); }
 .goal-live-c { font-size: 14px; margin-top: 7px; font-weight: 500; }
 .goal-live-w { font-size: 13.5px; color: var(--muted); margin-top: 10px; }
+/* Re-entry while the partner holds the turn: present, but plainly secondary to
+   the primary action it replaces. */
+.goal-live-view { }
+/* Conversation vs negotiation, said in the layout as well as the words. */
+.whi-current { border-color: var(--accent-line); background: var(--t1-bg); }
+.whi-badge { margin-left: 7px; font-size: 10.5px; letter-spacing: .04em; vertical-align: 2px; }
+.whi-live { line-height: 1.45; }
+.pc-banner { font-size: 12.5px; padding: 9px 11px; border-radius: 8px; margin-bottom: 11px;
+  border: 1px solid var(--line); color: var(--muted); line-height: 1.45; }
+.pc-banner.is-deal { border-color: var(--accent-line); background: var(--t1-bg); color: var(--t1); }
 
 /* supply stays reachable even mid-negotiation */
 .goal-holders { display: flex; align-items: center; gap: 12px; width: 100%;
@@ -513,6 +523,103 @@ const CSS = `
 .goal-with-p { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
 .goal-with-n { font-size: 16px; font-weight: 700; color: var(--text); }
 .goal-with-b { font-size: 10.5px; padding: 2px 8px; }
+
+/* ============================================================================
+   THE DEAL WORKSPACE — light, scoped.
+
+   Goals, Trade Binder and Trusted Partners stay dark: that is browsing, and the
+   artwork carries it. A deal is close reading — prices, percentages, card lists,
+   a conversation — so it gets a light, high-clarity treatment. The tokens are
+   overridden ONLY within .dw, so nothing else in the app shifts. */
+.dw {
+  --bg: #F7F9FA;
+  --panel: #FFFFFF;
+  --panel-2: #F3F6F7;
+  --line: #DFE5E8;
+  --line-soft: #EDF1F2;
+  --text: #16202A;
+  --muted: #5A6B76;
+  --faint: #7C8D98;
+  --t1: #0B5D66;
+  --t2: #4E8C93;
+  --t1-bg: #E6F0F1;
+  --accent: #0B7A72;
+  --accent-bg: #E8F4F3;
+  --accent-line: #C6E1DE;
+  --amber: #8A5A08;
+  --amber-bg: #FBF3E3;
+  --danger: #98302C;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  /* room for the persistent bar */
+  padding-bottom: calc(74px + env(safe-area-inset-bottom));
+}
+.dw .card { box-shadow: 0 1px 2px rgba(22,32,42,.05), 0 4px 14px rgba(22,32,42,.05); }
+.dw .btn { box-shadow: none; }
+.dw .btn.pri, .dw .btn.deep { color: #FFF; }
+.dw .cip-opt.on, .dw .tabb.on { color: #FFF; }
+.dw .art.ph { background: var(--panel-2); }
+
+/* 1. deal context — compact enough for a phone */
+.dw-ctx { display: flex; gap: 13px; align-items: flex-start; padding: 14px; margin-top: 14px; }
+.dw-ctx-b { flex: 1; min-width: 0; }
+.dw-ctx-n { font-family: 'Archivo'; font-size: 18px; font-weight: 700; line-height: 1.2;
+  letter-spacing: -.01em; }
+.dw-ctx-i { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.dw-ctx-p { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
+.dw-ctx-pn { font-size: 13.5px; font-weight: 600; }
+
+/* 2. compact progress */
+.dw-prog { padding: 14px 12px 12px; margin-top: 12px; }
+.rail.compact { gap: 2px; }
+.rail.compact .rail-s { padding-top: 9px; gap: 4px; }
+.rail.compact .rail-n { width: 18px; height: 18px; font-size: 10px; }
+.rail.compact .rail-l { font-size: 9.5px; }
+
+/* 3. guidance */
+.dw-guide { margin-top: 12px; padding: 13px 15px; border-radius: 12px;
+  background: var(--accent-bg); border: 1px solid var(--accent-line); }
+.dw-guide.partner { background: var(--amber-bg); border-color: #EBD9B4; }
+.dw-guide.none { background: var(--panel-2); border-color: var(--line); }
+.dw-guide-w { font-family: 'Archivo'; font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; font-weight: 700; color: var(--t1); margin-bottom: 4px; }
+.dw-guide.partner .dw-guide-w { color: var(--amber); }
+.dw-guide-t { font-size: 14.5px; line-height: 1.45; }
+
+/* 4. the stage owns the page */
+.dw-stage { margin-top: 14px; }
+.dw-flow { margin-top: 14px; }
+
+/* 6. persistent action bar */
+.dw-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 35; display: flex;
+  gap: 9px; padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  background: rgba(255,255,255,.97); border-top: 1px solid var(--line);
+  backdrop-filter: blur(8px); }
+.dw-bar-chat { flex: 0 1 auto; white-space: nowrap; }
+.dw-bar-go { flex: 1; }
+.dw-bar-wait { flex: 1; display: flex; align-items: center; justify-content: center;
+  font-size: 13.5px; color: var(--muted); }
+
+/* 7. chat drawer */
+.dw-chat-ovl { align-items: flex-end; }
+.dw-chat { background: var(--panel); color: var(--text); width: 100%; max-width: 560px;
+  border-radius: 18px 18px 0 0; max-height: 86vh; display: flex; flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom); }
+.dw-chat-h { display: flex; align-items: center; gap: 10px; padding: 15px 16px;
+  border-bottom: 1px solid var(--line-soft); font-weight: 700; font-size: 15px; }
+.dw-chat-x { margin-left: auto; background: none; border: 0; font-size: 24px; line-height: 1;
+  color: var(--faint); padding: 0 4px; }
+.chat-bare { padding: 14px 16px 16px; overflow-y: auto; }
+.chat-bare .chat-scroll { max-height: 46vh; }
+
+@media (min-width: 900px) {
+  /* Desktop keeps the bar inline rather than pinned across the whole viewport. */
+  .dw-bar { position: sticky; bottom: 0; margin: 16px -34px 0; padding-left: 34px;
+    padding-right: 34px; border-radius: 0; }
+  .dw-chat-ovl { align-items: center; }
+  .dw-chat { border-radius: 16px; max-height: 78vh; }
+}
 
 /* development-only simulator — deliberately unlike a MetYet product control */
 .sim { margin: 6px 0 14px; border: 1px dashed var(--line); border-radius: 11px; }
@@ -668,13 +775,13 @@ function Sheet({ title, sub, onClose, children, footer }) {
 /* The five stages, always named. A collector should never have to decode a bar:
    each step carries its number, its label and its state, on every surface. The
    states come from the same projection the receipt uses. */
-function Track({ stage, o, st }) {
+function Track({ stage, o, st, compact }) {
   const r = D.receiptForOpportunity(o || { stage, trade: { cards: [] } }, {
     binderById: st && st.binderById, cardById: st && st.cardById,
     partnerById: st && st.partnerById });
   return (
     <>
-      <ol className="rail" aria-label={`Stage ${r.stageIndex + 1} of 5: ${STAGE[stage].label}`}>
+      <ol className={"rail" + (compact ? " compact" : "")} aria-label={`Stage ${r.stageIndex + 1} of 5: ${STAGE[stage].label}`}>
         {r.stages.map((s2) => (
           <li key={s2.id} className={"rail-s " + s2.state}
             aria-current={s2.state === "current" ? "step" : undefined}>
@@ -685,7 +792,7 @@ function Track({ stage, o, st }) {
           </li>
         ))}
       </ol>
-      <div className="faint" style={{ fontSize: 13.5, marginTop: 10 }}>{STAGE_BLURB[stage]}</div>
+      {!compact && <div className="faint" style={{ fontSize: 13.5, marginTop: 10 }}>{STAGE_BLURB[stage]}</div>}
     </>
   );
 }
@@ -1019,13 +1126,23 @@ function GoalCard({ g, st, go }) {
           <div className="goal-live-h">
             <span className="goal-live-stage">{STAGE[live.stage].label}</span>
           </div>
+          {/* RE-ENTRY. An active deal is always reachable, whoever owns the turn.
+              Having no stage action means there is nothing to DO — not that the
+              deal, or the conversation inside it, becomes unreachable. Opening
+              it is a read: it mutates no stage, no nextActor, nothing. */}
           {act.cta ? (
             <button className="btn pri wide" style={{ marginTop: 11 }}
               onClick={() => go({ v: "deal", oppId: live.id })}>
               Continue Deal Flow
             </button>
           ) : (
-            <div className="goal-live-w">{act.waiting}</div>
+            <>
+              <div className="goal-live-w">{act.waiting}</div>
+              <button className="btn wide goal-live-view" style={{ marginTop: 9 }}
+                onClick={() => go({ v: "deal", oppId: live.id })}>
+                View Deal
+              </button>
+            </>
           )}
         </div>
       )}
@@ -1071,7 +1188,8 @@ function GoalCard({ g, st, go }) {
             {holders.length} {holders.length === 1 ? "partner has" : "partners have"} this card
           </div>
           {holders.map((h) => {
-            const talked = st.hasThreadAbout(g.cardId);
+            /* Per partner — talking to one says nothing about the others. */
+            const talked = st.hasThreadAbout(g.cardId, h.partner.id);
             return (
               <div key={h.partner.id} className="gs-row">
                 <Face partner={h.partner} size={30} />
@@ -1084,8 +1202,9 @@ function GoalCard({ g, st, go }) {
                 </div>
                 <div className="gs-a">
                   <span className="gs-ask mono">{money(h.ask)}</span>
-                  <button className="btn sm" onClick={() => st.reachOut(g.id, h.partner.id, g.cardId)}>
-                    {talked ? "Continue chatting" : "Reach out"}
+                  <button className="btn sm"
+                    onClick={() => go({ v: "chat", goalId: g.id, partnerId: h.partner.id, cardId: g.cardId })}>
+                    {talked ? "Continue chatting" : "Chat"}
                   </button>
                 </div>
               </div>
@@ -1182,7 +1301,8 @@ function SimulateTP({ o, st }) {
   }
   if (D.isActive(o)) {
     actions.push(["Send a message", () => {
-      A.sendMessage({ collectorId: o.collectorId, cardId: o.cardId, by: "tp",
+      A.sendMessage({ collectorId: o.collectorId, partnerId: o.partnerId,
+        cardId: o.cardId, by: "tp",
         text: "Sounds good — let me know.", oppId: o.id, at: AT });
       did("Message sent");
     }]);
@@ -1222,23 +1342,31 @@ function SimulateTP({ o, st }) {
 }
 
 /* THE SHARED CONVERSATION. The same thread the Trusted Partner reads and writes —
-   one per collector + card identity, spanning goals and the whole deal. Lifecycle
-   events sit inline with messages, so the record reads chronologically. */
-function DealChat({ o, st }) {
+   one per collector + PARTNER + card identity, spanning goals and the whole deal.
+   Lifecycle events sit inline with messages, so the record reads chronologically.
+
+   One component serves both a negotiation and a plain conversation with an
+   alternative partner: the difference is whether an opportunity happens to be
+   attached, never a second chat model. Sending a message NEVER touches deal
+   state — it only appends to the thread. */
+function DealChat({ o, partnerId, cardId, st, bare }) {
   const [draft, setDraft] = useState("");
-  const partner = st.partnerById(o.partnerId);
-  const thread = st.threadForCard(o.cardId);
+  const pid = partnerId != null ? partnerId : (o && o.partnerId);
+  const cid = cardId != null ? cardId : (o && o.cardId);
+  const partner = st.partnerById(pid);
+  const thread = st.threadWith(pid, cid);
   const entries = thread ? thread.entries : [];
   const them = partner ? partner.name : "them";
   const send = () => {
     if (!draft.trim()) return;
-    st.sendMessage(o.cardId, draft, o.id);
+    /* The oppId is passed only when this thread IS the negotiation's thread. */
+    st.sendMessage(pid, cid, draft, o && o.partnerId === pid ? o.id : undefined);
     setDraft("");
   };
 
   return (
-    <div className="card sec chat">
-      <div className="sec-h">Conversation</div>
+    <div className={bare ? "chat chat-bare" : "card sec chat"}>
+      {!bare && <div className="sec-h">Conversation</div>}
       <div className="chat-scroll">
         {entries.length === 0 ? (
           <div className="faint chat-empty">
@@ -1583,6 +1711,10 @@ function PartnerDetail({ partnerId, st, go }) {
             const c = st.cardById(s2.cardId);
             const g = st.goalFor(s2.cardId);
             const state = g ? st.stateOf(g.id) : null;
+            /* Whose deal is it? "Negotiating" is only a dead end if it is not
+               with this partner — and even then, only for the OFFER. */
+            const liveG = g ? st.openOppForGoal(g.id) : null;
+            const isCurrent = !!liveG && liveG.partnerId === partnerId;
             return (
               <div key={s2.invId || s2.cardId} className="card bnd-c">
                 <Art card={c} size="md" />
@@ -1603,21 +1735,30 @@ function PartnerDetail({ partnerId, st, go }) {
                       style={{ marginTop: 9 }}>
                       {g.tier === "primary" ? "Primary" : "Secondary"}
                     </span>
-                    {state === "negotiating" ? (
+                    {isCurrent && <div className="bnd-int">Your current deal</div>}
+                    {state === "negotiating" && !isCurrent && (
                       <div className="bnd-int" style={{ color: "var(--muted)" }}>
-                        Negotiating elsewhere
+                        Negotiating elsewhere — you can still talk
                       </div>
-                    ) : (
-                      <div className="act-2">
-                        <button className="btn sm" onClick={() => st.reachOut(g.id, partnerId, c.id)}>
-                          Reach out
+                    )}
+                    <div className="act-2">
+                      {/* Conversation is always open, whoever the deal is with. */}
+                      <button className="btn sm"
+                        onClick={() => go({ v: "chat", goalId: g.id, partnerId, cardId: c.id })}>
+                        {st.hasThreadAbout(c.id, partnerId) ? "Continue chatting" : "Chat"}
+                      </button>
+                      {isCurrent ? (
+                        <button className="btn sm pri"
+                          onClick={() => go({ v: "deal", oppId: liveG.id })}>
+                          View Deal
                         </button>
+                      ) : state !== "negotiating" ? (
                         <button className="btn sm pri"
                           onClick={() => go({ v: "offer", goalId: g.id, partnerId, cardId: c.id })}>
                           Make an offer
                         </button>
-                      </div>
-                    )}
+                      ) : null}
+                    </div>
                   </>
                 ) : (
                   /* Discovered inventory can become a goal. Adding one recalculates
@@ -1670,52 +1811,87 @@ function AddGoalSheet({ cardId, st, onClose, onAdded }) {
    stage means in plain language. Terms already agreed are shown as settled
    history; no stage can reopen them. */
 
+/* ============================================================================
+   THE COLLECTOR DEAL WORKSPACE
+
+   A mobile-first shell every stage plugs into:
+
+     deal context  ->  progress  ->  guidance  ->  stage work  ->  action bar
+
+   The stage owns its controls, as before. The action bar does NOT reimplement
+   them: each stage registers its primary action here, and the bar renders that
+   same handler. One definition, two places it can be pressed.
+   ========================================================================= */
 function Deal({ oppId, st, go }) {
   const o = st.opps.find((x) => x.id === oppId);
+  const [chat, setChat] = useState(false);
+  const [flow, setFlow] = useState(false);
+  /* Filled by whichever stage is mounted; null while waiting. */
+  const [bar, setBar] = useState(null);
+  const register = useCallback((next) => setBar(next), []);
+
   if (!o) return <div className="pg"><div className="card empty">This deal is no longer open.</div></div>;
   const g = st.goals.find((x) => x.id === o.goalId);
   const c = st.cardById(g.cardId);
   const p = st.partnerById(o.partnerId);
   const t = st.turnFor(o);
+  const them = p ? p.name : "them";
+  const short = p ? p.name.split(" ")[0] : "them";
+  const stageProps = { o, st, register };
 
   return (
-    <div className="pg">
+    <div className="pg dw">
       <button className="link" onClick={() => go({ v: "goals" })}>← Goals</button>
 
-      <div className="card dl-hero" style={{ marginTop: 14 }}>
-        <Art card={c} size="lg" />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="goal-n disp" style={{ marginTop: 0 }}>{c.name}</div>
-          <div className="goal-i">{cardLine(c)}</div>
-          <div className="goal-i">{gradeLine(c)}</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
-            <Face partner={p} size={26} />
-            <span style={{ marginLeft: 8, fontWeight: 600 }}>{p.name}</span>
+      {/* 1. DEAL CONTEXT — compact, and always the first thing read. */}
+      <div className="card dw-ctx">
+        <Art card={c} size="sm" />
+        <div className="dw-ctx-b">
+          <div className="dw-ctx-n">{c.name}</div>
+          <div className="dw-ctx-i">{cardLine(c)} · {gradeLine(c)}</div>
+          <div className="dw-ctx-p">
+            <Face partner={p} size={22} />
+            <span className="dw-ctx-pn">{them}</span>
           </div>
         </div>
       </div>
 
-      <div className="card sec">
-        <Track stage={o.stage} o={o} st={st} />
+      {/* 2. PROGRESS — the same canonical five stages, compact. */}
+      <div className="card dw-prog">
+        <Track stage={o.stage} o={o} st={st} compact />
       </div>
 
-      <Turn o={o} st={st} />
-
-      {o.stage === "agree-price" && <AgreePrice o={o} st={st} />}
-      {o.stage === "select-trade" && <SelectTrade o={o} st={st} />}
-      {o.stage === "value-trade" && <ValueTrade o={o} st={st} />}
-      {o.stage === "deal" && <DealStage o={o} st={st} />}
-      {o.stage === "fulfillment" && <Fulfillment o={o} st={st} />}
-      {o.stage === "completed" && <Completed o={o} />}
-
-      {/* THE SAME RECEIPT the Goal card shows, expanded. One projection, two
-          densities — so the two surfaces cannot disagree. */}
-      <div className="card sec">
-        <Receipt o={o} st={st} expanded />
+      {/* 3. GUIDANCE — canonical turn logic, in plain language. */}
+      <div className={"dw-guide " + (t.who || "none")}>
+        <div className="dw-guide-w">
+          {t.who === "me" ? "Your move"
+            : t.who === "partner" ? `Waiting on ${short}` : "Nothing to do"}
+        </div>
+        <div className="dw-guide-t">{t.what}</div>
       </div>
 
-      {/* The shared conversation, available at every stage. */}
-      <DealChat o={o} st={st} />
+      {/* 4. STAGE WORKSPACE — the dominant content, unchanged in substance. */}
+      <div className="dw-stage">
+        {o.stage === "agree-price" && <AgreePrice {...stageProps} />}
+        {o.stage === "select-trade" && <SelectTrade {...stageProps} />}
+        {o.stage === "value-trade" && <ValueTrade {...stageProps} />}
+        {o.stage === "deal" && <DealStage {...stageProps} />}
+        {o.stage === "fulfillment" && <Fulfillment {...stageProps} />}
+        {o.stage === "completed" && <Completed o={o} />}
+      </div>
+
+      {/* 8. DEAL FLOW — inspectable, but secondary during active work. */}
+      <div className="card sec dw-flow">
+        <button className="rc-toggle" aria-expanded={flow} onClick={() => setFlow(!flow)}>
+          <span className="rc-toggle-t">Deal Flow</span>
+          <span className="faint rc-toggle-s">
+            {D.receiptForOpportunity(o, { binderById: st.binderById, cardById: st.cardById,
+              partnerById: st.partnerById }).stages.filter((x) => x.state === "done").length} of 5 settled
+          </span>
+          <span className={"rc-chev" + (flow ? " on" : "")} aria-hidden="true">&#8250;</span>
+        </button>
+        {flow && <Receipt o={o} st={st} expanded inline />}
+      </div>
 
       <SimulateTP o={o} st={st} />
 
@@ -1730,16 +1906,57 @@ function Deal({ oppId, st, go }) {
           </div>
         </div>
       )}
+
+      {/* 6. PERSISTENT ACTION BAR — chat always one tap away; the stage's own
+          primary action beside it, or an honest waiting state. */}
+      {isOpen(o) && (
+        <div className="dw-bar">
+          <button className="btn dw-bar-chat" onClick={() => setChat(true)}>
+            Chat with {short}
+          </button>
+          {bar && bar.run ? (
+            <button className="btn pri dw-bar-go" disabled={!!bar.disabled} onClick={bar.run}>
+              {bar.label}
+            </button>
+          ) : (
+            <span className="dw-bar-wait">
+              {t.who === "partner" ? `Waiting on ${short}` : "Nothing to send yet"}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* 7. CHAT AS A DRAWER — the canonical thread, without leaving the stage. */}
+      {chat && (
+        <div className="ovl dw-chat-ovl" onClick={() => setChat(false)}>
+          <div className="dw-chat" onClick={(e) => e.stopPropagation()}>
+            <div className="dw-chat-h">
+              <span>Chat with {them}</span>
+              <button className="dw-chat-x" aria-label="Close chat"
+                onClick={() => setChat(false)}>&times;</button>
+            </div>
+            <DealChat o={o} st={st} bare />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function AgreePrice({ o, st }) {
+function AgreePrice({ o, st, register }) {
   const last = lastEntry(o.priceThread);
   const mine = st.turnFor(o).who === "me";
   const [amt, setAmt] = useState("");
   const n = Number(amt);
   const ok = amt !== "" && isFinite(n) && n > 0;
+  /* The action bar presses THIS handler — the same one the inline control uses. */
+  useEffect(() => {
+    if (!register) return;
+    register(mine
+      ? { label: ok ? "Send counter" : `Accept ${money(last && last.amount)}`,
+          run: () => (ok ? (st.priceRespond(o.id, "counter", n), setAmt("")) : st.priceRespond(o.id, "accept")) }
+      : null);
+  }, [register, mine, ok, n, o.id]);
 
   return (
     <div className="card sec">
@@ -1779,11 +1996,18 @@ function AgreePrice({ o, st }) {
 /* Select Trade — choosing which of your cards to put toward the purchase.
    Inclusion only: no values, no percentages, no money anywhere on this stage.
    Only copies the partner has already shown interest in are eligible. */
-function SelectTrade({ o, st }) {
+function SelectTrade({ o, st, register }) {
   const [picked, setPicked] = useState([]);   // never pre-selected: the collector chooses
   const groups = st.eligibleFor(o.partnerId, o);
   const eligible = [...groups.interested, ...groups.other];
   const inPack = o.trade.cards;
+  useEffect(() => {
+    if (!register) return;
+    register(!o.trade.submitted && eligible.length
+      ? { label: `Send ${picked.length || ""} card${picked.length === 1 ? "" : "s"} for review`.replace("  ", " "),
+          disabled: !picked.length, run: () => st.submitTrade(o.id, picked) }
+      : null);
+  }, [register, o.id, o.trade.submitted, picked.length, eligible.length]);
 
   if (!o.trade.submitted) {
     return (
@@ -1861,7 +2085,9 @@ function SelectTrade({ o, st }) {
 /* Value Trade — market value in whole dollars, then the percentage of it that
    becomes trade value. The dollar meaning of a percentage is always visible, so
    the collector is never agreeing to an abstraction. */
-function ValueTrade({ o, st }) {
+function ValueTrade({ o, st, register }) {
+  /* Values are agreed card by card, so there is no single bar action here. */
+  useEffect(() => { if (register) register(null); }, [register]);
   return (
     <>
       {acceptedCards(o).map((tcd) => (
@@ -1955,7 +2181,7 @@ function ValueCard({ o, tcd, st }) {
 
 /* Deal — the calculated balance, its derivation, then an optional final
    negotiation. Nothing here reopens a price, a value or a percentage. */
-function DealStage({ o, st }) {
+function DealStage({ o, st, register }) {
   const [amt, setAmt] = useState("");
   const calc = calcBalance(o);
   const p = st.partnerById(o.partnerId);
@@ -2025,9 +2251,14 @@ function DealStage({ o, st }) {
   );
 }
 
-function Fulfillment({ o, st }) {
+function Fulfillment({ o, st, register }) {
   const f = o.fulfillment || {};
   const p = st.partnerById(o.partnerId);
+  useEffect(() => {
+    if (!register) return;
+    register(!f.collectorReceipt
+      ? { label: "I've got the card", run: () => st.confirmHandoff(o.id) } : null);
+  }, [register, o.id, f.collectorReceipt]);
   return (
     <div className="card sec">
       <div className="sec-h">Handoff</div>
@@ -2066,7 +2297,6 @@ function WhoHasIt({ goalId, st, go }) {
   const c = st.cardById(g.cardId);
   const holders = st.partnersWith(g.cardId).slice().sort((a, b) => a.ask - b.ask);
   const live = st.openOppForGoal(goalId);
-  const [sent, setSent] = useState([]);
 
   return (
     <Sheet title={c.name} sub={`${cardLine(c)} · ${gradeLine(c)}`} onClose={() => go({ v: "goals" })}
@@ -2076,22 +2306,30 @@ function WhoHasIt({ goalId, st, go }) {
       </div>
       {live && (
         /* Alternatives stay visible during a negotiation — the collector can still
-           talk to anyone. Only the structured offer is limited to one at a time. */
-        <div className="faint" style={{ fontSize: 13, marginBottom: 12 }}>
-          You're negotiating this card with {st.partnerById(live.partnerId).name}. You can still
-          reach out to others, but you can only negotiate with one at a time.
+           talk to anyone. Only the structured offer is limited to one at a time.
+           CONVERSATION IS NOT NEGOTIATION: this is the sentence that says so. */
+        <div className="faint whi-live" style={{ fontSize: 13, marginBottom: 12 }}>
+          Your deal for this card is with {st.partnerById(live.partnerId).name}. You can talk to
+          anyone else here — chatting starts nothing. Making an offer stays closed until that
+          deal ends or completes.
         </div>
       )}
 
       {holders.map((h) => {
-        const already = sent.includes(h.partner.id)
-          || st.hasThreadAbout(c.id);
+        /* Scoped to THIS partner. A conversation with one partner says nothing
+           about whether another has been spoken to. */
+        const talked = st.hasThreadAbout(c.id, h.partner.id);
+        const current = !!live && live.partnerId === h.partner.id;
         const openness = st.interestCountFrom(h.partner.id);
         return (
-          <div key={h.partner.id} className="pick" style={{ cursor: "default", alignItems: "flex-start" }}>
+          <div key={h.partner.id} className={"pick" + (current ? " whi-current" : "")}
+            style={{ cursor: "default", alignItems: "flex-start" }}>
             <Face partner={h.partner} size={38} />
             <div className="pick-b" style={{ marginLeft: 10 }}>
-              <div style={{ fontWeight: 600 }}>{h.partner.name}</div>
+              <div style={{ fontWeight: 600 }}>
+                {h.partner.name}
+                {current && <span className="chip t whi-badge">CURRENT DEAL</span>}
+              </div>
               <div className="faint" style={{ fontSize: 13 }}>{h.partner.city}</div>
               <div className="faint" style={{ fontSize: 12.5, marginTop: 3 }}>
                 {cardLine(c)} · {gradeLine(c)}
@@ -2102,16 +2340,23 @@ function WhoHasIt({ goalId, st, go }) {
                 </div>
               )}
               <div className="act-2" style={{ marginTop: 9 }}>
-                <button className="btn sm" disabled={already}
-                  onClick={() => { st.reachOut(goalId, h.partner.id, c.id); setSent([...sent, h.partner.id]); }}>
-                  {already ? "Reached out" : "Reach out"}
+                {/* Never disabled. Opening a conversation is always available, and
+                    it is a conversation — it creates no opportunity, ever. */}
+                <button className="btn sm"
+                  onClick={() => go({ v: "chat", goalId, partnerId: h.partner.id, cardId: c.id })}>
+                  {talked ? "Continue chatting" : "Chat"}
                 </button>
-                {!live && (
+                {current ? (
+                  <button className="btn sm pri"
+                    onClick={() => go({ v: "deal", oppId: live.id })}>
+                    View Deal
+                  </button>
+                ) : !live ? (
                   <button className="btn sm pri"
                     onClick={() => go({ v: "offer", goalId, partnerId: h.partner.id })}>
                     Make an offer
                   </button>
-                )}
+                ) : null}
               </div>
             </div>
             <div className="mono" style={{ fontWeight: 700 }}>{money(h.ask)}</div>
@@ -2119,9 +2364,47 @@ function WhoHasIt({ goalId, st, go }) {
         );
       })}
       <div className="faint" style={{ fontSize: 12.5, marginTop: 12 }}>
-        Reaching out is just a conversation — it doesn't start a negotiation or commit you
+        Chatting is just a conversation — it doesn't start a negotiation or commit you
         to anything. Only you can make an offer.
       </div>
+    </Sheet>
+  );
+}
+
+/* A CONVERSATION, NOT A NEGOTIATION. The same canonical thread the Trusted
+   Partner reads — one per collector + partner + card — reached from "Who has
+   it" for any partner holding the card, whether or not a deal is under way with
+   somebody else. Opening or using this NEVER touches opportunity state. */
+function PartnerChat({ goalId, partnerId, cardId, st, go }) {
+  const c = st.cardById(cardId);
+  const partner = st.partnerById(partnerId);
+  const live = goalId ? st.openOppForGoal(goalId) : null;
+  const current = !!live && live.partnerId === partnerId;
+  const back = () => go(goalId ? { v: "start", goalId } : { v: "goals" });
+
+  return (
+    <Sheet title={`Chat with ${partner.name}`} sub={`${c.name} · ${gradeLine(c)}`}
+      onClose={back}
+      footer={<button className="btn wide" onClick={back}>Close</button>}>
+      <div className={"pc-banner " + (current ? "is-deal" : "is-chat")}>
+        {current
+          ? <>This is your <b>current deal</b> for this card.</>
+          : <>This is a conversation, not a negotiation. Nothing here starts a deal.</>}
+      </div>
+      {current && (
+        <button className="btn sm pri wide" style={{ marginBottom: 10 }}
+          onClick={() => go({ v: "deal", oppId: live.id })}>
+          View Deal
+        </button>
+      )}
+      {!current && live && (
+        <div className="faint" style={{ fontSize: 12.5, marginBottom: 10 }}>
+          You can only negotiate one deal per card at a time, and yours is with{" "}
+          {st.partnerById(live.partnerId).name}. Making an offer to {partner.name} opens up once
+          that deal ends or completes.
+        </div>
+      )}
+      <DealChat o={current ? live : null} partnerId={partnerId} cardId={cardId} st={st} bare />
     </Sheet>
   );
 }
@@ -2388,12 +2671,18 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
         id: "b" + Date.now().toString(36), collectorId, cardId,
         market: mine === "" ? null : Number(mine),
         cert: cert && cert.trim() ? cert.trim() : null, addedAt: AT, photos }),
-      /* Reaching out writes to the SAME thread the Trusted Partner reads. */
-      reachOut: (goalId, partnerId, cardId, text) =>
-        A.reachOut({ collectorId, cardId, oppId: (v.openOppForGoal(goalId) || {}).id,
-          text: text || null, at: AT }),
-      sendMessage: (cardId, text, oppId) =>
-        A.sendMessage({ collectorId, cardId, by: "collector", text, oppId, at: AT }),
+      /* Reaching out writes to the SAME thread that Trusted Partner reads — and
+         only that one. An opportunity is inherited by the thread only when the
+         negotiation is actually with this partner, so chatting to an
+         alternative never inherits, or disturbs, the active deal. */
+      reachOut: (goalId, partnerId, cardId, text) => {
+        const open = v.openOppForGoal(goalId);
+        return A.reachOut({ collectorId, partnerId, cardId,
+          oppId: open && open.partnerId === partnerId ? open.id : undefined,
+          text: text || null, at: AT });
+      },
+      sendMessage: (partnerId, cardId, text, oppId) =>
+        A.sendMessage({ collectorId, partnerId, cardId, by: "collector", text, oppId, at: AT }),
       /* Development only — see SimulateTP. Every call is a canonical action. */
       simulate: A,
       /* Returns null when the one-negotiation invariant refuses it. The refusal
@@ -2476,6 +2765,8 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
       </div>
 
       {nav.v === "start" && <WhoHasIt goalId={nav.goalId} st={st} go={go} />}
+      {nav.v === "chat" && <PartnerChat goalId={nav.goalId} partnerId={nav.partnerId}
+        cardId={nav.cardId} st={st} go={go} />}
       {nav.v === "offer" && <StartOffer goalId={nav.goalId} partnerId={nav.partnerId} st={st} go={go} />}
       {nav.v === "add" && <AddCopy st={st} go={go} />}
     </div>

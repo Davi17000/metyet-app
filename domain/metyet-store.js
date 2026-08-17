@@ -88,31 +88,35 @@ function createStore(seed) {
         : s.interests.filter((i) => !(i.partnerId === partnerId && i.binderId === binderId)) });
     },
 
-    /* ---- conversation: ONE thread per collector + card identity, shared with
-       the Trusted Partner. Reaching out creates NO opportunity, ever. ---- */
-    reachOut({ collectorId, cardId, oppId, text, at, by = "collector" }) {
+    /* ---- conversation: ONE thread per collector + partner + card identity,
+       shared with that Trusted Partner and no other. Reaching out creates NO
+       opportunity, ever — conversation and negotiation are different acts. ---- */
+    reachOut({ collectorId, partnerId, cardId, oppId, text, at, by = "collector" }) {
       const card = cardById(cardId);
-      if (!card) return null;
+      if (!card || !partnerId) return null;
       const entry = text
         ? { kind: "message", by, text }
         : { kind: "event", by: "system", text: "Reached out" };
       set({ ...s, conversations: D.appendThreadEntry(s.conversations, {
-        collectorId, card, cardId, oppId, entry, at }) });
-      return D.threadKey(collectorId, card);
+        collectorId, partnerId, card, cardId, oppId, entry, at }) });
+      return D.threadKey(collectorId, partnerId, card);
     },
-    sendMessage({ collectorId, cardId, by, text, oppId, at }) {
+    sendMessage({ collectorId, partnerId, cardId, by, text, oppId, at }) {
       const card = cardById(cardId);
-      if (!card || !text || !text.trim()) return null;
+      if (!card || !partnerId || !text || !text.trim()) return null;
       set({ ...s, conversations: D.appendThreadEntry(s.conversations, {
-        collectorId, card, cardId, oppId, entry: { kind: "message", by, text: text.trim() }, at }) });
-      return D.threadKey(collectorId, card);
+        collectorId, partnerId, card, cardId, oppId,
+        entry: { kind: "message", by, text: text.trim() }, at }) });
+      return D.threadKey(collectorId, partnerId, card);
     },
-    /* Lifecycle events land in the same thread, chronologically. */
-    logMilestone({ collectorId, cardId, text, oppId, at }) {
+    /* Lifecycle events land in the same thread, chronologically. A milestone
+       belongs to the partner the deal is with, so it never leaks to another. */
+    logMilestone({ collectorId, partnerId, cardId, text, oppId, at }) {
       const card = cardById(cardId);
-      if (!card) return null;
+      if (!card || !partnerId) return null;
       set({ ...s, conversations: D.appendThreadEntry(s.conversations, {
-        collectorId, card, cardId, oppId, entry: { kind: "event", by: "system", text }, at }) });
+        collectorId, partnerId, card, cardId, oppId,
+        entry: { kind: "event", by: "system", text }, at }) });
     },
 
     /* ---- opportunity: the one structured negotiation ---- */

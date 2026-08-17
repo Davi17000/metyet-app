@@ -212,15 +212,17 @@ describe("E. Collector Reach out -> TP Conversation", () => {
       .find((n) => txt(n).includes(casey(r).cardById(g.cardId).name));
     const inline = reachOutIn(card);
     if (inline) { click(inline); }                 // partners already listed
-    else { click(supplyRouteIn(card)); click(btn(r, "Reach out")); }
+    else { click(supplyRouteIn(card)); click(r.root.findAllByType("button").find((b) => CHAT_RE.test(txt(b).trim()))); }
+    sayInChat(r, "Is this still available?");
 
     eq(S(r).conversations.length, convBefore + 1, "one Conversation");
     eq(S(r).opportunities.length, oppsBefore, "and NO Opportunity");
     eq(casey(r).stateOf(g.id), stateBefore, "the Goal is still Seeking");
     const cv = S(r).conversations[S(r).conversations.length - 1];
-    /* A goal identifies a card, so the goal's conversation IS that card's thread. */
+    /* A goal identifies a card; the partner reached out to completes the identity. */
     eq(cv.cardId, g.cardId, "the thread is about the goal's card");
-    eq(cv.key, D.threadKey(CASEY, casey(r).cardById(g.cardId)), "keyed canonically");
+    assert(cv.partnerId, "the thread names the partner it is with");
+    eq(cv.key, D.threadKey(CASEY, cv.partnerId, casey(r).cardById(g.cardId)), "keyed canonically");
     eq(cv.collectorId, CASEY, "correct collector");
 
     switchTo(r, "Trusted Partner");
@@ -239,7 +241,8 @@ describe("F. TP Reach out -> Collector Conversation", () => {
     const oppsBefore = S(r).opportunities.length;
     const intBefore = S(r).interests.length;
 
-    TR.act(() => { store(r).actions.reachOut({ collectorId: CASEY, cardId: copy.cardId,
+    TR.act(() => { store(r).actions.reachOut({ collectorId: CASEY, partnerId: SELF,
+      cardId: copy.cardId,
       by: "tp", text: "Would you trade this?", at: "2026-08-14" }); });
     const cv = S(r).conversations[S(r).conversations.length - 1];
     eq(cv.cardId, copy.cardId, "about the exact card");
@@ -248,7 +251,7 @@ describe("F. TP Reach out -> Collector Conversation", () => {
     eq(S(r).interests.length, intBefore, "and Interest is untouched — separate concepts");
 
     switchTo(r, "Collector");
-    const seen = casey(r).threadForCard(copy.cardId);
+    const seen = casey(r).threadWith(SELF, copy.cardId);
     assert(seen && seen.id === cv.id, "Casey sees the same thread");
     eq(seen.cardId, copy.cardId, "about the same card");
   });
@@ -374,10 +377,18 @@ describe("M/N. Completion and failure derive Goal state", () => {
 const supplyRouteIn = (node) => cls(node, "goal-holders")[0] || cls(node, "gwatch-h")[0];
 /* When a primary goal has no live deal the partners are already listed inline,
    so there is no route to open — the conversation action is right there. */
+const CHAT_RE = /^(Chat|Continue chatting)$/;
 const reachOutIn = (node) => (cls(node, "gs-row")[0] || {}).findAllByType
   ? cls(node, "gs-row")[0].findAllByType("button")
-      .find((b) => /Reach out|Continue chatting/.test(txt(b)))
+      .find((b) => CHAT_RE.test(txt(b).trim()))
   : null;
+/* Conversation is now a place, not a fire-and-forget button: open it, then
+   actually say something. A thread exists once somebody has spoken. */
+const sayInChat = (r, text) => {
+  const ta = r.root.findAllByType("textarea")[0];
+  TR.act(() => { ta.props.onChange({ target: { value: text } }); });
+  click(r.root.findAllByType("button").find((b) => txt(b).trim() === "Send"));
+};
 const supplyOrReach = (node) => supplyRouteIn(node) || reachOutIn(node);
 const goalNodes = (r) => cls(r, "goal").concat(cls(r, "gwatch-r"));
 const goalWithSupply = (r) => goalNodes(r).find((n) => supplyOrReach(n));
@@ -730,11 +741,13 @@ describe("The shell never chooses which reality exists", () => {
     const card = cls(r, "goal").concat(cls(r, "gwatch-r"))
       .find((n) => txt(n).includes(casey(r).cardById(g.cardId).name));
     const inline = reachOutIn(card);
-    if (inline) { click(inline); }                 // partners already listed
+    if (inline) { click(inline); sayInChat(r, "Still available?"); click(btn(r, "Close")); }
     else {
       click(supplyRouteIn(card));
-      click(btn(r, "Reach out"));
+      click(r.root.findAllByType("button").find((b) => CHAT_RE.test(txt(b).trim())));
+      sayInChat(r, "Still available?");
       click(btn(r, "Close"));
+      if (btn(r, "Close")) click(btn(r, "Close"));
     }
 
     /* TP acts */

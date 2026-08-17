@@ -27,10 +27,13 @@ const SELF = "p-self";          // the Trusted Partner using the TP workspace
 /* ------------------------------------------------------------ CONVERSATION
 
    The conversation model is canonical in metyet-domain: ONE thread per
-   collector + card identity, appended through appendThreadEntry, shared by both
-   personas. The per-reach-out record that used to live here created a second,
-   incompatible shape and has been removed.
-   See: threadKey, findThread, appendThreadEntry, hasConversation. */
+   collector + trusted partner + card identity, appended through
+   appendThreadEntry, shared by both personas. A Conversation is between two
+   named participants, so the partner belongs in the key — without it, every
+   partner holding one identity shared a single thread. The per-reach-out record
+   that used to live here created a second, incompatible shape and was removed.
+   See: threadKey, findThread, appendThreadEntry, hasConversation,
+        threadsForCard, partnersInConversation. */
 
 /* ---------------------------------------------------------------- INTEREST */
 

@@ -198,7 +198,7 @@ describe("One active negotiation per goal", () => {
       && txt(n).includes("trusted partner"));
     if (!seeking) return;
     click(seeking.findAllByType("button").find((b) => txt(b) === "See who has it"));
-    assert(btn(r, "Reach out"), "Reach out available");
+    assert(btn(r, "Chat") || btn(r, "Continue chatting"), "a conversation is available");
     assert(btn(r, "Make an offer"), "and so is an offer, since this goal is idle");
   });
 });
@@ -212,31 +212,60 @@ describe("Reach out never becomes a negotiation", () => {
     const target = s0.goals.find((g) => g.collectorId === "c12"
       && D0.goalState(g.id, s0.opportunities) === "seeking");
     assert(target, "a Seeking goal exists");
+    const D2x = D0;
+    const before = s0.opportunities.filter((o) => o.collectorId === "c12" && D0.isActive(o)).length;
     const name = s0.catalog.find((c) => c.id === target.cardId).name;
     const row = allGoals(r).find((n) => txt(n).includes(name));
     const route = byClassIn(row, "gwatch-h")[0] || byClassIn(row, "goal-holders")[0];
     if (!route) return;                       // that goal has no supply to contact
     click(route);
-    click(btn(r, "Reach out"));
+    /* Chat is now a route into the conversation, not a blind write. Opening it
+       and speaking must still create no negotiation. */
+    click(btn(r, "Chat") || btn(r, "Continue chatting"));
+    const ta = r.root.findAllByType("textarea")[0];
+    TR.act(() => { ta.props.onChange({ target: { value: "Is this still available?" } }); });
+    click(r.root.findAllByType("button").find((b) => txt(b).trim() === "Send"));
     click(btn(r, "Close"));
     const st = __store.get().get();
+    eq(st.opportunities.filter((o) => o.collectorId === "c12"
+      && D2x.isActive(o)).length, before, "no negotiation was opened");
     const D2 = require("../domain/metyet-domain.js");
     const g = st.goals.find((x) => x.collectorId === "c12"
       && st.catalog.find((c) => c.id === x.cardId).name === name);
     eq(D2.goalState(g.id, st.opportunities), "seeking", "still Seeking after reaching out");
   });
 
-  test("a collector may reach out to several partners at once", () => {
+  test("a collector may hold separate conversations with several partners", () => {
     const r = mk();
     const seeking = allGoals(r).find((n) => byClassIn(n, "gwatch-h")[0]
       && /[2-9] partners/.test(txt(byClassIn(n, "gwatch-h")[0])));
     if (!seeking) return;
     click(byClassIn(seeking, "gwatch-h")[0]);
-    const outs = r.root.findAllByType("button").filter((b) => txt(b) === "Reach out");
+    const outs = r.root.findAllByType("button")
+      .filter((b) => ["Chat", "Continue chatting"].includes(txt(b).trim()));
     assert(outs.length >= 2, "multiple partners can be contacted");
-    outs.forEach((b) => click(b));
-    eq(r.root.findAllByType("button").filter((b) => txt(b) === "Reach out").length, 0,
-      "each records contact independently");
+
+    /* Speak to two of them, and prove the entries do not pool into one thread. */
+    const say = (i, text) => {
+      const all = r.root.findAllByType("button")
+        .filter((b) => ["Chat", "Continue chatting"].includes(txt(b).trim()));
+      click(all[i]);
+      const ta = r.root.findAllByType("textarea")[0];
+      TR.act(() => { ta.props.onChange({ target: { value: text } }); });
+      click(r.root.findAllByType("button").find((b) => txt(b).trim() === "Send"));
+      click(btn(r, "Close"));
+    };
+    say(0, "FIRST-PARTNER");
+    say(1, "SECOND-PARTNER");
+
+    const cv = __store.get().get().conversations;
+    const first = cv.find((t) => t.entries.some((e) => e.text === "FIRST-PARTNER"));
+    const second = cv.find((t) => t.entries.some((e) => e.text === "SECOND-PARTNER"));
+    assert(first && second, "both conversations exist");
+    assert(first.partnerId !== second.partnerId, "with two different partners");
+    assert(first.key !== second.key, "in two separate threads");
+    assert(!first.entries.some((e) => e.text === "SECOND-PARTNER"),
+      "and neither leaks into the other");
   });
 
   test("it keeps goal, partner and exact card context", () => {
@@ -244,8 +273,8 @@ describe("Reach out never becomes a negotiation", () => {
     assert(/appendThreadEntry/.test(fn), "it appends to the canonical shared thread");
     assert(!/startOpportunity|stage:/i.test(fn), "and touches no opportunity or stage");
     const dom = DOMAIN();
-    assert(/const threadKey = \(collectorId, card\)/.test(dom),
-      "one thread per collector and card identity");
+    assert(/const threadKey = \(collectorId, partnerId, card\)/.test(dom),
+      "one thread per collector, partner and card identity");
   });
 
   test("the language says plainly that nothing is committed", () => {
@@ -395,13 +424,33 @@ describe("Who has it", () => {
 
   test("during a negotiation alternatives stay visible without an offer button", () => {
     const r = mk();
-    const live = cls(r, "goal").find((n) => txt(n).includes("Negotiating"));
-    // reach the supply view for a card already being negotiated
-    const src = readSrc("collector/MetYetCollector.jsx");
-    assert(/\{!live && \(\s*<button className="btn sm pri"/.test(src),
-      "Make an offer is conditional on there being no live negotiation");
-    assert(src.includes("you can only negotiate with one at a time"),
-      "and the reason is explained");
+    const s0 = __store.get().get();
+    const D0 = require("../domain/metyet-domain.js");
+    const live = s0.opportunities.find((o) => o.collectorId === "c12" && D0.isActive(o));
+    assert(live, "a live negotiation exists in the seed");
+    const g = s0.goals.find((x) => x.id === live.goalId);
+    const holders = s0.inventory.filter((i) => i.cardId === g.cardId && !i.archived);
+    if (holders.length < 2) return;           // needs an alternative to be a test
+
+    /* Reach "Who has it" for the card already being negotiated. */
+    const name = s0.catalog.find((c) => c.id === g.cardId).name;
+    const row = allGoals(r).find((n) => txt(n).includes(name));
+    const route = byClassIn(row, "goal-holders")[0] || byClassIn(row, "gwatch-h")[0];
+    assert(route, "the supply route is reachable during a negotiation");
+    click(route);
+
+    /* Every holder is still listed, and every one can be talked to. */
+    const chats = r.root.findAllByType("button")
+      .filter((b) => ["Chat", "Continue chatting"].includes(txt(b).trim()));
+    assert(chats.length >= 2, "alternatives stay visible and contactable");
+
+    /* But no second negotiation may be started, from anywhere on the screen. */
+    eq(r.root.findAllByType("button").filter((b) => txt(b).trim() === "Make an offer").length, 0,
+      "no offer button while a deal is live");
+    /* The current partner is marked, and re-entry is offered. */
+    assert(txt(r.root).includes("CURRENT DEAL"), "the current deal partner is marked");
+    assert(btn(r, "View Deal"), "and the live deal can be re-entered from here");
+    assert(/Making an offer stays closed/.test(txt(r.root)), "and the reason is explained");
   });
 });
 
@@ -831,12 +880,14 @@ describe("Goals: every holder stays reachable", () => {
   test("10. alternatives are contactable, but a second offer is refused", () => {
     const r = mk();
     click(byClassIn(rayquaza(r), "goal-holders")[0]);
-    const outs = r.root.findAllByType("button").filter((b) => /Reach(ed)? out/.test(txt(b)));
+    const outs = r.root.findAllByType("button")
+      .filter((b) => ["Chat", "Continue chatting"].includes(txt(b).trim()));
     eq(outs.length, 3, "every partner can be contacted");
     eq(r.root.findAllByType("button").filter((b) => txt(b).trim() === "Make an offer").length, 0,
       "and no second offer is offered while one is live");
-    assert(all(r).includes("you can only negotiate with one at a time"),
-      "with the reason stated");
+    assert(all(r).includes("CURRENT DEAL"), "the negotiating partner is marked");
+    assert(btn(r, "View Deal"), "and their deal can be re-entered");
+    assert(/Making an offer stays closed/.test(all(r)), "with the reason stated");
   });
 
   test("the supply route reuses WhoHasIt rather than duplicating it", () => {
@@ -1032,9 +1083,12 @@ describe("The Primary Goal surfaces real activity", () => {
     TR.act(() => { __store.get().actions.endOpportunity("o9", "collector", "2026-08-14"); });
     const before = __store.get().get().opportunities.length;
     const rows = byClassIn(rayquaza(r), "gs-row");
-    rows.forEach((n) => assert(n.findAllByType("button").some((b) => /Reach out|Continue chatting/.test(txt(b))),
+    rows.forEach((n) => assert(n.findAllByType("button").some((b) => /^(Chat|Continue chatting)$/.test(txt(b).trim())),
       "every partner exposes a conversation action"));
-    click(rows[0].findAllByType("button").find((b) => /Reach out/.test(txt(b))));
+    click(rows[0].findAllByType("button").find((b) => /^(Chat|Continue chatting)$/.test(txt(b).trim())));
+    const ta = r.root.findAllByType("textarea")[0];
+    TR.act(() => { ta.props.onChange({ target: { value: "Still available?" } }); });
+    click(r.root.findAllByType("button").find((b) => txt(b).trim() === "Send"));
     eq(__store.get().get().opportunities.length, before, "no Opportunity was created");
     eq(__store.get().get().conversations.length, 1, "a Conversation was");
   });
@@ -1043,9 +1097,18 @@ describe("The Primary Goal surfaces real activity", () => {
     const r = mk();
     TR.act(() => { __store.get().actions.endOpportunity("o9", "collector", "2026-08-14"); });
     click(byClassIn(rayquaza(r), "gs-row")[0].findAllByType("button")
-      .find((b) => /Reach out/.test(txt(b))));
-    const again = byClassIn(rayquaza(r), "gs-row")[0];
-    assert(/Continue chatting/.test(txt(again)), "the label acknowledges the history");
+      .find((b) => /^(Chat|Continue chatting)$/.test(txt(b).trim())));
+    const ta = r.root.findAllByType("textarea")[0];
+    TR.act(() => { ta.props.onChange({ target: { value: "hello" } }); });
+    click(r.root.findAllByType("button").find((b) => txt(b).trim() === "Send"));
+    /* Close the chat, then the supply sheet it returns to, back to the goals list. */
+    click(btn(r, "Close"));
+    if (btn(r, "Close")) click(btn(r, "Close"));
+    const rows2 = byClassIn(rayquaza(r), "gs-row");
+    assert(rows2.length >= 2, "the goal card lists its partners again");
+    assert(/Continue chatting/.test(txt(rows2[0])), "the label acknowledges the history");
+    assert(!/Continue chatting/.test(txt(rows2[1])),
+      "and only for the partner actually spoken to");
   });
 
   test("10. a goal nobody stocks still renders cleanly", () => {
@@ -1185,6 +1248,8 @@ describe("Goal card and Opportunity detail agree", () => {
   const dealReceipt = (r) => {
     const card = cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
     click(card.findAllByType("button").find((b) => txt(b).trim() === "Continue Deal Flow"));
+    /* Secondary during active work: expand it to read the terms. */
+    click(cls(r, "dw-flow")[0].findAllByType("button")[0]);
     return cls(r, "rc-s").map((n) => txt(n));
   };
 
@@ -1558,11 +1623,15 @@ describe("Deal Flow presentation", () => {
     eq(byClassIn(card, "rc-s").length, 5, "while the five steps still render");
   });
 
-  test("the expanded workspace keeps its own heading", () => {
+  test("the workspace Deal Flow is secondary but inspectable", () => {
     const r = mk();
     click(ray(r).findAllByType("button").find((b) => txt(b).trim() === "Continue Deal Flow"));
-    eq(cls(r, "rc-h").length, 1, "standalone use is still labelled");
-    eq(txt(cls(r, "rc-h")[0]), "Deal Flow", "with the new name");
+    const flow = cls(r, "dw-flow")[0];
+    assert(flow, "a Deal Flow disclosure exists in the workspace");
+    eq(cls(r, "rc-s").length, 0, "collapsed while working");
+    assert(/Deal Flow/.test(txt(flow)) && /of 5 settled/.test(txt(flow)), "labelled and truthful");
+    click(flow.findAllByType("button")[0]);
+    eq(cls(r, "rc-s").length, 5, "and expands to the full five stages");
   });
 
   test("readability: the muted tiers were raised but stay distinct", () => {
@@ -1593,20 +1662,29 @@ describe("Deal Flow presentation", () => {
    SHARED CHAT, HISTORY, AND THE DEVELOPMENT SIMULATOR
    ========================================================================= */
 describe("Collector shared chat", () => {
+  /* Chat is a drawer now: one tap from the persistent action bar. */
   const openDeal = (r) => {
     const card = cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
     click(card.findAllByType("button").find((b) => txt(b).trim() === "Continue Deal Flow"));
     return r;
   };
+  const openChat = (r) => {
+    if (!cls(r, "dw-chat")[0]) click(cls(r, "dw-bar")[0].findAllByType("button")[0]);
+    return cls(r, "dw-chat")[0];
+  };
   const compose = (r, text) => {
-    const ta = cls(r, "chat-composer")[0].findAllByType("textarea")[0];
+    const drawer = openChat(r);
+    const ta = drawer.findAllByType("textarea")[0];
     TR.act(() => { ta.props.onChange({ target: { value: text } }); });
-    click(r.root.findAllByType("button").find((b) => txt(b).trim() === "Send"));
+    click(cls(r, "dw-chat")[0].findAllByType("button").find((b) => txt(b).trim() === "Send"));
   };
 
   test("the workspace exposes a conversation", () => {
     const r = openDeal(mk());
-    assert(cls(r, "chat")[0], "a chat panel is present");
+    assert(cls(r, "dw-bar")[0], "a persistent action bar");
+    assert(/Chat with/.test(txt(cls(r, "dw-bar")[0])), "with chat one tap away");
+    const drawer = openChat(r);
+    assert(drawer, "the drawer opens");
     assert(/Nothing here yet/.test(txt(cls(r, "chat-empty")[0])),
       "and says honestly that nothing has been said");
   });
@@ -1618,16 +1696,17 @@ describe("Collector shared chat", () => {
     const opp = s2.opportunities.find((o) => o.id === "o9");
     const card = s2.catalog.find((c) => c.id === opp.cardId);
     const Dm = require("../domain/metyet-domain.js");
-    const thread = Dm.findThread(s2.conversations, opp.collectorId, card);
+    const thread = Dm.findThread(s2.conversations, opp.collectorId, opp.partnerId, card);
     assert(thread, "the canonical thread exists");
-    eq(thread.key, Dm.threadKey(opp.collectorId, card), "keyed canonically");
+    eq(thread.key, Dm.threadKey(opp.collectorId, opp.partnerId, card), "keyed canonically");
+    eq(thread.partnerId, opp.partnerId, "and belongs to the deal's partner alone");
     assert(thread.entries.some((e) => e.text === "Can we meet Saturday?"), "carrying the message");
     eq(thread.entries[thread.entries.length - 1].by, "collector", "attributed to the collector");
   });
 
   test("no Collector-only conversation store exists", () => {
     const src = readSrc("collector/MetYetCollector.jsx");
-    assert(/st\.threadForCard\(o\.cardId\)/.test(src), "it reads the shared thread");
+    assert(/st\.threadWith\(pid, cid\)/.test(src), "it reads the shared thread");
     assert(!/useState\(\[\]\).*messages/i.test(src), "and keeps no local message list");
     const store = readSrc("domain/metyet-store.js");
     assert(/appendThreadEntry/.test(store), "writes go through the canonical append");
@@ -1636,12 +1715,14 @@ describe("Collector shared chat", () => {
   test("history and messages interleave chronologically", () => {
     const r = openDeal(mk());
     compose(r, "first");
-    TR.act(() => { __store.get().actions.logMilestone({ collectorId: "c12", cardId: "i17",
+    const oppNow = __store.get().get().opportunities.find((o) => o.id === "o9");
+    TR.act(() => { __store.get().actions.logMilestone({ collectorId: "c12",
+      partnerId: oppNow.partnerId, cardId: "i17",
       text: "Price agreed", at: "2026-08-16" }); });
     compose(r, "second");
-    const kinds = cls(r, "chat-scroll")[0].children ? null : null;
     const s2 = __store.get().get();
-    const t = s2.conversations.find((x) => x.cardId === "i17");
+    const t = s2.conversations.find((x) => x.cardId === "i17"
+      && x.partnerId === oppNow.partnerId);
     eq(t.entries.map((e) => e.kind).join(","), "message,event,message", "in order");
     /* And the event renders as an event, not a message. */
     assert(cls(r, "chat-ev").length >= 1, "lifecycle events render inline");
@@ -1691,6 +1772,191 @@ describe("Development-only TP simulator", () => {
     const fn = src().slice(src().indexOf("function SimulateTP"), src().indexOf("/* THE SHARED CONVERSATION"));
     ["simulated", "isSimulated", "fakeStage", "devStage"].forEach((k) =>
       assert(!fn.includes(k), "no " + k + " field"));
+  });
+});
+
+/* ============================================================================
+   THE COLLECTOR DEAL WORKSPACE FRAMEWORK
+
+   context -> progress -> guidance -> stage work -> persistent action bar,
+   with chat one tap away and Deal Flow secondary.
+   ========================================================================= */
+describe("Deal workspace mobile shell", () => {
+  const open = (r) => {
+    const card = cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
+    click(card.findAllByType("button").find((b) => txt(b).trim() === "Continue Deal Flow"));
+    return r;
+  };
+
+  test("deal context is compact and names card, identity and partner", () => {
+    const r = open(mk());
+    const ctx = cls(r, "dw-ctx")[0];
+    assert(ctx, "a context header");
+    eq(txt(byClassIn(ctx, "dw-ctx-n")[0]), "Rayquaza Gold Star", "the card");
+    assert(/EX Deoxys/.test(txt(byClassIn(ctx, "dw-ctx-i")[0])), "its identity");
+    assert(/PSA 9/.test(txt(byClassIn(ctx, "dw-ctx-i")[0])), "and grade");
+    eq(txt(byClassIn(ctx, "dw-ctx-pn")[0]), "Northline Cards", "the partner is unmistakable");
+    /* Compact: the large browse artwork is not used here. */
+    assert(String(byClassIn(ctx, "art")[0].props.className).includes("sm"),
+      "using small artwork, not the browse-size card");
+  });
+
+  test("all five canonical stages render, compact, from canonical state", () => {
+    const r = open(mk());
+    assert(String(cls(r, "rail")[0].props.className).includes("compact"), "compact rail");
+    eq(cls(r, "rail-s").length, 5, "five stages");
+    eq(cls(r, "rail-l").map(txt).join(" | "),
+      "Agree on Price | Select Trade | Value Trade | Deal | Fulfillment", "canonical labels");
+    const cur = cls(r, "rail-s").find((n) => String(n.props.className).includes("current"));
+    const opp = __store.get().get().opportunities.find((o) => o.id === "o9");
+    assert(txt(cur).includes("Select Trade") && opp.stage === "select-trade",
+      "the current stage comes from the opportunity");
+    /* Distinguishable without colour. */
+    cls(r, "rail-s").forEach((n) => assert(/complete|current|not started/.test(txt(n)),
+      "each stage states its status"));
+  });
+
+  test("guidance derives from canonical turn logic", () => {
+    const r = open(mk());
+    const g = cls(r, "dw-guide")[0];
+    assert(g, "a guidance block");
+    assert(/Your move/.test(txt(byClassIn(g, "dw-guide-w")[0])), "whose move");
+    assert(/Choose which of your cards/.test(txt(byClassIn(g, "dw-guide-t")[0])),
+      "and what to do, in plain language");
+    const src = readSrc("collector/MetYetCollector.jsx");
+    assert(/const t = st\.turnFor\(o\)/.test(src), "from the canonical turn selector");
+  });
+});
+
+describe("Persistent action bar", () => {
+  const open = (r) => {
+    const card = cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
+    click(card.findAllByType("button").find((b) => txt(b).trim() === "Continue Deal Flow"));
+    return r;
+  };
+
+  test("chat is always available during an active deal", () => {
+    const r = open(mk());
+    const bar = cls(r, "dw-bar")[0];
+    assert(bar, "the bar is present");
+    assert(/Chat with Northline/.test(txt(bar)), "naming the partner");
+  });
+
+  test("the primary action reuses the stage's own handler", () => {
+    const src = readSrc("collector/MetYetCollector.jsx");
+    /* Stages register their existing handler; the bar renders it. */
+    assert(/register\(mine/.test(src), "Agree on Price registers");
+    assert(/run: \(\) => st\.submitTrade\(o\.id, picked\)/.test(src), "Select Trade registers its handler");
+    assert(/run: \(\) => st\.confirmHandoff\(o\.id\)/.test(src), "Fulfillment registers its handler");
+    /* And the bar itself defines no mutation. */
+    const bar = src.slice(src.indexOf('className="dw-bar"'), src.indexOf('className="dw-bar"') + 700);
+    assert(/onClick=\{bar\.run\}/.test(bar), "the bar presses the registered handler");
+    assert(!/st\.(submitTrade|priceRespond|confirmHandoff|dealAgree)\(/.test(bar),
+      "and calls no handler of its own");
+  });
+
+  test("it drives the real mutation, and reflects the result", () => {
+    const r = open(mk());
+    const go = () => cls(r, "dw-bar")[0].findAllByType("button")[1];
+    eq(go().props.disabled, true, "nothing to send yet");
+    click(cls(r, "pick")[0]);
+    assert(/Send 1 card for review/.test(txt(go())), "the label comes from the stage");
+    click(go());
+    eq(__store.get().get().opportunities.find((o) => o.id === "o9").trade.submitted, true,
+      "the canonical submission happened");
+  });
+
+  test("waiting shows no invalid action", () => {
+    const r = open(mk());
+    click(cls(r, "pick")[0]);
+    click(cls(r, "dw-bar")[0].findAllByType("button")[1]);
+    const bar = cls(r, "dw-bar")[0];
+    assert(byClassIn(bar, "dw-bar-wait")[0], "a waiting state replaces the action");
+    assert(/Waiting on Northline/.test(txt(bar)), "naming who we wait on");
+    eq(bar.findAllByType("button").length, 1, "only chat remains pressable");
+  });
+});
+
+describe("Chat drawer", () => {
+  const open = (r) => {
+    const card = cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
+    click(card.findAllByType("button").find((b) => txt(b).trim() === "Continue Deal Flow"));
+    return r;
+  };
+  const drawer = (r) => { click(cls(r, "dw-bar")[0].findAllByType("button")[0]); return cls(r, "dw-chat")[0]; };
+
+  test("it opens in one tap without mutating the deal", () => {
+    const r = open(mk());
+    const before = JSON.stringify(__store.get().get().opportunities.find((o) => o.id === "o9"));
+    const d = drawer(r);
+    assert(d, "the drawer opened");
+    assert(/Chat with Northline Cards/.test(txt(byClassIn(d, "dw-chat-h")[0])), "titled");
+    eq(JSON.stringify(__store.get().get().opportunities.find((o) => o.id === "o9")), before,
+      "the opportunity is untouched");
+  });
+
+  test("it reads and writes the canonical thread — no second conversation", () => {
+    const r = open(mk());
+    drawer(r);
+    const ta = cls(r, "dw-chat")[0].findAllByType("textarea")[0];
+    TR.act(() => { ta.props.onChange({ target: { value: "On my way" } }); });
+    click(cls(r, "dw-chat")[0].findAllByType("button").find((b) => txt(b).trim() === "Send"));
+    const s2 = __store.get().get();
+    const Dm = require("../domain/metyet-domain.js");
+    const opp = s2.opportunities.find((o) => o.id === "o9");
+    const thread = Dm.findThread(s2.conversations, opp.collectorId, opp.partnerId,
+      s2.catalog.find((c) => c.id === opp.cardId));
+    assert(thread && thread.entries.some((e) => e.text === "On my way"), "written to the canonical thread");
+    eq(s2.conversations.length, 1, "and only one conversation exists");
+  });
+
+  test("a partner message stays visible in the drawer", () => {
+    const r = open(mk());
+    const oppNow = __store.get().get().opportunities.find((o) => o.id === "o9");
+    TR.act(() => { __store.get().actions.sendMessage({ collectorId: "c12",
+      partnerId: oppNow.partnerId, cardId: "i17",
+      by: "tp", text: "Looking forward to it", at: "2026-08-17" }); });
+    drawer(r);
+    assert(/Looking forward to it/.test(txt(cls(r, "dw-chat")[0])), "the partner's message shows");
+    assert(cls(r, "chat-m").some((n) => String(n.props.className).includes("theirs")),
+      "distinguished from the collector's own");
+  });
+
+  test("closing returns to the same stage context", () => {
+    const r = open(mk());
+    drawer(r);
+    click(cls(r, "dw-chat-x")[0]);
+    eq(cls(r, "dw-chat").length, 0, "the drawer closed");
+    const cur = cls(r, "rail-s").find((n) => String(n.props.className).includes("current"));
+    assert(txt(cur).includes("Select Trade"), "still on the same stage");
+    assert(cls(r, "dw-bar")[0], "with the action bar intact");
+  });
+});
+
+describe("Workspace theme", () => {
+  test("the deal workspace uses the light treatment, scoped", () => {
+    const src = readSrc("collector/MetYetCollector.jsx");
+    const dw = src.slice(src.indexOf(".dw {"), src.indexOf(".dw .card"));
+    const tok = (n) => { const m = new RegExp("--" + n + ": (#[0-9A-Fa-f]{6})").exec(dw); return m && m[1]; };
+    const lum = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).reduce((a, c) => a + c, 0) / 3;
+    assert(lum(tok("bg")) > 200, "a light page background: " + tok("bg"));
+    assert(lum(tok("text")) < 70, "with dark text: " + tok("text"));
+    assert(lum(tok("muted")) > lum(tok("text")), "and a readable secondary tier");
+    /* Teal remains the accent. */
+    const a = tok("accent");
+    const [rr, gg, bb] = [1, 3, 5].map((i) => parseInt(a.slice(i, i + 2), 16));
+    assert(gg > rr && bb > rr, "teal accent retained: " + a);
+    /* Scoped: the browse experience is untouched. */
+    const root = src.slice(src.indexOf(".mc {"), src.indexOf(".mc *"));
+    assert(lum(/--bg: (#[0-9A-Fa-f]{6})/.exec(root)[1]) < 60, "Goals and Binder stay dark");
+  });
+
+  test("the workspace leaves room for the action bar", () => {
+    const src = readSrc("collector/MetYetCollector.jsx");
+    assert(/padding-bottom: calc\(74px \+ env\(safe-area-inset-bottom\)\)/.test(src),
+      "content is not obscured, and the safe area is respected");
+    assert(/\.dw-bar \{[^}]*env\(safe-area-inset-bottom\)/.test(src.replace(/\n/g, "")),
+      "the bar itself respects it too");
   });
 });
 

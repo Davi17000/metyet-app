@@ -84,22 +84,46 @@ function collectorView(state, meId) {
   const stateOf = (goalId) => D.goalState(goalId, state.opportunities);
   const openOppForGoal = (goalId) => D.activeOppForGoal(goalId, state.opportunities);
   const goalFor = (cardId) => myGoals().find((g) => g.cardId === cardId);
-  /* ONE thread per collector + card identity, shared with the Trusted Partner.
-     A goal identifies the card, so a goal's conversation IS that card's thread —
-     which is why it survives promotion and is inherited by the opportunity. */
-  const threadForCard = (cardId) => D.findThread(state.conversations, meId, cardById(cardId));
+  /* ONE thread per collector + PARTNER + card identity. A conversation is with
+     somebody, so the partner is part of its identity; the card identity is what
+     lets one thread survive promotion and be inherited by the opportunity.
+
+     The collector may hold several such threads for one card — one per partner
+     they have talked to — which is what makes alternative-partner chat possible
+     without a second chat model. */
+  const threadWith = (partnerId, cardId) =>
+    (partnerId ? D.findThread(state.conversations, meId, partnerId, cardById(cardId)) : null);
+  /* Every partner thread about one identity, newest-agnostic order preserved. */
+  const threadsForCard = (cardId) =>
+    D.threadsForCard(state.conversations, meId, cardById(cardId));
+  const partnersTalkedTo = (cardId) =>
+    D.partnersInConversation(state.conversations, meId, cardById(cardId));
+
+  /* A goal names a card, not a partner. Where a negotiation is under way the
+     goal's "current" thread is the one with that deal's partner; otherwise
+     there is no single answer, and callers should ask per partner. */
   const threadForGoal = (goalId) => {
     const g = state.goals.find((x) => x.id === goalId);
-    return g ? threadForCard(g.cardId) : null;
+    if (!g) return null;
+    const opp = D.activeOppForGoal(goalId, state.opportunities);
+    return opp ? threadWith(opp.partnerId, g.cardId) : null;
   };
   /* Two honest questions, deliberately different:
        hasThreadAbout  — has contact been made at all (an event counts)
-       hasTalkedAbout  — has anyone actually said something (the TP's contract) */
-  const hasThreadAbout = (cardId) => !!threadForCard(cardId);
-  const hasTalkedAbout = (cardId) => D.hasConversation(state.conversations, meId, cardById(cardId));
-  const conversationsFor = (goalId) => {
-    const t = goalId ? threadForGoal(goalId) : null;
-    return t ? [t] : [];
+       hasTalkedAbout  — has anyone actually said something (the TP's contract)
+     Both answer for a specific partner when given one, and "anyone" when not. */
+  const hasThreadAbout = (cardId, partnerId) => (partnerId
+    ? !!threadWith(partnerId, cardId)
+    : threadsForCard(cardId).length > 0);
+  const hasTalkedAbout = (cardId, partnerId) => (partnerId
+    ? D.hasConversation(state.conversations, meId, partnerId, cardById(cardId))
+    : threadsForCard(cardId).some((t) => t.entries.some((e) => e.kind === "message")));
+  /* Scoped to a partner when asked; otherwise every partner thread on the goal. */
+  const conversationsFor = (goalId, partnerId) => {
+    const g = goalId ? state.goals.find((x) => x.id === goalId) : null;
+    if (!g) return [];
+    if (partnerId) { const t = threadWith(partnerId, g.cardId); return t ? [t] : []; }
+    return threadsForCard(g.cardId);
   };
 
   /* Select Trade eligibility: EVERY copy is eligible. Partner interest orders
@@ -145,7 +169,8 @@ function collectorView(state, meId) {
     myGoals, myBinder, myOpps, myPrefs,
     partnersWith, interestIn, interestCountFrom, forYou, partnerProfile,
     stateOf, openOppForGoal, goalFor, conversationsFor, tradeGroups, turnFor,
-    threadForCard, threadForGoal, hasTalkedAbout, hasThreadAbout,
+    threadWith, threadsForCard, partnersTalkedTo,
+    threadForGoal, hasTalkedAbout, hasThreadAbout,
   };
 }
 

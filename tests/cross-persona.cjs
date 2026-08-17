@@ -96,9 +96,9 @@ const partnerView = (partnerId = SELF_PARTNER) => {
     networkDemand: s.goals.filter((g) => g.collectorId !== null),
     myInterests: E.binderCopiesInterestedBy(s.interests, partnerId),
     myOpportunities: s.opportunities.filter((o) => o.partnerId === partnerId),
-    /* Threads are keyed on collector + card identity; a partner participates in
-     every thread with a collector they serve. */
-  conversations: s.conversations,
+    /* Threads are keyed on collector + partner + card identity, so a partner
+     participates in their OWN threads and in no one else's. */
+  conversations: s.conversations.filter((c) => c.partnerId === partnerId),
     /* The TP's own action surface, same canonical path. */
     markInterested: (binderId, on) => acts().setInterest(partnerId, binderId, on, "2026-08-14"),
     addInventory: (copy) => acts().addInventoryCopy({ ...copy, partnerId }),
@@ -210,14 +210,25 @@ describe("5. Collector Reach out -> TP sees the same Conversation", () => {
     const goal = cls(r, "goal").concat(cls(r, "gwatch-r"))
       .find((n) => supplyOrReach(n));
     click(supplyOrReach(goal));
-    click(btn(r, "Reach out"));
+    /* A conversation is a place now: open it, then say something. */
+    const chat = r.root.findAllByType("button")
+      .find((b) => /^(Chat|Continue chatting)$/.test(txt(b).trim()));
+    if (chat) click(chat);
+    const ta = r.root.findAllByType("textarea")[0];
+    TR.act(() => { ta.props.onChange({ target: { value: "Is this still available?" } }); });
+    click(r.root.findAllByType("button").find((b) => txt(b).trim() === "Send"));
 
     eq(st0().conversations.length, beforeConv + 1, "one Conversation created");
     eq(st0().opportunities.length, beforeOpps, "and NO Opportunity");
     const cvn = st0().conversations[st0().conversations.length - 1];
-    const seenByPartner = partnerView().conversations;
+    /* The partner it is WITH sees it — and only they do. */
+    const seenByPartner = partnerView(cvn.partnerId).conversations;
     assert(seenByPartner.some((c) => c.id === cvn.id), "the partner sees the same conversation");
-    assert(cvn.key, "keyed on collector and card identity");
+    const others = st0().partners.map((x) => x.id).filter((x) => x !== cvn.partnerId);
+    others.forEach((pid) => assert(!partnerView(pid).conversations.some((c) => c.id === cvn.id),
+      "and no other partner can see it"));
+    assert(cvn.key, "keyed on collector, partner and card identity");
+    assert(cvn.partnerId, "and it names the partner it is with");
     assert(cvn.cardId, "with the card it is about");
   });
 });

@@ -2680,14 +2680,16 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
   /* Thread semantics are canonical and shared — see metyet-domain. Both personas
      append through the same function, so one conversation per collector + card
      identity holds across both experiences. */
-  const threadKeyFor = useCallback((collectorId, cardId) => SharedID.threadKey(collectorId, card(cardId)), [card]);
+  /* This workspace IS one Trusted Partner, so every thread it touches is scoped
+     to that partner. Another partner holding the same identity has their own. */
+  const threadKeyFor = useCallback((collectorId, cardId) => SharedID.threadKey(collectorId, partnerId, card(cardId)), [card, partnerId]);
   const threadFor = useCallback(
-    (collectorId, cardId) => SharedID.findThread(threads, collectorId, card(cardId)),
-    [threads, card]
+    (collectorId, cardId) => SharedID.findThread(threads, collectorId, partnerId, card(cardId)),
+    [threads, card, partnerId]
   );
   const appendEntry = (collectorId, cardId, entry) => {
     setThreads((ts) => SharedID.appendThreadEntry(ts, {
-      collectorId, card: card(cardId), cardId, entry }));
+      collectorId, partnerId, card: card(cardId), cardId, entry }));
   };
   const sendMessage = (collectorId, cardId, by, text) => {
     appendEntry(collectorId, cardId, { kind: "message", by, text });
@@ -2696,8 +2698,8 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
   /* Structured lifecycle events land in the same thread, chronologically. */
   const logMilestone = (collectorId, cardId, text) => appendEntry(collectorId, cardId, { kind: "event", by: "system", text });
   const hasConversation = useCallback(
-    (collectorId, cardId) => SharedID.hasConversation(threads, collectorId, card(cardId)),
-    [threads, card]
+    (collectorId, cardId) => SharedID.hasConversation(threads, collectorId, partnerId, card(cardId)),
+    [threads, card, partnerId]
   );
 
   const logActivity = (collectorId, type, text, date) =>
