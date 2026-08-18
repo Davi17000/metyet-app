@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { createStore } from "../domain/metyet-store.js";
 import * as SharedID from "../domain/metyet-domain.js";
+import { DEV as SHARED_DEV } from "../shared/dev-flag.js";
 
 /* ============================================================
    MetYet — Trusted Partner Experience (pilot prototype)
@@ -1341,10 +1342,16 @@ const REVIEW_GOALS_SEED = [
    Trade, reviewed cards before Value Trade, and so on. No stage is manufactured
    by setting the field alone. The review deal starts where the lifecycle does. */
 const REVIEW_OPPS_SEED = [
+  /* The demo deal's POSITION here is deliberate. buildOpps varies each package by
+     `(cardIndex + oppIndex) % 7`, and slot 6 withdraws the only accepted card —
+     which left the Value Trade demo with nothing to value; the price thread
+     varies with the same index, deciding who owns the turn. This position gives
+     the demo row a package worth valuing AND the collector's move at Agree on
+     Price. Everything still derives normally; no variation logic was changed. */
   ["c12", "i8",  "agree-price", "2026-08-04", 1150],
+  ["c12", "i1",  "agree-price", "2026-08-09", 4200],
   ["c12", "i5",  "value-trade", "2026-07-28", 1450],
   ["c12", "i13", "deal",        "2026-07-30", 900],
-  ["c12", "i1",  "agree-price", "2026-08-09", 4200],
 ];
 /* The goal the harness drives, and the one it promotes, identified by card so
    no test or screen has to hardcode an index-derived id. */
@@ -2105,13 +2112,59 @@ function nextAction(opp) {
    ========================================================================== */
 /* The harness is opt-in. Default OFF so the canonical demo world — which several
    suites freeze by exact count — is untouched by review scaffolding. */
-const REVIEW_ON = typeof process !== "undefined" && process.env
-  && process.env.METYET_DEV === "1";
+const REVIEW_ON = SHARED_DEV;
+
+/* ------------------------------------------------------- DEV FIXTURE LOADER
+
+   ONE implementation of "load the demo deal at stage X", shared by the Collector's
+   review panel and the prototype header so there is no second fixture mechanism.
+
+   It is a pure state transform: rebuild the canonical seed at the requested
+   stage, then swap ONLY the demo deal's goal and opportunity into the world that
+   is already running. Nothing else is disturbed, and no stage field is written —
+   the stage comes from buildOpps deriving it, exactly as at hydration.
+
+   Returns the next state, or null when there is no demo deal to load. */
+const REVIEW_DEAL_NOTE_RE = /^Review deal/;
+export function demoDealFixture(state, { collectorId, demoStage }) {
+  const fixture = buildCanonicalSeed({ review: true, demoStage: demoStage || undefined });
+  const fg = fixture.goals.find((g) => g.collectorId === collectorId
+    && REVIEW_DEAL_NOTE_RE.test(g.note || ""));
+  if (!fg) return null;
+  const fo = fixture.opportunities.find((o) => o.goalId === fg.id);
+  const mine = state.goals.find((g) => g.collectorId === collectorId && g.cardId === fg.cardId);
+  if (!mine || !fo) return null;
+  return { ...state,
+    goals: state.goals.map((g) => (g.id === mine.id ? { ...fg, id: mine.id } : g)),
+    opportunities: [...state.opportunities.filter((o) => o.goalId !== mine.id),
+      { ...fo, id: "o-review", goalId: mine.id }] };
+}
+
+/* Which stage the demo deal is currently loaded at, for the dev controls to
+   reflect. Derived from the live opportunity — never stored anywhere. */
+export function demoDealStage(state, collectorId) {
+  const g = (state.goals || []).find((x) => x.collectorId === collectorId
+    && REVIEW_DEAL_NOTE_RE.test(x.note || ""));
+  if (!g) return null;
+  const o = (state.opportunities || []).find((x) => x.goalId === g.id && SharedID.isActive(x));
+  return o ? o.stage : null;
+}
 
 export function buildCanonicalSeed(opts) {
   const review = opts && opts.review != null ? !!opts.review : REVIEW_ON;
+  /* DEMO STAGE. The review deal is REBUILT at the requested stage rather than
+     having its stage field edited: the row still goes through buildOpps, which
+     derives the upstream terms that stage requires. So asking for Value Trade
+     yields a settled price, a submitted package and reviewed cards — the same
+     way every other seeded opportunity gets them. There is no stage setter.
+     Switching stages rebuilds the fixture; it does not preserve edits. */
+  const demoStage = opts && opts.demoStage;
   const goalsSeed = review ? [...GOALS_SEED, ...REVIEW_GOALS_SEED] : GOALS_SEED;
-  const oppsSeed = review ? [...OPPS_SEED, ...REVIEW_OPPS_SEED] : OPPS_SEED;
+  const reviewOpps = demoStage
+    ? REVIEW_OPPS_SEED.map((row) => (row[1] === REVIEW_DEAL_CARD
+      ? [row[0], row[1], demoStage, row[3], row[4]] : row))
+    : REVIEW_OPPS_SEED;
+  const oppsSeed = review ? [...OPPS_SEED, ...reviewOpps] : OPPS_SEED;
   return {
     catalog: CARDS_SEED,
     collectors: COLLECTORS_SEED,

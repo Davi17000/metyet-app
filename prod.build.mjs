@@ -5,7 +5,9 @@ const r = await build({
   target: ["es2020"], outfile: "dist/MetYet.prod.js",
   external: ["react", "react-dom"],
   jsx: "automatic",
-  define: { "process.env.NODE_ENV": '"production"' },
+  /* Production never ships dev tooling. Stated explicitly rather than relying
+     on the absence of a definition. */
+  define: { "process.env.NODE_ENV": '"production"', __METYET_DEV__: "false" },
   metafile: true, logLevel: "warning",
 });
 const o = Object.values(r.metafile.outputs)[0];

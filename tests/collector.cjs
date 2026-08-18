@@ -963,7 +963,7 @@ describe("Navigation uses the shared MetYet icon set", () => {
 
   test("1-3. the icons come from the Trusted Partner icon component", () => {
     const src = readSrc("collector/MetYetCollector.jsx");
-    assert(/import \{ buildCanonicalSeed, Icon \} from "\.\.\/src\/MetYet\.jsx"/.test(src),
+    assert(/import \{[^}]*\bIcon\b[^}]*\} from "\.\.\/src\/MetYet\.jsx"/.test(src),
       "the Collector imports the shared Icon");
     assert(/icon: "target"/.test(src) && /icon: "binder"/.test(src) && /icon: "people"/.test(src),
       "crosshairs, binder and people");
@@ -1701,8 +1701,8 @@ describe("Collector shared chat", () => {
 
   test("the workspace exposes a conversation", () => {
     const r = openDeal(mk());
-    assert(cls(r, "dw-bar")[0], "a persistent action bar");
-    assert(!/Chat with/.test(txt(cls(r, "dw-bar")[0])),
+    assert(cls(r, "idf-action")[0], "a persistent action bar");
+    assert(!/Chat with/.test(txt(cls(r, "idf-action")[0])),
       "and no separate chat destination — conversation is in the workspace");
     const drawer = openChat(r);
     assert(drawer, "the conversation renders inline");
@@ -1766,8 +1766,12 @@ describe("Development-only TP simulator", () => {
     const card = cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
     click(card.findAllByType("button").find((b) => String(b.props.className || "").includes("goal-deal")));
     eq(cls(r, "sim").length, 0, "absent from an ordinary run");
-    assert(/process\.env\.METYET_DEV === "1"/.test(src()),
-      "gated on an explicit development flag");
+    /* Gated on the one canonical flag, which resolves METYET_DEV in Node and a
+       build-time literal in the browser — see shared/dev-flag.js. */
+    assert(/const DEV = SHARED_DEV;/.test(src()),
+      "gated on the canonical development flag");
+    assert(/import \{ DEV as SHARED_DEV \} from "\.\.\/shared\/dev-flag\.js"/.test(src()),
+      "imported from the single definition");
   });
 
   test("it exposes canonical actions, never its own lifecycle logic", () => {
@@ -1845,6 +1849,7 @@ describe("Deal workspace mobile shell", () => {
 
   test("guidance derives from canonical turn logic", () => {
     const r = open(mk());
+    /* This describes the STANDALONE page, which keeps its own shell classes. */
     const g = cls(r, "dw-guide")[0];
     assert(g, "a guidance block");
     assert(/Your move/.test(txt(byClassIn(g, "dw-guide-w")[0])), "whose move");
@@ -1864,7 +1869,7 @@ describe("Persistent action bar", () => {
 
   test("chat is always available during an active deal", () => {
     const r = open(mk());
-    const bar = cls(r, "dw-bar")[0];
+    const bar = cls(r, "idf-action")[0];
     assert(bar, "the bar is present");
     assert(!/Chat with/.test(txt(bar)), "the bar carries no separate chat destination");
   });
@@ -1885,7 +1890,7 @@ describe("Persistent action bar", () => {
   test("it drives the real mutation, and reflects the result", () => {
     const r = open(mk());
     /* The bar now holds the stage action alone — chat is no longer a destination. */
-    const go = () => cls(r, "dw-bar")[0].findAllByType("button")[0];
+    const go = () => cls(r, "idf-action")[0].findAllByType("button")[0];
     eq(go().props.disabled, true, "nothing to send yet");
     click(cls(r, "pick")[0]);
     assert(/Send 1 card for review/.test(txt(go())), "the label comes from the stage");
@@ -1897,9 +1902,9 @@ describe("Persistent action bar", () => {
   test("waiting shows no invalid action", () => {
     const r = open(mk());
     click(cls(r, "pick")[0]);
-    click(cls(r, "dw-bar")[0].findAllByType("button")[0]);
-    const bar = cls(r, "dw-bar")[0];
-    assert(byClassIn(bar, "dw-bar-wait")[0], "a waiting state replaces the action");
+    click(cls(r, "idf-action")[0].findAllByType("button")[0]);
+    const bar = cls(r, "idf-action")[0];
+    assert(byClassIn(bar, "idf-action-wait")[0], "a waiting state replaces the action");
     assert(/Waiting on Northline/.test(txt(bar)), "naming who we wait on");
     eq(bar.findAllByType("button").length, 0, "and nothing false is left pressable");
     /* But the conversation is still right there, composer and all. */
@@ -1922,7 +1927,10 @@ describe("Embedded conversation", () => {
     const before = JSON.stringify(__store.get().get().opportunities.find((o) => o.id === "o9"));
     const d = drawer(r);
     assert(d, "the conversation is already there, no tap required");
-    assert(/Conversation/.test(txt(d)), "titled");
+    /* The heading now belongs to the column that owns the conversation, so that
+       there is exactly one of it — see inline-composition for the proof. */
+    const col = cls(r, "idf-side")[0] || d;
+    assert(/Conversation/.test(txt(col)), "titled");
     eq(JSON.stringify(__store.get().get().opportunities.find((o) => o.id === "o9")), before,
       "the opportunity is untouched");
   });
@@ -1959,7 +1967,7 @@ describe("Embedded conversation", () => {
     eq(cls(r, "dw-chat").length, 0, "and no drawer exists at all");
     const cur = cls(r, "rail-s").find((n) => String(n.props.className).includes("current"));
     assert(txt(cur).includes("Select Trade"), "still on the same stage");
-    assert(cls(r, "dw-bar")[0], "with the action bar intact");
+    assert(cls(r, "idf-action")[0], "with the action bar intact");
   });
 });
 

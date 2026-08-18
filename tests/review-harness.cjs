@@ -210,8 +210,13 @@ describe("3. Reset restores only the review scenario", () => {
   test("reset is a fixture rebuild, not a field editor", () => {
     const src = readSrc("collector/MetYetCollector.jsx");
     const fn = src.slice(src.indexOf("resetReviewDeal:"), src.indexOf("dealAgreed:"));
-    assert(/buildCanonicalSeed\(\{ review: true \}\)/.test(fn),
-      "the replacement comes from the canonical seed builder");
+    /* The loader is now shared with the prototype header, so the adapter
+       delegates rather than holding its own copy. */
+    assert(/demoDealFixture\(store\.get\(\), \{ collectorId, demoStage \}\)/.test(fn),
+      "it delegates to the one shared loader");
+    assert(/buildCanonicalSeed\(\{ review: true, demoStage:/
+      .test(readSrc("src/MetYet.jsx")),
+      "which rebuilds from the canonical seed builder");
     assert(/if \(!DEV\) return null;/.test(fn), "and it is dev-only");
   });
 });

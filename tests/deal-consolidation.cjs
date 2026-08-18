@@ -96,7 +96,7 @@ describe("A. Primary Goal becomes the Deal Flow once an offer exists", () => {
     const o = reviewOpp();
     const entry = cls(cardForOpp(r, o), "goal-deal")[0];
     click(entry);
-    assert(cls(r, "dw-stage")[0], "the Deal Flow workspace is open");
+    assert(cls(r, "idf-stage")[0], "the Deal Flow workspace is open");
     assert(cls(r, "chat-embed")[0], "with its conversation");
     /* It opened IN PLACE: the Goal is still on screen, now containing the deal. */
     assert(cls(r, "goal-dw")[0], "the workspace is inside the Goal");
@@ -109,7 +109,7 @@ describe("A. Primary Goal becomes the Deal Flow once an offer exists", () => {
     let o = reviewOpp();
     eq(D.nextActor(o).actor, "collector", "the review deal starts with the collector");
     click(cls(cardForOpp(r, o), "goal-deal")[0]);
-    assert(cls(r, "dw-stage")[0], "opens directly when it is your move");
+    assert(cls(r, "idf-stage")[0], "opens directly when it is your move");
 
     /* Hand the turn to the partner through canonical state, then re-enter. */
     const copy = S().binder.find((b) => b.collectorId === ME);
@@ -124,7 +124,7 @@ describe("A. Primary Goal becomes the Deal Flow once an offer exists", () => {
     assert(entry, "the deal is still represented on the Goals page");
     assert(/Waiting on/.test(txt(entry)), "stating truthfully who we wait on");
     click(entry);
-    assert(cls(r, "dw-stage")[0], "and it still opens directly while waiting");
+    assert(cls(r, "idf-stage")[0], "and it still opens directly while waiting");
   });
 
   test("re-entering a waiting deal mutates nothing", () => {
@@ -199,7 +199,7 @@ describe("B. Conversation is embedded, not a destination", () => {
     const r = mk();
     openDeal(r, reviewOpp());
     eq(cls(r, "dw-chat").length, 0, "no chat drawer renders");
-    const bar = cls(r, "dw-bar")[0];
+    const bar = cls(r, "idf-action")[0];
     assert(bar, "the action bar remains");
     assert(!/Chat with/.test(txt(bar)), "carrying no separate chat destination");
     const src = readSrc("collector/MetYetCollector.jsx");
@@ -359,7 +359,7 @@ describe("C. The review harness still works after consolidation", () => {
       const entry = cls(cardForOpp(r, o), "goal-deal")[0];
       assert(entry, stage + ": exposes direct Deal Flow entry");
       click(entry);
-      assert(cls(r, "dw-stage")[0], stage + ": opens its workspace");
+      assert(cls(r, "idf-stage")[0], stage + ": opens its workspace");
       assert(cls(r, "chat-embed")[0], stage + ": with embedded conversation");
     });
   });
@@ -389,7 +389,7 @@ describe("C. The review harness still works after consolidation", () => {
     eq(reviewOpp().stage, "value-trade", "the review deal moved");
 
     const r2 = remount();
-    click(btn(r2, "Reset review deal"));
+    click(r2.root.findAllByType("button").find((b) => /^Reset (review|demo) deal$/.test(txt(b).trim())));
     eq(reviewOpp().stage, "agree-price", "reset restored the starting fixture");
 
     const p = goalNoted(/^Review promotion/);

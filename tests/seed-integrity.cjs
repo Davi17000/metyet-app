@@ -179,7 +179,7 @@ describe("All five Collector review stages open", () => {
       const entry = cls(card, "goal-deal")[0];
       assert(entry, stage + ": exposes direct Deal Flow entry");
       click(entry);                             // would throw if it cannot render
-      assert(cls(r, "dw-stage")[0], stage + ": the workspace rendered");
+      assert(cls(r, "idf-stage")[0], stage + ": the workspace rendered");
       assert(cls(r, "chat-embed")[0], stage + ": with embedded conversation");
 
       /* Downstream stages must reconcile their trade terms against real copies. */

@@ -56,7 +56,7 @@ const worldShape = () => JSON.stringify({
   convs: S().conversations.map((t) => [t.key, t.entries.length]) });
 
 /* The order the bands must appear in, top to bottom, on mobile. */
-const BANDS = ["goal-deal", "goal-rail", "dw-guide", "dw-stage", "dw-bar",
+const BANDS = ["goal-deal", "goal-rail", "idf-stage", "idf-action",
   "chat-embed", "rc-wrap", "goal-holders"];
 const bandOrder = (node) => {
   const seen = [];
@@ -72,7 +72,7 @@ describe("A. One surface, not a card inside a card", () => {
   test("the workspace mounts inline, without page-level shell", () => {
     const r = mk();
     const card = expand(r, goalOf(oppAt("select-trade")));
-    assert(cls(card, "dw-inline")[0], "the workspace is in its inline form");
+    assert(cls(card, "idf")[0], "the workspace is in its dedicated inline form");
     eq(cls(card, "dw-ctx").length, 0, "no page context header");
     eq(cls(card, "dw-prog").length, 0, "no second progress panel");
     assert(!card.findAllByType("button").some((b) => /← Goals/.test(txt(b))),
@@ -81,9 +81,8 @@ describe("A. One surface, not a card inside a card", () => {
 
   test("nested panels are flattened rather than merely restyled", () => {
     const src = readSrc("collector/MetYetCollector.jsx");
-    const css = src.slice(src.indexOf(".dw-inline"), src.indexOf(".dw-inline") + 1400);
-    assert(/\.dw-inline \.card[^{]*\{[^}]*border: none/.test(css),
-      "inline sections drop their borders");
+    const css = src.slice(src.indexOf(".idf-stage > .card"), src.indexOf(".idf-stage > .card") + 400);
+    assert(/border: none/.test(css), "inline sections drop their borders");
     assert(/background: none/.test(css), "and their backgrounds");
   });
 
@@ -131,7 +130,7 @@ describe("A. One surface, not a card inside a card", () => {
   test("the canonical stage and conversation components are still shared", () => {
     const src = readSrc("collector/MetYetCollector.jsx");
     const card = src.slice(src.indexOf("function GoalCard"), src.indexOf("function SimulateTP"));
-    assert(/<Deal oppId=\{live\.id\}[^>]*inline/.test(card), "the Goal mounts the one workspace");
+    assert(/<InlineDeal o=\{live\} st=\{st\}/.test(card), "the Goal mounts the dedicated wrapper");
     ["AgreePrice", "SelectTrade", "ValueTrade", "Fulfillment", "DealChat"].forEach((c) =>
       assert(!new RegExp("<" + c + "\\b").test(card), c + " is not re-implemented"));
   });
@@ -177,7 +176,7 @@ describe("B. The summary row is the only disclosure", () => {
     const card = expand(r, goalOf(oppAt("select-trade")));
     const order = bandOrder(card);
     eq(order[0], "goal-deal", "the disclosure is the first band");
-    assert(order.indexOf("goal-deal") < order.indexOf("dw-stage"),
+    assert(order.indexOf("goal-deal") < order.indexOf("idf-stage"),
       "above the stage work, so it is never scrolled past");
   });
 
@@ -203,7 +202,7 @@ describe("C. Mobile vertical flow", () => {
     const r = mk();
     const card = expand(r, goalOf(oppAt("select-trade")));
     const order = bandOrder(card);
-    const expected = ["goal-deal", "goal-rail", "dw-guide", "dw-stage", "dw-bar",
+    const expected = ["goal-deal", "goal-rail", "idf-stage", "idf-action",
       "chat-embed", "rc-wrap"];
     eq(order.filter((k) => expected.includes(k)).join(" → "), expected.join(" → "),
       "summary, rail, guidance, stage, action, conversation, details");
@@ -213,19 +212,18 @@ describe("C. Mobile vertical flow", () => {
     const r = mk();
     const card = expand(r, goalOf(oppAt("select-trade")));
     const order = bandOrder(card);
-    assert(order.indexOf("dw-bar") > order.indexOf("dw-stage"), "action follows the stage");
-    assert(order.indexOf("dw-bar") < order.indexOf("chat-embed"),
+    assert(order.indexOf("idf-action") > order.indexOf("idf-stage"), "action follows the stage");
+    assert(order.indexOf("idf-action") < order.indexOf("chat-embed"),
       "and precedes the conversation, so it is never scrolled past");
   });
 
   test("no fixed bar and no nested scroller inside the Goal", () => {
     const src = readSrc("collector/MetYetCollector.jsx");
-    const css = src.slice(src.indexOf(".dw-inline"), src.indexOf(".dw-inline") + 1600);
-    assert(/\.dw-inline \.dw-bar[^}]*position: static/.test(css),
-      "the action bar is in flow, not pinned over the card");
-    assert(/\.dw-inline \.chat-embed \.chat-scroll[^}]*max-height: none/.test(css),
+    assert(!/\.idf[^{]*\{[^}]*position: fixed/.test(src),
+      "nothing inside the inline deal is pinned to the viewport");
+    assert(/\.idf \.chat-embed \.chat-scroll[^}]*max-height: none/.test(src),
       "the conversation does not scroll inside its own box");
-    assert(/overflow: visible/.test(css), "one natural page scroll");
+    assert(/overflow: visible/.test(src), "one natural page scroll");
   });
 
   test("partner discovery stays available but subordinate", () => {
@@ -233,11 +231,11 @@ describe("C. Mobile vertical flow", () => {
     const card = expand(r, goalOf(oppAt("select-trade")));
     const order = bandOrder(card);
     if (order.includes("goal-holders")) {
-      assert(order.indexOf("goal-holders") > order.indexOf("dw-bar"),
+      assert(order.indexOf("goal-holders") > order.indexOf("idf-action"),
         "alternatives sit below the stage action, not beside it");
     }
     /* End/cancel is never adjacent to the primary action. */
-    const bar = cls(card, "dw-bar")[0];
+    const bar = cls(card, "idf-action")[0];
     assert(!/Stop negotiation|Cancel agreed deal/.test(txt(bar)),
       "stopping is not offered beside the stage action");
   });
@@ -301,7 +299,7 @@ describe("E. All five stages, collapsed and expanded", () => {
 
       /* Expanded: one surface, one rail, correct order. */
       const card = expand(r, g);
-      assert(cls(card, "dw-stage")[0], stage + ": the stage workspace");
+      assert(cls(card, "idf-stage")[0], stage + ": the stage workspace");
       assert(cls(card, "chat-embed")[0], stage + ": the conversation");
       eq(cls(card, "rail-s").length, 5, stage + ": still one rail");
       eq(cls(card, "dw-ctx").length, 0, stage + ": no nested page header");
@@ -321,7 +319,7 @@ describe("E. All five stages, collapsed and expanded", () => {
     const r = mk();
     const o = oppAt("value-trade");
     const card = expand(r, goalOf(o));
-    assert(cls(card, "dw-stage")[0], "it renders");
+    assert(cls(card, "idf-stage")[0], "it renders");
     const owned = new Set(S().binder.filter((b) => b.collectorId === ME).map((b) => b.id));
     D.acceptedTradeCards(o).forEach((tc) => assert(owned.has(tc.binderId),
       "every trade term names a copy the collector owns"));

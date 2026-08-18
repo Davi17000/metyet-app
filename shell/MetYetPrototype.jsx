@@ -1,7 +1,8 @@
 import React, { useState, useRef } from "react";
-import MetYet, { buildCanonicalSeed } from "../src/MetYet.jsx";
+import MetYet, { buildCanonicalSeed, demoDealFixture, demoDealStage } from "../src/MetYet.jsx";
 import MetYetCollector from "../collector/MetYetCollector.jsx";
 import { createStore } from "../domain/metyet-store.js";
+import { DEV as SHARED_DEV } from "../shared/dev-flag.js";
 
 /* ============================================================================
    THE METYET PROTOTYPE SHELL
@@ -24,6 +25,21 @@ import { createStore } from "../domain/metyet-store.js";
 
 const SELF_PARTNER = "p-self";
 const SELF_COLLECTOR = "c12";
+
+/* Prototype tooling is hidden unless explicitly enabled, exactly as the
+   Collector's own review panel is, so nothing here can reach a normal build.
+   One flag, shared with every other gate — see shared/dev-flag.js. */
+const DEV = SHARED_DEV;
+
+/* The five canonical active stages, in lifecycle order. Labels match the ones
+   the product uses so the control reads the same as the rail beside it. */
+const DEMO_STAGES = [
+  { id: "agree-price", label: "Agree on Price" },
+  { id: "select-trade", label: "Select Trade" },
+  { id: "value-trade", label: "Value Trade" },
+  { id: "deal", label: "Deal" },
+  { id: "fulfillment", label: "Fulfillment" },
+];
 
 const PERSONAS = [
   { id: "tp", label: "Trusted Partner", who: "Northline Cards",
@@ -75,6 +91,13 @@ const CSS = `
   font-weight: 700; color: #7E8AA0; }
 .myp-viewing { color: #FFF; font-weight: 600; }
 .myp-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+/* Same scale and voice as the buttons beside it — tooling, not product CTA. */
+.myp-stage { display: inline-flex; align-items: center; gap: 6px; }
+.myp-stage-l { font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+  opacity: .7; }
+.myp-sel { font: inherit; font-size: 12px; padding: 4px 8px; border-radius: 7px;
+  background: transparent; color: inherit; border: 1px solid currentColor;
+  opacity: .85; cursor: pointer; }
 .myp-btn { background: none; border: 1px solid #2A3446; color: #C6CEDA; border-radius: 7px;
   padding: 4px 10px; font-size: 12px; }
 .myp-btn:hover { border-color: #46536B; color: #FFF; }
@@ -136,6 +159,9 @@ export default function MetYetPrototype() {
   }
 
   const current = PERSONAS.find((p) => p.id === persona);
+  /* Derived from the live opportunity, so the control always reflects what is
+     actually loaded — including after the demo is reset. */
+  const demoStage = DEV ? demoDealStage(store.get(), SELF_COLLECTOR) : null;
 
   return (
     <div className="myp">
@@ -149,6 +175,26 @@ export default function MetYetPrototype() {
         <span className="myp-actions">
           <button className="myp-btn" aria-haspopup="menu" aria-expanded={menu}
             onClick={() => setMenu(!menu)}>Switch persona</button>
+          {/* DEMO STAGE — development tooling, and Collector-only: it loads a
+              Collector review fixture, so it has no business appearing while
+              the Trusted Partner product is on screen. It calls the SAME loader
+              the Collector's review panel uses; it never writes a stage. */}
+          {DEV && persona === "collector" && (
+            <label className="myp-stage">
+              <span className="myp-stage-l">Demo stage</span>
+              <select className="myp-sel" value={demoStage || ""}
+                aria-label="Demo stage"
+                onChange={(e) => {
+                  const next = demoDealFixture(store.get(),
+                    { collectorId: SELF_COLLECTOR, demoStage: e.target.value });
+                  if (next) { store.set(next); setEpoch((n) => n + 1); }
+                }}>
+                {DEMO_STAGES.map((x) => (
+                  <option key={x.id} value={x.id}>{x.label}</option>
+                ))}
+              </select>
+            </label>
+          )}
           <button className="myp-btn" onClick={() => {
             /* ONE reset for ONE universe: restoring the seed resets both
                perspectives, because there is only one reality to restore. */
@@ -185,4 +231,4 @@ export default function MetYetPrototype() {
 
 /* Exposed for the unified-runtime tests: they must be able to assert that the
    store instance survives a persona switch. Not product surface. */
-export { PERSONAS, SELF_PARTNER, SELF_COLLECTOR };
+export { PERSONAS, SELF_PARTNER, SELF_COLLECTOR, DEMO_STAGES };

@@ -2,11 +2,12 @@ import React, { useState, useMemo, useCallback, useEffect, useSyncExternalStore 
 import * as D from "../domain/metyet-domain.js";
 import * as E from "../domain/metyet-entities.js";
 import { createStore } from "../domain/metyet-store.js";
+import { DEV as SHARED_DEV } from "../shared/dev-flag.js";
 import { collectorView } from "../domain/collector-view.js";
 /* THE CANONICAL SEED. The Collector runs on the same universe the Trusted
    Partner does — same cards, same collectors, same inventory copies. Casey Lin
    (c12) is a collector in that network, not a fixture. */
-import { buildCanonicalSeed, Icon } from "../src/MetYet.jsx";
+import { buildCanonicalSeed, demoDealFixture, Icon } from "../src/MetYet.jsx";
 import CardIdentityPicker from "../shared/CardIdentityPicker.jsx";
 
 const SELF_COLLECTOR = "c12";
@@ -368,10 +369,23 @@ const CSS = `
 .gsec-empty { padding: 26px 22px; text-align: center; }
 .gsec-none { font-size: 13px; padding: 2px 2px 4px; }
 
-/* the live deal: the most consequential thing on a primary goal */
-.goal-live { margin-top: 16px; padding: 15px 16px; background: var(--accent-bg);
+/* the live deal: the most consequential thing on a primary goal.
+
+   The display:block here is load-bearing, not decoration. An older .goal-live
+   rule further up this stylesheet (a compact status strip on a different
+   surface) sets display:flex with align-items:center, and since both match, it
+   one governed the deal's macro layout too — which is why the Deal Flow header,
+   the rail and the three-column work area sat side by side in a row instead of
+   stacking. Every child here is a full-width ROW. */
+.goal-live { display: block; margin-top: 16px; padding: 15px 16px;
+  background: var(--accent-bg);
   border: 1px solid var(--accent-line); border-left: 3px solid var(--t1);
   border-radius: 12px; }
+
+/* Expanded, the deal IS the card: it drops the compact callout treatment so the
+   header and rail can span the full width rather than sitting in a tinted box. */
+.goal.deal-open .goal-live { background: none; border: none; padding: 0;
+  margin-top: 22px; }
 .goal-live-h { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; }
 .goal-live-stage { font-family: 'Archivo'; font-size: 9.5px; letter-spacing: .1em;
   text-transform: uppercase; font-weight: 700; color: var(--t1); }
@@ -396,6 +410,12 @@ const CSS = `
    It is the ONLY control that opens or closes the workspace, and it stays put at
    the top of the expanded Goal. */
 .goal-deal-m { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+/* Expanded: a wide header row, not a bordered chip floating at the left. */
+.goal.deal-open .goal-deal { width: 100%; background: none; border: none;
+  border-radius: 0; padding: 0 0 14px; align-items: flex-start; }
+.goal.deal-open .goal-deal-s { font-size: 13px; letter-spacing: .08em; }
+.goal.deal-open .goal-rail { margin-top: 0; padding-top: 0; border-top: none;
+  padding-bottom: 20px; }
 .goal-deal-p { display: flex; align-items: center; gap: 6px; }
 .goal-deal-pn { font-size: 13.5px; font-weight: 600; }
 .goal-deal-r { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
@@ -405,27 +425,109 @@ const CSS = `
    contributes sections, not another bordered panel inside a panel. Everything
    below flattens the old page shell rather than re-styling it. ---- */
 .goal-dw { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 4px; }
-.dw-inline { padding: 0; background: none; }
-/* No nested white panels: sections become divided bands of one document. */
-.dw-inline .card, .dw-inline .sec {
+/* ================================================= INLINE DEAL FLOW GEOMETRY
+
+   Purpose-built for the Primary Goal card. Nothing here descends from the
+   standalone page shell: no viewport height, no page padding, no fixed bar, no
+   inherited column placement. The Goal card is the outer container. */
+.idf { display: block; }
+
+/* Section headings shared by all three regions — one typographic voice. */
+.idf-h { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--t1); margin-bottom: 8px; }
+.idf-h.quiet { color: var(--muted); }
+.idf-guide-t { font-size: 14px; line-height: 1.5; color: var(--text); margin-bottom: 16px; }
+
+/* Mobile is the base case: one column, one natural scroll, in reading order —
+   task, then details, then conversation. */
+.idf-work { display: block; background: var(--panel-2);
+  border: 1px solid var(--line-soft); border-radius: 12px; padding: 20px; }
+.idf-task, .idf-mid, .idf-side { min-width: 0; }
+.idf-mid, .idf-side { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line); }
+
+/* Sections inside the stage are bands of one document, not cards in a card. */
+.idf-stage > .card, .idf-stage > .sec, .idf-stage .card, .idf-stage .sec {
   background: none; border: none; border-radius: 0; box-shadow: none;
-  padding: 16px 0 0; margin: 0; }
-.dw-inline .card + .card, .dw-inline .sec + .sec,
-.dw-inline .card + .sec, .dw-inline .sec + .card { border-top: 1px solid var(--line-soft); }
-/* Stage work is the dominant band and uses the full width. */
-.dw-inline .dw-stage { padding-top: 14px; }
-.dw-inline .dw-guide { margin: 14px 0 0; border-radius: 8px; }
-/* In-flow action: a sticky bar would collide with the card and the nav. */
-.dw-inline .dw-bar { position: static; margin: 16px 0 0; padding: 14px 0 0;
-  border-top: 1px solid var(--line); background: none; box-shadow: none;
-  display: flex; gap: 10px; }
-.dw-inline .dw-bar .btn { width: 100%; }
-/* Conversation is a section of the deal, not a floating card on top of it. */
-.dw-inline .chat-embed .chat-scroll { max-height: none; }
-/* One natural page scroll — no nested scrollers anywhere inside the Goal. */
-.dw-inline [class*="scroll"] { overflow: visible; }
+  padding: 0; margin: 0 0 16px; width: auto; }
+.idf-stage .pick, .idf-stage .bnd-r, .idf-stage .tc-r {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+
+/* One action, in flow with the task it belongs to. Never fixed. */
+.idf-action { margin-top: 18px; }
+.idf-action-go { width: 100%; }
+.idf-action-wait { font-size: 13.5px; color: var(--muted); }
+
+/* Centre column: a quiet definition list, aligned, sized to its content. */
+.idf-det-l { margin: 0; }
+.idf-det-r { display: flex; align-items: baseline; gap: 12px; padding: 7px 0;
+  border-bottom: 1px solid var(--line-soft); }
+.idf-det-r:last-child { border-bottom: none; }
+.idf-det-k { margin: 0; font-size: 13px; color: var(--muted); flex: 1 1 auto; }
+.idf-det-v { margin: 0; font-size: 13.5px; color: var(--text); font-weight: 600;
+  text-align: right; font-variant-numeric: tabular-nums; }
+
+/* CONTAINMENT. A grid item's default min-width is auto, i.e. its min-content
+   width — so the composer's textarea could force the conversation column wider
+   than its track and spill past the card's right edge. Every wrapper between
+   the track and the textarea must be allowed to shrink, and the control must
+   include its own padding in its width. */
+.idf-side, .idf-side .chat, .idf-side .chat-embed,
+.idf-side .chat-scroll, .idf-side .chat-composer { min-width: 0; max-width: 100%; }
+.idf-side .chat-composer { flex-wrap: wrap; }
+.idf-side .inp { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.idf-side .chat-m { max-width: 100%; }
+.idf-side .chat-body { overflow-wrap: anywhere; }
+
+/* Conversation owns no scroller — the page scrolls, once. */
+.idf .chat-embed .chat-scroll { max-height: none; overflow: visible; }
+.idf .chat, .idf .chat-embed { background: none; border: none; box-shadow: none;
+  border-radius: 0; padding: 0; margin: 0; }
+
+/* Ending the deal: present, quiet, and as far from the CTA as the card allows. */
+.idf-stop { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line-soft); }
+.idf-stop-t { font-size: 12.5px; color: var(--muted); line-height: 1.45; margin-bottom: 10px; }
+
+/* CONTAINER-AWARE, NOT VIEWPORT-AWARE. A wide browser window says nothing about
+   how much room this deal actually has: the Goals column has its own width, and
+   splitting on viewport alone is what squeezed the stage and the conversation
+   into strips. The expanded Goal declares itself a query container and the work
+   area answers to ITS width. */
+.goal.deal-open { container-type: inline-size; container-name: deal; }
+
+/* 980px is the smallest width at which three columns are all still readable:
+   conversation floors at 320px, details at 240px, the task at 260px, plus two
+   64px dividers/gutters. Below it we fall back to two columns, and below 820px
+   to one — stacking is always the honest answer when the room is not there. */
+@container deal (min-width: 820px) {
+  .idf-work { display: grid; grid-template-columns: minmax(0, 3fr) minmax(320px, 2fr);
+    gap: 28px; align-items: start; }
+  .idf-main, .idf-side { grid-column: auto; }
+  .idf-mid, .idf-side { margin-top: 0; padding-top: 0; border-top: none; }
+  /* Two columns: task and details share the left, conversation takes the right. */
+  .idf-mid { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line-soft); }
+  .idf-side { border-left: 1px solid var(--line-soft); padding-left: 28px; }
+}
+
+@container deal (min-width: 980px) {
+  /* THREE REGIONS: current task, stage details, conversation. Conversation is
+     the widest, as the reference composition has it — prose needs the room, and
+     the task no longer dominates. Columns align to the top and size to their
+     content, so no region stretches into blank space. */
+  .idf-work { grid-template-columns:
+      minmax(260px, 0.95fr) minmax(240px, 0.95fr) minmax(320px, 1.3fr);
+    gap: 0; align-items: start; }
+  .idf-task, .idf-mid, .idf-side { grid-column: auto; grid-row: auto; }
+  .idf-task { padding-right: 28px; }
+  /* Subtle vertical dividers rather than more boxes. */
+  .idf-mid { margin-top: 0; padding: 0 28px; border-top: none;
+    border-left: 1px solid var(--line-soft); }
+  .idf-side { padding-left: 28px; border-left: 1px solid var(--line-soft); }
+}
+
 /* Alternative partners stay reachable but visually subordinate. */
 .goal-holders { font-size: 12.5px; }
+
+
 
 /* Review harness — dev only, deliberately plain so it never reads as product. */
 .rvw { border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; }
@@ -437,6 +539,12 @@ const CSS = `
 .rvw-w { font-size: 11.5px; }
 .rvw-a { margin-top: 9px; display: flex; align-items: center; gap: 9px; }
 .rvw-note { font-size: 11.5px; }
+.rvw-sec { margin-top: 11px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.rvw-sec-h { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 7px; }
+.rvw-stages { display: flex; flex-wrap: wrap; gap: 6px; }
+.rvw-st.on { border-color: var(--t1); color: var(--t1); font-weight: 600; }
+.rvw-note-l { font-size: 11.5px; color: var(--faint); margin-top: 7px; line-height: 1.45; }
 /* Re-entry while the partner holds the turn: present, but plainly secondary to
    the primary action it replaces. */
 .goal-live-view { }
@@ -517,6 +625,12 @@ const CSS = `
 .rail-s.current .rail-n { background: var(--t1); border-color: var(--t1); color: #04120F; font-weight: 700; }
 .rail-l { font-size: 10.5px; line-height: 1.25; text-align: center; color: var(--muted);
   overflow-wrap: anywhere; }
+/* In an expanded deal the rail has the full card width, so labels break between
+   words at worst — never letter by letter, which is what overflow-wrap:anywhere
+   was doing when the rail was squeezed into a narrow column. */
+.goal.deal-open .rail-l { overflow-wrap: normal; word-break: normal; hyphens: none; }
+.goal.deal-open .rail { gap: 8px; }
+.goal.deal-open .rail-s { min-width: 0; }
 .rail-s.done .rail-l { color: var(--text); }
 .rail-s.current .rail-l { color: var(--t1); font-weight: 700; }
 @media (max-width: 560px) {
@@ -591,7 +705,7 @@ const CSS = `
    artwork carries it. A deal is close reading — prices, percentages, card lists,
    a conversation — so it gets a light, high-clarity treatment. The tokens are
    overridden ONLY within .dw, so nothing else in the app shifts. */
-.dw {
+.goal.deal-open, .dw {
   --bg: #F7F9FA;
   --panel: #FFFFFF;
   --panel-2: #F3F6F7;
@@ -615,6 +729,18 @@ const CSS = `
   /* room for the persistent bar */
   padding-bottom: calc(74px + env(safe-area-inset-bottom));
 }
+/* An expanded Goal IS the deal, so it takes the deal's light treatment: the
+   whole card becomes the bright close-reading surface, and the browsing pages
+   around it stay exactly as they were. Without this the flattened inline
+   sections showed the dark browsing card through them. */
+.goal.deal-open {
+  background: var(--panel);
+  color: var(--text);
+  border-color: var(--line);
+  min-height: 0;
+  padding-bottom: 0;
+}
+.goal.deal-open .goal-n, .goal.deal-open .sec-h { color: var(--text); }
 .dw .card { box-shadow: 0 1px 2px rgba(22,32,42,.05), 0 4px 14px rgba(22,32,42,.05); }
 .dw .btn { box-shadow: none; }
 .dw .btn.pri, .dw .btn.deep { color: #FFF; }
@@ -771,6 +897,10 @@ const CSS = `
   .nav-l { font-size: 15px; }
   .mc-main { flex: 1; min-width: 0; }
   .pg { max-width: 800px; padding: 46px 38px 70px; }
+  /* An open Deal Flow takes most of the workspace right of the nav, while the
+     page keeps its normal gutters. Collapsed goals inside it stay compact
+     because .goal has no width of its own — only the page grew. */
+  .pg.pg-wide { max-width: 1240px; }
   .pg-t { font-size: 34px; }
   .bnd { grid-template-columns: repeat(auto-fill, minmax(184px, 1fr)); gap: 22px; }
   .ovl { align-items: center; }
@@ -926,6 +1056,8 @@ function ReviewPanel({ st, go }) {
   };
 
   const rd = st.reviewGoal();
+  const rdOpp = rd ? st.openOppForGoal(rd.id) : null;
+  const rdStage = rdOpp ? rdOpp.stage : null;
   return (
     <div className="rvw">
       <div className="rvw-h">
@@ -936,13 +1068,40 @@ function ReviewPanel({ st, go }) {
         {mine.map(row)}
       </div>
       {rd && (
-        <div className="rvw-a">
-          <button className="btn sm" onClick={() => {
-            const id = st.resetReviewDeal();
-            setNote(id ? "Review deal restored to Agree on Price." : "Could not restore.");
-          }}>Reset review deal</button>
-          {note && <span className="faint rvw-note">{note}</span>}
-        </div>
+        <>
+          {/* STAGE PICKER — a fixture loader, not a lifecycle simulation. Each
+              button REBUILDS the demo deal at that stage from the canonical seed
+              builder, so the upstream terms are derived rather than faked.
+              Switching stages discards edits; that is the point of a fixture.
+              To walk the lifecycle for real, use the progression deal below with
+              the TP simulator instead. */}
+          <div className="rvw-sec">
+            <div className="rvw-sec-h">Demo deal stage</div>
+            <div className="rvw-stages">
+              {DEAL_STEPS.map((sid) => (
+                <button key={sid} className={"btn sm rvw-st"
+                  + (rdStage === sid ? " on" : "")}
+                  aria-pressed={rdStage === sid}
+                  onClick={() => {
+                    const id = st.resetReviewDeal(sid);
+                    setNote(id ? `Demo deal rebuilt at ${STAGE[sid].label}.`
+                      : "Could not rebuild.");
+                  }}>{STAGE[sid].label}</button>
+              ))}
+            </div>
+            <div className="rvw-note-l">
+              Rebuilds the demo fixture at that stage. Edits are not kept — walk
+              the lifecycle on the progression deal instead.
+            </div>
+          </div>
+          <div className="rvw-a">
+            <button className="btn sm" onClick={() => {
+              const id = st.resetReviewDeal();
+              setNote(id ? "Demo deal reset to Agree on Price." : "Could not reset.");
+            }}>Reset demo deal</button>
+            {note && <span className="faint rvw-note">{note}</span>}
+          </div>
+        </>
       )}
     </div>
   );
@@ -958,7 +1117,9 @@ function Goals({ st, go }) {
   const secondary = goals.filter((g) => g.tier === "secondary");
 
   return (
-    <div className="pg">
+    /* The page widens ONLY while a Deal Flow is open: browsing stays a narrow,
+       comfortable reading column, and the deal gets room to actually work in. */
+    <div className={"pg" + (openDeal ? " pg-wide" : "")}>
       <div className="pg-h">
         <div>
           <h1 className="pg-t disp">Goals</h1>
@@ -1214,7 +1375,7 @@ function GoalCard({ g, st, go, open, onToggle }) {
     .stages.filter((x) => x.state === "done").length : 0;
 
   return (
-    <div className="card goal">
+    <div className={"card goal" + (open && live ? " deal-open" : "")}>
       <div className="goal-top">
         <Art card={c} size="lg" />
         <div className="goal-b">
@@ -1245,7 +1406,7 @@ function GoalCard({ g, st, go, open, onToggle }) {
           <button className="btn sm" disabled={!!live}
             title={live ? "Finish or stop the negotiation first" : undefined}
             onClick={() => st.removeGoal(g.id)}>Remove goal</button>
-          {live && (
+          {live && !open && (
             <button className="btn sm goal-stop" onClick={() => { setMenu(false); setConfirmStop(true); }}>
               {st.dealAgreed(live) ? "Cancel agreed deal" : "Stop negotiation"}
             </button>
@@ -1297,7 +1458,7 @@ function GoalCard({ g, st, go, open, onToggle }) {
 
           {open && (
             <div className="goal-dw">
-              <Deal oppId={live.id} st={st} go={go} inline />
+              <InlineDeal o={live} st={st} onStop={() => setConfirmStop(true)} />
             </div>
           )}
         </div>
@@ -1386,8 +1547,8 @@ function GoalCard({ g, st, go, open, onToggle }) {
    right now — the options are derived from the opportunity itself.
 
    Hidden unless explicitly enabled, so it cannot appear in a normal build. */
-const DEV = typeof process !== "undefined" && process.env
-  && process.env.METYET_DEV === "1";
+/* The one canonical flag — browser-safe, resolved in shared/dev-flag.js. */
+const DEV = SHARED_DEV;
 
 /* Which seeded goal is which review scenario. Matched on the seed note rather
    than an index-derived id, so appending to the seed cannot break the harness.
@@ -1506,7 +1667,7 @@ function SimulateTP({ o, st }) {
    alternative partner: the difference is whether an opportunity happens to be
    attached, never a second chat model. Sending a message NEVER touches deal
    state — it only appends to the thread. */
-function DealChat({ o, partnerId, cardId, st, bare, embedded }) {
+function DealChat({ o, partnerId, cardId, st, bare, embedded, headless }) {
   const [draft, setDraft] = useState("");
   const [full, setFull] = useState(false);
   const pid = partnerId != null ? partnerId : (o && o.partnerId);
@@ -1530,7 +1691,7 @@ function DealChat({ o, partnerId, cardId, st, bare, embedded }) {
 
   return (
     <div className={embedded ? "card sec chat chat-embed" : bare ? "chat chat-bare" : "card sec chat"}>
-      {!bare && <div className="sec-h">Conversation</div>}
+      {!bare && !headless && <div className="sec-h">Conversation</div>}
       {hidden > 0 && (
         <button className="link chat-more" onClick={() => setFull(true)}>
           Earlier messages ({hidden})
@@ -1991,12 +2152,174 @@ function AddGoalSheet({ cardId, st, onClose, onAdded }) {
    them: each stage registers its primary action here, and the bar renders that
    same handler. One definition, two places it can be pressed.
    ========================================================================= */
+/* ====================================================================== INLINE
+   DEAL FLOW — the Primary Goal's own working surface.
+
+   PURPOSE-BUILT GEOMETRY. This does NOT reuse the standalone Deal page shell.
+   That shell is a page: it owns `min-height: 100vh`, page padding, a fixed
+   action bar and its own context header, and every one of those fought the Goal
+   card when mounted inside it. Overriding them produced layout that was
+   technically inline but read as a page squeezed into a card.
+
+   What IS reused is everything that matters: the same stage components, the
+   same `register` contract for the canonical action, the same DealChat on the
+   same partner-scoped thread, the same opportunity. No business logic lives
+   here — this file section decides placement and nothing else.
+
+   The Goal card supplies the summary row, the rail, the receipt, the partner
+   alternatives and the end control; this wrapper supplies only the work area
+   between them. */
+/* THE CENTRE COLUMN — what this stage has actually established.
+
+   Every field comes from the canonical receipt, whose `reached(i)` guards blank
+   out any term belonging to a later stage. Reading only the CURRENT stage's row
+   therefore cannot leak future data, and nothing here is invented: when a stage
+   genuinely has little to show, the column stays light rather than padded.
+   Its heading says whether the stage is settled, which is derived, not stored. */
+function StageDetails({ o, st }) {
+  const r = D.receiptForOpportunity(o, { binderById: st.binderById,
+    cardById: st.cardById, partnerById: st.partnerById });
+  if (!r || r.stageIndex < 0) return null;
+  const cur = r.stages[r.stageIndex];
+  const rows = [];
+  const add = (label, value) => rows.push({ label, value });
+  const dash = "—";
+
+  if (cur.id === "agree-price") {
+    /* The standing figure is the last thing said in the price thread — current
+       stage data, not a downstream term. */
+    const last = (o.priceThread || [])[o.priceThread.length - 1];
+    add("Listed", cur.listed != null ? money(cur.listed) : dash);
+    add(last ? (last.by === "collector" ? "Your offer" : "Their counter") : "Offer",
+      last && last.amount != null ? money(last.amount) : dash);
+    add("Agreed", cur.price != null ? money(cur.price) : dash);
+  } else if (cur.id === "select-trade") {
+    const all = (o.trade && o.trade.cards) || [];
+    add("Proposed", String(all.length));
+    add("Accepted", String(all.filter((c) => c.inclusion === "accepted").length));
+    add("Unresolved", String(all.filter((c) => c.inclusion === "proposed").length));
+    add("Sent for review", cur.submitted ? "Yes" : "Not yet");
+  } else if (cur.id === "value-trade") {
+    add("Cards accepted", String(cur.cards.length));
+    add("Values agreed",
+      String(cur.cards.filter((c) => c.agreedMarket != null && c.agreedPercent != null).length));
+    add("Trade value", cur.total != null ? money(cur.total) : dash);
+  } else if (cur.id === "deal") {
+    const price = r.stages[0].price;
+    add("Agreed price", price != null ? money(price) : dash);
+    add("Trade value", r.stages[2].total != null ? money(r.stages[2].total) : dash);
+    add("Calculated", cur.calculated != null ? money(cur.calculated) : dash);
+    add("Balance", cur.balance != null
+      ? money(Math.abs(cur.balance)) + (cur.balance >= 0 ? " to them" : " to you") : dash);
+  } else if (cur.id === "fulfillment") {
+    add("How", cur.method || dash);
+    add("Where", cur.location || dash);
+    add("When", [cur.date, cur.time].filter(Boolean).join(" · ") || dash);
+    add("You", cur.collectorDone ? "Confirmed" : "Not yet");
+    add(cur.partner || st.partnerById(o.partnerId).name,
+      cur.partnerDone ? "Confirmed" : "Not yet");
+  }
+
+  const settled = rows.every((x) => x.value !== dash && x.value !== "Not yet");
+  return (
+    <div className="idf-det">
+      <div className="idf-h">Details{settled ? "" : " (unsettled)"}</div>
+      <dl className="idf-det-l">
+        {rows.map((x) => (
+          <div className="idf-det-r" key={x.label}>
+            <dt className="idf-det-k">{x.label}</dt>
+            <dd className="idf-det-v">{x.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+function InlineDeal({ o, st, onStop }) {
+  /* Filled by whichever stage is mounted; null while waiting. Identical
+     contract to the standalone shell, so stages need no inline special case. */
+  const [bar, setBar] = useState(null);
+  const register = useCallback((next) => setBar(next), []);
+
+  const p = st.partnerById(o.partnerId);
+  const t = st.turnFor(o);
+  const short = p ? p.name.split(" ")[0] : "them";
+  const stageProps = { o, st, register };
+
+  return (
+    <div className="idf">
+      <div className="idf-work">
+        {/* LEFT — the current task. Guidance, the stage's own work, and the one
+            canonical action, together, because they are one thought. */}
+        <div className="idf-task">
+          <div className="idf-h">{t.who === "me" ? "Your move"
+            : t.who === "partner" ? `Waiting on ${short}` : "Nothing to do"}</div>
+          <div className="idf-guide-t">{t.what}</div>
+
+          <div className="idf-stage">
+            {o.stage === "agree-price" && <AgreePrice {...stageProps} />}
+            {o.stage === "select-trade" && <SelectTrade {...stageProps} />}
+            {o.stage === "value-trade" && <ValueTrade {...stageProps} />}
+            {o.stage === "deal" && <DealStage {...stageProps} />}
+            {o.stage === "fulfillment" && <Fulfillment {...stageProps} />}
+            {o.stage === "completed" && <Completed o={o} />}
+          </div>
+
+          {/* Exactly one primary action: the stage registers it, this renders it.
+              Stages suppress their own copy whenever a register is supplied. */}
+          {isOpen(o) && (
+            <div className="idf-action">
+              {bar && bar.run ? (
+                <button className="btn pri idf-action-go" disabled={!!bar.disabled}
+                  onClick={bar.run}>{bar.label}</button>
+              ) : (
+                <span className="idf-action-wait">
+                  {t.who === "partner" ? `Waiting on ${short}` : "Nothing to send yet"}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* CENTRE — what this stage has established, from the canonical receipt. */}
+        <div className="idf-mid">
+          <StageDetails o={o} st={st} />
+        </div>
+
+        {/* RIGHT — the canonical conversation, with ending the deal beneath it:
+            reachable, but as far from the forward action as the card allows. */}
+        <div className="idf-side">
+          {/* The column owns the single heading; DealChat is told not to add a
+              second one. Two headings existed semantically, not just visually. */}
+          <div className="idf-h">Conversation</div>
+          <DealChat o={o} partnerId={o.partnerId} cardId={o.cardId} st={st}
+            embedded headless />
+          {isOpen(o) && onStop && (
+            <div className="idf-stop">
+              <div className="idf-h quiet">Stop this negotiation</div>
+              <div className="idf-stop-t">
+                The card stays on your goals — you can start again with anyone.
+              </div>
+              <button className="btn sm goal-stop" onClick={onStop}>
+                {st.dealAgreed(o) ? "Cancel agreed deal" : "Stop this negotiation"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <SimulateTP o={o} st={st} />
+    </div>
+  );
+}
+
 /* THE ONE ACTIVE-DEAL WORKSPACE. Rendered either as its own page or, when
    `inline`, inside the Primary Goal it belongs to. The prop suppresses page
    chrome only — the back link and the card/partner context the Goal already
    states. Every stage component, action registration, conversation, receipt and
    simulator below is the same code in both cases; nothing is cloned. */
-function Deal({ oppId, st, go, inline }) {
+function Deal({ oppId, st, go }) {
   const o = st.opps.find((x) => x.id === oppId);
   const [chat, setChat] = useState(false);
   const [flow, setFlow] = useState(false);
@@ -2014,12 +2337,12 @@ function Deal({ oppId, st, go, inline }) {
   const stageProps = { o, st, register };
 
   return (
-    <div className={inline ? "dw dw-inline" : "pg dw"}>
-      {!inline && <button className="link" onClick={() => go({ v: "goals" })}>← Goals</button>}
+    <div className="pg dw">
+      <button className="link" onClick={() => go({ v: "goals" })}>← Goals</button>
 
       {/* 1. DEAL CONTEXT — compact, and always the first thing read. Inline, the
           Goal has already said which card and which partner this is. */}
-      {!inline && (
+      {(
         <div className="card dw-ctx">
           <Art card={c} size="sm" />
           <div className="dw-ctx-b">
@@ -2035,12 +2358,16 @@ function Deal({ oppId, st, go, inline }) {
 
       {/* 2. PROGRESS — the same canonical five stages, compact. Inline, the
           collapsed summary already carries the track. */}
-      {!inline && (
+      {(
         <div className="card dw-prog">
           <Track stage={o.stage} o={o} st={st} compact />
         </div>
       )}
 
+      {/* 3-7. THE WORKING AREA. Guidance, stage work and its one action form the
+          primary column; the conversation is the supporting column. On a phone
+          these stack in this order; on a wide screen they sit side by side
+          INSIDE the same Goal surface — never two separate cards. */}
       {/* 3. GUIDANCE — canonical turn logic, in plain language. */}
       <div className={"dw-guide " + (t.who || "none")}>
         <div className="dw-guide-w">
@@ -2089,7 +2416,7 @@ function Deal({ oppId, st, go, inline }) {
       {/* 8. DEAL FLOW — inspectable, but secondary during active work. Inline,
           the Goal already carries this receipt below the workspace, so rendering
           it again here would repeat the heading and the settled count. */}
-      {!inline && <div className="card sec dw-flow">
+      {<div className="card sec dw-flow">
         <button className="rc-toggle" aria-expanded={flow} onClick={() => setFlow(!flow)}>
           <span className="rc-toggle-t">Deal Flow</span>
           <span className="faint rc-toggle-s">
@@ -2159,10 +2486,14 @@ function AgreePrice({ o, st, register }) {
           {ok && <div className="faint" style={{ fontSize: 13, marginTop: 7 }}>
             That's {Math.round((n / o.listedPrice) * 100)}% of what they're asking.
           </div>}
-          <button className="btn pri wide" style={{ marginTop: 12 }} disabled={!ok}
-            onClick={() => { st.priceRespond(o.id, "counter", n); setAmt(""); }}>
-            Send counter
-          </button>
+          {/* Same rule as Select Trade: when the shell is presenting this action
+              from the registration, do not render a second identical button. */}
+          {!register && (
+            <button className="btn pri wide" style={{ marginTop: 12 }} disabled={!ok}
+              onClick={() => { st.priceRespond(o.id, "counter", n); setAmt(""); }}>
+              Send counter
+            </button>
+          )}
         </>
       )}
     </div>
@@ -2225,7 +2556,10 @@ function SelectTrade({ o, st, register }) {
               ))}
           </>
         )}
-        {eligible.length > 0 && (
+        {/* The shell's action bar already presents this exact action from the
+            registration above, so rendering it here too showed the collector two
+            identical primary buttons. One registration, one handler, one button. */}
+        {eligible.length > 0 && !register && (
           <button className="btn pri wide" style={{ marginTop: 14 }} disabled={!picked.length}
             onClick={() => st.submitTrade(o.id, picked)}>
             Send {picked.length || ""} card{picked.length === 1 ? "" : "s"} for review
@@ -2445,7 +2779,10 @@ function Fulfillment({ o, st, register }) {
         <span className="mono">{money(Math.abs(finalBalance(o)))} {finalBalance(o) >= 0 ? "to them" : "to you"}</span></div>
       <div className="row"><span className="k">{p.name}</span>
         <span>{f.tpDone ? "Confirmed" : "Not yet"}</span></div>
-      {!f.collectorDone && (
+      {/* Same rule as the other stages: the registered action bar already shows
+          this, so a second identical button would be the collector's third way
+          to press one handler. */}
+      {!f.collectorDone && !register && (
         <button className="btn pri wide" style={{ marginTop: 16 }} onClick={() => st.confirmHandoff(o.id)}>
           I've got the card
         </button>
@@ -2884,24 +3221,17 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
          exactly as it was. */
       reviewGoal: () => v.myGoals().find((g) => REVIEW_DEAL_NOTE.test(g.note || "")),
       reviewPromoteGoal: () => v.myGoals().find((g) => REVIEW_PROMOTE_NOTE.test(g.note || "")),
-      resetReviewDeal: () => {
+      /* Load the review deal at a requested canonical stage, or at its default
+         starting stage when none is named. Both are the SAME operation: rebuild
+         the fixture from the canonical seed builder and swap it in. Nothing
+         edits a stage field, so there is no stage setter to misuse. */
+      resetReviewDeal: (demoStage) => {
         if (!DEV) return null;
-        const fixture = buildCanonicalSeed({ review: true });
-        const fg = fixture.goals.find((g) => g.collectorId === collectorId
-          && REVIEW_DEAL_NOTE.test(g.note || ""));
-        if (!fg) return null;
-        const fo = fixture.opportunities.find((o) => o.goalId === fg.id);
-        const cur = store.get();
-        const mine = cur.goals.find((g) => g.collectorId === collectorId
-          && g.cardId === fg.cardId);
-        if (!mine || !fo) return null;
-        /* Drop every opportunity on that goal, then reinstate the fixture one
-           under a stable id. Other goals, deals and conversations untouched. */
-        store.set({ ...cur,
-          goals: cur.goals.map((g) => (g.id === mine.id ? { ...fg, id: mine.id } : g)),
-          opportunities: [...cur.opportunities.filter((o) => o.goalId !== mine.id),
-            { ...fo, id: "o-review", goalId: mine.id }],
-        });
+        /* Delegates to the one shared loader, so the review panel and the
+           prototype header cannot drift apart. */
+        const next = demoDealFixture(store.get(), { collectorId, demoStage });
+        if (!next) return null;
+        store.set(next);
         return "o-review";
       },
       /* The canonical distinction the Trusted Partner already makes: once both

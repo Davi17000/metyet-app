@@ -139,8 +139,8 @@ describe("B. Inline expansion", () => {
     const o = oppAt("select-trade");
     const card = expand(r, goalOf(o));
     assert(cls(card, "goal-dw")[0], "the workspace is inside the Goal card");
-    assert(cls(card, "dw-inline")[0], "mounted in its inline form");
-    assert(cls(card, "dw-stage")[0], "with the current stage workspace");
+    assert(cls(card, "idf")[0], "mounted in its inline form");
+    assert(cls(card, "idf-stage")[0], "with the current stage workspace");
     assert(cls(card, "chat-embed")[0], "and the embedded conversation");
     assert(cls(r, "goal").length > 1, "the Goals page never went away");
     assert(!cls(card, "dw-ctx")[0], "page-level context chrome is suppressed inline");
@@ -150,8 +150,8 @@ describe("B. Inline expansion", () => {
     const r = mk();
     const card = expand(r, goalOf(oppAt("select-trade")));
     eq(cls(card, "chat-embed")[0].findAllByType("textarea").length, 1, "one composer");
-    assert(cls(card, "dw-bar")[0], "and the persistent stage action bar");
-    assert(!/Chat with/.test(txt(cls(card, "dw-bar")[0])), "with no chat destination");
+    assert(cls(card, "idf-action")[0], "and the persistent stage action bar");
+    assert(!/Chat with/.test(txt(cls(card, "idf-action")[0])), "with no chat destination");
   });
 
   test("expanding and collapsing mutate nothing at all", () => {
@@ -178,7 +178,7 @@ describe("B. Inline expansion", () => {
 
     const card = expand(r, g);
     assert(cls(card, "goal-dw")[0], "waiting never disables access");
-    const bar = cls(card, "dw-bar")[0];
+    const bar = cls(card, "idf-action")[0];
     assert(/Waiting on/.test(txt(bar)), "the bar states the wait");
     eq(bar.findAllByType("button").length, 0, "and offers no invalid action");
     eq(cls(card, "chat-embed")[0].findAllByType("textarea").length, 1,
@@ -199,8 +199,8 @@ describe("B. Inline expansion", () => {
     const src = readSrc("collector/MetYetCollector.jsx");
     const card = src.slice(src.indexOf("function GoalCard"), src.indexOf("function SimulateTP"));
     assert(card.length > 100, "the GoalCard source was located");
-    assert(/<Deal oppId=\{live\.id\}[^>]*inline/.test(card),
-      "the Goal mounts the existing workspace component");
+    assert(/<InlineDeal o=\{live\} st=\{st\}/.test(card),
+      "the Goal mounts the dedicated inline wrapper");
     ["AgreePrice", "SelectTrade", "ValueTrade", "DealStage", "Fulfillment", "DealChat"]
       .forEach((comp) => assert(!new RegExp("<" + comp + "\\b").test(card),
         comp + " is not re-implemented inside GoalCard"));
@@ -239,7 +239,7 @@ describe("C. One expanded deal at a time", () => {
     const card = cardFor(r, a);
     assert(cls(card, "goal-dw")[0], "the first is open again");
     eq(liveFor(a).stage, stage, "at the same canonical stage");
-    assert(cls(card, "dw-stage")[0], "with its workspace intact");
+    assert(cls(card, "idf-stage")[0], "with its workspace intact");
   });
 });
 
@@ -251,7 +251,7 @@ describe("D. Every stage renders inline", () => {
       assert(o, stage + ": an example exists");
       const card = expand(r, goalOf(o));
       assert(cls(card, "goal-dw")[0], stage + ": expanded inside the Goal");
-      assert(cls(card, "dw-stage")[0], stage + ": with its stage workspace");
+      assert(cls(card, "idf-stage")[0], stage + ": with its stage workspace");
       assert(cls(card, "chat-embed")[0], stage + ": and its conversation");
       /* Value Trade in particular must resolve real BinderCopies. */
       if (["value-trade", "deal", "fulfillment"].includes(stage)) {
@@ -366,7 +366,7 @@ describe("G. The review harness still works", () => {
       const g = goalOf(o);
       assert(cls(cardFor(r, g), "goal-deal")[0], stage + ": collapsed summary");
       const card = expand(r, g);
-      assert(cls(card, "dw-stage")[0], stage + ": expands inline");
+      assert(cls(card, "idf-stage")[0], stage + ": expands inline");
       assert(cls(card, "chat-embed")[0], stage + ": with conversation");
     });
   });
@@ -378,7 +378,7 @@ describe("G. The review harness still works", () => {
     TR.act(() => { acts().patchOpportunity(o.id, (x) => ({ ...x,
       agreedPrice: 4032, stage: "value-trade" })); });
     let r2; TR.act(() => { r2 = TR.create(React.createElement(App)); });
-    click(r2.root.findAllByType("button").find((b) => txt(b).trim() === "Reset review deal"));
+    click(r2.root.findAllByType("button").find((b) => /^Reset (review|demo) deal$/.test(txt(b).trim())));
     eq(liveFor(rg).stage, "agree-price", "reset restored the starting fixture");
 
     const pg = S().goals.find((g) => g.collectorId === ME && /^Review promotion/.test(g.note || ""));
