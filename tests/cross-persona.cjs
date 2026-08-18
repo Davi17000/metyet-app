@@ -297,7 +297,7 @@ describe("8. Collector proposes a Binder copy -> TP reviews that same id", () =>
     for (let i = 0; i < 6; i++) {
       r = collector();
       const b = r.root.findAllByType("button").filter((x) =>
-        /^(Continue Deal Flow|Choose trade cards|Agree card values|Check the balance|Confirm the handoff|Review their price|Make your offer)$/
+        /^(Deal Flow ·.*|Choose trade cards|Agree card values|Check the balance|Confirm the handoff|Review their price|Make your offer)$/
           .test(txt(x).trim()))[i];
       if (!b) break;
       click(b);

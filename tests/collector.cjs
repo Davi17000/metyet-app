@@ -332,7 +332,7 @@ describe("Select Trade", () => {
     for (let i = 0; i < 6; i++) {
       const r = mk();                                   // a fresh render each attempt
       const b = r.root.findAllByType("button").filter((x) =>
-        /^(Continue Deal Flow|Choose trade cards|Agree card values|Check the balance|Confirm the handoff|Review their price|Make your offer)$/
+        /^(Deal Flow ·.*|Choose trade cards|Agree card values|Check the balance|Confirm the handoff|Review their price|Make your offer)$/
           .test(txt(x).trim()))[i];
       if (!b) break;
       click(b);
@@ -809,25 +809,29 @@ describe("Goals: the live deal is legible and honest", () => {
     const r = mk();
     const card = rayquaza(r);
     const labels = card.findAllByType("button").map((b) => txt(b).trim());
-    assert(labels.includes("Continue Deal Flow"), "the CTA: " + labels);
+    assert(labels.some((l) => /^Deal Flow ·/.test(l)),
+      "the deal summary row is the CTA: " + labels);
     /* The stage is still named — the card says WHERE you are and WHO with,
        the button says how to carry on. */
-    assert(txt(byClassIn(card, "goal-live-stage")[0]) === "Select Trade",
-      "the current stage is stated");
+    assert(txt(byClassIn(card, "goal-deal-s")[0]) === "Deal Flow · Select Trade",
+      "the current stage is stated, once, in the summary row");
     /* And the stage-specific wording still drives the workspace itself. */
-    click(card.findAllByType("button").find((b) => txt(b).trim() === "Continue Deal Flow"));
+    click(card.findAllByType("button").find((b) => String(b.props.className || "").includes("goal-deal")));
     assert(r.root.findAllByType("button").some((b) => /Send .* for review/.test(txt(b))),
       "landing on the stage's own control");
   });
 
-  test("the partner is unmistakable, and terms are not repeated in the callout", () => {
+  test("the partner is unmistakable, and stated exactly once", () => {
     const r = mk();
     const card = rayquaza(r);
-    const who = byClassIn(card, "goal-with")[0];
-    assert(who, "a negotiating-with block");
-    assert(txt(who).includes("Negotiating with"), "labelled");
+    /* The partner now lives in the deal summary row itself: a separate
+       NEGOTIATING WITH block underneath said the same thing twice. */
+    const who = byClassIn(card, "goal-deal")[0];
+    assert(who, "the deal summary row");
     assert(txt(who).includes("Northline Cards"), "and names the partner");
-    assert(txt(who).includes("Trusted Partner"), "with the relationship badge");
+    eq(byClassIn(card, "goal-with").length, 0, "with no duplicate partner block");
+    eq(txt(card).split("Northline Cards").length - 1, 1,
+      "the partner is named once on the collapsed card");
     /* The agreed price belongs to the Deal Flow detail, not the callout. */
     assert(!txt(byClassIn(card, "goal-live")[0]).includes("Price agreed at"),
       "the summary sentence is not repeated here");
@@ -838,7 +842,7 @@ describe("Goals: the live deal is legible and honest", () => {
   test("7. clicking the action only navigates — nothing mutates", () => {
     const r = mk();
     const before = JSON.stringify(__store.get().get().opportunities.find((x) => x.id === "o9"));
-    click(rayquaza(r).findAllByType("button").find((b) => txt(b).trim() === "Continue Deal Flow"));
+    click(rayquaza(r).findAllByType("button").find((b) => String(b.props.className || "").includes("goal-deal")));
     eq(JSON.stringify(__store.get().get().opportunities.find((x) => x.id === "o9")), before,
       "the opportunity is byte-identical after navigation");
   });
@@ -1130,7 +1134,7 @@ describe("The Primary Goal surfaces real activity", () => {
 
   test("14/15. the next action and the Primary/Secondary split are intact", () => {
     const r = mk();
-    assert(rayquaza(r).findAllByType("button").some((b) => txt(b).trim() === "Continue Deal Flow"),
+    assert(rayquaza(r).findAllByType("button").some((b) => String(b.props.className || "").includes("goal-deal")),
       "the task-oriented CTA survives");
     assert(cls(r, "gwatch-r").length > 0, "secondary goals are still compact rows");
     const pArt = byClassIn(cls(r, "goal")[0], "art")[0];
@@ -1199,7 +1203,7 @@ describe("The stage rail names every stage", () => {
      and other active goals keep their own rails. Scope to the expanded card. */
   const openDeal = (r) => {
     const find = () => cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
-    click(find().findAllByType("button").find((b) => txt(b).trim() === "Continue Deal Flow"));
+    click(find().findAllByType("button").find((b) => String(b.props.className || "").includes("goal-deal")));
     return find();
   };
 
@@ -1249,9 +1253,11 @@ describe("Goal card and Opportunity detail agree", () => {
   };
   const dealReceipt = (r) => {
     const card = cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
-    click(card.findAllByType("button").find((b) => txt(b).trim() === "Continue Deal Flow"));
-    /* Secondary during active work: expand it to read the terms. */
-    click(cls(r, "dw-flow")[0].findAllByType("button")[0]);
+    click(card.findAllByType("button").find((b) => String(b.props.className || "").includes("goal-deal")));
+    /* Secondary during active work: the Goal carries the receipt below the
+       workspace now, so the workspace no longer repeats it. */
+    const host = cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
+    click(byClassIn(host, "rc-toggle")[0]);
     return cls(r, "rc-s").map((n) => txt(n));
   };
 
@@ -1383,9 +1389,12 @@ describe("Active Primary Goal hierarchy", () => {
 
   test("3. the canonical next action is still the strongest control", () => {
     const r = mk();
-    const cta = ray(r).findAllByType("button").find((b) => txt(b).trim() === "Continue Deal Flow");
+    const cta = ray(r).findAllByType("button").find((b) => String(b.props.className || "").includes("goal-deal"));
     assert(cta, "the derived CTA is present");
-    assert(String(cta.props.className).includes("pri"), "and styled as primary");
+    /* The disclosure row is the strongest control by placement and by carrying
+       the turn state, rather than by being painted as a primary button. */
+    assert(/Your move|Waiting on/.test(txt(cta)), "and states the turn");
+    assert(txt(cta).includes("Deal Flow"), "and names what it opens");
   });
 
   test("4/12. structural order: action, progress, receipt, alternatives", () => {
@@ -1547,8 +1556,8 @@ describe("Stopping a deal is deliberate", () => {
 
   test("21. stopping is never styled as forward progress", () => {
     const r = mk();
-    const cta = ray(r).findAllByType("button").find((b) => txt(b).trim() === "Continue Deal Flow");
-    assert(String(cta.props.className).includes("pri"), "the CTA is primary");
+    const cta = ray(r).findAllByType("button").find((b) => String(b.props.className || "").includes("goal-deal"));
+    assert(/Your move|Waiting on/.test(txt(cta)), "the CTA carries the turn");
     click(byClassIn(ray(r), "goal-edit-b")[0]);
     const stop = ray(r).findAllByType("button").find((b) => /Stop negotiation/.test(txt(b)));
     assert(!String(stop.props.className).includes("pri"), "stopping is not");
@@ -1565,28 +1574,36 @@ describe("Deal Flow presentation", () => {
   test("the Trusted Partner is prominent and stated once", () => {
     const r = mk();
     const card = ray(r);
-    const who = byClassIn(card, "goal-with")[0];
-    assert(who, "a negotiating-with block exists");
-    eq(txt(byClassIn(who, "goal-with-l")[0]), "Negotiating with", "clearly labelled");
-    eq(txt(byClassIn(who, "goal-with-n")[0]), "Northline Cards", "names the partner");
+    /* The partner sits in the deal summary row itself now — one place, beside
+       the stage it belongs to, instead of a second block repeating it. */
+    const who = byClassIn(card, "goal-deal")[0];
+    assert(who, "the deal summary row exists");
+    eq(txt(byClassIn(who, "goal-deal-pn")[0]), "Northline Cards", "names the partner");
     assert(byClassIn(who, "face")[0], "with their avatar");
-    assert(txt(who).includes("Trusted Partner"), "and the relationship badge");
+    eq(byClassIn(card, "goal-with").length, 0, "and no duplicate block");
     /* Stated once in the callout, not repeated. */
     eq((txt(byClassIn(card, "goal-live")[0]).match(/Northline Cards/g) || []).length, 1,
       "the partner is not duplicated within the callout");
   });
 
-  test("the CTA is Continue Deal Flow, and it is primary", () => {
+  test("the deal summary row is the one entry point, and the one exit", () => {
     const r = mk();
-    const cta = ray(r).findAllByType("button").find((b) => txt(b).trim() === "Continue Deal Flow");
-    assert(cta, "the CTA is present");
-    assert(String(cta.props.className).includes("pri"), "and is the strongest control");
+    const row = () => ray(r).findAllByType("button")
+      .find((b) => String(b.props.className || "").includes("goal-deal"));
+    assert(row(), "the summary row is present");
+    eq(row().props["aria-expanded"], false, "collapsed to begin with");
+    assert(/Deal Flow ·/.test(txt(row())), "naming what it opens");
+    click(row());
+    eq(row().props["aria-expanded"], true, "the same row reports expanded");
+    assert(byClassIn(ray(r), "goal-dw")[0], "and the workspace opened");
+    click(row());
+    eq(byClassIn(ray(r), "goal-dw").length, 0, "and the same row closes it again");
   });
 
   test("the CTA reaches the current step's existing action, unchanged", () => {
     const r = mk();
     const before = JSON.stringify(__store.get().get().opportunities.find((o) => o.id === "o9"));
-    click(ray(r).findAllByType("button").find((b) => txt(b).trim() === "Continue Deal Flow"));
+    click(ray(r).findAllByType("button").find((b) => String(b.props.className || "").includes("goal-deal")));
     const cur = cls(r, "rail-s").find((n) => String(n.props.className).includes("current"));
     assert(txt(cur).includes("Select Trade"), "lands on the canonical current stage");
     assert(r.root.findAllByType("button").some((b) => /Send .* for review/.test(txt(b))),
@@ -1627,11 +1644,14 @@ describe("Deal Flow presentation", () => {
 
   test("the workspace Deal Flow is secondary but inspectable", () => {
     const r = mk();
-    click(ray(r).findAllByType("button").find((b) => txt(b).trim() === "Continue Deal Flow"));
-    const flow = cls(r, "dw-flow")[0];
-    assert(flow, "a Deal Flow disclosure exists in the workspace");
+    click(ray(r).findAllByType("button").find((b) => String(b.props.className || "").includes("goal-deal")));
+    /* The receipt belongs to the Goal, below the workspace — the workspace no
+       longer renders a second copy of it inline. */
+    const flow = byClassIn(ray(r), "rc-wrap")[0];
+    assert(flow, "a Deal Flow disclosure exists below the workspace");
+    eq(cls(r, "dw-flow").length, 0, "and the workspace does not repeat it");
     eq(cls(r, "rc-s").length, 0, "collapsed while working");
-    assert(/Deal Flow/.test(txt(flow)) && /of 5 settled/.test(txt(flow)), "labelled and truthful");
+    assert(/of 5 settled/.test(txt(flow)), "labelled and truthful");
     click(flow.findAllByType("button")[0]);
     eq(cls(r, "rc-s").length, 5, "and expands to the full five stages");
   });
@@ -1667,7 +1687,7 @@ describe("Collector shared chat", () => {
   /* Chat is a drawer now: one tap from the persistent action bar. */
   const openDeal = (r) => {
     const card = cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
-    click(card.findAllByType("button").find((b) => txt(b).trim() === "Continue Deal Flow"));
+    click(card.findAllByType("button").find((b) => String(b.props.className || "").includes("goal-deal")));
     return r;
   };
   /* Conversation is embedded in the workspace now — there is nothing to open. */
@@ -1744,7 +1764,7 @@ describe("Development-only TP simulator", () => {
   test("it is hidden unless explicitly enabled", () => {
     const r = mk();
     const card = cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
-    click(card.findAllByType("button").find((b) => txt(b).trim() === "Continue Deal Flow"));
+    click(card.findAllByType("button").find((b) => String(b.props.className || "").includes("goal-deal")));
     eq(cls(r, "sim").length, 0, "absent from an ordinary run");
     assert(/process\.env\.METYET_DEV === "1"/.test(src()),
       "gated on an explicit development flag");
@@ -1838,7 +1858,7 @@ describe("Deal workspace mobile shell", () => {
 describe("Persistent action bar", () => {
   const open = (r) => {
     const card = cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
-    click(card.findAllByType("button").find((b) => txt(b).trim() === "Continue Deal Flow"));
+    click(card.findAllByType("button").find((b) => String(b.props.className || "").includes("goal-deal")));
     return r;
   };
 
@@ -1892,7 +1912,7 @@ describe("Persistent action bar", () => {
 describe("Embedded conversation", () => {
   const open = (r) => {
     const card = cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
-    click(card.findAllByType("button").find((b) => txt(b).trim() === "Continue Deal Flow"));
+    click(card.findAllByType("button").find((b) => String(b.props.className || "").includes("goal-deal")));
     return r;
   };
   const drawer = (r) => cls(r, "chat-embed")[0];

@@ -392,14 +392,41 @@ const CSS = `
 .goal-deal-c { font-size: 17px; line-height: 1; color: var(--muted); transition: transform .15s;
   transform: rotate(90deg); }
 .goal-deal-c.on { transform: rotate(-90deg); }
-/* The Deal Flow expanded INSIDE the goal. One natural page scroll: no nested
-   scroll area, and the action bar sits in flow rather than pinned to the
-   viewport, since the workspace is no longer the whole page. */
-.goal-dw { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
-.dw-inline { padding: 0; }
-.dw-inline .dw-bar { position: static; margin: 14px 0 0; padding: 10px 0 0;
-  border-top: 1px solid var(--line); background: none; box-shadow: none; }
+/* The disclosure row: stage + partner on the left, turn + chevron on the right.
+   It is the ONLY control that opens or closes the workspace, and it stays put at
+   the top of the expanded Goal. */
+.goal-deal-m { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.goal-deal-p { display: flex; align-items: center; gap: 6px; }
+.goal-deal-pn { font-size: 13.5px; font-weight: 600; }
+.goal-deal-r { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.goal-deal-t.mine { color: var(--t1); font-weight: 600; }
+
+/* ---- ONE SURFACE. Expanded, the Goal card IS the Deal Flow: the workspace
+   contributes sections, not another bordered panel inside a panel. Everything
+   below flattens the old page shell rather than re-styling it. ---- */
+.goal-dw { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 4px; }
+.dw-inline { padding: 0; background: none; }
+/* No nested white panels: sections become divided bands of one document. */
+.dw-inline .card, .dw-inline .sec {
+  background: none; border: none; border-radius: 0; box-shadow: none;
+  padding: 16px 0 0; margin: 0; }
+.dw-inline .card + .card, .dw-inline .sec + .sec,
+.dw-inline .card + .sec, .dw-inline .sec + .card { border-top: 1px solid var(--line-soft); }
+/* Stage work is the dominant band and uses the full width. */
+.dw-inline .dw-stage { padding-top: 14px; }
+.dw-inline .dw-guide { margin: 14px 0 0; border-radius: 8px; }
+/* In-flow action: a sticky bar would collide with the card and the nav. */
+.dw-inline .dw-bar { position: static; margin: 16px 0 0; padding: 14px 0 0;
+  border-top: 1px solid var(--line); background: none; box-shadow: none;
+  display: flex; gap: 10px; }
+.dw-inline .dw-bar .btn { width: 100%; }
+/* Conversation is a section of the deal, not a floating card on top of it. */
 .dw-inline .chat-embed .chat-scroll { max-height: none; }
+/* One natural page scroll — no nested scrollers anywhere inside the Goal. */
+.dw-inline [class*="scroll"] { overflow: visible; }
+/* Alternative partners stay reachable but visually subordinate. */
+.goal-holders { font-size: 12.5px; }
+
 /* Review harness — dev only, deliberately plain so it never reads as product. */
 .rvw { border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; }
 .rvw-h { font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 7px; }
@@ -1229,60 +1256,50 @@ function GoalCard({ g, st, go, open, onToggle }) {
       {/* 1. WHAT DO I NEED TO DO NOW? */}
       {live && (
         <div className="goal-live">
-          {/* Who this deal is with, said once and unmistakably. The terms live in
-              the Deal Flow detail rather than being repeated here. */}
-          <div className="goal-with">
-            <span className="goal-with-l">Negotiating with</span>
-            <span className="goal-with-p">
-              <Face partner={partner} size={26} />
-              <span className="goal-with-n">{partner.name}</span>
-              <span className="chip t goal-with-b">Trusted Partner</span>
-            </span>
-          </div>
-          <div className="goal-live-h">
-            <span className="goal-live-stage">{STAGE[live.stage].label}</span>
-          </div>
+
           {/* THE GOAL BECOMES THE DEAL. Once an offer exists, the Goal's working
               experience is the Deal Flow — so it opens HERE rather than sending
               the collector somewhere else. Collapsed by default: stage, partner,
               turn and the canonical five-stage track, and nothing further. The
               stage shown is the canonical opportunity stage, not a second
               indicator, and no future-stage terms are exposed. */}
+          {/* THE SUMMARY ROW IS THE DISCLOSURE. One control opens and closes the
+              workspace, and it stays at the top of the expanded Goal so the
+              collector never scrolls to find a way out. Stage, partner and turn
+              are stated here ONCE — no separate header repeats them below. */}
           <button className="goal-deal" aria-expanded={open}
+            aria-label={(open ? "Hide" : "Show") + " Deal Flow with " + partner.name
+              + " — " + STAGE[live.stage].label}
             onClick={() => onToggle(open ? null : g.id)}>
-            {/* The partner is already named once above; repeating it here would
-                say the same thing twice in one callout. */}
-            <span className="goal-deal-s">Deal Flow · {STAGE[live.stage].label}</span>
-            <span className="goal-deal-t">
-              {act.cta ? "Your move" : act.waiting || "Open"}
+            <span className="goal-deal-m">
+              <span className="goal-deal-s">Deal Flow · {STAGE[live.stage].label}</span>
+              <span className="goal-deal-p">
+                <Face partner={partner} size={20} />
+                <span className="goal-deal-pn">{partner.name}</span>
+              </span>
             </span>
-            <span className={"goal-deal-c" + (open ? " on" : "")} aria-hidden="true">&#8250;</span>
+            <span className="goal-deal-r">
+              <span className={"goal-deal-t" + (act.cta ? " mine" : "")}>
+                {act.cta ? "Your move" : act.waiting || "Open"}
+              </span>
+              <span className={"goal-deal-c" + (open ? " on" : "")} aria-hidden="true">&#8250;</span>
+            </span>
           </button>
           {/* RE-ENTRY, now in place. An active deal is always expandable, whoever
               owns the turn: having no stage action means there is nothing to DO,
               not that the deal or its conversation becomes unreachable.
               Expanding is presentation only — it mutates nothing. */}
-          {!open && !act.cta && <div className="goal-live-w">{act.waiting}</div>}
-          {/* The disclosure keeps the CTA's meaning: on the collector's turn it
-              still says what the deal needs, while waiting it is an honest
-              invitation to look. Either way it opens the same workspace here. */}
-          <button className={"btn wide goal-live-view" + (act.cta && !open ? " pri" : "")}
-            style={{ marginTop: 9 }} aria-expanded={open}
-            onClick={() => onToggle(open ? null : g.id)}>
-            {open ? "Hide Deal Flow" : act.cta ? "Continue Deal Flow" : "View Deal Flow"}
-          </button>
+          {/* ONE canonical rail, immediately below the summary and above the
+              stage work — collapsed or expanded, it appears exactly once. */}
+          <div className="goal-rail">
+            <Track stage={live.stage} o={live} st={st} />
+          </div>
+
           {open && (
             <div className="goal-dw">
               <Deal oppId={live.id} st={st} go={go} inline />
             </div>
           )}
-        </div>
-      )}
-
-      {/* 2. WHERE AM I IN THE DEAL? Glanceable, always visible. */}
-      {live && (
-        <div className="goal-rail">
-          <Track stage={live.stage} o={live} st={st} />
         </div>
       )}
 
@@ -2043,40 +2060,9 @@ function Deal({ oppId, st, go, inline }) {
         {o.stage === "completed" && <Completed o={o} />}
       </div>
 
-      {/* 7. CONVERSATION, INLINE. The same canonical thread scoped to collector +
-          partner + card — read and written through the same component the
-          pre-deal surfaces use. Not a second messaging system, and no longer a
-          drawer: what was said and what was agreed belong to the deal. */}
-      <DealChat o={o} partnerId={o.partnerId} cardId={o.cardId} st={st} embedded />
-
-      {/* 8. DEAL FLOW — inspectable, but secondary during active work. */}
-      <div className="card sec dw-flow">
-        <button className="rc-toggle" aria-expanded={flow} onClick={() => setFlow(!flow)}>
-          <span className="rc-toggle-t">Deal Flow</span>
-          <span className="faint rc-toggle-s">
-            {D.receiptForOpportunity(o, { binderById: st.binderById, cardById: st.cardById,
-              partnerById: st.partnerById }).stages.filter((x) => x.state === "done").length} of 5 settled
-          </span>
-          <span className={"rc-chev" + (flow ? " on" : "")} aria-hidden="true">&#8250;</span>
-        </button>
-        {flow && <Receipt o={o} st={st} expanded inline />}
-      </div>
-
-      <SimulateTP o={o} st={st} />
-
-      {isOpen(o) && (
-        <div style={{ textAlign: "center", padding: "6px 0 10px" }}>
-          <button className="link" style={{ color: "var(--muted)" }}
-            onClick={() => { st.endNegotiation(o.id); go({ v: "goals" }); }}>
-            Stop this negotiation
-          </button>
-          <div className="faint" style={{ fontSize: 12.5, marginTop: 5 }}>
-            The card stays on your goals — you can start again with anyone.
-          </div>
-        </div>
-      )}
-
-      {/* 6. PERSISTENT ACTION BAR — the canonical stage action, or an honest
+      {/* 6. PRIMARY STAGE ACTION — directly beneath the stage work it belongs to,
+          so the collector never scrolls past the whole conversation to reach it.
+          PERSISTENT ACTION BAR — the canonical stage action, or an honest
           waiting state. The Chat button is gone: conversation is part of this
           workspace now, not a destination to be sent to. The bar still presses
           the handler each stage registers; no stage logic lives in the shell. */}
@@ -2093,6 +2079,42 @@ function Deal({ oppId, st, go, inline }) {
           )}
         </div>
       )}
+
+      {/* 7. CONVERSATION, INLINE. The same canonical thread scoped to collector +
+          partner + card — read and written through the same component the
+          pre-deal surfaces use. Not a second messaging system, and no longer a
+          drawer: what was said and what was agreed belong to the deal. */}
+      <DealChat o={o} partnerId={o.partnerId} cardId={o.cardId} st={st} embedded />
+
+      {/* 8. DEAL FLOW — inspectable, but secondary during active work. Inline,
+          the Goal already carries this receipt below the workspace, so rendering
+          it again here would repeat the heading and the settled count. */}
+      {!inline && <div className="card sec dw-flow">
+        <button className="rc-toggle" aria-expanded={flow} onClick={() => setFlow(!flow)}>
+          <span className="rc-toggle-t">Deal Flow</span>
+          <span className="faint rc-toggle-s">
+            {D.receiptForOpportunity(o, { binderById: st.binderById, cardById: st.cardById,
+              partnerById: st.partnerById }).stages.filter((x) => x.state === "done").length} of 5 settled
+          </span>
+          <span className={"rc-chev" + (flow ? " on" : "")} aria-hidden="true">&#8250;</span>
+        </button>
+        {flow && <Receipt o={o} st={st} expanded inline />}
+      </div>}
+
+      <SimulateTP o={o} st={st} />
+
+      {isOpen(o) && (
+        <div style={{ textAlign: "center", padding: "6px 0 10px" }}>
+          <button className="link" style={{ color: "var(--muted)" }}
+            onClick={() => { st.endNegotiation(o.id); go({ v: "goals" }); }}>
+            Stop this negotiation
+          </button>
+          <div className="faint" style={{ fontSize: 12.5, marginTop: 5 }}>
+            The card stays on your goals — you can start again with anyone.
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

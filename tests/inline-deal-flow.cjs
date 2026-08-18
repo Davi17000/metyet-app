@@ -49,8 +49,9 @@ const cardFor = (r, g) => {
   return cls(r, "goal").concat(cls(r, "gwatch-r"))
     .find((n) => txt(n).includes(c.name) && txt(n).includes(c.set));
 };
+/* The summary row IS the disclosure — one control opens and closes it. */
 const discloseIn = (node) => node.findAllByType("button")
-  .find((b) => /^(Continue Deal Flow|View Deal Flow|Hide Deal Flow)$/.test(txt(b).trim()));
+  .find((b) => String(b.props.className || "").includes("goal-deal"));
 const expand = (r, g) => { click(discloseIn(cardFor(r, g))); return cardFor(r, g); };
 
 /* The canonical snapshot presentation must never disturb. */

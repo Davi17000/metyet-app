@@ -421,7 +421,7 @@ const addBinderCopy = (r, term) => {
    derived from opportunity stage. */
 /* The Goal card now uses one consistent entry point into the deal; the
    stage-specific wording lives inside the workspace. */
-const CTA = /^(Continue Deal Flow|Choose trade cards|Agree card values|Check the balance|Confirm the handoff|Review their price|Make your offer)$/;
+const CTA = /^(Deal Flow ·.*|Choose trade cards|Agree card values|Check the balance|Confirm the handoff|Review their price|Make your offer)$/;
 
 /* Drive a Seeking goal into a live negotiation through the rendered UI. */
 const openNegotiation = (r) => {
