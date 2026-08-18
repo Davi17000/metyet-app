@@ -994,17 +994,17 @@ describe("Goals shares the MetYet palette", () => {
     assert(tp.includes("--t1: #0B5D66"), "the Trusted Partner keeps its own value");
   });
 
-  test("13. the Collector surface is dark", () => {
+  test("13. the Collector surface is light", () => {
     const src = readSrc("collector/MetYetCollector.jsx");
     const bg = /--bg: (#[0-9A-Fa-f]{6})/.exec(src);
     assert(bg, "the page background is a token");
     const lum = [1, 3, 5].map((i) => parseInt(bg[1].slice(i, i + 2), 16))
       .reduce((a, c) => a + c, 0) / 3;
-    assert(lum < 60, "a genuinely dark page background: " + bg[1]);
+    assert(lum > 200, "a genuinely light page background: " + bg[1]);
     const text = /--text: (#[0-9A-Fa-f]{6})/.exec(src);
     const tlum = [1, 3, 5].map((i) => parseInt(text[1].slice(i, i + 2), 16))
       .reduce((a, c) => a + c, 0) / 3;
-    assert(tlum > 190, "with light text on it: " + text[1]);
+    assert(tlum < 70, "with dark text on it: " + text[1]);
   });
 
   test("13. nothing hard-codes a light surface", () => {
@@ -1663,10 +1663,12 @@ describe("Deal Flow presentation", () => {
       assert(m, name + " is a token");
       return [1, 3, 5].map((i) => parseInt(m[1].slice(i, i + 2), 16)).reduce((a, c) => a + c, 0) / 3;
     };
+    /* On white the ladder runs the other way: primary is darkest. What matters
+       is that all three stay dark enough to read and remain three levels. */
     const text = lum("text"), muted = lum("muted"), faint = lum("faint");
-    assert(muted > 160, "secondary text is comfortably readable: " + muted);
-    assert(faint > 130, "tertiary text is readable too: " + faint);
-    assert(text > muted && muted > faint, "and the three levels remain distinct");
+    assert(muted < 130, "secondary text is comfortably readable: " + muted);
+    assert(faint < 150, "tertiary text is readable too: " + faint);
+    assert(text < muted && muted < faint, "and the three levels remain distinct");
   });
 
   test("the five-stage model and settled count are untouched", () => {
@@ -1972,21 +1974,26 @@ describe("Embedded conversation", () => {
 });
 
 describe("Workspace theme", () => {
-  test("the deal workspace uses the light treatment, scoped", () => {
+  test("the whole Collector uses one light treatment", () => {
     const src = readSrc("collector/MetYetCollector.jsx");
-    const dw = src.slice(src.indexOf(".dw {"), src.indexOf(".dw .card"));
-    const tok = (n) => { const m = new RegExp("--" + n + ": (#[0-9A-Fa-f]{6})").exec(dw); return m && m[1]; };
+    /* The workspace palette was promoted to the root, so browsing and the deal
+       now read from ONE definition rather than two that had to agree. */
+    const root = src.slice(src.indexOf(".mc {"), src.indexOf(".mc *"));
+    const tok = (n) => { const m = new RegExp("--" + n + ": (#[0-9A-Fa-f]{6})").exec(root); return m && m[1]; };
     const lum = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).reduce((a, c) => a + c, 0) / 3;
     assert(lum(tok("bg")) > 200, "a light page background: " + tok("bg"));
+    assert(lum(tok("panel")) > 240, "white cards: " + tok("panel"));
     assert(lum(tok("text")) < 70, "with dark text: " + tok("text"));
     assert(lum(tok("muted")) > lum(tok("text")), "and a readable secondary tier");
     /* Teal remains the accent. */
     const a = tok("accent");
     const [rr, gg, bb] = [1, 3, 5].map((i) => parseInt(a.slice(i, i + 2), 16));
     assert(gg > rr && bb > rr, "teal accent retained: " + a);
-    /* Scoped: the browse experience is untouched. */
-    const root = src.slice(src.indexOf(".mc {"), src.indexOf(".mc *"));
-    assert(lum(/--bg: (#[0-9A-Fa-f]{6})/.exec(root)[1]) < 60, "Goals and Binder stay dark");
+    /* And the workspace no longer redefines any of it. */
+    const dw = src.slice(src.indexOf(".goal.deal-open, .dw {"),
+      src.indexOf("}", src.indexOf(".goal.deal-open, .dw {")));
+    assert(!/--bg:|--panel:|--text:|--muted:/.test(dw),
+      "the workspace declares no tokens of its own — one system, not two");
   });
 
   test("the workspace leaves room for the action bar", () => {

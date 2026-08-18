@@ -155,32 +155,33 @@ const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
 .mc {
-  /* DARK MODE, on MetYet's teal family. The Trusted Partner workspace is a lit
-     room you work in; the Collector app is a case you look into, so the cards
-     carry the light and the surfaces recede behind them. Same brand hue —
-     #0B5D66 lifted to an aqua that reads on near-black. */
-  --bg: #0A1014;
-  --panel: #121B21;
-  --panel-2: #16212A;
-  --line: #22313B;
-  --line-soft: #1A2730;
-  --text: #EEF5F7;
-  /* Readability pass: the old muted/faint pair sat too low against #0A1014.
-     Both lifted, and the ladder kept — primary, secondary, tertiary still read
-     as three distinct levels rather than one uniform white. */
-  --muted: #B8C9D2;
-  --faint: #92A7B2;
-  --t1: #2FD4C4;
-  --t2: #1E8E88;
-  --t1-bg: #122A2E;
-  /* The action colour. Brighter than the TP's #0B5D66 because it has to carry
-     on a dark surface, but the same hue family. */
-  --accent: #17B3A6;
-  --accent-bg: #10262A;
-  --accent-line: #1E4A4C;
-  --amber: #E0A63C;
-  --amber-bg: #241C0E;
-  --danger: #E06B62;
+  /* ONE LIGHT SYSTEM. The Collector app used to be a dark case you looked into,
+     with a light workspace opened inside it for close reading. Two systems, and
+     the seam showed: the same component read differently depending on whether a
+     deal happened to be open behind it.
+
+     These are the workspace's tokens, promoted to the root. The names are
+     unchanged, so every rule that already spoke in tokens simply follows —
+     which is why this is a theme change and not a rewrite. The three-level text
+     ladder is kept: primary, secondary, tertiary still read as three distinct
+     weights, now against white rather than near-black. */
+  --bg: #F7F9FA;
+  --panel: #FFFFFF;
+  --panel-2: #F3F6F7;
+  --line: #DFE5E8;
+  --line-soft: #EDF1F2;
+  --text: #16202A;          /* 15.4:1 on white */
+  --muted: #5A6B76;         /*  6.1:1 — secondary, still comfortably readable */
+  --faint: #64757F;         /*  4.6:1 on white — tertiary, still clears AA */
+  --t1: #0B5D66;
+  --t2: #40767D;            /* darkened from #4E8C93 to clear AA on white */
+  --t1-bg: #E6F0F1;
+  --accent: #0B7A72;
+  --accent-bg: #E8F4F3;
+  --accent-line: #C6E1DE;
+  --amber: #8A5A08;
+  --amber-bg: #FBF3E3;
+  --danger: #98302C;
   font-family: 'Public Sans', system-ui, sans-serif;
   color: var(--text);
   font-size: 15px;
@@ -194,7 +195,7 @@ const CSS = `
 .mc button { font: inherit; color: inherit; cursor: pointer; }
 /* Focus must stay visible on a dark surface — a teal ring, never removed. */
 .mc :focus-visible { outline: 2px solid var(--t1); outline-offset: 2px; border-radius: 6px; }
-.mc ::selection { background: var(--accent); color: #04120F; }
+.mc ::selection { background: var(--accent-bg); color: var(--text); }
 .mc ::placeholder { color: var(--faint); }
 .disp { font-family: 'Archivo', system-ui, sans-serif; letter-spacing: -0.015em; }
 .mono { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
@@ -215,10 +216,10 @@ const CSS = `
   box-shadow: 0 1px 2px rgba(15,19,27,.05); }
 .btn:active { transform: translateY(1px); }
 .btn:hover { border-color: var(--t2); background: var(--panel); }
-.btn.pri { background: var(--accent); border-color: var(--accent); color: #04120F;
+.btn.pri { background: var(--accent); border-color: var(--accent); color: #FFF;
   box-shadow: 0 2px 8px rgba(11,93,102,.24); }
-.btn.pri:hover { background: #5B4BD0; }
-.btn.deep { background: var(--t1); border-color: var(--t1); color: #04120F;
+.btn.pri:hover { background: #096A63; border-color: #096A63; }
+.btn.deep { background: var(--t1); border-color: var(--t1); color: #FFF;
   box-shadow: 0 2px 8px rgba(11,93,102,.24); }
 .btn.wide { width: 100%; }
 .btn.sm { padding: 7px 12px; font-size: 13px; border-radius: 8px; }
@@ -248,7 +249,7 @@ const CSS = `
   background: var(--panel-2); border: 1px solid var(--line); }
 .ph-n { font-family: 'Archivo'; font-weight: 700; font-size: 12px; line-height: 1.15;
   color: var(--muted); overflow-wrap: anywhere; }
-.ph-s { font-size: 9.5px; color: var(--faint); line-height: 1.2; }
+.ph-s { font-size: 10.5px; color: var(--faint); line-height: 1.4; }
 .art.xl { width: 178px; height: 249px; } .art.xl .ph-n { font-size: 15px; }
 .art.lg { width: 132px; height: 184px; } .art.lg .ph-n { font-size: 13px; }
 .art.md { width: 100px; height: 140px; } .art.md .ph-n { font-size: 11px; }
@@ -259,7 +260,7 @@ const CSS = `
 .goal { padding: 20px; margin-bottom: 18px; }
 .goal-top { display: flex; gap: 20px; }
 .goal-b { flex: 1; min-width: 0; }
-.tier { font-family: 'Archivo'; font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
+.tier { font-family: 'Archivo'; font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
   font-weight: 700; padding: 3px 8px; border-radius: 5px; display: inline-block; }
 .tier.p { background: var(--accent-bg); color: var(--t1); }
 .tier.s { background: var(--panel-2); color: var(--muted); }
@@ -276,7 +277,7 @@ const CSS = `
 /* the partners who can actually help — a compact row each, not a card each */
 .goal-supply { margin-top: 16px; border: 1px solid var(--line); border-radius: 12px;
   overflow: hidden; }
-.goal-supply-h { font-family: 'Archivo'; font-size: 10px; letter-spacing: .09em;
+.goal-supply-h { font-family: 'Archivo'; font-size: 11px; letter-spacing: .09em;
   text-transform: uppercase; font-weight: 700; color: var(--muted);
   padding: 11px 14px; background: var(--panel-2); }
 .gs-row { display: flex; align-items: center; gap: 11px; padding: 11px 14px;
@@ -290,7 +291,7 @@ const CSS = `
 
 /* the receipt: the deal filling itself in. Subordinate to the card and the CTA. */
 .rc { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
-.rc-h { font-family: 'Archivo'; font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+.rc-h { font-family: 'Archivo'; font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
   font-weight: 700; color: var(--muted); margin-bottom: 10px; }
 .rc-s { display: flex; gap: 11px; padding: 9px 0; border-bottom: 1px solid var(--line-soft); }
 .rc-s:last-child { border-bottom: 0; }
@@ -298,7 +299,7 @@ const CSS = `
   font-family: 'IBM Plex Mono', monospace; display: flex; align-items: center;
   justify-content: center; border: 1px solid var(--line); color: var(--faint); }
 .rc-s.done .rc-n { background: var(--t1-bg); border-color: var(--accent-line); color: var(--t1); }
-.rc-s.current .rc-n { background: var(--t1); border-color: var(--t1); color: #04120F; font-weight: 700; }
+.rc-s.current .rc-n { background: var(--t1); border-color: var(--t1); color: #FFF; font-weight: 700; }
 .rc-b { flex: 1; min-width: 0; }
 .rc-t { display: flex; align-items: baseline; gap: 8px; font-size: 13px; font-weight: 600;
   flex-wrap: wrap; }
@@ -326,10 +327,10 @@ const CSS = `
 .gp-seg.done { background: var(--t2); }
 .gp-seg.now { background: var(--t1); box-shadow: 0 0 8px rgba(47,212,196,.45); }
 .goal-prog-l { display: flex; gap: 3px; margin-top: 7px; }
-.gp-l { flex: 1; font-size: 9.5px; line-height: 1.25; color: var(--faint); text-align: center;
+.gp-l { flex: 1; font-size: 11px; line-height: 1.4; color: var(--faint); text-align: center;
   overflow: hidden; text-overflow: ellipsis; }
 .gp-l.on { color: var(--t1); font-weight: 700; }
-@media (max-width: 520px) { .gp-l { font-size: 0; } .gp-l.on { font-size: 10px; } }
+@media (max-width: 520px) { .gp-l { font-size: 0; } .gp-l.on { font-size: 11px; } }
 
 /* ---- the shared card identity picker, in the Collector's visual language.
    Same questions as the Trusted Partner asks; consumer spacing and targets. */
@@ -339,7 +340,7 @@ const CSS = `
   background: none; border: 0; border-bottom: 1px solid var(--line-soft); padding: 10px 4px; }
 .cip-row:hover { background: var(--panel-2); }
 .cip-main { display: flex; flex-direction: column; min-width: 0; }
-.cip-name { font-size: 14.5px; font-weight: 600; line-height: 1.25; }
+.cip-name { font-size: 14.5px; font-weight: 600; line-height: 1.4; }
 .cip-sub { font-size: 12.5px; color: var(--muted); }
 .cip-var { font-size: 11.5px; color: var(--faint); }
 .cip-hint { font-size: 12px; padding: 10px 4px; }
@@ -353,7 +354,7 @@ const CSS = `
 .cip-opt { border: 1px solid var(--line); background: var(--panel-2); border-radius: 9px;
   padding: 8px 12px; font-size: 13px; font-weight: 500; min-width: 42px; }
 .cip-opt:hover { border-color: var(--t2); }
-.cip-opt.on { background: var(--accent); border-color: var(--accent); color: #04120F; }
+.cip-opt.on { background: var(--accent); border-color: var(--accent); color: #FFF; }
 .cip-opt.wide { min-width: 62px; }
 
 /* ---- goals: two sections doing two different jobs --------------------------
@@ -387,7 +388,7 @@ const CSS = `
 .goal.deal-open .goal-live { background: none; border: none; padding: 0;
   margin-top: 22px; }
 .goal-live-h { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; }
-.goal-live-stage { font-family: 'Archivo'; font-size: 9.5px; letter-spacing: .1em;
+.goal-live-stage { font-family: 'Archivo'; font-size: 11px; letter-spacing: .1em;
   text-transform: uppercase; font-weight: 700; color: var(--t1); }
 .goal-live-c { font-size: 14px; margin-top: 7px; font-weight: 500; }
 .goal-live-w { font-size: 13.5px; color: var(--muted); margin-top: 10px; }
@@ -602,7 +603,7 @@ const CSS = `
   border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); }
 .pt-s { flex: 1; }
 .pt-s-n { font-size: 25px; font-weight: 700; color: var(--t1); line-height: 1; letter-spacing: -.02em; }
-.pt-s-l { font-size: 11.5px; color: var(--muted); margin-top: 4px; line-height: 1.3; }
+.pt-s-l { font-size: 11.5px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
 .pt-hist { font-size: 13px; color: var(--muted); margin-top: 13px; padding-top: 12px;
   border-top: 1px solid var(--line-soft); }
 .pt-cards { display: flex; gap: 7px; margin-top: 13px; overflow-x: auto; padding-bottom: 2px; }
@@ -622,8 +623,8 @@ const CSS = `
   font-family: 'IBM Plex Mono', monospace; display: flex; align-items: center;
   justify-content: center; border: 1px solid var(--line); color: var(--muted); }
 .rail-s.done .rail-n { background: var(--t1-bg); border-color: var(--accent-line); color: var(--t1); }
-.rail-s.current .rail-n { background: var(--t1); border-color: var(--t1); color: #04120F; font-weight: 700; }
-.rail-l { font-size: 10.5px; line-height: 1.25; text-align: center; color: var(--muted);
+.rail-s.current .rail-n { background: var(--t1); border-color: var(--t1); color: #FFF; font-weight: 700; }
+.rail-l { font-size: 11.5px; line-height: 1.4; text-align: center; color: var(--muted);
   overflow-wrap: anywhere; }
 /* In an expanded deal the rail has the full card width, so labels break between
    words at worst — never letter by letter, which is what overflow-wrap:anywhere
@@ -648,7 +649,7 @@ const CSS = `
 .turn.me { background: var(--accent-bg); }
 .turn.partner { background: var(--amber-bg); }
 .turn.none { background: var(--line-soft); }
-.turn-w { font-family: 'Archivo'; font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+.turn-w { font-family: 'Archivo'; font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
   font-weight: 700; margin-bottom: 5px; }
 .turn.me .turn-w { color: var(--accent); } .turn.partner .turn-w { color: var(--amber); }
 .turn-t { font-size: 15px; line-height: 1.45; }
@@ -670,7 +671,7 @@ const CSS = `
 .tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 16px; }
 .tabb { flex: 0 0 auto; background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px;
   padding: 8px 14px; font-size: 13.5px; font-weight: 600; color: var(--muted); }
-.tabb.on { background: var(--accent); border-color: var(--accent); color: #04120F; }
+.tabb.on { background: var(--accent); border-color: var(--accent); color: #FFF; }
 .tabb.on .faint { color: rgba(255,255,255,.75); }
 .act-2 { display: flex; gap: 8px; margin-top: 10px; }
 .act-2 .btn { flex: 1; }
@@ -692,7 +693,7 @@ const CSS = `
 /* who the deal is with — stated once, at the top of the active block */
 .goal-with { display: flex; flex-direction: column; gap: 7px; padding-bottom: 13px;
   margin-bottom: 12px; border-bottom: 1px solid var(--accent-line); }
-.goal-with-l { font-family: 'Archivo'; font-size: 9.5px; letter-spacing: .11em;
+.goal-with-l { font-family: 'Archivo'; font-size: 11px; letter-spacing: .11em;
   text-transform: uppercase; font-weight: 700; color: var(--t1); }
 .goal-with-p { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
 .goal-with-n { font-size: 16px; font-weight: 700; color: var(--text); }
@@ -705,24 +706,9 @@ const CSS = `
    artwork carries it. A deal is close reading — prices, percentages, card lists,
    a conversation — so it gets a light, high-clarity treatment. The tokens are
    overridden ONLY within .dw, so nothing else in the app shifts. */
+/* No token overrides here any more: the workspace's palette IS the app's
+   palette now, so this rule only carries the workspace's own layout. */
 .goal.deal-open, .dw {
-  --bg: #F7F9FA;
-  --panel: #FFFFFF;
-  --panel-2: #F3F6F7;
-  --line: #DFE5E8;
-  --line-soft: #EDF1F2;
-  --text: #16202A;
-  --muted: #5A6B76;
-  --faint: #7C8D98;
-  --t1: #0B5D66;
-  --t2: #4E8C93;
-  --t1-bg: #E6F0F1;
-  --accent: #0B7A72;
-  --accent-bg: #E8F4F3;
-  --accent-line: #C6E1DE;
-  --amber: #8A5A08;
-  --amber-bg: #FBF3E3;
-  --danger: #98302C;
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
@@ -743,8 +729,6 @@ const CSS = `
 .goal.deal-open .goal-n, .goal.deal-open .sec-h { color: var(--text); }
 .dw .card { box-shadow: 0 1px 2px rgba(22,32,42,.05), 0 4px 14px rgba(22,32,42,.05); }
 .dw .btn { box-shadow: none; }
-.dw .btn.pri, .dw .btn.deep { color: #FFF; }
-.dw .cip-opt.on, .dw .tabb.on { color: #FFF; }
 .dw .art.ph { background: var(--panel-2); }
 
 /* 1. deal context — compact enough for a phone */
@@ -761,14 +745,14 @@ const CSS = `
 .rail.compact { gap: 2px; }
 .rail.compact .rail-s { padding-top: 9px; gap: 4px; }
 .rail.compact .rail-n { width: 18px; height: 18px; font-size: 10px; }
-.rail.compact .rail-l { font-size: 9.5px; }
+.rail.compact .rail-l { font-size: 11px; }
 
 /* 3. guidance */
 .dw-guide { margin-top: 12px; padding: 13px 15px; border-radius: 12px;
   background: var(--accent-bg); border: 1px solid var(--accent-line); }
-.dw-guide.partner { background: var(--amber-bg); border-color: #EBD9B4; }
+.dw-guide.partner { background: var(--amber-bg); border-color: var(--line); }
 .dw-guide.none { background: var(--panel-2); border-color: var(--line); }
-.dw-guide-w { font-family: 'Archivo'; font-size: 10px; letter-spacing: .1em;
+.dw-guide-w { font-family: 'Archivo'; font-size: 11px; letter-spacing: .1em;
   text-transform: uppercase; font-weight: 700; color: var(--t1); margin-bottom: 4px; }
 .dw-guide.partner .dw-guide-w { color: var(--amber); }
 .dw-guide-t { font-size: 14.5px; line-height: 1.45; }
@@ -841,7 +825,7 @@ const CSS = `
 .rc-wrap { margin-top: 14px; border-top: 1px solid var(--line-soft); }
 .rc-toggle { display: flex; align-items: center; gap: 10px; width: 100%; background: none;
   border: 0; padding: 13px 0 4px; text-align: left; }
-.rc-toggle-t { font-family: 'Archivo'; font-size: 10px; letter-spacing: .1em;
+.rc-toggle-t { font-family: 'Archivo'; font-size: 11px; letter-spacing: .1em;
   text-transform: uppercase; font-weight: 700; color: var(--muted); }
 .rc-toggle-s { font-size: 12px; margin-left: auto; color: var(--muted); }
 .rc-chev { color: var(--faint); font-size: 17px; transition: transform .16s ease;
@@ -854,11 +838,11 @@ const CSS = `
   text-align: left; }
 .rowb:hover { background: var(--panel-2); }
 /* derived goal state — describes reality, never stored */
-.state { font-family: 'Archivo'; font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
+.state { font-family: 'Archivo'; font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
   font-weight: 700; padding: 3px 8px; border-radius: 5px; }
 .state.seeking { background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); }
 .state.negotiating { background: var(--t1-bg); color: var(--t1); border: 1px solid var(--accent-line); }
-.state.satisfied { background: #102A18; color: #57C97E; border: 1px solid #1E4A2C; }
+.state.satisfied { background: #E7F4EA; color: #1B6B36; border: 1px solid #BEE0C8; }
 
 /* ---- bottom navigation: consumer, thumb-reachable ---- */
 .nav { position: fixed; left: 0; right: 0; bottom: 0; background: rgba(10,16,20,.94);

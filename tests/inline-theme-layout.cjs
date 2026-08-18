@@ -81,10 +81,9 @@ describe("Theme — the expanded Goal is the light workspace", () => {
 
   test("the light tokens are the existing ones, not a second colour system", () => {
     /* One declaration block serves both the page workspace and the inline one. */
-    assert(/\.goal\.deal-open, \.dw \{/.test(SRC),
-      "the expanded Goal shares the .dw token block");
-    const block = SRC.slice(SRC.indexOf(".goal.deal-open, .dw {"),
-      SRC.indexOf("}", SRC.indexOf(".goal.deal-open, .dw {")));
+    /* The tokens now live once, on the Collector root, and the workspace simply
+       inherits them — so there is one colour system for the whole product. */
+    const block = SRC.slice(SRC.indexOf(".mc {"), SRC.indexOf(".mc *"));
     [["--panel", "#FFFFFF"], ["--bg", "#F7F9FA"], ["--text", "#16202A"],
      ["--accent", "#0B7A72"], ["--line", "#DFE5E8"]].forEach(([k, v]) =>
       assert(new RegExp(k + ":\\s*" + v).test(block), k + " keeps its canonical value"));
