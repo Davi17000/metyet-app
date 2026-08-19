@@ -115,10 +115,19 @@ describe("B. Exactly the five canonical stages, in order", () => {
   test("five options, canonical order and labels", () => {
     const dev = load(true);
     const r = asCollector(mount(dev));
-    const opts = selectorIn(r).children.filter((c) => typeof c !== "string");
-    eq(opts.length, 5, "five options");
+    /* The five Deal Flow stages now sit in their own group, separate from the
+       pre-deal states, so they can never read as a sixth stage. */
+    const groups = selectorIn(r).children.filter((c) => typeof c !== "string");
+    const dealGroup = groups.find((g) => g.props.label === "Deal stage");
+    assert(dealGroup, "the Deal stage group exists");
+    const opts = dealGroup.children.filter((c) => typeof c !== "string");
+    eq(opts.length, 5, "five deal stages");
     eq(opts.map((o) => o.props.value).join(","), STAGES.join(","), "canonical order");
     eq(opts.map((o) => txt(o)).join(","), LABELS.join(","), "with the product's labels");
+    const pre = groups.find((g) => g.props.label === "Pre-deal");
+    assert(pre, "and the pre-deal group is a separate list");
+    assert(!pre.children.filter((c) => typeof c !== "string")
+      .some((o) => STAGES.includes(o.props.value)), "sharing no ids with the stages");
   });
 
   test("the list is derived from one declared set", () => {

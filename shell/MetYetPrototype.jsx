@@ -33,6 +33,13 @@ const DEV = SHARED_DEV;
 
 /* The five canonical active stages, in lifecycle order. Labels match the ones
    the product uses so the control reads the same as the rail beside it. */
+/* Before any offer exists. NOT Deal Flow stages — the lifecycle still has
+   exactly five, and nothing here is ever written to opportunity.stage. */
+const DEMO_PRE = [
+  { id: "pre-deal", label: "Photo request" },
+  { id: "pre-deal-ready", label: "Photos ready" },
+];
+
 const DEMO_STAGES = [
   { id: "agree-price", label: "Agree on Price" },
   { id: "select-trade", label: "Select Trade" },
@@ -189,9 +196,18 @@ export default function MetYetPrototype() {
                     { collectorId: SELF_COLLECTOR, demoStage: e.target.value });
                   if (next) { store.set(next); setEpoch((n) => n + 1); }
                 }}>
-                {DEMO_STAGES.map((x) => (
-                  <option key={x.id} value={x.id}>{x.label}</option>
-                ))}
+                {/* Kept in its own group: these come BEFORE a deal exists, and
+                    must never read as a sixth Deal Flow stage. */}
+                <optgroup label="Pre-deal">
+                  {DEMO_PRE.map((x) => (
+                    <option key={x.id} value={x.id}>{x.label}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Deal stage">
+                  {DEMO_STAGES.map((x) => (
+                    <option key={x.id} value={x.id}>{x.label}</option>
+                  ))}
+                </optgroup>
               </select>
             </label>
           )}
@@ -231,4 +247,4 @@ export default function MetYetPrototype() {
 
 /* Exposed for the unified-runtime tests: they must be able to assert that the
    store instance survives a persona switch. Not product surface. */
-export { PERSONAS, SELF_PARTNER, SELF_COLLECTOR, DEMO_STAGES };
+export { PERSONAS, SELF_PARTNER, SELF_COLLECTOR, DEMO_STAGES, DEMO_PRE };

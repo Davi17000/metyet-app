@@ -1363,6 +1363,10 @@ const REVIEW_OPPS_SEED = [
 /* The goal the harness drives, and the one it promotes, identified by card so
    no test or screen has to hardcode an index-derived id. */
 const REVIEW_DEAL_CARD = "i1";
+/* Named so the harness can offer states that exist BEFORE a deal does. Neither
+   is a Deal Flow stage, and neither is ever written to opportunity.stage. */
+const PRE_DEAL = "pre-deal";
+const PRE_DEAL_READY = "pre-deal-ready";
 const REVIEW_PROMOTE_CARD = "i11";
 
 const STAGES = [
@@ -2140,11 +2144,27 @@ export function demoDealFixture(state, { collectorId, demoStage }) {
   if (!fg) return null;
   const fo = fixture.opportunities.find((o) => o.goalId === fg.id);
   const mine = state.goals.find((g) => g.collectorId === collectorId && g.cardId === fg.cardId);
-  if (!mine || !fo) return null;
-  return { ...state,
-    goals: state.goals.map((g) => (g.id === mine.id ? { ...fg, id: mine.id } : g)),
-    opportunities: [...state.opportunities.filter((o) => o.goalId !== mine.id),
-      { ...fo, id: "o-review", goalId: mine.id }] };
+  if (!mine) return null;
+
+  const goals = state.goals.map((g) => (g.id === mine.id ? { ...fg, id: mine.id } : g));
+  const rest = state.opportunities.filter((o) => o.goalId !== mine.id);
+
+  /* PRE-DEAL states have no opportunity at all: the demo starts before one
+     exists. The copies behind that goal and any outstanding asks come from the
+     rebuilt fixture, so the whole starting position is deterministic. */
+  if (!fo) {
+    return { ...state, goals, opportunities: rest,
+      inventory: state.inventory.map((i) => {
+        const f = fixture.inventory.find((x) => x.invId === i.invId);
+        return f && f.cardId === fg.cardId ? { ...i, photos: f.photos } : i;
+      }),
+      photoRequests: (state.photoRequests || [])
+        .filter((r) => !fixture.inventory.some((x) => x.invId === r.invId
+          && x.cardId === fg.cardId)) };
+  }
+
+  return { ...state, goals,
+    opportunities: [...rest, { ...fo, id: "o-review", goalId: mine.id }] };
 }
 
 /* Which stage the demo deal is currently loaded at, for the dev controls to
@@ -2154,7 +2174,12 @@ export function demoDealStage(state, collectorId) {
     && REVIEW_DEAL_NOTE_RE.test(x.note || ""));
   if (!g) return null;
   const o = (state.opportunities || []).find((x) => x.goalId === g.id && SharedID.isActive(x));
-  return o ? o.stage : null;
+  if (o) return o.stage;
+  /* No deal yet — which pre-deal position is loaded is told by the copies. */
+  const copies = (state.inventory || []).filter((i) => i.cardId === g.cardId && !i.archived);
+  if (!copies.length) return null;
+  return copies.some((i) => SharedID.INVARIANTS.copyPhotographed(i.photos))
+    ? PRE_DEAL_READY : PRE_DEAL;
 }
 
 export function buildCanonicalSeed(opts) {
@@ -2166,13 +2191,25 @@ export function buildCanonicalSeed(opts) {
      way every other seeded opportunity gets them. There is no stage setter.
      Switching stages rebuilds the fixture; it does not preserve edits. */
   const demoStage = opts && opts.demoStage;
+  /* PRE-DEAL. Everything the demo picker offers otherwise begins after an offer
+     has been made. These two start BEFORE one exists, so the photo workflow can
+     be walked as the product actually runs it: the review deal's opportunity is
+     simply not seeded, and the copies behind that goal are shaped so the
+     collector meets either a stock-only card or a photographed one.
+
+     This is fixture building, not a stage setter — there is no "photo-request"
+     stage, and nothing here writes a stage field. */
+  const preDeal = demoStage === PRE_DEAL || demoStage === PRE_DEAL_READY;
   const goalsSeed = review ? [...GOALS_SEED, ...REVIEW_GOALS_SEED] : GOALS_SEED;
-  const reviewOpps = demoStage
-    ? REVIEW_OPPS_SEED.map((row) => (row[1] === REVIEW_DEAL_CARD
-      ? [row[0], row[1], demoStage, row[3], row[4]] : row))
-    : REVIEW_OPPS_SEED;
+  const reviewOpps = preDeal
+    /* No opportunity for the review goal: the deal has not begun. */
+    ? REVIEW_OPPS_SEED.filter((row) => row[1] !== REVIEW_DEAL_CARD)
+    : demoStage
+      ? REVIEW_OPPS_SEED.map((row) => (row[1] === REVIEW_DEAL_CARD
+        ? [row[0], row[1], demoStage, row[3], row[4]] : row))
+      : REVIEW_OPPS_SEED;
   const oppsSeed = review ? [...OPPS_SEED, ...reviewOpps] : OPPS_SEED;
-  return {
+  const world = {
     catalog: CARDS_SEED,
     collectors: COLLECTORS_SEED,
     partners: PARTNERS_SEED,
@@ -2250,6 +2287,22 @@ export function buildCanonicalSeed(opts) {
           text: "Some room, yes. Tell me when you're ready to move on it." },
       ],
     }] : [],
+  };
+
+  if (!preDeal) return world;
+
+  /* Shape the copies behind the review goal so the collector meets the state
+     being demonstrated. The collector's supply view shows ONE copy per partner
+     and prefers a photographed one, so every copy of that identity has to agree
+     — otherwise the picker would quietly route around the stock-only case. */
+  const wantPhotos = demoStage === PRE_DEAL_READY;
+  return { ...world,
+    inventory: world.inventory.map((i) => (i.cardId !== REVIEW_DEAL_CARD ? i
+      : { ...i, photos: wantPhotos
+        ? { front: "copy:" + i.invId + ":front", back: "copy:" + i.invId + ":back" }
+        : { front: null, back: null } })),
+    /* Nobody has asked yet: the loop starts from the first click. */
+    photoRequests: [],
   };
 }
 
