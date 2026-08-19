@@ -274,9 +274,9 @@ describe("D. Top composition and disclosure", () => {
     const card = open(r);
     const top = cls(card, "goal-top")[0];
     assert(top, "a top row");
-    eq(cls(top, "rail-s").length, 5, "carrying the five-stage rail");
+    eq(cls(top, "rail-s").length, 6, "carrying the five-stage rail");
     assert(cls(top, "art")[0] || top.findAllByType("div").length > 0, "beside the artwork");
-    eq(cls(card, "rail-s").length, 5, "and exactly one rail in the whole card");
+    eq(cls(card, "rail-s").length, 6, "and exactly one rail in the whole card");
     eq(cls(cls(card, "idf-work")[0], "rail-s").length, 0, "never inside the work grid");
   });
 

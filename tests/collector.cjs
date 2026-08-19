@@ -1207,13 +1207,13 @@ describe("The stage rail names every stage", () => {
     return find();
   };
 
-  test("1-3. five stages, numbered, canonically labelled and ordered", () => {
+  test("1-3. six pursuit steps, numbered, canonically labelled and ordered", () => {
     const r = openDeal(mk());   // the expanded goal card
     const steps = cls(r, "rail-s");
-    eq(steps.length, 5, "five stages");
-    eq(cls(r, "rail-n").map(txt).join(","), "1,2,3,4,5", "numbered 1-5");
+    eq(steps.length, 6, "six pursuit steps");
+    eq(cls(r, "rail-n").map(txt).join(","), "1,2,3,4,5,6", "numbered 1-6");
     eq(cls(r, "rail-l").map(txt).join(" | "),
-      "Agree on Price | Select Trade | Value Trade | Deal | Fulfillment",
+      "Review Card | Agree on Price | Select Trade | Value Trade | Deal | Fulfillment",
       "canonical labels, in canonical order");
   });
 
@@ -1230,8 +1230,8 @@ describe("The stage rail names every stage", () => {
     const r = openDeal(mk());   // the expanded goal card
     const steps = cls(r, "rail-s");
     const stateOf = (n) => String(n.props.className).replace("rail-s ", "").trim();
-    eq(steps.map(stateOf).join(","), "done,current,pending,pending,pending",
-      "Select Trade is current, with one settled behind it");
+    eq(steps.map(stateOf).join(","), "done,done,current,pending,pending,pending",
+      "Select Trade is current, with Review Card and Agree on Price behind it");
     const cur = steps.find((n) => stateOf(n) === "current");
     eq(cur.props["aria-current"], "step", "and it is announced as the current step");
   });
@@ -1416,13 +1416,13 @@ describe("Active Primary Goal hierarchy", () => {
       "progress beside the identity, then the deal, then receipt, then other partners");
   });
 
-  test("5. progress shows all five numbered, labelled stages", () => {
+  test("5. progress shows all six numbered, labelled steps", () => {
     const r = mk();
     const card = ray(r);
-    eq(byClassIn(card, "rail-s").length, 5, "five stages");
-    eq(byClassIn(card, "rail-n").map(txt).join(","), "1,2,3,4,5", "numbered");
+    eq(byClassIn(card, "rail-s").length, 6, "six pursuit steps");
+    eq(byClassIn(card, "rail-n").map(txt).join(","), "1,2,3,4,5,6", "numbered");
     eq(byClassIn(card, "rail-l").map(txt).join(" | "),
-      "Agree on Price | Select Trade | Value Trade | Deal | Fulfillment", "and labelled");
+      "Review Card | Agree on Price | Select Trade | Value Trade | Deal | Fulfillment", "and labelled");
   });
 
   test("6/7. the receipt is collapsed by default", () => {
@@ -1674,11 +1674,15 @@ describe("Deal Flow presentation", () => {
   test("the five-stage model and settled count are untouched", () => {
     const r = mk();
     const card = ray(r);
-    eq(byClassIn(card, "rail-s").length, 5, "five stages");
+    /* The RAIL is the pursuit: six steps, Review Card first. The RECEIPT is the
+        negotiation: still five, because that is what a deal settles — the two
+        are deliberately different counts. */
+    eq(byClassIn(card, "rail-s").length, 6, "six pursuit steps");
     eq(byClassIn(card, "rail-l").map(txt).join(" | "),
-      "Agree on Price | Select Trade | Value Trade | Deal | Fulfillment", "canonical labels");
+      "Review Card | Agree on Price | Select Trade | Value Trade | Deal | Fulfillment",
+      "canonical labels, Review Card first");
     assert(/1 of 5 settled/.test(txt(byClassIn(card, "rc-toggle")[0])),
-      "and the settled count is preserved");
+      "and the negotiation settled count is untouched");
   });
 });
 
@@ -1837,9 +1841,9 @@ describe("Deal workspace mobile shell", () => {
   test("all five canonical stages render, compact, from canonical state", () => {
     const r = open(mk());
     assert(String(cls(r, "rail")[0].props.className).includes("compact"), "compact rail");
-    eq(cls(r, "rail-s").length, 5, "five stages");
+    eq(cls(r, "rail-s").length, 6, "five stages");
     eq(cls(r, "rail-l").map(txt).join(" | "),
-      "Agree on Price | Select Trade | Value Trade | Deal | Fulfillment", "canonical labels");
+      "Review Card | Agree on Price | Select Trade | Value Trade | Deal | Fulfillment", "canonical labels");
     const cur = cls(r, "rail-s").find((n) => String(n.props.className).includes("current"));
     const opp = __store.get().get().opportunities.find((o) => o.id === "o9");
     assert(txt(cur).includes("Select Trade") && opp.stage === "select-trade",

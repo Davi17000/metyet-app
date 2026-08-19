@@ -413,6 +413,22 @@ const CSS = `
   color: var(--t1); font-weight: 700; }
 .goal-deal-p { font-size: 13px; font-weight: 600; }
 .goal-deal-t { margin-left: auto; font-size: 12px; color: var(--muted); }
+/* Review Card: the two faces of one physical copy, side by side. */
+.rv-h { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--muted); margin: 18px 0 8px; }
+.rv-faces { display: flex; gap: 12px; }
+.rv-face { flex: 1 1 0; min-width: 0; }
+.rv-face-l { font-size: 12.5px; color: var(--muted); margin-bottom: 5px; }
+.rv-face-b { aspect-ratio: 5 / 7; border: 1px dashed var(--line); border-radius: 10px;
+  background: var(--panel-2); display: flex; align-items: center; justify-content: center;
+  overflow: hidden; }
+.rv-face.has .rv-face-b { border-style: solid; background: var(--panel); }
+.rv-img { width: 100%; height: 100%; object-fit: cover; }
+.rv-awaiting { font-size: 12.5px; color: var(--faint); }
+.rv-note { font-size: 12.5px; color: var(--muted); line-height: 1.45; margin-top: 12px; }
+.rv-confirm { max-width: 460px; padding: 22px; }
+.rv-confirm-t { font-size: 14px; line-height: 1.5; color: var(--muted); margin-top: 8px; }
+
 /* ---- AGREE ON PRICE.
 
    The hierarchy IS the interface here: what just happened, then the number on
@@ -1028,14 +1044,28 @@ function Sheet({ title, sub, onClose, children, footer }) {
 /* The five stages, always named. A collector should never have to decode a bar:
    each step carries its number, its label and its state, on every surface. The
    states come from the same projection the receipt uses. */
-function Track({ stage, o, st, compact }) {
+/* THE PURSUIT RAIL — six steps, of which five are a negotiation.
+
+   Reviewing a specific copy is where chasing it begins, so it is step 1. It is
+   NOT an opportunity stage: `review` is passed when the collector is still
+   looking at the card, and the settlement states for steps 2-6 continue to come
+   from the canonical receipt, which knows about five. */
+function Track({ stage, o, st, compact, review }) {
   const r = D.receiptForOpportunity(o || { stage, trade: { cards: [] } }, {
     binderById: st && st.binderById, cardById: st && st.cardById,
     partnerById: st && st.partnerById });
+  /* Step 1 is settled the moment a deal exists — the collector has decided. */
+  const first = { id: "review-card", n: 1, label: "Review Card",
+    state: review ? "current" : "done" };
+  const rest = r.stages.map((x) => ({ ...x, n: x.n + 1,
+    state: review ? "todo" : x.state }));
+  const steps = [first, ...rest];
+  const at = steps.findIndex((x) => x.state === "current");
   return (
     <>
-      <ol className={"rail" + (compact ? " compact" : "")} aria-label={`Stage ${r.stageIndex + 1} of 5: ${STAGE[stage].label}`}>
-        {r.stages.map((s2) => (
+      <ol className={"rail" + (compact ? " compact" : "")}
+        aria-label={`Step ${at + 1} of ${steps.length}: ${steps[at] ? steps[at].label : ""}`}>
+        {steps.map((s2) => (
           <li key={s2.id} className={"rail-s " + s2.state}
             aria-current={s2.state === "current" ? "step" : undefined}>
             <span className="rail-n" aria-hidden="true">{s2.n}</span>
@@ -1466,11 +1496,114 @@ function PhotoNote({ inv, st }) {
   );
 }
 
+/* ------------------------------------------------------------- REVIEW CARD
+
+   Step one of the pursuit: deciding whether this specific copy is worth
+   negotiating over. Actual photographs are the strongest way to answer that,
+   which is why asking for them is the emphasis — but they are not a condition
+   of proceeding, and the collector may price a card they cannot fully see if
+   they understand that is what they are doing. A grade already carries much of
+   a card's condition; a raw card carries none of it. */
+function ReviewCard({ g, pursuit, partner, st, go }) {
+  const c = st.cardById(g.cardId);
+  const inv = pursuit.copy;
+  const photos = (inv && inv.photos) || {};
+  const [confirm, setConfirm] = useState(false);
+  const graded = !!(c.grade && !D.isRaw(c));
+
+  const face = (label, url) => (
+    <div className={"rv-face" + (url ? " has" : "")}>
+      <div className="rv-face-l">{label}</div>
+      <div className="rv-face-b">
+        {url ? <img className="rv-img" src={url} alt={label + " of the actual card"} />
+          : <span className="rv-awaiting">Awaiting photo</span>}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="idf rv">
+      <div className="idf-work two">
+        <div className="idf-task">
+          <div className="idf-h">
+            {pursuit.ready ? "Your move" : "Waiting on " + partner.name}
+          </div>
+          <div className="idf-guide-t">
+            {pursuit.ready
+              ? `${partner.name} has added photos of the actual card. Have a look, then decide whether to make an offer.`
+              : `You asked to see the actual card before making an offer. You'll be able to review the photos here when ${partner.name} adds them.`}
+          </div>
+
+          <div className="rv-h">
+            {pursuit.ready ? "Photos of actual card" : "Actual card photos"}
+          </div>
+          <div className="rv-faces">
+            {face("Front", photos.front)}
+            {face("Back", photos.back)}
+          </div>
+          {!pursuit.ready && (
+            <div className="rv-note">
+              {graded
+                ? `This copy is graded ${c.grade}, so much of its condition is already established. Photos still show the slab, cert and eye appeal.`
+                : "This copy is raw, so its condition is not established by a grade. Photos are the only way to judge it."}
+            </div>
+          )}
+
+          <div className="idf-action">
+            {pursuit.ready ? (
+              <button className="btn pri idf-action-go"
+                onClick={() => go({ v: "offer", goalId: g.id, partnerId: partner.id })}>
+                Make an offer
+              </button>
+            ) : (
+              /* The quieter path: proceeding without seeing the card is allowed,
+                 and confirmed once so the collector knows what they are missing. */
+              <button className={"btn idf-action-go" + (graded ? " pri" : "")}
+                onClick={() => setConfirm(true)}>
+                Make an offer without photos
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="idf-side">
+          <div className="idf-h">Conversation</div>
+          <DealChat partnerId={partner.id} cardId={g.cardId} st={st} embedded headless />
+        </div>
+      </div>
+
+      {confirm && (
+        <div className="ovl" onClick={() => setConfirm(false)}>
+          <div className="sheet rv-confirm" onClick={(e) => e.stopPropagation()}>
+            <div className="sheet-h">Make an offer without actual photos?</div>
+            <div className="rv-confirm-t">
+              {partner.name} hasn't added photos of this copy yet. You can wait for
+              them, or continue and price it on what you can see.
+            </div>
+            <div className="act-2" style={{ marginTop: 16 }}>
+              <button className="btn" onClick={() => setConfirm(false)}>Keep waiting</button>
+              <button className="btn pri" onClick={() => {
+                setConfirm(false);
+                go({ v: "offer", goalId: g.id, partnerId: partner.id });
+              }}>Continue without photos</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GoalCard({ g, st, go, open, onToggle }) {
   const c = st.cardById(g.cardId);
   const holders = st.partnersWith(g.cardId);
   const live = st.openOppForGoal(g.id);
-  const partner = live ? st.partnerById(live.partnerId) : null;
+  /* One pursuit, two phases: reviewing a copy, then negotiating over it. Both
+     render the same workspace on the Goal — only the second is a deal. */
+  const pursuit = st.pursuitFor(g.id);
+  const reviewing = !!pursuit && pursuit.kind === "review";
+  const partner = live ? st.partnerById(live.partnerId)
+    : reviewing ? st.partnerById(pursuit.partnerId) : null;
   const state = st.stateOf(g.id);
   const [menu, setMenu] = useState(false);
   /* Detail-on-demand, and purely local: a disclosure is not canonical state, and
@@ -1509,9 +1642,10 @@ function GoalCard({ g, st, go, open, onToggle }) {
             what the deal is about, not stacked under it — which also lets the
             artwork and identity have the width they were being denied. One
             canonical rail; on a narrow container it simply wraps beneath. */}
-        {live && (
+        {(live || reviewing) && (
           <div className="goal-rail">
-            <Track stage={live.stage} o={live} st={st} />
+            <Track stage={live ? live.stage : "agree-price"} o={live} st={st}
+              review={reviewing} />
           </div>
         )}
       </div>
@@ -1528,6 +1662,37 @@ function GoalCard({ g, st, go, open, onToggle }) {
             <button className="btn sm goal-stop" onClick={() => { setMenu(false); setConfirmStop(true); }}>
               {st.dealAgreed(live) ? "Cancel agreed deal" : "Stop negotiation"}
             </button>
+          )}
+        </div>
+      )}
+
+      {/* 1a. REVIEWING A COPY — the pursuit before any offer. Same workspace,
+             same disclosure, one step earlier on the rail. */}
+      {reviewing && !live && (
+        <div className="goal-live">
+          <button className="goal-deal" aria-expanded={open}
+            aria-label={(open ? "Hide" : "Show") + " Deal Flow with " + partner.name
+              + " — Review Card"}
+            onClick={() => onToggle(open ? null : g.id)}>
+            <span className="goal-deal-m">
+              <span className="goal-deal-s">Deal Flow · Review Card</span>
+              <span className="goal-deal-p">
+                <Face partner={partner} size={20} />
+                <span className="goal-deal-pn">{partner.name}</span>
+              </span>
+            </span>
+            <span className="goal-deal-r">
+              <span className={"goal-deal-t" + (pursuit.ready ? " mine" : "")}>
+                {pursuit.ready ? "Your move" : "Waiting on " + partner.name}
+              </span>
+              <span className={"goal-deal-c" + (open ? " on" : "")} aria-hidden="true">&#8250;</span>
+            </span>
+          </button>
+
+          {open && (
+            <div className="goal-dw">
+              <ReviewCard g={g} pursuit={pursuit} partner={partner} st={st} go={go} />
+            </div>
           )}
         </div>
       )}

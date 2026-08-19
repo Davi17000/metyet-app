@@ -86,16 +86,25 @@ describe("A. The rule itself", () => {
     eq(D.INVARIANTS.copyPhotographed(null), false, "nor nothing at all");
   });
 
-  test("only a photographed copy can be negotiated over", () => {
+  /* CONTRACT CHANGE — the domain no longer refuses an offer for want of photos.
+     Seeing the card is strongly encouraged by the interface (and confirmed when
+     skipped), but a collector who understands what they cannot see may price
+     anyway; a graded card carries much of its condition in the grade. What the
+     domain still enforces is the COPY: readiness remains a real, derived fact,
+     and the interface leads with it. */
+  test("a stock-only copy is not ready, but is no longer forbidden", () => {
     const st = world();
-    const refused = offer(st, "stock");
-    eq(refused.refused, D.REFUSE.photosNeeded, "a stock-only copy is refused");
-    eq(st.get().opportunities.length, 0, "and no opportunity exists");
+    eq(D.INVARIANTS.copyPhotographed(copyOf(st, "stock").photos), false, "not ready");
+    const oid = offer(st, "stock");
+    assert(typeof oid === "string", "yet the collector may still choose to offer");
+    eq(st.get().opportunities.length, 1, "creating one ordinary negotiation");
   });
 
-  test("one face is not quietly treated as enough", () => {
+  test("readiness still distinguishes one face from two", () => {
     const st = world();
-    eq(offer(st, "half").refused, D.REFUSE.photosNeeded, "front-only is still refused");
+    eq(D.INVARIANTS.copyPhotographed(copyOf(st, "half").photos), false,
+      "front-only is not ready, so the interface still leads with the request");
+    eq(D.INVARIANTS.copyPhotographed(copyOf(st, "shot").photos), true, "both faces are");
   });
 
   test("an unavailable copy is refused however well photographed", () => {
@@ -103,11 +112,13 @@ describe("A. The rule itself", () => {
     eq(offer(st, "gone").refused, D.REFUSE.copyUnavailable, "archived copies cannot be offered on");
   });
 
-  test("the rule lives in the domain, so no surface can route around it", () => {
+  test("the copy itself is still enforced in the domain", () => {
     const store = readSrc("domain/metyet-store.js");
     const guard = store.slice(store.indexOf("startOpportunity({"), store.indexOf("const id = \"o\""));
-    assert(/copyPhotographed/.test(guard), "startOpportunity itself checks the copy");
-    assert(/REFUSE\.photosNeeded/.test(guard), "and refuses with a reason");
+    assert(/REFUSE\.copyUnavailable/.test(guard),
+      "a deal names one physical card, which must exist and be available");
+    assert(!/REFUSE\.photosNeeded/.test(guard),
+      "but photographs are no longer a precondition of negotiating");
   });
 });
 
@@ -199,7 +210,8 @@ describe("D. The partner photographs the copy", () => {
     st.actions.requestPhotos({ collectorId: "c1", partnerId: "p2", invId: "stock", at: AT });
     eq(st.actions.addCopyPhotos({ invId: "stock", front: "f", at: AT }), false, "front alone: not ready");
     eq(st.get().photoRequests[0].fulfilledAt, null, "the request stays open");
-    eq(offer(st, "stock").refused, D.REFUSE.photosNeeded, "and no offer is possible yet");
+    eq(D.INVARIANTS.copyPhotographed(copyOf(st, "stock").photos), false,
+      "and the copy is still not ready to review");
 
     eq(st.actions.addCopyPhotos({ invId: "stock", back: "b", at: AT }), true, "with the back: ready");
     assert(st.get().photoRequests[0].fulfilledAt, "and the request is fulfilled");
@@ -341,11 +353,11 @@ describe("G. What the partner sees", () => {
   test("demand appears on the copy-specific inventory row", () => {
     assert(comp.length > 100, "the surface exists");
     assert(/requestsFor\(inv\.invId\)/.test(comp), "asking about this exact copy");
-    assert(/requested photos of this card/.test(comp), "and naming who asked");
+    assert(/is reviewing this copy/.test(comp), "and naming who is reviewing it");
   });
 
   test("the partner is offered the photography, not a deal", () => {
-    assert(/Add front &amp; back photos/.test(comp), "the primary action is to photograph");
+    assert(/Add actual card photos/.test(comp), "the primary action is to photograph");
     assert(!/offer|deal|negotiat/i.test(comp.replace(/offered on/g, "")),
       "nothing suggests a commitment");
   });

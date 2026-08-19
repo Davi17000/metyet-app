@@ -229,7 +229,7 @@ describe("E. One of everything, across all five stages", () => {
       const r = mk();
       const card = expand(r, goalOf(oppAt(stage)));
       eq(cls(card, "goal-deal").length, 1, "one summary row");
-      eq(cls(card, "rail-s").length, 5, "one five-stage rail");
+      eq(cls(card, "rail-s").length, 6, "one six-step pursuit rail");
       eq(cls(card, "chat-embed").length, 1, "one conversation");
       eq(cls(card, "rc-wrap").length, 1, "one receipt");
       eq(cls(card, "idf-action").length, 1, "one action area");

@@ -120,9 +120,9 @@ describe("A. One surface, not a card inside a card", () => {
   test("exactly one canonical stage rail, and one receipt", () => {
     const r = mk();
     const g = goalOf(oppAt("select-trade"));
-    eq(cls(cardFor(r, g), "rail-s").length, 5, "collapsed: one rail");
+    eq(cls(cardFor(r, g), "rail-s").length, 6, "collapsed: one rail");
     const card = expand(r, g);
-    eq(cls(card, "rail-s").length, 5, "expanded: still exactly one rail");
+    eq(cls(card, "rail-s").length, 6, "expanded: still exactly one rail");
     eq(cls(card, "dw-flow").length, 0, "the workspace does not repeat the receipt");
     eq(cls(card, "rc-wrap").length, 1, "the Goal carries it, once");
   });
@@ -298,14 +298,14 @@ describe("E. All five stages, collapsed and expanded", () => {
       eq(cls(collapsed, "goal-dw").length, 0, stage + ": no workspace while collapsed");
       eq(cls(collapsed, "chat-embed").length, 0, stage + ": no conversation while collapsed");
       eq(cls(collapsed, "dw-bar").length, 0, stage + ": no action bar while collapsed");
-      eq(cls(collapsed, "rail-s").length, 5, stage + ": compact progress");
+      eq(cls(collapsed, "rail-s").length, 6, stage + ": compact progress");
       assert(rowIn(collapsed), stage + ": a disclosure");
 
       /* Expanded: one surface, one rail, correct order. */
       const card = expand(r, g);
       assert(cls(card, "idf-stage")[0], stage + ": the stage workspace");
       assert(cls(card, "chat-embed")[0], stage + ": the conversation");
-      eq(cls(card, "rail-s").length, 5, stage + ": still one rail");
+      eq(cls(card, "rail-s").length, 6, stage + ": still one rail");
       eq(cls(card, "dw-ctx").length, 0, stage + ": no nested page header");
       eq(cls(card, "goal-with").length, 0, stage + ": no duplicated partner block");
       assert(bandOrder(card).indexOf("goal-deal") <= 1,

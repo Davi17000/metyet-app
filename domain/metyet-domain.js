@@ -166,7 +166,8 @@ const REFUSE = {
   noGoal: "no-goal",
   notPrimary: "goal-not-primary",
   alreadyNegotiating: "already-negotiating",
-  /* Discovery is fine on a stock image; negotiating a price is not. */
+  /* Kept for callers that still speak it, but the domain no longer refuses an
+     offer for want of photos — seeing the card is encouraged, not enforced. */
   photosNeeded: "photos-needed",
   copyUnavailable: "copy-unavailable",
 };
@@ -284,7 +285,23 @@ module.exports.identityFrom = identityFrom;
    Reconciliation is guaranteed by construction: every number comes from the
    same helpers the Opportunity workspace uses. */
 
+/* THE NEGOTIATION stages: what a deal settles, one at a time. Five, unchanged —
+   this is what "N of 5 settled" counts, and what opportunity.stage may hold. */
 const RECEIPT_STAGES = ["agree-price", "select-trade", "value-trade", "deal", "fulfillment"];
+
+/* THE PURSUIT, as the collector experiences it. Reviewing a specific copy is
+   the beginning of chasing it, so it belongs on the same rail — but it is NOT a
+   negotiation stage and is never written to opportunity.stage.
+
+   Keeping the two lists apart is the whole point. An Opportunity carries a
+   priceThread whose first entry is an offer; manufacturing one so that a photo
+   request could "be" a stage would put a financial statement in the collector's
+   mouth that they never made. So Review Card is derived from the photo request
+   that already exists, and only steps 2-6 correspond to a real deal. */
+const PURSUIT_STEPS = [
+  { id: "review-card", label: "Review Card", negotiation: false },
+  ...RECEIPT_STAGES.map((id) => ({ id, label: STAGE_LABEL[id], negotiation: true })),
+];
 
 function receiptForOpportunity(o, { binderById, cardById, partnerById } = {}) {
   if (!o) return null;
@@ -350,6 +367,7 @@ function receiptForOpportunity(o, { binderById, cardById, partnerById } = {}) {
 }
 
 module.exports.RECEIPT_STAGES = RECEIPT_STAGES;
+module.exports.PURSUIT_STEPS = PURSUIT_STEPS;
 module.exports.receiptForOpportunity = receiptForOpportunity;
 
 /* ---------------------------------------------------------- CONVERSATIONS

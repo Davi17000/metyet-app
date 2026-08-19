@@ -6198,14 +6198,14 @@ function PhotoDemand({ ctx, inv }) {
     <div className="pd">
       <div className="pd-t">
         {asks.length
-          ? asks.map((a) => a.name).join(", ") + (asks.length === 1
-            ? " requested photos of this card" : " requested photos of this card")
+          ? asks.map((a) => a.name).join(", ")
+            + (asks.length === 1 ? " is reviewing this copy" : " are reviewing this copy")
           : "Front photo added — back still needed"}
       </div>
       <div className="pd-s">
-        {photos.front && !photos.back ? "Back photo still needed before this copy can be offered on."
-          : photos.back && !photos.front ? "Front photo still needed before this copy can be offered on."
-          : "Add front and back photos of this exact copy."}
+        {photos.front && !photos.back ? "Back photo still needed before they can see the whole card."
+          : photos.back && !photos.front ? "Front photo still needed before they can see the whole card."
+          : "Add actual card photos of this exact copy so they can review it."}
       </div>
       <div className="pd-a">
         {!photos.front && (
@@ -6219,7 +6219,7 @@ function PhotoDemand({ ctx, inv }) {
           </button>
         )}
         <button className="btn sm pri" onClick={() => addCopyPhotos(inv.invId, { front: true, back: true })}>
-          Add front &amp; back photos
+          Add actual card photos
         </button>
       </div>
     </div>

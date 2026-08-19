@@ -124,7 +124,7 @@ describe("B. Header and rail are full-width rows", () => {
       eq(cls(work, "goal-deal").length, 0, "the disclosure is outside the grid");
       eq(cls(work, "rail-s").length, 0, "and so is the rail");
       eq(cls(card, "goal-deal").length, 1, "exactly one disclosure");
-      eq(cls(card, "rail-s").length, 5, "exactly one rail");
+      eq(cls(card, "rail-s").length, 6, "exactly one rail");
     });
   });
 
@@ -200,8 +200,9 @@ describe("D. Conversation: one heading, and nothing escapes the column", () => {
     /* headless is opt-in, so nothing else lost its title. */
     assert(/embedded headless/.test(SRC), "only the inline column opts out");
     const uses = [...SRC.matchAll(/<DealChat[^>]*>/g)].map((m) => m[0]);
-    eq(uses.filter((u) => /headless/.test(u)).length, 1,
-      "exactly one call site suppresses the heading");
+    /* Two column-headed surfaces now: the deal workspace and Review Card. */
+    eq(uses.filter((u) => /headless/.test(u)).length, 2,
+      "only the column-headed surfaces suppress it");
   });
 
   test("the composer is inside the conversation column and can shrink", () => {

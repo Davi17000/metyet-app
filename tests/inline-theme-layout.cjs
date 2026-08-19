@@ -214,7 +214,7 @@ describe("Duplication and hierarchy hold across all five stages", () => {
       const r = mk();
       const card = expand(r, goalOf(oppAt(stage)));
       eq(cls(card, "goal-deal").length, 1, "one deal summary");
-      eq(cls(card, "rail-s").length, 5, "one five-stage rail");
+      eq(cls(card, "rail-s").length, 6, "one six-step pursuit rail");
       eq(cls(card, "rc-wrap").length, 1, "one receipt");
       eq(cls(card, "chat-embed").length, 1, "one conversation");
       eq(cls(card, "goal-with").length, 0, "no separate partner block");

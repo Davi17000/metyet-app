@@ -52,6 +52,40 @@ function collectorView(state, meId) {
     return photoRequestFor(inv.invId) ? "requested" : "stock";
   };
 
+  /* THE PURSUIT OF A SPECIFIC COPY, as one continuous thing.
+
+     Before an offer, the collector is reviewing a copy — that state already
+     exists as the photo request, so it is projected here rather than stored
+     twice. After an offer, the opportunity is the pursuit. Both read as the
+     same workspace on the Goal; only one of them is a negotiation. */
+  const pursuitFor = (goalId) => {
+    const g = state.goals.find((x) => x.id === goalId);
+    if (!g) return null;
+    const opp = D.activeOppForGoal(goalId, state.opportunities);
+    if (opp) return { kind: "deal", step: opp.stage, opp, invId: opp.invId,
+      partnerId: opp.partnerId };
+    /* No deal yet: having asked to see a copy of this card IS the pursuit, and
+       it continues once the photos arrive — that is the moment the collector
+       has something to review and a decision to make. It ends when they make an
+       offer (a deal takes over) and not before. */
+    const req = (state.photoRequests || []).find((r) => r.collectorId === meId
+      && (state.inventory || [])
+        .some((i) => i.invId === r.invId && i.cardId === g.cardId && !i.archived));
+    if (!req) return null;
+    const copy = (state.inventory || []).find((i) => i.invId === req.invId);
+    const ready = D.INVARIANTS.copyPhotographed(copy && copy.photos);
+    return { kind: "review", step: "review-card", request: req,
+      invId: req.invId, partnerId: req.partnerId, copy, ready,
+      /* Whose move: theirs until the card can be seen, then the collector's. */
+      who: ready ? "me" : "partner" };
+  };
+
+  /* Where the pursuit stands on the six-step rail, and whose move it is. */
+  const pursuitStep = (goalId) => {
+    const p = pursuitFor(goalId);
+    return p ? p.step : null;
+  };
+
   const partnersWith = (cardId) => {
     const c = cardById(cardId);
     /* A partner may hold several physical copies of one identity. The collector
@@ -195,7 +229,7 @@ function collectorView(state, meId) {
     meId, cardById, partnerById, catalog: state.catalog,
     myGoals, myBinder, myOpps, myPrefs,
     partnersWith, interestIn, interestCountFrom, forYou, partnerProfile,
-    copyPhotos, photoState, photoRequestFor, inventoryCopy,
+    copyPhotos, photoState, photoRequestFor, inventoryCopy, pursuitFor, pursuitStep,
     stateOf, openOppForGoal, goalFor, conversationsFor, tradeGroups, turnFor,
     threadWith, threadsForCard, partnersTalkedTo,
     threadForGoal, hasTalkedAbout, hasThreadAbout,

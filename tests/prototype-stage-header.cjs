@@ -124,8 +124,8 @@ describe("B. Exactly the five canonical stages, in order", () => {
     eq(opts.length, 5, "five deal stages");
     eq(opts.map((o) => o.props.value).join(","), STAGES.join(","), "canonical order");
     eq(opts.map((o) => txt(o)).join(","), LABELS.join(","), "with the product's labels");
-    const pre = groups.find((g) => g.props.label === "Pre-deal");
-    assert(pre, "and the pre-deal group is a separate list");
+    const pre = groups.find((g) => g.props.label === "Review Card");
+    assert(pre, "and the Review Card group is a separate list");
     assert(!pre.children.filter((c) => typeof c !== "string")
       .some((o) => STAGES.includes(o.props.value)), "sharing no ids with the stages");
   });

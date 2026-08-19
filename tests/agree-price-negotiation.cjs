@@ -253,9 +253,9 @@ describe("F. The rest of the stage is unchanged", () => {
     const { card } = at("countered");
     eq(cls(card, "idf-mid").length, 0, "no details column");
     eq(cls(card, "idf-det").length, 0, "and no details block");
-    eq(cls(card, "rail-s").length, 5, "exactly one rail");
+    eq(cls(card, "rail-s").length, 6, "exactly one rail");
     eq(cls(cls(card, "idf-work")[0], "rail-s").length, 0, "outside the pricing grid");
-    eq(cls(cls(card, "goal-top")[0], "rail-s").length, 5, "beside the card identity");
+    eq(cls(cls(card, "goal-top")[0], "rail-s").length, 6, "beside the card identity");
   });
 
   test("stopping remains only in the overflow menu", () => {

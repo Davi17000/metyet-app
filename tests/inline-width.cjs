@@ -211,7 +211,7 @@ describe("C. Rail readability", () => {
     test(stage + ": one rail, canonical state, spanning the card", () => {
       const r = mk();
       const card = expand(r, goalOf(oppAt(stage)));
-      eq(cls(card, "rail-s").length, 5, "exactly one five-stage rail");
+      eq(cls(card, "rail-s").length, 6, "exactly one six-step pursuit rail");
       /* The rail sits above the work area, so it spans the whole card. */
       const work = cls(card, "idf-work")[0];
       eq(cls(work, "rail-s").length, 0, "outside the two-column area");
@@ -220,7 +220,8 @@ describe("C. Rail readability", () => {
         return k.includes("current") ? "current" : k.includes("done") ? "done" : "pending";
       });
       eq(states.filter((x) => x === "current").length, 1, "one current stage");
-      eq(states[STAGES.indexOf(stage)], "current", "and it is the canonical one");
+      eq(states[STAGES.indexOf(stage) + 1], "current",
+        "and it is the canonical one, one place along for Review Card");
     });
   });
 });

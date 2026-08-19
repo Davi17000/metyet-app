@@ -101,11 +101,12 @@ describe("A. Header and rail sit above the work area", () => {
     test(stage + ": exactly one rail, canonical current stage", () => {
       const r = mk();
       const card = expand(r, goalOf(oppAt(stage)));
-      eq(cls(card, "rail-s").length, 5, "one five-stage rail");
+      eq(cls(card, "rail-s").length, 6, "one six-step pursuit rail");
       const states = cls(card, "rail-s").map((n) => (String(n.props.className).includes("current")
         ? "current" : String(n.props.className).includes("done") ? "done" : "pending"));
       eq(states.filter((x) => x === "current").length, 1, "one current marker");
-      eq(states[STAGES.indexOf(stage)], "current", "on the canonical stage");
+      eq(states[STAGES.indexOf(stage) + 1], "current",
+        "on the canonical stage, offset by Review Card");
     });
   });
 });

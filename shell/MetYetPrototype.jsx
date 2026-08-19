@@ -35,9 +35,12 @@ const DEV = SHARED_DEV;
    the product uses so the control reads the same as the rail beside it. */
 /* Before any offer exists. NOT Deal Flow stages — the lifecycle still has
    exactly five, and nothing here is ever written to opportunity.stage. */
+/* User-facing language is Review Card. The fixture ids stay `pre-deal*`: they
+   are internal, referenced by tests and the seed, and renaming them would be
+   churn without meaning. What the reviewer reads is what matters. */
 const DEMO_PRE = [
-  { id: "pre-deal", label: "Photo request" },
-  { id: "pre-deal-ready", label: "Photos ready" },
+  { id: "pre-deal", label: "Review Card · awaiting photos" },
+  { id: "pre-deal-ready", label: "Review Card · photos ready" },
 ];
 
 const DEMO_STAGES = [
@@ -198,7 +201,7 @@ export default function MetYetPrototype() {
                 }}>
                 {/* Kept in its own group: these come BEFORE a deal exists, and
                     must never read as a sixth Deal Flow stage. */}
-                <optgroup label="Pre-deal">
+                <optgroup label="Review Card">
                   {DEMO_PRE.map((x) => (
                     <option key={x.id} value={x.id}>{x.label}</option>
                   ))}

@@ -95,7 +95,7 @@ describe("A. Collapsed active-deal state", () => {
       "naming the canonical stage");
     const partner = S().partners.find((p) => p.id === o.partnerId);
     assert(txt(card).includes(partner.name), "and the negotiating partner");
-    eq(cls(card, "rail-s").length, 5, "with the compact five-stage track");
+    eq(cls(card, "rail-s").length, 6, "with the compact six-step track");
     assert(discloseIn(card), "and a disclosure control");
   });
 
@@ -107,8 +107,10 @@ describe("A. Collapsed active-deal state", () => {
       const k = String(n.props.className);
       return k.includes("current") ? "current" : k.includes("done") ? "done" : "pending";
     });
-    eq(states.join(","), "done,current,pending,pending,pending",
-      "one settled behind, Select Trade current, the rest pending");
+    /* Six steps now: Review Card is settled once a deal exists, then the five
+       negotiation stages carry their canonical settlement. */
+    eq(states.join(","), "done,done,current,pending,pending,pending",
+      "Review Card settled, Agree on Price settled, Select Trade current");
     /* No downstream term is named while the deal has not reached it. */
     const body = txt(card);
     assert(!/balance/i.test(body), "no Deal-stage balance is shown at Select Trade");

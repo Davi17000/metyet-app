@@ -84,7 +84,7 @@ describe("A. The bundle under test is the one just built", () => {
       "dist/MetYet.cjs knows the pre-deal fixtures — run `npm run build` if not");
     assert(/demoDealFixture/.test(built), "and exports the shared fixture loader");
     const shell = readSrc("dist/Prototype.cjs");
-    assert(/Pre-deal/.test(shell) && /Deal stage/.test(shell),
+    assert(/Review Card/.test(shell) && /Deal stage/.test(shell),
       "dist/Prototype.cjs has the grouped selector — run `npm run build` if not");
   });
 });
@@ -102,7 +102,7 @@ describe("A2. The control, and where it sits", () => {
     const dev = loadShell(true);
     const r = asCollector(dev);
     const groups = selectorIn(r).children.filter((c) => typeof c !== "string");
-    const pre = groups.find((g) => g.props.label === "Pre-deal");
+    const pre = groups.find((g) => g.props.label === "Review Card");
     const deal = groups.find((g) => g.props.label === "Deal stage");
     assert(pre && deal, "two clearly separate groups");
     const preIds = pre.children.filter((c) => typeof c !== "string").map((o) => o.props.value);
@@ -224,11 +224,11 @@ describe("C. The loop runs on real actions", () => {
     st.actions.requestPhotos({ collectorId: ME, partnerId: inv.partnerId, invId: inv.invId, at: "D1" });
     eq(st.actions.addCopyPhotos({ invId: inv.invId, front: "f", at: "D2" }), false, "not ready");
     eq(st.get().photoRequests[0].fulfilledAt, null, "the request stays open");
-    /* And the domain still refuses an offer. */
-    const refused = st.actions.startOpportunity({ goalId: goal(st).id, collectorId: ME,
-      partnerId: inv.partnerId, cardId: goal(st).cardId, invId: inv.invId,
-      listedPrice: inv.ask, amount: 100, at: "D2" });
-    eq(refused.refused, D.REFUSE.photosNeeded, "still not offerable");
+    /* CONTRACT CHANGE: the domain no longer refuses for want of photos, so what
+       is asserted here is the fact the interface leads with — the copy is not
+       ready to review, and the request is still outstanding. */
+    eq(D.INVARIANTS.copyPhotographed(st.get().inventory
+      .find((i) => i.invId === inv.invId).photos), false, "the copy is still not ready");
   });
 
   test("both faces resolve the request and open the offer", () => {

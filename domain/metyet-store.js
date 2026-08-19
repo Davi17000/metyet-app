@@ -171,15 +171,18 @@ function createStore(seed) {
       if (!D.INVARIANTS.goalIsPursued(goalId, s.goals)) return { refused: D.REFUSE.notPrimary };
       if (!D.INVARIANTS.oneNegotiationPerGoal(goalId, s.opportunities))
         return { refused: D.REFUSE.alreadyNegotiating };
-      /* A price is a judgement about a specific physical card, so the collector
-         must have been able to see that card. Discovery runs on the stock
-         image; negotiation does not. Enforced here rather than in the UI, so no
-         surface can route around it. */
+      /* CONTRACT CHANGE. Actual photos used to be an absolute requirement here.
+         They are no longer: a graded card carries much of its condition in the
+         grade itself, and a collector who understands what they cannot see is
+         entitled to price accordingly. Seeing the card is now strongly
+         encouraged by the interface — with a confirmation when it is skipped —
+         rather than forbidden by the domain.
+
+         What remains absolute is the copy: a deal names one physical card, and
+         that card has to exist and still be available. */
       if (invId != null) {
         const copy = (s.inventory || []).find((i) => i.invId === invId);
         if (!copy || copy.archived) return { refused: D.REFUSE.copyUnavailable };
-        if (!D.INVARIANTS.copyPhotographed(copy.photos))
-          return { refused: D.REFUSE.photosNeeded };
       }
       const id = "o" + Math.random().toString(36).slice(2, 9);
       const opp = {
