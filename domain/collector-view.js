@@ -64,20 +64,27 @@ function collectorView(state, meId) {
     const opp = D.activeOppForGoal(goalId, state.opportunities);
     if (opp) return { kind: "deal", step: opp.stage, opp, invId: opp.invId,
       partnerId: opp.partnerId };
-    /* No deal yet: having asked to see a copy of this card IS the pursuit, and
-       it continues once the photos arrive — that is the moment the collector
-       has something to review and a decision to make. It ends when they make an
-       offer (a deal takes over) and not before. */
-    const req = (state.photoRequests || []).find((r) => r.collectorId === meId
-      && (state.inventory || [])
-        .some((i) => i.invId === r.invId && i.cardId === g.cardId && !i.archived));
-    if (!req) return null;
-    const copy = (state.inventory || []).find((i) => i.invId === req.invId);
+    /* No deal yet. The pursuit is the collector LOOKING at one specific copy —
+       which begins when they choose it, not only when they ask for photographs.
+       Asking is one thing you might do while reviewing, not the thing that
+       makes reviewing real. A photo request still counts on its own, so a
+       pursuit begun before copyReviews existed still reads correctly. */
+    const mine = (r) => r.collectorId === meId && (state.inventory || [])
+      .some((i) => i.invId === r.invId && i.cardId === g.cardId && !i.archived);
+    const sel = (state.copyReviews || []).find((r) => mine(r) && !r.endedAt);
+    const req = (state.photoRequests || []).find((r) => mine(r)
+      && (!sel || r.invId === sel.invId));
+    const invId = sel ? sel.invId : req ? req.invId : null;
+    if (!invId) return null;
+
+    const copy = (state.inventory || []).find((i) => i.invId === invId);
     const ready = D.INVARIANTS.copyPhotographed(copy && copy.photos);
-    return { kind: "review", step: "review-card", request: req,
-      invId: req.invId, partnerId: req.partnerId, copy, ready,
-      /* Whose move: theirs until the card can be seen, then the collector's. */
-      who: ready ? "me" : "partner" };
+    const asked = !!req;
+    return { kind: "review", step: "review-card", request: req || null,
+      review: sel || null, invId, partnerId: (sel || req).partnerId, copy, ready, asked,
+      /* Whose move: the collector's until they have asked for something, and
+         again once the card can actually be seen. */
+      who: ready || !asked ? "me" : "partner" };
   };
 
   /* Where the pursuit stands on the six-step rail, and whose move it is. */

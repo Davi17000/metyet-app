@@ -1451,29 +1451,6 @@ function WatchRow({ g, st, go }) {
   );
 }
 
-/* THE COPY YOU CAN ACTUALLY JUDGE.
-
-   A stock image identifies the card; it cannot tell a collector what condition
-   THIS copy is in, and condition is most of the price. So discovery runs on the
-   stock image and negotiation does not: until both faces of this exact copy
-   exist, the collector is offered a way to see it rather than a way to bid on
-   it. The rule itself lives in the domain — this only renders it. */
-function CopyAction({ inv, st, onOffer, onRequest, small }) {
-  const phase = st.photoState(inv);
-  const sz = small ? "btn sm" : "btn";
-  if (phase === "ready") {
-    return <button className={sz + " pri"} onClick={onOffer}>Make an offer</button>;
-  }
-  if (phase === "requested") {
-    return (
-      <button className={sz} disabled>
-        Photos requested
-      </button>
-    );
-  }
-  return <button className={sz} onClick={onRequest}>Request photos</button>;
-}
-
 /* Says which image the collector is looking at, so the two are never confused. */
 function PhotoNote({ inv, st }) {
   const phase = st.photoState(inv);
@@ -1526,12 +1503,16 @@ function ReviewCard({ g, pursuit, partner, st, go }) {
       <div className="idf-work two">
         <div className="idf-task">
           <div className="idf-h">
-            {pursuit.ready ? "Your move" : "Waiting on " + partner.name}
+            {pursuit.who === "me" ? "Your move" : "Waiting on " + partner.name}
           </div>
           <div className="idf-guide-t">
             {pursuit.ready
               ? `${partner.name} has added photos of the actual card. Have a look, then decide whether to make an offer.`
-              : `You asked to see the actual card before making an offer. You'll be able to review the photos here when ${partner.name} adds them.`}
+              : pursuit.asked
+                ? `You asked to see the actual card before making an offer. You'll be able to review the photos here when ${partner.name} adds them.`
+                /* Nothing has been asked for yet: the next move is genuinely
+                   the collector's, so say what it is. */
+                : `${partner.name} hasn't photographed this copy. Ask to see it before you price it, or make an offer on what you can see.`}
           </div>
 
           <div className="rv-h">
@@ -1555,14 +1536,24 @@ function ReviewCard({ g, pursuit, partner, st, go }) {
                 onClick={() => go({ v: "offer", goalId: g.id, partnerId: partner.id })}>
                 Make an offer
               </button>
-            ) : (
-              /* The quieter path: proceeding without seeing the card is allowed,
-                 and confirmed once so the collector knows what they are missing. */
+            ) : (<>
+              {/* Asking to see the card is the emphasis while it is unseen —
+                  unless nobody has asked yet AND the grade already carries the
+                  condition, in which case the two are genuinely balanced. */}
+              {!pursuit.asked && (
+                <button className={"btn idf-action-go" + (graded ? "" : " pri")}
+                  style={{ marginBottom: 10 }}
+                  onClick={() => st.requestPhotos(inv)}>
+                  Request actual photos
+                </button>
+              )}
+              {/* The quieter path: proceeding without seeing the card is allowed,
+                  and confirmed once so the collector knows what they are missing. */}
               <button className={"btn idf-action-go" + (graded ? " pri" : "")}
                 onClick={() => setConfirm(true)}>
                 Make an offer without photos
               </button>
-            )}
+            </>)}
           </div>
         </div>
 
@@ -1682,8 +1673,8 @@ function GoalCard({ g, st, go, open, onToggle }) {
               </span>
             </span>
             <span className="goal-deal-r">
-              <span className={"goal-deal-t" + (pursuit.ready ? " mine" : "")}>
-                {pursuit.ready ? "Your move" : "Waiting on " + partner.name}
+              <span className={"goal-deal-t" + (pursuit.who === "me" ? " mine" : "")}>
+                {pursuit.who === "me" ? "Your move" : "Waiting on " + partner.name}
               </span>
               <span className={"goal-deal-c" + (open ? " on" : "")} aria-hidden="true">&#8250;</span>
             </span>
@@ -1759,7 +1750,10 @@ function GoalCard({ g, st, go, open, onToggle }) {
         <div className="goal-avail faint">
           None of your partners have this yet. They'll see you're looking.
         </div>
-      ) : live ? (
+      ) : (live || reviewing) ? (
+        /* A pursuit is under way, so the Goal workspace above owns every forward
+           action. What remains here is supply as CONTEXT: who else has the card,
+           one tap away — never a second place to make the same offer. */
         <button className="goal-holders" onClick={() => go({ v: "start", goalId: g.id })}>
           <span className="faces">
             {holders.slice(0, 4).map((h) => <Face key={h.partner.id} partner={h.partner} />)}
@@ -1797,8 +1791,10 @@ function GoalCard({ g, st, go, open, onToggle }) {
               </div>
             );
           })}
+          {/* This opens discovery, so it says so. Offering happens in Review
+              Card, once a copy has been chosen. */}
           <button className="btn sm pri gs-offer" onClick={() => go({ v: "start", goalId: g.id })}>
-            Make an offer
+            Choose a copy to review
           </button>
         </div>
       )}
@@ -2364,9 +2360,10 @@ function PartnerDetail({ partnerId, st, go }) {
                           View Deal
                         </button>
                       ) : state !== "negotiating" ? (
-                        <CopyAction inv={inv} st={st} small
-                          onOffer={() => go({ v: "offer", goalId: g.id, partnerId, cardId: c.id })}
-                          onRequest={() => st.requestPhotos(inv)} />
+                        <button className="btn sm pri"
+                          onClick={() => { st.reviewCopy(inv); go({ v: "goals" }); }}>
+                          Review card
+                        </button>
                       ) : null}
                     </div>
                   </>
@@ -3189,6 +3186,10 @@ function WhoHasIt({ goalId, st, go }) {
   const c = st.cardById(g.cardId);
   const holders = st.partnersWith(g.cardId).slice().sort((a, b) => a.ask - b.ask);
   const live = st.openOppForGoal(goalId);
+  /* A pursuit already under way — a Review Card, or a deal. Either way the Goal
+     workspace owns it, and this sheet becomes discovery-only. */
+  const pursuit = st.pursuitFor(goalId);
+  const pursued = pursuit && pursuit.kind === "review" ? pursuit : null;
 
   return (
     <Sheet title={c.name} sub={`${cardLine(c)} · ${gradeLine(c)}`} onClose={() => go({ v: "goals" })}
@@ -3239,15 +3240,32 @@ function WhoHasIt({ goalId, st, go }) {
                   onClick={() => go({ v: "chat", goalId, partnerId: h.partner.id, cardId: c.id })}>
                   {talked ? "Continue chatting" : "Chat"}
                 </button>
+                {/* DISCOVERY CHOOSES; THE WORKSPACE OWNS. Before a pursuit
+                    exists this is where a partner and copy get chosen, so the
+                    forward actions live here. Once one is being pursued, this
+                    sheet stops offering any way to act on it — it hands back to
+                    the Goal, so there is only ever one surface that can start
+                    the same offer. Chat above is unaffected: talking is not a
+                    forward action. */}
                 {current ? (
                   <button className="btn sm pri"
                     onClick={() => go({ v: "deal", oppId: live.id })}>
                     View Deal
                   </button>
-                ) : !live ? (
-                  <CopyAction inv={h.inv} st={st} small
-                    onOffer={() => go({ v: "offer", goalId, partnerId: h.partner.id })}
-                    onRequest={() => st.requestPhotos(h.inv)} />
+                ) : pursued && pursued.partnerId === h.partner.id ? (
+                  <button className="btn sm pri"
+                    onClick={() => go({ v: "goals" })}>
+                    Open Review Card
+                  </button>
+                ) : !live && !pursued ? (
+                  /* DISCOVERY CHOOSES; REVIEW CARD DECIDES. Selecting a copy
+                     opens the pursuit on the Goal — it does not open an offer
+                     workflow here, because deciding what to pay is a different
+                     question from deciding which copy to look at. */
+                  <button className="btn sm pri"
+                    onClick={() => { st.reviewCopy(h.inv); go({ v: "goals" }); }}>
+                    Review card
+                  </button>
                 ) : null}
               </div>
             </div>
@@ -3255,10 +3273,20 @@ function WhoHasIt({ goalId, st, go }) {
           </div>
         );
       })}
-      <div className="faint" style={{ fontSize: 12.5, marginTop: 12 }}>
-        Chatting is just a conversation — it doesn't start a negotiation or commit you
-        to anything. Only you can make an offer.
-      </div>
+      {/* Explains a decision the collector has not made yet. Once they are
+          pursuing a copy, Review Card provides that context instead. */}
+      {!live && !pursued && (
+        <div className="faint" style={{ fontSize: 12.5, marginTop: 12 }}>
+          Chatting is just a conversation — it doesn't start a negotiation or commit you
+          to anything. Only you can make an offer.
+        </div>
+      )}
+      {pursued && (
+        <div className="faint" style={{ fontSize: 12.5, marginTop: 12 }}>
+          You're reviewing {st.partnerById(pursued.partnerId).name}'s copy. Carry on from
+          the Deal Flow on this goal — you can still talk to anyone here.
+        </div>
+      )}
     </Sheet>
   );
 }
@@ -3595,6 +3623,11 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
          opportunity, touches no goal, and repeated clicks do not pile up. */
       requestPhotos: (inv) => (inv ? A.requestPhotos({ collectorId, partnerId: inv.partnerId,
         invId: inv.invId, at: AT }) : null),
+      /* Choosing which copy to pursue. Creates no offer and asks nothing of the
+         partner — it simply makes the pursuit real and visible on the Goal. */
+      reviewCopy: (inv) => (inv ? A.reviewCopy({ collectorId, partnerId: inv.partnerId,
+        invId: inv.invId, at: AT }) : null),
+      endReview: (id) => A.endReview(id, AT),
 
       /* ---- REVIEW HARNESS (development only) --------------------------------
          Scoped restore of the designated review deal to its canonical starting

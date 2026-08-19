@@ -326,15 +326,19 @@ describe("F. What the collector sees", () => {
   });
 
   test("the collector UI offers the right action for each state", () => {
+    /* CONTRACT CHANGE: these actions moved out of the discovery row and into
+       Review Card, which is now the single decision surface for a copy. The
+       states themselves are unchanged. */
     const src = readSrc("collector/MetYetCollector.jsx");
-    const comp = src.slice(src.indexOf("function CopyAction("), src.indexOf("function PhotoNote("));
-    assert(/phase === "ready"/.test(comp) && /Make an offer/.test(comp),
-      "offer only when the copy is ready");
-    assert(/phase === "requested"/.test(comp) && /Photos requested/.test(comp),
-      "waiting once asked");
-    assert(/Request photos/.test(comp), "and an ask when it is stock-only");
+    const comp = src.slice(src.indexOf("function ReviewCard("), src.indexOf("function GoalCard("));
+    assert(/pursuit\.ready/.test(comp) && /Make an offer/.test(comp),
+      "offer when the copy can be seen");
+    assert(/Make an offer without photos/.test(comp), "a quieter path when it cannot");
+    assert(/Waiting on/.test(comp), "waiting once asked");
     /* Product language, not implementation vocabulary. */
     assert(!/gate|prerequisite|invariant/i.test(comp), "no internal words in the UI");
+    /* And the old discovery-row control is gone entirely. */
+    assert(!/function CopyAction\(/.test(src), "CopyAction was removed, not just unused");
   });
 
   test("the reason is explained plainly", () => {

@@ -33,6 +33,13 @@ function createStore(seed) {
     conversations: seed.conversations,     // shared threads; see domain.appendThreadEntry
     /* Collector asks to see a specific physical copy. Not a deal. */
     photoRequests: seed.photoRequests || [],
+    /* Collector is looking at ONE physical copy with a view to pursuing it.
+       Deliberately separate from photoRequests: asking a partner to photograph
+       a card is work they must do, and the partner's inventory reads open
+       requests as demand. Merely deciding to look at a copy must not appear on
+       their shelf as a job. Non-financial, copy-specific, and it creates
+       nothing else. */
+    copyReviews: seed.copyReviews || [],
     opportunities: seed.opportunities,
     preferences: seed.preferences,         // {collectorId, tags[]}
   };
@@ -90,6 +97,27 @@ function createStore(seed) {
         : s.interests.filter((i) => !(i.partnerId === partnerId && i.binderId === binderId)) });
     },
 
+    /* ---- REVIEWING A SPECIFIC COPY ---------------------------------------
+       Choosing which copy to pursue. This is the moment the Goal acquires a
+       partner, and it is the whole of what Review Card needs to exist — no
+       offer, no price, no obligation, and nothing the partner has to act on. */
+    reviewCopy({ collectorId, partnerId, invId, at }) {
+      const copy = (s.inventory || []).find((i) => i.invId === invId);
+      if (!copy || copy.archived) return { refused: D.REFUSE.copyUnavailable };
+      const open = (s.copyReviews || []).find((r) => r.collectorId === collectorId
+        && r.invId === invId && !r.endedAt);
+      if (open) return open.id;                  // already looking at it
+      const id = "rv" + Math.random().toString(36).slice(2, 9);
+      set({ ...s, copyReviews: [...(s.copyReviews || []),
+        { id, collectorId, partnerId: partnerId || copy.partnerId, invId, at, endedAt: null }] });
+      return id;
+    },
+    /* Walking away before any offer. Ends the looking, nothing else. */
+    endReview(id, at) {
+      set({ ...s, copyReviews: (s.copyReviews || []).map((r) =>
+        (r.id === id && !r.endedAt ? { ...r, endedAt: at || null } : r)) });
+    },
+
     /* ---- ACTUAL CARD PHOTOS ------------------------------------------------
        A request is a low-commitment signal about one physical copy: "I want to
        see this before I talk price." It is not a deal, so it creates no
@@ -108,8 +136,16 @@ function createStore(seed) {
         && r.invId === invId && !r.fulfilledAt);
       if (already) return null;
       const id = "pr" + Math.random().toString(36).slice(2, 9);
-      set({ ...s, photoRequests: [...(s.photoRequests || []),
-        { id, collectorId, partnerId: partnerId || copy.partnerId, invId, at, fulfilledAt: null }] });
+      /* Asking to see a copy IS reviewing it, so record that too when the
+         collector arrived by that route rather than by selecting first. */
+      const reviewing = (s.copyReviews || []).some((r) => r.collectorId === collectorId
+        && r.invId === invId && !r.endedAt);
+      set({ ...s,
+        photoRequests: [...(s.photoRequests || []),
+          { id, collectorId, partnerId: partnerId || copy.partnerId, invId, at, fulfilledAt: null }],
+        copyReviews: reviewing ? (s.copyReviews || []) : [...(s.copyReviews || []),
+          { id: "rv" + id, collectorId, partnerId: partnerId || copy.partnerId,
+            invId, at, endedAt: null }] });
       return id;
     },
     /* The partner photographs the copy. This enriches the inventory record
