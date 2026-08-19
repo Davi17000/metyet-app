@@ -58,7 +58,7 @@ const asCollector = (s, collectorId) => ({
 describe("A. Collector Goal -> TP Demand", () => {
   test("one goal record, visible from both sides", () => {
     const st = world();
-    st.actions.addInventoryCopy({ invId: "inv1", partnerId: "p-self", cardId: "k1", ask: 4200 });
+    st.actions.addInventoryCopy({ invId: "inv1", partnerId: "p-self", cardId: "k1", ask: 4200, photos: { front: "copy:inv1:front", back: "copy:inv1:back" } });
     const gid = st.actions.addGoal({ collectorId: "c1", cardId: "k1", tier: "primary", at: AT });
 
     eq(st.get().goals.length, 1, "exactly one Goal record exists");
@@ -75,7 +75,7 @@ describe("B. TP Inventory -> Collector Supply", () => {
     st.actions.addGoal({ collectorId: "c1", cardId: "k3", tier: "primary", at: AT });
     eq(asCollector(st.get(), "c1").supplyFor("k3").length, 0, "no supply yet");
 
-    st.actions.addInventoryCopy({ invId: "inv9", partnerId: "p2", cardId: "k3", ask: 980 });
+    st.actions.addInventoryCopy({ invId: "inv9", partnerId: "p2", cardId: "k3", ask: 980, photos: { front: "copy:inv9:front", back: "copy:inv9:back" } });
 
     eq(st.get().inventory.length, 1, "exactly one InventoryCopy");
     eq(asPartner(st.get(), "p2").myInventory.length, 1, "its owner sees it");
@@ -142,7 +142,7 @@ describe("D. TP Interested -> Collector signal", () => {
 describe("E. Collector Reach out -> TP conversation", () => {
   test("one conversation, both participants, no Opportunity", () => {
     const st = world();
-    st.actions.addInventoryCopy({ invId: "inv1", partnerId: "p2", cardId: "k1", ask: 4200 });
+    st.actions.addInventoryCopy({ invId: "inv1", partnerId: "p2", cardId: "k1", ask: 4200, photos: { front: "copy:inv1:front", back: "copy:inv1:back" } });
     const gid = st.actions.addGoal({ collectorId: "c1", cardId: "k1", tier: "primary", at: AT });
     st.actions.reachOut({ collectorId: "c1", partnerId: "p2", cardId: "k1", oppId: null,
       text: "Is this still available?", at: AT });
@@ -182,7 +182,7 @@ describe("F. TP Reach out -> Collector conversation", () => {
 describe("G. Collector Make an offer -> TP Opportunity", () => {
   test("one Opportunity, same stage, same card, same goal, one owner", () => {
     const st = world();
-    st.actions.addInventoryCopy({ invId: "inv1", partnerId: "p2", cardId: "k1", ask: 4200 });
+    st.actions.addInventoryCopy({ invId: "inv1", partnerId: "p2", cardId: "k1", ask: 4200, photos: { front: "copy:inv1:front", back: "copy:inv1:back" } });
     const gid = st.actions.addGoal({ collectorId: "c1", cardId: "k1", tier: "primary", at: AT });
     const oid = st.actions.startOpportunity({ goalId: gid, collectorId: "c1", partnerId: "p2",
       cardId: "k1", invId: "inv1", listedPrice: 4200, amount: 3700, at: AT });
@@ -216,8 +216,8 @@ describe("H. One negotiation per goal", () => {
 
   test("alternatives stay visible and reachable by conversation", () => {
     const st = world();
-    st.actions.addInventoryCopy({ invId: "i1", partnerId: "p2", cardId: "k1", ask: 4200 });
-    st.actions.addInventoryCopy({ invId: "i2", partnerId: "p-self", cardId: "k1", ask: 4300 });
+    st.actions.addInventoryCopy({ invId: "i1", partnerId: "p2", cardId: "k1", ask: 4200, photos: { front: "copy:i1:front", back: "copy:i1:back" } });
+    st.actions.addInventoryCopy({ invId: "i2", partnerId: "p-self", cardId: "k1", ask: 4300, photos: { front: "copy:i2:front", back: "copy:i2:back" } });
     const gid = st.actions.addGoal({ collectorId: "c1", cardId: "k1", tier: "primary", at: AT });
     st.actions.startOpportunity({ goalId: gid, collectorId: "c1", partnerId: "p2",
       cardId: "k1", listedPrice: 4200, amount: 3700, at: AT });

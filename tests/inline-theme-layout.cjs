@@ -130,13 +130,13 @@ describe("Layout — one surface, primary and supporting columns", () => {
   test("mobile stacks; the desktop split is an enhancement, not a second build", () => {
     assert(/\.idf-work \{[^}]*display: block/.test(SRC),
       "one column by default — mobile is the base case");
-    const desk = SRC.slice(SRC.indexOf("@container deal (min-width:"));
+    const desk = SRC.slice(SRC.indexOf("@container deal (min-width: 820px)"), SRC.indexOf("@container deal (min-width: 980px)"));
     assert(/\.idf-work \{ display: grid/.test(desk),
       "becoming a real two-column grid only when there is room");
   });
 
   test("neither column collapses to a strip, and stage carries more weight", () => {
-    const desk = SRC.slice(SRC.indexOf("@container deal (min-width:"));
+    const desk = SRC.slice(SRC.indexOf("@container deal (min-width: 820px)"), SRC.indexOf("@container deal (min-width: 980px)"));
     const cols = /grid-template-columns: minmax\(0, (\d+)fr\) minmax\((\d+)px, (\d+)fr\)/.exec(desk);
     assert(cols, "the work area declares an explicit two-column grid");
     assert(Number(cols[1]) > Number(cols[3]),
@@ -157,7 +157,7 @@ describe("Layout — one surface, primary and supporting columns", () => {
     assert(cls(card, "idf")[0], "the dedicated inline wrapper is what renders");
     /* And it declares none of the page-level geometry that caused the trouble. */
     const idf = SRC.slice(SRC.indexOf(".idf { display: block; }"),
-      SRC.indexOf("@container deal (min-width:"));
+      SRC.indexOf("@container deal (min-width: 820px)"));
     assert(!/min-height: 100vh/.test(idf), "no viewport min-height");
     assert(!/position: fixed|position: sticky/.test(idf), "nothing pinned");
     assert(!/env\(safe-area-inset/.test(idf), "no page safe-area padding");

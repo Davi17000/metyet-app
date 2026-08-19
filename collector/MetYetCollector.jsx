@@ -7,7 +7,8 @@ import { collectorView } from "../domain/collector-view.js";
 /* THE CANONICAL SEED. The Collector runs on the same universe the Trusted
    Partner does — same cards, same collectors, same inventory copies. Casey Lin
    (c12) is a collector in that network, not a fixture. */
-import { buildCanonicalSeed, demoDealFixture, Icon } from "../src/MetYet.jsx";
+import { buildCanonicalSeed, demoDealFixture, Icon,
+  CounterFields, validAmount, percentageOf } from "../src/MetYet.jsx";
 import CardIdentityPicker from "../shared/CardIdentityPicker.jsx";
 
 const SELF_COLLECTOR = "c12";
@@ -249,6 +250,13 @@ const CSS = `
   background: var(--panel-2); border: 1px solid var(--line); }
 .ph-n { font-family: 'Archivo'; font-weight: 700; font-size: 12px; line-height: 1.15;
   color: var(--muted); overflow-wrap: anywhere; }
+/* Which picture am I looking at? Said plainly, never in internal vocabulary. */
+.ph-note { font-size: 12.5px; line-height: 1.45; color: var(--muted); margin: 6px 0 2px; }
+.ph-note.actual { color: var(--t1); font-weight: 600; }
+.ph-tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--muted); background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; margin-right: 7px; }
+
 .ph-s { font-size: 10.5px; color: var(--faint); line-height: 1.4; }
 .art.xl { width: 178px; height: 249px; } .art.xl .ph-n { font-size: 15px; }
 .art.lg { width: 132px; height: 184px; } .art.lg .ph-n { font-size: 13px; }
@@ -398,15 +406,75 @@ const CSS = `
 .chat-more { display: block; font-size: 12.5px; margin: 0 0 8px; color: var(--muted); }
 /* Active goals read as deals at the entry point, and open straight into one. */
 .goal-deal { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+  min-height: 52px;
   background: var(--t1-bg); border: 1px solid var(--accent-line); border-radius: 10px;
   padding: 9px 11px; margin-top: 10px; cursor: pointer; }
 .goal-deal-s { font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase;
   color: var(--t1); font-weight: 700; }
 .goal-deal-p { font-size: 13px; font-weight: 600; }
 .goal-deal-t { margin-left: auto; font-size: 12px; color: var(--muted); }
+/* ---- AGREE ON PRICE.
+
+   The hierarchy IS the interface here: what just happened, then the number on
+   the table, then what it means, then the decision. Everything quieter than the
+   standing proposal is deliberately quieter. ---- */
+.ap-h { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 8px; }
+
+/* The focal object. Tinted only when the OTHER party is the one waiting on an
+   answer, so the collector's eye lands on what they must respond to. */
+.ap-now { padding: 16px 18px; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--panel-2); }
+.ap-now.theirs { background: var(--t1-bg); border-color: var(--accent-line); }
+.ap-who { font-size: 11.5px; font-weight: 700; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--t1); margin-bottom: 6px; }
+.ap-amt { font-size: 32px; font-weight: 700; line-height: 1.1; color: var(--text); }
+.ap-sub { font-size: 13.5px; color: var(--muted); line-height: 1.45; margin-top: 5px; }
+.ap-prev { font-size: 13px; color: var(--faint); line-height: 1.45; margin-top: 10px;
+  padding-top: 10px; border-top: 1px solid var(--line); }
+
+/* The primary decision, immediately beneath the number it acts on. */
+.ap-go { margin-top: 16px; }
+.ap-counter { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.ap-counter.open { border-top: none; padding-top: 0; }
+.ap-send { margin-top: 12px; }
+.ap-wait { font-size: 13.5px; color: var(--muted); margin-top: 16px; }
+
+/* Two ways of typing one number, side by side while there is room. */
+.ap .pn-in { display: flex; gap: 12px; margin-bottom: 4px; }
+.ap .pn-f { flex: 1 1 0; min-width: 0; display: block; }
+.ap .pn-fl { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 5px; }
+.ap .pn-w { position: relative; display: block; }
+.ap .pn-u { position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+  font-size: 13.5px; color: var(--muted); pointer-events: none; }
+.ap .pn-u.r { left: auto; right: 11px; }
+.ap .pn-w .inp { padding-left: 24px; }
+.ap .pn-w .inp.r { padding-left: 14px; padding-right: 26px; }
+@media (max-width: 420px) { .ap .pn-in { flex-direction: column; gap: 10px; } }
+
+/* Offer history — the record, kept quiet. */
+.oh { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--line-soft); }
+.oh-h { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 8px; }
+.oh-more { display: block; font-size: 12.5px; color: var(--t1); margin-bottom: 8px; }
+.oh-l { list-style: none; margin: 0; padding: 0; }
+.oh-r { display: flex; align-items: baseline; gap: 8px; padding: 6px 0;
+  font-size: 13px; border-bottom: 1px solid var(--line-soft); }
+.oh-r:last-child { border-bottom: none; }
+.oh-who { font-weight: 600; color: var(--text); }
+.oh-act { color: var(--muted); }
+.oh-amt { margin-left: auto; color: var(--text); font-variant-numeric: tabular-nums; }
+.oh-pct { color: var(--muted); }
+
+/* The top row: identity on the left, where the deal stands on the right. */
+.goal-rail { flex: 1 1 320px; min-width: 260px; align-self: flex-start; }
+.goal-top { flex-wrap: wrap; }
+
 .goal-deal-c { font-size: 17px; line-height: 1; color: var(--muted); transition: transform .15s;
   transform: rotate(90deg); }
 .goal-deal-c.on { transform: rotate(-90deg); }
+.goal-deal:hover { border-color: var(--t1); }
+.goal.deal-open .goal-deal:hover { background: var(--panel-2); }
 /* The disclosure row: stage + partner on the left, turn + chevron on the right.
    It is the ONLY control that opens or closes the workspace, and it stays put at
    the top of the expanded Goal. */
@@ -485,8 +553,6 @@ const CSS = `
   border-radius: 0; padding: 0; margin: 0; }
 
 /* Ending the deal: present, quiet, and as far from the CTA as the card allows. */
-.idf-stop { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line-soft); }
-.idf-stop-t { font-size: 12.5px; color: var(--muted); line-height: 1.45; margin-bottom: 10px; }
 
 /* CONTAINER-AWARE, NOT VIEWPORT-AWARE. A wide browser window says nothing about
    how much room this deal actually has: the Goals column has its own width, and
@@ -523,6 +589,15 @@ const CSS = `
   .idf-mid { margin-top: 0; padding: 0 28px; border-top: none;
     border-left: 1px solid var(--line-soft); }
   .idf-side { padding-left: 28px; border-left: 1px solid var(--line-soft); }
+}
+
+/* AGREE ON PRICE has no details column, so its work area is two regions, not
+   three. Declared after the base tiers so it overrides them at both widths. */
+@container deal (min-width: 820px) {
+  .idf-work.two { grid-template-columns: minmax(0, 1.05fr) minmax(320px, 1fr); }
+}
+@container deal (min-width: 980px) {
+  .idf-work.two { grid-template-columns: minmax(0, 1.05fr) minmax(340px, 1fr); }
 }
 
 /* Alternative partners stay reachable but visually subordinate. */
@@ -896,11 +971,15 @@ const CSS = `
 
 /* Card artwork stands in for a real image. Even at the smallest size it always
    carries the card's name, so a screen never degrades into blank plates. */
-function Art({ card, size = "lg" }) {
+function Art({ card, size = "lg", copy }) {
   const [failed, setFailed] = useState(false);
-  /* The shared catalog names this csvId — the same field the Trusted Partner
-     app uses, so both personas render identical artwork. */
-  const src = artUrl(card.csvId);
+  /* ONE IMAGE-SOURCE RULE: the actual front photo of THIS copy if it exists,
+     otherwise the stock/reference artwork, otherwise the identity plate. Once
+     actual photos exist the stock image stops being shown here, so there is
+     never a question of which picture is the physical card. */
+  const actual = copy && copy.photos && copy.photos.front && copy.photos.back
+    ? copy.photos.front : null;
+  const src = actual || artUrl(card.csvId);
   /* Artwork is the point of a collecting product, so it gets real images. But it
      is never the card's identity: if the image is slow, blocked or missing the
      plate still says which card this is, at the same dimensions, so a grid never
@@ -1342,6 +1421,51 @@ function WatchRow({ g, st, go }) {
   );
 }
 
+/* THE COPY YOU CAN ACTUALLY JUDGE.
+
+   A stock image identifies the card; it cannot tell a collector what condition
+   THIS copy is in, and condition is most of the price. So discovery runs on the
+   stock image and negotiation does not: until both faces of this exact copy
+   exist, the collector is offered a way to see it rather than a way to bid on
+   it. The rule itself lives in the domain — this only renders it. */
+function CopyAction({ inv, st, onOffer, onRequest, small }) {
+  const phase = st.photoState(inv);
+  const sz = small ? "btn sm" : "btn";
+  if (phase === "ready") {
+    return <button className={sz + " pri"} onClick={onOffer}>Make an offer</button>;
+  }
+  if (phase === "requested") {
+    return (
+      <button className={sz} disabled>
+        Photos requested
+      </button>
+    );
+  }
+  return <button className={sz} onClick={onRequest}>Request photos</button>;
+}
+
+/* Says which image the collector is looking at, so the two are never confused. */
+function PhotoNote({ inv, st }) {
+  const phase = st.photoState(inv);
+  if (phase === "ready") {
+    return <div className="ph-note actual">Photos of actual card · Front &amp; Back</div>;
+  }
+  if (phase === "requested") {
+    return (
+      <div className="ph-note">
+        <span className="ph-tag">Stock image</span>
+        Photos requested — waiting on {st.partnerById(inv.partnerId).name}.
+      </div>
+    );
+  }
+  return (
+    <div className="ph-note">
+      <span className="ph-tag">Stock image</span>
+      See the actual card before negotiating price.
+    </div>
+  );
+}
+
 function GoalCard({ g, st, go, open, onToggle }) {
   const c = st.cardById(g.cardId);
   const holders = st.partnersWith(g.cardId);
@@ -1380,6 +1504,16 @@ function GoalCard({ g, st, go, open, onToggle }) {
             On your list since {fmtDate(g.since)}
           </div>
         </div>
+
+        {/* THE RAIL SHARES THE TOP ROW. Where the deal stands belongs beside
+            what the deal is about, not stacked under it — which also lets the
+            artwork and identity have the width they were being denied. One
+            canonical rail; on a narrow container it simply wraps beneath. */}
+        {live && (
+          <div className="goal-rail">
+            <Track stage={live.stage} o={live} st={st} />
+          </div>
+        )}
       </div>
 
       {menu && (
@@ -1390,7 +1524,7 @@ function GoalCard({ g, st, go, open, onToggle }) {
           <button className="btn sm" disabled={!!live}
             title={live ? "Finish or stop the negotiation first" : undefined}
             onClick={() => st.removeGoal(g.id)}>Remove goal</button>
-          {live && !open && (
+          {live && (
             <button className="btn sm goal-stop" onClick={() => { setMenu(false); setConfirmStop(true); }}>
               {st.dealAgreed(live) ? "Cancel agreed deal" : "Stop negotiation"}
             </button>
@@ -1434,15 +1568,9 @@ function GoalCard({ g, st, go, open, onToggle }) {
               owns the turn: having no stage action means there is nothing to DO,
               not that the deal or its conversation becomes unreachable.
               Expanding is presentation only — it mutates nothing. */}
-          {/* ONE canonical rail, immediately below the summary and above the
-              stage work — collapsed or expanded, it appears exactly once. */}
-          <div className="goal-rail">
-            <Track stage={live.stage} o={live} st={st} />
-          </div>
-
           {open && (
             <div className="goal-dw">
-              <InlineDeal o={live} st={st} onStop={() => setConfirmStop(true)} />
+              <InlineDeal o={live} st={st} />
             </div>
           )}
         </div>
@@ -2029,10 +2157,14 @@ function PartnerDetail({ partnerId, st, go }) {
                with this partner — and even then, only for the OFFER. */
             const liveG = g ? st.openOppForGoal(g.id) : null;
             const isCurrent = !!liveG && liveG.partnerId === partnerId;
+            /* The exact physical copy on this partner's shelf — photos belong to
+               it, never to the card identity. */
+            const inv = st.inventoryCopy(s2.invId);
             return (
               <div key={s2.invId || s2.cardId} className="card bnd-c">
-                <Art card={c} size="md" />
+                <Art card={c} size="md" copy={inv} />
                 <div className="bnd-n">{c.name}</div>
+                {inv && <PhotoNote inv={inv} st={st} />}
                 <div className="bnd-i">{cardLine(c)}</div>
                 <div className="bnd-i">{gradeLine(c)}</div>
                 <div style={{ fontWeight: 700, marginTop: 8 }}>{money(s2.ask)}</div>
@@ -2067,10 +2199,9 @@ function PartnerDetail({ partnerId, st, go }) {
                           View Deal
                         </button>
                       ) : state !== "negotiating" ? (
-                        <button className="btn sm pri"
-                          onClick={() => go({ v: "offer", goalId: g.id, partnerId, cardId: c.id })}>
-                          Make an offer
-                        </button>
+                        <CopyAction inv={inv} st={st} small
+                          onOffer={() => go({ v: "offer", goalId: g.id, partnerId, cardId: c.id })}
+                          onRequest={() => st.requestPhotos(inv)} />
                       ) : null}
                     </div>
                   </>
@@ -2220,7 +2351,7 @@ function StageDetails({ o, st }) {
   );
 }
 
-function InlineDeal({ o, st, onStop }) {
+function InlineDeal({ o, st }) {
   /* Filled by whichever stage is mounted; null while waiting. Identical
      contract to the standalone shell, so stages need no inline special case. */
   const [bar, setBar] = useState(null);
@@ -2233,7 +2364,7 @@ function InlineDeal({ o, st, onStop }) {
 
   return (
     <div className="idf">
-      <div className="idf-work">
+      <div className={"idf-work" + (o.stage === "agree-price" ? " two" : "")}>
         {/* LEFT — the current task. Guidance, the stage's own work, and the one
             canonical action, together, because they are one thought. */}
         <div className="idf-task">
@@ -2252,7 +2383,10 @@ function InlineDeal({ o, st, onStop }) {
 
           {/* Exactly one primary action: the stage registers it, this renders it.
               Stages suppress their own copy whenever a register is supplied. */}
-          {isOpen(o) && (
+          {/* A stage that presents two genuinely different decisions renders them
+              itself; the shell's single slot would have to collapse them into
+              one control. */}
+          {isOpen(o) && !(bar && bar.own) && (
             <div className="idf-action">
               {bar && bar.run ? (
                 <button className="btn pri idf-action-go" disabled={!!bar.disabled}
@@ -2266,10 +2400,15 @@ function InlineDeal({ o, st, onStop }) {
           )}
         </div>
 
-        {/* CENTRE — what this stage has established, from the canonical receipt. */}
-        <div className="idf-mid">
-          <StageDetails o={o} st={st} />
-        </div>
+        {/* CENTRE — what this stage has established, from the canonical receipt.
+            Agree on Price is a single decision about one number, so it shows the
+            pricing and the conversation and nothing else: a "Details (unsettled)"
+            column there could only ever list terms this stage has not reached. */}
+        {o.stage !== "agree-price" && (
+          <div className="idf-mid">
+            <StageDetails o={o} st={st} />
+          </div>
+        )}
 
         {/* RIGHT — the canonical conversation, with ending the deal beneath it:
             reachable, but as far from the forward action as the card allows. */}
@@ -2279,17 +2418,7 @@ function InlineDeal({ o, st, onStop }) {
           <div className="idf-h">Conversation</div>
           <DealChat o={o} partnerId={o.partnerId} cardId={o.cardId} st={st}
             embedded headless />
-          {isOpen(o) && onStop && (
-            <div className="idf-stop">
-              <div className="idf-h quiet">Stop this negotiation</div>
-              <div className="idf-stop-t">
-                The card stays on your goals — you can start again with anyone.
-              </div>
-              <button className="btn sm goal-stop" onClick={onStop}>
-                {st.dealAgreed(o) ? "Cancel agreed deal" : "Stop this negotiation"}
-              </button>
-            </div>
-          )}
+
         </div>
       </div>
 
@@ -2430,56 +2559,157 @@ function Deal({ oppId, st, go }) {
   );
 }
 
-function AgreePrice({ o, st, register }) {
-  const last = lastEntry(o.priceThread);
-  const mine = st.turnFor(o).who === "me";
-  const [amt, setAmt] = useState("");
-  const n = Number(amt);
-  const ok = amt !== "" && isFinite(n) && n > 0;
-  /* The action bar presses THIS handler — the same one the inline control uses. */
-  useEffect(() => {
-    if (!register) return;
-    register(mine
-      ? { label: ok ? "Send counter" : `Accept ${money(last && last.amount)}`,
-          run: () => (ok ? (st.priceRespond(o.id, "counter", n), setAmt("")) : st.priceRespond(o.id, "accept")) }
-      : null);
-  }, [register, mine, ok, n, o.id]);
+/* ---------------------------------------------------- AGREE ON PRICE
+
+   A negotiation is a sequence of things people did, so the screen says what was
+   done, by whom, and for how much — rather than listing numbers and leaving the
+   collector to work out which one is live.
+
+   Everything below is derived from the canonical price thread. There is no
+   second history model: `events()` folds the partner's listing and the thread
+   into one chronological read, and the LAST event is by definition the standing
+   proposal. That holds after any number of rounds. */
+
+const PRICE_VERB = { offer: "offered", counter: "countered", accept: "accepted" };
+
+/* Actor language, always naming who acted. */
+const priceEvents = (o, partnerName) => {
+  const rows = [];
+  if (o.listedPrice != null) {
+    rows.push({ who: partnerName, mine: false, verb: "listed",
+      amount: o.listedPrice, at: null, listing: true });
+  }
+  (o.priceThread || []).forEach((e, i) => rows.push({
+    who: e.by === "collector" ? "You" : partnerName,
+    mine: e.by === "collector",
+    verb: PRICE_VERB[e.type] || e.type,
+    amount: e.amount, at: e.at, key: i,
+  }));
+  return rows;
+};
+
+/* The quiet chronological record. Supports the decision; never competes. */
+function OfferHistory({ events, listed }) {
+  const [open, setOpen] = useState(false);
+  if (events.length < 2) return null;
+  /* The newest row is already the headline above, so history is the rest. */
+  const earlier = events.slice(0, -1);
+  const shown = open ? earlier : earlier.slice(-2);
+  const hidden = earlier.length - shown.length;
 
   return (
-    <div className="card sec">
-      <div className="sec-h">Price</div>
-      <div className="row"><span className="k">They're asking</span><span className="mono">{money(o.listedPrice)}</span></div>
-      {o.priceThread.map((e, i) => (
-        <div key={i} className="row">
-          <span className="k">{e.by === "me" ? "You" : "They"} {e.type === "offer" ? "offered" : e.type === "accept" ? "accepted" : "countered"}</span>
-          <span className="mono">{money(e.amount)} · {Math.round((e.amount / o.listedPrice) * 100)}%</span>
+    <div className="oh">
+      <div className="oh-h">Offer history · {events.length} events</div>
+      {hidden > 0 && (
+        <button className="link oh-more" onClick={() => setOpen(true)}>
+          Show {hidden} earlier
+        </button>
+      )}
+      <ol className="oh-l">
+        {shown.map((e, i) => (
+          <li key={i} className={"oh-r" + (e.mine ? " mine" : "")}>
+            <span className="oh-who">{e.who}</span>
+            <span className="oh-act">{e.verb}</span>
+            <span className="oh-amt mono">{money(e.amount)}
+              {percentageOf(e.amount, listed) != null
+                && <span className="oh-pct"> · {percentageOf(e.amount, listed)}%</span>}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function AgreePrice({ o, st, register }) {
+  const thread = o.priceThread || [];
+  const last = lastEntry(thread);
+  const mine = st.turnFor(o).who === "me";
+  const partner = st.partnerById(o.partnerId);
+  const them = partner ? partner.name : "them";
+  const [amt, setAmt] = useState("");
+  const canSend = validAmount(amt);
+
+  const events = priceEvents(o, them);
+  const latest = events[events.length - 1];
+  /* The collector's own most recent figure, when the standing one is not theirs
+     — subordinate context, not a second headline. */
+  const minePrev = [...events].reverse().find((e) => e.mine && e !== latest);
+  const opening = thread.length === 0;          // nobody has proposed yet
+
+  /* Two genuinely different decisions, so the stage renders its own actions
+     rather than borrowing the shell's single slot. */
+  useEffect(() => {
+    if (!register) return;
+    register(mine ? { own: true } : null);
+  }, [register, mine]);
+
+  const pctOf = (v) => percentageOf(v, o.listedPrice);
+  const share = (v) => (pctOf(v) == null ? null
+    : pctOf(v) + "% of " + (opening ? "listed price" : "their " + money(o.listedPrice) + " listed price"));
+
+  return (
+    <div className="ap">
+      {/* WHAT JUST HAPPENED — actor, action, and the number on the table. */}
+      <div className={"ap-now" + (latest && !latest.mine && !latest.listing ? " theirs" : "")}>
+        <div className="ap-who">
+          {latest ? latest.who + " " + latest.verb : "Not yet listed"}
         </div>
-      ))}
-      {mine && last && (
-        <>
-          <button className="btn deep wide" style={{ marginTop: 16 }}
+        {latest && <div className="ap-amt mono">{money(latest.amount)}</div>}
+        {latest && (opening
+          ? <div className="ap-sub">This is their asking price. {share(latest.amount)}.</div>
+          : share(latest.amount) && <div className="ap-sub">{share(latest.amount)}</div>)}
+        {minePrev && (
+          <div className="ap-prev">
+            Your offer was {money(minePrev.amount)}
+            {pctOf(minePrev.amount) != null && " · " + pctOf(minePrev.amount) + "%"}
+          </div>
+        )}
+      </div>
+
+      {mine && (
+        opening || !last ? (
+          /* OPENING — the collector proposes first, so there is nothing to
+             accept and no Accept action is offered. */
+          <div className="ap-counter open">
+            <div className="ap-h">Your offer</div>
+            <CounterFields amt={amt} setAmt={setAmt} reference={o.listedPrice}
+              pctLabel="% of listed price"
+              amtAria="Your offer in dollars"
+              pctAria="Your offer as a percentage of listed price" />
+            <button className={"btn wide ap-send" + (canSend ? " pri" : "")}
+              disabled={!canSend}
+              onClick={() => { st.priceRespond(o.id, "counter", Number(amt)); setAmt(""); }}>
+              Send offer
+            </button>
+          </div>
+        ) : (<>
+          {/* ACCEPT — reads only from the standing proposal, so it cannot be
+              changed, replaced or hidden by anything typed below. */}
+          <button className="btn pri wide ap-go"
             onClick={() => st.priceRespond(o.id, "accept")}>
             Accept {money(last.amount)}
           </button>
-          <div className="faint" style={{ fontSize: 13, textAlign: "center", margin: "14px 0 10px" }}>
-            or offer something else
-          </div>
-          <input className="inp" inputMode="decimal" value={amt} placeholder="$"
-            aria-label="Your counter offer"
-            onChange={(e) => setAmt(e.target.value.replace(/[^\d.]/g, ""))} />
-          {ok && <div className="faint" style={{ fontSize: 13, marginTop: 7 }}>
-            That's {Math.round((n / o.listedPrice) * 100)}% of what they're asking.
-          </div>}
-          {/* Same rule as Select Trade: when the shell is presenting this action
-              from the registration, do not render a second identical button. */}
-          {!register && (
-            <button className="btn pri wide" style={{ marginTop: 12 }} disabled={!ok}
-              onClick={() => { st.priceRespond(o.id, "counter", n); setAmt(""); }}>
+
+          {/* COUNTER — its own input, its own submit, its own validity. */}
+          <div className="ap-counter">
+            <div className="ap-h">or counter</div>
+            <CounterFields amt={amt} setAmt={setAmt} reference={o.listedPrice}
+              pctLabel="% of listed price"
+              amtAria="Counter amount in dollars"
+              pctAria="Counter as a percentage of listed price" />
+            <button className={"btn wide ap-send" + (canSend ? " pri" : "")}
+              disabled={!canSend}
+              onClick={() => { st.priceRespond(o.id, "counter", Number(amt)); setAmt(""); }}>
               Send counter
             </button>
-          )}
-        </>
+          </div>
+        </>)
       )}
+
+      {!mine && <div className="ap-wait">Waiting on {them}</div>}
+
+      <OfferHistory events={events} listed={o.listedPrice} />
     </div>
   );
 }
@@ -2831,6 +3061,7 @@ function WhoHasIt({ goalId, st, go }) {
               <div className="faint" style={{ fontSize: 12.5, marginTop: 3 }}>
                 {cardLine(c)} · {gradeLine(c)}
               </div>
+              {h.inv && <PhotoNote inv={h.inv} st={st} />}
               {openness > 0 && (
                 <div style={{ fontSize: 12.5, color: "var(--t1)", marginTop: 3 }}>
                   Open to {openness} of your binder card{openness === 1 ? "" : "s"}
@@ -2849,10 +3080,9 @@ function WhoHasIt({ goalId, st, go }) {
                     View Deal
                   </button>
                 ) : !live ? (
-                  <button className="btn sm pri"
-                    onClick={() => go({ v: "offer", goalId, partnerId: h.partner.id })}>
-                    Make an offer
-                  </button>
+                  <CopyAction inv={h.inv} st={st} small
+                    onOffer={() => go({ v: "offer", goalId, partnerId: h.partner.id })}
+                    onRequest={() => st.requestPhotos(h.inv)} />
                 ) : null}
               </div>
             </div>
@@ -3196,6 +3426,11 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
       },
       endNegotiation: (oppId) => A.endOpportunity(oppId, "collector", AT),
 
+      /* Asking to see a specific physical copy. Not a deal: it creates no
+         opportunity, touches no goal, and repeated clicks do not pile up. */
+      requestPhotos: (inv) => (inv ? A.requestPhotos({ collectorId, partnerId: inv.partnerId,
+        invId: inv.invId, at: AT }) : null),
+
       /* ---- REVIEW HARNESS (development only) --------------------------------
          Scoped restore of the designated review deal to its canonical starting
          fixture. This is a FIXTURE swap, not a state editor: the replacement
@@ -3225,7 +3460,13 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
       priceRespond: (id, action, amount) => A.patchOpportunity(id, (o) => {
         if (action === "accept") {
           const last = D.lastEntry(o.priceThread);
+          /* Entering Select Trade means opening an empty trade package. Without
+             it the next stage dereferences a null trade and cannot render — the
+             accept path led straight into a crash. Nothing is agreed here: an
+             empty, unsubmitted package is exactly the state Select Trade starts
+             from, and submitTrade replaces it wholesale. */
           return { ...o, agreedPrice: last.amount, stage: "select-trade",
+            trade: o.trade || { mode: "trade", submitted: false, cards: [] },
             priceThread: [...o.priceThread, { by: "collector", type: "accept", amount: last.amount, at: AT }] };
         }
         return { ...o, priceThread: [...o.priceThread, { by: "collector", type: "counter", amount, at: AT }] };

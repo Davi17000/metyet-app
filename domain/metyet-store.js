@@ -31,6 +31,8 @@ function createStore(seed) {
     binder: seed.binder,                   // {id, collectorId, cardId, market, photos, cert, addedAt}
     interests: seed.interests,             // {partnerId, binderId, at}
     conversations: seed.conversations,     // shared threads; see domain.appendThreadEntry
+    /* Collector asks to see a specific physical copy. Not a deal. */
+    photoRequests: seed.photoRequests || [],
     opportunities: seed.opportunities,
     preferences: seed.preferences,         // {collectorId, tags[]}
   };
@@ -88,6 +90,46 @@ function createStore(seed) {
         : s.interests.filter((i) => !(i.partnerId === partnerId && i.binderId === binderId)) });
     },
 
+    /* ---- ACTUAL CARD PHOTOS ------------------------------------------------
+       A request is a low-commitment signal about one physical copy: "I want to
+       see this before I talk price." It is not a deal, so it creates no
+       opportunity, touches no goal, and consumes no negotiation slot.
+
+       It is its own small relationship rather than a conversation entry because
+       conversations are keyed on CARD IDENTITY, and this is about one exact
+       copy — a partner holding three of the same Charizard must be able to tell
+       which one was asked about. */
+    requestPhotos({ collectorId, partnerId, invId, at }) {
+      const copy = (s.inventory || []).find((i) => i.invId === invId);
+      if (!copy || copy.archived) return { refused: D.REFUSE.copyUnavailable };
+      /* Nothing to ask for, and repeated clicks must not pile up. */
+      if (D.INVARIANTS.copyPhotographed(copy.photos)) return null;
+      const already = (s.photoRequests || []).some((r) => r.collectorId === collectorId
+        && r.invId === invId && !r.fulfilledAt);
+      if (already) return null;
+      const id = "pr" + Math.random().toString(36).slice(2, 9);
+      set({ ...s, photoRequests: [...(s.photoRequests || []),
+        { id, collectorId, partnerId: partnerId || copy.partnerId, invId, at, fulfilledAt: null }] });
+      return id;
+    },
+    /* The partner photographs the copy. This enriches the inventory record
+       permanently — it is not tied to whoever asked, so every later collector
+       benefits from the one piece of work. */
+    addCopyPhotos({ invId, front, back, at }) {
+      const copy = (s.inventory || []).find((i) => i.invId === invId);
+      if (!copy) return { refused: D.REFUSE.copyUnavailable };
+      const photos = { front: front !== undefined ? front : (copy.photos || {}).front,
+        back: back !== undefined ? back : (copy.photos || {}).back };
+      const complete = D.INVARIANTS.copyPhotographed(photos);
+      set({ ...s,
+        inventory: s.inventory.map((i) => (i.invId === invId ? { ...i, photos } : i)),
+        /* One face does not resolve the ask; the request stays open until the
+           collector can actually see the card. */
+        photoRequests: (s.photoRequests || []).map((r) => (r.invId === invId && !r.fulfilledAt
+          && complete ? { ...r, fulfilledAt: at || null } : r)) });
+      return complete;
+    },
+
     /* ---- conversation: ONE thread per collector + partner + card identity,
        shared with that Trusted Partner and no other. Reaching out creates NO
        opportunity, ever — conversation and negotiation are different acts. ---- */
@@ -129,6 +171,16 @@ function createStore(seed) {
       if (!D.INVARIANTS.goalIsPursued(goalId, s.goals)) return { refused: D.REFUSE.notPrimary };
       if (!D.INVARIANTS.oneNegotiationPerGoal(goalId, s.opportunities))
         return { refused: D.REFUSE.alreadyNegotiating };
+      /* A price is a judgement about a specific physical card, so the collector
+         must have been able to see that card. Discovery runs on the stock
+         image; negotiation does not. Enforced here rather than in the UI, so no
+         surface can route around it. */
+      if (invId != null) {
+        const copy = (s.inventory || []).find((i) => i.invId === invId);
+        if (!copy || copy.archived) return { refused: D.REFUSE.copyUnavailable };
+        if (!D.INVARIANTS.copyPhotographed(copy.photos))
+          return { refused: D.REFUSE.photosNeeded };
+      }
       const id = "o" + Math.random().toString(36).slice(2, 9);
       const opp = {
         id, goalId, collectorId, partnerId, cardId, invId,

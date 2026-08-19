@@ -72,9 +72,11 @@ describe("A. The parent lays its children out as rows", () => {
     const live = cls(card, "goal-live")[0];
     assert(live, "the deal region exists");
     const kids = kidsOf(live);
+    /* The rail moved up beside the card identity, so goal-live now carries the
+       disclosure and the work area. */
     assert(/goal-deal/.test(kids[0]), "the disclosure is the first row");
-    assert(/goal-rail/.test(kids[1]), "the rail is the second row");
-    assert(/goal-dw/.test(kids[2]), "and the work area is the third");
+    assert(/goal-dw/.test(kids[1]), "and the work area is the second");
+    eq(cls(card, "goal-rail").length, 1, "with exactly one rail, in the top row");
   });
 
   test("that parent is explicitly block, overriding the older flex rule", () => {
@@ -127,11 +129,14 @@ describe("B. Header and rail are full-width rows", () => {
   });
 
   test("expanded, the header sheds its boxed treatment and fills the width", () => {
-    const open = rulesFor(".goal-deal").find((x) => /deal-open/.test(x.sel));
-    assert(open, "an expanded-state rule exists for the header");
-    assert(/width:\s*100%/.test(open.body), "it takes the full width");
-    assert(/border:\s*none/.test(open.body), "dropping the box border");
-    assert(/background:\s*none/.test(open.body), "and the tinted background");
+    /* Several rules now target the expanded header (base treatment, hover), so
+       check the properties across all of them rather than the first match. */
+    const open = rulesFor(".goal-deal").filter((x) => /deal-open/.test(x.sel));
+    assert(open.length, "an expanded-state rule exists for the header");
+    const body = open.map((x) => x.body).join(" ");
+    assert(/width:\s*100%/.test(body), "it takes the full width");
+    assert(/border:\s*none/.test(body), "dropping the box border");
+    assert(/background:\s*none/.test(body), "and the tinted background");
   });
 
   test("the header is still the one collapse control", () => {
@@ -152,10 +157,9 @@ describe("C. Only the work area has three columns", () => {
       const r = mk();
       const card = expand(r, goalOf(oppAt(stage)));
       const kids = kidsOf(cls(card, "idf-work")[0]);
-      eq(kids.length, 3, "no extra grid child");
+      eq(kids.length, stage === "agree-price" ? 2 : 3, "no extra grid child");
       assert(/idf-task/.test(kids[0]), "task first");
-      assert(/idf-mid/.test(kids[1]), "details second");
-      assert(/idf-side/.test(kids[2]), "conversation third");
+      assert(/idf-side/.test(kids[kids.length - 1]), "conversation last");
     });
   });
 
@@ -242,8 +246,10 @@ describe("E. Nothing canonical moved", () => {
       const card = expand(r, goalOf(oppAt(stage)));
       eq(cls(card, "idf-action").length, 1, "one action area");
       eq(cls(card, "chat-embed").length, 1, "one conversation");
-      eq(cls(card, "idf-det").length, 1, "the details column survives");
-      assert(cls(card, "idf-det-k").length > 0, "with canonical fields");
+      const wantsDetails = stage !== "agree-price";
+      eq(cls(card, "idf-det").length, wantsDetails ? 1 : 0,
+        wantsDetails ? "the details column survives" : "Agree on Price shows no details");
+      if (wantsDetails) assert(cls(card, "idf-det-k").length > 0, "with canonical fields");
       const seen = {};
       card.findAllByType("button").map((b) => txt(b).trim()).filter(Boolean)
         .forEach((l) => { seen[l] = (seen[l] || 0) + 1; });

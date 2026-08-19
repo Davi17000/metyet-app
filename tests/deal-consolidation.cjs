@@ -199,8 +199,10 @@ describe("B. Conversation is embedded, not a destination", () => {
     const r = mk();
     openDeal(r, reviewOpp());
     eq(cls(r, "dw-chat").length, 0, "no chat drawer renders");
-    const bar = cls(r, "idf-action")[0];
-    assert(bar, "the action bar remains");
+    /* The review deal sits at Agree on Price, which owns its Accept and Counter
+       rather than borrowing the shell's single action slot. */
+    const bar = cls(r, "idf-action")[0] || cls(r, "ap-now")[0];
+    assert(bar, "an action path exists");
     assert(!/Chat with/.test(txt(bar)), "carrying no separate chat destination");
     const src = readSrc("collector/MetYetCollector.jsx");
     assert(!/dw-bar-chat/.test(src.slice(src.indexOf('className="dw-bar"'))),

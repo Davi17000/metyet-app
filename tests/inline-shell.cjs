@@ -65,7 +65,7 @@ const worldShape = () => JSON.stringify({
   goals: S().goals.map((g) => [g.id, g.tier]),
   convs: S().conversations.map((t) => [t.key, t.entries.length]) });
 /* The desktop rules, read once. */
-const WIDE_AT = SRC.indexOf("@container deal (min-width:");
+const WIDE_AT = SRC.indexOf("@container deal (min-width: 820px)");
 const DESKTOP = SRC.slice(WIDE_AT, WIDE_AT + 700);
 
 describe("A. The dedicated inline shell", () => {
@@ -113,13 +113,13 @@ describe("A. The dedicated inline shell", () => {
           && !seen.includes(k)) seen.push(k);
       });
     });
-    eq(seen.join(" → "), "goal-deal → goal-rail → idf-work → rc-wrap → goal-holders",
-      "summary, rail, work, details, alternatives — in that order");
+    eq(seen.join(" → "), "goal-rail → goal-deal → idf-work → rc-wrap → goal-holders",
+      "rail (beside identity), summary, work, details, alternatives");
   });
 
   test("the wrapper declares no page-level geometry", () => {
     const idf = SRC.slice(SRC.indexOf(".idf { display: block; }"),
-      SRC.indexOf("@container deal (min-width:"));
+      SRC.indexOf("@container deal (min-width: 820px)"));
     assert(!/min-height:\s*100vh/.test(idf), "no viewport min-height");
     assert(!/position:\s*(fixed|sticky)/.test(idf), "nothing pinned to the viewport");
     assert(!/env\(safe-area-inset/.test(idf), "no page safe-area padding");
@@ -166,7 +166,7 @@ describe("C. Mobile is explicitly one column", () => {
     assert(/\.idf-work \{[^}]*display: block/.test(SRC),
       "one column is the base case, not a fallback");
     const base = SRC.slice(SRC.indexOf(".idf { display: block; }"),
-      SRC.indexOf("@container deal (min-width:"));
+      SRC.indexOf("@container deal (min-width: 820px)"));
     assert(!/display: grid|display: flex/.test(base.slice(0, base.indexOf(".idf-guide"))),
       "no side-by-side layout below the breakpoint");
   });
@@ -187,7 +187,7 @@ describe("C. Mobile is explicitly one column", () => {
 
   test("no fixed heights and no nested overflow owner", () => {
     const idf = SRC.slice(SRC.indexOf(".idf { display: block; }"),
-      SRC.indexOf("@container deal (min-width:"));
+      SRC.indexOf("@container deal (min-width: 820px)"));
     assert(!/height:\s*\d+px/.test(idf), "no fixed heights");
     assert(/\.idf \.chat-embed \.chat-scroll[^}]*overflow: visible/.test(SRC),
       "the conversation owns no scroller");

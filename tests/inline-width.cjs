@@ -64,7 +64,7 @@ const worldShape = () => JSON.stringify({
 
 /* The rules under test, read once. */
 const WIDE = /\.pg\.pg-wide \{[^}]*\}/.exec(SRC);
-const CQ_AT = SRC.indexOf("@container deal (min-width:");
+const CQ_AT = SRC.indexOf("@container deal (min-width: 820px)");
 const CQ = SRC.slice(CQ_AT, CQ_AT + 700);
 
 describe("A. The page widens only while a deal is open", () => {
@@ -236,8 +236,8 @@ describe("D. Nothing canonical moved", () => {
           && !seen.includes(k)) seen.push(k);
       });
     });
-    eq(seen.join(" → "), "goal-deal → goal-rail → idf-work → rc-wrap → goal-holders",
-      "the order is unchanged by the width work");
+    eq(seen.join(" → "), "goal-rail → goal-deal → idf-work → rc-wrap → goal-holders",
+      "rail beside the identity, then the disclosure, then the work area");
   });
 
   STAGES.forEach((stage) => {

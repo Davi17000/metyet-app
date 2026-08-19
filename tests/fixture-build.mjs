@@ -5,7 +5,7 @@ import { build } from "esbuild";
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
 mkdirSync("dist", { recursive: true });
 const src = readFileSync("src/MetYet.jsx", "utf8");
-writeFileSync("dist/MetYet.testsrc.jsx", src + "\nexport { TradeBinder, BinderCard, PriceDecision, MarketDecision, CardContext, inventoryCoverage, networkProfile, networkDemandCards, identityKey, percentageOf, amountFromPercentage, COLLECTOR_CARDS_SEED, GOALS_SEED, CARDS_SEED, buildOpps, OPPS_SEED };\n");
+writeFileSync("dist/MetYet.testsrc.jsx", src + "\nexport { TradeBinder, BinderCard, PriceDecision, MarketDecision, CardContext, inventoryCoverage, networkProfile, networkDemandCards, identityKey, amountFromPercentage, COLLECTOR_CARDS_SEED, GOALS_SEED, CARDS_SEED, buildOpps, OPPS_SEED };\n");
 await build({
   entryPoints: ["dist/MetYet.testsrc.jsx"],
   bundle: true, format: "cjs", platform: "node", outfile: "dist/MetYet.test.cjs",

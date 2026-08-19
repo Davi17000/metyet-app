@@ -143,6 +143,13 @@ const INVARIANTS = {
   /* A binder copy is a physical thing a partner must be able to evaluate.
      Both faces or it does not exist. */
   binderCopyPhotographed: (photos) => !!(photos && photos.front && photos.back),
+  /* THE SAME RULE, FOR THE OTHER SIDE'S SHELF. A stock image identifies the
+     card; actual front and back photos identify the specific physical copy, and
+     price depends on condition — so a copy is ready to be negotiated over only
+     once both faces of THAT copy exist. One face is not enough, and there is
+     deliberately no separate predicate: it is the same standard a collector's
+     binder copy has always had to meet. */
+  copyPhotographed: (photos) => !!(photos && photos.front && photos.back),
   /* An Opportunity is evidence of active pursuit. A Secondary goal is a
      watchlist entry — the collector is looking, not chasing — so a deal cannot
      begin against one. Promotion to Primary is the collector's own statement
@@ -159,6 +166,9 @@ const REFUSE = {
   noGoal: "no-goal",
   notPrimary: "goal-not-primary",
   alreadyNegotiating: "already-negotiating",
+  /* Discovery is fine on a stock image; negotiating a price is not. */
+  photosNeeded: "photos-needed",
+  copyUnavailable: "copy-unavailable",
 };
 
 module.exports = {

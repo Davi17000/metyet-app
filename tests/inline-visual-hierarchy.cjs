@@ -56,7 +56,7 @@ const worldShape = () => JSON.stringify({
   convs: S().conversations.map((t) => [t.key, t.entries.length]) });
 
 /* The order the bands must appear in, top to bottom, on mobile. */
-const BANDS = ["goal-deal", "goal-rail", "idf-stage", "idf-action",
+const BANDS = ["goal-rail", "goal-deal", "idf-stage", "idf-action",
   "chat-embed", "rc-wrap", "goal-holders"];
 const bandOrder = (node) => {
   const seen = [];
@@ -175,9 +175,11 @@ describe("B. The summary row is the only disclosure", () => {
     const r = mk();
     const card = expand(r, goalOf(oppAt("select-trade")));
     const order = bandOrder(card);
-    eq(order[0], "goal-deal", "the disclosure is the first band");
+    /* The rail shares the top row with the identity; the disclosure sits
+       directly beneath, still above all the working columns. */
     assert(order.indexOf("goal-deal") < order.indexOf("idf-stage"),
-      "above the stage work, so it is never scrolled past");
+      "the disclosure is above the stage work, so it is never scrolled past");
+    assert(order.indexOf("goal-deal") <= 1, "and stays near the top: " + order.join(" → "));
   });
 
   test("expanding, collapsing and switching mutate nothing", () => {
@@ -202,7 +204,9 @@ describe("C. Mobile vertical flow", () => {
     const r = mk();
     const card = expand(r, goalOf(oppAt("select-trade")));
     const order = bandOrder(card);
-    const expected = ["goal-deal", "goal-rail", "idf-stage", "idf-action",
+    /* The rail moved up to share the top row with the card identity, so it now
+       precedes the Deal Flow disclosure. */
+    const expected = ["goal-rail", "goal-deal", "idf-stage", "idf-action",
       "chat-embed", "rc-wrap"];
     eq(order.filter((k) => expected.includes(k)).join(" → "), expected.join(" → "),
       "summary, rail, guidance, stage, action, conversation, details");
@@ -304,7 +308,8 @@ describe("E. All five stages, collapsed and expanded", () => {
       eq(cls(card, "rail-s").length, 5, stage + ": still one rail");
       eq(cls(card, "dw-ctx").length, 0, stage + ": no nested page header");
       eq(cls(card, "goal-with").length, 0, stage + ": no duplicated partner block");
-      eq(bandOrder(card)[0], "goal-deal", stage + ": disclosure stays on top");
+      assert(bandOrder(card).indexOf("goal-deal") <= 1,
+        stage + ": disclosure stays near the top");
 
       /* And collapses back to compact from the same row. */
       click(rowIn(cardFor(r, g)));

@@ -32,9 +32,13 @@ const world = () => createStore({
   partners: [{ id: "p2", name: "Rina" }, { id: "p3", name: "Marcus" }],
   goals: [], binder: [], interests: [], conversations: [], opportunities: [],
   preferences: [],
+  /* Photographed: these tests are about who can read a conversation, not about
+     photography, so the copies must be ones a collector could negotiate over. */
   inventory: [
-    { invId: "i-p2", partnerId: "p2", cardId: "k1", ask: 9450, archived: false },
-    { invId: "i-p3", partnerId: "p3", cardId: "k1", ask: 10200, archived: false },
+    { invId: "i-p2", partnerId: "p2", cardId: "k1", ask: 9450, archived: false,
+      photos: { front: "copy:i-p2:front", back: "copy:i-p2:back" } },
+    { invId: "i-p3", partnerId: "p3", cardId: "k1", ask: 10200, archived: false,
+      photos: { front: "copy:i-p3:front", back: "copy:i-p3:back" } },
   ],
 });
 

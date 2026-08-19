@@ -91,8 +91,8 @@ describe("A. Header and rail sit above the work area", () => {
         if (["goal-deal", "goal-rail", "idf-work"].includes(k) && !seen.includes(k)) seen.push(k);
       });
     });
-    eq(seen.join(" → "), "goal-deal → goal-rail → idf-work",
-      "header, then rail, then the work area");
+    eq(seen.join(" → "), "goal-rail → goal-deal → idf-work",
+      "rail beside the identity, then the header, then the work area");
     click(row());
     eq(cls(cardFor(r, g), "idf-work").length, 0, "and the same row closes it");
   });
@@ -112,21 +112,25 @@ describe("A. Header and rail sit above the work area", () => {
 
 describe("B. Three regions, in order", () => {
   STAGES.forEach((stage) => {
-    test(stage + ": task, details and conversation are siblings", () => {
+    test(stage + ": its regions are siblings in one work container", () => {
+      /* Agree on Price is a single pricing decision, so it has no centre
+         details column — pricing and conversation only. */
+      const THREE = stage !== "agree-price";
       const r = mk();
       const card = expand(r, goalOf(oppAt(stage)));
       const work = cls(card, "idf-work")[0];
       assert(work, "one work container");
       eq(cls(work, "idf-task").length, 1, "one current-task region");
-      eq(cls(work, "idf-mid").length, 1, "one stage-details region");
+      eq(cls(work, "idf-mid").length, THREE ? 1 : 0,
+        THREE ? "one stage-details region" : "no details column at Agree on Price");
       eq(cls(work, "idf-side").length, 1, "one conversation region");
 
       const kids = work.children.filter((c) => typeof c !== "string")
         .map((c) => String(c.props && c.props.className || ""));
-      eq(kids.length, 3, "exactly three regions — no extra structural column");
+      eq(kids.length, THREE ? 3 : 2, "exactly the regions this stage needs");
       assert(/idf-task/.test(kids[0]), "task first");
-      assert(/idf-mid/.test(kids[1]), "details second");
-      assert(/idf-side/.test(kids[2]), "conversation third");
+      if (THREE) assert(/idf-mid/.test(kids[1]), "details second");
+      assert(/idf-side/.test(kids[kids.length - 1]), "conversation last");
     });
   });
 
@@ -182,7 +186,7 @@ describe("C. Stage details are canonical and leak nothing", () => {
     fulfillment: ["How", "Where", "When", "You"],
   };
 
-  STAGES.forEach((stage) => {
+  STAGES.filter((x) => x !== "agree-price").forEach((stage) => {
     test(stage + ": renders its own stage's fields", () => {
       const r = mk();
       const card = expand(r, goalOf(oppAt(stage)));
@@ -282,18 +286,18 @@ describe("D. Action, conversation and ending", () => {
     assert(t.entries.some((e) => e.text === "any news?"), "on the canonical thread");
   });
 
-  test("ending is offered below the conversation, never beside the action", () => {
+  test("ending lives only in the overflow menu, never beside the action", () => {
     const r = mk();
     const card = expand(r, goalOf(oppAt("select-trade")));
-    const stop = cls(card, "idf-stop")[0];
-    assert(stop, "an end control exists");
-    eq(cls(cls(card, "idf-side")[0], "idf-stop").length, 1, "in the conversation column");
-    eq(cls(cls(card, "idf-task")[0], "idf-stop").length, 0, "not in the task column");
-    assert(!/Stop this negotiation|Cancel agreed deal/.test(txt(cls(card, "idf-action")[0])),
-      "and not inside the action area");
-    const btn = stop.findAllByType("button")[0];
-    assert(!String(btn.props.className).includes("pri"),
-      "it is never styled as forward progress");
+    /* One stop route: the header's overflow menu. Nothing in the body. */
+    eq(cls(card, "idf-stop").length, 0, "no end control in the work area");
+    assert(!/Stop this negotiation|Cancel agreed deal/.test(txt(cls(card, "idf-work")[0])),
+      "and none anywhere in the working columns");
+    click(cls(card, "goal-edit-b")[0]);
+    const stop = cls(cardFor(r, goalOf(oppAt("select-trade"))), "goal-stop")[0];
+    assert(stop, "it is in the overflow menu");
+    assert(!String(stop.props.className).includes("pri"),
+      "and is never styled as forward progress");
   });
 
   test("the lower summary row stays secondary and singular", () => {

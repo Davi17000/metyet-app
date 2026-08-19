@@ -66,8 +66,15 @@ const tpSees = (r) => ({
    canonical tier action — which is precisely what the promotion confirmation
    does in the UI — so the scenario starts from a pursuable goal. */
 const seekingGoalWithSupply = (r) => {
+  /* Supply you can actually negotiate over. A price is a judgement about a
+     specific physical copy, so that copy must have been photographed; a
+     stock-only copy is discoverable but not yet offerable. Asked of the same
+     projection the offer path uses, since it matches on card IDENTITY rather
+     than on cardId equality. */
+  const offerable = (g) => casey(r).partnersWith(g.cardId)
+    .some((h) => D.INVARIANTS.copyPhotographed(h.inv.photos));
   const has = (g) => casey(r).stateOf(g.id) === "seeking"
-    && casey(r).partnersWith(g.cardId).length > 0;
+    && casey(r).partnersWith(g.cardId).length > 0 && offerable(g);
   const primary = casey(r).myGoals().find((g) => g.tier === "primary" && has(g));
   if (primary) return primary;
   const watch = casey(r).myGoals().find((g) => has(g));
@@ -438,7 +445,8 @@ const openNegotiation = (r) => {
   click(route);
   /* Both routes land on the partner list; choose a partner, then send. */
   const pick = r.root.findAllByType("button").find((b) => txt(b).trim() === "Make an offer");
-  assert(pick, "a partner to offer to");
+  assert(pick, "a partner to offer to — buttons: "
+    + r.root.findAllByType("button").map((b) => txt(b).trim()).filter(Boolean).join("|"));
   click(pick);
   const send = btn(r, "Send offer");
   assert(send, "the send control: " + r.root.findAllByType("button").map((b) => txt(b).trim()).filter(Boolean).join("|"));

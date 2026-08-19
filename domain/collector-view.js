@@ -31,6 +31,27 @@ function collectorView(state, meId) {
   };
 
   /* Which partners hold the exact identity a goal names. Canonical match. */
+  /* ONE IMAGE-SOURCE RULE for a specific physical copy:
+       actual front/back photos  ->  stock/reference image  ->  identity plate
+     A stock image says WHICH CARD this is; actual photos say what THIS COPY
+     looks like, which is what a price is a judgement about. */
+  const inventoryCopy = (invId) => (state.inventory || []).find((i) => i.invId === invId) || null;
+
+  const copyPhotos = (inv) => (inv && D.INVARIANTS.copyPhotographed(inv.photos)
+    ? { actual: true, front: inv.photos.front, back: inv.photos.back }
+    : { actual: false, front: null, back: null });
+
+  /* An open ask by THIS collector for THIS exact copy. */
+  const photoRequestFor = (invId) => (state.photoRequests || []).find((r) =>
+    r.collectorId === meId && r.invId === invId && !r.fulfilledAt) || null;
+
+  /* What the collector can do about this copy right now. Derived, never stored. */
+  const photoState = (inv) => {
+    if (!inv) return "none";
+    if (D.INVARIANTS.copyPhotographed(inv.photos)) return "ready";
+    return photoRequestFor(inv.invId) ? "requested" : "stock";
+  };
+
   const partnersWith = (cardId) => {
     const c = cardById(cardId);
     /* A partner may hold several physical copies of one identity. The collector
@@ -39,7 +60,13 @@ function collectorView(state, meId) {
     const best = new Map();
     E.partnersHolding(state.inventory, c, cardById).forEach((inv) => {
       const cur = best.get(inv.partnerId);
-      if (!cur || inv.ask < cur.ask) best.set(inv.partnerId, { partner: partnerById(inv.partnerId), inv, ask: inv.ask });
+      /* Prefer a copy the collector can actually judge: a price is a judgement
+         about a specific physical card, and a stock image cannot support one.
+         Among photographed copies take the cheapest; fall back to a stock-only
+         copy so the card is still discoverable and photos can be asked for. */
+      const shot = D.INVARIANTS.copyPhotographed(inv.photos);
+      const better = !cur || (shot && !cur.shot) || (shot === cur.shot && inv.ask < cur.ask);
+      if (better) best.set(inv.partnerId, { partner: partnerById(inv.partnerId), inv, ask: inv.ask, shot });
     });
     return [...best.values()].filter((x) => x.partner);
   };
@@ -168,6 +195,7 @@ function collectorView(state, meId) {
     meId, cardById, partnerById, catalog: state.catalog,
     myGoals, myBinder, myOpps, myPrefs,
     partnersWith, interestIn, interestCountFrom, forYou, partnerProfile,
+    copyPhotos, photoState, photoRequestFor, inventoryCopy,
     stateOf, openOppForGoal, goalFor, conversationsFor, tradeGroups, turnFor,
     threadWith, threadsForCard, partnersTalkedTo,
     threadForGoal, hasTalkedAbout, hasThreadAbout,

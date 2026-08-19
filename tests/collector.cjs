@@ -1412,8 +1412,8 @@ describe("Active Primary Goal hierarchy", () => {
       (n.children || []).forEach((x) => typeof x === "object" && walk(x));
     };
     walk(card);
-    eq(flat.join(" -> "), "goal-live -> goal-rail -> rc-wrap -> goal-holders",
-      "take action, then progress, then receipt, then other partners");
+    eq(flat.join(" -> "), "goal-rail -> goal-live -> rc-wrap -> goal-holders",
+      "progress beside the identity, then the deal, then receipt, then other partners");
   });
 
   test("5. progress shows all five numbered, labelled stages", () => {

@@ -955,6 +955,13 @@ table.tbl.vt tfoot td { border-top: 1px solid var(--line); background: #F7F9FA; 
   color: var(--muted); font-weight: 600; margin-bottom: 3px; }
 .pn-amt { font-size: 24px; font-weight: 600; line-height: 1.1; letter-spacing: -.01em; }
 .pn-pct { font-size: 12px; color: var(--muted); margin-top: 2px; }
+/* Demand for actual photos of one shelf copy. Quiet until somebody asks. */
+.pd { border-bottom: 1px solid var(--line); padding: 10px 14px; background: var(--amber-bg); }
+.pd.done { background: none; padding: 8px 14px; }
+.pd-t { font-size: 13px; font-weight: 600; color: var(--text); }
+.pd.done .pd-t { color: var(--t1); font-weight: 600; font-size: 12.5px; }
+.pd-s { font-size: 12.5px; color: var(--muted); margin-top: 3px; line-height: 1.45; }
+.pd-a { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 9px; }
 .pn-accept { width: 100%; justify-content: center; margin-top: 10px; }
 /* a quiet rule, not a section break: accepting and countering are two answers to
    the same question and should read that way */
@@ -2170,22 +2177,42 @@ export function buildCanonicalSeed(opts) {
     collectors: COLLECTORS_SEED,
     partners: PARTNERS_SEED,
     inventory: 
-    CARDS_SEED.filter((c) => c.id.startsWith("i")).map((c, k) => ({
-      invId: "inv" + (k + 1), partnerId: SELF_PARTNER, cardId: c.id, ask: c.value,
-      cost: Math.round(c.value * 0.78), acquired: "2026-0" + ((k % 6) + 1) + "-1" + ((k % 9) + 1), archived: false,
-      cert: "PSA " + (70000000 + k * 13457), photos: { front: null, back: null },
-    })).concat([
+    /* ACTUAL PHOTOS, WHERE DEMAND HAS ALREADY PAID FOR THEM.
+
+       A stock image identifies the card; front and back photos identify the
+       specific physical copy, which is what a price is actually a judgement
+       about. Established inventory has been photographed — that is the normal
+       steady state, and every seeded deal depends on it.
+
+       Copies 3, 7, 11 … are deliberately left stock-only so the new
+       request-and-upload path has real subjects to work on. The photo keys name
+       the COPY, never the card identity, so two copies of one card can never
+       share a photograph. */
+    CARDS_SEED.filter((c) => c.id.startsWith("i")).map((c, k) => {
+      const invId = "inv" + (k + 1);
+      const stockOnly = k % 4 === 2;
+      return {
+        invId, partnerId: SELF_PARTNER, cardId: c.id, ask: c.value,
+        cost: Math.round(c.value * 0.78), acquired: "2026-0" + ((k % 6) + 1) + "-1" + ((k % 9) + 1), archived: false,
+        cert: "PSA " + (70000000 + k * 13457),
+        photos: stockOnly ? { front: null, back: null }
+          : { front: "copy:" + invId + ":front", back: "copy:" + invId + ":back" },
+      };
+    }).concat([
       // extra physical copies of the same card identity, at different prices
-      { invId: "inv-c2", partnerId: SELF_PARTNER, cardId: "i1", ask: 4650, cost: 3400, acquired: "2026-05-02", archived: false, cert: "PSA 71204885", photos: { front: null, back: null } },
+      { invId: "inv-c2", partnerId: SELF_PARTNER, cardId: "i1", ask: 4650, cost: 3400, acquired: "2026-05-02", archived: false, cert: "PSA 71204885", photos: { front: "copy:inv-c2:front", back: "copy:inv-c2:back" } },
+      /* Same card identity as inv-c2, deliberately NOT photographed: proof that
+         photos belong to the copy and never to the identity. */
       { invId: "inv-c3", partnerId: SELF_PARTNER, cardId: "i1", ask: 3950, cost: 3100, acquired: "2026-06-21", archived: false, cert: "PSA 68931507", photos: { front: null, back: null } },
-      { invId: "inv-c4", partnerId: SELF_PARTNER, cardId: "i14", ask: 810, cost: 615, acquired: "2026-07-04", archived: false, cert: "PSA 73550142", photos: { front: null, back: null } },
+      /* One face only — still not enough to price against. */
+      { invId: "inv-c4", partnerId: SELF_PARTNER, cardId: "i14", ask: 810, cost: 615, acquired: "2026-07-04", archived: false, cert: "PSA 73550142", photos: { front: "copy:inv-c4:front", back: null } },
       /* OTHER PARTNERS' STOCK. Same canonical collection, different owner — this is
          what lets a collector see several partners who can meet one goal. Scoped
          out of every TP surface by partnerId, so p-self's shelf is unchanged. */
-      { invId: "inv-p2-1", partnerId: "p2", cardId: "i17", ask: 9450, cost: 8100, acquired: "2026-06-02", archived: false, cert: "PSA 70884120", photos: { front: null, back: null } },
-      { invId: "inv-p3-1", partnerId: "p3", cardId: "i17", ask: 10200, cost: 8800, acquired: "2026-05-18", archived: false, cert: "PSA 71559034", photos: { front: null, back: null } },
-      { invId: "inv-p2-2", partnerId: "p2", cardId: "i23", ask: 1290, cost: 990, acquired: "2026-07-11", archived: false, cert: null, photos: { front: null, back: null } },
-      { invId: "inv-p4-1", partnerId: "p4", cardId: "u6", ask: 1380, cost: 1050, acquired: "2026-07-29", archived: false, cert: null, photos: { front: null, back: null } },
+      { invId: "inv-p2-1", partnerId: "p2", cardId: "i17", ask: 9450, cost: 8100, acquired: "2026-06-02", archived: false, cert: "PSA 70884120", photos: { front: "copy:inv-p2-1:front", back: "copy:inv-p2-1:back" } },
+      { invId: "inv-p3-1", partnerId: "p3", cardId: "i17", ask: 10200, cost: 8800, acquired: "2026-05-18", archived: false, cert: "PSA 71559034", photos: { front: "copy:inv-p3-1:front", back: "copy:inv-p3-1:back" } },
+      { invId: "inv-p2-2", partnerId: "p2", cardId: "i23", ask: 1290, cost: 990, acquired: "2026-07-11", archived: false, cert: null, photos: { front: "copy:inv-p2-2:front", back: "copy:inv-p2-2:back" } },
+      { invId: "inv-p4-1", partnerId: "p4", cardId: "u6", ask: 1380, cost: 1050, acquired: "2026-07-29", archived: false, cert: null, photos: { front: "copy:inv-p4-1:front", back: "copy:inv-p4-1:back" } },
     ]),
     goals: goalsSeed.map((g, i) => ({
       id: "g" + i, collectorId: g[0], cardId: g[1], tier: g[2], note: g[3],
@@ -2619,6 +2646,7 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
   const [nav, setNav] = useState({ section: "collectors" });
   const [cardDb, setCardDb] = useShared(store, "catalog");
   const [inventory, setInventory] = useShared(store, "inventory");
+  const [photoRequests, setPhotoRequests] = useShared(store, "photoRequests");
   const [goals, setGoals] = useShared(store, "goals");
   const [collectors, setCollectors] = useShared(store, "collectors");
   const [opps, setOpps] = useShared(store, "opportunities");
@@ -3247,7 +3275,36 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
     setModal(null);
   };
 
+  /* ACTUAL PHOTOS. One canonical record: the photos live on the inventory copy,
+     and a request is a small copy-specific relationship. Nothing here is
+     duplicated per collector — one photo set serves everyone who asked. */
+  const photos = {
+    state: photoRequests,
+    requestsFor: (invId) => (photoRequests || [])
+      .filter((r) => r.invId === invId && !r.fulfilledAt)
+      .map((r) => ({ ...r, name: (collectors.find((c) => c.id === r.collectorId) || {}).name || r.collectorId })),
+    /* Marks the faces the partner has photographed. Front and back are accepted
+       independently, but the copy is only offer-ready once both exist. */
+    addCopyPhotos: (invId, faces) => {
+      const inv = inventory.find((i) => i.invId === invId);
+      if (!inv) return;
+      const next = { ...(inv.photos || {}) };
+      if (faces.front) next.front = "copy:" + invId + ":front";
+      if (faces.back) next.back = "copy:" + invId + ":back";
+      setInventory(inventory.map((i) => (i.invId === invId ? { ...i, photos: next } : i)));
+      if (next.front && next.back) {
+        setPhotoRequests((photoRequests || []).map((r) => (r.invId === invId && !r.fulfilledAt
+          ? { ...r, fulfilledAt: NOW } : r)));
+        say("Front and back photos added. Collectors who asked can now make an offer.");
+      } else {
+        say(next.front ? "Front photo added. The back is still needed."
+          : "Back photo added. The front is still needed.");
+      }
+    },
+  };
+
   const ctx = {
+    photos,
     nav, setNav, card, collector, collectors, cardDb, catalog, resolveCanonicalCard, inventory, activeInv, ownedIds, goals, opps, activity,
     model, profile, demandCards, coverage, demandFor, goalMatches, goalsForIdentity, stageCounts, goalsAtStage, collectorStats, collectorFacts,
     say, setModal, setDrawer, drawer, startOutreach, saveCard, addCopyToInventory, archiveInv, archiveRisk,
@@ -4011,6 +4068,10 @@ function CounterFields({ amt, setAmt, reference, pctLabel, pctAria, amtAria, sho
 }
 
 const validAmount = (amt) => amt !== "" && isFinite(Number(amt)) && Number(amt) > 0;
+
+/* Shared with the Collector so both seats negotiate price through one
+   implementation: same conversion, same guards, same canonical dollar value. */
+export { CounterFields, validAmount, canCounter, percentageOf };
 
 /* Trade % and Trade Value are two readings of ONE negotiated term, and here the
    PERCENTAGE is the canonical one — it is what tcApplyPercent stores. The dollar
@@ -6055,6 +6116,63 @@ function MyInventory({ ctx }) {
   );
 }
 
+/* ------------------------------------------------- ACTUAL PHOTOS OF THIS COPY
+
+   A stock image says which card this is. Front and back photos say what THIS
+   copy looks like, which is what a collector is actually pricing. Photographing
+   is real work, so it happens when demand asks for it — and once done it stays
+   on the inventory record, so every later collector benefits from it.
+
+   This lives on the inventory row because that is already the copy-specific
+   surface; a request is about one shelf item, not about a card identity. */
+function PhotoDemand({ ctx, inv }) {
+  const { state, requestsFor, addCopyPhotos } = ctx.photos || {};
+  if (!state) return null;
+  const photos = inv.photos || {};
+  const complete = !!(photos.front && photos.back);
+  const asks = requestsFor(inv.invId);
+
+  if (complete) {
+    return (
+      <div className="pd done">
+        <span className="pd-t">Photos of actual card · Front &amp; Back</span>
+      </div>
+    );
+  }
+  if (!asks.length && !photos.front) return null;   // no demand, no partial work
+
+  return (
+    <div className="pd">
+      <div className="pd-t">
+        {asks.length
+          ? asks.map((a) => a.name).join(", ") + (asks.length === 1
+            ? " requested photos of this card" : " requested photos of this card")
+          : "Front photo added — back still needed"}
+      </div>
+      <div className="pd-s">
+        {photos.front && !photos.back ? "Back photo still needed before this copy can be offered on."
+          : photos.back && !photos.front ? "Front photo still needed before this copy can be offered on."
+          : "Add front and back photos of this exact copy."}
+      </div>
+      <div className="pd-a">
+        {!photos.front && (
+          <button className="btn sm" onClick={() => addCopyPhotos(inv.invId, { front: true })}>
+            Add front photo
+          </button>
+        )}
+        {!photos.back && (
+          <button className="btn sm" onClick={() => addCopyPhotos(inv.invId, { back: true })}>
+            Add back photo
+          </button>
+        )}
+        <button className="btn sm pri" onClick={() => addCopyPhotos(inv.invId, { front: true, back: true })}>
+          Add front &amp; back photos
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function InventoryRow({ ctx, inv, c, d }) {
   const { collector, setNav, setDrawer, setModal } = ctx;
   const [whyOpen, setWhyOpen] = useState(false);
@@ -6085,6 +6203,7 @@ function InventoryRow({ ctx, inv, c, d }) {
     <div className="panel inv-row">
       <div className="inv-art"><CardImage card={c} size="shelf" /></div>
       <div className="inv-body">
+      <PhotoDemand ctx={ctx} inv={inv} />
       <div style={{ display: "flex", alignItems: "flex-start", gap: 14, padding: "12px 14px" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <span className="inv-idline">
