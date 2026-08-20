@@ -7,7 +7,8 @@ const r = await build({
   jsx: "automatic",
   /* Production never ships dev tooling. Stated explicitly rather than relying
      on the absence of a definition. */
-  define: { "process.env.NODE_ENV": '"production"', __METYET_DEV__: "false" },
+  define: { "process.env.NODE_ENV": '"production"', __METYET_DEV__: "false",
+    __METYET_DEMO__: "false" },
   metafile: true, logLevel: "warning",
 });
 const o = Object.values(r.metafile.outputs)[0];

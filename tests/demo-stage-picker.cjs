@@ -88,9 +88,12 @@ describe("A. Development only", () => {
 
   test("the control is gated in source, not merely styled away", () => {
     const panel = SRC.slice(SRC.indexOf("function ReviewPanel"), SRC.indexOf("function Goals("));
-    assert(/if \(!DEV\) return null;/.test(panel), "the panel returns null outside dev");
+    /* CONTRACT CHANGE: scenario controls are tester-facing, so they are gated
+       on DEMO rather than DEV. The property is the same — the control is absent
+       from the tree, not merely hidden — and DEV still implies DEMO. */
+    assert(/if \(!DEMO\) return null;/.test(panel), "the panel returns null outside demo mode");
     const fn = SRC.slice(SRC.indexOf("resetReviewDeal:"), SRC.indexOf("dealAgreed:"));
-    assert(/if \(!DEV\) return null;/.test(fn), "and so does the loader itself");
+    assert(/if \(!DEMO\) return null;/.test(fn), "and so does the loader itself");
   });
 });
 

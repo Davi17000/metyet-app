@@ -3,6 +3,7 @@ import MetYet, { buildCanonicalSeed, demoDealFixture, demoDealStage } from "../s
 import MetYetCollector from "../collector/MetYetCollector.jsx";
 import { createStore } from "../domain/metyet-store.js";
 import { DEV as SHARED_DEV } from "../shared/dev-flag.js";
+import { DEMO as SHARED_DEMO } from "../shared/demo-flag.js";
 
 /* ============================================================================
    THE METYET PROTOTYPE SHELL
@@ -30,6 +31,9 @@ const SELF_COLLECTOR = "c12";
    Collector's own review panel is, so nothing here can reach a normal build.
    One flag, shared with every other gate — see shared/dev-flag.js. */
 const DEV = SHARED_DEV;
+/* Scenario controls are for whoever is trying the product, not only for us.
+   DEV implies DEMO at the flag layer, so this needs no `|| DEV` here. */
+const DEMO = SHARED_DEMO;
 
 /* The five canonical active stages, in lifecycle order. Labels match the ones
    the product uses so the control reads the same as the rail beside it. */
@@ -171,7 +175,7 @@ export default function MetYetPrototype() {
   const current = PERSONAS.find((p) => p.id === persona);
   /* Derived from the live opportunity, so the control always reflects what is
      actually loaded — including after the demo is reset. */
-  const demoStage = DEV ? demoDealStage(store.get(), SELF_COLLECTOR) : null;
+  const demoStage = DEMO ? demoDealStage(store.get(), SELF_COLLECTOR) : null;
 
   return (
     <div className="myp">
@@ -185,15 +189,15 @@ export default function MetYetPrototype() {
         <span className="myp-actions">
           <button className="myp-btn" aria-haspopup="menu" aria-expanded={menu}
             onClick={() => setMenu(!menu)}>Switch persona</button>
-          {/* DEMO STAGE — development tooling, and Collector-only: it loads a
-              Collector review fixture, so it has no business appearing while
-              the Trusted Partner product is on screen. It calls the SAME loader
-              the Collector's review panel uses; it never writes a stage. */}
-          {DEV && persona === "collector" && (
+          {/* SCENARIO — tester-facing, and Collector-only: it loads a Collector
+              review fixture, so it has no business appearing while the Trusted
+              Partner product is on screen. It calls the SAME loader the
+              Collector's review panel uses; it never writes a stage. */}
+          {DEMO && persona === "collector" && (
             <label className="myp-stage">
-              <span className="myp-stage-l">Demo stage</span>
+              <span className="myp-stage-l">Scenario</span>
               <select className="myp-sel" value={demoStage || ""}
-                aria-label="Demo stage"
+                aria-label="Scenario"
                 onChange={(e) => {
                   const next = demoDealFixture(store.get(),
                     { collectorId: SELF_COLLECTOR, demoStage: e.target.value });

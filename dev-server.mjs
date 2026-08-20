@@ -28,6 +28,9 @@ const ctx = await context({
      one boolean, not an environment object. */
   define: {
     __METYET_DEV__: JSON.stringify(process.env.METYET_DEV === "1"),
+    /* Policy lives in shared/demo-flag.js — DEV implying DEMO is decided there,
+       so this passes through only what was actually asked for. */
+    __METYET_DEMO__: JSON.stringify(process.env.METYET_DEMO === "1"),
   },
   logLevel: "info",
   /* React is bundled here rather than externalised: the browser has no module

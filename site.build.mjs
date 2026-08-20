@@ -72,9 +72,13 @@ try {
     /* React and ReactDOM are bundled, NOT externalised: a browser cannot
        resolve a bare "react" specifier, and an import map would be a second
        thing to keep in step with package.json. */
+    /* app.metyet.io is the pilot: vendors and collectors need to reach a deal
+       at Value Trade and put it back, without engineering tooling on screen.
+       A future customer build defines both false and needs no source change. */
     define: {
       "process.env.NODE_ENV": '"production"',
       __METYET_DEV__: "false",
+      __METYET_DEMO__: "true",
     },
   });
 
