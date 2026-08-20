@@ -1,4 +1,7 @@
-import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import React, { useState, useMemo, useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import { createStore } from "../domain/metyet-store.js";
+import * as SharedID from "../domain/metyet-domain.js";
+import { DEV as SHARED_DEV } from "../shared/dev-flag.js";
 
 /* ============================================================
    MetYet — Trusted Partner Experience (pilot prototype)
@@ -666,10 +669,26 @@ table.tbl { width: 100%; border-collapse: separate; border-spacing: 0; }
 /* Dimensions reserved by the component, so these only carry appearance. */
 .cimg { border-radius: 3px; object-fit: cover; background: #EEF1F4; flex: 0 0 auto;
   border: 1px solid var(--line-soft); display: inline-block; vertical-align: middle; }
-.cimg.empty { background: repeating-linear-gradient(135deg, #F2F4F7 0 4px, #EDF0F4 4px 8px);
+/* A readable placeholder, not an error state: same footprint as the artwork, quiet
+   enough that a real image is still obviously preferable. */
+.cimg.empty { display: flex; align-items: center; justify-content: center; overflow: hidden;
+  padding: 4px; text-align: center;
+  background: repeating-linear-gradient(135deg, #F2F4F7 0 4px, #EDF0F4 4px 8px);
   border-style: dashed; border-color: var(--line); }
 .ws-stock { flex: 0 0 auto; margin-right: 16px; padding-right: 16px; border-right: 1px solid var(--line-soft); }
 .vt-stock { flex: 0 0 auto; margin-right: 16px; padding-right: 16px; border-right: 1px solid var(--line-soft); }
+.cimg-ph { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.cimg-ph-n { font-size: 10px; font-weight: 600; line-height: 1.15; color: var(--muted);
+  overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical; overflow: hidden; }
+.cimg-ph-s, .cimg-ph-g { font-size: 8.5px; line-height: 1.25; color: var(--faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cimg-ph-g { margin-top: 2px; }
+/* the identity scales with the plate rather than overflowing it */
+.cimg.empty.thumbnail .cimg-ph-n { font-size: 7px; -webkit-line-clamp: 2; }
+.cimg.empty.triage .cimg-ph-n { font-size: 8px; }
+.cimg.empty.feature .cimg-ph-n, .cimg.empty.shelf .cimg-ph-n, .cimg.empty.hero .cimg-ph-n { font-size: 12px; }
+.cimg.empty.shelf .cimg-ph-s, .cimg.empty.hero .cimg-ph-s, .cimg.empty.feature .cimg-ph-s { font-size: 10px; }
 .cimg-row { display: flex; align-items: center; gap: 11px; min-width: 0; }
 /* A browse-size image is taller than a line of text, so those rows align to the top
    and get room rather than centring a 75px card against 12px type. */
@@ -936,6 +955,13 @@ table.tbl.vt tfoot td { border-top: 1px solid var(--line); background: #F7F9FA; 
   color: var(--muted); font-weight: 600; margin-bottom: 3px; }
 .pn-amt { font-size: 24px; font-weight: 600; line-height: 1.1; letter-spacing: -.01em; }
 .pn-pct { font-size: 12px; color: var(--muted); margin-top: 2px; }
+/* Demand for actual photos of one shelf copy. Quiet until somebody asks. */
+.pd { border-bottom: 1px solid var(--line); padding: 10px 14px; background: var(--amber-bg); }
+.pd.done { background: none; padding: 8px 14px; }
+.pd-t { font-size: 13px; font-weight: 600; color: var(--text); }
+.pd.done .pd-t { color: var(--t1); font-weight: 600; font-size: 12.5px; }
+.pd-s { font-size: 12.5px; color: var(--muted); margin-top: 3px; line-height: 1.45; }
+.pd-a { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 9px; }
 .pn-accept { width: 100%; justify-content: center; margin-top: 10px; }
 /* a quiet rule, not a section break: accepting and countering are two answers to
    the same question and should read that way */
@@ -1005,9 +1031,16 @@ const Icon = ({ n, s = 16 }) => {
     x: <><path d="m4 4 8 8M12 4l-8 8" /></>,
     send: <><path d="M14 2 7 9M14 2l-4.5 12L7 9 2 6.5z" /></>,
     copy: <><rect x="5.5" y="5.5" width="8" height="8" rx="1.2" /><path d="M10.5 3.5h-8v8" /></>,
+    /* Collector navigation. Same 16px grid, same 1.4 stroke, same joins. */
+    target: <><circle cx="8" cy="8" r="5" /><circle cx="8" cy="8" r="1.4" /><path d="M8 1v2M8 13v2M1 8h2M13 8h2" /></>,
+    binder: <><rect x="3" y="2.5" width="10.5" height="11" rx="1.2" /><path d="M6 2.5v11" /><path d="M4.4 5.2h.9M4.4 8h.9M4.4 10.8h.9" /></>,
   };
   return <svg {...p}>{paths[n]}</svg>;
 };
+
+/* Shared so the Collector navigation uses the same marks, weight and grid as the
+   Trusted Partner workspace rather than a second icon vocabulary. */
+export { Icon };
 
 /* ------------------------------ MOCK DATA ------------------------------ */
 
@@ -1015,7 +1048,24 @@ const TODAY = new Date("2026-08-09");
 
 /* The Trusted Partner's own settings. The trade percentage is established here,
    not negotiated inside a deal. */
-const PARTNER = { name: "Northline Cards", tradeRate: 0.8 };
+/* TRUSTED PARTNERS are shared domain entities. The workspace shows p-self; the
+   others exist because collectors work with several partners, and both personas
+   read the same records. The old single-partner constant was a prototype
+   artifact, not the domain. */
+const SELF_PARTNER = "p-self";
+const PARTNERS_SEED = [
+  { id: "p-self", name: "Northline Cards", city: "Duluth, Minnesota", tradeRate: 0.8,
+    since: "2022-08-30", note: "Your shop." },
+  { id: "p2", name: "Complete Collectibles", city: "Roseville, Minnesota", tradeRate: 0.8,
+    since: "2023-04-11", note: "First pick on most Base Set breaks in the Twin Cities." },
+  { id: "p3", name: "Ryan's Collectibles", city: "Minneapolis, Minnesota", tradeRate: 0.78,
+    since: "2024-02-20", note: "Hunts down Neo-era holos better than anyone." },
+  { id: "p4", name: "Kane TCG", city: "Eagan, Minnesota", tradeRate: 0.8,
+    since: "2025-09-02", note: "Mostly modern, moving into vintage." },
+];
+/* Kept as a narrow alias so existing TP call sites read naturally; it resolves
+   through the partner list rather than being a separate source of truth. */
+const PARTNER = PARTNERS_SEED[0];
 
 /* Counteroffer ceiling. null = unlimited for the pilot. Set a number here and
    both price and market-value negotiation enforce it — see countersBy(). */
@@ -1240,21 +1290,84 @@ const GOALS_SEED = [
   ["c12", "i17", "primary", "Rayquaza Gold Star — first big purchase", "2026-03-02", "2026-01-14", "2026-04-21"],
   ["c13", "u11", "primary", "Trophy Pikachu No. 3", "2026-04-06", "2026-02-01", "2026-04-06"],
   ["c13", "i30", "primary", "Japanese Neo Genesis sealed box", "2026-04-06", "2026-01-15", "2026-04-06"],
-  ["c1", "i2", "secondary", "", "2025-10-20", "2025-10-20", "2026-03-02"], ["c1", "i5", "secondary", "", "2025-11-02", "2025-11-02", "2026-02-05"], ["c1", "i28", "secondary", "", "2025-11-27", "2025-11-27", "2026-01-11"], ["c1", "u2", "secondary", "", "2025-11-14", "2025-11-14", "2025-12-12"],
-  ["c2", "i3", "secondary", "", "2025-12-09", "2025-12-09", "2025-12-09"], ["c2", "i2", "secondary", "", "2025-12-18", "2025-12-18", "2025-12-18"], ["c2", "i11", "secondary", "", "2026-01-05", "2026-01-05", "2026-01-05"], ["c2", "u2", "secondary", "", "2025-12-03", "2025-12-03", "2025-12-03"],
+  ["c1", "i2", "secondary", "", "2025-10-20", "2025-10-20", "2026-03-02"], ["c1", "i5", "primary", "", "2025-11-02", "2025-11-02", "2026-02-05"], ["c1", "i28", "secondary", "", "2025-11-27", "2025-11-27", "2026-01-11"], ["c1", "u2", "secondary", "", "2025-11-14", "2025-11-14", "2025-12-12"],
+  ["c2", "i3", "primary", "", "2025-12-09", "2025-12-09", "2025-12-09"], ["c2", "i2", "secondary", "", "2025-12-18", "2025-12-18", "2025-12-18"], ["c2", "i11", "primary", "", "2026-01-05", "2026-01-05", "2026-01-05"], ["c2", "u2", "secondary", "", "2025-12-03", "2025-12-03", "2025-12-03"],
   ["c3", "i19", "secondary", "", "2026-01-15", "2026-01-15", "2026-01-15"], ["c3", "i20", "secondary", "", "2026-01-28", "2026-01-28", "2026-01-28"], ["c3", "i30", "secondary", "", "2026-02-02", "2026-02-02", "2026-08-09"], ["c3", "u4", "secondary", "", "2026-01-09", "2026-01-09", "2026-08-08"],
-  ["c4", "i25", "secondary", "", "2026-02-11", "2026-02-11", "2026-08-07"], ["c4", "i26", "secondary", "", "2026-02-24", "2026-02-24", "2026-08-06"], ["c4", "i23", "secondary", "", "2026-03-06", "2026-03-06", "2026-08-04"], ["c4", "i21", "secondary", "", "2026-01-22", "2026-01-22", "2026-08-03"],
-  ["c5", "i9", "secondary", "", "2026-03-18", "2026-03-18", "2026-07-31"], ["c5", "i10", "secondary", "", "2026-03-27", "2026-03-27", "2026-07-28"], ["c5", "i5", "secondary", "", "2026-04-09", "2026-04-09", "2026-07-24"], ["c5", "i1", "secondary", "", "2026-02-05", "2026-02-05", "2026-07-21"],
-  ["c6", "i13", "secondary", "", "2026-04-21", "2026-04-21", "2026-07-17"], ["c6", "i11", "secondary", "", "2026-04-30", "2026-04-30", "2026-07-13"], ["c6", "i14", "secondary", "", "2026-05-01", "2026-05-01", "2026-07-06"], ["c6", "i15", "secondary", "", "2026-02-17", "2026-02-17", "2026-06-29"],
-  ["c7", "i18", "secondary", "", "2026-05-20", "2026-05-20", "2026-06-22"], ["c7", "i19", "secondary", "", "2026-05-23", "2026-05-23", "2026-06-15"], ["c7", "i30", "secondary", "", "2026-06-07", "2026-06-07", "2026-06-07"], ["c7", "i17", "secondary", "", "2026-03-01", "2026-03-01", "2026-05-29"],
-  ["c8", "i25", "secondary", "", "2026-06-16", "2026-06-16", "2026-06-16"], ["c8", "i26", "secondary", "", "2026-06-30", "2026-06-30", "2026-06-30"], ["c8", "i27", "secondary", "", "2026-07-05", "2026-07-05", "2026-07-05"], ["c8", "i24", "secondary", "", "2026-03-12", "2026-03-12", "2026-04-06"],
+  ["c4", "i25", "secondary", "", "2026-02-11", "2026-02-11", "2026-08-07"], ["c4", "i26", "primary", "", "2026-02-24", "2026-02-24", "2026-08-06"], ["c4", "i23", "secondary", "", "2026-03-06", "2026-03-06", "2026-08-04"], ["c4", "i21", "secondary", "", "2026-01-22", "2026-01-22", "2026-08-03"],
+  ["c5", "i9", "primary", "", "2026-03-18", "2026-03-18", "2026-07-31"], ["c5", "i10", "secondary", "", "2026-03-27", "2026-03-27", "2026-07-28"], ["c5", "i5", "secondary", "", "2026-04-09", "2026-04-09", "2026-07-24"], ["c5", "i1", "secondary", "", "2026-02-05", "2026-02-05", "2026-07-21"],
+  ["c6", "i13", "primary", "", "2026-04-21", "2026-04-21", "2026-07-17"], ["c6", "i11", "secondary", "", "2026-04-30", "2026-04-30", "2026-07-13"], ["c6", "i14", "secondary", "", "2026-05-01", "2026-05-01", "2026-07-06"], ["c6", "i15", "secondary", "", "2026-02-17", "2026-02-17", "2026-06-29"],
+  ["c7", "i18", "primary", "", "2026-05-20", "2026-05-20", "2026-06-22"], ["c7", "i19", "secondary", "", "2026-05-23", "2026-05-23", "2026-06-15"], ["c7", "i30", "secondary", "", "2026-06-07", "2026-06-07", "2026-06-07"], ["c7", "i17", "primary", "", "2026-03-01", "2026-03-01", "2026-05-29"],
+  ["c8", "i25", "primary", "", "2026-06-16", "2026-06-16", "2026-06-16"], ["c8", "i26", "secondary", "", "2026-06-30", "2026-06-30", "2026-06-30"], ["c8", "i27", "secondary", "", "2026-07-05", "2026-07-05", "2026-07-05"], ["c8", "i24", "secondary", "", "2026-03-12", "2026-03-12", "2026-04-06"],
   ["c9", "i1", "secondary", "", "2026-07-16", "2026-07-16", "2026-07-16"], ["c9", "i12", "secondary", "", "2026-07-20", "2026-07-20", "2026-07-20"], ["c9", "u1", "secondary", "", "2026-03-24", "2026-03-24", "2026-03-24"],
-  ["c10", "i14", "secondary", "", "2025-12-30", "2025-12-30", "2026-01-11"], ["c10", "i15", "secondary", "", "2026-01-19", "2026-01-19", "2026-01-19"], ["c10", "i19", "secondary", "", "2026-02-20", "2026-02-20", "2026-02-20"], ["c10", "i23", "secondary", "", "2026-04-02", "2026-04-02", "2026-04-02"],
+  ["c10", "i14", "primary", "", "2025-12-30", "2025-12-30", "2026-01-11"], ["c10", "i15", "secondary", "", "2026-01-19", "2026-01-19", "2026-01-19"], ["c10", "i19", "secondary", "", "2026-02-20", "2026-02-20", "2026-02-20"], ["c10", "i23", "secondary", "", "2026-04-02", "2026-04-02", "2026-04-02"],
   ["c11", "i7", "secondary", "", "2026-03-11", "2026-03-11", "2026-03-11"], ["c11", "i28", "secondary", "", "2026-04-14", "2026-04-14", "2026-04-14"], ["c11", "u10", "secondary", "", "2026-04-15", "2026-04-15", "2026-04-15"],
-  ["c12", "i21", "secondary", "", "2026-05-11", "2026-05-11", "2026-05-11"], ["c12", "i23", "secondary", "", "2026-06-23", "2026-06-23", "2026-08-09"], ["c12", "i16", "secondary", "", "2026-07-09", "2026-07-09", "2026-08-08"], ["c12", "u6", "secondary", "", "2026-04-27", "2026-04-27", "2026-08-07"],
-  ["c13", "i20", "secondary", "", "2026-02-06", "2026-02-06", "2026-08-06"], ["c13", "i18", "secondary", "", "2026-03-30", "2026-03-30", "2026-08-04"], ["c13", "i29", "secondary", "", "2026-04-25", "2026-04-25", "2026-08-03"], ["c13", "u12", "secondary", "", "2026-05-06", "2026-05-06", "2026-07-31"],
+  /* Casey bought this one — her completed Opportunity references it, so the Goal
+     derives Satisfied rather than needing a stored status. */
+  ["c12", "x6", "secondary", "Bought it. Done.", "2026-01-20", "2026-01-20", "2026-03-29"],
+  ["c12", "i21", "primary", "", "2026-05-11", "2026-05-11", "2026-05-11"], ["c12", "i23", "secondary", "", "2026-06-23", "2026-06-23", "2026-08-09"], ["c12", "i16", "secondary", "", "2026-07-09", "2026-07-09", "2026-08-08"], ["c12", "u6", "secondary", "", "2026-04-27", "2026-04-27", "2026-08-07"],
+  ["c13", "i20", "primary", "", "2026-02-06", "2026-02-06", "2026-08-06"], ["c13", "i18", "secondary", "", "2026-03-30", "2026-03-30", "2026-08-04"], ["c13", "i29", "secondary", "", "2026-04-25", "2026-04-25", "2026-08-03"], ["c13", "u12", "secondary", "", "2026-05-06", "2026-05-06", "2026-07-31"],
   ["c8", "i34", "secondary", "", "2026-08-06", "2026-08-06", "2026-08-06"], ["c5", "u13", "secondary", "", "2026-05-14", "2026-05-14", "2026-07-24"],
+
 ];
+
+/* ============================================================ REVIEW HARNESS
+
+   Development/demo scaffolding for reviewing the Collector experience. OFF by
+   default: the canonical demo world is frozen by several suites (exact
+   opportunity counts, exact TP nav badges), and a review fixture is not product
+   data, so these rows are only appended when the harness is explicitly asked
+   for — `buildCanonicalSeed({ review: true })`, or METYET_DEV=1.
+
+   They are APPENDED rather than inserted so every existing record keeps its
+   "g"+index / "o"+index id. buildOpps resolves goals by index and the suites
+   reference g20 / o9 / o33 directly, so inserting above would silently
+   renumber the world.
+
+   Casey (c12) is the Collector persona, so the review scenarios are hers. With
+   her existing Select Trade (i17) and Fulfillment (i21) deals these give one
+   Primary Goal at every active stage, plus a separate goal for driving the
+   lifecycle by hand, plus one for testing promotion.
+
+   REVIEW_NOTE is the marker the dev-only UI keys off: no internal vocabulary
+   reaches a production surface, because none of this exists without the flag. */
+const REVIEW_NOTE = "Review";
+const REVIEW_GOALS_SEED = [
+  ["c12", "i8",  "primary",   "Review fixture \u2014 Agree on Price", "2026-08-04", "2026-08-04", "2026-08-09"],
+  ["c12", "i5",  "primary",   "Review fixture \u2014 Value Trade",    "2026-07-28", "2026-07-28", "2026-08-09"],
+  ["c12", "i13", "primary",   "Review fixture \u2014 Deal",           "2026-07-30", "2026-07-30", "2026-08-09"],
+  /* The one goal meant to be DRIVEN through the lifecycle, not looked at. Kept
+     distinct from the five static examples so progressing it never destroys the
+     stage coverage they exist to provide. */
+  ["c12", "i1",  "primary",   "Review deal \u2014 walk the full lifecycle", "2026-08-09", "2026-08-09", "2026-08-09"],
+  /* Promotion scenario: starts Secondary, with supply and a conversation
+     already in place, so what survives graduation is observable. */
+  ["c12", "i11", "secondary", "Review promotion \u2014 Secondary to Primary", "2026-08-09", "2026-08-09", "2026-08-09"],
+];
+
+/* Stage validity is NOT asserted here: each row goes through buildOpps, which
+   derives the upstream terms the stage requires — a settled price before Select
+   Trade, reviewed cards before Value Trade, and so on. No stage is manufactured
+   by setting the field alone. The review deal starts where the lifecycle does. */
+const REVIEW_OPPS_SEED = [
+  /* The demo deal's POSITION here is deliberate. buildOpps varies each package by
+     `(cardIndex + oppIndex) % 7`, and slot 6 withdraws the only accepted card —
+     which left the Value Trade demo with nothing to value; the price thread
+     varies with the same index, deciding who owns the turn. This position gives
+     the demo row a package worth valuing AND the collector's move at Agree on
+     Price. Everything still derives normally; no variation logic was changed. */
+  ["c12", "i8",  "agree-price", "2026-08-04", 1150],
+  ["c12", "i1",  "agree-price", "2026-08-09", 4200],
+  ["c12", "i5",  "value-trade", "2026-07-28", 1450],
+  ["c12", "i13", "deal",        "2026-07-30", 900],
+];
+/* The goal the harness drives, and the one it promotes, identified by card so
+   no test or screen has to hardcode an index-derived id. */
+const REVIEW_DEAL_CARD = "i1";
+/* Named so the harness can offer states that exist BEFORE a deal does. Neither
+   is a Deal Flow stage, and neither is ever written to opportunity.stage. */
+const PRE_DEAL = "pre-deal";
+const PRE_DEAL_READY = "pre-deal-ready";
+const REVIEW_PROMOTE_CARD = "i11";
 
 const STAGES = [
   { id: "secondary", label: "Secondary Goal", group: "intent" },
@@ -1303,14 +1416,27 @@ const stageNo = (id) => (STAGE_NUMBER[id] ? String(STAGE_NUMBER[id]).padStart(2,
 /* "01 · Agree on Price", or just the label for unnumbered states. */
 const stageWithNo = (id) => (stageNo(id) ? `${stageNo(id)} · ${STAGE_LABEL[id]}` : STAGE_LABEL[id]);
 
-/* Cards collectors own. `tpInterest` is a Trusted Partner flag, and it is the ONLY
-   thing that makes a card eligible to be offered in trade. Unflagged cards never
-   appear in Select Trade. [cardId, collectorId, tpInterest] */
+/* Cards collectors own. Partner interest is a RELATIONSHIP held separately, and it
+   is the only thing that makes a copy eligible to be offered in trade. */
 /* The collector's trade binder. `market` is the collector's own proposed market value,
    captured in the binder rather than invented at valuation time. `photos` are of the
    exact physical copy and are reused automatically — a collector never re-shoots a card
-   they have already documented. [cardId, collectorId, tpInterest, market, photos, cert] */
+   they have already documented. [cardId, collectorId, interested, market, photos, cert] */
 const PHOTOS = (id) => ({ front: "binder:" + id + ":front", back: "binder:" + id + ":back" });
+/* Standing interest held by partners OTHER than p-self. Same relationship shape;
+   only the partner differs. */
+const OTHER_INTEREST_SEED = [
+  /* Casey's Mew ex already interests p-self; these make it a multi-partner copy,
+     which is what the Collector binder needs in order to show more than one. */
+  { partnerId: "p2", binderId: "cc16", at: "2026-08-07" },
+  { partnerId: "p3", binderId: "cc16", at: "2026-08-11" },
+  { partnerId: "p2", binderId: "cc0", at: "2026-08-02" },
+  { partnerId: "p2", binderId: "cc4", at: "2026-07-12" },
+  { partnerId: "p2", binderId: "cc9", at: "2026-06-28" },
+  { partnerId: "p3", binderId: "cc0", at: "2026-08-05" },
+  { partnerId: "p3", binderId: "cc12", at: "2026-07-19" },
+  { partnerId: "p4", binderId: "cc4", at: "2026-08-04" },
+];
 const NO_PHOTOS = { front: null, back: null };
 /* THE TRADE BINDER INVARIANT.
    A binder entry is not a catalog match — it is a specific physical copy the Trusted
@@ -1320,7 +1446,7 @@ const NO_PHOTOS = { front: null, back: null };
    violates it can never exist. Everything downstream — Open to Trade, Select Trade,
    Value Trade — relies on this and therefore never asks for photos again. */
 const hasBothPhotos = (photos) => !!(photos && photos.front && photos.back);
-/* [cardId, collectorId, tpInterest, market, photos, cert, addedAt]
+/* [cardId, collectorId, interestedBySelf, market, photos, cert, addedAt]
    addedAt is when the collector shared the copy into their binder. Fixed dates, so
    the "new since you last looked" counts are the same on every run. */
 const COLLECTOR_CARDS_SEED = [
@@ -1434,9 +1560,17 @@ const emptyDeal = () => ({
   agreedAdj: null,      // OUTPUT only — written solely by acceptance
 });
 
-const emptyOpp = (collectorId, cardId, invId, listedPrice, at) => ({
+/* An Opportunity pursues a GOAL. The Domain Contract has always said so; this
+   makes the implementation say it too. goalId is set once, here and at
+   hydration, so no call site has to re-derive the relationship from
+   (collectorId, cardId). */
+/* An Opportunity also references the TRUSTED PARTNER. The TP prototype never
+   needed it because it only ever had one; the Domain Contract always required
+   it, and the Collector needs to know who it is negotiating with. */
+const emptyOpp = (collectorId, cardId, invId, listedPrice, at, goalId = null,
+  partnerId = SELF_PARTNER) => ({
   id: "o" + Math.random().toString(36).slice(2, 9),
-  collectorId, cardId, invId,
+  collectorId, cardId, invId, goalId, partnerId,
   stage: "agree-price",
   listedPrice,
   priceThread: [],          // {by:'collector'|'tp', type:'offer'|'counter'|'accept'|'decline', amount, at}
@@ -1980,15 +2114,237 @@ function nextAction(opp) {
 
 /* Expands the seed tuples into full lifecycle records with structured state
    consistent with the stage each one is parked at. */
-function buildOpps(seed) {
+/* ============================================================================
+   THE CANONICAL SEED, BUILT ONCE
+
+   Hydration moved out of the component so a shell can construct the ONE store
+   before either persona mounts. Same records, same ids, same order — this is a
+   relocation, not a re-seed.
+   ========================================================================== */
+/* The harness is opt-in. Default OFF so the canonical demo world — which several
+   suites freeze by exact count — is untouched by review scaffolding. */
+const REVIEW_ON = SHARED_DEV;
+
+/* ------------------------------------------------------- DEV FIXTURE LOADER
+
+   ONE implementation of "load the demo deal at stage X", shared by the Collector's
+   review panel and the prototype header so there is no second fixture mechanism.
+
+   It is a pure state transform: rebuild the canonical seed at the requested
+   stage, then swap ONLY the demo deal's goal and opportunity into the world that
+   is already running. Nothing else is disturbed, and no stage field is written —
+   the stage comes from buildOpps deriving it, exactly as at hydration.
+
+   Returns the next state, or null when there is no demo deal to load. */
+const REVIEW_DEAL_NOTE_RE = /^Review deal/;
+export function demoDealFixture(state, { collectorId, demoStage }) {
+  const fixture = buildCanonicalSeed({ review: true, demoStage: demoStage || undefined });
+  const fg = fixture.goals.find((g) => g.collectorId === collectorId
+    && REVIEW_DEAL_NOTE_RE.test(g.note || ""));
+  if (!fg) return null;
+  const fo = fixture.opportunities.find((o) => o.goalId === fg.id);
+  const mine = state.goals.find((g) => g.collectorId === collectorId && g.cardId === fg.cardId);
+  if (!mine) return null;
+
+  const goals = state.goals.map((g) => (g.id === mine.id ? { ...fg, id: mine.id } : g));
+  const rest = state.opportunities.filter((o) => o.goalId !== mine.id);
+
+  /* PRE-DEAL states have no opportunity at all: the demo starts before one
+     exists. The copies behind that goal and any outstanding asks come from the
+     rebuilt fixture, so the whole starting position is deterministic. */
+  if (!fo) {
+    return { ...state, goals, opportunities: rest,
+      inventory: state.inventory.map((i) => {
+        const f = fixture.inventory.find((x) => x.invId === i.invId);
+        return f && f.cardId === fg.cardId ? { ...i, photos: f.photos } : i;
+      }),
+      photoRequests: (state.photoRequests || [])
+        .filter((r) => !fixture.inventory.some((x) => x.invId === r.invId
+          && x.cardId === fg.cardId)) };
+  }
+
+  return { ...state, goals,
+    opportunities: [...rest, { ...fo, id: "o-review", goalId: mine.id }] };
+}
+
+/* Which stage the demo deal is currently loaded at, for the dev controls to
+   reflect. Derived from the live opportunity — never stored anywhere. */
+export function demoDealStage(state, collectorId) {
+  const g = (state.goals || []).find((x) => x.collectorId === collectorId
+    && REVIEW_DEAL_NOTE_RE.test(x.note || ""));
+  if (!g) return null;
+  const o = (state.opportunities || []).find((x) => x.goalId === g.id && SharedID.isActive(x));
+  if (o) return o.stage;
+  /* No deal yet — which pre-deal position is loaded is told by the copies. */
+  const copies = (state.inventory || []).filter((i) => i.cardId === g.cardId && !i.archived);
+  if (!copies.length) return null;
+  return copies.some((i) => SharedID.INVARIANTS.copyPhotographed(i.photos))
+    ? PRE_DEAL_READY : PRE_DEAL;
+}
+
+export function buildCanonicalSeed(opts) {
+  const review = opts && opts.review != null ? !!opts.review : REVIEW_ON;
+  /* DEMO STAGE. The review deal is REBUILT at the requested stage rather than
+     having its stage field edited: the row still goes through buildOpps, which
+     derives the upstream terms that stage requires. So asking for Value Trade
+     yields a settled price, a submitted package and reviewed cards — the same
+     way every other seeded opportunity gets them. There is no stage setter.
+     Switching stages rebuilds the fixture; it does not preserve edits. */
+  const demoStage = opts && opts.demoStage;
+  /* PRE-DEAL. Everything the demo picker offers otherwise begins after an offer
+     has been made. These two start BEFORE one exists, so the photo workflow can
+     be walked as the product actually runs it: the review deal's opportunity is
+     simply not seeded, and the copies behind that goal are shaped so the
+     collector meets either a stock-only card or a photographed one.
+
+     This is fixture building, not a stage setter — there is no "photo-request"
+     stage, and nothing here writes a stage field. */
+  const preDeal = demoStage === PRE_DEAL || demoStage === PRE_DEAL_READY;
+  const goalsSeed = review ? [...GOALS_SEED, ...REVIEW_GOALS_SEED] : GOALS_SEED;
+  const reviewOpps = preDeal
+    /* No opportunity for the review goal: the deal has not begun. */
+    ? REVIEW_OPPS_SEED.filter((row) => row[1] !== REVIEW_DEAL_CARD)
+    : demoStage
+      ? REVIEW_OPPS_SEED.map((row) => (row[1] === REVIEW_DEAL_CARD
+        ? [row[0], row[1], demoStage, row[3], row[4]] : row))
+      : REVIEW_OPPS_SEED;
+  const oppsSeed = review ? [...OPPS_SEED, ...reviewOpps] : OPPS_SEED;
+  const world = {
+    catalog: CARDS_SEED,
+    collectors: COLLECTORS_SEED,
+    partners: PARTNERS_SEED,
+    inventory: 
+    /* ACTUAL PHOTOS, WHERE DEMAND HAS ALREADY PAID FOR THEM.
+
+       A stock image identifies the card; front and back photos identify the
+       specific physical copy, which is what a price is actually a judgement
+       about. Established inventory has been photographed — that is the normal
+       steady state, and every seeded deal depends on it.
+
+       Copies 3, 7, 11 … are deliberately left stock-only so the new
+       request-and-upload path has real subjects to work on. The photo keys name
+       the COPY, never the card identity, so two copies of one card can never
+       share a photograph. */
+    CARDS_SEED.filter((c) => c.id.startsWith("i")).map((c, k) => {
+      const invId = "inv" + (k + 1);
+      const stockOnly = k % 4 === 2;
+      return {
+        invId, partnerId: SELF_PARTNER, cardId: c.id, ask: c.value,
+        cost: Math.round(c.value * 0.78), acquired: "2026-0" + ((k % 6) + 1) + "-1" + ((k % 9) + 1), archived: false,
+        cert: "PSA " + (70000000 + k * 13457),
+        photos: stockOnly ? { front: null, back: null }
+          : { front: "copy:" + invId + ":front", back: "copy:" + invId + ":back" },
+      };
+    }).concat([
+      // extra physical copies of the same card identity, at different prices
+      { invId: "inv-c2", partnerId: SELF_PARTNER, cardId: "i1", ask: 4650, cost: 3400, acquired: "2026-05-02", archived: false, cert: "PSA 71204885", photos: { front: "copy:inv-c2:front", back: "copy:inv-c2:back" } },
+      /* Same card identity as inv-c2, deliberately NOT photographed: proof that
+         photos belong to the copy and never to the identity. */
+      { invId: "inv-c3", partnerId: SELF_PARTNER, cardId: "i1", ask: 3950, cost: 3100, acquired: "2026-06-21", archived: false, cert: "PSA 68931507", photos: { front: null, back: null } },
+      /* One face only — still not enough to price against. */
+      { invId: "inv-c4", partnerId: SELF_PARTNER, cardId: "i14", ask: 810, cost: 615, acquired: "2026-07-04", archived: false, cert: "PSA 73550142", photos: { front: "copy:inv-c4:front", back: null } },
+      /* OTHER PARTNERS' STOCK. Same canonical collection, different owner — this is
+         what lets a collector see several partners who can meet one goal. Scoped
+         out of every TP surface by partnerId, so p-self's shelf is unchanged. */
+      { invId: "inv-p2-1", partnerId: "p2", cardId: "i17", ask: 9450, cost: 8100, acquired: "2026-06-02", archived: false, cert: "PSA 70884120", photos: { front: "copy:inv-p2-1:front", back: "copy:inv-p2-1:back" } },
+      { invId: "inv-p3-1", partnerId: "p3", cardId: "i17", ask: 10200, cost: 8800, acquired: "2026-05-18", archived: false, cert: "PSA 71559034", photos: { front: "copy:inv-p3-1:front", back: "copy:inv-p3-1:back" } },
+      { invId: "inv-p2-2", partnerId: "p2", cardId: "i23", ask: 1290, cost: 990, acquired: "2026-07-11", archived: false, cert: null, photos: { front: "copy:inv-p2-2:front", back: "copy:inv-p2-2:back" } },
+      { invId: "inv-p4-1", partnerId: "p4", cardId: "u6", ask: 1380, cost: 1050, acquired: "2026-07-29", archived: false, cert: null, photos: { front: "copy:inv-p4-1:front", back: "copy:inv-p4-1:back" } },
+    ]),
+    goals: goalsSeed.map((g, i) => ({
+      id: "g" + i, collectorId: g[0], cardId: g[1], tier: g[2], note: g[3],
+      since: g[4],        // when the CURRENT priority began
+      createdAt: g[5],    // when the goal first existed
+      confirmedAt: g[6],  // when the collector last said it's still accurate
+      secondarySince: g[2] === "primary" ? g[5] : null,
+    })),
+    opportunities: buildOpps(oppsSeed, goalsSeed),
+    binder: COLLECTOR_CARDS_SEED.map((r, i) => ({ id: "cc" + i, cardId: r[0], collectorId: r[1], market: r[3], photos: r[4], cert: r[5], addedAt: r[6] })),
+    /* CANONICAL INTEREST: TrustedPartner -> exact BinderCopy. */
+    interests: (() => {
+    const rows = [];
+    COLLECTOR_CARDS_SEED.forEach((r, i) => {
+      if (r[2]) rows.push({ partnerId: SELF_PARTNER, binderId: "cc" + i, at: r[6] });
+    });
+    OTHER_INTEREST_SEED.forEach((x) => rows.push(x));
+    return rows;
+  })(),
+    activity: ACTIVITY_SEED.map((a, i) => ({ id: "a" + i, collectorId: a[0], type: a[1], text: a[2], date: a[3] })),
+    /* One thread per Trusted Partner x Collector x card identity. Keyed on identity
+       rather than goalId or oppId so it survives Secondary -> Primary and is
+       inherited by the Opportunity when the collector makes an offer. */
+    /* Only the review scenario seeds a conversation: it is the thing promotion
+       must be shown to preserve. Keyed canonically (collector + partner + card)
+       through the same identity function the domain uses. */
+    conversations: review ? [{
+      id: "t-review-promote",
+      key: SharedID.threadKey("c12", SELF_PARTNER, CARDS_SEED.find((c) => c.id === REVIEW_PROMOTE_CARD)),
+      collectorId: "c12", partnerId: SELF_PARTNER, cardId: REVIEW_PROMOTE_CARD, oppId: null,
+      entries: [
+        { id: "e-rev-1", at: "2026-08-08", kind: "message", by: "collector",
+          text: "Watching this one for now \u2014 is the price flexible?" },
+        { id: "e-rev-2", at: "2026-08-08", kind: "message", by: "tp",
+          text: "Some room, yes. Tell me when you're ready to move on it." },
+      ],
+    }] : [],
+  };
+
+  if (!preDeal) return world;
+
+  /* Shape the copies behind the review goal so the collector meets the state
+     being demonstrated. The collector's supply view shows ONE copy per partner
+     and prefers a photographed one, so every copy of that identity has to agree
+     — otherwise the picker would quietly route around the stock-only case. */
+  const wantPhotos = demoStage === PRE_DEAL_READY;
+  return { ...world,
+    inventory: world.inventory.map((i) => (i.cardId !== REVIEW_DEAL_CARD ? i
+      : { ...i, photos: wantPhotos
+        ? { front: "copy:" + i.invId + ":front", back: "copy:" + i.invId + ":back" }
+        : { front: null, back: null } })),
+    /* Nobody has asked yet: the loop starts from the first click. */
+    photoRequests: [],
+  };
+}
+
+/* Store-backed [value, setter] adapter. Existing TP call sites — setInventory(fn),
+   setOpps(fn) — keep working unchanged, but the write lands on the ONE canonical
+   collection. No shadow state, no mirror, no effect syncing two copies. */
+function useShared(store, key) {
+  const state = useSyncExternalStore(store.sub, store.get, store.get);
+  const set = useCallback((updater) => {
+    const cur = store.get();
+    const next = typeof updater === "function" ? updater(cur[key]) : updater;
+    store.set({ ...cur, [key]: next });
+  }, [store, key]);
+  return [state[key], set];
+}
+
+function buildOpps(seed, goalsSeed = GOALS_SEED) {
+  /* A collector holds at most one goal per card identity, so (collectorId,
+     cardId) resolves the goal unambiguously. Resolved ONCE, at hydration. */
+  const goalIdFor = (collectorId, cardId) => {
+    const ix = goalsSeed.findIndex((g) => g[0] === collectorId && g[1] === cardId);
+    return ix < 0 ? null : "g" + ix;
+  };
   const binder = (cid) => COLLECTOR_CARDS_SEED.filter((r) => r[1] === cid && r[2] && r[4].front && r[3] != null);
   const eligible = (cid) => binder(cid).map((r) => r[0]);
   const binderRow = (id) => COLLECTOR_CARDS_SEED.find((r) => r[0] === id);
+  /* A trade term references an exact BinderCopy, and a BinderCopy's canonical id
+     is "cc"+index — the same index buildCanonicalSeed assigns when it maps
+     COLLECTOR_CARDS_SEED into binder records. The seed previously wrote the CARD
+     id into binderId, so every seeded trade card pointed at a copy that does not
+     exist. Resolved through the SAME lookup binderRow uses, so the id names
+     precisely the row whose photos, cert and market value were read. */
+  const binderIdOf = (id) => {
+    const ix = COLLECTOR_CARDS_SEED.findIndex((r) => r[0] === id);
+    return ix < 0 ? null : "cc" + ix;
+  };
   const val = (id) => CARDS_SEED.find((c) => c.id === id)?.value || 0;
 
   return seed.map((t, i) => {
     const [collectorId, cardId, stage, at, listed] = t;
-    const o = { ...emptyOpp(collectorId, cardId, null, listed, at), id: "o" + i, stage, updated: at };
+    const o = { ...emptyOpp(collectorId, cardId, null, listed, at, goalIdFor(collectorId, cardId)),
+      id: "o" + i, stage, updated: at };
     const offer = Math.round(listed * 0.88);
     const settled = Math.round(listed * 0.95);
 
@@ -2016,7 +2372,7 @@ function buildOpps(seed) {
       o.trade = all.length
         ? { mode: "trade", submitted, cards: all.map((id, k) => {
             const b = binderRow(id);
-            const tc = emptyTradeCard(id, b[4], b[5], id);
+            const tc = emptyTradeCard(id, b[4], b[5], binderIdOf(id));
             // the last row always stays awaiting review so the stage never
             // seeds in an already-settled state it should have advanced out of
             if (submitted && k < all.length - 1) {
@@ -2053,7 +2409,7 @@ function buildOpps(seed) {
              6 collector withdrew over the economics */
         o.trade = { mode: "trade", submitted: true, cards: ids.map((id, k) => {
           const b = binderRow(id);
-          const tc = emptyTradeCard(id, b[4], b[5], id);
+          const tc = emptyTradeCard(id, b[4], b[5], binderIdOf(id));
           tc.inclusion = "accepted"; tc.reviewedAt = at;
           const ask = b[3];
           const slot = (k + i) % 7;
@@ -2088,7 +2444,7 @@ function buildOpps(seed) {
           const b = binderRow(id);
           const v = Math.round(b[3] * 0.9);
           const r = rates[(k + i) % rates.length];
-          const tc = emptyTradeCard(id, b[4], b[5], id);
+          const tc = emptyTradeCard(id, b[4], b[5], binderIdOf(id));
           tc.inclusion = "accepted"; tc.reviewedAt = at;
           tc.collectorMarket = v; tc.tpMarket = v; tc.agreedMarket = v;
           tc.valueThread = [
@@ -2157,6 +2513,7 @@ const OPPS_SEED = [
   ["c11", "x2", "completed", "2026-04-11", 300], ["c12", "x6", "completed", "2026-03-29", 380],
   ["c13", "x10", "completed", "2026-07-02", 700], ["c13", "x7", "completed", "2025-12-15", 900],
   ["c1", "x3", "completed", "2025-11-08", 350], ["c11", "x4", "completed", "2026-02-19", 220],
+
 ];
 
 const ACTIVITY_SEED = [
@@ -2213,8 +2570,10 @@ const initials = (n) => n.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpp
    part of the key: a 1st Edition Charizard and an Unlimited Charizard are the same
    name/set/number and would otherwise collide. Condition participates only for Raw
    cards, because a PSA grade already expresses condition. Tags are never involved. */
-const GRADED_VALUES = ["Raw", "PSA 1", "PSA 2", "PSA 3", "PSA 4", "PSA 5", "PSA 6", "PSA 7", "PSA 8", "PSA 9", "PSA 10"];
-const CONDITION_VALUES = ["Near Mint", "Lightly Played", "Moderately Played", "Heavily Played", "Damaged"];
+/* One definition of the grade and condition vocabularies, shared with the
+   Collector so both personas describe a copy identically. */
+const GRADED_VALUES = SharedID.GRADED_VALUES;
+const CONDITION_VALUES = SharedID.CONDITION_VALUES;
 const PRINT_VALUES = ["Normal", "Holo", "Reverse Holo"];
 
 const isRaw = (c) => c && c.grade === "Raw";
@@ -2327,17 +2686,26 @@ const certNumber = (cert) => {
 
 /* ------------------------------- APP ---------------------------------- */
 
-export default function MetYet() {
+export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER }) {
+  /* An injected store always wins — that is how the unified shell hands both
+     personas the SAME runtime. Standalone, the TP builds its own so it still
+     renders on its own, and each mount gets a fresh universe exactly as the old
+     useState hydration did. There is never a second canonical copy inside one
+     mounted runtime. */
+  const store = useMemo(
+    () => injectedStore || createStore(buildCanonicalSeed()), [injectedStore]);
   /* Open on the network for the same reason: it establishes the inputs before their
      consequences. The TP can still go straight to Opportunities. */
   const [nav, setNav] = useState({ section: "collectors" });
-  const [cardDb, setCardDb] = useState(CARDS_SEED);
-  /* The canonical Pokémon catalog for Add Inventory discovery: every PRINTED card
-     MetYet knows exists, whoever holds it. Built from the full card universe — TP
-     inventory, unmet collector goals, collector trade cards and sold history — never
-     filtered to what is owned, and deduplicated on printed identity so one printed
-     card appears once regardless of how many graded copies of it exist.
-     `variants` keeps the underlying records so edition can be resolved on selection. */
+  const [cardDb, setCardDb] = useShared(store, "catalog");
+  const [inventory, setInventory] = useShared(store, "inventory");
+  const [photoRequests, setPhotoRequests] = useShared(store, "photoRequests");
+  const [goals, setGoals] = useShared(store, "goals");
+  const [collectors, setCollectors] = useShared(store, "collectors");
+  const [opps, setOpps] = useShared(store, "opportunities");
+  const [collectorCards, setCollectorCards] = useShared(store, "binder");
+  const [interests, setInterests] = useShared(store, "interests");
+  const [activity, setActivity] = useShared(store, "activity");
   const catalog = useMemo(() => {
     const groups = new Map();
     for (const c of cardDb) {
@@ -2366,35 +2734,12 @@ export default function MetYet() {
     setCardDb((db) => [...db, resolved]);
     return { id, card: resolved };
   };
-  const [inventory, setInventory] = useState(() =>
-    CARDS_SEED.filter((c) => c.id.startsWith("i")).map((c, k) => ({
-      invId: "inv" + (k + 1), cardId: c.id, ask: c.value,
-      cost: Math.round(c.value * 0.78), acquired: "2026-0" + ((k % 6) + 1) + "-1" + ((k % 9) + 1), archived: false,
-      cert: "PSA " + (70000000 + k * 13457), photos: { front: null, back: null },
-    })).concat([
-      // extra physical copies of the same card identity, at different prices
-      { invId: "inv-c2", cardId: "i1", ask: 4650, cost: 3400, acquired: "2026-05-02", archived: false, cert: "PSA 71204885", photos: { front: null, back: null } },
-      { invId: "inv-c3", cardId: "i1", ask: 3950, cost: 3100, acquired: "2026-06-21", archived: false, cert: "PSA 68931507", photos: { front: null, back: null } },
-      { invId: "inv-c4", cardId: "i14", ask: 810, cost: 615, acquired: "2026-07-04", archived: false, cert: "PSA 73550142", photos: { front: null, back: null } },
-    ])
-  );
-  const [goals, setGoals] = useState(() => GOALS_SEED.map((g, i) => ({
-      id: "g" + i, collectorId: g[0], cardId: g[1], tier: g[2], note: g[3],
-      since: g[4],        // when the CURRENT priority began
-      createdAt: g[5],    // when the goal first existed
-      confirmedAt: g[6],  // when the collector last said it's still accurate
-      secondarySince: g[2] === "primary" ? g[5] : null,
-    })));
-  const [collectors, setCollectors] = useState(COLLECTORS_SEED);
-  const [opps, setOpps] = useState(() => buildOpps(OPPS_SEED));
-  const [collectorCards, setCollectorCards] = useState(() =>
-    COLLECTOR_CARDS_SEED.map((r, i) => ({ id: "cc" + i, cardId: r[0], collectorId: r[1], tpInterest: r[2], market: r[3], photos: r[4], cert: r[5], addedAt: r[6] }))
-  );
-  const [activity, setActivity] = useState(() => ACTIVITY_SEED.map((a, i) => ({ id: "a" + i, collectorId: a[0], type: a[1], text: a[2], date: a[3] })));
-  /* One thread per Trusted Partner x Collector x card identity. Keyed on identity
-     rather than goalId or oppId so it survives Secondary -> Primary and is inherited
-     by the Opportunity when the collector makes an offer. */
-  const [threads, setThreads] = useState([]);
+  const [threads, setThreads] = useShared(store, "conversations");
+  /* Interest readers, derived from the one canonical relationship. */
+  const interestedIn = useCallback((binderId, pid = partnerId) =>
+    interests.some((i) => i.binderId === binderId && i.partnerId === pid), [interests, partnerId]);
+  const partnersInterested = useCallback((binderId) =>
+    interests.filter((i) => i.binderId === binderId).map((i) => i.partnerId), [interests]);
   const [toast, setToast] = useState(null);
   const [modal, setModal] = useState(null);
   const [drawer, setDrawer] = useState(null);
@@ -2405,7 +2750,11 @@ export default function MetYet() {
   const card = useCallback((id) => cardDb.find((c) => c.id === id), [cardDb]);
   const collector = useCallback((id) => collectors.find((c) => c.id === id), [collectors]);
 
-  const activeInv = useMemo(() => inventory.filter((i) => !i.archived), [inventory]);
+  /* THE TP SEES ONLY ITS OWN SHELF. Inventory is partner-owned, so every TP
+     surface scopes to the active partner. Other partners' stock lives in the
+     same canonical collection — it simply is not this partner's to manage. */
+  const activeInv = useMemo(
+    () => inventory.filter((i) => !i.archived && i.partnerId === SELF_PARTNER), [inventory]);
   const ownedIds = useMemo(() => new Set(activeInv.map((i) => i.cardId)), [activeInv]);
 
   // preference matches: shared tags, excluding pairs that already have an explicit goal
@@ -2530,34 +2879,33 @@ export default function MetYet() {
         coverage: mine.length ? covered.length / mine.length : null,
         coveredGoals: covered.length,
         totalGoals: mine.length,
-        /* Every card shared, whatever the Trusted Partner thinks of it — tpInterest
+        /* Every card shared, whatever the Trusted Partner thinks of it — interest
            is a TP opinion and has no bearing on how big the binder is. */
         binderTotal: binder.length,
         binderNew: unseenAdditions(binder, c),
-        /* What the TP said they'd accept. Read off tpInterest every render, never stored. */
-        binderOpen: binder.filter((cc) => cc.tpInterest).length,
+        /* What this partner said they'd consider. Read off the interest relationship
+           every render, never stored. */
+        binderOpen: binder.filter((cc) => interestedIn(cc.id)).length,
       };
     },
-    [collectorStats, goals, goalMatches, collector, collectorCards]
+    [collectorStats, goals, goalMatches, collector, collectorCards, interestedIn]
   );
 
 
   /* ---- actions ---- */
-  const threadKeyFor = useCallback((collectorId, cardId) => collectorId + "::" + identityKey(card(cardId)), [card]);
+  /* Thread semantics are canonical and shared — see metyet-domain. Both personas
+     append through the same function, so one conversation per collector + card
+     identity holds across both experiences. */
+  /* This workspace IS one Trusted Partner, so every thread it touches is scoped
+     to that partner. Another partner holding the same identity has their own. */
+  const threadKeyFor = useCallback((collectorId, cardId) => SharedID.threadKey(collectorId, partnerId, card(cardId)), [card, partnerId]);
   const threadFor = useCallback(
-    (collectorId, cardId) => threads.find((t) => t.key === threadKeyFor(collectorId, cardId)) || null,
-    [threads, threadKeyFor]
+    (collectorId, cardId) => SharedID.findThread(threads, collectorId, partnerId, card(cardId)),
+    [threads, card, partnerId]
   );
-  /* Opening the workspace never creates a thread. Only a real message or a lifecycle
-     event does, so "has this conversation started?" stays honest. */
   const appendEntry = (collectorId, cardId, entry) => {
-    const key = collectorId + "::" + identityKey(card(cardId));
-    const stamped = { id: "e" + Date.now() + Math.random().toString(36).slice(2, 6), at: new Date().toISOString(), ...entry };
-    setThreads((ts) => {
-      const found = ts.find((t) => t.key === key);
-      if (found) return ts.map((t) => (t.key === key ? { ...t, entries: [...t.entries, stamped] } : t));
-      return [...ts, { id: "t" + key, key, collectorId, cardId, oppId: null, entries: [stamped] }];
-    });
+    setThreads((ts) => SharedID.appendThreadEntry(ts, {
+      collectorId, partnerId, card: card(cardId), cardId, entry }));
   };
   const sendMessage = (collectorId, cardId, by, text) => {
     appendEntry(collectorId, cardId, { kind: "message", by, text });
@@ -2566,8 +2914,8 @@ export default function MetYet() {
   /* Structured lifecycle events land in the same thread, chronologically. */
   const logMilestone = (collectorId, cardId, text) => appendEntry(collectorId, cardId, { kind: "event", by: "system", text });
   const hasConversation = useCallback(
-    (collectorId, cardId) => { const t = threadFor(collectorId, cardId); return !!t && t.entries.some((e) => e.kind === "message"); },
-    [threadFor]
+    (collectorId, cardId) => SharedID.hasConversation(threads, collectorId, partnerId, card(cardId)),
+    [threads, card, partnerId]
   );
 
   const logActivity = (collectorId, type, text, date) =>
@@ -2621,7 +2969,15 @@ export default function MetYet() {
     const g = goals.find((x) => x.id === goalId);
     const inv = inventory.find((i) => i.invId === invId && !i.archived);
     if (!g || !inv) return;
-    const o = emptyOpp(g.collectorId, g.cardId, inv.invId, inv.ask, NOW);
+    /* A deal is evidence of active pursuit, so the goal must be Primary. A
+       Trusted Partner cannot promote a collector's goal on their behalf — that
+       is the collector's own statement of intent. */
+    if (g.tier !== "primary") return;
+    /* ONE active negotiation per goal, enforced where the opportunity is made —
+       not by whichever surface happened to call. */
+    if (opps.some((o2) => o2.goalId === goalId && isActive(o2)
+      && STAGE_MAP.indexOf(o2.stage) >= STAGE_MAP.indexOf("agree-price"))) return;
+    const o = emptyOpp(g.collectorId, g.cardId, inv.invId, inv.ask, NOW, goalId, inv.partnerId || SELF_PARTNER);
     o.priceThread = [{ by: "collector", type: "offer", amount, at: NOW }];
     setOpps((os) => [...os, o]);
     // Making an offer is a stronger reaffirmation than pressing Confirm, so it
@@ -2639,22 +2995,41 @@ export default function MetYet() {
 
   /* --- AGREE ON PRICE --- */
 
-  const priceRespond = (oppId, by, action, amount) =>
-    patchOpp(oppId, (o) => {
-      const thread = [...o.priceThread, { by, type: action, amount: action === "accept" ? lastEntry(o.priceThread).amount : amount, at: NOW }];
-      const agreed = action === "accept" ? lastEntry(o.priceThread).amount : null;
+  /* SETTLING A PRICE IS A COMMITMENT OF THE PHYSICAL COPY, so acceptance goes
+     through the canonical action that enforces that — the same one the
+     Collector uses. Patching agreedPrice here would let this seat commit a copy
+     another deal had already taken, which is not a thing that can be true of
+     one physical card. Counters and declines are ordinary edits and stay here. */
+  const priceRespond = (oppId, by, action, amount) => {
+    if (action === "accept") {
+      const o = store.get().opportunities.find((x) => x.id === oppId);
+      const settled = o && lastEntry(o.priceThread);
+      const res = store.actions.agreePrice({ oppId, by,
+        amount: settled ? settled.amount : amount, at: NOW });
+      if (res && res.refused) {
+        /* Says only that the copy is taken — never by whom, or for how much. */
+        say(res.refused === SharedID.REFUSE.copyCommitted
+          ? "That copy is already committed to another deal."
+          : "That price could not be agreed.");
+        return null;
+      }
+      const now = store.get().opportunities.find((x) => x.id === oppId);
+      say(`Price agreed at ${money(now.agreedPrice)} — ${cardShort(card(now.cardId))}`);
+      return now;
+    }
+    return patchOpp(oppId, (o) => {
+      const thread = [...o.priceThread, { by, type: action, amount, at: NOW }];
       return {
         ...o, priceThread: thread,
-        agreedPrice: agreed ?? o.agreedPrice,
-        stage: action === "accept" ? "select-trade" : action === "decline" ? o.stage : o.stage,
+        stage: action === "decline" ? o.stage : o.stage,
         declined: action === "decline" ? true : o.declined,
       };
     }, (n, o) => {
       const who = by === "tp" ? "You" : collector(o.collectorId).short;
-      if (action === "accept") return `Price agreed at ${money(n.agreedPrice)} — ${cardShort(card(o.cardId))}`;
       if (action === "decline") return `${who} stopped pursuing ${cardShort(card(o.cardId))}`;
       return `${who} countered at ${money(amount)} — ${cardShort(card(o.cardId))}`;
     });
+  };
 
   /* --- SELECT TRADE (Collector-owned) --- */
 
@@ -2864,7 +3239,7 @@ export default function MetYet() {
     if (!hasBothPhotos(photos)) { say("A trade binder copy needs both a front and a back photo."); return false; }
     setCollectorCards((cs) => [...cs, {
       id: "cc" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
-      cardId, collectorId, tpInterest: false,
+      cardId, collectorId,
       market: market == null || market === "" ? null : Number(market),
       photos: { front: photos.front, back: photos.back },
       cert: cert || null,
@@ -2885,10 +3260,13 @@ export default function MetYet() {
   const markBinderReviewed = useCallback((collectorId) => {
     const at = new Date().toISOString();
     setCollectors((cs) => cs.map((c) => (c.id === collectorId ? { ...c, binderReviewedAt: at } : c)));
-  }, []);
+  }, [setCollectors]);
 
-  const setTradeInterest = (ccId, on) => {
-    setCollectorCards((cs) => cs.map((c) => (c.id === ccId ? { ...c, tpInterest: on } : c)));
+  const setTradeInterest = (ccId, on, partnerId = SELF_PARTNER) => {
+    setInterests((xs) => (on
+      ? (xs.some((i) => i.binderId === ccId && i.partnerId === partnerId) ? xs
+        : [...xs, { partnerId, binderId: ccId, at: NOW }])
+      : xs.filter((i) => !(i.binderId === ccId && i.partnerId === partnerId))));
     say(on ? "Marked open to trade. It can now be added in Select Trade." : "No longer marked open to trade. It won't appear in Select Trade.");
   };
 
@@ -2915,6 +3293,7 @@ export default function MetYet() {
     if (cost === undefined || ask === undefined) return;
     setInventory((iv) => [...iv, {
       invId: "inv" + cardId + "-" + Date.now(),
+      partnerId: SELF_PARTNER,          // a copy belongs to the partner who added it
       cardId,
       ask,
       cost,
@@ -2968,11 +3347,40 @@ export default function MetYet() {
     setModal(null);
   };
 
+  /* ACTUAL PHOTOS. One canonical record: the photos live on the inventory copy,
+     and a request is a small copy-specific relationship. Nothing here is
+     duplicated per collector — one photo set serves everyone who asked. */
+  const photos = {
+    state: photoRequests,
+    requestsFor: (invId) => (photoRequests || [])
+      .filter((r) => r.invId === invId && !r.fulfilledAt)
+      .map((r) => ({ ...r, name: (collectors.find((c) => c.id === r.collectorId) || {}).name || r.collectorId })),
+    /* Marks the faces the partner has photographed. Front and back are accepted
+       independently, but the copy is only offer-ready once both exist. */
+    addCopyPhotos: (invId, faces) => {
+      const inv = inventory.find((i) => i.invId === invId);
+      if (!inv) return;
+      const next = { ...(inv.photos || {}) };
+      if (faces.front) next.front = "copy:" + invId + ":front";
+      if (faces.back) next.back = "copy:" + invId + ":back";
+      setInventory(inventory.map((i) => (i.invId === invId ? { ...i, photos: next } : i)));
+      if (next.front && next.back) {
+        setPhotoRequests((photoRequests || []).map((r) => (r.invId === invId && !r.fulfilledAt
+          ? { ...r, fulfilledAt: NOW } : r)));
+        say("Front and back photos added. Collectors who asked can now make an offer.");
+      } else {
+        say(next.front ? "Front photo added. The back is still needed."
+          : "Back photo added. The front is still needed.");
+      }
+    },
+  };
+
   const ctx = {
+    photos,
     nav, setNav, card, collector, collectors, cardDb, catalog, resolveCanonicalCard, inventory, activeInv, ownedIds, goals, opps, activity,
     model, profile, demandCards, coverage, demandFor, goalMatches, goalsForIdentity, stageCounts, goalsAtStage, collectorStats, collectorFacts,
     say, setModal, setDrawer, drawer, startOutreach, saveCard, addCopyToInventory, archiveInv, archiveRisk,
-    collectorCards, setTradeInterest, attachBinderPhotos, markBinderReviewed, collectorAddBinderCard, hasBothPhotos,
+    collectorCards, setTradeInterest, interests, interestedIn, partnersInterested, attachBinderPhotos, markBinderReviewed, collectorAddBinderCard, hasBothPhotos,
     threads, threadFor, sendMessage, hasConversation,
     collectorPromoteGoal, collectorConfirmGoal, collectorMakeOffer, priceRespond,
     tradeAddCard, tradeRemoveCard, submitPackageForReview, tpReviewInclusion,
@@ -3626,9 +4034,25 @@ function CardImage({ card: c, size = "thumbnail", className = "" }) {
   // dimensions are always reserved so a missing or slow image shifts nothing
   const box = { width: w, height: Math.round(w / 0.716) };   // standard card ratio
   if (!c || !art || failed) {
+    /* Artwork is a convenience, never the card's identity. When it is missing, slow or
+       blocked, the plate still says WHICH card this is, so a grid never degrades into
+       blank boxes. Dimensions are the same as the image, so nothing shifts if the
+       artwork later loads. */
+    const roomy = w >= CARD_IMAGE_SIZES.browse;      // below this only a name fits
     return (
-      <span className={"cimg empty " + className} style={box} aria-hidden="true"
-        title={c && !c.csvId ? "No catalog match for this card" : "Card image unavailable"} />
+      <span className={"cimg empty " + size + " " + className} style={box}
+        role="img"
+        aria-label={c ? `${c.name} — ${c.set} ${c.num}` : "Card image unavailable"}
+        title={c ? cardShort(c) : "Card image unavailable"}>
+        {c && (
+          <span className="cimg-ph">
+            <span className="cimg-ph-n">{c.name}</span>
+            {roomy && c.set && <span className="cimg-ph-s">{c.set}</span>}
+            {roomy && c.num && c.num !== "—" && <span className="cimg-ph-s">#{c.num}</span>}
+            {roomy && <span className="cimg-ph-g">{isRaw(c) ? "Raw" : c.grade}</span>}
+          </span>
+        )}
+      </span>
     );
   }
   // small asset for list contexts, hi-res only where the card is the subject
@@ -3676,7 +4100,8 @@ const Money = ({ v }) => <span className="mono">{v == null ? "—" : money(v)}</
    no usable reference the percentage field is simply not offered. */
 const cleanNum = (v) => v.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1");
 
-function CounterFields({ amt, setAmt, reference, pctLabel, pctAria, amtAria, showPercent = true }) {
+function CounterFields({ amt, setAmt, reference, pctLabel, pctAria, amtAria,
+  amtLabel = "Amount", showPercent = true }) {
   const pct = percentageOf(amt, reference);
   /* Market value is negotiated in dollars only; the percentage reading belongs to
      stages measured against a reference the parties actually talk in. */
@@ -3693,7 +4118,7 @@ function CounterFields({ amt, setAmt, reference, pctLabel, pctAria, amtAria, sho
   return (
     <div className="pn-in">
       <label className="pn-f">
-        <span className="pn-fl">Amount</span>
+        <span className="pn-fl">{amtLabel}</span>
         <span className="pn-w"><span className="pn-u">$</span>
           <input className="inp" type="text" inputMode="decimal" value={amt}
             aria-label={amtAria}
@@ -3716,6 +4141,10 @@ function CounterFields({ amt, setAmt, reference, pctLabel, pctAria, amtAria, sho
 }
 
 const validAmount = (amt) => amt !== "" && isFinite(Number(amt)) && Number(amt) > 0;
+
+/* Shared with the Collector so both seats negotiate price through one
+   implementation: same conversion, same guards, same canonical dollar value. */
+export { CounterFields, validAmount, canCounter, percentageOf, amountFromPercentage };
 
 /* Trade % and Trade Value are two readings of ONE negotiated term, and here the
    PERCENTAGE is the canonical one — it is what tcApplyPercent stores. The dollar
@@ -3930,9 +4359,13 @@ function PriceDecision({ opp, col, na, priceRespond, by = "tp" }) {
 
         {canCounter(opp.priceThread, by) && (<>
           <div className="pn-or"><span>or counter</span></div>
-          <CounterFields amt={amt} setAmt={setAmt} reference={listed} pctLabel="% of listed"
-            amtAria="Counter amount in dollars"
-            pctAria="Counter as a percentage of listed price" />
+          {/* The same synced pair the Collector uses, labelled for this seat.
+              Countering is not committing: the copy is only spoken for when a
+              price is finalised, so nothing here warns about commitment. */}
+          <CounterFields amt={amt} setAmt={setAmt} reference={listed}
+            amtLabel="Your counter" pctLabel="% of asking"
+            amtAria="Your counter in dollars"
+            pctAria="Your counter as a percentage of the asking price" />
           {/* One expression drives both the styling and the disabled state, so the
               button can never look ready when it cannot submit, or vice versa. */}
           <button className={"btn sm pn-send" + (validAmount(amt) ? " pri" : "")}
@@ -4388,7 +4821,7 @@ function ResolvedCardRow({ ctx, tc, accepted }) {
 
 function SelectTradeReview({ ctx, opp }) {
   const { collectorCards, card, collector, tradeAddCard, submitPackageForReview,
-    collectorChooseCash, setDrawer, setNav } = ctx;
+    collectorChooseCash, setDrawer, setNav, interestedIn } = ctx;
   const col = collector(opp.collectorId);
   const cards = tradeCards(opp);
 
@@ -4398,7 +4831,7 @@ function SelectTradeReview({ ctx, opp }) {
   const rejected = cards.filter((tc) => tc.inclusion === "rejected");
 
   const inPackage = new Set(cards.map((c) => c.cardId));
-  const addable = collectorCards.filter((cc) => cc.collectorId === opp.collectorId && cc.tpInterest && !inPackage.has(cc.cardId));
+  const addable = collectorCards.filter((cc) => cc.collectorId === opp.collectorId && interestedIn(cc.id) && !inPackage.has(cc.cardId));
 
   const summary = [
     accepted.length ? `${accepted.length} accepted` : null,
@@ -5760,6 +6193,63 @@ function MyInventory({ ctx }) {
   );
 }
 
+/* ------------------------------------------------- ACTUAL PHOTOS OF THIS COPY
+
+   A stock image says which card this is. Front and back photos say what THIS
+   copy looks like, which is what a collector is actually pricing. Photographing
+   is real work, so it happens when demand asks for it — and once done it stays
+   on the inventory record, so every later collector benefits from it.
+
+   This lives on the inventory row because that is already the copy-specific
+   surface; a request is about one shelf item, not about a card identity. */
+function PhotoDemand({ ctx, inv }) {
+  const { state, requestsFor, addCopyPhotos } = ctx.photos || {};
+  if (!state) return null;
+  const photos = inv.photos || {};
+  const complete = !!(photos.front && photos.back);
+  const asks = requestsFor(inv.invId);
+
+  if (complete) {
+    return (
+      <div className="pd done">
+        <span className="pd-t">Photos of actual card · Front &amp; Back</span>
+      </div>
+    );
+  }
+  if (!asks.length && !photos.front) return null;   // no demand, no partial work
+
+  return (
+    <div className="pd">
+      <div className="pd-t">
+        {asks.length
+          ? asks.map((a) => a.name).join(", ")
+            + (asks.length === 1 ? " is reviewing this copy" : " are reviewing this copy")
+          : "Front photo added — back still needed"}
+      </div>
+      <div className="pd-s">
+        {photos.front && !photos.back ? "Back photo still needed before they can see the whole card."
+          : photos.back && !photos.front ? "Front photo still needed before they can see the whole card."
+          : "Add actual card photos of this exact copy so they can review it."}
+      </div>
+      <div className="pd-a">
+        {!photos.front && (
+          <button className="btn sm" onClick={() => addCopyPhotos(inv.invId, { front: true })}>
+            Add front photo
+          </button>
+        )}
+        {!photos.back && (
+          <button className="btn sm" onClick={() => addCopyPhotos(inv.invId, { back: true })}>
+            Add back photo
+          </button>
+        )}
+        <button className="btn sm pri" onClick={() => addCopyPhotos(inv.invId, { front: true, back: true })}>
+          Add actual card photos
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function InventoryRow({ ctx, inv, c, d }) {
   const { collector, setNav, setDrawer, setModal } = ctx;
   const [whyOpen, setWhyOpen] = useState(false);
@@ -5790,6 +6280,7 @@ function InventoryRow({ ctx, inv, c, d }) {
     <div className="panel inv-row">
       <div className="inv-art"><CardImage card={c} size="shelf" /></div>
       <div className="inv-body">
+      <PhotoDemand ctx={ctx} inv={inv} />
       <div style={{ display: "flex", alignItems: "flex-start", gap: 14, padding: "12px 14px" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <span className="inv-idline">
@@ -6061,7 +6552,7 @@ function CollectorNetwork({ ctx }) {
    this asks "what does my whole network have, what is new, and who already wants it?"
    No parallel card model, no second interest flag, no relevance score. */
 function NetworkBinder({ ctx }) {
-  const { collectorCards, collectors, card, collector, setTradeInterest, setNav, setDrawer, goalsForIdentity } = ctx;
+  const { collectorCards, collectors, card, collector, setTradeInterest, setNav, setDrawer, goalsForIdentity, interestedIn } = ctx;
   const [q, setQ] = useState("");
   const [only, setOnly] = useState(null);            // "new" | "notReviewed" | "interested"
   const [demandOnly, setDemandOnly] = useState(false); // composes with the above
@@ -6090,16 +6581,16 @@ function NetworkBinder({ ctx }) {
         isNew: isUnseenAddition(cc, col),
         /* Not reviewed is DERIVED from the absence of interest — no second flag, and
            no implication that the TP rejected anything. */
-        notReviewed: !cc.tpInterest };
+        notReviewed: !interestedIn(cc.id) };
     })
-    .filter(Boolean), [collectorCards, inNetwork, card, collector, goalsForIdentity]);
+    .filter(Boolean), [collectorCards, inNetwork, card, collector, goalsForIdentity, interestedIn]);
 
   const query = q.trim().toLowerCase();
   const shown = useMemo(() => {
     let r = rows;
     if (only === "new") r = r.filter((x) => x.isNew);
     if (only === "notReviewed") r = r.filter((x) => x.notReviewed);
-    if (only === "interested") r = r.filter((x) => x.cc.tpInterest);
+    if (only === "interested") r = r.filter((x) => interestedIn(x.cc.id));
     if (demandOnly) r = r.filter((x) => x.primary.length > 0);
     if (who) r = r.filter((x) => x.col.id === who);
     if (form) r = r.filter((x) => (form === "raw" ? isRaw(x.c) : !isRaw(x.c)));
@@ -6183,7 +6674,7 @@ function NetworkBinder({ ctx }) {
       ) : (
         <div className="nb-grid">
           {shown.map((x) => (
-            <div key={x.cc.id} className={"nb-card" + (x.cc.tpInterest ? " on" : "")}>
+            <div key={x.cc.id} className={"nb-card" + (interestedIn(x.cc.id) ? " on" : "")}>
               <div className="nb-art"><CardImage card={x.c} size="feature" /></div>
               <div className="nb-b">
                 <div className="nb-t" title={cardTitle(x.c)}>{x.c.name}</div>
@@ -6233,14 +6724,14 @@ function NetworkBinder({ ctx }) {
                   <button className="btn sm nb-view" onClick={() => setDrawer({ type: "binderCopy", ccId: x.cc.id })}>
                     View copy
                   </button>
-                  {/* The same tpInterest state the collector profile writes. */}
+                  {/* The same canonical interest relationship the profile writes. */}
                   {/* Interest is the Trusted Partner's, not the collector's. The
                       aria-label says so outright; the visible label stays short. */}
-                  <button className={"btn sm cp-bind-x" + (x.cc.tpInterest ? " on" : "")}
-                    aria-pressed={x.cc.tpInterest ? "true" : "false"}
-                    aria-label={(x.cc.tpInterest ? "Remove your interest in" : "Mark your interest in")
+                  <button className={"btn sm cp-bind-x" + (interestedIn(x.cc.id) ? " on" : "")}
+                    aria-pressed={interestedIn(x.cc.id) ? "true" : "false"}
+                    aria-label={(interestedIn(x.cc.id) ? "Remove your interest in" : "Mark your interest in")
                       + " " + cardShort(x.c) + " owned by " + x.col.short}
-                    onClick={() => setTradeInterest(x.cc.id, !x.cc.tpInterest)}>
+                    onClick={() => setTradeInterest(x.cc.id, !interestedIn(x.cc.id))}>
                     <span className="mk" aria-hidden="true" />
                     You&rsquo;re interested
                   </button>
@@ -6399,9 +6890,9 @@ function GoalCard({ ctx, g, tier }) {
 /* One card the collector has shared, as it sits in their binder. Everything shown
    is persistent binder data already on the collectorCards record or its catalog
    card — nothing here is valued, negotiated, or opportunity-specific. The single
-   action is standing Trusted Partner interest, written straight to tpInterest. */
+   action is standing Trusted Partner interest, written to the interest relationship. */
 function BinderCard({ ctx, cc }) {
-  const { card, setTradeInterest, setDrawer } = ctx;
+  const { card, setTradeInterest, setDrawer, interestedIn } = ctx;
   const c = card(cc.cardId);
   if (!c) return null;
   /* Where the copy comes from, and what makes this copy that copy. Both lines are
@@ -6418,7 +6909,7 @@ function BinderCard({ ctx, cc }) {
   ].filter(Boolean).join(" · ");
 
   return (
-    <div className={"cp-bind" + (cc.tpInterest ? " on" : "")}>
+    <div className={"cp-bind" + (interestedIn(cc.id) ? " on" : "")}>
       {/* Artwork carries the recognition, so it keeps the space; the caption below
           holds the identity needed to tell this copy from another like it. */}
       <div className="cp-bind-art"><CardImage card={c} size="feature" /></div>
@@ -6433,9 +6924,9 @@ function BinderCard({ ctx, cc }) {
           View copy
         </button>
         <button
-          className={"btn sm cp-bind-x" + (cc.tpInterest ? " on" : "")}
-          aria-pressed={cc.tpInterest ? "true" : "false"}
-          onClick={() => setTradeInterest(cc.id, !cc.tpInterest)}
+          className={"btn sm cp-bind-x" + (interestedIn(cc.id) ? " on" : "")}
+          aria-pressed={interestedIn(cc.id) ? "true" : "false"}
+          onClick={() => setTradeInterest(cc.id, !interestedIn(cc.id))}
         >
           <span className="mk" aria-hidden="true" />
           Open to trade
@@ -6452,9 +6943,9 @@ const DEFAULT_BINDER_LIMIT = 10;
 
 /* Standing relationship context. Presentation only: ordering, paging and search are
    derived per render, so collectorCards stays exactly as the collector shared it and
-   tpInterest remains the single piece of state this section writes. */
+   the interest relationship remains the single piece of state this section writes. */
 function TradeBinder({ ctx, collectorId, sectionRef }) {
-  const { collectorCards, card } = ctx;
+  const { collectorCards, card, interestedIn } = ctx;
   const [q, setQ] = useState("");
   const [expanded, setExpanded] = useState(false);
 
@@ -6479,7 +6970,7 @@ function TradeBinder({ ctx, collectorId, sectionRef }) {
     });
   }, [ordered, query, card]);
 
-  const openCount = binder.filter((cc) => cc.tpInterest).length;
+  const openCount = binder.filter((cc) => interestedIn(cc.id)).length;
   // Above the limit the binder can't be seen whole, so it earns search and paging.
   const oversized = binder.length > DEFAULT_BINDER_LIMIT;
   // A search shows everything it found; the page limit only governs the default view.
@@ -6801,26 +7292,8 @@ const optionalMoneyState = (raw) => {
 /* Multi-term, case-insensitive match across the fields a TP would actually type.
    Every term must appear somewhere in the card's searchable text, so "Charizard Base"
    narrows to Base Set Charizards rather than returning either. */
-function searchCards(cards, query) {
-  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  if (!terms.length) return [];
-  const scored = [];
-  for (const c of cards) {
-    const name = String(c.name).toLowerCase();
-    const hay = [c.name, c.set, c.num, c.year, c.grade, c.edition, c.print, c.language]
-      .filter(Boolean).join(" ").toLowerCase();
-    if (!terms.every((t) => hay.includes(t))) continue;
-    // rank: name matches first, then earlier name position, then set then name
-    const inName = terms.filter((t) => name.includes(t)).length;
-    scored.push({ c, inName, pos: name.indexOf(terms[0]) });
-  }
-  return scored
-    .sort((a, b) => b.inName - a.inName
-      || (a.pos < 0 ? 99 : a.pos) - (b.pos < 0 ? 99 : b.pos)
-      || a.c.name.localeCompare(b.c.name)
-      || a.c.set.localeCompare(b.c.set))
-    .map((x) => x.c);
-}
+/* The canonical search, shared with the Collector's Add Goal. */
+const searchCards = SharedID.searchCards;
 
 /* Add Inventory: find the PRINTED card, then describe the physical copy you hold.
    Search and dedup run on printIdentityKey — grade never splits a search result. */

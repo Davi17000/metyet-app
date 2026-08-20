@@ -1,0 +1,10 @@
+const { execFileSync } = require("child_process");
+let fail = 0;
+execFileSync("node", ["tests/fixture-build.mjs"], { stdio: "inherit" });
+for (const f of ["tests/e2e-unified.cjs", "tests/unified.cjs", "tests/shared-state.cjs", "tests/conversation-privacy.cjs", "tests/deal-reentry.cjs", "tests/review-card.cjs", "tests/pursuit-ownership.cjs", "tests/discovery-review-card.cjs", "tests/inline-review-selection.cjs", "tests/exclusion-boundaries.cjs", "tests/tp-commitment-ux.cjs", "tests/copy-photos.cjs", "tests/seed-integrity.cjs", "tests/review-harness.cjs", "tests/demo-stage-picker.cjs", "tests/pre-deal-scenario.cjs", "tests/dev-flag.cjs", "tests/prototype-stage-header.cjs", "tests/deal-consolidation.cjs", "tests/inline-deal-flow.cjs", "tests/inline-visual-hierarchy.cjs", "tests/inline-theme-layout.cjs", "tests/inline-shell.cjs", "tests/inline-width.cjs", "tests/initial-offer-pricing.cjs", "tests/agree-price-stage.cjs", "tests/agree-price-negotiation.cjs", "tests/inline-composition.cjs", "tests/inline-macro-layout.cjs", "tests/cross-persona.cjs", "tests/collector.cjs", "tests/collector-theme.cjs", "tests/network-binder.cjs", "tests/end-deal.cjs", "tests/collector-profile.cjs", "tests/navigation.cjs", "tests/cultivate.cjs", "tests/coverage.cjs", "tests/opportunities.cjs", "tests/workspace.cjs", "tests/agree-price.cjs", "tests/value-trade.cjs", "tests/trade-pct.cjs", "tests/select-trade.cjs", "tests/card-copy.cjs", "tests/add-inventory-repro.cjs", "tests/binder-copy.cjs", "tests/photo-identity.cjs", "tests/network.cjs", "tests/trade-binder.cjs", "tests/binder-scale.cjs", "tests/regression.cjs"]) {
+  console.log("\n======== " + f + " ========");
+  try { console.log(execFileSync("node", [f], { encoding: "utf8" })); }
+  catch (e) { console.log(e.stdout || ""); fail++; }
+}
+console.log(fail ? `\n${fail} suite(s) failed` : "\nALL SUITES PASSED");
+process.exit(fail ? 1 : 0);
