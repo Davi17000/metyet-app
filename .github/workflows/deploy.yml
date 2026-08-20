@@ -32,8 +32,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
-        run: npm run build
+      # dist/ is build and test infrastructure: Node-facing bundles that
+      # externalise React, with no HTML and nothing that mounts. Publishing it
+      # is what produced the 404. The site build makes an actual page.
+      - name: Build site
+        run: npm run build:site
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -41,7 +44,7 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          path: ./dist
+          path: ./site
 
   deploy:
     environment:
