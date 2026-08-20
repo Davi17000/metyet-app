@@ -70,7 +70,7 @@ const asCollector = (mod) => {
   return r;
 };
 const selectorIn = (r) => r.root.findAllByType("select")
-  .find((s) => /Demo stage/.test(String(s.props["aria-label"] || "")));
+  .find((s) => /Scenario/.test(String(s.props["aria-label"] || "")));
 
 describe("A. The bundle under test is the one just built", () => {
   /* This suite reads the app from dist/, which `npm test` does not rebuild.

@@ -57,7 +57,7 @@ const mount = (mod) => { let r; TR.act(() => { r = TR.create(React.createElement
 const asCollector = (r) => { click(cls(r, "myp-card")[1]); return r; };
 const asTP = (r) => { click(cls(r, "myp-card")[0]); return r; };
 const selectorIn = (r) => r.root.findAllByType("select")
-  .find((s) => /Demo stage/.test(String(s.props["aria-label"] || "")));
+  .find((s) => /Scenario/.test(String(s.props["aria-label"] || "")));
 const choose = (r, stage) => TR.act(() => selectorIn(r).props.onChange({ target: { value: stage } }));
 
 describe("A. Development only, Collector only", () => {
@@ -65,7 +65,7 @@ describe("A. Development only, Collector only", () => {
     const prod = load(false);
     const r = asCollector(mount(prod));
     eq(r.root.findAllByType("select").length, 0, "no selector anywhere");
-    assert(!/Demo stage/.test(txt(cls(r, "myp-bar")[0])), "and no label for one");
+    assert(!/Scenario/.test(txt(cls(r, "myp-bar")[0])), "and no label for one");
   });
 
   test("it appears in the prototype bar in dev, viewing as Collector", () => {
@@ -74,7 +74,7 @@ describe("A. Development only, Collector only", () => {
     const bar = cls(r, "myp-bar")[0];
     assert(selectorIn(r), "the selector exists");
     assert(cls(bar, "myp-stage")[0], "and it lives inside the prototype bar");
-    assert(/Demo stage/.test(txt(bar)), "labelled as demo tooling");
+    assert(/Scenario/.test(txt(bar)), "labelled for a tester, not an engineer");
     /* Beside the existing controls, not replacing them. */
     assert(/Switch persona/.test(txt(bar)), "Switch persona is untouched");
     assert(/Reset demo/.test(txt(bar)), "and so is Reset demo");
@@ -85,7 +85,7 @@ describe("A. Development only, Collector only", () => {
     const r = asTP(mount(dev));
     eq(r.root.findAllByType("select").length, 0,
       "a Collector-only fixture control has no place in the TP UI");
-    assert(!/Demo stage/.test(txt(cls(r, "myp-bar")[0])), "not even its label");
+    assert(!/Scenario/.test(txt(cls(r, "myp-bar")[0])), "not even its label");
   });
 
   test("it is not inside the product content", () => {
@@ -93,7 +93,7 @@ describe("A. Development only, Collector only", () => {
     const r = asCollector(mount(dev));
     const body = cls(r, "myp-body")[0];
     eq(body.findAllByType("select").filter((s) =>
-      /Demo stage/.test(String(s.props["aria-label"] || ""))).length, 0,
+      /Scenario/.test(String(s.props["aria-label"] || ""))).length, 0,
       "the selector is not inside the Collector app");
     eq(cls(body, "myp-stage").length, 0, "nor anywhere in the product body");
     /* And specifically not inside a Goal card or Deal Flow. */
@@ -102,12 +102,15 @@ describe("A. Development only, Collector only", () => {
   });
 
   test("the gate is in source, not styling", () => {
-    assert(/const DEV = SHARED_DEV;/.test(SHELL),
-      "the shell uses the canonical dev flag");
-    assert(/import \{ DEV as SHARED_DEV \} from "\.\.\/shared\/dev-flag\.js"/.test(SHELL),
+    /* CONTRACT CHANGE: the scenario picker is for testers, so it is gated on
+       the canonical DEMO flag. Both flags are still imported from their single
+       definitions rather than re-derived from the environment. */
+    assert(/const DEMO = SHARED_DEMO;/.test(SHELL),
+      "the shell uses the canonical demo flag");
+    assert(/import \{ DEMO as SHARED_DEMO \} from "\.\.\/shared\/demo-flag\.js"/.test(SHELL),
       "imported from the single definition, not re-derived");
-    assert(/\{DEV && persona === "collector" && \(/.test(SHELL),
-      "and gates the control on dev AND the Collector persona");
+    assert(/\{DEMO && persona === "collector" && \(/.test(SHELL),
+      "and gates the control on demo mode AND the Collector persona");
   });
 });
 

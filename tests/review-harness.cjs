@@ -217,7 +217,7 @@ describe("3. Reset restores only the review scenario", () => {
     assert(/buildCanonicalSeed\(\{ review: true, demoStage:/
       .test(readSrc("src/MetYet.jsx")),
       "which rebuilds from the canonical seed builder");
-    assert(/if \(!DEV\) return null;/.test(fn), "and it is dev-only");
+    assert(/if \(!DEMO\) return null;/.test(fn), "and it is dev-only");
   });
 });
 

@@ -162,13 +162,23 @@ describe("D. Demo tooling is compiled off, and provably so", () => {
     eq(devMod.exports.DEV, true, "and true when a build asks for it");
   });
 
-  test("the dev surfaces are gated on exactly that flag", () => {
+  test("each surface is gated on the flag that matches its audience", () => {
+    /* CONTRACT CHANGE: scenario controls serve testers and are gated on DEMO;
+       engineering tooling stays on DEV. Both flags come from their single
+       canonical modules. */
     const shell = fs.readFileSync(path.join(ROOT, "shell", "MetYetPrototype.jsx"), "utf8");
     assert(/import \{ DEV as SHARED_DEV \} from "\.\.\/shared\/dev-flag\.js"/.test(shell),
-      "the shell reads the one canonical flag");
-    assert(/\{DEV && persona === "collector" && \(/.test(shell),
-      "the review harness is behind it");
-    assert(/const demoStage = DEV \? /.test(shell), "as is the demo stage");
+      "the shell reads the canonical dev flag");
+    assert(/import \{ DEMO as SHARED_DEMO \} from "\.\.\/shared\/demo-flag\.js"/.test(shell),
+      "and the canonical demo flag");
+    assert(/\{DEMO && persona === "collector" && \(/.test(shell),
+      "the scenario picker is behind DEMO");
+    assert(/const demoStage = DEMO \? /.test(shell), "as is the stage it reflects");
+    /* Simulating the other side of a negotiation is not a demo control. */
+    const col = fs.readFileSync(path.join(ROOT, "collector", "MetYetCollector.jsx"), "utf8");
+    const sim = col.slice(col.indexOf("function SimulateTP("),
+      col.indexOf("function SimulateTP(") + 300);
+    assert(/if \(!DEV\) return null;/.test(sim), "it stays behind DEV");
   });
 
   test("the tooling remains in source for local development", () => {

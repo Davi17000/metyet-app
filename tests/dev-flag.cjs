@@ -71,8 +71,14 @@ describe("A. One definition, not three", () => {
     const dev = readSrc("dev-server.mjs");
     const define = /define:\s*\{([^}]*)\}/.exec(dev);
     assert(define, "the dev server defines something");
-    eq((define[1].match(/:/g) || []).length, 1, "exactly one value crosses into the browser");
-    assert(/__METYET_DEV__/.test(define[1]), "and it is the dev flag");
+    /* CONTRACT CHANGE: two booleans cross now, DEV and DEMO. The property
+       being protected is unchanged — each is a single literal, and no
+       environment object is handed to the browser. */
+    const crossings = define[1].split("\n").filter((l) => /__METYET_[A-Z]+__:/.test(l));
+    eq(crossings.length, 2, "exactly two values cross into the browser");
+    assert(/__METYET_DEV__: JSON\.stringify\(/.test(define[1]), "the dev flag");
+    assert(/__METYET_DEMO__: JSON\.stringify\(/.test(define[1]), "and the demo flag");
+    assert(!/process\.env\s*[,}]/.test(define[1]), "neither passes the environment itself");
     assert(!/window\.process|globalThis\.process|process-polyfill/.test(dev),
       "no process shim is installed in the browser");
   });
@@ -200,10 +206,10 @@ describe("E. Gated behaviour still follows the flag", () => {
     return r;
   };
 
-  test("dev on: the Demo stage selector and review fixtures are present", () => {
+  test("demo on: the Scenario selector and review fixtures are present", () => {
     const mod = load(true);
     const r = collector(mod);
-    assert(/Demo stage/.test(txt(cls(r, "myp-bar")[0])), "the selector is in the bar");
+    assert(/Scenario/.test(txt(cls(r, "myp-bar")[0])), "the selector is in the bar");
     eq(r.root.findAllByType("select").length, 1, "with its control");
     const s = mod.buildCanonicalSeed();
     assert(s.goals.some((g) => /^Review /.test(g.note || "")), "review fixtures are seeded");
@@ -212,7 +218,7 @@ describe("E. Gated behaviour still follows the flag", () => {
   test("dev off: neither appears, and the product is unchanged", () => {
     const mod = load(false);
     const r = collector(mod);
-    assert(!/Demo stage/.test(txt(cls(r, "myp-bar")[0])), "no selector label");
+    assert(!/Scenario/.test(txt(cls(r, "myp-bar")[0])), "no selector label");
     eq(r.root.findAllByType("select").length, 0, "and no control");
     eq(cls(r, "rvw").length, 0, "no review panel");
     const s = mod.buildCanonicalSeed();

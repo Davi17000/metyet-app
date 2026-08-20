@@ -3,6 +3,7 @@ import * as D from "../domain/metyet-domain.js";
 import * as E from "../domain/metyet-entities.js";
 import { createStore } from "../domain/metyet-store.js";
 import { DEV as SHARED_DEV } from "../shared/dev-flag.js";
+import { DEMO as SHARED_DEMO } from "../shared/demo-flag.js";
 import { collectorView } from "../domain/collector-view.js";
 /* THE CANONICAL SEED. The Collector runs on the same universe the Trusted
    Partner does — same cards, same collectors, same inventory copies. Casey Lin
@@ -1131,7 +1132,7 @@ function Turn({ o, st }) {
    read from the canonical derivation, never stored on the harness. */
 function ReviewPanel({ st, go }) {
   const [note, setNote] = useState("");
-  if (!DEV) return null;
+  if (!DEMO) return null;
   /* Index every stage example, not just the seeded ones: Select Trade and
      Fulfillment are covered by Casey's pre-existing deals, and a stage index
      that silently omitted them would defeat the point. Review-noted goals are
@@ -1939,6 +1940,9 @@ function GoalCard({ g, st, go, open, onToggle }) {
    Hidden unless explicitly enabled, so it cannot appear in a normal build. */
 /* The one canonical flag — browser-safe, resolved in shared/dev-flag.js. */
 const DEV = SHARED_DEV;
+/* Scenario loading and reset are how a tester reaches a late stage at all;
+   simulating the other side of a negotiation is not, and stays on DEV. */
+const DEMO = SHARED_DEMO;
 
 /* Which seeded goal is which review scenario. Matched on the seed note rather
    than an index-derived id, so appending to the seed cannot break the harness.
@@ -3826,7 +3830,7 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
          the fixture from the canonical seed builder and swap it in. Nothing
          edits a stage field, so there is no stage setter to misuse. */
       resetReviewDeal: (demoStage) => {
-        if (!DEV) return null;
+        if (!DEMO) return null;
         /* Delegates to the one shared loader, so the review panel and the
            prototype header cannot drift apart. */
         const next = demoDealFixture(store.get(), { collectorId, demoStage });
