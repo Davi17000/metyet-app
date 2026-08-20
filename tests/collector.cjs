@@ -1825,7 +1825,7 @@ describe("Deal workspace mobile shell", () => {
     return r;
   };
 
-  test("deal context is compact and names card, identity and partner", () => {
+  test("deal context anchors the card and names identity and partner", () => {
     const r = open(mk());
     const ctx = cls(r, "dw-ctx")[0];
     assert(ctx, "a context header");
@@ -1833,9 +1833,12 @@ describe("Deal workspace mobile shell", () => {
     assert(/EX Deoxys/.test(txt(byClassIn(ctx, "dw-ctx-i")[0])), "its identity");
     assert(/PSA 9/.test(txt(byClassIn(ctx, "dw-ctx-i")[0])), "and grade");
     eq(txt(byClassIn(ctx, "dw-ctx-pn")[0]), "Northline Cards", "the partner is unmistakable");
-    /* Compact: the large browse artwork is not used here. */
-    assert(String(byClassIn(ctx, "art")[0].props.className).includes("sm"),
-      "using small artwork, not the browse-size card");
+    /* CONTRACT CHANGE: this header used the small thumbnail, which read as a
+       label rather than as the object being negotiated. It now uses the same xl
+       treatment the Goal's pursuit header uses, so both surfaces describe the
+       same physical card at the same scale. */
+    assert(String(byClassIn(ctx, "art")[0].props.className).includes("xl"),
+      "anchored by the card itself, at the same scale as the Goal surface");
   });
 
   test("all five canonical stages render, compact, from canonical state", () => {

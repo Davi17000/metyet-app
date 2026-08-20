@@ -3967,6 +3967,48 @@ function CopyPhoto({ photo, side, size = "sm", onOpen, card }) {
 /* One enlarged view, shared by every surface that shows a physical copy. Inspection
    only: identity, the chosen face, and a way to flip between faces. It carries no
    decision of any kind, and opening it touches nothing but its own state. */
+/* ------------------------------------------------ SHARED ACTUAL-PHOTO PIECES
+
+   Both personas look at the same physical copies, so how a face is presented
+   and how the two faces are switched belong in one place. These own display and
+   nothing else: no close, no navigation, no domain action, no photo request,
+   no pricing. Each persona wraps them in its own shell — the Trusted Partner's
+   Modal, the Collector's sheet — because those genuinely differ, and pushing a
+   single modal framework across both apps would be a larger change than this
+   work needs.
+
+   A photo is an opaque copy-scoped token rather than a URL, so a face renders
+   as a labelled plate rather than an <img>. This is the product's established
+   treatment and the reason it is shared rather than reinvented. */
+function ActualCardPhoto({ photos, side, cardLabel }) {
+  const has = !!(photos && photos[side]);
+  return (
+    <>
+      <div className="lb-side">{side}</div>
+      <div className={"copyph-p" + (has ? "" : " missing")}
+        role="img"
+        aria-label={`${side} photo of ${cardLabel || "this copy"}`}>
+        <span>{has ? "collector photo" : "not on file"}</span>
+      </div>
+    </>
+  );
+}
+
+/* Front/back as a labelled pair, shown only when there are two faces to choose
+   between. Whichever face is current is pressed, so the control states which
+   one is on screen rather than only offering the other. */
+function FaceSwitch({ photos, side, onSide }) {
+  if (!(photos?.front && photos?.back)) return null;
+  return (
+    <div className="lb-nav" role="group" aria-label="Choose a face">
+      {["front", "back"].map((f) => (
+        <button key={f} className={"btn sm" + (side === f ? " on" : "")}
+          aria-pressed={side === f} onClick={() => onSide(f)}>{f}</button>
+      ))}
+    </div>
+  );
+}
+
 function PhotoLightbox({ ctx, photos, cardId, cert, side: initial }) {
   const { setModal, card } = ctx;
   const [side, setSide] = useState(initial === "back" ? "back" : "front");
@@ -3983,30 +4025,18 @@ function PhotoLightbox({ ctx, photos, cardId, cert, side: initial }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const both = !!(photos?.front && photos?.back);
   return (
     <Modal title={c ? c.name : "Copy photo"} width={560}
       sub={c ? [c.set + (c.num && c.num !== "—" ? " · #" + c.num : ""), isRaw(c) ? "Raw · " + c.condition : c.grade, cert].filter(Boolean).join(" · ") : null}
       onClose={close}
       footer={<>
-        {both && (
-          <div className="lb-nav" role="group" aria-label="Choose a face">
-            {["front", "back"].map((f) => (
-              <button key={f} className={"btn sm" + (side === f ? " on" : "")}
-                aria-pressed={side === f} onClick={() => setSide(f)}>{f}</button>
-            ))}
-          </div>
-        )}
+        <FaceSwitch photos={photos} side={side} onSide={setSide} />
         <button className="btn" onClick={close}>Close</button>
       </>}>
       <div className="lb">
         <CardCopyActions ctx={ctx} card={c} copy={{ cert }} />
-        <div className="lb-side">{side}</div>
-        <div className={"copyph-p" + (photos?.[side] ? "" : " missing")}
-          role="img"
-          aria-label={`${side} photo of ${c ? cardShort(c) : "this copy"}`}>
-          <span>{photos?.[side] ? "collector photo" : "not on file"}</span>
-        </div>
+        <ActualCardPhoto photos={photos} side={side}
+          cardLabel={c ? cardShort(c) : null} />
       </div>
     </Modal>
   );
@@ -4144,7 +4174,8 @@ const validAmount = (amt) => amt !== "" && isFinite(Number(amt)) && Number(amt) 
 
 /* Shared with the Collector so both seats negotiate price through one
    implementation: same conversion, same guards, same canonical dollar value. */
-export { CounterFields, validAmount, canCounter, percentageOf, amountFromPercentage };
+export { CounterFields, validAmount, canCounter, percentageOf, amountFromPercentage,
+  ActualCardPhoto, FaceSwitch };
 
 /* Trade % and Trade Value are two readings of ONE negotiated term, and here the
    PERCENTAGE is the canonical one — it is what tcApplyPercent stores. The dollar

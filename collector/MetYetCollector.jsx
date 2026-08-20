@@ -8,7 +8,8 @@ import { collectorView } from "../domain/collector-view.js";
    Partner does — same cards, same collectors, same inventory copies. Casey Lin
    (c12) is a collector in that network, not a fixture. */
 import { buildCanonicalSeed, demoDealFixture, Icon,
-  CounterFields, validAmount, percentageOf } from "../src/MetYet.jsx";
+  CounterFields, validAmount, percentageOf,
+  ActualCardPhoto, FaceSwitch } from "../src/MetYet.jsx";
 import CardIdentityPicker from "../shared/CardIdentityPicker.jsx";
 
 const SELF_COLLECTOR = "c12";
@@ -260,6 +261,11 @@ const CSS = `
 .ph-s { font-size: 10.5px; color: var(--faint); line-height: 1.4; }
 .art.xl { width: 178px; height: 249px; } .art.xl .ph-n { font-size: 15px; }
 .art.lg { width: 132px; height: 184px; } .art.lg .ph-n { font-size: 13px; }
+/* On a narrow container the enlarged card steps back down rather than pushing
+   the identity column out of the row. */
+@media (max-width: 480px) {
+  .goal-top > .art.xl, .dw-ctx > .art.xl { width: 132px; height: 184px; }
+}
 .art.md { width: 100px; height: 140px; } .art.md .ph-n { font-size: 11px; }
 .art.sm { width: 58px; height: 81px; } .art.sm .ph-n { font-size: 8px; } .art.sm .ph-s { display: none; }
 .art.xs { width: 40px; height: 56px; } .art.xs .ph-n { font-size: 7px; } .art.xs .ph-s { display: none; }
@@ -413,6 +419,20 @@ const CSS = `
   color: var(--t1); font-weight: 700; }
 .goal-deal-p { font-size: 13px; font-weight: 600; }
 .goal-deal-t { margin-left: auto; font-size: 12px; color: var(--muted); }
+/* Copy evidence in the card header: secondary, and absent when there is
+   nothing to inspect. */
+.cx-ph { margin-top: 10px; }
+.cx-ph-btn { font-size: 12.5px; }
+.cx-ph-none { font-size: 12.5px; color: var(--faint); line-height: 1.45; }
+/* The viewer: one face at a time, at a size worth inspecting. */
+.lbx { max-width: 460px; padding: 20px; }
+.lbx-b { aspect-ratio: 5 / 7; max-height: 58vh; margin: 14px auto 0; border-radius: 12px;
+  border: 1px solid var(--line); background: var(--panel-2); overflow: hidden;
+  display: flex; align-items: center; justify-content: center; }
+.lbx-b img { width: 100%; height: 100%; object-fit: contain; }
+.lbx-nav { display: flex; gap: 8px; }
+.lbx-nav .btn.on { border-color: var(--t1); color: var(--t1); font-weight: 600; }
+
 /* Review Card: the two faces of one physical copy, side by side. */
 .rv-h { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
   color: var(--muted); margin: 18px 0 8px; }
@@ -1591,6 +1611,51 @@ function ReviewCard({ g, pursuit, partner, st, go }) {
   );
 }
 
+/* ------------------------------------------------- ACTUAL COPY PHOTO VIEWER
+
+   One physical copy, one face at a time. The face itself and the front/back
+   switch are the SHARED primitives both personas use; only the shell around
+   them is the Collector's own. The Trusted Partner's PhotoLightbox could not be
+   reused whole because it is wired to that app's ctx/setModal and its inventory
+   actions — but everything below that shell is now common to both.
+
+   It reads; it never writes. No price, stage, turn or draft passes through it,
+   which is why the collector can open it mid-counter and find their typed
+   amount exactly where they left it. */
+function CopyPhotoViewer({ copy, card, side, onSide, onClose }) {
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        onSide(side === "front" ? "back" : "front");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [side, onSide, onClose]);
+
+  return (
+    <div className="ovl" onClick={onClose}>
+      <div className="sheet lbx" role="dialog" aria-modal="true"
+        aria-label={"Actual photos of " + card.name}
+        onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-h">{card.name}</div>
+        <div className="faint" style={{ fontSize: 13, marginTop: 2 }}>
+          {cardLine(card)} · {gradeLine(card)}
+        </div>
+        <div className="lbx-b">
+          <ActualCardPhoto photos={copy.photos} side={side} cardLabel={card.name} />
+        </div>
+        <div className="act-2" style={{ marginTop: 16 }}>
+          <FaceSwitch photos={copy.photos} side={side} onSide={onSide} />
+          <button className="btn" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function GoalCard({ g, st, go, open, onToggle }) {
   const c = st.cardById(g.cardId);
   const holders = st.partnersWith(g.cardId);
@@ -1603,6 +1668,13 @@ function GoalCard({ g, st, go, open, onToggle }) {
     : reviewing ? st.partnerById(pursuit.partnerId) : null;
   const state = st.stateOf(g.id);
   const [menu, setMenu] = useState(false);
+  /* Which face is on screen, or null. Purely local: inspecting evidence is not
+     a lifecycle event, and nothing about it belongs in the domain. */
+  const [viewPhotos, setViewPhotos] = useState(null);
+  /* The exact physical copy this pursuit is bound to — the same invId the deal
+     names, so the photos can only ever be of the card being negotiated. */
+  const boundCopy = pursuit && pursuit.invId ? st.inventoryCopy(pursuit.invId) : null;
+  const copyHasPhotos = !!boundCopy && D.INVARIANTS.copyPhotographed(boundCopy.photos);
   /* Detail-on-demand, and purely local: a disclosure is not canonical state, and
      it resets whenever Goals is re-entered. */
   const [openReceipt, setOpenReceipt] = useState(false);
@@ -1615,7 +1687,12 @@ function GoalCard({ g, st, go, open, onToggle }) {
   return (
     <div className={"card goal" + (open && live ? " deal-open" : "")}>
       <div className="goal-top">
-        <Art card={c} size="lg" />
+        {/* ANCHORING THE NEGOTIATION. Browsing a list of goals and deciding what
+            to pay for one physical copy are different acts, so once a pursuit is
+            open the card steps up to the product's existing xl preset. No new
+            size was invented: xl already existed, and its 178:249 keeps the
+            card's proportions. */}
+        <Art card={c} size={pursuit ? "xl" : "lg"} />
         <div className="goal-b">
           <div className="goal-hd">
             <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" }}>
@@ -1633,6 +1710,30 @@ function GoalCard({ g, st, go, open, onToggle }) {
           <div className="faint" style={{ fontSize: 13, marginTop: 6 }}>
             On your list since {fmtDate(g.since)}
           </div>
+
+          {/* COPY EVIDENCE, where the card is identified. Actual photographs
+              belong to the physical copy, so once they exist they stay
+              inspectable at every stage — a price is a judgement about what
+              those photos show. This is a way to LOOK, never a way to ask:
+              requesting photos belongs to Review Card, and Agree on Price does
+              not reach backwards for it. When there is nothing to inspect the
+              fact is simply stated, with no disabled control. */}
+          {pursuit && (
+            <div className="cx-ph">
+              {copyHasPhotos ? (
+                <button className="btn sm cx-ph-btn"
+                  aria-label={"View actual photos of this " + c.name + " from "
+                    + (partner ? partner.name : "this partner")}
+                  onClick={() => setViewPhotos("front")}>
+                  View actual card photos
+                </button>
+              ) : (
+                <div className="cx-ph-none">
+                  Actual card photos not available
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* THE RAIL SHARES THE TOP ROW. Where the deal stands belongs beside
@@ -1808,6 +1909,11 @@ function GoalCard({ g, st, go, open, onToggle }) {
           })}
 
         </div>
+      )}
+
+      {viewPhotos && boundCopy && (
+        <CopyPhotoViewer copy={boundCopy} card={c} side={viewPhotos}
+          onSide={setViewPhotos} onClose={() => setViewPhotos(null)} />
       )}
 
       {confirmStop && live && (
@@ -2612,6 +2718,10 @@ function InlineDeal({ o, st }) {
 function Deal({ oppId, st, go }) {
   const o = st.opps.find((x) => x.id === oppId);
   const [chat, setChat] = useState(false);
+  /* Which face is on screen, or null. Local to the shell, so opening it cannot
+     remount the stage below and cannot disturb a half-typed counter. */
+  const [viewPhotos, setViewPhotos] = useState(null);
+
   const [flow, setFlow] = useState(false);
   /* Filled by whichever stage is mounted; null while waiting. */
   const [bar, setBar] = useState(null);
@@ -2624,23 +2734,51 @@ function Deal({ oppId, st, go }) {
   const t = st.turnFor(o);
   const them = p ? p.name : "them";
   const short = p ? p.name.split(" ")[0] : "them";
+  /* THE EXACT COPY THIS DEAL NAMES. Resolved from o.invId alone: not from the
+     card, not from the partner, not from the first matching row in inventory —
+     a sibling copy's photographs are evidence about a different object. An
+     unbound deal simply has nothing to inspect. */
+  const boundCopy = o.invId ? st.inventoryCopy(o.invId) : null;
+  const copyHasPhotos = !!boundCopy && D.INVARIANTS.copyPhotographed(boundCopy.photos);
   const stageProps = { o, st, register };
 
   return (
     <div className="pg dw">
+      {viewPhotos && boundCopy && (
+        <CopyPhotoViewer copy={boundCopy} card={c} side={viewPhotos}
+          onSide={setViewPhotos} onClose={() => setViewPhotos(null)} />
+      )}
       <button className="link" onClick={() => go({ v: "goals" })}>← Goals</button>
 
       {/* 1. DEAL CONTEXT — compact, and always the first thing read. Inline, the
           Goal has already said which card and which partner this is. */}
       {(
         <div className="card dw-ctx">
-          <Art card={c} size="sm" />
+          {/* The same scale the Goal's pursuit header uses, so both surfaces
+              describe the same physical card the same way. */}
+          <Art card={c} size="xl" />
           <div className="dw-ctx-b">
             <div className="dw-ctx-n">{c.name}</div>
             <div className="dw-ctx-i">{cardLine(c)} · {gradeLine(c)}</div>
             <div className="dw-ctx-p">
               <Face partner={p} size={22} />
               <span className="dw-ctx-pn">{them}</span>
+            </div>
+            {/* COPY EVIDENCE BELONGS TO THE SHELL, not to whichever stage is
+                mounted below: the photographs describe the object being traded,
+                and stay inspectable from pricing through fulfillment. This is a
+                way to LOOK and nothing else — asking for photographs belongs to
+                Review Card, which this deal is already past. */}
+            <div className="cx-ph">
+              {copyHasPhotos ? (
+                <button className="btn sm cx-ph-btn"
+                  aria-label={"View actual photos of this " + c.name + " from " + them}
+                  onClick={() => setViewPhotos("front")}>
+                  View actual card photos
+                </button>
+              ) : (
+                <div className="cx-ph-none">Actual card photos not available</div>
+              )}
             </div>
           </div>
         </div>
