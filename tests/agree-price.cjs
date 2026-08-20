@@ -111,10 +111,13 @@ describe("Agree on Price — the percentage drives dollars", () => {
 
   test("the percentage field is labelled against listed price", () => {
     const r = atAgreePrice();
+    /* CONTRACT CHANGE: both seats now name what the field IS rather than its
+       unit, so the Collector's offer and the Partner's counter read as one
+       pricing system. The denominator is still spelled out. */
     const labels = byClassIn(panel(r), "pn-fl").map(text);
-    eq(labels.join(" | "), "Amount | % of listed", "units are labelled, not implied");
-    assert(inputs(r)[1].props["aria-label"].includes("percentage of listed price"),
-      "and spelled out for assistive tech");
+    eq(labels.join(" | "), "Your counter | % of asking", "the field is named, not just its unit");
+    assert(inputs(r)[1].props["aria-label"].includes("percentage of the asking price"),
+      "and the denominator is spelled out for assistive tech");
   });
 });
 

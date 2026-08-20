@@ -63,13 +63,14 @@ const expand = (r) => { click(cardFor(r).findAllByType("button")
   .find((b) => String(b.props.className || "").includes("goal-deal"))); return cardFor(r); };
 /* Two shapes of the same route: an expanded supply list with its own CTA before
    a pursuit exists, and a compact "See all N partners" row once one does. */
+/* Before a pursuit the partners are listed inline on the Goal, each row carrying
+   its own Review Card; once one exists the list collapses to a compact
+   "See all N partners" row that opens the read-only sheet. */
+const inlineRows = (r) => cls(cardFor(r), "gs-row");
 const openDiscovery = (r) => {
-  const card = cardFor(r);
-  const b = cls(card, "goal-holders")[0]
-    || cls(card, "gs-offer")[0]
-    || card.findAllByType("button").find((x) => /See all/.test(txt(x)));
-  assert(b, "a discovery route exists");
-  click(b);
+  const b = cls(cardFor(r), "goal-holders")[0]
+    || cardFor(r).findAllByType("button").find((x) => /See all/.test(txt(x)));
+  if (b) click(b);
   return r;
 };
 const ask = () => { const i = copy();
@@ -79,43 +80,65 @@ const photograph = () => { const i = copy();
   TR.act(() => { acts().addCopyPhotos({ invId: i.invId, front: "f", back: "b", at: AT }); }); };
 
 describe("A. Before a pursuit, discovery still does its job", () => {
-  test("the Goal offers a route into partner discovery", () => {
+  test("the Goal lists its partners inline, each choosable", () => {
     const r = boot("pre-deal");
     eq(view().pursuitFor(goal().id), null, "nothing is being pursued yet");
-    assert(offerCTAs(r).length >= 1 || cls(cardFor(r), "gs-offer")[0],
-      "and the Goal still leads somewhere to choose a partner");
+    const rows = inlineRows(r);
+    assert(rows.length >= 1, "the partners who have the card are listed on the Goal");
+    rows.forEach((row) => assert(row.findAllByType("button")
+      .some((b) => /^Review Card$/i.test(txt(b))), "each row can be chosen directly"));
+    eq(cls(cardFor(r), "gs-offer").length, 0,
+      "with no separate control that only opens a sheet asking the same thing");
   });
 
-  test("discovery presents the forward actions for choosing a copy", () => {
+  test("choosing happens on the Goal, not behind a sheet", () => {
     const r = boot("pre-deal");
-    openDiscovery(r);
-    /* CONTRACT CHANGE: discovery selects a copy to review; the forward actions
-       then live in Review Card on the Goal. */
-    const labels = r.root.findAllByType("button").map(txt);
-    assert(labels.some((t) => t === "Review card"), "a way to choose a copy");
+    const labels = inlineRows(r).flatMap((n) => n.findAllByType("button").map(txt));
+    assert(labels.some((t) => /^Review Card$/i.test(t)), "a way to choose a copy");
     assert(!labels.some((t) => /^Make an offer/.test(t)),
-      "and no offer workflow in discovery");
+      "and no offer workflow at the point of choosing");
     assert(labels.some((t) => /^(Chat|Continue chatting)$/.test(t)), "and to talk first");
-    assert(/Chatting is just a conversation/.test(txt(r.root)),
-      "with the copy that explains a decision not yet made");
   });
 
-  test("multi-partner discovery is not removed", () => {
+  test("multi-partner comparison is not removed", () => {
     const r = boot("pre-deal");
-    openDiscovery(r);
-    assert(cls(r, "pick").length >= 1, "partners are listed for comparison");
-    assert(/of your partners/.test(txt(r.root)), "and counted");
+    const rows = inlineRows(r);
+    assert(rows.length >= 1, "partners are listed for comparison");
+    rows.forEach((n) => assert(/\$/.test(txt(n)), "each with its asking price"));
   });
 });
 
 describe("B. A Review Card pursuit takes ownership", () => {
-  test("the duplicate lower Make an offer disappears", () => {
+  test("there is never a second way to start an offer", () => {
+    /* This replaces a narrower guard that counted the old `gs-offer` button.
+       That button existed only to open a sheet asking which copy to review, and
+       is gone — so the property it protected is asserted directly instead: at
+       every point, the Goal offers exactly one forward action, and it is never
+       a duplicate route to the same offer. */
     const r = boot("pre-deal");
-    eq(cls(cardFor(r), "gs-offer").length, 1, "before the pursuit it is there");
+
+    /* Before a pursuit: the only forward action is choosing a copy, one per
+       partner row, and no offer can be started from anywhere on the Goal. */
+    eq(cls(cardFor(r), "gs-offer").length, 0, "no standalone selection CTA");
+    eq(offerCTAs(r).length, 0, "and no offer CTA before a copy is chosen");
+    const rows = cls(cardFor(r), "gs-row");
+    assert(rows.length >= 1, "the partners are listed");
+    rows.forEach((n) => eq(n.findAllByType("button")
+      .filter((b) => /^Review Card$/i.test(txt(b))).length, 1,
+      "each row offers exactly one way to choose it"));
+
+    /* Once reviewing: still nothing on the collapsed Goal, because the
+       workspace owns it. */
     ask();
     const r2 = remount();
-    eq(cls(cardFor(r2), "gs-offer").length, 0, "and once reviewing, it is gone");
-    eq(offerCTAs(r2).length, 0, "with no offer CTA at all on the collapsed Goal");
+    eq(cls(cardFor(r2), "gs-offer").length, 0, "still no standalone CTA");
+    eq(offerCTAs(r2).length, 0, "and no offer CTA on the collapsed Goal");
+    eq(cls(cardFor(r2), "gs-row").length, 0,
+      "the choosable rows give way to the pursuit");
+
+    /* Expanded: exactly one, inside the workspace. */
+    expand(r2);
+    eq(offerCTAs(r2).length, 1, "exactly one forward action, and it is the workspace's");
   });
 
   test("supply becomes supporting context, not a second workflow", () => {
@@ -224,7 +247,7 @@ describe("D. The handoffs still work end to end", () => {
     const r = boot("pre-deal");
     const opps = S().opportunities.length;
     openDiscovery(r);
-    const pick = r.root.findAllByType("button").find((b) => txt(b) === "Review card");
+    const pick = r.root.findAllByType("button").find((b) => /^Review Card$/i.test(txt(b).trim()));
     assert(pick, "discovery offers the copy for review");
     click(pick);
     eq(S().opportunities.length, opps, "no negotiation was created");

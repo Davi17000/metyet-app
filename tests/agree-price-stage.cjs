@@ -221,8 +221,12 @@ describe("B. Accept and Counter are distinct decisions", () => {
   test("both seats price through one implementation", () => {
     assert(/CounterFields, validAmount, percentageOf/.test(SRC),
       "the Collector imports the shared price helpers");
-    assert(/export \{ CounterFields, validAmount, canCounter, percentageOf \}/
-      .test(readSrc("src/MetYet.jsx")), "which the Trusted Partner already used");
+    /* Matched by name rather than by the exact export list, so adding another
+       shared helper strengthens the sharing instead of breaking the assertion. */
+    const tp = readSrc("src/MetYet.jsx");
+    ["CounterFields", "validAmount", "percentageOf"].forEach((name) =>
+      assert(new RegExp("export \\{[^}]*\\b" + name + "\\b[^}]*\\}").test(tp),
+        name + " is shared from the Trusted Partner's implementation"));
     const stage = SRC.slice(SRC.indexOf("function AgreePrice("), SRC.indexOf("/* Select Trade"));
     assert(!/const pct =|Math\.round\(\(n \/ o\.listedPrice\)/.test(stage),
       "and the Collector re-derives no conversion of its own");

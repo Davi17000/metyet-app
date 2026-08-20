@@ -428,6 +428,9 @@ const CSS = `
 .rv-note { font-size: 12.5px; color: var(--muted); line-height: 1.45; margin-top: 12px; }
 .rv-confirm { max-width: 460px; padding: 22px; }
 .rv-confirm-t { font-size: 14px; line-height: 1.5; color: var(--muted); margin-top: 8px; }
+/* Why an offer could not be made. Never says who holds the copy. */
+.ap-refused { font-size: 13.5px; line-height: 1.5; color: var(--text); background: var(--amber-bg);
+  border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; }
 
 /* ---- AGREE ON PRICE.
 
@@ -1206,6 +1209,9 @@ function Goals({ st, go }) {
   /* ONE EXPANDED DEAL AT A TIME. Presentation state, held here rather than in
      each card so opening one collapses the other. Switching touches no deal. */
   const [openDeal, setOpenDeal] = useState(null);
+  /* `force` opens rather than toggles: selecting a copy should always reveal the
+     workspace, whatever the card's previous state was. */
+  const toggleDeal = (id, force) => setOpenDeal((cur) => (force ? id : (cur === id ? null : id)));
   const primary = goals.filter((g) => g.tier === "primary");
   const secondary = goals.filter((g) => g.tier === "secondary");
 
@@ -1245,7 +1251,7 @@ function Goals({ st, go }) {
         </div>
       ) : primary.map((g) => (
         <GoalCard key={g.id} g={g} st={st} go={go}
-          open={openDeal === g.id} onToggle={setOpenDeal} />
+          open={openDeal === g.id} onToggle={toggleDeal} />
       ))}
 
       {/* SECONDARY — a watchlist. Compact rows, no deal machinery. */}
@@ -1787,15 +1793,20 @@ function GoalCard({ g, st, go, open, onToggle }) {
                     onClick={() => go({ v: "chat", goalId: g.id, partnerId: h.partner.id, cardId: g.cardId })}>
                     {talked ? "Continue chatting" : "Chat"}
                   </button>
+                  {/* THE ROWS ARE THE CHOICE. The collector is already looking at
+                      every partner who has the card, so choosing one belongs
+                      here rather than behind a sheet that asks the same question
+                      again. Selecting binds this exact copy and expands the Goal
+                      in place — no route change, so nothing scrolls away. */}
+                  <button className="btn sm pri"
+                    onClick={() => { st.reviewCopy(h.inv); onToggle(g.id, true); }}>
+                    Review Card
+                  </button>
                 </div>
               </div>
             );
           })}
-          {/* This opens discovery, so it says so. Offering happens in Review
-              Card, once a copy has been chosen. */}
-          <button className="btn sm pri gs-offer" onClick={() => go({ v: "start", goalId: g.id })}>
-            Choose a copy to review
-          </button>
+
         </div>
       )}
 
@@ -1854,9 +1865,13 @@ function SimulateTP({ o, st }) {
         did("Countered");
       }]);
       actions.push(["Accept the offer", () => {
-        A.patchOpportunity(o.id, (x) => ({ ...x, agreedPrice: last.amount, stage: "select-trade",
-          priceThread: [...x.priceThread, { by: "partner", type: "accept", amount: last.amount, at: AT }] }));
-        did("Accepted — moved to Select Trade");
+        /* Even the simulator settles through the canonical action: a dev tool
+           that could commit an already-committed copy would be simulating
+           something that cannot happen. */
+        const res = A.agreePrice({ oppId: o.id, amount: last.amount, by: "partner", at: AT });
+        did(res && res.refused === D.REFUSE.copyCommitted
+          ? "That copy is already committed to another deal"
+          : "Accepted — moved to Select Trade");
       }]);
     }
   }
@@ -3333,6 +3348,7 @@ function PartnerChat({ goalId, partnerId, cardId, st, go }) {
        rule is stated BEFORE the collector commits, not after they try. ---- */
 function StartOffer({ goalId, partnerId, st, go }) {
   const [promote, setPromote] = useState(null);
+  const [refused, setRefused] = useState(null);
   const g = st.goals.find((x) => x.id === goalId);
   const c = st.cardById(g.cardId);
   const p = st.partnerById(partnerId);
@@ -3340,7 +3356,11 @@ function StartOffer({ goalId, partnerId, st, go }) {
   const match = st.partnersWith(g.cardId).find((x) => x.partner.id === partnerId);
   const stock = match ? { ask: match.ask } : null;
   const live = st.openOppForGoal(goalId);
-  const [amt, setAmt] = useState(stock ? String(Math.round(stock.ask * 0.9)) : "");
+  /* BLANK. The field used to open at 90% of asking — a hardcoded 0.9 that read
+     as a recommendation MetYet has no business making. The first offer is the
+     collector's judgement, so they enter it deliberately. Nothing seeds it:
+     not the asking price, not a private valuation, not a prior negotiation. */
+  const [amt, setAmt] = useState("");
   const n = Number(amt);
 
   if (live) {
@@ -3390,24 +3410,43 @@ function StartOffer({ goalId, partnerId, st, go }) {
     );
   }
 
+  /* THE FIRST OFFER IS THE COMMITMENT. Reviewing a card, asking to see it and
+     chatting about it are all reversible; submitting a price is the moment this
+     goal acquires a deal and other partners stop being available for it. So the
+     consequence is explained once, here — and not again on any counter, because
+     by then the collector is already in the deal it describes. */
+  const submit = () => {
+    const res = st.startOffer(goalId, partnerId, n);
+    /* Refused because this is a watchlist goal — offer promotion rather than a
+       dead end. The collector decides; MetYet never promotes for them. */
+    if (res && res.refused === D.REFUSE.notPrimary) { setPromote(n); return; }
+    if (res && res.refused) { setRefused(res.refused); return; }
+    go({ v: "deal", oppId: res });
+  };
+
   return (
     <Sheet title="Make an offer" sub={`${c.name} · ${cardLine(c)} · ${gradeLine(c)}`}
       onClose={() => go({ v: "partner", partnerId })}
       footer={<>
         <button className="btn" onClick={() => go({ v: "partner", partnerId })}>Cancel</button>
+        {/* "Submit offer", not "Send offer": this establishes the active deal
+            rather than merely sending a message. The consequence is stated in
+            the sheet itself, so there is no second dialog repeating it. */}
         <button className="btn pri" style={{ flex: 1 }} disabled={!(n > 0)}
-          onClick={() => {
-            const res = st.startOffer(goalId, partnerId, n);
-            /* Refused because this is a watchlist goal — offer promotion rather
-               than a dead end. The collector decides; MetYet never promotes for
-               them. */
-            if (res && res.refused === D.REFUSE.notPrimary) { setPromote(n); return; }
-            if (res && res.refused) return;
-            go({ v: "deal", oppId: res });
-          }}>
-          Send offer
+          onClick={submit}>
+          Submit offer
         </button>
       </>}>
+      {refused && (
+        <div className="ap-refused">
+          {refused === D.REFUSE.copyCommitted
+            /* Says only that the copy is taken — never by whom, or for how much. */
+            ? "This copy is currently committed to another deal. You can keep reviewing it and talking to " + p.name + ", but it can't be offered on until that deal ends."
+            : refused === D.REFUSE.alreadyNegotiating
+              ? "You already have an active deal for this goal. Finish or stop it before offering elsewhere."
+              : "That copy isn't available."}
+        </div>
+      )}
       <div style={{ display: "flex", gap: 14, alignItems: "center", marginBottom: 18 }}>
         <Art card={c} size="md" />
         <div>
@@ -3415,16 +3454,22 @@ function StartOffer({ goalId, partnerId, st, go }) {
           <div className="faint" style={{ fontSize: 13.5 }}>asking {money(stock?.ask)}</div>
         </div>
       </div>
-      <input className="inp" inputMode="decimal" value={amt} aria-label="Your offer"
-        onChange={(e) => setAmt(e.target.value.replace(/[^\d.]/g, ""))} />
-      {n > 0 && stock && (
-        <div className="faint" style={{ fontSize: 13, marginTop: 8 }}>
-          That's {Math.round((n / stock.ask) * 100)}% of what they're asking.
-        </div>
-      )}
-      <div className="faint" style={{ fontSize: 12.5, marginTop: 14 }}>
-        Only you can start a negotiation. Once this is open, you'll work through price,
-        then any cards you trade, then the balance — one step at a time.
+      {/* The same synced pair both seats use at Agree on Price: dollars are the
+          canonical value, the percentage is a second way of typing the same
+          number. Nothing here rates a percentage as good, fair or market. */}
+      <div className="ap">
+        <CounterFields amt={amt} setAmt={setAmt} reference={stock ? stock.ask : null}
+          amtLabel="Your offer" pctLabel="% of asking"
+          amtAria="Your offer in dollars"
+          pctAria="Your offer as a percentage of the asking price" />
+      </div>
+      {/* What this moment actually commits — not what happens four stages later.
+          Scoped to THIS goal: other goals are unaffected, and the partner has
+          committed nothing yet. */}
+      <div className="faint" style={{ fontSize: 12.5, marginTop: 14, lineHeight: 1.5 }}>
+        Submitting an offer starts an active deal with {p.name} for this goal.
+        You'll work exclusively with them on it until the deal is completed or the
+        negotiation ends.
       </div>
     </Sheet>
   );
@@ -3655,20 +3700,20 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
          sides agree, ending it is a CANCELLATION rather than a stop. */
       dealAgreed: (o) => !!(o && o.deal && o.deal.tpAgreed && o.deal.collectorAgreed),
 
-      priceRespond: (id, action, amount) => A.patchOpportunity(id, (o) => {
+      priceRespond: (id, action, amount) => {
         if (action === "accept") {
-          const last = D.lastEntry(o.priceThread);
-          /* Entering Select Trade means opening an empty trade package. Without
-             it the next stage dereferences a null trade and cannot render — the
-             accept path led straight into a crash. Nothing is agreed here: an
-             empty, unsubmitted package is exactly the state Select Trade starts
-             from, and submitTrade replaces it wholesale. */
-          return { ...o, agreedPrice: last.amount, stage: "select-trade",
-            trade: o.trade || { mode: "trade", submitted: false, cards: [] },
-            priceThread: [...o.priceThread, { by: "collector", type: "accept", amount: last.amount, at: AT }] };
+          /* Settling the price commits the physical copy, so it goes through the
+             canonical action that enforces that — not a blind patch. Returns a
+             refusal when another deal settled this copy first. */
+          const o = store.get().opportunities.find((x) => x.id === id);
+          const last = o && D.lastEntry(o.priceThread);
+          return A.agreePrice({ oppId: id, amount: last ? last.amount : amount,
+            by: "collector", at: AT });
         }
-        return { ...o, priceThread: [...o.priceThread, { by: "collector", type: "counter", amount, at: AT }] };
-      }),
+        /* A counter is an ordinary edit; only acceptance commits anything. */
+        return A.patchOpportunity(id, (o) => ({ ...o,
+          priceThread: [...o.priceThread, { by: "collector", type: "counter", amount, at: AT }] }));
+      },
       submitTrade: (id, binderIds) => A.patchOpportunity(id, (o) => ({
         ...o, trade: { submitted: true, cards: binderIds.map((b) => ({ binderId: b, inclusion: "proposed" })) } })),
       marketRespond: (id, binderId, action, amount) => A.patchOpportunity(id, (o) => ({

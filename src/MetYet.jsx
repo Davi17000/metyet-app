@@ -2995,22 +2995,41 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
 
   /* --- AGREE ON PRICE --- */
 
-  const priceRespond = (oppId, by, action, amount) =>
-    patchOpp(oppId, (o) => {
-      const thread = [...o.priceThread, { by, type: action, amount: action === "accept" ? lastEntry(o.priceThread).amount : amount, at: NOW }];
-      const agreed = action === "accept" ? lastEntry(o.priceThread).amount : null;
+  /* SETTLING A PRICE IS A COMMITMENT OF THE PHYSICAL COPY, so acceptance goes
+     through the canonical action that enforces that — the same one the
+     Collector uses. Patching agreedPrice here would let this seat commit a copy
+     another deal had already taken, which is not a thing that can be true of
+     one physical card. Counters and declines are ordinary edits and stay here. */
+  const priceRespond = (oppId, by, action, amount) => {
+    if (action === "accept") {
+      const o = store.get().opportunities.find((x) => x.id === oppId);
+      const settled = o && lastEntry(o.priceThread);
+      const res = store.actions.agreePrice({ oppId, by,
+        amount: settled ? settled.amount : amount, at: NOW });
+      if (res && res.refused) {
+        /* Says only that the copy is taken — never by whom, or for how much. */
+        say(res.refused === SharedID.REFUSE.copyCommitted
+          ? "That copy is already committed to another deal."
+          : "That price could not be agreed.");
+        return null;
+      }
+      const now = store.get().opportunities.find((x) => x.id === oppId);
+      say(`Price agreed at ${money(now.agreedPrice)} — ${cardShort(card(now.cardId))}`);
+      return now;
+    }
+    return patchOpp(oppId, (o) => {
+      const thread = [...o.priceThread, { by, type: action, amount, at: NOW }];
       return {
         ...o, priceThread: thread,
-        agreedPrice: agreed ?? o.agreedPrice,
-        stage: action === "accept" ? "select-trade" : action === "decline" ? o.stage : o.stage,
+        stage: action === "decline" ? o.stage : o.stage,
         declined: action === "decline" ? true : o.declined,
       };
     }, (n, o) => {
       const who = by === "tp" ? "You" : collector(o.collectorId).short;
-      if (action === "accept") return `Price agreed at ${money(n.agreedPrice)} — ${cardShort(card(o.cardId))}`;
       if (action === "decline") return `${who} stopped pursuing ${cardShort(card(o.cardId))}`;
       return `${who} countered at ${money(amount)} — ${cardShort(card(o.cardId))}`;
     });
+  };
 
   /* --- SELECT TRADE (Collector-owned) --- */
 
@@ -4081,7 +4100,8 @@ const Money = ({ v }) => <span className="mono">{v == null ? "—" : money(v)}</
    no usable reference the percentage field is simply not offered. */
 const cleanNum = (v) => v.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1");
 
-function CounterFields({ amt, setAmt, reference, pctLabel, pctAria, amtAria, showPercent = true }) {
+function CounterFields({ amt, setAmt, reference, pctLabel, pctAria, amtAria,
+  amtLabel = "Amount", showPercent = true }) {
   const pct = percentageOf(amt, reference);
   /* Market value is negotiated in dollars only; the percentage reading belongs to
      stages measured against a reference the parties actually talk in. */
@@ -4098,7 +4118,7 @@ function CounterFields({ amt, setAmt, reference, pctLabel, pctAria, amtAria, sho
   return (
     <div className="pn-in">
       <label className="pn-f">
-        <span className="pn-fl">Amount</span>
+        <span className="pn-fl">{amtLabel}</span>
         <span className="pn-w"><span className="pn-u">$</span>
           <input className="inp" type="text" inputMode="decimal" value={amt}
             aria-label={amtAria}
@@ -4124,7 +4144,7 @@ const validAmount = (amt) => amt !== "" && isFinite(Number(amt)) && Number(amt) 
 
 /* Shared with the Collector so both seats negotiate price through one
    implementation: same conversion, same guards, same canonical dollar value. */
-export { CounterFields, validAmount, canCounter, percentageOf };
+export { CounterFields, validAmount, canCounter, percentageOf, amountFromPercentage };
 
 /* Trade % and Trade Value are two readings of ONE negotiated term, and here the
    PERCENTAGE is the canonical one — it is what tcApplyPercent stores. The dollar
@@ -4339,9 +4359,13 @@ function PriceDecision({ opp, col, na, priceRespond, by = "tp" }) {
 
         {canCounter(opp.priceThread, by) && (<>
           <div className="pn-or"><span>or counter</span></div>
-          <CounterFields amt={amt} setAmt={setAmt} reference={listed} pctLabel="% of listed"
-            amtAria="Counter amount in dollars"
-            pctAria="Counter as a percentage of listed price" />
+          {/* The same synced pair the Collector uses, labelled for this seat.
+              Countering is not committing: the copy is only spoken for when a
+              price is finalised, so nothing here warns about commitment. */}
+          <CounterFields amt={amt} setAmt={setAmt} reference={listed}
+            amtLabel="Your counter" pctLabel="% of asking"
+            amtAria="Your counter in dollars"
+            pctAria="Your counter as a percentage of the asking price" />
           {/* One expression drives both the styling and the disabled state, so the
               button can never look ready when it cannot submit, or vice versa. */}
           <button className={"btn sm pn-send" + (validAmount(amt) ? " pri" : "")}

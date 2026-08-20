@@ -97,6 +97,26 @@ function createStore(seed) {
         : s.interests.filter((i) => !(i.partnerId === partnerId && i.binderId === binderId)) });
     },
 
+    /* SETTLING THE PRICE — the partner's point of commitment.
+
+       Enforced here rather than in either app, because this is the moment the
+       physical copy stops being available to anyone else and both personas can
+       reach it. If another live deal settled this copy first, this one cannot
+       also settle it: the card exists once. */
+    agreePrice({ oppId, amount, by, at }) {
+      const o = (s.opportunities || []).find((x) => x.id === oppId);
+      if (!o) return { refused: D.REFUSE.noGoal };
+      const taken = D.INVARIANTS.copyCommittedTo(o.invId, s.opportunities, o.id);
+      if (taken) return { refused: D.REFUSE.copyCommitted };
+      set({ ...s, opportunities: s.opportunities.map((x) => (x.id === oppId ? { ...x,
+        agreedPrice: amount, stage: "select-trade",
+        /* Entering Select Trade means opening an empty trade package. */
+        trade: x.trade || { mode: "trade", submitted: false, cards: [] },
+        priceThread: [...x.priceThread,
+          { by: by || "collector", type: "accept", amount, at }] } : x)) });
+      return oppId;
+    },
+
     /* ---- REVIEWING A SPECIFIC COPY ---------------------------------------
        Choosing which copy to pursue. This is the moment the Goal acquires a
        partner, and it is the whole of what Review Card needs to exist — no
@@ -219,6 +239,11 @@ function createStore(seed) {
       if (invId != null) {
         const copy = (s.inventory || []).find((i) => i.invId === invId);
         if (!copy || copy.archived) return { refused: D.REFUSE.copyUnavailable };
+        /* Somebody has already settled a price on this exact copy. Offering on
+           it now could only end in disappointment, so it is refused here rather
+           than allowed to run and fail later. */
+        if (D.INVARIANTS.copyCommittedTo(invId, s.opportunities))
+          return { refused: D.REFUSE.copyCommitted };
       }
       const id = "o" + Math.random().toString(36).slice(2, 9);
       const opp = {

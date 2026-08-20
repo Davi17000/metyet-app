@@ -59,9 +59,18 @@ const cardFor = (r) => {
   const c = S().catalog.find((x) => x.id === goal().cardId);
   return cls(r, "goal").find((n) => txt(n).includes(c.name) && txt(n).includes(c.set));
 };
-const discoveryRoute = (r) => { const card = cardFor(r);
-  return cls(card, "goal-holders")[0] || cls(card, "gs-offer")[0]; };
-const openDiscovery = (r) => { click(discoveryRoute(r)); return r; };
+/* CONTRACT CHANGE. The partners who have the card are listed on the Goal
+   itself, and each row carries its own Review Card — so choosing no longer
+   goes through a sheet that asks the same question again. Once a pursuit
+   exists the list collapses to a compact row that opens the read-only sheet. */
+const inlineRows = (r) => cls(cardFor(r), "gs-row");
+const rowFor = (r, i) => inlineRows(r)[i || 0];
+const chooseIn = (node) => node.findAllByType("button")
+  .find((b) => /^Review Card$/i.test(txt(b)));
+/* Selecting a copy the way the collector now does: on the row, in place. */
+const choose = (r, i) => { click(chooseIn(rowFor(r, i))); return r; };
+const discoveryRoute = (r) => cls(cardFor(r), "goal-holders")[0];
+const openDiscovery = (r) => { const b = discoveryRoute(r); if (b) click(b); return r; };
 const labels = (r) => r.root.findAllByType("button").map(txt);
 const expand = (r) => { click(cardFor(r).findAllByType("button")
   .find((b) => String(b.props.className || "").includes("goal-deal"))); return cardFor(r); };
@@ -180,7 +189,7 @@ describe("B. Discovery selects; it does not negotiate", () => {
     const r = boot("pre-deal");
     openDiscovery(r);
     const seen = labels(r);
-    assert(seen.some((t) => t === "Review card"), "a way to choose a copy");
+    assert(seen.some((t) => /^Review Card$/i.test(t)), "a way to choose a copy");
     eq(seen.filter((t) => /^Make an offer/.test(t)).length, 0,
       "and no offer workflow in discovery");
   });
@@ -195,8 +204,7 @@ describe("B. Discovery selects; it does not negotiate", () => {
   test("selecting from discovery lands the pursuit on the Goal", () => {
     const r = boot("pre-deal");
     const opps = S().opportunities.length;
-    openDiscovery(r);
-    click(r.root.findAllByType("button").find((b) => txt(b) === "Review card"));
+    choose(r);
     eq(S().opportunities.length, opps, "no negotiation was created");
     const p = pursuit();
     assert(p && p.kind === "review", "a Review Card pursuit exists");
@@ -207,18 +215,20 @@ describe("B. Discovery selects; it does not negotiate", () => {
 
   test("no photo request is created merely by selecting", () => {
     const r = boot("pre-deal");
-    openDiscovery(r);
-    click(r.root.findAllByType("button").find((b) => txt(b) === "Review card"));
+    choose(r);
     eq(S().photoRequests.length, 0, "the partner has not been asked for anything");
   });
 
-  test("multi-partner comparison survives", () => {
+  test("multi-partner comparison survives, on the Goal itself", () => {
     const r = boot("pre-deal");
-    openDiscovery(r);
-    assert(cls(r, "pick").length >= 1, "partners are listed");
-    assert(labels(r).filter((t) => t === "Review card").length >= 1,
-      "each with its own way in");
-    assert(labels(r).some((t) => /^(Chat|Continue chatting)$/.test(t)), "and Chat");
+    const rows = inlineRows(r);
+    assert(rows.length >= 1, "every partner who has the card is listed");
+    rows.forEach((n) => {
+      assert(chooseIn(n), "each with its own way in");
+      assert(n.findAllByType("button").some((b) => /^(Chat|Continue chatting)$/.test(txt(b))),
+        "and its own way to talk first");
+      assert(/\$/.test(txt(n)), "and its asking price to compare");
+    });
   });
 
   test("choosing a different partner reviews that partner's copy", () => {
@@ -236,8 +246,7 @@ describe("C. Review Card entry states", () => {
     /* Nothing has been asked of the partner yet, so saying "Waiting on them"
        would be false — and would hide the fact that the next move is a choice. */
     const r = boot("pre-deal");
-    openDiscovery(r);
-    click(r.root.findAllByType("button").find((b) => txt(b) === "Review card"));
+    choose(r);
     const r2 = remount();
     eq(txt(cls(cardFor(r2), "goal-deal-t")[0]), "Your move", "the move is theirs to make");
     const card = expand(r2);
@@ -249,8 +258,7 @@ describe("C. Review Card entry states", () => {
 
   test("asking hands the move to the partner", () => {
     const r = boot("pre-deal");
-    openDiscovery(r);
-    click(r.root.findAllByType("button").find((b) => txt(b) === "Review card"));
+    choose(r);
     let r2 = remount();
     click(expand(r2).findAllByType("button").find((b) => txt(b) === "Request actual photos"));
     r2 = remount();
@@ -261,8 +269,7 @@ describe("C. Review Card entry states", () => {
 
   test("stock-only leads with asking to see the card", () => {
     const r = boot("pre-deal");
-    openDiscovery(r);
-    click(r.root.findAllByType("button").find((b) => txt(b) === "Review card"));
+    choose(r);
     const r2 = remount();
     const card = expand(r2);
     eq(offerCTAs(r2).join(","), "Make an offer without photos",
@@ -285,8 +292,7 @@ describe("C. Review Card entry states", () => {
 
   test("photos-ready leads with the offer", () => {
     const r = boot("pre-deal-ready");
-    openDiscovery(r);
-    click(r.root.findAllByType("button").find((b) => txt(b) === "Review card"));
+    choose(r);
     const r2 = remount();
     expand(r2);
     eq(offerCTAs(r2).join(","), "Make an offer", "exactly one, and it is the offer");
@@ -310,8 +316,7 @@ describe("C. Review Card entry states", () => {
 describe("D. Offering happens in Review Card", () => {
   test("proceed-without-photos confirms, then stays in the workspace", () => {
     const r = boot("pre-deal");
-    openDiscovery(r);
-    click(r.root.findAllByType("button").find((b) => txt(b) === "Review card"));
+    choose(r);
     const r2 = remount();
     const card = expand(r2);
     click(card.findAllByType("button").find((b) => txt(b) === "Make an offer without photos"));
@@ -340,8 +345,7 @@ describe("D. Offering happens in Review Card", () => {
 
   test("Review Card reads as settled once the deal exists", () => {
     const r = boot("pre-deal-ready");
-    openDiscovery(r);
-    click(r.root.findAllByType("button").find((b) => txt(b) === "Review card"));
+    choose(r);
     const inv = copy();
     TR.act(() => { acts().startOpportunity({ goalId: goal().id, collectorId: ME,
       partnerId: inv.partnerId, cardId: goal().cardId, invId: inv.invId,
@@ -370,12 +374,19 @@ describe("E. The legacy modal is gone from this flow", () => {
     assert(!/<CopyAction/.test(SRC), "and nothing references it");
   });
 
-  test("discovery keeps the information it is good at", () => {
+  test("the Goal keeps the information discovery was good at", () => {
     const r = boot("pre-deal");
+    const rows = inlineRows(r);
+    assert(rows.length >= 1, "the partners are on the Goal");
+    assert(/\$/.test(txt(cardFor(r))), "with listed prices to compare");
+    assert(rows.some((n) => n.findAllByType("button")
+      .some((b) => /^(Chat|Continue chatting)$/.test(txt(b)))), "and Chat");
+    /* The fuller sheet is still reachable once a pursuit exists, for the
+       partners not being pursued. */
+    choose(r);
+    assert(discoveryRoute(r), "and the compact route to the full list remains");
     openDiscovery(r);
-    assert(cls(r, "ph-note").length >= 1, "stock vs actual photo state is still shown");
-    assert(/\$/.test(txt(r.root)), "with listed prices");
-    assert(labels(r).some((t) => /^(Chat|Continue chatting)$/.test(t)), "and Chat");
+    assert(cls(r, "ph-note").length >= 1, "where stock vs actual photo state is shown");
   });
 });
 

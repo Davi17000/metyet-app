@@ -381,10 +381,9 @@ describe("M/N. Completion and failure derive Goal state", () => {
      primary + no deal    -> .gs-row        (every partner listed inline)
      secondary            -> .gwatch-h      (compact count link)
    Tests should not care which; they care that the partners are reachable. */
-/* Three shapes of the same route into partner discovery: the compact row once a
-   pursuit exists, the watch row, and the expanded supply list's own CTA. */
-const supplyRouteIn = (node) => cls(node, "goal-holders")[0] || cls(node, "gwatch-h")[0]
-  || cls(node, "gs-offer")[0];
+/* Routes into partner discovery. The expanded supply list needs none: its rows
+   carry Review Card directly. */
+const supplyRouteIn = (node) => cls(node, "goal-holders")[0] || cls(node, "gwatch-h")[0];
 /* When a primary goal has no live deal the partners are already listed inline,
    so there is no route to open — the conversation action is right there. */
 const CHAT_RE = /^(Chat|Continue chatting)$/;
@@ -444,22 +443,23 @@ const openNegotiation = (r) => {
      copy to review, and the offer is then made from Review Card on the Goal.
      Which copy you are buying and what you will pay are different questions,
      asked in different places. */
-  const inlineReview = card.findAllByType("button").find((b) => txt(b).trim() === "Review card");
+  const inlineReview = card.findAllByType("button").find((b) => /^Review Card$/i.test(txt(b).trim()));
   const route = inlineReview || supplyRouteIn(card);
   assert(route, "a discovery route on " + nm + ": " + card.findAllByType("button").map((b) => txt(b).trim()).join("|"));
   click(route);
   if (!inlineReview) {
-    const pick = r.root.findAllByType("button").find((b) => txt(b).trim() === "Review card");
+    const pick = r.root.findAllByType("button").find((b) => /^Review Card$/i.test(txt(b).trim()));
     assert(pick, "a copy to review — buttons: "
       + r.root.findAllByType("button").map((b) => txt(b).trim()).filter(Boolean).join("|"));
     click(pick);
   }
   /* Now on the Goal: open Review Card and make the offer from there. */
   const goalNow = () => cls(r, "goal").concat(cls(r, "gwatch-r")).find((n) => txt(n).includes(nm));
+  /* Selecting a copy already opens the workspace; only expand if it is shut. */
   const disc = goalNow().findAllByType("button")
     .find((b) => String(b.props.className || "").includes("goal-deal"));
   assert(disc, "the Goal now carries a Review Card pursuit");
-  click(disc);
+  if (!disc.props["aria-expanded"]) click(disc);
   const offer = goalNow().findAllByType("button")
     .find((b) => /^Make an offer/.test(txt(b).trim()));
   assert(offer, "Review Card offers the forward action: "
@@ -468,8 +468,10 @@ const openNegotiation = (r) => {
   /* Without photos this asks for confirmation first. */
   const cont = r.root.findAllByType("button").find((b) => txt(b).trim() === "Continue without photos");
   if (cont) click(cont);
-  const send = btn(r, "Send offer");
-  assert(send, "the send control: " + r.root.findAllByType("button").map((b) => txt(b).trim()).filter(Boolean).join("|"));
+  /* The deal-creating CTA is "Submit offer"; the sheet itself explains that it
+     starts an active deal for this goal. */
+  const send = r.root.findAllByType("button").find((b) => /^(Submit|Send) offer$/.test(txt(b).trim()));
+  assert(send, "the submit control: " + r.root.findAllByType("button").map((b) => txt(b).trim()).filter(Boolean).join("|"));
   click(send);
   return { g, o: S(r).opportunities[S(r).opportunities.length - 1] };
 };
@@ -744,14 +746,15 @@ describe("O. Privacy through actual persona switching", () => {
     const card = cls(r, "goal").concat(cls(r, "gwatch-r")).find((n) => txt(n).includes(nm));
     /* Reach the offer field the way the product now does: choose a copy in
        discovery, then open Review Card on the Goal and offer from there. */
-    const inline = card.findAllByType("button").find((b) => txt(b).trim() === "Review card");
+    const inline = card.findAllByType("button").find((b) => /^Review Card$/i.test(txt(b).trim()));
     click(inline || supplyRouteIn(card));
     if (!inline) {
-      click(r.root.findAllByType("button").find((b) => txt(b).trim() === "Review card"));
+      click(r.root.findAllByType("button").find((b) => /^Review Card$/i.test(txt(b).trim())));
     }
     const goalNow = () => cls(r, "goal").concat(cls(r, "gwatch-r")).find((n) => txt(n).includes(nm));
-    click(goalNow().findAllByType("button")
-      .find((b) => String(b.props.className || "").includes("goal-deal")));
+    const disc2 = goalNow().findAllByType("button")
+      .find((b) => String(b.props.className || "").includes("goal-deal"));
+    if (disc2 && !disc2.props["aria-expanded"]) click(disc2);
     click(goalNow().findAllByType("button").find((b) => /^Make an offer/.test(txt(b).trim())));
     const cont = r.root.findAllByType("button").find((b) => txt(b).trim() === "Continue without photos");
     if (cont) click(cont);

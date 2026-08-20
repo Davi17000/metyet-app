@@ -139,7 +139,27 @@ function nextActor(o) {
 const INVARIANTS = {
   /* A collector may pursue one structured negotiation per goal at a time.
      Alternatives stay visible and reachable — only the offer is limited. */
+  /* THE COLLECTOR'S BOUNDARY. Per GOAL, and it begins at the first submitted
+     offer — not at reviewing, asking for photos, or chatting. Those are how you
+     find out whether you want the card; this is where you commit to buying one. */
   oneNegotiationPerGoal: (goalId, opps) => activeOppForGoal(goalId, opps) == null,
+
+  /* THE PARTNER'S BOUNDARY, and deliberately a different one.
+
+     A partner is not committed merely because somebody has offered — several
+     collectors may be talking to them about the same card at once, and that is
+     healthy. They become committed when the PRICE IS SETTLED, because that is
+     the point at which they have told one collector what the card costs them
+     and cannot honestly tell another the same thing.
+
+     Settled price is `agreedPrice != null`, which is the existing canonical
+     marker for Agree on Price being done; no new field is introduced. The lock
+     is per PHYSICAL COPY, so a partner may commit different copies to different
+     collectors at the same time. It releases when the deal ends, since an ended
+     deal no longer holds anything. */
+  copyCommittedTo: (invId, opps, exceptOppId) => (invId == null ? null
+    : (opps || []).find((o) => o.invId === invId && o.id !== exceptOppId
+      && isActive(o) && o.agreedPrice != null) || null),
   /* A binder copy is a physical thing a partner must be able to evaluate.
      Both faces or it does not exist. */
   binderCopyPhotographed: (photos) => !!(photos && photos.front && photos.back),
@@ -170,6 +190,10 @@ const REFUSE = {
      offer for want of photos — seeing the card is encouraged, not enforced. */
   photosNeeded: "photos-needed",
   copyUnavailable: "copy-unavailable",
+  /* The copy is spoken for. Deliberately says nothing about who, or for how
+     much — a blocked collector learns the card is unavailable, not who beat
+     them to it or what they paid. */
+  copyCommitted: "copy-committed",
 };
 
 module.exports = {

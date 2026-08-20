@@ -66,10 +66,9 @@ const acts = () => __store.get().actions;
      primary + no deal    -> .gs-row        (every partner listed inline)
      secondary            -> .gwatch-h      (compact count link)
    Tests should not care which; they care that the partners are reachable. */
-/* Three shapes of the same route into partner discovery: the compact row, the
-   watch row, and the expanded supply list's own CTA. */
-const supplyRouteIn = (node) => cls(node, "goal-holders")[0] || cls(node, "gwatch-h")[0]
-  || cls(node, "gs-offer")[0];
+/* Routes into partner discovery. The expanded supply list needs none: its rows
+   carry Review Card directly. */
+const supplyRouteIn = (node) => cls(node, "goal-holders")[0] || cls(node, "gwatch-h")[0];
 /* When a primary goal has no live deal the partners are already listed inline,
    so there is no route to open — the conversation action is right there. */
 const reachOutIn = (node) => (cls(node, "gs-row")[0] || {}).findAllByType
@@ -260,21 +259,23 @@ describe("6. Collector Make an offer -> TP sees the same Opportunity id", () => 
     const goal = cls(r, "goal").concat(cls(r, "gwatch-r")).find((n) => txt(n).includes(name));
     /* CONTRACT CHANGE: discovery selects a copy to review; the offer is then
        made from Review Card on the Goal. */
-    const inline = goal.findAllByType("button").find((b) => txt(b).trim() === "Review card");
+    const inline = goal.findAllByType("button").find((b) => /^Review Card$/i.test(txt(b).trim()));
     const route = inline || supplyOrReach(goal);
     assert(route, "a discovery route: "
       + goal.findAllByType("button").map((b) => txt(b).trim()).filter(Boolean).join("|"));
     click(route);
     if (!inline) {
-      click(r.root.findAllByType("button").find((b) => txt(b).trim() === "Review card"));
+      click(r.root.findAllByType("button").find((b) => /^Review Card$/i.test(txt(b).trim())));
     }
     const goalNow = () => cls(r, "goal").concat(cls(r, "gwatch-r")).find((n) => txt(n).includes(name));
-    click(goalNow().findAllByType("button")
-      .find((b) => String(b.props.className || "").includes("goal-deal")));
+    const disc2 = goalNow().findAllByType("button")
+      .find((b) => String(b.props.className || "").includes("goal-deal"));
+    if (disc2 && !disc2.props["aria-expanded"]) click(disc2);
     click(goalNow().findAllByType("button").find((b) => /^Make an offer/.test(txt(b).trim())));
     const cont = r.root.findAllByType("button").find((b) => txt(b).trim() === "Continue without photos");
     if (cont) click(cont);
-    click(btn(r, "Send offer"));
+    click(r.root.findAllByType("button")
+      .find((b) => /^(Submit|Send) offer$/.test(txt(b).trim())));
 
     const mine = cv().myOpps();
     const newest = mine[mine.length - 1];
