@@ -2,13 +2,14 @@
   "name": "metyet",
   "version": "1.0.0",
   "private": true,
-  "description": "MetYet — one shared domain, two persona experiences (Trusted Partner and Collector)",
+  "description": "MetYet \u2014 one shared domain, two persona experiences (Trusted Partner and Collector)",
   "license": "UNLICENSED",
   "scripts": {
     "build": "node build-all.mjs && node tests/fixture-build.mjs",
     "dev": "node dev-server.mjs",
     "test": "node tests/all.cjs",
     "prod": "node prod.build.mjs",
+    "build:site": "node site.build.mjs",
     "smoke": "node tests/prod-smoke.mjs",
     "previews": "node build-preview.mjs && node build-preview-unified.mjs",
     "verify": "npm run build && npm test && npm run prod && npm run smoke && npm run previews"
