@@ -403,8 +403,12 @@ describe("F. One viewer, two personas", () => {
       COL.indexOf("function GoalCard("));
     assert(/<ActualCardPhoto/.test(col), "the Collector's viewer uses the same face");
     assert(/<FaceSwitch/.test(col), "and the same switch");
-    assert(/ActualCardPhoto, FaceSwitch \} from "\.\.\/src\/MetYet\.jsx"/.test(COL),
-      "imported, not copied");
+    /* Matched by name rather than by the exact import list, so adding another
+       shared symbol strengthens the sharing instead of breaking the pin. */
+    ["ActualCardPhoto", "FaceSwitch"].forEach((n) => {
+      const re = new RegExp('import \\{[^}]*\\b' + n + '\\b[^}]*\\} from "\\.\\./src/MetYet\\.jsx"', "s");
+      assert(re.test(COL), n + " is imported from the shared module, not copied");
+    });
   });
 
   test("the Collector re-implements no face or switch markup", () => {

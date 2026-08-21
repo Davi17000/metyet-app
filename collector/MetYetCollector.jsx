@@ -10,7 +10,7 @@ import { collectorView } from "../domain/collector-view.js";
    (c12) is a collector in that network, not a fixture. */
 import { buildCanonicalSeed, demoDealFixture, Icon,
   CounterFields, validAmount, percentageOf,
-  ActualCardPhoto, FaceSwitch } from "../src/MetYet.jsx";
+  ActualCardPhoto, FaceSwitch, emptyTradeCard } from "../src/MetYet.jsx";
 import CardIdentityPicker from "../shared/CardIdentityPicker.jsx";
 
 const SELF_COLLECTOR = "c12";
@@ -3420,11 +3420,11 @@ function Fulfillment({ o, st, register }) {
       <div className="row"><span className="k">Settling up</span>
         <span className="mono">{money(Math.abs(finalBalance(o)))} {finalBalance(o) >= 0 ? "to them" : "to you"}</span></div>
       <div className="row"><span className="k">{p.name}</span>
-        <span>{f.tpDone ? "Confirmed" : "Not yet"}</span></div>
+        <span>{D.FULFILLMENT.handedOff(f) ? "Confirmed" : "Not yet"}</span></div>
       {/* Same rule as the other stages: the registered action bar already shows
           this, so a second identical button would be the collector's third way
           to press one handler. */}
-      {!f.collectorDone && !register && (
+      {!D.FULFILLMENT.received(f) && !register && (
         <button className="btn pri wide" style={{ marginTop: 16 }} onClick={() => st.confirmHandoff(o.id)}>
           I've got the card
         </button>
@@ -3965,8 +3965,25 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
         return A.patchOpportunity(id, (o) => ({ ...o,
           priceThread: [...o.priceThread, { by: "collector", type: "counter", amount, at: AT }] }));
       },
+      /* ONE TRADE-CARD SHAPE. This used to build {binderId, inclusion} — a
+         reduced object missing the stable row id, the cardId, both negotiation
+         threads and every market/percent field. A card created that way could
+         be proposed but could never be valued: the Value Trade model had
+         nothing to write into, and two rows for the same binder copy could not
+         be told apart. It now uses the same factory the Trusted Partner's own
+         path uses, so both seats observe one object.
+
+         Nothing is agreed on creation: inclusion starts "proposed", withdrawn
+         false, both threads empty, every agreed field null. Proposing a card is
+         not the partner accepting it. */
       submitTrade: (id, binderIds) => A.patchOpportunity(id, (o) => ({
-        ...o, trade: { submitted: true, cards: binderIds.map((b) => ({ binderId: b, inclusion: "proposed" })) } })),
+        ...o,
+        trade: { ...(o.trade || {}), submitted: true,
+          cards: binderIds.map((bid) => {
+            const b = st.binderById(bid);
+            return emptyTradeCard(b ? b.cardId : null,
+              b ? b.photos : null, b ? b.cert : null, bid);
+          }) } })),
       marketRespond: (id, binderId, action, amount) => A.patchOpportunity(id, (o) => ({
         ...o, trade: { ...o.trade, cards: o.trade.cards.map((c) => (c.binderId !== binderId ? c
           : action === "accept" ? { ...c, agreedMarket: c.tpMarket } : { ...c, collectorMarket: amount })) } })),
@@ -3980,11 +3997,15 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
       dealAgree: (id, amount) => A.patchOpportunity(id, (o) => ({
         ...o, stage: "fulfillment",
         deal: { ...o.deal, agreedAdj: amount, tpAgreed: true, collectorAgreed: true },
+        /* Canonical field names — the same two facts the Trusted Partner's own
+           confirmHandoff maintains. (The fabricated plan and the cross-persona
+           agreement above remain for Pass 2; this pass only stops a THIRD
+           spelling of fulfillment state being written.) */
         fulfillment: { method: "Meet in person", where: "To arrange", when: "To arrange",
-          collectorDone: false, tpDone: false } })),
+          collectorReceipt: false, tpHandoff: false } })),
       confirmHandoff: (id) => A.patchOpportunity(id, (o) => {
-        const f = { ...o.fulfillment, collectorDone: true };
-        return f.tpDone ? { ...o, fulfillment: f, stage: "completed", completedAt: AT }
+        const f = { ...o.fulfillment, collectorReceipt: true };
+        return D.FULFILLMENT.handedOff(f) ? { ...o, fulfillment: f, stage: "completed", completedAt: AT }
           : { ...o, fulfillment: f };
       }),
     };
