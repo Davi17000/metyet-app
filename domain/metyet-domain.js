@@ -69,6 +69,9 @@ const goalState = (goalId, opps) => {
 
    One arithmetic, used by both personas. Trade value needs BOTH terms agreed;
    there is no partial credit. */
+const tradeRows = (o) => (o.trade && o.trade.cards) || [];
+const acceptedRows = (o) => tradeRows(o).filter((c) => c.inclusion === "accepted");
+const activeTradeCards = (o) => acceptedRows(o).filter((c) => !c.withdrawn);
 const acceptedTradeCards = (o) =>
   ((o.trade && o.trade.cards) || []).filter((c) => c.inclusion === "accepted" && !c.withdrawn);
 const cardSettled = (c) => c.agreedMarket != null && c.agreedPercent != null;
@@ -264,7 +267,62 @@ const tcWithdraw = (tc, at) => (tc.inclusion === "accepted" && !tc.withdrawn
 const tcDecide = (tc, decision, at) => (tc.inclusion === "proposed"
   ? { ...tc, inclusion: decision, reviewedAt: at } : tc);
 
-const TRADE = { applyMarket: tcApplyMarket, decide: tcDecide, applyPercent: tcApplyPercent,
+/* WHEN SELECTION IS OVER.
+
+   The Trusted Partner reviews each proposed card; once none is still awaiting a
+   decision, the selection has resolved and the deal moves on — to Value Trade if
+   anything was accepted, or straight to Deal as a cash purchase if everything
+   was rejected. There is no further decision for either person to make, which is
+   why nothing waits for a confirmation that would have nothing to confirm.
+
+   This rule already existed, but only inside the Trusted Partner's React module,
+   applied on its own review path. The canonical action did not run it, so a
+   review performed through the shared action left the card accepted, the
+   guidance saying "move on to agreeing values", and the stage still on Select
+   Trade — the two seats disagreeing about the same opportunity. Moving it here
+   is what makes one review mean one outcome. */
+const selectTradeSettled = (o) => !!(o.trade && o.trade.submitted)
+  && tradeRows(o).filter((c) => c.inclusion === "proposed").length === 0
+  && tradeRows(o).filter((c) => c.inclusion === "accepted").length > 0;
+
+const selectionExhausted = (o) => !!(o.trade && o.trade.submitted)
+  && tradeRows(o).filter((c) => c.inclusion === "proposed").length === 0
+  && tradeRows(o).filter((c) => c.inclusion === "accepted").length === 0;
+
+/* Applied after any change to inclusion. It only ever moves a deal that is
+   actually sitting in Select Trade, so it cannot disturb a later stage. */
+const closeSelection = (o) => {
+  if (o.stage !== "select-trade" || isTerminal(o)) return o;
+  if (selectTradeSettled(o)) return { ...o, stage: "value-trade" };
+  if (selectionExhausted(o)) {
+    return { ...o, trade: { ...o.trade, mode: "cash" }, stage: "deal" };
+  }
+  return o;
+};
+
+/* WHEN VALUATION IS OVER. Every card still in the trade has an agreed market
+   value AND an agreed percentage, and at least one of them survived to carry
+   economics. If every card was withdrawn the deal deliberately WAITS here for an
+   explicit collector decision rather than silently becoming a cash purchase —
+   choosing to buy outright is a decision somebody makes, not a default.
+
+   Same story as closeSelection: the rule existed, but only inside the Trusted
+   Partner's module, so a valuation settled through the canonical actions left
+   the deal sitting in Value Trade with nothing left to negotiate. */
+const valueTradeSettled = (o) => {
+  const active = activeTradeCards(o);
+  return acceptedRows(o).length > 0 && active.every(cardSettled);
+};
+
+const closeValuation = (o) => {
+  if (o.stage !== "value-trade" || isTerminal(o)) return o;
+  return valueTradeSettled(o) && activeTradeCards(o).filter(cardSettled).length > 0
+    ? { ...o, stage: "deal" } : o;
+};
+
+const TRADE = { applyMarket: tcApplyMarket, decide: tcDecide,
+  selectTradeSettled, selectionExhausted, closeSelection,
+  valueTradeSettled, closeValuation, applyPercent: tcApplyPercent,
   applyDealAdjustment: dealApplyAdj, withdraw: tcWithdraw, marketAgreed };
 
 const INVARIANTS = {

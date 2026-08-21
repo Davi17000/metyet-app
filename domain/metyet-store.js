@@ -264,13 +264,15 @@ function createStore(seed) {
        seat's agreement: `by` names who is acting, and only that side's fields
        move. */
     tradeMarketRespond({ oppId, tradeCardId, by, action, amount, at }) {
-      return this.patchOpportunity(oppId, (o) => ({ ...o,
+      /* Settling the last open term is what ends this stage. */
+      return this.patchOpportunity(oppId, (o) => D.TRADE.closeValuation({ ...o,
         trade: { ...o.trade, cards: (o.trade?.cards || []).map((c) => (c.id !== tradeCardId
           ? c : D.TRADE.applyMarket(c, by, action, amount, at))) } }));
     },
 
     tradePercentRespond({ oppId, tradeCardId, by, action, percent, at }) {
-      return this.patchOpportunity(oppId, (o) => ({ ...o,
+      /* Settling the last open term is what ends this stage. */
+      return this.patchOpportunity(oppId, (o) => D.TRADE.closeValuation({ ...o,
         trade: { ...o.trade, cards: (o.trade?.cards || []).map((c) => (c.id !== tradeCardId
           ? c : D.TRADE.applyPercent(c, by, action, percent, at))) } }));
     },
@@ -342,15 +344,19 @@ function createStore(seed) {
     /* The partner's Select Trade decision. Omitting tradeCardId decides every
        still-undecided row, which is what "accept these cards" means. */
     reviewTradeCards({ oppId, tradeCardId, decision, at }) {
-      return this.patchOpportunity(oppId, (o) => ({ ...o,
+      return this.patchOpportunity(oppId, (o) => D.TRADE.closeSelection({ ...o,
         trade: { ...o.trade, cards: (o.trade?.cards || []).map((c) => (
           (tradeCardId && c.id !== tradeCardId) ? c : D.TRADE.decide(c, decision, at))) } }));
     },
 
     withdrawTradeCard({ oppId, tradeCardId, at }) {
-      return this.patchOpportunity(oppId, (o) => ({ ...o,
-        trade: { ...o.trade, cards: (o.trade?.cards || []).map((c) => (c.id !== tradeCardId
-          ? c : D.TRADE.withdraw(c, at))) } }));
+      /* Withdrawing can also empty the selection, so the same rule applies. */
+      /* Withdrawing can empty a selection, and can also settle a valuation by
+         removing the last unagreed card, so both rules apply. */
+      return this.patchOpportunity(oppId, (o) => D.TRADE.closeValuation(
+        D.TRADE.closeSelection({ ...o,
+          trade: { ...o.trade, cards: (o.trade?.cards || []).map((c) => (c.id !== tradeCardId
+            ? c : D.TRADE.withdraw(c, at))) } })));
     },
 
     chooseCashOnly({ oppId, at }) {
