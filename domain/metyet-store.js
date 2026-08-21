@@ -338,6 +338,13 @@ function createStore(seed) {
       });
     },
 
+    /* Either seat may take a card out of the trade; the rule is the same one. */
+    withdrawTradeCard({ oppId, tradeCardId, at }) {
+      return this.patchOpportunity(oppId, (o) => ({ ...o,
+        trade: { ...o.trade, cards: (o.trade?.cards || []).map((c) => (c.id !== tradeCardId
+          ? c : D.TRADE.withdraw(c, at))) } }));
+    },
+
     chooseCashOnly({ oppId, at }) {
       return this.patchOpportunity(oppId, (o) => (
         !["select-trade", "value-trade"].includes(o.stage) ? o

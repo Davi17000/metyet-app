@@ -1700,7 +1700,7 @@ const dealApplyAdj = SharedID.TRADE.applyDealAdjustment;
 
 const adjOpen = (deal) => deal.agreedAdj == null && deal.adjThread.length > 0;
 
-const tcWithdraw = (tc, at) => (tc.inclusion === "accepted" && !tc.withdrawn ? { ...tc, withdrawn: true, withdrawnAt: at } : tc);
+const tcWithdraw = SharedID.TRADE.withdraw;
 
 /* ---- money. Trade credit requires BOTH agreed terms. There is no fallback to
    the partner default: an unagreed percentage means unresolved credit. -------- */

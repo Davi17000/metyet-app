@@ -422,6 +422,35 @@ const CSS = `
 .goal-deal-t { margin-left: auto; font-size: 12px; color: var(--muted); }
 /* Demo scaffolding, deliberately not product chrome: it must read as the
    tester standing in for the other side, never as a Collector action. */
+.vcard-top { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 16px; }
+.vcard-id { flex: 1; min-width: 0; }
+.vcard-n { font-size: 17px; font-weight: 700; line-height: 1.2; }
+.vcard-st { font-size: 12.5px; color: var(--t1); margin-top: 8px; font-weight: 600; }
+.vcard.out { opacity: .72; }
+.vcard-out { font-size: 13px; color: var(--muted); line-height: 1.5; }
+.vcard-out-a { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line-soft); }
+.vcard-tot { margin-top: 14px; }
+
+/* One panel shape, used by both units of negotiation. */
+.vp { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
+.vp-h { font-family: 'Archivo'; font-size: 11px; letter-spacing: .11em;
+  text-transform: uppercase; font-weight: 700; color: var(--muted); }
+.vp.locked .vp-lock { font-size: 13px; color: var(--faint); margin-top: 8px; line-height: 1.45; }
+.vp-agreed, .vp-standing { margin-top: 10px; }
+.vp-amt { display: block; font-size: 22px; font-weight: 700; }
+.vp-by { display: block; font-size: 12.5px; color: var(--muted); margin-top: 3px; }
+.vp-none { font-size: 13px; color: var(--faint); margin-top: 9px; }
+.vp-accept { margin-top: 12px; }
+.vp-counter { margin-top: 14px; }
+.vp-hint { font-size: 12.5px; color: var(--faint); margin-top: 7px; line-height: 1.45; }
+.vp-hist { margin-top: 12px; }
+.vp-hist-b { background: none; border: 0; padding: 0; font-size: 12.5px;
+  color: var(--t1); text-decoration: underline; }
+.vp-hist-l { list-style: none; margin: 9px 0 0; padding: 0; }
+.vp-hist-l li { display: flex; gap: 7px; font-size: 12.5px; color: var(--muted);
+  padding: 3px 0; }
+.vp-hist-who { font-weight: 600; color: var(--text); }
+
 .st-cash { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line-soft); }
 .st-cash-n { display: block; font-size: 12.5px; color: var(--faint);
   margin-top: 8px; line-height: 1.45; }
@@ -3274,83 +3303,226 @@ function ValueTrade({ o, st, register }) {
   );
 }
 
-function ValueCard({ o, tcd, st }) {
-  const b = st.binderById(tcd.binderId);
-  const c = st.cardById(b.cardId);
-  /* Their private reference value prefills the field as a convenience. Nothing
-     reaches the partner until they press send. */
-  const [mkt, setMkt] = useState(tcd.collectorMarket != null ? String(tcd.collectorMarket) : String(b.market ?? ""));
-  const [pc, setPc] = useState(tcd.collectorPercent != null ? String(Math.round(tcd.collectorPercent * 100)) : "80");
-  const settled = cardSettled(tcd);
-  const mSettled = marketSettled(tcd);
+/* ---------------------------------------------- ONE NEGOTIATION, TWO UNITS
+
+   Market value and Trade % are the same conversation held twice: somebody puts
+   a number on the table, the other side accepts it or answers with their own.
+   So they get the same shape — standing proposal, who made it, accept, counter
+   — and differ only in how the number is written. Learning it once is enough.
+
+   Everything shown is read from the card's own threads; nothing is recomputed
+   or remembered locally beyond the draft being typed. */
+function Phase({ label, standing, standingBy, agreed, format, partnerName,
+  yourTurn, draft, setDraft, inputLabel, hint, onAccept, onPropose, sendLabel,
+  thread, locked, lockNote }) {
+  const [showHistory, setShowHistory] = useState(false);
+
+  if (locked) {
+    return (
+      <div className="vp locked">
+        <div className="vp-h">{label}</div>
+        <div className="vp-lock">{lockNote}</div>
+      </div>
+    );
+  }
 
   return (
-    <div className="card sec">
-      <div style={{ display: "flex", gap: 14, alignItems: "flex-start", marginBottom: 14 }}>
-        <Art card={c} size="md" />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 17, fontWeight: 700 }}>{c.name}</div>
+    <div className="vp">
+      <div className="vp-h">{label}</div>
+
+      {agreed != null ? (
+        <div className="vp-agreed">
+          <span className="vp-amt mono">{format(agreed)}</span>
+          <span className="vp-by">Agreed by you both</span>
+        </div>
+      ) : standing != null ? (
+        <>
+          <div className="vp-standing">
+            <span className="vp-amt mono">{format(standing)}</span>
+            <span className="vp-by">
+              Proposed by {standingBy === "tp" ? partnerName : "you"}
+              {yourTurn ? " — your move" : ` — waiting on ${partnerName}`}
+            </span>
+          </div>
+          {yourTurn && (
+            <button className="btn deep wide vp-accept" onClick={onAccept}>
+              Accept {format(standing)}
+            </button>
+          )}
+        </>
+      ) : (
+        <div className="vp-none">
+          No proposal yet{yourTurn ? " — put a number on the table." : "."}
+        </div>
+      )}
+
+      {agreed == null && (
+        <div className="vp-counter">
+          <label className="pn-f">
+            <span className="pn-fl">{standing != null ? "Your counter" : "Your proposal"}</span>
+            <input className="inp" inputMode="decimal" value={draft} aria-label={inputLabel}
+              onChange={(e) => setDraft(e.target.value.replace(/[^\d.]/g, ""))} />
+          </label>
+          {hint && <div className="vp-hint">{hint}</div>}
+          <button className="btn pri wide" style={{ marginTop: 10 }}
+            disabled={!sendLabel} onClick={onPropose}>
+            {sendLabel || "Enter an amount"}
+          </button>
+        </div>
+      )}
+
+      {thread.length > 0 && (
+        <div className="vp-hist">
+          <button className="vp-hist-b" aria-expanded={showHistory}
+            onClick={() => setShowHistory(!showHistory)}>
+            {showHistory ? "Hide" : "Show"} history ({thread.length})
+          </button>
+          {showHistory && (
+            <ul className="vp-hist-l">
+              {thread.map((e, n) => (
+                <li key={n}>
+                  <span className="vp-hist-who">{e.by === "tp" ? partnerName : "You"}</span>
+                  <span className="vp-hist-act">{e.type === "accept" ? "accepted" : "proposed"}</span>
+                  <span className="mono">{format(e.type === "accept"
+                    ? (e.amount != null ? e.amount : e.percent)
+                    : (e.amount != null ? e.amount : e.percent))}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ValueCard({ o, tcd, st }) {
+  const b = st.binderById(tcd.binderId);
+  const c = st.cardById(b ? b.cardId : tcd.cardId);
+  /* Their private reference value prefills the field as a convenience. Nothing
+     reaches the partner until they press send. */
+  const [mkt, setMkt] = useState(tcd.collectorMarket != null
+    ? String(tcd.collectorMarket) : String((b && b.market) ?? ""));
+  const [pc, setPc] = useState(tcd.collectorPercent != null
+    ? String(Math.round(tcd.collectorPercent * 100)) : "");
+  const [confirmOut, setConfirmOut] = useState(false);
+
+  const partner = st.partnerById(o.partnerId);
+  const them = partner ? partner.name : "them";
+  const settled = cardSettled(tcd);
+  const mSettled = marketSettled(tcd);
+  const out = !!tcd.withdrawn;
+
+  /* Whose move it is, per phase, derived from the card's own standing
+     positions — never from a local flag. */
+  const marketStanding = tcd.tpMarket != null && tcd.agreedMarket == null
+    ? { amount: tcd.tpMarket, by: "tp" }
+    : tcd.collectorMarket != null && tcd.agreedMarket == null
+      ? { amount: tcd.collectorMarket, by: "collector" } : null;
+  const marketMine = !!marketStanding && marketStanding.by === "tp";
+  const pctStanding = tcd.tpPercent != null && tcd.agreedPercent == null
+    ? { amount: tcd.tpPercent, by: "tp" }
+    : tcd.collectorPercent != null && tcd.agreedPercent == null
+      ? { amount: tcd.collectorPercent, by: "collector" } : null;
+  const pctMine = !!pctStanding && pctStanding.by === "tp";
+
+  return (
+    <div className={"card sec vcard" + (out ? " out" : "")}>
+      <div className="vcard-top">
+        <Art card={c} size="md" copy={b} />
+        <div className="vcard-id">
+          <div className="vcard-n">{c.name}</div>
           <div className="faint" style={{ fontSize: 13.5 }}>{cardLine(c)} · {gradeLine(c)}</div>
-          {settled && <span className="chip t" style={{ marginTop: 8 }}>Settled</span>}
+          <div className="vcard-st">
+            {out ? "Removed from the trade"
+              : settled ? "Settled"
+                : !mSettled ? "Agreeing what it's worth"
+                  : "Agreeing how much counts"}
+          </div>
         </div>
       </div>
 
-      {settled ? (
-        <>
-          <div className="row"><span className="k">Value you both agreed</span>
-            <span className="mono">{money(tcd.agreedMarket)}</span></div>
-          <div className="row"><span className="k">Share going to the trade</span>
-            <span className="mono">{pct(tcd.agreedPercent)}</span></div>
-          <div className="row tot"><span>Worth toward the card</span>
-            <span className="mono">{money(tradeValue(tcd))}</span></div>
-        </>
-      ) : !mSettled ? (
-        <>
-          <div className="sec-h">What's it worth?</div>
-          {tcd.tpMarket != null && (
-            <div className="row"><span className="k">They say</span>
-              <span className="mono">{money(tcd.tpMarket)}</span></div>
-          )}
-          {tcd.tpMarket != null && (
-            <button className="btn deep wide" style={{ margin: "12px 0" }}
-              onClick={() => st.marketRespond(o.id, tcd.binderId, "accept")}>
-              Agree on {money(tcd.tpMarket)}
-            </button>
-          )}
-          <input className="inp" inputMode="decimal" value={mkt} aria-label="What you think it's worth"
-            onChange={(e) => setMkt(e.target.value.replace(/[^\d.]/g, ""))} />
-          <div className="faint" style={{ fontSize: 12.5, marginTop: 6 }}>
-            Starts from your own note. They only see what you send.
-          </div>
-          <button className="btn pri wide" style={{ marginTop: 12 }} disabled={!(Number(mkt) > 0)}
-            onClick={() => st.marketRespond(o.id, tcd.binderId, "propose", Number(mkt))}>
-            Send {money(Number(mkt))}
-          </button>
-        </>
+      {out ? (
+        /* The row stays, because the negotiation happened. It simply stops
+           counting toward the deal. */
+        <div className="vcard-out">
+          This card is no longer part of the trade. Its history is kept below.
+        </div>
       ) : (
         <>
-          <div className="row"><span className="k">Value you both agreed</span>
-            <span className="mono">{money(tcd.agreedMarket)}</span></div>
-          <div className="sec-h" style={{ marginTop: 16 }}>How much counts toward the card?</div>
-          {tcd.tpPercent != null && (
-            <button className="btn deep wide" style={{ marginBottom: 12 }}
-              onClick={() => st.pctRespond(o.id, tcd.binderId, "accept")}>
-              Agree on {pct(tcd.tpPercent)} — {money(D.tradeValueAt(tcd.agreedMarket, tcd.tpPercent))}
-            </button>
-          )}
-          <input className="inp" inputMode="decimal" value={pc} aria-label="Percentage toward the trade"
-            onChange={(e) => setPc(e.target.value.replace(/[^\d.]/g, ""))} />
-          <div className="faint" style={{ fontSize: 13, marginTop: 7 }}>
-            {Number(pc) > 0
+          <Phase
+            label="Market value"
+            standing={marketStanding ? marketStanding.amount : null}
+            standingBy={marketStanding ? marketStanding.by : null}
+            agreed={tcd.agreedMarket}
+            format={money}
+            partnerName={them}
+            yourTurn={marketMine}
+            draft={mkt} setDraft={setMkt}
+            inputLabel="What you think it's worth, in dollars"
+            hint="Starts from your own note. They only see what you send."
+            onAccept={() => st.marketRespond(o.id, tcd.id, "accept")}
+            onPropose={() => st.marketRespond(o.id, tcd.id, "propose", Number(mkt))}
+            sendLabel={Number(mkt) > 0 ? `Send ${money(Number(mkt))}` : null}
+            thread={tcd.valueThread || []}
+          />
+
+          <Phase
+            label="Trade %"
+            locked={!mSettled}
+            lockNote="Available once you've agreed what this card is worth."
+            standing={pctStanding ? pctStanding.amount : null}
+            standingBy={pctStanding ? pctStanding.by : null}
+            agreed={tcd.agreedPercent}
+            format={pct}
+            partnerName={them}
+            yourTurn={pctMine}
+            draft={pc} setDraft={setPc}
+            inputLabel="Percentage of the market value toward this card"
+            hint={Number(pc) > 0 && tcd.agreedMarket != null
               ? `${Math.round(Number(pc))}% of ${money(tcd.agreedMarket)} is ${money(D.tradeValueAt(tcd.agreedMarket, Number(pc) / 100))} toward the card.`
-              : "Enter a percentage to see what it's worth."}
-          </div>
-          <button className="btn pri wide" style={{ marginTop: 12 }}
-            disabled={!(Number(pc) > 0 && Number(pc) <= 100)}
-            onClick={() => st.pctRespond(o.id, tcd.binderId, "propose", Number(pc) / 100)}>
-            Send {Math.round(Number(pc) || 0)}%
-          </button>
+              : null}
+            onAccept={() => st.pctRespond(o.id, tcd.id, "accept")}
+            onPropose={() => st.pctRespond(o.id, tcd.id, "propose", Number(pc) / 100)}
+            sendLabel={Number(pc) > 0 && Number(pc) <= 100
+              ? `Send ${Math.round(Number(pc))}%` : null}
+            thread={tcd.percentThread || []}
+          />
+
+          {/* What this card actually contributes, once both halves are agreed. */}
+          {settled && (
+            <div className="row tot vcard-tot"><span>Worth toward the card</span>
+              <span className="mono">{money(tradeValue(tcd))}</span></div>
+          )}
+
+          {/* Secondary by design: taking a card out is a valid move, not the
+              one being encouraged. */}
+          {!settled && (
+            <div className="vcard-out-a">
+              <button className="btn sm" onClick={() => setConfirmOut(true)}>
+                Remove from trade
+              </button>
+            </div>
+          )}
         </>
+      )}
+
+      {confirmOut && (
+        <div className="ovl" onClick={() => setConfirmOut(false)}>
+          <div className="sheet rv-confirm" onClick={(e) => e.stopPropagation()}>
+            <div className="sheet-h">Remove {c.name} from the trade?</div>
+            <div className="rv-confirm-t">
+              It stops counting toward the deal. What you and {them} agreed about
+              it is kept.
+            </div>
+            <div className="act-2" style={{ marginTop: 16 }}>
+              <button className="btn" onClick={() => setConfirmOut(false)}>Keep it in</button>
+              <button className="btn pri" onClick={() => {
+                st.withdrawTradeCard(o.id, tcd.id); setConfirmOut(false);
+              }}>Remove it</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -4096,6 +4268,8 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
       requestPlanRevision: (id, note) =>
         A.requestFulfillmentRevision({ oppId: id, note, at: AT }),
       chooseCashOnly: (id) => A.chooseCashOnly({ oppId: id, at: AT }),
+      withdrawTradeCard: (id, tradeCardId) =>
+        A.withdrawTradeCard({ oppId: id, tradeCardId, at: AT }),
       confirmHandoff: (id) => A.confirmHandoff({ oppId: id, by: "collector", at: AT }),
     };
   }, [state, store, collectorId]);
