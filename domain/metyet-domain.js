@@ -250,8 +250,16 @@ function dealApplyAdj(deal, by, action, amount, at) {
     tpAgreed: false, collectorAgreed: false };   // proposal invalidates confirmations only
 }
 
+/* Withdrawing a card from the trade. It sets a flag rather than deleting the
+   row, because the negotiation that happened is still true: the card stops
+   contributing economics but its history stays readable. Only an accepted,
+   not-already-withdrawn card can be withdrawn — the rule the TP seat already
+   used, now reachable by both. */
+const tcWithdraw = (tc, at) => (tc.inclusion === "accepted" && !tc.withdrawn
+  ? { ...tc, withdrawn: true, withdrawnAt: at } : tc);
+
 const TRADE = { applyMarket: tcApplyMarket, applyPercent: tcApplyPercent,
-  applyDealAdjustment: dealApplyAdj, marketAgreed };
+  applyDealAdjustment: dealApplyAdj, withdraw: tcWithdraw, marketAgreed };
 
 const INVARIANTS = {
   /* A collector may pursue one structured negotiation per goal at a time.
