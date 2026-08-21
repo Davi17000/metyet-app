@@ -255,7 +255,12 @@ describe("F. The rest of the stage is unchanged", () => {
     eq(cls(card, "idf-det").length, 0, "and no details block");
     eq(cls(card, "rail-s").length, 6, "exactly one rail");
     eq(cls(cls(card, "idf-work")[0], "rail-s").length, 0, "outside the pricing grid");
-    eq(cls(cls(card, "goal-top")[0], "rail-s").length, 6, "beside the card identity");
+    /* CONTRACT CHANGE: the rail moved out of the identity row into its own
+       region, so it is no longer "beside" identity — but it is still exactly
+       one rail, outside the pricing grid, which is what this protects. */
+    eq(cls(cls(card, "goal-top")[0], "rail-s").length, 0,
+      "not competing with the card identity for width");
+    eq(cls(cls(card, "goal-rail")[0], "rail-s").length, 6, "in its own region");
   });
 
   test("stopping remains only in the overflow menu", () => {
