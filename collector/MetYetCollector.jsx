@@ -2112,13 +2112,15 @@ function SimulateTP({ o, st }) {
   }
   if (o.stage === "deal" && !(o.deal && o.deal.tpAgreed)) {
     actions.push(["Agree the balance", () => {
-      A.patchOpportunity(o.id, (x) => ({ ...x, deal: { ...x.deal, tpAgreed: true } }));
+      /* Through the canonical action, acting AS the partner — the simulator
+         stands in for that seat rather than reaching past the rule. */
+      A.dealAgree({ oppId: o.id, by: "tp", at: AT });
       did("Agreed");
     }]);
   }
   if (o.stage === "fulfillment" && !(o.fulfillment && o.fulfillment.tpHandoff)) {
     actions.push(["Confirm handoff", () => {
-      A.patchOpportunity(o.id, (x) => ({ ...x, fulfillment: { ...x.fulfillment, tpHandoff: true } }));
+      A.confirmHandoff({ oppId: o.id, by: "tp", at: AT });
       did("Handed over");
     }]);
   }
@@ -3984,30 +3986,27 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
             return emptyTradeCard(b ? b.cardId : null,
               b ? b.photos : null, b ? b.cert : null, bid);
           }) } })),
-      marketRespond: (id, binderId, action, amount) => A.patchOpportunity(id, (o) => ({
-        ...o, trade: { ...o.trade, cards: o.trade.cards.map((c) => (c.binderId !== binderId ? c
-          : action === "accept" ? { ...c, agreedMarket: c.tpMarket } : { ...c, collectorMarket: amount })) } })),
-      pctRespond: (id, binderId, action, frac) => A.patchOpportunity(id, (o) => {
-        const next = { ...o, trade: { ...o.trade, cards: o.trade.cards.map((c) => (c.binderId !== binderId ? c
-          : action === "accept" ? { ...c, agreedPercent: c.tpPercent } : { ...c, collectorPercent: frac })) } };
-        return D.acceptedTradeCards(next).every(D.cardSettled) ? { ...next, stage: "deal" } : next;
-      }),
-      dealPropose: (id, amount) => A.patchOpportunity(id, (o) => ({
-        ...o, deal: { ...o.deal, proposedBy: "collector", proposedAdj: amount } })),
-      dealAgree: (id, amount) => A.patchOpportunity(id, (o) => ({
-        ...o, stage: "fulfillment",
-        deal: { ...o.deal, agreedAdj: amount, tpAgreed: true, collectorAgreed: true },
-        /* Canonical field names — the same two facts the Trusted Partner's own
-           confirmHandoff maintains. (The fabricated plan and the cross-persona
-           agreement above remain for Pass 2; this pass only stops a THIRD
-           spelling of fulfillment state being written.) */
-        fulfillment: { method: "Meet in person", where: "To arrange", when: "To arrange",
-          collectorReceipt: false, tpHandoff: false } })),
-      confirmHandoff: (id) => A.patchOpportunity(id, (o) => {
-        const f = { ...o.fulfillment, collectorReceipt: true };
-        return D.FULFILLMENT.handedOff(f) ? { ...o, fulfillment: f, stage: "completed", completedAt: AT }
-          : { ...o, fulfillment: f };
-      }),
+      /* STAGE 4-6 GO THROUGH THE CANONICAL ACTIONS. These used to be local
+         shortcuts that wrote agreed values with no thread history, agreed on
+         the partner's behalf, and invented a fulfillment plan nobody proposed.
+         The rules now live in the domain, so this layer only names the actor.
+
+         Trade cards are addressed by their own row id — binderId could not tell
+         two rows for the same binder copy apart. */
+      marketRespond: (id, tradeCardId, action, amount) =>
+        A.tradeMarketRespond({ oppId: id, tradeCardId, by: "collector", action, amount, at: AT }),
+      pctRespond: (id, tradeCardId, action, frac) =>
+        A.tradePercentRespond({ oppId: id, tradeCardId, by: "collector", action, percent: frac, at: AT }),
+      dealPropose: (id, amount) =>
+        A.dealAdjustRespond({ oppId: id, by: "collector", action: "propose", amount, at: AT }),
+      /* Agreeing means agreeing for the collector. Whether the deal is mutually
+         agreed is derived from both bits, not asserted by one seat. */
+      dealAgree: (id) => A.dealAgree({ oppId: id, by: "collector", at: AT }),
+      confirmPlan: (id) => A.confirmFulfillmentPlan({ oppId: id, at: AT }),
+      requestPlanRevision: (id, note) =>
+        A.requestFulfillmentRevision({ oppId: id, note, at: AT }),
+      chooseCashOnly: (id) => A.chooseCashOnly({ oppId: id, at: AT }),
+      confirmHandoff: (id) => A.confirmHandoff({ oppId: id, by: "collector", at: AT }),
     };
   }, [state, store, collectorId]);
 

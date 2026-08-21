@@ -290,13 +290,17 @@ describe("E. Nothing else moved", () => {
       675, "market x percent, rounded");
   });
 
-  test("this pass added no stage progression and no new agreement", () => {
+  test("no seat asserts the other seat's agreement", () => {
+    /* CONTRACT CHANGE: in Pass 1 this test DOCUMENTED the fabricated
+       `tpAgreed: true, collectorAgreed: true` as known-remaining work. Pass 2
+       removed it, so the assertion now protects its absence — the same concern,
+       flipped from a record of a defect to a guard against its return. */
     const active = code(COL);
-    /* Pass 2 territory: still present, still wrong, deliberately not touched. */
-    assert(/tpAgreed: true, collectorAgreed: true/.test(active),
-      "the fabricated cross-persona agreement is documented as remaining");
+    assert(!/tpAgreed: true/.test(active),
+      "the Collector never sets the partner's agreement");
+    assert(!/collectorAgreed: true, tpAgreed/.test(active), "in either order");
     assert(!/collectorReceipt: true, tpHandoff: true/.test(active),
-      "but this pass did not add a new one");
+      "nor both completion facts at once");
   });
 });
 
