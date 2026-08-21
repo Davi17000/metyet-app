@@ -3028,11 +3028,8 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
      applies while the package is a draft or any card is still unreviewed. */
   const selectionExhausted = (o) =>
     !!o.trade?.submitted && proposedCards(o).length === 0 && includedCards(o).length === 0;
-  const maybeCloseSelection = (o) => {
-    if (selectTradeSettled(o)) return { ...o, stage: "value-trade" };
-    if (selectionExhausted(o)) return { ...o, trade: { ...o.trade, mode: "cash" }, stage: "deal" };
-    return o;
-  };
+  /* One rule, in the domain, so both seats close a selection the same way. */
+  const maybeCloseSelection = SharedID.TRADE.closeSelection;
 
   const tpReviewInclusion = (oppId, cardId, action) =>
     patchOpp(oppId, (o) => {
@@ -3095,8 +3092,7 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
   /* Deal is reached only when every included card is fully agreed (market AND
      percentage) or withdrawn. If everything was withdrawn the opportunity waits
      here for an explicit collector decision rather than silently becoming cash. */
-  const maybeCloseValuation = (o) =>
-    valueTradeSettled(o) && settledCards(o).length > 0 ? { ...o, stage: "deal" } : o;
+  const maybeCloseValuation = SharedID.TRADE.closeValuation;
 
   const patchCard = (oppId, cardId, fn, note, type = "stage") =>
     patchOpp(oppId, (o) => {
