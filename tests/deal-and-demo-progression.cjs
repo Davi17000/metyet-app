@@ -137,6 +137,8 @@ describe("A. Deal is a receipt of card-level agreements", () => {
 
   test("a cash-only deal claims no trade", () => {
     const w = world();
+    /* Cash-only requires an empty package; emptying it is the collector's move. */
+    w.st.actions.patchOpportunity(w.o, (x) => ({ ...x, trade: { ...x.trade, cards: [] } }));
     w.st.actions.chooseCashOnly({ oppId: w.o, at: AT });
     eq(w.get().trade.mode, "cash", "the decision is recorded");
     eq(D.totalTradeValue(w.get()), 0, "and contributes nothing");

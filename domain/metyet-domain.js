@@ -320,7 +320,12 @@ const closeValuation = (o) => {
     ? { ...o, stage: "deal" } : o;
 };
 
-const TRADE = { applyMarket: tcApplyMarket, decide: tcDecide,
+/* Rows still IN the trade: awaiting the partner's decision, or accepted and not
+   withdrawn. Rejected and withdrawn rows keep their history but are out. */
+const liveTradeRows = (o) => tradeRows(o).filter((c) =>
+  c.inclusion === "proposed" || (c.inclusion === "accepted" && !c.withdrawn));
+
+const TRADE = { applyMarket: tcApplyMarket, decide: tcDecide, liveTradeRows,
   selectTradeSettled, selectionExhausted, closeSelection,
   valueTradeSettled, closeValuation, applyPercent: tcApplyPercent,
   applyDealAdjustment: dealApplyAdj, withdraw: tcWithdraw, marketAgreed };
@@ -383,6 +388,8 @@ const REFUSE = {
      much — a blocked collector learns the card is unavailable, not who beat
      them to it or what they paid. */
   copyCommitted: "copy-committed",
+  /* Cash-only and a live trade card are contradictory intents. */
+  tradeCardsSelected: "trade-cards-selected",
 };
 
 module.exports = {

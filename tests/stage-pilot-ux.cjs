@@ -236,7 +236,12 @@ describe("D. Select Trade offers the cash path", () => {
   test("choosing cash records the decision and moves on", () => {
     boot("select-trade");
     const before = opp();
-    TR.act(() => { acts().chooseCashOnly({ oppId: before.id, at: AT }); });
+    /* CONTRACT CHANGE: cash-only now refuses while cards are still in the
+       trade, so the package is emptied first — which is exactly what the
+       collector must do in the UI before the option reappears. */
+    TR.act(() => { acts().patchOpportunity(before.id, (x) => ({ ...x,
+      trade: { ...x.trade, cards: [] } })); });
+    TR.act(() => { acts().chooseCashOnly({ oppId: opp().id, at: AT }); });
     eq(opp().trade.mode, "cash", "the decision is recorded");
     eq(opp().trade.cashOnlyAt, AT, "with when it was taken");
     eq(D.totalTradeValue(opp()), 0, "and no trade credit follows");
@@ -245,6 +250,8 @@ describe("D. Select Trade offers the cash path", () => {
   test("undecided is still distinguishable from decided-cash", () => {
     boot("select-trade");
     assert(opp().trade.mode !== "cash", "a live selection has not decided");
+    TR.act(() => { acts().patchOpportunity(opp().id, (x) => ({ ...x,
+      trade: { ...x.trade, cards: [] } })); });
     TR.act(() => { acts().chooseCashOnly({ oppId: opp().id, at: AT }); });
     eq(opp().trade.mode, "cash", "and deciding is a recorded event, not an absence");
   });

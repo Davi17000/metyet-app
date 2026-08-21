@@ -364,7 +364,11 @@ describe("Select Trade", () => {
     const r = atSelect();
     /* Locate the Select Trade panel by its heading rather than by position —
        "Agreed so far" is a separate, legitimate terms summary. */
-    const stage = cls(r, "sec").find((n) => /Cards you offered|Your cards/.test(txt(n)));
+    /* CONTRACT CHANGE: the "Your cards" preamble was removed as redundant, so
+       the panel is found by the card list it contains. */
+    const stage = cls(r, "sec").find((n) => cls(n, "gs-row").length > 0
+      || /Cards you offered|Trade Binder|Update Binder/.test(txt(n)))
+      || cls(r, "idf-stage")[0];
     assert(stage, "the Select Trade panel");
     assert(!/\$\d/.test(txt(stage)), "no money on the stage surface: " + txt(stage).slice(0, 90));
     assert(!/%/.test(txt(stage)), "and no percentages");

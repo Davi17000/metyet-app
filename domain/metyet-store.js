@@ -359,7 +359,20 @@ function createStore(seed) {
             ? c : D.TRADE.withdraw(c, at))) } })));
     },
 
+    /* CASH-ONLY MEANS NO CARDS ARE GOING IN. Choosing it while cards are still
+       live in the trade produced a deal that was simultaneously a cash purchase
+       and a pending trade: mode "cash", stage "deal", and a row still sitting at
+       "proposed" that Value Trade was skipped over and could never resolve.
+
+       So the rule is a business invariant, not a matter of which button shows.
+       A card that is proposed or accepted-and-not-withdrawn is still IN the
+       trade; the collector must take those out before buying outright. Rejected
+       and withdrawn rows are already out and do not block anything. */
     chooseCashOnly({ oppId, at }) {
+      const opp = (s.opportunities || []).find((x) => x.id === oppId);
+      if (opp && D.TRADE.liveTradeRows(opp).length > 0) {
+        return { refused: D.REFUSE.tradeCardsSelected };
+      }
       return this.patchOpportunity(oppId, (o) => (
         !["select-trade", "value-trade"].includes(o.stage) ? o
           : { ...o, trade: { ...(o.trade || {}), mode: "cash", submitted: true,

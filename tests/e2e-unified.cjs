@@ -545,7 +545,10 @@ describe("J. Select Trade across personas", () => {
     const r = enterStage("Select Trade");
     assert(r, "a seeded opportunity sits at Select Trade");
     const opp = S(r).opportunities.find((o) => o.collectorId === CASEY && o.stage === "select-trade");
-    const panel = cls(r, "sec").find((n) => /Your cards|Cards you offered/.test(txt(n)));
+    /* CONTRACT CHANGE: the "Your cards" preamble was removed as redundant, so the
+       panel is located by the grouped card list it actually contains. */
+    const panel = cls(r, "sec").find((n) => cls(n, "gs-row").length > 0
+      || /Cards you offered|Trade Binder/.test(txt(n)));
     assert(panel, "the Select Trade panel is rendered");
 
     /* Money and private value must not appear on this stage. */

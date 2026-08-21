@@ -137,7 +137,8 @@ describe("B. Three regions, in order", () => {
 
   test("each region holds what belongs to it", () => {
     const r = mk();
-    const card = expand(r, goalOf(oppAt("select-trade")));
+    /* A stage that still has details, so region ownership is actually tested. */
+    const card = expand(r, goalOf(oppAt("value-trade")));
     const task = cls(card, "idf-task")[0];
     const mid = cls(card, "idf-mid")[0];
     const side = cls(card, "idf-side")[0];
@@ -187,7 +188,11 @@ describe("C. Stage details are canonical and leak nothing", () => {
     fulfillment: ["How", "Where", "When", "You"],
   };
 
-  STAGES.filter((x) => x !== "agree-price").forEach((stage) => {
+  /* Agree on Price and Select Trade carry no details column: the first because
+     its figures live in the pricing panel, the second because they were already
+     attached to the cards themselves. Both stages that DO summarise otherwise
+     invisible terms are still checked. */
+  STAGES.filter((x) => !["agree-price", "select-trade"].includes(x)).forEach((stage) => {
     test(stage + ": renders its own stage's fields", () => {
       const r = mk();
       const card = expand(r, goalOf(oppAt(stage)));
@@ -215,15 +220,19 @@ describe("C. Stage details are canonical and leak nothing", () => {
   });
 
   test("values match the canonical opportunity, not a copy", () => {
+    /* CONTRACT CHANGE: Select Trade no longer carries a details column — every
+       figure it showed (proposed / accepted / unresolved / sent) was already
+       attached to the cards themselves a few inches away. The property this
+       protects is unchanged and now checked on a stage that still has details:
+       what the column shows is DERIVED from the opportunity, never stored. */
     const r = mk();
-    const o = oppAt("select-trade");
+    const o = oppAt("value-trade");
     const card = expand(r, goalOf(o));
-    const all = (o.trade && o.trade.cards) || [];
-    eq(detailOf(card, "Proposed"), String(all.length), "proposed count is derived");
-    eq(detailOf(card, "Accepted"),
-      String(all.filter((c) => c.inclusion === "accepted").length), "accepted count is derived");
-    eq(detailOf(card, "Sent for review"), o.trade && o.trade.submitted ? "Yes" : "Not yet",
-      "and submission state is read, not stored");
+    const cards = D.acceptedTradeCards(o);
+    eq(detailOf(card, "Cards accepted"), String(cards.length), "the count is derived");
+    eq(detailOf(card, "Values agreed"),
+      String(cards.filter((c) => c.agreedMarket != null && c.agreedPercent != null).length),
+      "as is what has been settled");
   });
 
   test("the details column reads the receipt and invents no store", () => {
