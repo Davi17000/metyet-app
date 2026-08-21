@@ -256,6 +256,95 @@ function createStore(seed) {
       set({ ...s, opportunities: [...s.opportunities, opp] });
       return id;
     },
+    /* ---- STAGE 4-6: one action per business event, called by BOTH seats.
+
+       Each is a thin canonical wrapper over the shared rule in D.TRADE or over
+       a single agreement bit. They exist so that neither React component owns a
+       business rule, and — critically — so that no seat can assert the other
+       seat's agreement: `by` names who is acting, and only that side's fields
+       move. */
+    tradeMarketRespond({ oppId, tradeCardId, by, action, amount, at }) {
+      return this.patchOpportunity(oppId, (o) => ({ ...o,
+        trade: { ...o.trade, cards: (o.trade?.cards || []).map((c) => (c.id !== tradeCardId
+          ? c : D.TRADE.applyMarket(c, by, action, amount, at))) } }));
+    },
+
+    tradePercentRespond({ oppId, tradeCardId, by, action, percent, at }) {
+      return this.patchOpportunity(oppId, (o) => ({ ...o,
+        trade: { ...o.trade, cards: (o.trade?.cards || []).map((c) => (c.id !== tradeCardId
+          ? c : D.TRADE.applyPercent(c, by, action, percent, at))) } }));
+    },
+
+    dealAdjustRespond({ oppId, by, action, amount, at }) {
+      return this.patchOpportunity(oppId, (o) => ({ ...o,
+        deal: D.TRADE.applyDealAdjustment(o.deal || { adjThread: [] }, by, action, amount, at) }));
+    },
+
+    /* AGREEMENT IS PER SEAT. One bit, belonging to whoever acted. The deal
+       becomes mutually agreed only because both bits are true — never because
+       one action set both. */
+    dealAgree({ oppId, by, at }) {
+      return this.patchOpportunity(oppId, (o) => {
+        if (o.stage !== "deal") return o;
+        const deal = { ...(o.deal || {}),
+          [by === "tp" ? "tpAgreed" : "collectorAgreed"]: true };
+        const both = !!deal.tpAgreed && !!deal.collectorAgreed;
+        /* Entering Fulfillment creates a fulfillment record with UNSET terms.
+           Anything else would put words in the partner's mouth: a plan nobody
+           proposed, presented to the collector as if they had. */
+        return { ...o, deal, stage: both ? "fulfillment" : o.stage,
+          fulfillment: both
+            ? (o.fulfillment || { method: null, where: null, when: null,
+                proposedAt: null, collectorConfirmedPlan: false,
+                revisionRequested: null, tpHandoff: false, collectorReceipt: false })
+            : o.fulfillment,
+          ...(both ? { at } : {}) };
+      });
+    },
+
+    /* The partner proposes how the exchange happens; the collector answers. */
+    proposeFulfillment({ oppId, plan, at }) {
+      return this.patchOpportunity(oppId, (o) => ({ ...o,
+        fulfillment: { ...(o.fulfillment || {}), ...plan, proposedAt: at,
+          revisionRequested: null, collectorConfirmedPlan: false } }));
+    },
+
+    confirmFulfillmentPlan({ oppId, at }) {
+      return this.patchOpportunity(oppId, (o) => {
+        const f = o.fulfillment || {};
+        if (!f.proposedAt || f.revisionRequested) return o;   // nothing to confirm
+        return { ...o, fulfillment: { ...f, collectorConfirmedPlan: true, confirmedAt: at } };
+      });
+    },
+
+    requestFulfillmentRevision({ oppId, note, at }) {
+      return this.patchOpportunity(oppId, (o) => ({ ...o,
+        fulfillment: { ...(o.fulfillment || {}), collectorConfirmedPlan: false,
+          revisionRequested: { note, at } } }));
+    },
+
+    /* COMPLETION IS TWO EVENTS. Handing the card over and confirming receipt are
+       different acts by different people; one action never sets both. */
+    confirmHandoff({ oppId, by, at }) {
+      return this.patchOpportunity(oppId, (o) => {
+        const f = o.fulfillment || {};
+        const planAgreed = !!f.proposedAt && !f.revisionRequested && !!f.collectorConfirmedPlan;
+        if (!planAgreed) return o;      // cannot complete what was never agreed
+        const next = { ...f, [by === "tp" ? "tpHandoff" : "collectorReceipt"]: true };
+        const done = D.FULFILLMENT.handedOff(next) && D.FULFILLMENT.received(next);
+        return { ...o, fulfillment: next,
+          stage: done ? "completed" : o.stage,
+          completedAt: done ? at : o.completedAt };
+      });
+    },
+
+    chooseCashOnly({ oppId, at }) {
+      return this.patchOpportunity(oppId, (o) => (
+        !["select-trade", "value-trade"].includes(o.stage) ? o
+          : { ...o, trade: { ...(o.trade || {}), mode: "cash", submitted: true,
+              cards: o.trade?.cards || [], cashOnlyAt: at }, stage: "deal" }));
+    },
+
     patchOpportunity(oppId, fn) {
       set({ ...s, opportunities: s.opportunities.map((o) => (o.id === oppId ? fn(o) : o)) });
     },

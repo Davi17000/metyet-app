@@ -171,6 +171,82 @@ const FULFILLMENT = {
   },
 };
 
+
+/* ============================================================================
+   TRADE NEGOTIATION RULES — ONE IMPLEMENTATION, BOTH SEATS
+
+   These were pure, actor-parameterised reducers already, but they lived inside
+   the Trusted Partner's React module — so the Collector could not reach them
+   and grew its own shortcuts that wrote `agreedMarket` and `agreedPercent`
+   directly, with no thread history and none of the gating below. Two seats,
+   two implementations, one of them silently wrong.
+
+   Moving them here changes no rule. It puts the rule BENEATH both personas, so
+   the canonical store actions can call it and neither UI has to re-state it.
+
+   The invariants they carry, unchanged:
+     - an agreed value is OUTPUT only: it is written by one side accepting the
+       other's standing position, never typed in;
+     - every proposal, counter and acceptance is appended to its thread;
+     - market closes before percentage opens, and the partner opens percentage;
+     - a re-opened deal adjustment invalidates both confirmations, because a
+       newly assembled deal has not been agreed by anybody yet.
+   ========================================================================== */
+const marketAgreed = (tc) => tc.agreedMarket != null;
+
+function tcApplyMarket(tc, by, action, amount, at) {
+  if (marketAgreed(tc)) return tc;                       // market is closed
+  if (action === "accept") {
+    const other = by === "tp" ? tc.collectorMarket : tc.tpMarket;
+    if (other == null) return tc;
+    return { ...tc, agreedMarket: other,
+      ...(by === "tp" ? { tpMarket: other } : { collectorMarket: other }),
+      valueThread: [...tc.valueThread, { by, type: "accept", amount: other, at }] };
+  }
+  if (!(amount > 0)) return tc;
+  return { ...tc,
+    ...(by === "tp" ? { tpMarket: amount } : { collectorMarket: amount }),
+    valueThread: [...tc.valueThread, { by, type: "propose", amount, at }] };
+}
+
+function tcApplyPercent(tc, by, action, percent, at) {
+  if (!marketAgreed(tc) || tc.agreedPercent != null || tc.withdrawn) return tc;
+  if (by === "tp" && tc.tpPercent == null && action !== "propose") return tc;
+  if (by === "collector" && tc.tpPercent == null) return tc;   // TP opens this phase
+  if (action === "accept") {
+    const other = by === "tp" ? tc.collectorPercent : tc.tpPercent;
+    if (other == null) return tc;
+    return { ...tc, agreedPercent: other,
+      ...(by === "tp" ? { tpPercent: other } : { collectorPercent: other }),
+      percentThread: [...tc.percentThread, { by, type: "accept", percent: other, at }] };
+  }
+  if (!(percent > 0) || percent > 1) return tc;
+  return { ...tc,
+    ...(by === "tp" ? { tpPercent: percent } : { collectorPercent: percent }),
+    percentThread: [...tc.percentThread, { by, type: "propose", percent, at }] };
+}
+
+function dealApplyAdj(deal, by, action, amount, at) {
+  if (deal.agreedAdj != null) return deal;                 // locked once agreed
+  if (action === "accept") {
+    const other = by === "tp" ? deal.collectorAdj : deal.tpAdj;
+    if (other == null) return deal;
+    return { ...deal, agreedAdj: other,
+      ...(by === "tp" ? { tpAdj: other } : { collectorAdj: other }),
+      adjThread: [...deal.adjThread, { by, type: "accept", amount: other, at }],
+      // a newly assembled deal must be confirmed again by both sides
+      tpAgreed: false, collectorAgreed: false };
+  }
+  if (typeof amount !== "number" || !isFinite(amount) || amount === 0) return deal;
+  return { ...deal,
+    ...(by === "tp" ? { tpAdj: amount } : { collectorAdj: amount }),
+    adjThread: [...deal.adjThread, { by, type: "propose", amount, at }],
+    tpAgreed: false, collectorAgreed: false };   // proposal invalidates confirmations only
+}
+
+const TRADE = { applyMarket: tcApplyMarket, applyPercent: tcApplyPercent,
+  applyDealAdjustment: dealApplyAdj, marketAgreed };
+
 const INVARIANTS = {
   /* A collector may pursue one structured negotiation per goal at a time.
      Alternatives stay visible and reachable — only the offer is limited. */
@@ -232,7 +308,7 @@ const REFUSE = {
 };
 
 module.exports = {
-  FULFILLMENT,
+  FULFILLMENT, TRADE,
   identityKey, isRaw, sameIdentity,
   STAGES, STAGE_IX, STAGE_LABEL,
   isEnded, isCompleted, isTerminal, isActive, isNegotiating,

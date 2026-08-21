@@ -1691,61 +1691,13 @@ const tcReviewInclusion = (tc, action, at) =>
     ? { ...tc, inclusion: "accepted", reviewedAt: at }
     : { ...tc, inclusion: "rejected", reviewedAt: at };
 
-/* Market. `agreedMarket` is only ever written by one side accepting the other's
-   standing position, so it cannot be typed in directly. Locked once agreed. */
-function tcApplyMarket(tc, by, action, amount, at) {
-  if (marketAgreed(tc)) return tc;                       // market is closed
-  if (action === "accept") {
-    const other = by === "tp" ? tc.collectorMarket : tc.tpMarket;
-    if (other == null) return tc;
-    return { ...tc, agreedMarket: other,
-      ...(by === "tp" ? { tpMarket: other } : { collectorMarket: other }),
-      valueThread: [...tc.valueThread, { by, type: "accept", amount: other, at }] };
-  }
-  if (!(amount > 0)) return tc;
-  return { ...tc,
-    ...(by === "tp" ? { tpMarket: amount } : { collectorMarket: amount }),
-    valueThread: [...tc.valueThread, { by, type: "propose", amount, at }] };
-}
+/* Market, percentage and deal-adjustment rules now live in the domain, so the
+   Collector's seat runs the same code rather than its own. */
+const tcApplyMarket = SharedID.TRADE.applyMarket;
+const tcApplyPercent = SharedID.TRADE.applyPercent;
+const dealApplyAdj = SharedID.TRADE.applyDealAdjustment;
 
-/* Percentage. Cannot open before the market is agreed. TP moves first. */
-function tcApplyPercent(tc, by, action, percent, at) {
-  if (!marketAgreed(tc) || tc.agreedPercent != null || tc.withdrawn) return tc;
-  if (by === "tp" && tc.tpPercent == null && action !== "propose") return tc;
-  if (by === "collector" && tc.tpPercent == null) return tc;   // TP opens this phase
-  if (action === "accept") {
-    const other = by === "tp" ? tc.collectorPercent : tc.tpPercent;
-    if (other == null) return tc;
-    return { ...tc, agreedPercent: other,
-      ...(by === "tp" ? { tpPercent: other } : { collectorPercent: other }),
-      percentThread: [...tc.percentThread, { by, type: "accept", percent: other, at }] };
-  }
-  if (!(percent > 0) || percent > 1) return tc;
-  return { ...tc,
-    ...(by === "tp" ? { tpPercent: percent } : { collectorPercent: percent }),
-    percentThread: [...tc.percentThread, { by, type: "propose", percent, at }] };
-}
 
-/* Deal adjustment negotiation. Same shape as market and percentage: one standing
-   position per side, agreement only through acceptance, agreed value is output-only.
-   Either party may open it. */
-function dealApplyAdj(deal, by, action, amount, at) {
-  if (deal.agreedAdj != null) return deal;                 // locked once agreed
-  if (action === "accept") {
-    const other = by === "tp" ? deal.collectorAdj : deal.tpAdj;
-    if (other == null) return deal;
-    return { ...deal, agreedAdj: other,
-      ...(by === "tp" ? { tpAdj: other } : { collectorAdj: other }),
-      adjThread: [...deal.adjThread, { by, type: "accept", amount: other, at }],
-      // a newly assembled deal must be confirmed again by both sides
-      tpAgreed: false, collectorAgreed: false };
-  }
-  if (typeof amount !== "number" || !isFinite(amount) || amount === 0) return deal;
-  return { ...deal,
-    ...(by === "tp" ? { tpAdj: amount } : { collectorAdj: amount }),
-    adjThread: [...deal.adjThread, { by, type: "propose", amount, at }],
-    tpAgreed: false, collectorAgreed: false };   // proposal invalidates confirmations only
-}
 const adjOpen = (deal) => deal.agreedAdj == null && deal.adjThread.length > 0;
 
 const tcWithdraw = (tc, at) => (tc.inclusion === "accepted" && !tc.withdrawn ? { ...tc, withdrawn: true, withdrawnAt: at } : tc);
