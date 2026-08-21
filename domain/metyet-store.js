@@ -339,6 +339,14 @@ function createStore(seed) {
     },
 
     /* Either seat may take a card out of the trade; the rule is the same one. */
+    /* The partner's Select Trade decision. Omitting tradeCardId decides every
+       still-undecided row, which is what "accept these cards" means. */
+    reviewTradeCards({ oppId, tradeCardId, decision, at }) {
+      return this.patchOpportunity(oppId, (o) => ({ ...o,
+        trade: { ...o.trade, cards: (o.trade?.cards || []).map((c) => (
+          (tradeCardId && c.id !== tradeCardId) ? c : D.TRADE.decide(c, decision, at))) } }));
+    },
+
     withdrawTradeCard({ oppId, tradeCardId, at }) {
       return this.patchOpportunity(oppId, (o) => ({ ...o,
         trade: { ...o.trade, cards: (o.trade?.cards || []).map((c) => (c.id !== tradeCardId

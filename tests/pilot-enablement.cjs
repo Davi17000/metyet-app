@@ -185,8 +185,15 @@ describe("B. The partner can be answered, canonically", () => {
   test("the response goes through the canonical action", () => {
     const src = COL.slice(COL.indexOf("function DemoPartnerResponse("),
       COL.indexOf("function SimulateTP("));
-    assert(/st\.simulate\.agreePrice\(\{ oppId: o\.id/.test(src),
-      "price agreement uses the canonical agreePrice");
+    /* CONTRACT CHANGE: the helper now covers every stage, so it aliases the
+       canonical action set once (`const A = st.simulate`) instead of naming it
+       per call. The guarantee is unchanged and asserted more strongly below:
+       canonical actions only, and no field patching. */
+    assert(/const A = st\.simulate;/.test(src), "it uses the canonical action set");
+    assert(/A\.agreePrice\(\{ oppId: o\.id/.test(src), "price agreement is canonical");
+    ["tradeMarketRespond", "tradePercentRespond", "dealAgree", "proposeFulfillment",
+      "confirmHandoff", "reviewTradeCards"].forEach((a) =>
+      assert(new RegExp("A\\." + a + "\\(").test(src), a + " is canonical too"));
     assert(!/patchOpportunity/.test(src), "and patches no fields directly");
     assert(!/stage:/.test(src), "and writes no stage");
     /* The same action the Trusted Partner's own accept routes through. */
