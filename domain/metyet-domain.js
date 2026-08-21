@@ -124,7 +124,7 @@ function nextActor(o) {
     }
     case "fulfillment": {
       const f = o.fulfillment || {};
-      return f.collectorDone ? { actor: "partner", reason: "handoff" }
+      return FULFILLMENT.received(f) ? { actor: "partner", reason: "handoff" }
         : { actor: "collector", reason: "handoff" };
     }
     default:
@@ -136,6 +136,41 @@ function nextActor(o) {
 
    Enforced HERE, in the domain, so no UI entry point on either persona can
    route around them. */
+/* ============================================================================
+   ONE FACT, ONE FIELD — FULFILLMENT
+
+   Two seats were storing the same two facts under different names. The Trusted
+   Partner (and every canonical action) wrote `tpHandoff` / `collectorReceipt`;
+   the Collector wrote `tpDone` / `collectorDone`. Worse, the two were read in
+   different places: turn logic asked the raw record for `collectorDone` while
+   the receipt projection asked it for `collectorReceipt`. A deal fulfilled from
+   one seat could therefore read as "waiting on the collector" in the rail and
+   "collector confirmed" in the receipt — the same record disagreeing with
+   itself.
+
+   `tpHandoff` / `collectorReceipt` are canonical, because they are what the
+   canonical actions (confirmHandoff) already write and what the completion rule
+   already tests. The names also say which fact they hold: a handoff is the
+   partner giving the card over, a receipt is the collector confirming they have
+   it — two events, not one boolean seen twice.
+
+   These readers are the ONLY place the legacy names are understood. Reading a
+   legacy record here keeps old and seeded data working without scattering
+   `a || b` through the app; nothing writes the legacy names any more, so this
+   is a migration boundary rather than a permanent dialect. A record carrying
+   both is resolved by the canonical field, deterministically, since that is the
+   one the canonical actions maintain. */
+const FULFILLMENT = {
+  handedOff: (f) => {
+    if (!f) return false;
+    return f.tpHandoff != null ? !!f.tpHandoff : !!f.tpDone;
+  },
+  received: (f) => {
+    if (!f) return false;
+    return f.collectorReceipt != null ? !!f.collectorReceipt : !!f.collectorDone;
+  },
+};
+
 const INVARIANTS = {
   /* A collector may pursue one structured negotiation per goal at a time.
      Alternatives stay visible and reachable — only the offer is limited. */
@@ -197,6 +232,7 @@ const REFUSE = {
 };
 
 module.exports = {
+  FULFILLMENT,
   identityKey, isRaw, sameIdentity,
   STAGES, STAGE_IX, STAGE_LABEL,
   isEnded, isCompleted, isTerminal, isActive, isNegotiating,
@@ -384,8 +420,10 @@ function receiptForOpportunity(o, { binderById, cardById, partnerById } = {}) {
         date: reached(4) ? (o.fulfillment && o.fulfillment.date) || null : null,
         time: reached(4) ? (o.fulfillment && o.fulfillment.time) || null : null,
         location: reached(4) ? (o.fulfillment && o.fulfillment.location) || null : null,
-        collectorDone: reached(4) ? !!(o.fulfillment && o.fulfillment.collectorReceipt) : false,
-        partnerDone: reached(4) ? !!(o.fulfillment && o.fulfillment.tpHandoff) : false },
+        /* Output names belong to the receipt's vocabulary; the FACTS come from
+           the one canonical reader, so this can never disagree with the rail. */
+        collectorDone: reached(4) ? FULFILLMENT.received(o.fulfillment) : false,
+        partnerDone: reached(4) ? FULFILLMENT.handedOff(o.fulfillment) : false },
     ],
   };
 }

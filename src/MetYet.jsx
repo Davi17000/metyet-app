@@ -4174,7 +4174,8 @@ const validAmount = (amt) => amt !== "" && isFinite(Number(amt)) && Number(amt) 
 
 /* Shared with the Collector so both seats negotiate price through one
    implementation: same conversion, same guards, same canonical dollar value. */
-export { CounterFields, validAmount, canCounter, percentageOf, amountFromPercentage,
+export { emptyTradeCard,
+  CounterFields, validAmount, canCounter, percentageOf, amountFromPercentage,
   ActualCardPhoto, FaceSwitch };
 
 /* Trade % and Trade Value are two readings of ONE negotiated term, and here the
