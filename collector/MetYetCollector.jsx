@@ -420,6 +420,22 @@ const CSS = `
   color: var(--t1); font-weight: 700; }
 .goal-deal-p { font-size: 13px; font-weight: 600; }
 .goal-deal-t { margin-left: auto; font-size: 12px; color: var(--muted); }
+/* Demo scaffolding, deliberately not product chrome: it must read as the
+   tester standing in for the other side, never as a Collector action. */
+.dpr { margin-top: 16px; padding: 13px 14px; border: 1px dashed var(--line);
+  border-radius: 11px; background: var(--panel-2); }
+.dpr-h { display: flex; align-items: center; gap: 8px; }
+/* Pilot testers read this, not engineers, so it observes the same legibility
+   floor as product copy rather than claiming a tooling exemption. */
+.dpr-tag { font-family: 'Archivo'; font-size: 10.5px; letter-spacing: .13em;
+  text-transform: uppercase; font-weight: 700; color: var(--faint);
+  border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
+.dpr-l { font-size: 12px; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--muted); font-weight: 600; }
+.dpr-b { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.dpr-n { font-size: 13px; color: var(--text); margin-top: 10px; }
+.dpr-f { font-size: 12px; color: var(--faint); margin-top: 9px; line-height: 1.45; }
+
 /* Copy evidence in the card header: secondary, and absent when there is
    nothing to inspect. */
 .cx-ph { margin-top: 10px; }
@@ -506,8 +522,8 @@ const CSS = `
 .oh-amt { margin-left: auto; color: var(--text); font-variant-numeric: tabular-nums; }
 .oh-pct { color: var(--muted); }
 
-/* The top row: identity on the left, where the deal stands on the right. */
-.goal-rail { flex: 1 1 320px; min-width: 260px; align-self: flex-start; }
+/* Its own row, beneath identity — see the rail block in GoalCard. */
+.goal-rail { width: 100%; }
 .goal-top { flex-wrap: wrap; }
 
 .goal-deal-c { font-size: 17px; line-height: 1; color: var(--muted); transition: transform .15s;
@@ -755,7 +771,7 @@ const CSS = `
    Reading order becomes: identity, then status, then the rail as secondary
    context, then the workspace. Nothing about the lifecycle changes — the six
    steps, their names and their order are untouched. */
-.goal.deal-open .goal-b { display: flex; flex-direction: column; }
+.goal.deal-open .goal-b { display: flex; flex-direction: column; min-width: 0; }
 .goal.deal-open .goal-n { font-size: 26px; margin-top: 8px;
   /* Let a long name use the room it has instead of hyphenating into a column. */
   overflow-wrap: normal; word-break: normal; hyphens: none; }
@@ -1754,18 +1770,22 @@ function GoalCard({ g, st, go, open, onToggle }) {
             </div>
           )}
         </div>
-
-        {/* THE RAIL SHARES THE TOP ROW. Where the deal stands belongs beside
-            what the deal is about, not stacked under it — which also lets the
-            artwork and identity have the width they were being denied. One
-            canonical rail; on a narrow container it simply wraps beneath. */}
-        {(live || reviewing) && (
-          <div className="goal-rail">
-            <Track stage={live ? live.stage : "agree-price"} o={live} st={st}
-              review={reviewing} />
-          </div>
-        )}
       </div>
+
+      {/* THE RAIL GETS ITS OWN ROW. It used to be a third flex sibling inside
+          .goal-top, with `flex: 1 1 320px` against an identity column of basis
+          0 — so the rail claimed most of the free space and the name was left
+          with a couple of hundred pixels, breaking "Rayquaza Gold Star" across
+          three lines on a card that had room to spare. Identity and artwork now
+          own the top row; where the deal stands is its own region beneath,
+          which is also the order someone reads in: what this is, then how far
+          along it is. */}
+      {(live || reviewing) && (
+        <div className="goal-rail">
+          <Track stage={live ? live.stage : "agree-price"} o={live} st={st}
+            review={reviewing} />
+        </div>
+      )}
 
       {menu && (
         <div className="goal-menu">
@@ -1969,6 +1989,75 @@ const DEMO = SHARED_DEMO;
 const REVIEW_DEAL_NOTE = /^Review deal/;
 const REVIEW_PROMOTE_NOTE = /^Review promotion/;
 const REVIEW_ANY_NOTE = /^Review (deal|fixture|promotion)/;
+
+/* ------------------------------------------------ DEMO: PARTNER RESPONSE
+
+   Pilot testing is a one-person job: without this, moving a deal forward means
+   switching persona, finding the matching workflow, acting, and switching back.
+   This offers the partner's move where the tester already is.
+
+   It is NOT the engineering simulator wearing product clothes. The rule it
+   obeys is that every response goes through the SAME canonical action the real
+   Trusted Partner seat uses — so a demo move cannot reach a state the product
+   could not reach, and cannot skip a validation the real seat enforces.
+
+   That rule is also why this control is smaller than it might look like it
+   should be. Only price agreement currently has a shared canonical action
+   (store.actions.agreePrice). The later stages' partner moves — accepting
+   proposed cards, proposing values, agreeing the balance, confirming handoff —
+   live inside the Trusted Partner component itself, built on its own patch
+   helper with its own guards. Reaching them from here would mean duplicating
+   that decision logic, which is exactly the thing that makes a demo lie. So
+   where no canonical action exists, this control says so and points at the
+   real seat rather than offering a button that fakes it. */
+function DemoPartnerResponse({ o, st }) {
+  if (!DEMO || !o) return null;
+  const partner = st.partnerById(o.partnerId);
+  const them = partner ? partner.name : "the partner";
+  const [note, setNote] = useState("");
+
+  /* Valid responses for THIS stage, and nothing else. */
+  const responses = [];
+  if (o.stage === "agree-price" && !D.isTerminal(o)) {
+    const last = D.lastEntry(o.priceThread);
+    /* The partner can only accept a proposal that is actually theirs to answer. */
+    if (last && last.by === "collector" && last.type !== "accept") {
+      responses.push([`${them} accepts ${money(last.amount)}`, () => {
+        const res = st.simulate.agreePrice({ oppId: o.id, amount: last.amount,
+          by: "partner", at: AT });
+        setNote(res && res.refused
+          ? "That copy is already committed to another deal."
+          : `${them} agreed at ${money(last.amount)} — now at Select Trade.`);
+      }]);
+    }
+  }
+
+  if (!responses.length) {
+    /* Hidden entirely when there is nothing valid to offer, rather than a
+       disabled button implying a move exists. */
+    if (o.stage !== "agree-price") return null;
+    return null;
+  }
+
+  return (
+    <div className="dpr">
+      <div className="dpr-h">
+        <span className="dpr-tag">Demo</span>
+        <span className="dpr-l">Partner response</span>
+      </div>
+      <div className="dpr-b">
+        {responses.map(([label, run]) => (
+          <button key={label} className="btn sm" onClick={run}>{label}</button>
+        ))}
+      </div>
+      {note && <div className="dpr-n">{note}</div>}
+      <div className="dpr-f">
+        Acts as {them}, through the same action their own screen uses.
+        Switch persona for the full Trusted Partner workflow.
+      </div>
+    </div>
+  );
+}
 
 function SimulateTP({ o, st }) {
   const [open, setOpen] = useState(false);
@@ -2727,6 +2816,7 @@ function InlineDeal({ o, st }) {
         </div>
       </div>
 
+      <DemoPartnerResponse o={o} st={st} />
       <SimulateTP o={o} st={st} />
     </div>
   );
@@ -2878,6 +2968,7 @@ function Deal({ oppId, st, go }) {
         {flow && <Receipt o={o} st={st} expanded inline />}
       </div>}
 
+      <DemoPartnerResponse o={o} st={st} />
       <SimulateTP o={o} st={st} />
 
       {isOpen(o) && (

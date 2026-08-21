@@ -273,22 +273,37 @@ describe("C. A pricing stage shows only pricing", () => {
 });
 
 describe("D. Top composition and disclosure", () => {
-  test("the rail shares the top row with the card identity", () => {
+  test("the rail has its own region, beneath the card identity", () => {
+    /* CONTRACT CHANGE: the rail used to be a third flex sibling inside
+       .goal-top with `flex: 1 1 320px` against an identity column of basis 0,
+       so it claimed most of the free space and broke long card names across
+       three lines. Identity now owns the top row; the rail sits below it. The
+       guarantees that mattered are unchanged and still asserted here: exactly
+       one rail, all six steps, never inside the work grid. */
     const r = mk();
     const card = open(r);
     const top = cls(card, "goal-top")[0];
     assert(top, "a top row");
-    eq(cls(top, "rail-s").length, 6, "carrying the five-stage rail");
-    assert(cls(top, "art")[0] || top.findAllByType("div").length > 0, "beside the artwork");
+    eq(cls(top, "rail-s").length, 0, "which the rail no longer competes for");
+    assert(cls(top, "art")[0], "identity keeps the artwork");
+    assert(cls(top, "goal-b")[0], "and the name and metadata");
+    const rail = cls(card, "goal-rail")[0];
+    assert(rail, "the rail is its own region");
+    eq(cls(rail, "rail-s").length, 6, "carrying all six steps");
     eq(cls(card, "rail-s").length, 6, "and exactly one rail in the whole card");
     eq(cls(cls(card, "idf-work")[0], "rail-s").length, 0, "never inside the work grid");
   });
 
-  test("the rail can wrap beneath on a narrow card", () => {
+  test("identity reflows on a narrow card rather than being crushed", () => {
+    /* The rail no longer needs a flex basis to "drop cleanly" — it is already
+       on its own row at every width. What still has to reflow is the identity
+       row itself, and the rail's own steps when there is genuinely no room. */
     assert(/\.goal-top \{ flex-wrap: wrap; \}/.test(SRC),
-      "the top row wraps rather than overflowing");
-    assert(/\.goal-rail \{ flex: 1 1 320px; min-width: 260px/.test(SRC),
-      "and the rail has a basis and a floor so it drops cleanly");
+      "artwork and identity wrap rather than overflowing");
+    assert(/\.goal-rail \{ width: 100%; \}/.test(SRC),
+      "the rail spans its own row");
+    assert(/\.rail \{ flex-direction: column/.test(SRC),
+      "and becomes a list only when the width truly demands it");
   });
 
   test("one disclosure, with a comfortable target and clear state", () => {
