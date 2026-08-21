@@ -195,7 +195,8 @@ describe("C. Each loaded stage is canonically valid", () => {
       const open = cls(r2, "goal").find((n) => txt(n).includes(c.name) && txt(n).includes(c.set));
       assert(cls(open, "idf-stage")[0], id + ": the real stage workspace renders");
       assert(cls(open, "chat-embed")[0], id + ": with the canonical conversation");
-      if (id !== "agree-price") {
+      /* Select Trade joined Agree on Price in carrying no details column. */
+      if (!["agree-price", "select-trade"].includes(id)) {
         assert(cls(open, "idf-det")[0], id + ": and the stage details column");
       }
     });

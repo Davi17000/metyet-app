@@ -463,7 +463,8 @@ const CSS = `
   padding: 3px 0; }
 .vp-hist-who { font-weight: 600; color: var(--text); }
 
-.st-cash { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line-soft); }
+.st-alt { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line-soft); }
+.st-alt > .btn + .btn { margin-left: 8px; }
 .st-cash-n { display: block; font-size: 12.5px; color: var(--faint);
   margin-top: 8px; line-height: 1.45; }
 
@@ -1922,7 +1923,7 @@ function GoalCard({ g, st, go, open, onToggle }) {
               Expanding is presentation only — it mutates nothing. */}
           {open && (
             <div className="goal-dw">
-              <InlineDeal o={live} st={st} />
+              <InlineDeal o={live} st={st} go={go} />
             </div>
           )}
         </div>
@@ -2851,11 +2852,12 @@ function StageDetails({ o, st }) {
       last && last.amount != null ? money(last.amount) : dash);
     add("Agreed", cur.price != null ? money(cur.price) : dash);
   } else if (cur.id === "select-trade") {
-    const all = (o.trade && o.trade.cards) || [];
-    add("Proposed", String(all.length));
-    add("Accepted", String(all.filter((c) => c.inclusion === "accepted").length));
-    add("Unresolved", String(all.filter((c) => c.inclusion === "proposed").length));
-    add("Sent for review", cur.submitted ? "Yes" : "Not yet");
+    /* Deliberately empty. Every figure this used to show — how many cards were
+       proposed, accepted, still unresolved — is already legible in the card list
+       a few inches away, each attached to the card it describes. Counting them
+       again in a column was density without information. Other stages keep
+       their details, because those summarise terms that are NOT otherwise on
+       screen. */
   } else if (cur.id === "value-trade") {
     add("Cards accepted", String(cur.cards.length));
     add("Values agreed",
@@ -2877,6 +2879,10 @@ function StageDetails({ o, st }) {
       cur.partnerDone ? "Confirmed" : "Not yet");
   }
 
+  /* A stage with nothing to summarise renders no column at all, rather than an
+     empty shell that reserves width in the layout. */
+  if (rows.length === 0) return null;
+
   const settled = rows.every((x) => x.value !== dash && x.value !== "Not yet");
   return (
     <div className="idf-det">
@@ -2893,7 +2899,7 @@ function StageDetails({ o, st }) {
   );
 }
 
-function InlineDeal({ o, st }) {
+function InlineDeal({ o, st, go }) {
   /* Filled by whichever stage is mounted; null while waiting. Identical
      contract to the standalone shell, so stages need no inline special case. */
   const [bar, setBar] = useState(null);
@@ -2902,7 +2908,7 @@ function InlineDeal({ o, st }) {
   const p = st.partnerById(o.partnerId);
   const t = st.turnFor(o);
   const short = p ? p.name.split(" ")[0] : "them";
-  const stageProps = { o, st, register };
+  const stageProps = { o, st, register, go };
 
   return (
     <div className="idf">
@@ -3000,7 +3006,7 @@ function Deal({ oppId, st, go }) {
      unbound deal simply has nothing to inspect. */
   const boundCopy = o.invId ? st.inventoryCopy(o.invId) : null;
   const copyHasPhotos = !!boundCopy && D.INVARIANTS.copyPhotographed(boundCopy.photos);
-  const stageProps = { o, st, register };
+  const stageProps = { o, st, register, go };
 
   return (
     <div className="pg dw">
@@ -3293,11 +3299,14 @@ function AgreePrice({ o, st, register }) {
 /* Select Trade — choosing which of your cards to put toward the purchase.
    Inclusion only: no values, no percentages, no money anywhere on this stage.
    Only copies the partner has already shown interest in are eligible. */
-function SelectTrade({ o, st, register }) {
+function SelectTrade({ o, st, register, go }) {
   const [picked, setPicked] = useState([]);   // never pre-selected: the collector chooses
   const groups = st.eligibleFor(o.partnerId, o);
   const eligible = [...groups.interested, ...groups.other];
   const inPack = o.trade.cards;
+  /* What is currently IN the trade, counting both what has been committed and
+     what is picked but not yet sent. Either makes cash-only contradictory. */
+  const liveRows = [...D.TRADE.liveTradeRows(o), ...picked];
   useEffect(() => {
     if (!register) return;
     register(!o.trade.submitted && eligible.length
@@ -3309,11 +3318,8 @@ function SelectTrade({ o, st, register }) {
   if (!o.trade.submitted) {
     return (
       <div className="card sec">
-        <div className="sec-h">Your cards</div>
-        <div style={{ fontSize: 14, marginBottom: 14 }}>
-          Pick what you'd put toward this. You'll agree what each one is worth after
-          they've said yes or no.
-        </div>
+        {/* No preamble: the stage guidance above already says what this is for,
+            and the grouped card list says what to do with it. */}
         {eligible.length === 0 ? (
           <div className="faint" style={{ fontSize: 14 }}>
             Your binder is empty, so this would be a cash purchase.
@@ -3361,13 +3367,28 @@ function SelectTrade({ o, st, register }) {
             because the deal continues either way. It goes through the canonical
             action, which records the decision, so "decided not to trade" stays
             distinguishable from "hasn't chosen yet". */}
-        <div className="st-cash">
-          <button className="btn sm" onClick={() => st.chooseCashOnly(o.id)}>
-            Continue without trade
+        <div className="st-alt">
+          {/* Navigation only. Nothing about this deal changes — the collector is
+              going to fetch more cards and coming back to the same package. */}
+          <button className="btn sm" onClick={() => go({ v: "binder" })}>
+            Update Binder
           </button>
-          <span className="st-cash-n">
-            Pay the full agreed price in cash. You can't add trade cards afterwards.
-          </span>
+
+          {/* CASH-ONLY IS THE EMPTY-PACKAGE PATH. Offered only when nothing is in
+              the trade: choosing it with cards selected produced a deal that was
+              a cash purchase AND a pending trade at once. Hidden rather than
+              disabled, because with cards selected it is not a choice being
+              withheld — it is simply not the situation the collector is in. */}
+          {liveRows.length === 0 && (
+            <>
+              <button className="btn sm" onClick={() => st.chooseCashOnly(o.id)}>
+                Continue without trade
+              </button>
+              <span className="st-cash-n">
+                Pay the full agreed price in cash. You can't add trade cards afterwards.
+              </span>
+            </>
+          )}
         </div>
       </div>
     );

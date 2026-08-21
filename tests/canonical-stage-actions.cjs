@@ -268,7 +268,11 @@ describe("D. Fulfillment: propose, agree, then two completions", () => {
 describe("E. Cash-only, and one implementation per rule", () => {
   test("choosing cash is canonical and distinguishable from undecided", () => {
     const w = world();
-    w.st.actions.patchOpportunity(w.o, (x) => ({ ...x, stage: "select-trade" }));
+    /* CONTRACT CHANGE: cash-only now refuses while cards are still in the
+       trade, because that state is contradictory. Emptying the package first
+       is exactly what the collector does in the UI to make it valid again. */
+    w.st.actions.patchOpportunity(w.o, (x) => ({ ...x, stage: "select-trade",
+      trade: { ...x.trade, cards: [] } }));
     eq(w.get().trade.mode, undefined, "undecided has no mode");
     w.st.actions.chooseCashOnly({ oppId: w.o, at: AT });
     eq(w.get().trade.mode, "cash", "deciding records the decision");

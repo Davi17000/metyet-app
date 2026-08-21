@@ -247,9 +247,11 @@ describe("E. Nothing canonical moved", () => {
       const card = expand(r, goalOf(oppAt(stage)));
       eq(cls(card, "idf-action").length, 1, "one action area");
       eq(cls(card, "chat-embed").length, 1, "one conversation");
-      const wantsDetails = stage !== "agree-price";
+      /* Select Trade joined Agree on Price in having no details column — its
+         counts duplicated the card list beside it. */
+      const wantsDetails = !["agree-price", "select-trade"].includes(stage);
       eq(cls(card, "idf-det").length, wantsDetails ? 1 : 0,
-        wantsDetails ? "the details column survives" : "Agree on Price shows no details");
+        wantsDetails ? "the details column survives" : stage + " shows no details");
       if (wantsDetails) assert(cls(card, "idf-det-k").length > 0, "with canonical fields");
       const seen = {};
       card.findAllByType("button").map((b) => txt(b).trim()).filter(Boolean)
