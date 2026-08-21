@@ -744,6 +744,24 @@ const CSS = `
 /* In an expanded deal the rail has the full card width, so labels break between
    words at worst — never letter by letter, which is what overflow-wrap:anywhere
    was doing when the rail was squeezed into a narrow column. */
+/* HIERARCHY WHILE A DEAL IS OPEN.
+
+   The card is the subject, so its name gets the full width of the block rather
+   than sharing a row with the six-step rail. Previously the identity column and
+   the tracker competed for the same space and both lost: names broke to three
+   lines ("Rayquaza / Gold / Star") while stage labels shrank to near-illegible
+   columns, on a card with plenty of width to spare.
+
+   Reading order becomes: identity, then status, then the rail as secondary
+   context, then the workspace. Nothing about the lifecycle changes — the six
+   steps, their names and their order are untouched. */
+.goal.deal-open .goal-b { display: flex; flex-direction: column; }
+.goal.deal-open .goal-n { font-size: 26px; margin-top: 8px;
+  /* Let a long name use the room it has instead of hyphenating into a column. */
+  overflow-wrap: normal; word-break: normal; hyphens: none; }
+.goal.deal-open .goal-i { font-size: 14.5px; margin-top: 6px; }
+/* The rail is context, so it is separated rather than interleaved. */
+.goal.deal-open .goal-rail { margin-top: 18px; }
 .goal.deal-open .rail-l { overflow-wrap: normal; word-break: normal; hyphens: none; }
 .goal.deal-open .rail { gap: 8px; }
 .goal.deal-open .rail-s { min-width: 0; }
