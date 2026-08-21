@@ -115,9 +115,15 @@ const CSS = `
 .myp-btn { background: none; border: 1px solid #2A3446; color: #C6CEDA; border-radius: 7px;
   padding: 4px 10px; font-size: 12px; }
 .myp-btn:hover { border-color: #46536B; color: #FFF; }
+/* ABOVE THE VEIL, EXPLICITLY. Both live in .myp-bar's stacking context; the
+   veil claims z-index 55 while the menu claimed none, so the transparent veil
+   painted over the menu and swallowed every click. The menu looked fine and did
+   nothing: choosing a persona hit the veil, which closes the menu. One number
+   short of the veil is enough, and states the relationship rather than relying
+   on document order. */
 .myp-menu { position: absolute; top: 32px; right: 14px; background: #FFF; color: #131922;
   border: 1px solid #DFE4EA; border-radius: 9px; padding: 4px; min-width: 190px;
-  box-shadow: 0 10px 28px rgba(15,19,27,.18); }
+  box-shadow: 0 10px 28px rgba(15,19,27,.18); z-index: 56; }
 .myp-item { display: block; width: 100%; text-align: left; background: none; border: 0;
   padding: 8px 10px; border-radius: 6px; font-size: 13px; }
 .myp-item:hover { background: #F1F4F7; }
