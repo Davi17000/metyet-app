@@ -209,7 +209,7 @@ describe("B. Accept and Counter are distinct decisions", () => {
   });
 
   test("the shell no longer collapses both decisions into one slot", () => {
-    const stage = SRC.slice(SRC.indexOf("function AgreePrice("), SRC.indexOf("/* Select Trade"));
+    const stage = SRC.slice(SRC.indexOf("function AgreePrice("), SRC.indexOf("function SelectTrade("));
     assert(/register\(mine \? \{ own: true \} : null\)/.test(stage),
       "the stage tells the shell it owns its actions");
     assert(!/label: ok \?/.test(stage),
@@ -227,7 +227,7 @@ describe("B. Accept and Counter are distinct decisions", () => {
     ["CounterFields", "validAmount", "percentageOf"].forEach((name) =>
       assert(new RegExp("export \\{[^}]*\\b" + name + "\\b[^}]*\\}").test(tp),
         name + " is shared from the Trusted Partner's implementation"));
-    const stage = SRC.slice(SRC.indexOf("function AgreePrice("), SRC.indexOf("/* Select Trade"));
+    const stage = SRC.slice(SRC.indexOf("function AgreePrice("), SRC.indexOf("function SelectTrade("));
     assert(!/const pct =|Math\.round\(\(n \/ o\.listedPrice\)/.test(stage),
       "and the Collector re-derives no conversion of its own");
   });

@@ -258,7 +258,13 @@ function dealApplyAdj(deal, by, action, amount, at) {
 const tcWithdraw = (tc, at) => (tc.inclusion === "accepted" && !tc.withdrawn
   ? { ...tc, withdrawn: true, withdrawnAt: at } : tc);
 
-const TRADE = { applyMarket: tcApplyMarket, applyPercent: tcApplyPercent,
+/* The partner's inclusion decision on a proposed card. Accepting brings it into
+   the trade's economics; rejecting leaves the row and its history in place but
+   out of the totals. Only an undecided card can be decided. */
+const tcDecide = (tc, decision, at) => (tc.inclusion === "proposed"
+  ? { ...tc, inclusion: decision, reviewedAt: at } : tc);
+
+const TRADE = { applyMarket: tcApplyMarket, decide: tcDecide, applyPercent: tcApplyPercent,
   applyDealAdjustment: dealApplyAdj, withdraw: tcWithdraw, marketAgreed };
 
 const INVARIANTS = {

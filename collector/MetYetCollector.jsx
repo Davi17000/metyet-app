@@ -422,6 +422,18 @@ const CSS = `
 .goal-deal-t { margin-left: auto; font-size: 12px; color: var(--muted); }
 /* Demo scaffolding, deliberately not product chrome: it must read as the
    tester standing in for the other side, never as a Collector action. */
+.dl-h { font-family: 'Archivo'; font-size: 11px; letter-spacing: .11em;
+  text-transform: uppercase; font-weight: 700; color: var(--muted); margin: 16px 0 4px; }
+.dl-card { padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
+.dl-card-n { font-size: 15px; font-weight: 700; margin-bottom: 7px; }
+.dl-card-m { display: flex; justify-content: space-between; font-size: 13.5px;
+  color: var(--muted); padding: 2px 0; }
+.dl-card-m.tv { color: var(--text); font-weight: 600; margin-top: 4px; }
+.dl-cash { font-size: 13.5px; color: var(--muted); line-height: 1.5; margin: 12px 0; }
+.dl-agree { margin: 14px 0; padding: 10px 0; border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft); }
+.dl-wait { font-size: 13.5px; color: var(--muted); line-height: 1.5; }
+
 .vcard-top { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 16px; }
 .vcard-id { flex: 1; min-width: 0; }
 .vcard-n { font-size: 17px; font-weight: 700; line-height: 1.2; }
@@ -2054,28 +2066,124 @@ function DemoPartnerResponse({ o, st }) {
   const them = partner ? partner.name : "the partner";
   const [note, setNote] = useState("");
 
-  /* Valid responses for THIS stage, and nothing else. */
+  /* THE PARTNER'S MOVE, WHERE THE TESTER ALREADY IS.
+
+     A pilot is usually one person, so without this every step means switching
+     persona, finding the matching screen, acting, and switching back. This
+     offers the counterparty's move in place.
+
+     It is not a shortcut past the rules. Every response calls the SAME canonical
+     action the real Trusted Partner seat calls, with `by: "tp"` — so a demo move
+     cannot reach a state the product could not, cannot skip a validation, and
+     cannot agree on the collector's behalf. Only moves that are valid RIGHT NOW
+     are offered; when it is the collector's turn, this shows nothing. */
+  const A = st.simulate;
   const responses = [];
-  if (o.stage === "agree-price" && !D.isTerminal(o)) {
-    const last = D.lastEntry(o.priceThread);
-    /* The partner can only accept a proposal that is actually theirs to answer. */
-    if (last && last.by === "collector" && last.type !== "accept") {
-      responses.push([`${them} accepts ${money(last.amount)}`, () => {
-        const res = st.simulate.agreePrice({ oppId: o.id, amount: last.amount,
-          by: "partner", at: AT });
-        setNote(res && res.refused
-          ? "That copy is already committed to another deal."
-          : `${them} agreed at ${money(last.amount)} — now at Select Trade.`);
-      }]);
+  const say = (t) => setNote(t);
+
+  if (!D.isTerminal(o)) {
+    if (o.stage === "agree-price") {
+      const last = D.lastEntry(o.priceThread);
+      if (last && last.by === "collector" && last.type !== "accept") {
+        responses.push([`${them} accepts ${money(last.amount)}`, () => {
+          const res = A.agreePrice({ oppId: o.id, amount: last.amount, by: "partner", at: AT });
+          say(res && res.refused ? "That copy is already committed to another deal."
+            : `${them} agreed at ${money(last.amount)}.`);
+        }]);
+      }
+    }
+
+    /* Select Trade: the partner decides which proposed cards to include. */
+    if (o.stage === "select-trade" && o.trade && o.trade.submitted) {
+      const undecided = (o.trade.cards || []).filter((c) => c.inclusion === "proposed");
+      if (undecided.length) {
+        responses.push([`${them} accepts ${undecided.length} proposed card${undecided.length === 1 ? "" : "s"}`, () => {
+          A.reviewTradeCards({ oppId: o.id, decision: "accepted", at: AT });
+          say(`${them} accepted the cards — on to agreeing what they're worth.`);
+        }]);
+      }
+    }
+
+    /* Value Trade: market first, then percentage, one card at a time. */
+    if (o.stage === "value-trade") {
+      const active = D.acceptedTradeCards(o);
+      const needsMarket = active.find((c) => c.agreedMarket == null);
+      if (needsMarket) {
+        const name = (st.cardById(needsMarket.cardId) || {}).name || "that card";
+        if (needsMarket.collectorMarket != null) {
+          responses.push([`${them} accepts ${money(needsMarket.collectorMarket)} for ${name}`, () => {
+            A.tradeMarketRespond({ oppId: o.id, tradeCardId: needsMarket.id, by: "tp",
+              action: "accept", at: AT });
+            say(`Market value agreed for ${name}.`);
+          }]);
+        } else {
+          const b = st.binderById(needsMarket.binderId);
+          const ref = b && b.market ? b.market : 1000;
+          responses.push([`${them} proposes ${money(ref)} for ${name}`, () => {
+            A.tradeMarketRespond({ oppId: o.id, tradeCardId: needsMarket.id, by: "tp",
+              action: "propose", amount: ref, at: AT });
+            say(`${them} put ${money(ref)} on ${name}.`);
+          }]);
+        }
+      } else {
+        const needsPct = active.find((c) => c.agreedPercent == null);
+        if (needsPct) {
+          const name = (st.cardById(needsPct.cardId) || {}).name || "that card";
+          if (needsPct.collectorPercent != null) {
+            responses.push([`${them} accepts ${pct(needsPct.collectorPercent)} for ${name}`, () => {
+              A.tradePercentRespond({ oppId: o.id, tradeCardId: needsPct.id, by: "tp",
+                action: "accept", at: AT });
+              say(`Trade % agreed for ${name}.`);
+            }]);
+          } else {
+            responses.push([`${them} proposes 80% for ${name}`, () => {
+              A.tradePercentRespond({ oppId: o.id, tradeCardId: needsPct.id, by: "tp",
+                action: "propose", percent: 0.8, at: AT });
+              say(`${them} proposed 80% on ${name}.`);
+            }]);
+          }
+        }
+      }
+    }
+
+    /* Deal: the partner's own agreement, and nothing else. */
+    if (o.stage === "deal") {
+      const d = o.deal || {};
+      if (d.agreedAdj == null && d.collectorAdj != null) {
+        responses.push([`${them} accepts ${money(d.collectorAdj)}`, () => {
+          A.dealAdjustRespond({ oppId: o.id, by: "tp", action: "accept", at: AT });
+          say(`${them} accepted your figure.`);
+        }]);
+      }
+      if (!d.tpAgreed) {
+        responses.push([`${them} agrees to this deal`, () => {
+          A.dealAgree({ oppId: o.id, by: "tp", at: AT });
+          say(`${them} has agreed. The deal moves on once you have too.`);
+        }]);
+      }
+    }
+
+    /* Fulfillment: propose the plan, then hand over once it is agreed. */
+    if (o.stage === "fulfillment") {
+      const f = o.fulfillment || {};
+      const planOnTable = !!f.proposedAt && !f.revisionRequested;
+      if (!planOnTable) {
+        responses.push([`${them} proposes a handoff plan`, () => {
+          A.proposeFulfillment({ oppId: o.id,
+            plan: { method: "Meet in person", where: "Duluth, Minnesota", when: "Saturday, 2pm" },
+            at: AT });
+          say(`${them} proposed how, where and when.`);
+        }]);
+      } else if (f.collectorConfirmedPlan && !D.FULFILLMENT.handedOff(f)) {
+        responses.push([`${them} confirms handoff`, () => {
+          A.confirmHandoff({ oppId: o.id, by: "tp", at: AT });
+          say(`${them} handed the card over.`);
+        }]);
+      }
     }
   }
 
-  if (!responses.length) {
-    /* Hidden entirely when there is nothing valid to offer, rather than a
-       disabled button implying a move exists. */
-    if (o.stage !== "agree-price") return null;
-    return null;
-  }
+  if (!responses.length) return null;
 
   return (
     <div className="dpr">
@@ -2090,7 +2198,7 @@ function DemoPartnerResponse({ o, st }) {
       </div>
       {note && <div className="dpr-n">{note}</div>}
       <div className="dpr-f">
-        Acts as {them}, through the same action their own screen uses.
+        Acts as {them}, through the same actions their own screen uses.
         Switch persona for the full Trusted Partner workflow.
       </div>
     </div>
@@ -3534,66 +3642,121 @@ function DealStage({ o, st, register }) {
   const [amt, setAmt] = useState("");
   const calc = calcBalance(o);
   const p = st.partnerById(o.partnerId);
-  const proposed = o.deal.proposedAdj != null ? o.deal.proposedAdj : null;
-  const fromPartner = o.deal.proposedBy && o.deal.proposedBy !== "collector";
+  const them = p ? p.name : "them";
   const n = Number(amt);
+
+  /* THE ADJUSTMENT, READ CANONICALLY. Pass 2 replaced `proposedAdj`/`proposedBy`
+     with one standing position per side plus a thread; this screen was still
+     reading the old fields and so showed nothing at all after a proposal. */
+  const deal = o.deal || {};
+  const adjStanding = deal.agreedAdj == null && deal.tpAdj != null ? { amount: deal.tpAdj, by: "tp" }
+    : deal.agreedAdj == null && deal.collectorAdj != null
+      ? { amount: deal.collectorAdj, by: "collector" } : null;
+  const fromPartner = !!adjStanding && adjStanding.by === "tp";
+  const cash = D.finalBalance(o);
+  const cashOnly = (o.trade && o.trade.mode === "cash") || acceptedCards(o).length === 0;
+
+  /* Agreement belongs to whoever gave it. Never inferred, never combined. */
+  const iAgreed = !!deal.collectorAgreed;
+  const theyAgreed = !!deal.tpAgreed;
 
   return (
     <>
       <div className="card sec">
-        <div className="sec-h">How the balance works out</div>
+        <div className="sec-h">What this deal comes to</div>
+
         <div className="row"><span className="k">Price you agreed</span>
           <span className="mono">{money(o.agreedPrice)}</span></div>
-        {acceptedCards(o).map((tcd) => {
-          const b = st.binderById(tcd.binderId);
-          return (
-            <div key={tcd.binderId} className="row">
-              <span className="k">{st.cardById(b.cardId).name}</span>
-              <span className="mono">−{money(tradeValue(tcd))}</span>
-            </div>
-          );
-        })}
+
+        {/* EVERY NUMBER TRACEABLE TO A CARD-LEVEL AGREEMENT. The breakdown shows
+            what each card was agreed to be worth, what share of it counts, and
+            the credit that produces — so the total is arithmetic the collector
+            can follow rather than a figure to take on trust. */}
+        {cashOnly ? (
+          <div className="dl-cash">
+            No cards are going into this trade, so the full price is settled in cash.
+          </div>
+        ) : (
+          <>
+            <div className="dl-h">Cards you're trading</div>
+            {acceptedCards(o).map((tcd) => {
+              const b = st.binderById(tcd.binderId);
+              const c = st.cardById(b ? b.cardId : tcd.cardId);
+              return (
+                <div key={tcd.id || tcd.binderId} className="dl-card">
+                  <div className="dl-card-n">{c.name}</div>
+                  <div className="dl-card-m">
+                    <span>Agreed market value</span>
+                    <span className="mono">{money(tcd.agreedMarket)}</span>
+                  </div>
+                  <div className="dl-card-m">
+                    <span>Agreed Trade %</span>
+                    <span className="mono">{pct(tcd.agreedPercent)}</span>
+                  </div>
+                  <div className="dl-card-m tv">
+                    <span>Trade value</span>
+                    <span className="mono">{money(tradeValue(tcd))}</span>
+                  </div>
+                </div>
+              );
+            })}
+            <div className="row"><span className="k">Total trade value</span>
+              <span className="mono">−{money(D.totalTradeValue(o))}</span></div>
+          </>
+        )}
+
+        {/* Direction in words, because a sign is not an explanation. */}
         <div className="row tot">
-          <span>{calc >= 0 ? "You pay" : `${p.name} pays you`}</span>
-          <span className="mono">{money(Math.abs(calc))}</span>
+          <span>{cash >= 0 ? `You pay ${them}` : `${them} pays you`}</span>
+          <span className="mono">{money(Math.abs(cash))}</span>
         </div>
       </div>
 
       <div className="card sec">
         <div className="sec-h">Final negotiation</div>
         <div style={{ fontSize: 14, marginBottom: 12 }}>
-          {proposed == null
+          {adjStanding == null
             ? <>The numbers above are settled. If you'd like to land somewhere different, propose a final figure — everything you already agreed stays the same.</>
             : fromPartner
-              ? <>{p.name} suggested settling at <b className="mono">{money(o.deal.proposedAdj)}</b> instead of {money(Math.abs(calc))}.</>
-              : <>You suggested <b className="mono">{money(o.deal.proposedAdj)}</b>. Waiting on them.</>}
+              ? <>{them} suggested settling at <b className="mono">{money(adjStanding.amount)}</b> instead of {money(Math.abs(calc))}.</>
+              : <>You suggested <b className="mono">{money(adjStanding.amount)}</b>. Waiting on {them}.</>}
         </div>
 
-        {st.turnFor(o).who === "me" && (
+        {/* Whose agreement is in, stated separately for each person. */}
+        <div className="dl-agree">
+          <div className="row"><span className="k">You</span>
+            <span>{iAgreed ? "Agreed" : "Not yet"}</span></div>
+          <div className="row"><span className="k">{them}</span>
+            <span>{theyAgreed ? "Agreed" : "Not yet"}</span></div>
+        </div>
+
+        {!iAgreed && (
           <>
-            {fromPartner && (
+            {adjStanding && fromPartner && (
               <button className="btn deep wide" style={{ marginBottom: 12 }}
-                onClick={() => st.dealAgree(o.id, o.deal.proposedAdj)}>
-                Agree on {money(o.deal.proposedAdj)}
+                onClick={() => st.dealAdjustAccept(o.id)}>
+                Accept {money(adjStanding.amount)}
               </button>
             )}
-            {!fromPartner && (
-              <button className="btn deep wide" style={{ marginBottom: 12 }}
-                onClick={() => st.dealAgree(o.id, calc)}>
-                Agree on {money(Math.abs(calc))}
-              </button>
-            )}
+            <button className="btn pri wide" style={{ marginBottom: 12 }}
+              onClick={() => st.dealAgree(o.id)}>
+              Agree to this deal
+            </button>
             <input className="inp" inputMode="decimal" value={amt} placeholder="Propose a different figure"
               aria-label="Propose a final cash amount"
               onChange={(e) => setAmt(e.target.value.replace(/[^\d.]/g, ""))} />
             <div className="faint" style={{ fontSize: 12.5, marginTop: 6 }}>
               Only the cash changes. Card values and percentages stay exactly as agreed.
             </div>
-            <button className="btn pri wide" style={{ marginTop: 12 }} disabled={!(n > 0)}
+            <button className="btn wide" style={{ marginTop: 12 }} disabled={!(n > 0)}
               onClick={() => { st.dealPropose(o.id, n); setAmt(""); }}>
               Propose {money(n || 0)}
             </button>
           </>
+        )}
+
+        {iAgreed && !theyAgreed && (
+          <div className="dl-wait">You've agreed. Waiting on {them}.</div>
         )}
       </div>
     </>
@@ -4267,6 +4430,8 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
       confirmPlan: (id) => A.confirmFulfillmentPlan({ oppId: id, at: AT }),
       requestPlanRevision: (id, note) =>
         A.requestFulfillmentRevision({ oppId: id, note, at: AT }),
+      dealAdjustAccept: (id) =>
+        A.dealAdjustRespond({ oppId: id, by: "collector", action: "accept", at: AT }),
       chooseCashOnly: (id) => A.chooseCashOnly({ oppId: id, at: AT }),
       withdrawTradeCard: (id, tradeCardId) =>
         A.withdrawTradeCard({ oppId: id, tradeCardId, at: AT }),

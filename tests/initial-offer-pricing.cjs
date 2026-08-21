@@ -341,7 +341,7 @@ describe("E. The partner's counter mirrors it, and commits nothing", () => {
 
 describe("F. The pricing system is consistent everywhere", () => {
   test("the Collector's own counter uses the same fields", () => {
-    const ap = COL.slice(COL.indexOf("function AgreePrice("), COL.indexOf("/* Select Trade"));
+    const ap = COL.slice(COL.indexOf("function AgreePrice("), COL.indexOf("function SelectTrade("));
     assert(/<CounterFields/.test(ap), "Agree on Price uses them");
     assert(/pctLabel="% of listed price"/.test(ap) || /pctLabel="% of asking"/.test(ap),
       "with a labelled denominator");
