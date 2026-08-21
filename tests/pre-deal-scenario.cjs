@@ -279,12 +279,18 @@ describe("C. The loop runs on real actions", () => {
 describe("D. State survives the persona switch", () => {
   test("one store carries request and photos across both sides", () => {
     /* The prototype switches which app is mounted, not which world exists. */
-    assert(/store\.reset\(buildCanonicalSeed\(\)\)/.test(SHELL),
+    /* CONTRACT CHANGE: the seed now carries `review` so the demo world contains
+       the goal the scenarios address. The property protected here is unchanged
+       — reseeding happens only on an explicit reset, never on a persona
+       switch — so the assertion matches the call rather than its old argument. */
+    assert(/store\.reset\(buildCanonicalSeed\(\{ review: DEMO \}\)\)/.test(SHELL),
       "the shell reseeds only on an explicit reset");
+    eq((SHELL.match(/store\.reset\(/g) || []).length, 1, "from exactly one place");
     /* The store is built once, and reseeded only by the explicit Reset demo
        button — never as a side effect of anything else. */
-    assert(/storeRef\.current === null\) storeRef\.current = createStore\(buildCanonicalSeed\(\)\)/
+    assert(/storeRef\.current === null\)[\s\S]{0,120}?storeRef\.current = createStore\(buildCanonicalSeed\(\{ review: DEMO \}\)\)/
       .test(SHELL), "the world is created once");
+    eq((SHELL.match(/createStore\(/g) || []).length, 1, "from exactly one place");
     eq((SHELL.match(/store\.reset\(/g) || []).length, 1, "and reset exactly one way");
     const setPersona = SHELL.slice(SHELL.indexOf("setPersona("),
       SHELL.indexOf("setPersona(") + 400);

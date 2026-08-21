@@ -137,7 +137,15 @@ export default function MetYetPrototype() {
      state updates — can never re-run the factory. Switching perspective must
      not be able to replace reality. */
   const storeRef = useRef(null);
-  if (storeRef.current === null) storeRef.current = createStore(buildCanonicalSeed());
+  /* THE DEMO WORLD NEEDS THE GOAL THE SCENARIOS TALK ABOUT. Every scenario
+     rebuilds the canonical review fixture and swaps it onto the collector's
+     matching goal — so without `review`, that goal is simply absent, the loader
+     finds nothing to swap, and every selection silently does nothing. Seeding
+     the same way the scenarios expect is what makes them real. A build with
+     DEMO off is untouched: it seeds exactly as before. */
+  if (storeRef.current === null) {
+    storeRef.current = createStore(buildCanonicalSeed({ review: DEMO }));
+  }
   const store = storeRef.current;
 
   const [persona, setPersona] = useState(null);      // null = the chooser
@@ -227,7 +235,9 @@ export default function MetYetPrototype() {
           <button className="myp-btn" onClick={() => {
             /* ONE reset for ONE universe: restoring the seed resets both
                perspectives, because there is only one reality to restore. */
-            store.reset(buildCanonicalSeed());
+            /* Reset returns to the demo baseline, not a world the scenarios
+               can no longer address. */
+            store.reset(buildCanonicalSeed({ review: DEMO }));
             setEpoch((e) => e + 1);
             setMenu(false);
           }}>Reset demo</button>

@@ -125,7 +125,9 @@ describe("5. One store instance, shared", () => {
   test("the shell creates it once, in a ref", () => {
     const src = require("fs").readFileSync(
       require("path").join(__dirname, "..", "shell", "MetYetPrototype.jsx"), "utf8");
-    assert(/storeRef\.current === null\) storeRef\.current = createStore/.test(src),
+    /* Matched across the line break the explanatory comment introduced; the
+       property is that the store is created lazily in a ref, exactly once. */
+    assert(/storeRef\.current === null\)[\s\S]{0,80}?storeRef\.current = createStore/.test(src),
       "lazily, exactly once");
     assert(!/useState\(\(\) => createStore/.test(src), "not in state that a re-render could replace");
   });
