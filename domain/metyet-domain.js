@@ -73,6 +73,12 @@ const acceptedTradeCards = (o) =>
   ((o.trade && o.trade.cards) || []).filter((c) => c.inclusion === "accepted" && !c.withdrawn);
 const cardSettled = (c) => c.agreedMarket != null && c.agreedPercent != null;
 const tradeValueOf = (c) => (cardSettled(c) ? Math.round(c.agreedMarket * c.agreedPercent) : null);
+/* What a card WOULD be worth at a given percentage. Previews need this before
+   anything is agreed, and tradeValueOf deliberately refuses unsettled cards —
+   so without it each screen re-derives the rounding rule and they drift. Same
+   arithmetic, one definition. */
+const tradeValueAt = (market, percent) =>
+  (market == null || percent == null ? null : Math.round(market * percent));
 const totalTradeValue = (o) => acceptedTradeCards(o).reduce((a, c) => a + (tradeValueOf(c) || 0), 0);
 
 /* Positive = the collector pays the partner. Negative = the partner pays the
@@ -313,7 +319,7 @@ module.exports = {
   STAGES, STAGE_IX, STAGE_LABEL,
   isEnded, isCompleted, isTerminal, isActive, isNegotiating,
   activeOppForGoal, goalState,
-  acceptedTradeCards, cardSettled, tradeValueOf, totalTradeValue,
+  acceptedTradeCards, cardSettled, tradeValueOf, tradeValueAt, totalTradeValue,
   calculatedBalance, finalBalance,
   lastEntry, nextActor,
   INVARIANTS, REFUSE,
