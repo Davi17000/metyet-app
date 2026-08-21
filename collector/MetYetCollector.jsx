@@ -422,6 +422,15 @@ const CSS = `
 .goal-deal-t { margin-left: auto; font-size: 12px; color: var(--muted); }
 /* Demo scaffolding, deliberately not product chrome: it must read as the
    tester standing in for the other side, never as a Collector action. */
+.st-cash { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line-soft); }
+.st-cash-n { display: block; font-size: 12.5px; color: var(--faint);
+  margin-top: 8px; line-height: 1.45; }
+
+.fh-wait { font-size: 13px; color: var(--muted); line-height: 1.5; margin-bottom: 12px; }
+.fh-act { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.fh-ask { margin-top: 12px; padding: 12px; background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 11px; }
+
 .dpr { margin-top: 16px; padding: 13px 14px; border: 1px dashed var(--line);
   border-radius: 11px; background: var(--panel-2); }
 .dpr-h { display: flex; align-items: center; gap: 8px; }
@@ -3209,6 +3218,20 @@ function SelectTrade({ o, st, register }) {
             Send {picked.length || ""} card{picked.length === 1 ? "" : "s"} for review
           </button>
         )}
+
+        {/* A CASH DEAL IS A REAL OUTCOME, not a failure to trade. It is offered
+            plainly and styled as the secondary path it is — never as cancelling,
+            because the deal continues either way. It goes through the canonical
+            action, which records the decision, so "decided not to trade" stays
+            distinguishable from "hasn't chosen yet". */}
+        <div className="st-cash">
+          <button className="btn sm" onClick={() => st.chooseCashOnly(o.id)}>
+            Continue without trade
+          </button>
+          <span className="st-cash-n">
+            Pay the full agreed price in cash. You can't add trade cards afterwards.
+          </span>
+        </div>
       </div>
     );
   }
@@ -3245,7 +3268,7 @@ function ValueTrade({ o, st, register }) {
   return (
     <>
       {acceptedCards(o).map((tcd) => (
-        <ValueCard key={tcd.binderId} o={o} tcd={tcd} st={st} />
+        <ValueCard key={tcd.id || tcd.binderId} o={o} tcd={tcd} st={st} />
       ))}
     </>
   );
@@ -3312,14 +3335,14 @@ function ValueCard({ o, tcd, st }) {
           {tcd.tpPercent != null && (
             <button className="btn deep wide" style={{ marginBottom: 12 }}
               onClick={() => st.pctRespond(o.id, tcd.binderId, "accept")}>
-              Agree on {pct(tcd.tpPercent)} — {money(Math.round(tcd.agreedMarket * tcd.tpPercent))}
+              Agree on {pct(tcd.tpPercent)} — {money(D.tradeValueAt(tcd.agreedMarket, tcd.tpPercent))}
             </button>
           )}
           <input className="inp" inputMode="decimal" value={pc} aria-label="Percentage toward the trade"
             onChange={(e) => setPc(e.target.value.replace(/[^\d.]/g, ""))} />
           <div className="faint" style={{ fontSize: 13, marginTop: 7 }}>
             {Number(pc) > 0
-              ? `${Math.round(Number(pc))}% of ${money(tcd.agreedMarket)} is ${money(Math.round(tcd.agreedMarket * Number(pc) / 100))} toward the card.`
+              ? `${Math.round(Number(pc))}% of ${money(tcd.agreedMarket)} is ${money(D.tradeValueAt(tcd.agreedMarket, Number(pc) / 100))} toward the card.`
               : "Enter a percentage to see what it's worth."}
           </div>
           <button className="btn pri wide" style={{ marginTop: 12 }}
@@ -3408,25 +3431,92 @@ function DealStage({ o, st, register }) {
 function Fulfillment({ o, st, register }) {
   const f = o.fulfillment || {};
   const p = st.partnerById(o.partnerId);
+  const [note, setNote] = useState("");
+  const [asking, setAsking] = useState(false);
+
+  /* THREE DISTINCT MOMENTS, and the collector is only ever in one of them:
+       1. the partner has not proposed how the exchange happens — nothing to do;
+       2. a plan is on the table — agree to it, or ask for a change;
+       3. the plan is agreed — confirm receipt when the card actually arrives.
+     Agreeing to a plan is not receiving a card, so those never share a button.
+     Before Pass 2 this screen showed a plan nobody had proposed; now it shows
+     the absence honestly and waits. */
+  const proposed = !!f.proposedAt && !f.revisionRequested;
+  const agreed = proposed && !!f.collectorConfirmedPlan;
+  const received = D.FULFILLMENT.received(f);
+
   useEffect(() => {
     if (!register) return;
-    register(!f.collectorReceipt
-      ? { label: "I've got the card", run: () => st.confirmHandoff(o.id) } : null);
-  }, [register, o.id, f.collectorReceipt]);
+    register(
+      !proposed ? null
+        : !agreed ? { label: "Agree to this plan", run: () => st.confirmPlan(o.id) }
+          : !received ? { label: "I've got the card", run: () => st.confirmHandoff(o.id) }
+            : null);
+  }, [register, o.id, proposed, agreed, received]);
+
+  const term = (k, v) => (
+    <div className="row"><span className="k">{k}</span>
+      <span>{v || <span className="faint">Not proposed yet</span>}</span></div>
+  );
+
   return (
     <div className="card sec">
       <div className="sec-h">Handoff</div>
-      <div className="row"><span className="k">How</span><span>{f.method}</span></div>
-      <div className="row"><span className="k">Where</span><span>{f.where}</span></div>
-      <div className="row"><span className="k">When</span><span>{f.when}</span></div>
+
+      {!proposed && (
+        <div className="fh-wait">
+          {f.revisionRequested
+            ? `You asked ${p.name} to change the plan. Waiting for a new proposal.`
+            : `${p.name} will propose how, where and when to hand the card over.`}
+        </div>
+      )}
+
+      {term("How", f.method)}
+      {term("Where", f.where)}
+      {term("When", f.when)}
       <div className="row"><span className="k">Settling up</span>
         <span className="mono">{money(Math.abs(finalBalance(o)))} {finalBalance(o) >= 0 ? "to them" : "to you"}</span></div>
+
+      {/* The plan and the exchange are reported separately, because they are
+          separate facts: agreeing a Saturday meet is not having the card. */}
+      <div className="row"><span className="k">Plan</span>
+        <span>{agreed ? "Agreed by you both"
+          : proposed ? `Proposed by ${p.name} — your move`
+            : "Not proposed yet"}</span></div>
       <div className="row"><span className="k">{p.name}</span>
-        <span>{D.FULFILLMENT.handedOff(f) ? "Confirmed" : "Not yet"}</span></div>
-      {/* Same rule as the other stages: the registered action bar already shows
-          this, so a second identical button would be the collector's third way
-          to press one handler. */}
-      {!D.FULFILLMENT.received(f) && !register && (
+        <span>{D.FULFILLMENT.handedOff(f) ? "Handed over" : "Not yet"}</span></div>
+      <div className="row"><span className="k">You</span>
+        <span>{received ? "Confirmed receipt" : "Not yet"}</span></div>
+
+      {proposed && !agreed && (
+        <div className="fh-act">
+          {!register && (
+            <button className="btn pri" onClick={() => st.confirmPlan(o.id)}>
+              Agree to this plan
+            </button>
+          )}
+          <button className="btn" onClick={() => setAsking(true)}>Ask for a change</button>
+        </div>
+      )}
+
+      {asking && (
+        <div className="fh-ask">
+          <label className="pn-f">
+            <span className="pn-fl">What would work better?</span>
+            <input className="inp" value={note} aria-label="What would work better"
+              onChange={(e) => setNote(e.target.value)} />
+          </label>
+          <div className="act-2" style={{ marginTop: 12 }}>
+            <button className="btn" onClick={() => { setAsking(false); setNote(""); }}>Cancel</button>
+            <button className="btn pri" disabled={!note.trim()}
+              onClick={() => { st.requestPlanRevision(o.id, note.trim()); setAsking(false); setNote(""); }}>
+              Send request
+            </button>
+          </div>
+        </div>
+      )}
+
+      {agreed && !received && !register && (
         <button className="btn pri wide" style={{ marginTop: 16 }} onClick={() => st.confirmHandoff(o.id)}>
           I've got the card
         </button>
