@@ -138,7 +138,7 @@ describe("B. Three regions, in order", () => {
   test("each region holds what belongs to it", () => {
     const r = mk();
     /* A stage that still has details, so region ownership is actually tested. */
-    const card = expand(r, goalOf(oppAt("value-trade")));
+    const card = expand(r, goalOf(oppAt("deal")));
     const task = cls(card, "idf-task")[0];
     const mid = cls(card, "idf-mid")[0];
     const side = cls(card, "idf-side")[0];
@@ -192,7 +192,8 @@ describe("C. Stage details are canonical and leak nothing", () => {
      its figures live in the pricing panel, the second because they were already
      attached to the cards themselves. Both stages that DO summarise otherwise
      invisible terms are still checked. */
-  STAGES.filter((x) => !["agree-price", "select-trade"].includes(x)).forEach((stage) => {
+  STAGES.filter((x) => !["agree-price", "select-trade", "value-trade"].includes(x))
+    .forEach((stage) => {
     test(stage + ": renders its own stage's fields", () => {
       const r = mk();
       const card = expand(r, goalOf(oppAt(stage)));
@@ -226,13 +227,17 @@ describe("C. Stage details are canonical and leak nothing", () => {
        protects is unchanged and now checked on a stage that still has details:
        what the column shows is DERIVED from the opportunity, never stored. */
     const r = mk();
-    const o = oppAt("value-trade");
+    /* Moved again: Value Trade also lost its details column, its figures now
+       stated on the cards themselves. Deal still summarises terms that are not
+       otherwise on screen, so the property — details are DERIVED from the
+       opportunity, never stored — is checked there. */
+    const o = oppAt("deal");
     const card = expand(r, goalOf(o));
-    const cards = D.acceptedTradeCards(o);
-    eq(detailOf(card, "Cards accepted"), String(cards.length), "the count is derived");
-    eq(detailOf(card, "Values agreed"),
-      String(cards.filter((c) => c.agreedMarket != null && c.agreedPercent != null).length),
-      "as is what has been settled");
+    /* Compared as the numbers they derive from, not as formatted strings. */
+    const num = (k) => Number(String(detailOf(card, k)).replace(/[^0-9.]/g, ""));
+    eq(num("Agreed price"), o.agreedPrice, "the price is derived");
+    eq(num("Trade value"), D.totalTradeValue(o),
+      "and the trade value comes from the canonical helper");
   });
 
   test("the details column reads the receipt and invents no store", () => {

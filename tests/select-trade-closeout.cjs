@@ -236,7 +236,8 @@ describe("C. Redundant surfaces are gone", () => {
   });
 
   test("other stages keep their details", () => {
-    ["value-trade", "deal", "fulfillment"].forEach((stage) => {
+    /* Value Trade has since lost its column too, in its own closeout pass. */
+    ["deal", "fulfillment"].forEach((stage) => {
       __store.reset(M.buildCanonicalSeed({ review: true, demoStage: stage }));
       TR.act(() => { R = TR.create(React.createElement(App)); });
       cls(R, "goal").forEach((g) => {

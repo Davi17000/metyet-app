@@ -437,6 +437,16 @@ const CSS = `
 .vcard-top { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 16px; }
 .vcard-id { flex: 1; min-width: 0; }
 .vcard-n { font-size: 17px; font-weight: 700; line-height: 1.2; }
+.vcard-agreed { font-size: 13.5px; color: var(--text); margin-top: 7px; font-weight: 600; }
+.vp.settled { padding-top: 12px; }
+.vp-settled { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.vp-set-amt { font-size: 16px; font-weight: 700; }
+.vp-set-by { font-size: 12.5px; color: var(--muted); }
+.vp-unit { display: flex; align-items: center; gap: 7px; }
+.vp-unit .inp { flex: 1 1 auto; min-width: 0; }
+.vp-unit-m { font-size: 16px; font-weight: 600; color: var(--muted); }
+.vcard-sum { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line-soft); }
+
 .vcard-st { font-size: 12.5px; color: var(--t1); margin-top: 8px; font-weight: 600; }
 .vcard.out { opacity: .72; }
 .vcard-out { font-size: 13px; color: var(--muted); line-height: 1.5; }
@@ -2859,10 +2869,10 @@ function StageDetails({ o, st }) {
        their details, because those summarise terms that are NOT otherwise on
        screen. */
   } else if (cur.id === "value-trade") {
-    add("Cards accepted", String(cur.cards.length));
-    add("Values agreed",
-      String(cur.cards.filter((c) => c.agreedMarket != null && c.agreedPercent != null).length));
-    add("Trade value", cur.total != null ? money(cur.total) : dash);
+    /* Deliberately empty, as with Select Trade. Cards accepted, values agreed
+       and trade value are each stated on the card they belong to, where the
+       collector is actually deciding; counting them again in a column added
+       density without telling anyone anything new. */
   } else if (cur.id === "deal") {
     const price = r.stages[0].price;
     add("Agreed price", price != null ? money(price) : dash);
@@ -3443,7 +3453,7 @@ function ValueTrade({ o, st, register }) {
    or remembered locally beyond the draft being typed. */
 function Phase({ label, standing, standingBy, agreed, format, partnerName,
   yourTurn, draft, setDraft, inputLabel, hint, onAccept, onPropose, sendLabel,
-  thread, locked, lockNote }) {
+  emptyLabel, unit, thread, locked, lockNote, collapsed, agreedLabel }) {
   const [showHistory, setShowHistory] = useState(false);
 
   if (locked) {
@@ -3451,6 +3461,41 @@ function Phase({ label, standing, standingBy, agreed, format, partnerName,
       <div className="vp locked">
         <div className="vp-h">{label}</div>
         <div className="vp-lock">{lockNote}</div>
+      </div>
+    );
+  }
+
+  /* AGREED TERMS STOP COMPETING. Once a number is settled it is context for the
+     decision still open, not a negotiation of its own — so the inputs and the
+     Accept button go, the figure stays, and the history that produced it stays
+     one click away. Nothing is erased. */
+  if (collapsed) {
+    return (
+      <div className="vp settled">
+        <div className="vp-settled">
+          <span className="vp-h">{label}</span>
+          <span className="vp-set-amt mono">{format(agreed)}</span>
+          <span className="vp-set-by">{agreedLabel || "Agreed by you both"}</span>
+        </div>
+        {thread.length > 0 && (
+          <div className="vp-hist">
+            <button className="vp-hist-b" aria-expanded={showHistory}
+              onClick={() => setShowHistory(!showHistory)}>
+              {showHistory ? "Hide" : "View"} history ({thread.length})
+            </button>
+            {showHistory && (
+              <ul className="vp-hist-l">
+                {thread.map((e, n) => (
+                  <li key={n}>
+                    <span className="vp-hist-who">{e.by === "tp" ? partnerName : "You"}</span>
+                    <span className="vp-hist-act">{e.type === "accept" ? "accepted" : "proposed"}</span>
+                    <span className="mono">{format(e.amount != null ? e.amount : e.percent)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -3489,13 +3534,17 @@ function Phase({ label, standing, standingBy, agreed, format, partnerName,
         <div className="vp-counter">
           <label className="pn-f">
             <span className="pn-fl">{standing != null ? "Your counter" : "Your proposal"}</span>
-            <input className="inp" inputMode="decimal" value={draft} aria-label={inputLabel}
-              onChange={(e) => setDraft(e.target.value.replace(/[^\d.]/g, ""))} />
+            <span className={"vp-unit" + (unit === "%" ? " suffix" : "")}>
+              {unit !== "%" && <span className="vp-unit-m">{unit}</span>}
+              <input className="inp" inputMode="decimal" value={draft} aria-label={inputLabel}
+                onChange={(e) => setDraft(e.target.value.replace(/[^\d.]/g, ""))} />
+              {unit === "%" && <span className="vp-unit-m">%</span>}
+            </span>
           </label>
           {hint && <div className="vp-hint">{hint}</div>}
           <button className="btn pri wide" style={{ marginTop: 10 }}
             disabled={!sendLabel} onClick={onPropose}>
-            {sendLabel || "Enter an amount"}
+            {sendLabel || emptyLabel}
           </button>
         </div>
       )}
@@ -3504,7 +3553,7 @@ function Phase({ label, standing, standingBy, agreed, format, partnerName,
         <div className="vp-hist">
           <button className="vp-hist-b" aria-expanded={showHistory}
             onClick={() => setShowHistory(!showHistory)}>
-            {showHistory ? "Hide" : "Show"} history ({thread.length})
+            {showHistory ? "Hide" : "View"} history ({thread.length})
           </button>
           {showHistory && (
             <ul className="vp-hist-l">
@@ -3562,6 +3611,16 @@ function ValueCard({ o, tcd, st }) {
         <div className="vcard-id">
           <div className="vcard-n">{c.name}</div>
           <div className="faint" style={{ fontSize: 13.5 }}>{cardLine(c)} · {gradeLine(c)}</div>
+          {/* AN AGREED TERM BELONGS WITH THE CARD. Once the market value is
+              settled it is a fact about this object, so it sits beside the
+              name rather than in a panel still shaped like a negotiation.
+              Derived from agreedMarket — an unsettled proposal never reaches
+              here, so nothing can read as agreed that isn't. */}
+          {tcd.agreedMarket != null && (
+            <div className="vcard-agreed">
+              Agreed market value · <span className="mono">{money(tcd.agreedMarket)}</span>
+            </div>
+          )}
           <div className="vcard-st">
             {out ? "Removed from the trade"
               : settled ? "Settled"
@@ -3593,7 +3652,11 @@ function ValueCard({ o, tcd, st }) {
             onAccept={() => st.marketRespond(o.id, tcd.id, "accept")}
             onPropose={() => st.marketRespond(o.id, tcd.id, "propose", Number(mkt))}
             sendLabel={Number(mkt) > 0 ? `Send ${money(Number(mkt))}` : null}
+            emptyLabel="Enter a dollar amount"
+            unit="$"
             thread={tcd.valueThread || []}
+            /* Settled: shown as context, with its history intact. */
+            collapsed={tcd.agreedMarket != null}
           />
 
           <Phase
@@ -3615,13 +3678,24 @@ function ValueCard({ o, tcd, st }) {
             onPropose={() => st.pctRespond(o.id, tcd.id, "propose", Number(pc) / 100)}
             sendLabel={Number(pc) > 0 && Number(pc) <= 100
               ? `Send ${Math.round(Number(pc))}%` : null}
+            emptyLabel="Enter a percentage"
+            unit="%"
             thread={tcd.percentThread || []}
+            collapsed={tcd.agreedPercent != null}
           />
 
           {/* What this card actually contributes, once both halves are agreed. */}
           {settled && (
-            <div className="row tot vcard-tot"><span>Worth toward the card</span>
-              <span className="mono">{money(tradeValue(tcd))}</span></div>
+            <div className="vcard-sum">
+              <div className="row"><span className="k">Agreed market value</span>
+                <span className="mono">{money(tcd.agreedMarket)}</span></div>
+              <div className="row"><span className="k">Trade percentage</span>
+                <span className="mono">{pct(tcd.agreedPercent)}</span></div>
+              {/* The canonical helper, so this figure cannot drift from the
+                  one the Deal stage totals. */}
+              <div className="row tot"><span>Trade value</span>
+                <span className="mono">{money(tradeValue(tcd))}</span></div>
+            </div>
           )}
 
           {/* Secondary by design: taking a card out is a valid move, not the
