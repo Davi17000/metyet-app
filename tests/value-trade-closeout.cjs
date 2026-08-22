@@ -211,7 +211,12 @@ describe("C. One grammar, two units", () => {
       "its empty state asks for a percentage");
     assert(!labels(vc).some((t) => /Enter an amount/.test(t)),
       "and never the old unit-free wording");
-    eq(cls(vc, "vp-unit-m").map(txt).join(","), "%", "with the field marked %");
+    /* CONTRACT CHANGE: the percentage phase now offers BOTH units, because a
+       trade % and the dollars it represents are one proposal written two ways.
+       The percentage field is still marked %, and a dollar field joins it. */
+    const marks = cls(vc, "vp-unit-m").map(txt);
+    assert(marks.includes("%"), "the percentage field is marked %: " + marks.join(","));
+    assert(marks.includes("$"), "and its linked dollar field is marked $");
   });
 
   test("Accept names the standing dollar proposal", () => {
