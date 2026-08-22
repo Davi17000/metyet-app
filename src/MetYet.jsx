@@ -1704,7 +1704,9 @@ const tcWithdraw = SharedID.TRADE.withdraw;
 
 /* ---- money. Trade credit requires BOTH agreed terms. There is no fallback to
    the partner default: an unagreed percentage means unresolved credit. -------- */
-const creditFor = (tc) => (fullyAgreed(tc) ? Math.round(tc.agreedMarket * tc.agreedPercent) : null);
+/* The canonical trade-value rule, not a second copy of the arithmetic: this
+   figure and the one the Deal stage totals must never be able to disagree. */
+const creditFor = (tc) => (fullyAgreed(tc) ? SharedID.tradeValueOf(tc) : null);
 const totalCredit = (opp) => settledCards(opp).reduce((a, c) => a + creditFor(c), 0);
 const oppValue = (o) => (o.agreedPrice != null ? o.agreedPrice : o.listedPrice);
 /* ONE source of truth for cash direction. Sign convention, stated once:
@@ -3007,11 +3009,11 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
 
   /* Draft removal only. Once the TP has made an inclusion decision the row is
      transaction history and can never be deleted. */
-  const tradeRemoveCard = (oppId, cardId) =>
+  const tradeRemoveCard = (oppId, rowId) =>
     draftPatch(oppId, (o) => {
-      const tc = o.trade.cards.find((c) => c.cardId === cardId);
+      const tc = o.trade.cards.find((c) => c.id === rowId);
       if (!tc || tc.inclusion !== "proposed" || o.trade.submitted) return o;
-      return { ...o, trade: { ...o.trade, cards: o.trade.cards.filter((c) => c.cardId !== cardId) } };
+      return { ...o, trade: { ...o.trade, cards: o.trade.cards.filter((c) => c.id !== rowId) } };
     });
 
   /* The collector hands the package to the TP for inclusion review. No economics
@@ -3031,13 +3033,16 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
   /* One rule, in the domain, so both seats close a selection the same way. */
   const maybeCloseSelection = SharedID.TRADE.closeSelection;
 
-  const tpReviewInclusion = (oppId, cardId, action) =>
+  /* Same row-identity rule as the valuation actions: a decision is about one
+     proposed row, even when two rows name the same card. */
+  const tpReviewInclusion = (oppId, rowId, action) =>
     patchOpp(oppId, (o) => {
       if (o.stage !== "select-trade" || isTerminal(o)) return o;   // inclusion closes with the stage
-      const cards = o.trade.cards.map((c) => (c.cardId === cardId ? tcReviewInclusion(c, action, NOW) : c));
+      const cards = o.trade.cards.map((c) => (c.id === rowId ? tcReviewInclusion(c, action, NOW) : c));
       return maybeCloseSelection({ ...o, trade: { ...o.trade, cards } });
     }, (n, o) => {
-      const nm = card(cardId).name;
+      const row = n.trade.cards.find((c) => c.id === rowId);
+      const nm = card(row.cardId).name;
       const base = action === "accept" ? `You accepted ${nm} into the trade` : `You rejected ${nm} from the trade`;
       if (n.stage === "value-trade")
         return `${base} — package settled at ${includedCards(n).length} card${includedCards(n).length === 1 ? "" : "s"}, valuation open`;
@@ -3094,34 +3099,43 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
      here for an explicit collector decision rather than silently becoming cash. */
   const maybeCloseValuation = SharedID.TRADE.closeValuation;
 
-  const patchCard = (oppId, cardId, fn, note, type = "stage") =>
+  /* ADDRESSED BY ROW, NOT BY CARD. Matching on cardId meant a collector who put
+     two copies of the same card into a trade would have both mutated by one
+     proposal — two independent negotiations moving as one. The trade-card row
+     id is the thing being negotiated over. */
+  const patchCard = (oppId, rowId, fn, note, type = "stage") =>
     patchOpp(oppId, (o) => {
       if (o.stage !== "value-trade" || isTerminal(o)) return o;    // terms close with the stage
-      const cards = o.trade.cards.map((c) => (c.cardId === cardId ? fn(c) : c));
+      const cards = o.trade.cards.map((c) => (c.id === rowId ? fn(c) : c));
       return maybeCloseValuation({ ...o, trade: { ...o.trade, cards } });
     }, note, type);
 
-  const marketAction = (oppId, cardId, by, action, amount) =>
-    patchCard(oppId, cardId, (c) => tcApplyMarket(c, by, action, amount, NOW), (n, o) => {
-      const nm = card(cardId).name;
+  const marketAction = (oppId, rowId, by, action, amount) =>
+    patchCard(oppId, rowId, (c) => tcApplyMarket(c, by, action, amount, NOW), (n, o) => {
+      const row = n.trade.cards.find((c) => c.id === rowId);
+      const nm = card(row.cardId).name;
       const who = by === "tp" ? "You" : collector(o.collectorId).short;
-      const after = n.trade.cards.find((c) => c.cardId === cardId);
+      const after = row;
       if (action === "accept") return `Market agreed on ${nm} at ${money(after.agreedMarket)}`;
       return `${who} proposed ${money(amount)} market value for ${nm}`;
     });
 
-  const percentAction = (oppId, cardId, by, action, percent) =>
-    patchCard(oppId, cardId, (c) => tcApplyPercent(c, by, action, percent, NOW), (n, o) => {
-      const nm = card(cardId).name;
+  const percentAction = (oppId, rowId, by, action, percent) =>
+    patchCard(oppId, rowId, (c) => tcApplyPercent(c, by, action, percent, NOW), (n, o) => {
+      const row = n.trade.cards.find((c) => c.id === rowId);
+      const nm = card(row.cardId).name;
       const who = by === "tp" ? "You" : collector(o.collectorId).short;
-      const after = n.trade.cards.find((c) => c.cardId === cardId);
+      const after = row;
       if (action === "accept") return `Trade % agreed on ${nm} at ${pct(after.agreedPercent)} — trade value ${money(creditFor(after))}`;
       return `${who} proposed a ${pct(percent)} trade rate on ${nm}`;
     });
 
-  const collectorWithdrawCard = (oppId, cardId) =>
-    patchCard(oppId, cardId, (c) => tcWithdraw(c, NOW),
-      (n, o) => `${collector(o.collectorId).short} withdrew ${card(cardId).name} from the trade — keeping the card at these economics`);
+  const collectorWithdrawCard = (oppId, rowId) =>
+    patchCard(oppId, rowId, (c) => tcWithdraw(c, NOW),
+      (n, o) => {
+        const row = n.trade.cards.find((c) => c.id === rowId);
+        return `${collector(o.collectorId).short} withdrew ${card(row.cardId).name} from the trade — keeping the card at these economics`;
+      });
 
   /* --- DEAL --- */
 
@@ -4254,9 +4268,14 @@ function MarketDecision({ tc, by, theirHeading, myHeading, party, defaultAmount,
   /* A starting point, never a submission: the field is filled but nothing is written
      until the existing send action is pressed, and the value can be edited first. */
   const [amt, setAmt] = useState(() => (defaultAmount != null ? String(defaultAmount) : ""));
+  /* ONE PROJECTION, BOTH SEATS. This used to read the raw fields and decide for
+     itself whether anything was "on the table"; it now asks the same domain
+     question the Collector asks, so the two seats cannot disagree about the
+     standing proposal or whose move it is. */
+  const ns = SharedID.TRADE.negotiationState(tc, "market", by);
   const mine = by === "tp" ? tc.tpMarket : tc.collectorMarket;
-  const theirs = by === "tp" ? tc.collectorMarket : tc.tpMarket;
-  const opening = theirs == null;                     // nothing on the table yet
+  const theirs = ns.state === "theirs" ? ns.standing : null;
+  const opening = ns.state !== "theirs";              // nothing of theirs to answer
 
   return (
     <div className="pn row">
@@ -4291,9 +4310,10 @@ function MarketDecision({ tc, by, theirHeading, myHeading, party, defaultAmount,
 
 /* Not this side's turn: the standing proposal and who owes the next move. */
 function MarketWaiting({ tc, by, who, party }) {
-  const mine = by === "tp" ? tc.tpMarket : tc.collectorMarket;
-  const theirs = by === "tp" ? tc.collectorMarket : tc.tpMarket;
-  if (mine == null) return null;
+  /* Waiting is a state the domain reports, not one this component infers. */
+  const ns = SharedID.TRADE.negotiationState(tc, "market", by);
+  const mine = ns.standing;
+  if (ns.state !== "waiting") return null;
   return (
     <div className="pn row wait">
       <div className="pn-side">
@@ -4614,8 +4634,8 @@ function TradeRow({ ctx, opp, tc }) {
           {st.owner === "tp" ? (
             <MarketDecision tc={tc} by="tp" party={col}
               theirHeading="Their market value" myHeading="Your market value"
-              onAccept={() => marketAction(opp.id, tc.cardId, "tp", "accept")}
-              onPropose={(a) => marketAction(opp.id, tc.cardId, "tp", "propose", a)} />
+              onAccept={() => marketAction(opp.id, tc.id, "tp", "accept")}
+              onPropose={(a) => marketAction(opp.id, tc.id, "tp", "propose", a)} />
           ) : (<>
             <MarketWaiting tc={tc} by="tp" who={col.short} party={col} />
             <SimBlock who={col.short}>
@@ -4626,8 +4646,8 @@ function TradeRow({ ctx, opp, tc }) {
                    convenience. It reaches the TP only once they press send. */
                 defaultAmount={binderRef ? binderRef.market : null}
                 theirHeading="Your market value" myHeading={col.short + "'s market value"}
-                onAccept={() => marketAction(opp.id, tc.cardId, "collector", "accept")}
-                onPropose={(a) => marketAction(opp.id, tc.cardId, "collector",
+                onAccept={() => marketAction(opp.id, tc.id, "collector", "accept")}
+                onPropose={(a) => marketAction(opp.id, tc.id, "collector",
                   tc.collectorMarket == null ? "propose" : "counter", a)} />
             </SimBlock>
           </>)}
@@ -4641,18 +4661,18 @@ function TradeRow({ ctx, opp, tc }) {
         <tr className="vt-act"><td colSpan={5}>
           {st.owner === "tp" ? (
             <TradeDecision tc={tc} by="tp" party={col} defaultPct={defaultPct}
-              onAccept={() => percentAction(opp.id, tc.cardId, "tp", "accept")}
-              onPropose={(frac) => percentAction(opp.id, tc.cardId, "tp", "propose", frac)} />
+              onAccept={() => percentAction(opp.id, tc.id, "tp", "accept")}
+              onPropose={(frac) => percentAction(opp.id, tc.id, "tp", "propose", frac)} />
           ) : (<>
             <TradeWaiting tc={tc} by="tp" who={col.short} party={col} />
             <SimBlock who={col.short}>
               {/* Same negotiation from the collector's seat. Proposals and counters are
                   one domain operation, so both send "propose". */}
               <TradeDecision tc={tc} by="collector"
-                onAccept={() => percentAction(opp.id, tc.cardId, "collector", "accept")}
-                onPropose={(frac) => percentAction(opp.id, tc.cardId, "collector", "propose", frac)} />
+                onAccept={() => percentAction(opp.id, tc.id, "collector", "accept")}
+                onPropose={(frac) => percentAction(opp.id, tc.id, "collector", "propose", frac)} />
               <div className="vt-actions" style={{ marginTop: 9 }}>
-                <button className="btn sm dgr" onClick={() => collectorWithdrawCard(opp.id, tc.cardId)}>
+                <button className="btn sm dgr" onClick={() => collectorWithdrawCard(opp.id, tc.id)}>
                   Withdraw — keep the card
                 </button>
               </div>
@@ -4766,15 +4786,15 @@ function ProposedCardReview({ ctx, opp, tc }) {
         <div className="st-decide">
           <div className="st-ask">Would you accept this card into the trade?</div>
           <div className="vt-actions">
-            <button className="btn pri sm" onClick={() => tpReviewInclusion(opp.id, tc.cardId, "accept")}>Accept into trade</button>
-            <button className="btn sm dgr" onClick={() => tpReviewInclusion(opp.id, tc.cardId, "reject")}>Reject</button>
+            <button className="btn pri sm" onClick={() => tpReviewInclusion(opp.id, tc.id, "accept")}>Accept into trade</button>
+            <button className="btn sm dgr" onClick={() => tpReviewInclusion(opp.id, tc.id, "reject")}>Reject</button>
           </div>
         </div>
       ) : (
         <SimBlock who={col.short}>
           <div className="vt-actions">
             <span style={{ fontSize: 11.5 }}>Draft — not yet sent for your review.</span>
-            <button className="btn sm dgr" onClick={() => tradeRemoveCard(opp.id, tc.cardId)}>Remove from package</button>
+            <button className="btn sm dgr" onClick={() => tradeRemoveCard(opp.id, tc.id)}>Remove from package</button>
           </div>
         </SimBlock>
       )}
