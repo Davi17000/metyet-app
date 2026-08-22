@@ -214,7 +214,8 @@ describe("C. One grammar, two units", () => {
     /* CONTRACT CHANGE: the percentage phase now offers BOTH units, because a
        trade % and the dollars it represents are one proposal written two ways.
        The percentage field is still marked %, and a dollar field joins it. */
-    const marks = cls(vc, "vp-unit-m").map(txt);
+    /* CONTRACT CHANGE: the shared TradeFields editor supplies both units. */
+    const marks = cls(vc, "pn-u").map(txt);
     assert(marks.includes("%"), "the percentage field is marked %: " + marks.join(","));
     assert(marks.includes("$"), "and its linked dollar field is marked $");
   });

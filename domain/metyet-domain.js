@@ -80,8 +80,13 @@ const tradeValueOf = (c) => (cardSettled(c) ? Math.round(c.agreedMarket * c.agre
    anything is agreed, and tradeValueOf deliberately refuses unsettled cards —
    so without it each screen re-derives the rounding rule and they drift. Same
    arithmetic, one definition. */
-const tradeValueAt = (market, percent) =>
-  (market == null || percent == null ? null : Math.round(market * percent));
+/* A trade value only exists against a real market figure. Guarding here rather
+   than at each call site is what keeps NaN out of every screen that converts. */
+const tradeValueAt = (market, percent) => {
+  const m = Number(market); const p = Number(percent);
+  if (!isFinite(m) || !isFinite(p) || m <= 0 || p < 0) return null;
+  return Math.round(m * p);
+};
 const totalTradeValue = (o) => acceptedTradeCards(o).reduce((a, c) => a + (tradeValueOf(c) || 0), 0);
 
 /* Positive = the collector pays the partner. Negative = the partner pays the

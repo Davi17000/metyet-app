@@ -10,7 +10,7 @@ import { collectorView } from "../domain/collector-view.js";
    (c12) is a collector in that network, not a fixture. */
 import { buildCanonicalSeed, demoDealFixture, Icon,
   CounterFields, validAmount, percentageOf,
-  ActualCardPhoto, FaceSwitch, emptyTradeCard } from "../src/MetYet.jsx";
+  ActualCardPhoto, FaceSwitch, emptyTradeCard, TradeFields } from "../src/MetYet.jsx";
 import CardIdentityPicker from "../shared/CardIdentityPicker.jsx";
 
 const SELF_COLLECTOR = "c12";
@@ -3610,7 +3610,6 @@ function ValueCard({ o, tcd, st }) {
     ? String(tcd.collectorMarket) : String((b && b.market) ?? ""));
   const [pc, setPc] = useState(tcd.collectorPercent != null
     ? String(Math.round(tcd.collectorPercent * 100)) : "");
-  const [pcMoney, setPcMoney] = useState("");
   const [confirmOut, setConfirmOut] = useState(false);
 
   const partner = st.partnerById(o.partnerId);
@@ -3626,15 +3625,8 @@ function ValueCard({ o, tcd, st }) {
   const mNS = D.TRADE.negotiationState(tcd, "market", "collector");
   const pNS = D.TRADE.negotiationState(tcd, "percent", "collector");
 
-  /* $ AND % ARE ONE PROPOSAL. A trade percentage and the dollars it represents
-     are the same economic statement written two ways, so both are editable and
-     each keeps the other in step through the canonical helpers. */
-  const pctToMoney = (v) => (tcd.agreedMarket == null || !(Number(v) > 0) ? ""
-    : String(D.tradeValueAt(tcd.agreedMarket, Number(v) / 100)));
-  const moneyToPct = (v) => (tcd.agreedMarket == null || !(Number(v) > 0) ? ""
-    : String(percentageOf(Number(v), tcd.agreedMarket)));
-  const setPctFrom = (v) => { setPc(v); setPcMoney(pctToMoney(v)); };
-  const setMoneyFrom = (v) => { setPcMoney(v); setPc(moneyToPct(v)); };
+  /* The percentage draft is the single local value; the shared TradeFields
+     editor derives the dollar view from it. */
 
   return (
     <div className={"card sec vcard" + (out ? " out" : "")}>
@@ -3703,30 +3695,15 @@ function ValueCard({ o, tcd, st }) {
             format={pct}
             partnerName={them}
             yourTurn={pNS.state === "theirs"}
-            draft={pc} setDraft={setPctFrom}
+            draft={pc} setDraft={setPc}
+            /* THE SHARED LINKED EDITOR. The Trusted Partner already had this,
+               and had it better — the percentage is the authority and the dollar
+               field is derived, so the two can never drift into a figure no
+               percentage expresses. Phase 1 built a second one here; this is the
+               consolidation, not a copy. */
             linked={(
-              <div className="vp-linked">
-                <label className="pn-f">
-                  <span className="pn-fl">Trade %</span>
-                  <span className="vp-unit suffix">
-                    <input className="inp" inputMode="decimal" value={pc}
-                      aria-label="Trade percentage"
-                      onChange={(e) => setPctFrom(e.target.value.replace(/[^\d.]/g, ""))} />
-                    <span className="vp-unit-m">%</span>
-                  </span>
-                </label>
-                <label className="pn-f">
-                  <span className="pn-fl">Trade value</span>
-                  <span className="vp-unit">
-                    <span className="vp-unit-m">$</span>
-                    <input className="inp" inputMode="decimal" value={pcMoney}
-                      aria-label="Trade value in dollars"
-                      onChange={(e) => setMoneyFrom(e.target.value.replace(/[^\d.]/g, ""))} />
-                  </span>
-                </label>
-              </div>
+              <TradeFields pcs={pc} setPcs={setPc} market={tcd.agreedMarket} />
             )}
-            inputLabel="Percentage of the market value toward this card"
             hint={Number(pc) > 0 && tcd.agreedMarket != null
               ? `${Math.round(Number(pc))}% of ${money(tcd.agreedMarket)} is ${money(D.tradeValueAt(tcd.agreedMarket, Number(pc) / 100))} toward the card.`
               : null}
