@@ -194,7 +194,7 @@ describe("B. The inert percentage send (Defect B)", () => {
       percentThread: [{ by: "tp", type: "propose", percent: 0.9, at: AT }] });
     assert(labels(vc).some((t) => /^Accept 90%$/.test(t)),
       "with the standing proposal named: " + labels(vc).join(" | "));
-    assert(cls(vc, "vp-linked")[0], "and a counter editor");
+    assert(cls(vc, "pn-in")[0], "and the shared counter editor");
   });
 
   test("the collector's counter is recorded once and hands the turn back", () => {
@@ -272,7 +272,7 @@ describe("D. Dollars and percentages are one proposal", () => {
   test("editing the percentage updates the dollars", () => {
     render({ ...MARKET_AGREED, tpPercent: 0.9,
       percentThread: [{ by: "tp", type: "propose", percent: 0.9, at: AT }] });
-    TR.act(() => { field("Trade percentage").props.onChange({ target: { value: "90" } }); });
+    TR.act(() => { field("Trade percentage of the agreed market value").props.onChange({ target: { value: "90" } }); });
     eq(field("Trade value in dollars").props.value, "1845",
       "90% of $2,050 is $1,845");
   });
@@ -281,25 +281,31 @@ describe("D. Dollars and percentages are one proposal", () => {
     render({ ...MARKET_AGREED, tpPercent: 0.9,
       percentThread: [{ by: "tp", type: "propose", percent: 0.9, at: AT }] });
     TR.act(() => { field("Trade value in dollars").props.onChange({ target: { value: "1845" } }); });
-    eq(field("Trade percentage").props.value, "90", "and back again");
+    eq(field("Trade percentage of the agreed market value").props.value, "90", "and back again");
   });
 
   test("both resolve through the canonical helpers", () => {
     eq(D.tradeValueAt(2050, 0.9), 1845, "percentage to dollars");
-    const src = code(COL).slice(code(COL).indexOf("const pctToMoney"),
-      code(COL).indexOf("const pctToMoney") + 600);
-    assert(/D\.tradeValueAt\(/.test(src), "the UI converts with the domain helper");
-    assert(/percentageOf\(/.test(src), "in both directions");
-    assert(!/\* 100|\/ 2050|Math\.round\(Number\(v\) \* /.test(src),
-      "and does no arithmetic of its own");
+    /* CONTRACT CHANGE: conversion moved into the shared TradeFields editor, so
+       it is asserted where it now lives — and neither persona restates it. */
+    const TPSRC = code(fs.readFileSync(path.join(ROOT, "src", "MetYet.jsx"), "utf8"));
+    const shared = TPSRC.slice(TPSRC.indexOf("function TradeFields("),
+      TPSRC.indexOf("function TradeFields(") + 1200);
+    assert(/SharedID\.tradeValueAt\(/.test(shared), "it converts with the domain helper");
+    assert(/percentageOf\(/.test(shared), "in both directions");
+    assert(!/Math\.round\(Number\(market\)/.test(shared), "and does no arithmetic of its own");
+    assert(/<TradeFields /.test(code(COL)), "and the Collector renders that shared editor");
   });
 
   test("both fields carry their unit", () => {
     const vc = render({ ...MARKET_AGREED, tpPercent: 0.9,
       percentThread: [{ by: "tp", type: "propose", percent: 0.9, at: AT }] });
-    const marks = cls(vc, "vp-unit-m").map(txt);
+    /* CONTRACT CHANGE: the Collector now renders the SHARED TradeFields editor
+       (the Trusted Partner's, which was the better implementation), so the unit
+       markers carry its class names. Both units are still shown. */
+    const marks = cls(vc, "pn-u").map(txt);
     assert(marks.includes("%") && marks.includes("$"), "both units shown: " + marks.join(","));
-    assert(field("Trade percentage"), "a labelled percentage field");
+    assert(field("Trade percentage of the agreed market value"), "a labelled percentage field");
     assert(field("Trade value in dollars"), "and a labelled dollar field");
   });
 

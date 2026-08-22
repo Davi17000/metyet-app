@@ -381,4 +381,71 @@ describe("G. Demo and lifecycle parity", () => {
   });
 });
 
+describe("H. One linked $ / % editor, both seats", () => {
+  const TPSRC = code(TP);
+  const shared = TPSRC.slice(TPSRC.indexOf("function TradeFields("),
+    TPSRC.indexOf("function TradeFields(") + 1400);
+
+  test("the editor is defined once and exported", () => {
+    eq((TPSRC.match(/function TradeFields\(/g) || []).length, 1, "one definition");
+    assert(/export \{[^}]*TradeFields[^}]*\}/.test(TPSRC), "exported for both seats");
+  });
+
+  test("both personas render that one component", () => {
+    assert(/<TradeFields /.test(TPSRC), "the Trusted Partner renders it");
+    assert(/<TradeFields /.test(code(COL)), "and so does the Collector");
+    assert(/TradeFields \} from "\.\.\/src\/MetYet\.jsx"|TradeFields \}/.test(code(COL)),
+      "imported, not copied");
+  });
+
+  test("the Collector's parallel editor is gone", () => {
+    /* Phase 1 built a second one here; consolidating meant deleting it, not
+       leaving two implementations that agree today and drift tomorrow. */
+    const col = code(COL);
+    assert(!/const pctToMoney/.test(col), "no local percentage-to-dollars helper");
+    assert(!/const moneyToPct/.test(col), "no local dollars-to-percentage helper");
+    assert(!/pcMoney/.test(col), "and no second local draft");
+  });
+
+  test("conversion lives in the shared editor, using domain helpers", () => {
+    assert(/SharedID\.tradeValueAt\(/.test(shared), "percentage to dollars");
+    assert(/percentageOf\(/.test(shared), "and back");
+    assert(!/Math\.round\(Number\(market\) \*/.test(shared), "no arithmetic of its own");
+  });
+
+  test("neither persona component restates the formula", () => {
+    [["Collector", code(COL)], ["Trusted Partner", TPSRC.replace(shared, "")]]
+      .forEach(([name, src]) => assert(!/Math\.round\(.*agreedMarket \* /.test(src),
+        name + " does no conversion arithmetic"));
+  });
+
+  test("the percentage is the authority, so no second value is stored", () => {
+    /* The dollar field is derived. Only a fraction is ever submitted. */
+    assert(/const shown = pcs === ""/.test(shared), "the dollar view is derived from the draft");
+    const tc = M.emptyTradeCard("ka", null, null, "b-0");
+    assert(!("tradeValue" in tc), "and nothing extra is stored on the row");
+  });
+
+  test("the conversions hold at both example markets", () => {
+    eq(D.tradeValueAt(2050, 0.9), 1845, "90% of $2,050");
+    eq(M.percentageOf(1845, 2050), 90, "and back");
+    eq(D.tradeValueAt(900, 0.75), 675, "75% of $900");
+    eq(M.percentageOf(675, 900), 75, "and back");
+  });
+
+  test("invalid input produces no value and no NaN", () => {
+    [null, 0, -1, "x"].forEach((m) =>
+      eq(D.tradeValueAt(m, 0.9), null, "no trade value against " + String(m)));
+    assert(!isNaN(D.tradeValueAt(0, 0.9)), "and never NaN");
+    eq(M.percentageOf(100, 0), null, "nor a percentage of nothing");
+  });
+
+  test("the TP percentage phase reads the shared projection", () => {
+    assert(/SharedID\.TRADE\.negotiationState\(tc, "percent", by\)/.test(TPSRC),
+      "whose move it is comes from the domain");
+    assert(!/const theirs = by === "tp" \? tc\.collectorPercent : tc\.tpPercent;/.test(TPSRC),
+      "not from reading raw fields");
+  });
+});
+
 require("./run.cjs").run();

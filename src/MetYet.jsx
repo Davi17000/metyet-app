@@ -4136,7 +4136,7 @@ const validAmount = (amt) => amt !== "" && isFinite(Number(amt)) && Number(amt) 
 
 /* Shared with the Collector so both seats negotiate price through one
    implementation: same conversion, same guards, same canonical dollar value. */
-export { emptyTradeCard,
+export { emptyTradeCard, TradeFields,
   CounterFields, validAmount, canCounter, percentageOf, amountFromPercentage,
   ActualCardPhoto, FaceSwitch };
 
@@ -4149,17 +4149,28 @@ export { emptyTradeCard,
    This is NOT the Market Value negotiation percentage. That one compares two market
    proposals and is never stored. This one becomes tc.agreedPercent and drives
    settlement through creditFor(). The labels are deliberately different. */
+/* LINKED $ / % INPUTS — the shared primitive, used by both seats.
+
+   A trade percentage and the dollars it represents are one economic proposal
+   written two ways, so both are editable and each keeps the other in step.
+   ONE of them is the authority: the percentage. The dollar field is derived
+   rather than separately stored, which is why typing a value quantises to the
+   nearest whole percent instead of drifting into a figure no percentage could
+   express — and why only one canonical value is ever submitted.
+
+   The conversions come from the domain, so this can never disagree with the
+   trade value the Deal stage totals. */
 function TradeFields({ pcs, setPcs, market }) {
   const p = Number(pcs);
   const usable = isFinite(Number(market)) && Number(market) > 0;
-  const valueOf = (whole) => Math.round(Number(market) * (Number(whole) / 100));
-  const shown = pcs === "" || !isFinite(p) ? "" : (usable ? String(valueOf(p)) : "");
+  const shown = pcs === "" || !isFinite(p) || !usable ? ""
+    : String(SharedID.tradeValueAt(Number(market), p / 100) ?? "");
 
   const onValue = (v) => {
     const next = cleanNum(v);
     if (next === "" || !usable) return setPcs(next === "" ? "" : pcs);
-    // quantise to the nearest whole percent: the percentage is the authority
-    const whole = Math.round((Number(next) / Number(market)) * 100);
+    /* Quantise to the nearest whole percent: the percentage is the authority. */
+    const whole = percentageOf(Number(next), Number(market));
     setPcs(whole > 0 ? String(Math.min(whole, 100)) : "");
   };
 
@@ -4192,8 +4203,10 @@ function TradeFields({ pcs, setPcs, market }) {
    then your own position in two synchronized readings. */
 function TradeDecision({ tc, by, party, defaultPct, onAccept, onPropose }) {
   const market = tc.agreedMarket;
+  /* Whose move it is comes from the domain, not from reading raw fields. */
+  const ns = SharedID.TRADE.negotiationState(tc, "percent", by);
   const mine = by === "tp" ? tc.tpPercent : tc.collectorPercent;
-  const theirs = by === "tp" ? tc.collectorPercent : tc.tpPercent;
+  const theirs = ns.state === "theirs" ? ns.standing : null;
   /* The TP's default is a starting position, not a proposal: it fills the field and
      waits for an explicit send. Nothing is written until the button is pressed. */
   const [pcs, setPcs] = useState(() => (
@@ -4201,7 +4214,7 @@ function TradeDecision({ tc, by, party, defaultPct, onAccept, onPropose }) {
 
   const p = Number(pcs);
   const valid = pcs !== "" && isFinite(p) && p > 0 && p <= 100;
-  const dollars = (frac) => (market > 0 ? money(Math.round(market * frac)) : "—");
+  const dollars = (frac) => (market > 0 ? money(SharedID.tradeValueAt(market, frac)) : "—");
 
   return (
     <div className="pn row">
