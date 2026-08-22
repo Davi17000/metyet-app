@@ -203,6 +203,56 @@ const FULFILLMENT = {
    ========================================================================== */
 const marketAgreed = (tc) => tc.agreedMarket != null;
 
+/* Who made the proposal currently on the table, or null if none is. The last
+   thread entry is the authority: it is the move nobody has answered yet. */
+const marketStanding = (tc) => {
+  if (marketAgreed(tc)) return null;
+  const last = (tc.valueThread || [])[tc.valueThread.length - 1];
+  return last && last.type === "propose" ? last.by : null;
+};
+const percentStanding = (tc) => {
+  if (tc.agreedPercent != null) return null;
+  const last = (tc.percentThread || [])[tc.percentThread.length - 1];
+  return last && last.type === "propose" ? last.by : null;
+};
+
+/* ONE NEGOTIATION STATE, READ THE SAME WAY BY BOTH SEATS.
+
+   Every numeric negotiation in MetYet is the same conversation: somebody puts a
+   number on the table, the other answers. Rather than each screen working out
+   whose move it is from raw fields — and drifting — both ask this.
+
+   `phase` is "market" or "percent"; `viewer` is the seat asking. The answer says
+   what state the negotiation is in, so the UI never has to invent one:
+
+     locked    this phase cannot open yet
+     settled   agreed; show it as context, not as a decision
+     waiting   the viewer has spoken and is being answered
+     theirs    a proposal is on the table for the viewer to accept or counter
+     open      nobody has proposed and it is the viewer's move
+     blocked   nobody has proposed and it is NOT the viewer's move
+*/
+const negotiationState = (tc, phase, viewer) => {
+  const other = viewer === "tp" ? "collector" : "tp";
+  if (phase === "percent") {
+    if (!marketAgreed(tc)) return { state: "locked", standing: null, by: null };
+    if (tc.agreedPercent != null) {
+      return { state: "settled", standing: tc.agreedPercent, by: null };
+    }
+    const who = percentStanding(tc);
+    if (who === viewer) return { state: "waiting", standing: viewer === "tp" ? tc.tpPercent : tc.collectorPercent, by: viewer };
+    if (who === other) return { state: "theirs", standing: other === "tp" ? tc.tpPercent : tc.collectorPercent, by: other };
+    /* Nobody has proposed. The partner opens this phase, so the collector waits
+       rather than being offered a control that would do nothing. */
+    return { state: viewer === "tp" ? "open" : "blocked", standing: null, by: null };
+  }
+  if (marketAgreed(tc)) return { state: "settled", standing: tc.agreedMarket, by: null };
+  const who = marketStanding(tc);
+  if (who === viewer) return { state: "waiting", standing: viewer === "tp" ? tc.tpMarket : tc.collectorMarket, by: viewer };
+  if (who === other) return { state: "theirs", standing: other === "tp" ? tc.tpMarket : tc.collectorMarket, by: other };
+  return { state: "open", standing: null, by: null };
+};
+
 function tcApplyMarket(tc, by, action, amount, at) {
   if (marketAgreed(tc)) return tc;                       // market is closed
   if (action === "accept") {
@@ -213,6 +263,13 @@ function tcApplyMarket(tc, by, action, amount, at) {
       valueThread: [...tc.valueThread, { by, type: "accept", amount: other, at }] };
   }
   if (!(amount > 0)) return tc;
+  /* ONE TURN AT A TIME. A proposal is a move in a conversation: once yours is
+     the standing one, the other person is holding it, and pressing Send again
+     cannot mean anything. Without this a collector could append the same
+     $2,050 to the history three times and appear to be negotiating with
+     themselves. Countering a proposal THEY made is still allowed — that is the
+     normal back-and-forth. */
+  if (marketStanding(tc) === by) return tc;
   return { ...tc,
     ...(by === "tp" ? { tpMarket: amount } : { collectorMarket: amount }),
     valueThread: [...tc.valueThread, { by, type: "propose", amount, at }] };
@@ -230,6 +287,7 @@ function tcApplyPercent(tc, by, action, percent, at) {
       percentThread: [...tc.percentThread, { by, type: "accept", percent: other, at }] };
   }
   if (!(percent > 0) || percent > 1) return tc;
+  if (percentStanding(tc) === by) return tc;             // same turn rule
   return { ...tc,
     ...(by === "tp" ? { tpPercent: percent } : { collectorPercent: percent }),
     percentThread: [...tc.percentThread, { by, type: "propose", percent, at }] };
@@ -328,7 +386,8 @@ const liveTradeRows = (o) => tradeRows(o).filter((c) =>
 const TRADE = { applyMarket: tcApplyMarket, decide: tcDecide, liveTradeRows,
   selectTradeSettled, selectionExhausted, closeSelection,
   valueTradeSettled, closeValuation, applyPercent: tcApplyPercent,
-  applyDealAdjustment: dealApplyAdj, withdraw: tcWithdraw, marketAgreed };
+  applyDealAdjustment: dealApplyAdj, withdraw: tcWithdraw, marketAgreed,
+  marketStanding, percentStanding, negotiationState };
 
 const INVARIANTS = {
   /* A collector may pursue one structured negotiation per goal at a time.

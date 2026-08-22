@@ -437,6 +437,11 @@ const CSS = `
 .vcard-top { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 16px; }
 .vcard-id { flex: 1; min-width: 0; }
 .vcard-n { font-size: 17px; font-weight: 700; line-height: 1.2; }
+.vp-wait { font-size: 13px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+.vp-linked { display: flex; gap: 10px; align-items: flex-end; }
+.vp-linked > label { flex: 1 1 0; min-width: 0; }
+.vp-linked-eq { font-size: 12.5px; color: var(--faint); margin-top: 7px; }
+
 .vcard-agreed { font-size: 13.5px; color: var(--text); margin-top: 7px; font-weight: 600; }
 .vp.settled { padding-top: 12px; }
 .vp-settled { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
@@ -3453,7 +3458,8 @@ function ValueTrade({ o, st, register }) {
    or remembered locally beyond the draft being typed. */
 function Phase({ label, standing, standingBy, agreed, format, partnerName,
   yourTurn, draft, setDraft, inputLabel, hint, onAccept, onPropose, sendLabel,
-  emptyLabel, unit, thread, locked, lockNote, collapsed, agreedLabel }) {
+  emptyLabel, unit, thread, locked, lockNote, collapsed, agreedLabel, ns,
+  linked }) {
   const [showHistory, setShowHistory] = useState(false);
 
   if (locked) {
@@ -3504,12 +3510,33 @@ function Phase({ label, standing, standingBy, agreed, format, partnerName,
     <div className="vp">
       <div className="vp-h">{label}</div>
 
+      {/* WAITING. The collector has spoken; the screen says who is holding it
+          rather than leaving a Send button that would do nothing. */}
+      {ns === "waiting" && (
+        <>
+          <div className="vp-standing">
+            <span className="vp-amt mono">{format(standing)}</span>
+            <span className="vp-by">You proposed this</span>
+          </div>
+          <div className="vp-wait">{partnerName} is reviewing it.</div>
+        </>
+      )}
+
+      {/* BLOCKED. Nobody has proposed and it is not this seat's move — the
+          partner opens the percentage phase, so an editor here would be a
+          control that silently does nothing. */}
+      {ns === "blocked" && (
+        <div className="vp-wait">
+          Waiting on {partnerName} to propose a {label.toLowerCase()}.
+        </div>
+      )}
+
       {agreed != null ? (
         <div className="vp-agreed">
           <span className="vp-amt mono">{format(agreed)}</span>
           <span className="vp-by">Agreed by you both</span>
         </div>
-      ) : standing != null ? (
+      ) : (ns === "theirs" && standing != null) ? (
         <>
           <div className="vp-standing">
             <span className="vp-amt mono">{format(standing)}</span>
@@ -3524,17 +3551,17 @@ function Phase({ label, standing, standingBy, agreed, format, partnerName,
             </button>
           )}
         </>
-      ) : (
-        <div className="vp-none">
-          No proposal yet{yourTurn ? " — put a number on the table." : "."}
-        </div>
-      )}
+      ) : ns === "open" ? (
+        <div className="vp-none">No proposal yet — put a number on the table.</div>
+      ) : null}
 
-      {agreed == null && (
+      {agreed == null && (ns === "theirs" || ns === "open") && (
         <div className="vp-counter">
           <label className="pn-f">
             <span className="pn-fl">{standing != null ? "Your counter" : "Your proposal"}</span>
-            <span className={"vp-unit" + (unit === "%" ? " suffix" : "")}>
+            {linked}
+            <span className={"vp-unit" + (unit === "%" ? " suffix" : "")}
+              style={linked ? { display: "none" } : undefined}>
               {unit !== "%" && <span className="vp-unit-m">{unit}</span>}
               <input className="inp" inputMode="decimal" value={draft} aria-label={inputLabel}
                 onChange={(e) => setDraft(e.target.value.replace(/[^\d.]/g, ""))} />
@@ -3583,6 +3610,7 @@ function ValueCard({ o, tcd, st }) {
     ? String(tcd.collectorMarket) : String((b && b.market) ?? ""));
   const [pc, setPc] = useState(tcd.collectorPercent != null
     ? String(Math.round(tcd.collectorPercent * 100)) : "");
+  const [pcMoney, setPcMoney] = useState("");
   const [confirmOut, setConfirmOut] = useState(false);
 
   const partner = st.partnerById(o.partnerId);
@@ -3593,16 +3621,20 @@ function ValueCard({ o, tcd, st }) {
 
   /* Whose move it is, per phase, derived from the card's own standing
      positions — never from a local flag. */
-  const marketStanding = tcd.tpMarket != null && tcd.agreedMarket == null
-    ? { amount: tcd.tpMarket, by: "tp" }
-    : tcd.collectorMarket != null && tcd.agreedMarket == null
-      ? { amount: tcd.collectorMarket, by: "collector" } : null;
-  const marketMine = !!marketStanding && marketStanding.by === "tp";
-  const pctStanding = tcd.tpPercent != null && tcd.agreedPercent == null
-    ? { amount: tcd.tpPercent, by: "tp" }
-    : tcd.collectorPercent != null && tcd.agreedPercent == null
-      ? { amount: tcd.collectorPercent, by: "collector" } : null;
-  const pctMine = !!pctStanding && pctStanding.by === "tp";
+  /* Both seats read the same projection, so neither can drift about whose move
+     it is or what is on the table. */
+  const mNS = D.TRADE.negotiationState(tcd, "market", "collector");
+  const pNS = D.TRADE.negotiationState(tcd, "percent", "collector");
+
+  /* $ AND % ARE ONE PROPOSAL. A trade percentage and the dollars it represents
+     are the same economic statement written two ways, so both are editable and
+     each keeps the other in step through the canonical helpers. */
+  const pctToMoney = (v) => (tcd.agreedMarket == null || !(Number(v) > 0) ? ""
+    : String(D.tradeValueAt(tcd.agreedMarket, Number(v) / 100)));
+  const moneyToPct = (v) => (tcd.agreedMarket == null || !(Number(v) > 0) ? ""
+    : String(percentageOf(Number(v), tcd.agreedMarket)));
+  const setPctFrom = (v) => { setPc(v); setPcMoney(pctToMoney(v)); };
+  const setMoneyFrom = (v) => { setPcMoney(v); setPc(moneyToPct(v)); };
 
   return (
     <div className={"card sec vcard" + (out ? " out" : "")}>
@@ -3640,12 +3672,13 @@ function ValueCard({ o, tcd, st }) {
         <>
           <Phase
             label="Market value"
-            standing={marketStanding ? marketStanding.amount : null}
-            standingBy={marketStanding ? marketStanding.by : null}
+            ns={mNS.state}
+            standing={mNS.standing}
+            standingBy={mNS.by}
             agreed={tcd.agreedMarket}
             format={money}
             partnerName={them}
-            yourTurn={marketMine}
+            yourTurn={mNS.state === "theirs"}
             draft={mkt} setDraft={setMkt}
             inputLabel="What you think it's worth, in dollars"
             hint="Starts from your own note. They only see what you send."
@@ -3663,13 +3696,36 @@ function ValueCard({ o, tcd, st }) {
             label="Trade %"
             locked={!mSettled}
             lockNote="Available once you've agreed what this card is worth."
-            standing={pctStanding ? pctStanding.amount : null}
-            standingBy={pctStanding ? pctStanding.by : null}
+            ns={pNS.state}
+            standing={pNS.standing}
+            standingBy={pNS.by}
             agreed={tcd.agreedPercent}
             format={pct}
             partnerName={them}
-            yourTurn={pctMine}
-            draft={pc} setDraft={setPc}
+            yourTurn={pNS.state === "theirs"}
+            draft={pc} setDraft={setPctFrom}
+            linked={(
+              <div className="vp-linked">
+                <label className="pn-f">
+                  <span className="pn-fl">Trade %</span>
+                  <span className="vp-unit suffix">
+                    <input className="inp" inputMode="decimal" value={pc}
+                      aria-label="Trade percentage"
+                      onChange={(e) => setPctFrom(e.target.value.replace(/[^\d.]/g, ""))} />
+                    <span className="vp-unit-m">%</span>
+                  </span>
+                </label>
+                <label className="pn-f">
+                  <span className="pn-fl">Trade value</span>
+                  <span className="vp-unit">
+                    <span className="vp-unit-m">$</span>
+                    <input className="inp" inputMode="decimal" value={pcMoney}
+                      aria-label="Trade value in dollars"
+                      onChange={(e) => setMoneyFrom(e.target.value.replace(/[^\d.]/g, ""))} />
+                  </span>
+                </label>
+              </div>
+            )}
             inputLabel="Percentage of the market value toward this card"
             hint={Number(pc) > 0 && tcd.agreedMarket != null
               ? `${Math.round(Number(pc))}% of ${money(tcd.agreedMarket)} is ${money(D.tradeValueAt(tcd.agreedMarket, Number(pc) / 100))} toward the card.`
