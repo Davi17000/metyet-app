@@ -249,7 +249,7 @@ describe("E. Nothing canonical moved", () => {
       eq(cls(card, "chat-embed").length, 1, "one conversation");
       /* Select Trade joined Agree on Price in having no details column — its
          counts duplicated the card list beside it. */
-      const wantsDetails = !["agree-price", "select-trade"].includes(stage);
+      const wantsDetails = !["agree-price", "select-trade", "value-trade"].includes(stage);
       eq(cls(card, "idf-det").length, wantsDetails ? 1 : 0,
         wantsDetails ? "the details column survives" : stage + " shows no details");
       if (wantsDetails) assert(cls(card, "idf-det-k").length > 0, "with canonical fields");

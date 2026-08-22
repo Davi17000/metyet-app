@@ -256,10 +256,14 @@ describe("C. A pricing stage shows only pricing", () => {
   });
 
   test("other stages keep their details column", () => {
-    __store.reset(buildCanonicalSeed({ review: true, demoStage: "value-trade" }));
+    /* CONTRACT CHANGE: Value Trade lost its details column too — its figures
+       are now stated on the cards being negotiated. Deal is the nearest stage
+       that still summarises terms not otherwise on screen, so the guarantee
+       (a stage with its own terms keeps its column) is checked there. */
+    __store.reset(buildCanonicalSeed({ review: true, demoStage: "deal" }));
     let r; TR.act(() => { r = TR.create(React.createElement(App)); });
     const card = open(r);
-    eq(cls(card, "idf-mid").length, 1, "Value Trade still has its details");
+    eq(cls(card, "idf-mid").length, 1, "Deal still has its details");
     assert(cls(card, "idf-det-k").length > 0, "with canonical fields");
   });
 
