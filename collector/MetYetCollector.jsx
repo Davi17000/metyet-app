@@ -812,6 +812,7 @@ const CSS = `
   width: 100%; gap: 12px; padding: 9px 0; background: none; border: 0;
   border-bottom: 1px solid var(--line-soft); text-align: left; font-size: 14px; }
 .rel-row.static { cursor: default; }
+.rel-row-b { display: flex; flex-direction: column; gap: 3px; }
 .rel-row-n { font-weight: 600; }
 
 .bnd-av { font-size: 11.5px; font-weight: 700; letter-spacing: .05em;
@@ -2710,6 +2711,8 @@ function PartnerDetail({ partnerId, st, go }) {
     { id: "secondary", label: "Secondary Goals", list: byTier("secondary") },
     { id: "foryou", label: "For You", list: forYou },
     { id: "all", label: "All Inventory", list: stock },
+    /* Last, and not the default: the inventory is why most visits happen. */
+    { id: "relationship", label: "Relationship", list: rel.history },
   ];
   const active = tabs.find((t) => t.id === tab) || tabs[0];
 
@@ -2721,83 +2724,26 @@ function PartnerDetail({ partnerId, st, go }) {
         <div>
           <div className="pt-n disp">{p.name}</div>
           <div className="pt-c">{p.city}</div>
+          {/* HOW MUCH THEY HAVE, AND WHAT WE HAVE DONE. Both derived: the count
+              from the inventory records themselves, the history from the same
+              opportunities Goals owns. Nothing about what we are negotiating
+              NOW — that belongs in Goals, and repeating it here was the
+              dashboard this page is meant not to be. */}
           <div className="faint" style={{ fontSize: 13, marginTop: 4 }}>
-            {x.deals} deal{x.deals === 1 ? "" : "s"} together ·{" "}
-            {/* Interest is willingness to consider, never demand. */}
-            open to {x.interested} of your binder card{x.interested === 1 ? "" : "s"}
+            {stock.length === 0 ? "No inventory yet"
+              : `${stock.length} card${stock.length === 1 ? "" : "s"}`}
+            {rel.history.length > 0 && (
+              <> · {rel.history.filter(D.isCompleted).length} completed deal
+                {rel.history.filter(D.isCompleted).length === 1 ? "" : "s"} together</>
+            )}
           </div>
         </div>
       </div>
 
-      {/* THE RELATIONSHIP, BEFORE THE INVENTORY. The tabs below answer "what do
-          they have?" — useful, but not why this partner matters. These three
-          rows answer that: what they are already helping with, what of mine
-          they want, and what we have done before. Every one is a projection of
-          the same canonical records; nothing here holds stage, trade, cash or
-          fulfillment state, and each routes into Goals rather than reproducing
-          it. */}
-      {(rel.active.length > 0 || rel.interests.length > 0 || rel.history.length > 0) && (
-        <div className="card sec rel">
-          <div className="rel-sum">
-            <span><b>{rel.active.length}</b> active {rel.active.length === 1 ? "Goal" : "Goals"}</span>
-            <span><b>{rel.interests.length}</b> of your cards they want</span>
-            <span><b>{rel.history.length}</b> completed</span>
-          </div>
-
-          {rel.active.length > 0 && (
-            <>
-              <div className="rel-h">What they're helping with</div>
-              {rel.active.map((o) => {
-                const c = st.cardById(o.cardId);
-                const step = D.PURSUIT_STEPS.find((x2) => x2.id === o.stage);
-                return (
-                  <button key={o.id} className="rel-row" onClick={() => go({ v: "deal", oppId: o.id })}>
-                    <span className="rel-row-n">{c ? c.name : o.cardId}</span>
-                    <span className="faint">{step ? step.label : o.stage}</span>
-                  </button>
-                );
-              })}
-            </>
-          )}
-
-          {rel.interests.length > 0 && (
-            <>
-              <div className="rel-h">What you could help them with</div>
-              {rel.interests.map((b) => {
-                const c = st.cardById(b.cardId);
-                /* Interest is interest. It never implies a deal exists. */
-                const cs = st.binderCopyState(b.id);
-                return (
-                  <button key={b.id} className="rel-row" onClick={() => go({ v: "binder" })}>
-                    <span className="rel-row-n">{c ? c.name : b.cardId}</span>
-                    <span className="faint">
-                      {cs.state === "available" ? "Available"
-                        : cs.state === "in-deal" ? "In a deal" : "Traded"}
-                    </span>
-                  </button>
-                );
-              })}
-            </>
-          )}
-
-          {rel.history.length > 0 && (
-            <>
-              <div className="rel-h">Our history</div>
-              {rel.history.map((o) => {
-                const c = st.cardById(o.cardId);
-                return (
-                  <div key={o.id} className="rel-row static">
-                    <span className="rel-row-n">{c ? c.name : o.cardId}</span>
-                    <span className="faint">
-                      {D.isCompleted(o) ? "Completed" : "Ended"}
-                    </span>
-                  </div>
-                );
-              })}
-            </>
-          )}
-        </div>
-      )}
+      {/* The relationship lives in its own tab now, not in a panel above the
+          inventory. A collector usually opens a partner to browse what they
+          have; a dashboard between the header and the shelf pushed that down
+          for information most visits did not need. */}
 
       <div className="tabs">
         {tabs.map((t) => (
@@ -2815,7 +2761,37 @@ function PartnerDetail({ partnerId, st, go }) {
         </div>
       )}
 
-      {active.list.length === 0 ? (
+      {/* RELATIONSHIP: what we have actually done together. Transactions as
+          evidence of a relationship, not a transaction log — which is why
+          active deals are deliberately absent. Those are being negotiated, and
+          Goals is where negotiation lives; showing them here would be a second
+          place to watch the same thing. Every row is the canonical opportunity
+          itself, routed back into Goals. */}
+      {active.id === "relationship" ? (
+        rel.history.length === 0 ? (
+          <div className="card empty">No completed deals together yet.</div>
+        ) : (
+          <div className="card sec">
+            {rel.history.map((o) => {
+              const c = st.cardById(o.cardId);
+              const done = D.isCompleted(o);
+              const when = o.completedAt || o.endedAt || o.updated;
+              return (
+                <button key={o.id} className="rel-row"
+                  onClick={() => go({ v: "deal", oppId: o.id })}>
+                  <span className="rel-row-b">
+                    <span className="rel-row-n">{c ? c.name : o.cardId}</span>
+                    <span className="faint" style={{ fontSize: 12.5 }}>
+                      {done ? "Completed" : "Ended"}{when ? ` · ${fmtDate(when)}` : ""}
+                    </span>
+                  </span>
+                  <span className="faint">View deal</span>
+                </button>
+              );
+            })}
+          </div>
+        )
+      ) : active.list.length === 0 ? (
         <div className="card empty">
           {active.id === "foryou"
             ? "Nothing here matches what you collect right now."

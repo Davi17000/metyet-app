@@ -377,12 +377,18 @@ describe("Select Trade", () => {
 
 /* ---------- 6. Partner browsing ---------- */
 describe("Trusted Partner browsing", () => {
-  test("the four tabs are present and scoped to that partner", () => {
+  test("the inventory tabs are present, with Relationship after them", () => {
     const r = mk();
     nav(r, "Trusted Partners"); openPartner(r, 0);
     const labels = cls(r, "tabb").map((b) => txt(b).replace(/\d+$/, "").trim());
-    eq(labels.join(" | "), "Primary Goals | Secondary Goals | For You | All Inventory",
-      "the requested four");
+    /* CONTRACT CHANGE: a Relationship tab was added, holding the history that
+       previously sat in a summary panel above the inventory. The four
+       inventory tabs are unchanged and still lead, because browsing what a
+       partner has is why most visits happen. */
+    eq(labels.join(" | "),
+      "Primary Goals | Secondary Goals | For You | All Inventory | Relationship",
+      "the four inventory tabs, then the relationship");
+    eq(labels[0], "Primary Goals", "and the inventory still comes first");
   });
 
   test("All Inventory holds everything the partner has", () => {

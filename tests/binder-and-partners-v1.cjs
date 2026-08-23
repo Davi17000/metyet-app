@@ -210,11 +210,17 @@ describe("B. Trusted Partners is a relationship, not a CRM", () => {
       assert(!new RegExp(w2, "i").test(rel), "no " + w2));
   });
 
-  test("each row routes into Goals rather than reproducing it", () => {
+  test("history routes into Goals rather than reproducing it", () => {
+    /* CONTRACT CHANGE: the summary panel above the inventory was removed and
+       its history moved into a Relationship tab. Active goals and binder
+       interests are no longer surfaced here at all — active work belongs in
+       Goals, and the partner's interest in a card is shown on the card. What
+       remains is history, and it still routes rather than reproducing. */
     const rel = code(COL).slice(code(COL).indexOf("function PartnerDetail("),
-      code(COL).indexOf("function PartnerDetail(") + 5000);
-    assert(/go\(\{ v: "deal", oppId: o\.id \}\)/.test(rel), "active goals route to the deal");
-    assert(/go\(\{ v: "binder" \}\)/.test(rel), "interested cards route to the binder");
+      code(COL).indexOf("function PartnerDetail(") + 6000);
+    assert(/go\(\{ v: "deal", oppId: o\.id \}\)/.test(rel), "history routes to the deal");
+    assert(!/What they're helping with/.test(rel), "no active-goal summary remains");
+    assert(!/What you could help them with/.test(rel), "nor a binder-interest summary");
   });
 });
 
