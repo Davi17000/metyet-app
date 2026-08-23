@@ -469,6 +469,7 @@ const CSS = `
 .vp-none { font-size: 13px; color: var(--faint); margin-top: 9px; }
 .vp-accept { margin-top: 12px; }
 .vp-counter { margin-top: 14px; }
+.vp-counter-h { font-size: 12.5px; color: var(--muted); margin-bottom: 8px; }
 .vp-hint { font-size: 12.5px; color: var(--faint); margin-top: 7px; line-height: 1.45; }
 .vp-hist { margin-top: 12px; }
 .vp-hist-b { background: none; border: 0; padding: 0; font-size: 12.5px;
@@ -562,17 +563,28 @@ const CSS = `
 .ap-send { margin-top: 12px; }
 .ap-wait { font-size: 13.5px; color: var(--muted); margin-top: 16px; }
 
-/* Two ways of typing one number, side by side while there is room. */
-.ap .pn-in { display: flex; gap: 12px; margin-bottom: 4px; }
-.ap .pn-f { flex: 1 1 0; min-width: 0; display: block; }
-.ap .pn-fl { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 5px; }
-.ap .pn-w { position: relative; display: block; }
-.ap .pn-u { position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+/* Two ways of typing one number, side by side while there is room.
+
+   NOT SCOPED TO A PANEL. These style the shared TradeFields editor, which is now
+   used in Value Trade as well as Agree on Price. While they were written as
+   an .ap-scoped selector, the unit markers had no positioning outside Agree on
+   Price, so they fell back to inline text and collided with their own labels —
+   which is exactly how a label and its unit came to read as one run-on string. */
+.pn-in { display: flex; gap: 12px; margin-bottom: 4px; }
+.pn-f { flex: 1 1 0; min-width: 0; display: block; }
+.pn-fl { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 5px; }
+.pn-w { position: relative; display: block; }
+.pn-u { position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
   font-size: 13.5px; color: var(--muted); pointer-events: none; }
-.ap .pn-u.r { left: auto; right: 11px; }
-.ap .pn-w .inp { padding-left: 24px; }
-.ap .pn-w .inp.r { padding-left: 14px; padding-right: 26px; }
-@media (max-width: 420px) { .ap .pn-in { flex-direction: column; gap: 10px; } }
+.pn-u.r { left: auto; right: 11px; }
+.pn-w .inp { padding-left: 24px; }
+.pn-w .inp.r { padding-left: 14px; padding-right: 26px; }
+@media (max-width: 420px) { .pn-in { flex-direction: column; gap: 10px; } }
+
+/* In Value Trade the two fields stack, so the second needs the same breathing
+   room above it that the Send button below has. */
+.vp .pn-in { flex-direction: column; gap: 0; }
+.vp .pn-in > .pn-f + .pn-f { margin-top: 12px; }
 
 /* Offer history — the record, kept quiet. */
 .oh { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--line-soft); }
@@ -3459,7 +3471,7 @@ function ValueTrade({ o, st, register }) {
 function Phase({ label, standing, standingBy, agreed, format, partnerName,
   yourTurn, draft, setDraft, inputLabel, hint, onAccept, onPropose, sendLabel,
   emptyLabel, unit, thread, locked, lockNote, collapsed, agreedLabel, ns,
-  linked }) {
+  linked, quote }) {
   const [showHistory, setShowHistory] = useState(false);
 
   if (locked) {
@@ -3480,7 +3492,7 @@ function Phase({ label, standing, standingBy, agreed, format, partnerName,
       <div className="vp settled">
         <div className="vp-settled">
           <span className="vp-h">{label}</span>
-          <span className="vp-set-amt mono">{format(agreed)}</span>
+          <span className="vp-set-amt mono">{format(agreed)}{quote ? ` (${quote(agreed)})` : ""}</span>
           <span className="vp-set-by">{agreedLabel || "Agreed by you both"}</span>
         </div>
         {thread.length > 0 && (
@@ -3515,7 +3527,7 @@ function Phase({ label, standing, standingBy, agreed, format, partnerName,
       {ns === "waiting" && (
         <>
           <div className="vp-standing">
-            <span className="vp-amt mono">{format(standing)}</span>
+            <span className="vp-amt mono">{format(standing)}{quote ? ` (${quote(standing)})` : ""}</span>
             <span className="vp-by">You proposed this</span>
           </div>
           <div className="vp-wait">{partnerName} is reviewing it.</div>
@@ -3533,13 +3545,16 @@ function Phase({ label, standing, standingBy, agreed, format, partnerName,
 
       {agreed != null ? (
         <div className="vp-agreed">
-          <span className="vp-amt mono">{format(agreed)}</span>
+          <span className="vp-amt mono">{format(agreed)}{quote ? ` (${quote(agreed)})` : ""}</span>
           <span className="vp-by">Agreed by you both</span>
         </div>
       ) : (ns === "theirs" && standing != null) ? (
         <>
           <div className="vp-standing">
-            <span className="vp-amt mono">{format(standing)}</span>
+            {/* A percentage on its own is hard to weigh; the dollars it comes to
+                say what is actually being proposed. Same line, because it is one
+                figure read two ways rather than two facts. */}
+            <span className="vp-amt mono">{format(standing)}{quote ? ` (${quote(standing)})` : ""}</span>
             <span className="vp-by">
               Proposed by {standingBy === "tp" ? partnerName : "you"}
               {yourTurn ? " — your move" : ` — waiting on ${partnerName}`}
@@ -3557,9 +3572,14 @@ function Phase({ label, standing, standingBy, agreed, format, partnerName,
 
       {agreed == null && (ns === "theirs" || ns === "open") && (
         <div className="vp-counter">
+          {/* The shared editor labels its own fields, so this heading names the
+              move rather than repeating them — otherwise "Your counter" and
+              "Trade %" ran together as one string. */}
+          <div className="vp-counter-h">{standing != null ? "Your counter" : "Your proposal"}</div>
+          {linked}
+          {!linked && (
           <label className="pn-f">
             <span className="pn-fl">{standing != null ? "Your counter" : "Your proposal"}</span>
-            {linked}
             <span className={"vp-unit" + (unit === "%" ? " suffix" : "")}
               style={linked ? { display: "none" } : undefined}>
               {unit !== "%" && <span className="vp-unit-m">{unit}</span>}
@@ -3568,6 +3588,7 @@ function Phase({ label, standing, standingBy, agreed, format, partnerName,
               {unit === "%" && <span className="vp-unit-m">%</span>}
             </span>
           </label>
+          )}
           {hint && <div className="vp-hint">{hint}</div>}
           <button className="btn pri wide" style={{ marginTop: 10 }}
             disabled={!sendLabel} onClick={onPropose}>
@@ -3713,6 +3734,8 @@ function ValueCard({ o, tcd, st }) {
               ? `Send ${Math.round(Number(pc))}%` : null}
             emptyLabel="Enter a percentage"
             unit="%"
+            /* Whole dollars, no decimals — the canonical helper rounds. */
+            quote={(frac) => money(D.tradeValueAt(tcd.agreedMarket, frac))}
             thread={tcd.percentThread || []}
             collapsed={tcd.agreedPercent != null}
           />
