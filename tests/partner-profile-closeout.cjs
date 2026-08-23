@@ -149,7 +149,12 @@ describe("B. The header is compact and derived", () => {
   test("the inventory total is counted from the records", () => {
     const w = world({ stock: 3 });
     eq(w.view().partnerProfile("nl").stock.length, 3, "three on the shelf");
-    assert(/\$\{stock\.length\} card/.test(detail()), "the header counts them");
+    /* CONTRACT CHANGE: the count moved into the shared inventoryLine helper so
+       the landing card and this header render one sentence from one
+       projection. Still derived, still nothing stored. */
+    assert(/inventoryLine\(st\.partnerInventorySummary\(partnerId\)\)/.test(detail()),
+      "the header renders the shared summary");
+    assert(/\$\{sum\.totalInventory\} card/.test(code(COL)), "which counts the records");
     assert(!/inventoryCount/.test(code(COL)) && !/inventoryCount/.test(code(VIEW)),
       "and nothing stores a total");
   });
@@ -164,12 +169,12 @@ describe("B. The header is compact and derived", () => {
   test("an empty shelf says so", () => {
     const w = world({ stock: 0 });
     eq(w.view().partnerProfile("nl").stock.length, 0, "nothing listed");
-    assert(/"No inventory yet"/.test(detail()), "and the header says it plainly");
+    assert(/"No inventory yet"/.test(code(COL)), "and the line says it plainly");
   });
 
   test("singular and plural are both handled", () => {
     const d = detail();
-    assert(/card\$\{stock\.length === 1 \? "" : "s"\}/.test(d), "cards");
+    assert(/card\$\{sum\.totalInventory === 1 \? "" : "s"\}/.test(code(COL)), "cards");
     assert(/completed deal\s*\n?\s*\{rel\.history\.filter\(D\.isCompleted\)\.length === 1 \? "" : "s"\}/
       .test(d) || /=== 1 \? "" : "s"\} together/.test(d), "and deals");
   });

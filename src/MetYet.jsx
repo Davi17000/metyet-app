@@ -2185,6 +2185,12 @@ export function buildCanonicalSeed(opts) {
       return {
         invId, partnerId: SELF_PARTNER, cardId: c.id, ask: c.value,
         cost: Math.round(c.value * 0.78), acquired: "2026-0" + ((k % 6) + 1) + "-1" + ((k % 9) + 1), archived: false,
+        /* Deterministic listing dates, deliberately unlike `acquired`: a recent
+           batch of eight so freshness is demonstrable, an older addition to
+           prove it is not simply "everything", and the rest left undated so the
+           legacy path stays covered by the demo world itself. */
+        ...(k < 8 ? { addedAt: "2026-08-08" }
+          : k < 11 ? { addedAt: "2026-07-30" } : {}),
         cert: "PSA " + (70000000 + k * 13457),
         photos: stockOnly ? { front: null, back: null }
           : { front: "copy:" + invId + ":front", back: "copy:" + invId + ":back" },
@@ -3259,7 +3265,11 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
       cardId,
       ask,
       cost,
+      /* Provenance: when the PARTNER got it. Blank means they did not say. */
       acquired: draft.acquired || NOW,
+      /* Freshness: when it entered MetYet. Always now, never the draft — this
+         is a fact about the listing, not something a partner types. */
+      addedAt: NOW,
       cert: draft.cert ? draft.cert.trim() : null,
       archived: false,
       photos: { front: null, back: null },
