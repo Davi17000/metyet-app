@@ -803,6 +803,22 @@ const CSS = `
   box-shadow: 0 6px 14px rgba(0,0,0,.36), 0 18px 40px rgba(0,0,0,.32); }
 .bnd-n { font-size: 14px; font-weight: 600; margin-top: 11px; line-height: 1.25; overflow-wrap: anywhere; }
 .bnd-i { font-size: 12px; color: var(--faint); margin-top: 3px; }
+.rel { margin-bottom: 16px; }
+.rel-sum { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px;
+  color: var(--muted); padding-bottom: 12px; border-bottom: 1px solid var(--line-soft); }
+.rel-h { font-family: 'Archivo'; font-size: 11px; letter-spacing: .11em;
+  text-transform: uppercase; font-weight: 700; color: var(--muted); margin: 14px 0 6px; }
+.rel-row { display: flex; justify-content: space-between; align-items: center;
+  width: 100%; gap: 12px; padding: 9px 0; background: none; border: 0;
+  border-bottom: 1px solid var(--line-soft); text-align: left; font-size: 14px; }
+.rel-row.static { cursor: default; }
+.rel-row-n { font-weight: 600; }
+
+.bnd-av { font-size: 11.5px; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; margin-top: 7px; }
+.bnd-av.in-deal { color: var(--t1); }
+.bnd-av.traded { color: var(--faint); }
+
 .bnd-int { margin-top: 10px; font-size: 12.5px; color: var(--t1); font-weight: 600; }
 .bnd-int.none { color: var(--faint); font-weight: 400; }
 
@@ -2511,6 +2527,19 @@ function Binder({ st, go }) {
                 <div className="bnd-n">{c.name}</div>
                 <div className="bnd-i">{cardLine(c)}</div>
                 <div className="bnd-i">{gradeLine(c)}</div>
+                {/* WHAT THIS COPY IS DOING, derived from the deals themselves.
+                    A card already committed to a trade is not supply the
+                    collector can offer again, and saying so here saves them
+                    discovering it at Select Trade. */}
+                {(() => {
+                  const cs = st.binderCopyState(b.id);
+                  if (cs.state === "available") return null;
+                  return (
+                    <div className={"bnd-av " + cs.state}>
+                      {cs.state === "in-deal" ? "In a deal" : "Traded"}
+                    </div>
+                  );
+                })()}
                 <div className={"bnd-int" + (who.length ? "" : " none")}>
                   {who.length === 0 ? "No partner has flagged this"
                     : `${who.length} partner${who.length === 1 ? "" : "s"} would consider it`}
@@ -2664,6 +2693,7 @@ function Partners({ st, go }) {
 function PartnerDetail({ partnerId, st, go }) {
   const p = st.partnerById(partnerId);
   const x = st.partnerProfile(partnerId);
+  const rel = st.partnerRelationship(partnerId);
   const [tab, setTab] = useState("primary");
   const [adding, setAdding] = useState(null);
 
@@ -2698,6 +2728,76 @@ function PartnerDetail({ partnerId, st, go }) {
           </div>
         </div>
       </div>
+
+      {/* THE RELATIONSHIP, BEFORE THE INVENTORY. The tabs below answer "what do
+          they have?" — useful, but not why this partner matters. These three
+          rows answer that: what they are already helping with, what of mine
+          they want, and what we have done before. Every one is a projection of
+          the same canonical records; nothing here holds stage, trade, cash or
+          fulfillment state, and each routes into Goals rather than reproducing
+          it. */}
+      {(rel.active.length > 0 || rel.interests.length > 0 || rel.history.length > 0) && (
+        <div className="card sec rel">
+          <div className="rel-sum">
+            <span><b>{rel.active.length}</b> active {rel.active.length === 1 ? "Goal" : "Goals"}</span>
+            <span><b>{rel.interests.length}</b> of your cards they want</span>
+            <span><b>{rel.history.length}</b> completed</span>
+          </div>
+
+          {rel.active.length > 0 && (
+            <>
+              <div className="rel-h">What they're helping with</div>
+              {rel.active.map((o) => {
+                const c = st.cardById(o.cardId);
+                const step = D.PURSUIT_STEPS.find((x2) => x2.id === o.stage);
+                return (
+                  <button key={o.id} className="rel-row" onClick={() => go({ v: "deal", oppId: o.id })}>
+                    <span className="rel-row-n">{c ? c.name : o.cardId}</span>
+                    <span className="faint">{step ? step.label : o.stage}</span>
+                  </button>
+                );
+              })}
+            </>
+          )}
+
+          {rel.interests.length > 0 && (
+            <>
+              <div className="rel-h">What you could help them with</div>
+              {rel.interests.map((b) => {
+                const c = st.cardById(b.cardId);
+                /* Interest is interest. It never implies a deal exists. */
+                const cs = st.binderCopyState(b.id);
+                return (
+                  <button key={b.id} className="rel-row" onClick={() => go({ v: "binder" })}>
+                    <span className="rel-row-n">{c ? c.name : b.cardId}</span>
+                    <span className="faint">
+                      {cs.state === "available" ? "Available"
+                        : cs.state === "in-deal" ? "In a deal" : "Traded"}
+                    </span>
+                  </button>
+                );
+              })}
+            </>
+          )}
+
+          {rel.history.length > 0 && (
+            <>
+              <div className="rel-h">Our history</div>
+              {rel.history.map((o) => {
+                const c = st.cardById(o.cardId);
+                return (
+                  <div key={o.id} className="rel-row static">
+                    <span className="rel-row-n">{c ? c.name : o.cardId}</span>
+                    <span className="faint">
+                      {D.isCompleted(o) ? "Completed" : "Ended"}
+                    </span>
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </div>
+      )}
 
       <div className="tabs">
         {tabs.map((t) => (

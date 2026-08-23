@@ -134,6 +134,49 @@ function collectorView(state, meId) {
       .filter((x) => x.why.length > 0);
   };
 
+  /* ==========================================================================
+     WHAT IS THIS COPY DOING? — derived, never stored.
+
+     Availability is not a flag somebody sets; it is a fact about whether this
+     exact physical copy is currently committed to a deal. Storing it would give
+     us two answers to one question the moment a deal moved on, so it is read
+     from the opportunities themselves.
+
+     The boundary follows the trade model already in force. A card that has only
+     been PROPOSED is not yet spoken for — the partner has not accepted it, and
+     the same copy may sit in more than one proposal until somebody does. It
+     becomes "in a deal" when a partner accepts it into an active trade, and
+     "traded" when that deal completes. Withdrawn and rejected rows release it.
+
+     Identity is the binder copy, never the card: two copies of the same card
+     are two different objects and can be in two different places. */
+  const binderCopyState = (binderId) => {
+    const rowIn = (o) => ((o.trade && o.trade.cards) || []).find((c) =>
+      c.binderId === binderId && c.inclusion === "accepted" && !c.withdrawn);
+    const mine = state.opportunities.filter((o) => o.collectorId === meId);
+    const done = mine.find((o) => D.isCompleted(o) && rowIn(o));
+    if (done) return { state: "traded", opp: done };
+    const live = mine.find((o) => D.isActive(o) && rowIn(o));
+    if (live) return { state: "in-deal", opp: live };
+    return { state: "available", opp: null };
+  };
+
+  /* Everything the relationship page needs, from the one canonical record set:
+     what they can help with, what we could help them with, and what has already
+     happened. No second history model, and no stage or trade state of its own —
+     the opportunities are returned as they are, for routing into Goals. */
+  const partnerRelationship = (pid) => {
+    const mine = state.opportunities.filter((o) => o.collectorId === meId
+      && o.partnerId === pid);
+    return {
+      partner: partnerById(pid),
+      active: mine.filter(D.isActive),
+      history: mine.filter((o) => !D.isActive(o)),
+      interests: myBinder().filter((b) => interestIn(b.id)
+        .some((i) => i.partnerId === pid)),
+    };
+  };
+
   const partnerProfile = (pid) => {
     const stock = E.inventoryOf(state.inventory, pid);
     const held = new Set(stock.map((s) => s.cardId));
@@ -236,6 +279,7 @@ function collectorView(state, meId) {
     meId, cardById, partnerById, catalog: state.catalog,
     myGoals, myBinder, myOpps, myPrefs,
     partnersWith, interestIn, interestCountFrom, forYou, partnerProfile,
+    binderCopyState, partnerRelationship,
     copyPhotos, photoState, photoRequestFor, inventoryCopy, pursuitFor, pursuitStep,
     stateOf, openOppForGoal, goalFor, conversationsFor, tradeGroups, turnFor,
     threadWith, threadsForCard, partnersTalkedTo,
