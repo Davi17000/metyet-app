@@ -298,7 +298,21 @@ function tcApplyPercent(tc, by, action, percent, at) {
     percentThread: [...tc.percentThread, { by, type: "propose", percent, at }] };
 }
 
-function dealApplyAdj(deal, by, action, amount, at) {
+/* Whose adjustment proposal is on the table, or null if none is. The last
+   thread entry is the authority: it is the move nobody has answered yet. */
+const dealAdjStanding = (deal) => {
+  if (!deal || deal.agreedAdj != null) return null;
+  const thread = deal.adjThread || [];
+  const last = thread[thread.length - 1];
+  return last && last.type === "propose" ? last.by : null;
+};
+
+function dealApplyAdj(rawDeal, by, action, amount, at) {
+  /* A deal that reached this stage through closeValuation may have no thread
+     yet — nobody had proposed anything. Reading one that was never created is
+     what made Propose throw, and an action that throws is one that silently
+     does nothing. */
+  const deal = { adjThread: [], ...(rawDeal || {}) };
   if (deal.agreedAdj != null) return deal;                 // locked once agreed
   if (action === "accept") {
     const other = by === "tp" ? deal.collectorAdj : deal.tpAdj;
@@ -310,6 +324,10 @@ function dealApplyAdj(deal, by, action, amount, at) {
       tpAgreed: false, collectorAgreed: false };
   }
   if (typeof amount !== "number" || !isFinite(amount) || amount === 0) return deal;
+  /* ONE TURN AT A TIME, as everywhere else a number is negotiated. Without this
+     a second Send silently replaced the figure the other party was already
+     reading — the same defect fixed for market value and trade percentage. */
+  if (dealAdjStanding(deal) === by) return deal;
   return { ...deal,
     ...(by === "tp" ? { tpAdj: amount } : { collectorAdj: amount }),
     adjThread: [...deal.adjThread, { by, type: "propose", amount, at }],
@@ -358,7 +376,8 @@ const closeSelection = (o) => {
   if (o.stage !== "select-trade" || isTerminal(o)) return o;
   if (selectTradeSettled(o)) return { ...o, stage: "value-trade" };
   if (selectionExhausted(o)) {
-    return { ...o, trade: { ...o.trade, mode: "cash" }, stage: "deal" };
+    return { ...o, trade: { ...o.trade, mode: "cash" }, stage: "deal",
+      deal: { adjThread: [], ...(o.deal || {}) } };
   }
   return o;
 };
@@ -379,8 +398,9 @@ const valueTradeSettled = (o) => {
 
 const closeValuation = (o) => {
   if (o.stage !== "value-trade" || isTerminal(o)) return o;
-  return valueTradeSettled(o) && activeTradeCards(o).filter(cardSettled).length > 0
-    ? { ...o, stage: "deal" } : o;
+  if (!(valueTradeSettled(o) && activeTradeCards(o).filter(cardSettled).length > 0)) return o;
+  /* Arriving at Deal means arriving with somewhere to negotiate the balance. */
+  return { ...o, stage: "deal", deal: { adjThread: [], ...(o.deal || {}) } };
 };
 
 /* Rows still IN the trade: awaiting the partner's decision, or accepted and not
@@ -391,7 +411,7 @@ const liveTradeRows = (o) => tradeRows(o).filter((c) =>
 const TRADE = { applyMarket: tcApplyMarket, decide: tcDecide, liveTradeRows,
   selectTradeSettled, selectionExhausted, closeSelection,
   valueTradeSettled, closeValuation, applyPercent: tcApplyPercent,
-  applyDealAdjustment: dealApplyAdj, withdraw: tcWithdraw, marketAgreed,
+  applyDealAdjustment: dealApplyAdj, dealAdjStanding, withdraw: tcWithdraw, marketAgreed,
   marketStanding, percentStanding, negotiationState };
 
 const INVARIANTS = {

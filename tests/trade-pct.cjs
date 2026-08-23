@@ -21,6 +21,16 @@ const btnIn = (node, startsWith) =>
 const fields = (node) => node.findAllByType("input");
 const values = (node) => fields(node).map((i) => i.props.value).join("|");
 const typeIn = (node, i, v) => TR.act(() => { fields(node)[i].props.onChange({ target: { value: v } }); });
+/* Typing then leaving the field. CONTRACT CHANGE: while a dollar amount is
+   being typed the field now shows the person's own text rather than
+   re-deriving on every keystroke — otherwise "765" appeared as "9", then "72",
+   as each partial number was converted to a whole percent and back. The two
+   representations still reconcile, at the moment that matters: on commit. */
+const commitIn = (node, i, v) => {
+  typeIn(node, i, v);
+  const f = fields(node)[i];
+  if (f && f.props.onBlur) TR.act(() => { f.props.onBlur(); });
+};
 const rowText = (r) => text(byClass(r, "tbl")[0]);
 
 /* Settle the market on the untouched card, leaving the TP to open Trade %. */
@@ -108,14 +118,14 @@ describe("Trade % ↔ Trade Value synchronization", () => {
 
   test("D. an awkward trade value quantises to a whole percent", () => {
     const r = atTradePct();
-    typeIn(last(r), 1, "398");                    // 398/500 = 79.6%
+    commitIn(last(r), 1, "398");                    // 398/500 = 79.6%
     eq(values(last(r)), "80|400", "rounds to 80% and redisplays its exact trade value");
   });
 
   test("D. the two fields can never visually disagree", () => {
     const r = atTradePct();
     for (const v of ["398", "401", "333", "1", "499", "251"]) {
-      typeIn(last(r), 1, v);
+      commitIn(last(r), 1, v);
       const [p, d] = values(last(r)).split("|");
       if (p === "") continue;
       eq(Number(d), Math.round(MARKET * Number(p) / 100),

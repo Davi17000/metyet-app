@@ -4163,16 +4163,36 @@ export { emptyTradeCard, TradeFields,
 function TradeFields({ pcs, setPcs, market }) {
   const p = Number(pcs);
   const usable = isFinite(Number(market)) && Number(market) > 0;
-  const shown = pcs === "" || !isFinite(p) || !usable ? ""
+
+  /* WHILE YOU ARE TYPING DOLLARS, THE DOLLAR FIELD IS YOURS.
+
+     The percentage stays the authority — it is what gets submitted, and it is
+     what the dollar figure is derived from once you stop. But deriving the
+     DISPLAY from it on every keystroke meant the field overwrote the person
+     using it: typing "765" showed "9", then "72", because each partial number
+     was converted to a whole percent and converted straight back. A field that
+     rewrites your input mid-word is unusable, and it is how a legitimate entry
+     could end up reading as the full market value.
+
+     So a dollar edit holds its own text until focus leaves. The percentage
+     still updates on every keystroke, so nothing about submission changes. */
+  const [typed, setTyped] = useState(null);
+
+  const derived = pcs === "" || !isFinite(p) || !usable ? ""
     : String(SharedID.tradeValueAt(Number(market), p / 100) ?? "");
+  const shown = typed != null ? typed : derived;
 
   const onValue = (v) => {
     const next = cleanNum(v);
-    if (next === "" || !usable) return setPcs(next === "" ? "" : pcs);
+    setTyped(next);
+    if (next === "" || !usable) return setPcs("");
     /* Quantise to the nearest whole percent: the percentage is the authority. */
     const whole = percentageOf(Number(next), Number(market));
     setPcs(whole > 0 ? String(Math.min(whole, 100)) : "");
   };
+  /* On leaving the field, show the figure the agreed percentage actually
+     represents — so what is on screen is always what would be sent. */
+  const settle = () => setTyped(null);
 
   return (
     <div className="pn-in">
@@ -4181,7 +4201,7 @@ function TradeFields({ pcs, setPcs, market }) {
         <span className="pn-w"><span className="pn-u r">%</span>
           <input className="inp r" type="text" inputMode="decimal" value={pcs}
             aria-label="Trade percentage of the agreed market value"
-            onChange={(e) => setPcs(cleanNum(e.target.value))} />
+            onChange={(e) => { setTyped(null); setPcs(cleanNum(e.target.value)); }} />
         </span>
       </label>
       {usable && (
@@ -4190,6 +4210,7 @@ function TradeFields({ pcs, setPcs, market }) {
           <span className="pn-w"><span className="pn-u">$</span>
             <input className="inp" type="text" inputMode="decimal" value={shown}
               aria-label="Trade value in dollars"
+              onBlur={settle}
               onChange={(e) => onValue(e.target.value)} />
           </span>
         </label>
@@ -4257,7 +4278,7 @@ function TradeWaiting({ tc, by, who, party }) {
         {party && <NegotiationParty c={party} />}
         <div className="pn-h">Your trade %</div>
         <div className="pn-amt mono">{pct(mine)}</div>
-        <div className="pn-pct">Trade Value {market > 0 ? money(Math.round(market * mine)) : "—"}</div>
+        <div className="pn-pct">Trade Value {market > 0 ? money(SharedID.tradeValueAt(market, mine)) : "—"}</div>
         <div className="pn-pct">on agreed market value {money(market)}</div>
       </div>
       <div className="pn-wait">Waiting on {who}</div>
