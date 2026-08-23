@@ -279,7 +279,7 @@ function createStore(seed) {
 
     dealAdjustRespond({ oppId, by, action, amount, at }) {
       return this.patchOpportunity(oppId, (o) => ({ ...o,
-        deal: D.TRADE.applyDealAdjustment(o.deal || { adjThread: [] }, by, action, amount, at) }));
+        deal: D.TRADE.applyDealAdjustment(o.deal, by, action, amount, at) }));
     },
 
     /* AGREEMENT IS PER SEAT. One bit, belonging to whoever acted. The deal
@@ -376,7 +376,8 @@ function createStore(seed) {
       return this.patchOpportunity(oppId, (o) => (
         !["select-trade", "value-trade"].includes(o.stage) ? o
           : { ...o, trade: { ...(o.trade || {}), mode: "cash", submitted: true,
-              cards: o.trade?.cards || [], cashOnlyAt: at }, stage: "deal" }));
+              cards: o.trade?.cards || [], cashOnlyAt: at }, stage: "deal",
+              deal: { adjThread: [], ...(o.deal || {}) } }));
     },
 
     patchOpportunity(oppId, fn) {

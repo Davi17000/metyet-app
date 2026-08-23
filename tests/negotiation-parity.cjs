@@ -421,7 +421,14 @@ describe("H. One linked $ / % editor, both seats", () => {
 
   test("the percentage is the authority, so no second value is stored", () => {
     /* The dollar field is derived. Only a fraction is ever submitted. */
-    assert(/const shown = pcs === ""/.test(shared), "the dollar view is derived from the draft");
+    /* CONTRACT CHANGE: the dollar field holds the person's own text while they
+       type, then re-derives on blur — the fix for a field that overwrote its
+       user mid-entry. The percentage remains the authority: it is what is
+       submitted, and what the settled display is computed from. */
+    assert(/const derived = pcs === ""/.test(shared), "the settled view derives from the percentage");
+    assert(/const shown = typed != null \? typed : derived;/.test(shared),
+      "and typing is respected until the field is left");
+    assert(/const settle = \(\) => setTyped\(null\);/.test(shared), "which is when it reconciles");
     const tc = M.emptyTradeCard("ka", null, null, "b-0");
     assert(!("tradeValue" in tc), "and nothing extra is stored on the row");
   });

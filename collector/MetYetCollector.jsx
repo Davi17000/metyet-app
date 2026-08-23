@@ -1518,7 +1518,7 @@ function Receipt({ o, st, expanded, inline }) {
                 <dt>Balance</dt>
                 <dd>{s2.balance != null ? money(Math.abs(s2.balance)) + (s2.balance >= 0 ? " to them" : " to you")
                   : <span className="rc-p">{s2.state === "pending" ? "Pending" : "Not finalized"}</span>}</dd>
-                {s2.finalAdj != null && (<><dt>Final negotiation</dt><dd>{money(s2.finalAdj)}</dd></>)}
+                {s2.finalAdj != null && (<><dt>Final cash adjustment</dt><dd>{money(s2.finalAdj)}</dd></>)}
               </dl>
             )}
 
@@ -3806,6 +3806,9 @@ function DealStage({ o, st, register }) {
   const fromPartner = !!adjStanding && adjStanding.by === "tp";
   const cash = D.finalBalance(o);
   const cashOnly = (o.trade && o.trade.mode === "cash") || acceptedCards(o).length === 0;
+  /* What the final agreement changed relative to the settled economics. Zero
+     until somebody agrees a different figure. */
+  const adjustment = cash - calc;
 
   /* Agreement belongs to whoever gave it. Never inferred, never combined. */
   const iAgreed = !!deal.collectorAgreed;
@@ -3856,6 +3859,19 @@ function DealStage({ o, st, register }) {
           </>
         )}
 
+        {/* THE DERIVATION, NOT JUST THE ANSWER: what the settled terms came to,
+            what was then agreed instead, and what is actually owed. The middle
+            line only appears when something actually changed. */}
+        <div className="row"><span className="k">Calculated cash balance</span>
+          <span className="mono">{money(Math.abs(calc))}</span></div>
+        {adjustment !== 0 && (
+          <div className="row"><span className="k">
+            {adjustment < 0 ? "Additional discount" : "Final cash adjustment"}
+          </span>
+            <span className="mono">
+              {adjustment < 0 ? "−" : "+"}{money(Math.abs(adjustment))}
+            </span></div>
+        )}
         {/* Direction in words, because a sign is not an explanation. */}
         <div className="row tot">
           <span>{cash >= 0 ? `You pay ${them}` : `${them} pays you`}</span>
@@ -3864,13 +3880,21 @@ function DealStage({ o, st, register }) {
       </div>
 
       <div className="card sec">
-        <div className="sec-h">Final negotiation</div>
-        <div style={{ fontSize: 14, marginBottom: 12 }}>
+        <div className="sec-h">Final cash amount</div>
+        {/* WHAT THE NUMBER MEANS, BEFORE ANYONE TYPES ONE. "Final negotiation"
+            left it ambiguous whether a figure was a new card price, a deal
+            total, or the cash owed. It is the cash — and only the cash. The
+            calculated figure is shown first so a proposal is read as a change
+            FROM something rather than as a fresh number. */}
+        <div className="row"><span className="k">Calculated amount owed</span>
+          <span className="mono">{money(Math.abs(calc))}</span></div>
+
+        <div style={{ fontSize: 14, margin: "12px 0" }}>
           {adjStanding == null
-            ? <>The numbers above are settled. If you'd like to land somewhere different, propose a final figure — everything you already agreed stays the same.</>
+            ? <>Only the cash changes. The agreed price and everything you settled about the cards stay exactly as they are.</>
             : fromPartner
-              ? <>{them} suggested settling at <b className="mono">{money(adjStanding.amount)}</b> instead of {money(Math.abs(calc))}.</>
-              : <>You suggested <b className="mono">{money(adjStanding.amount)}</b>. Waiting on {them}.</>}
+              ? <>{them} proposed <b className="mono">{money(adjStanding.amount)}</b> — your move.</>
+              : <>You proposed <b className="mono">{money(adjStanding.amount)}</b> — waiting on {them}.</>}
         </div>
 
         {/* Whose agreement is in, stated separately for each person. */}
@@ -3893,8 +3917,12 @@ function DealStage({ o, st, register }) {
               onClick={() => st.dealAgree(o.id)}>
               Agree to this deal
             </button>
-            <input className="inp" inputMode="decimal" value={amt} placeholder="Propose a different figure"
-              aria-label="Propose a final cash amount"
+            {/* Named where it can be seen, not only where a screen reader
+                finds it: the field holds the cash owed, nothing else. */}
+            <div className="pn-fl">Final cash amount</div>
+            <input className="inp" inputMode="decimal" value={amt}
+              placeholder="Propose a different cash amount"
+              aria-label="Final cash amount"
               onChange={(e) => setAmt(e.target.value.replace(/[^\d.]/g, ""))} />
             <div className="faint" style={{ fontSize: 12.5, marginTop: 6 }}>
               Only the cash changes. Card values and percentages stay exactly as agreed.
