@@ -277,7 +277,7 @@ describe("C. The arithmetic, in both directions", () => {
     propose(w, "tp", 800);
     accept(w, "collector");
     eq(D.finalBalance(w.get()) - D.calculatedBalance(w.get()), 75, "an adjustment of +$75");
-    assert(/adjustment < 0 \? "Additional discount" : "Final cash adjustment"/.test(code(COL)),
+    assert(/"Additional discount" : "Final cash adjustment"/.test(code(COL)),
       "which the receipt names neutrally");
   });
 
@@ -287,7 +287,7 @@ describe("C. The arithmetic, in both directions", () => {
     accept(w, "tp");
     eq(D.finalBalance(w.get()), 725, "the same figure");
     eq(D.finalBalance(w.get()) - D.calculatedBalance(w.get()), 0, "no adjustment");
-    assert(/\{adjustment !== 0 && \(/.test(code(COL)),
+    assert(/\{receipt\.adjustment !== 0 && \(/.test(code(COL)),
       "and the receipt omits the line rather than showing $0");
   });
 
@@ -298,7 +298,7 @@ describe("C. The arithmetic, in both directions", () => {
     eq(D.calculatedBalance(owedToUs.get()), -100, "the partner owes $100");
     const level = atDeal({ price: 500, cards: [["ka", 500, 1]] });
     eq(D.calculatedBalance(level.get()), 0, "and a zero balance is possible");
-    assert(/cash >= 0 \? `You pay \$\{them\}` : `\$\{them\} pays you`/.test(code(COL)),
+    assert(/`You owe \$\{them\}`/.test(code(COL)) && /`\$\{them\} owes you`/.test(code(COL)),
       "each stated in words, not by a sign");
   });
 
@@ -393,19 +393,19 @@ describe("E. The screen says what the number is", () => {
   test("the receipt preserves the derivation", () => {
     assert(/Calculated cash balance/.test(code(COL)), "what the settled terms came to");
     assert(/Additional discount|Final cash adjustment/.test(code(COL)), "what changed");
-    assert(/cash >= 0 \? `You pay/.test(code(COL)), "and what is actually owed");
+    assert(/`You owe \$\{them\}`/.test(code(COL)), "and what is actually owed");
   });
 
   test("no percentage appears where cash has none", () => {
     const deal = code(COL).slice(code(COL).indexOf("function DealStage("),
-      code(COL).indexOf("function DealStage(") + 6000);
+      code(COL).indexOf("function Fulfillment("));
     assert(!/<TradeFields/.test(deal), "the linked editor belongs to Value Trade only");
     assert(!/pn-u.*%/.test(deal), "and no percentage unit is offered");
   });
 
   test("the presentation writes nothing canonical", () => {
     const deal = code(COL).slice(code(COL).indexOf("function DealStage("),
-      code(COL).indexOf("function DealStage(") + 6000);
+      code(COL).indexOf("function Fulfillment("));
     ["agreedAdj:", "tpAgreed:", "collectorAgreed:", "stage:"].forEach((f) =>
       assert(!deal.includes(f), "no direct write of " + f));
     assert(/st\.dealPropose\(o\.id, n\)/.test(deal), "it calls the canonical action");

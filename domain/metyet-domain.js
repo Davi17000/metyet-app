@@ -96,6 +96,46 @@ const calculatedBalance = (o) =>
 const finalBalance = (o) =>
   (o.deal && o.deal.agreedAdj != null ? o.deal.agreedAdj : calculatedBalance(o));
 
+/* ============================================================================
+   WHO OWES WHOM — ONE SIGNED NUMBER, ONE READING OF IT
+
+   The convention, stated once so nothing has to guess:
+
+     balance > 0   the collector owes the partner
+     balance < 0   the partner owes the collector
+     balance === 0 nobody owes anything
+
+   The sign was always right in the domain. What went wrong was the receipt
+   rendering Math.abs() of it, which threw the direction away — so a deal where
+   the trade was worth MORE than the card still read as "you pay", and the
+   adjustment line was computed against a magnitude rather than a position.
+
+   So direction is derived here, from the signed amount, and returned as meaning
+   rather than as a number to be interpreted again downstream. The magnitude
+   comes back unsigned because a headline should never show a negative: which
+   way the money moves belongs in the words. Presentation maps `direction` to
+   its own tokens; no colour or persona wording lives in the domain. */
+const cashDirection = (amount) => {
+  if (amount == null) return { direction: "unknown", amount: null };
+  if (amount > 0) return { direction: "collector-to-tp", amount: Math.abs(amount) };
+  if (amount < 0) return { direction: "tp-to-collector", amount: Math.abs(amount) };
+  return { direction: "settled", amount: 0 };
+};
+
+/* What the receipt is actually reporting: what the settled terms came to, what
+   an accepted final amount changed, and what is owed — each with its direction
+   already resolved. The adjustment stays SIGNED against the signed balance, so
+   -300 becoming -250 is +50 (less owed to the collector), not -50. */
+const cashReceipt = (o) => {
+  const calc = calculatedBalance(o);
+  const final = finalBalance(o);
+  return {
+    calculated: cashDirection(calc),
+    final: cashDirection(final),
+    adjustment: (calc == null || final == null) ? null : final - calc,
+  };
+};
+
 /* --------------------------------------------------------- TURN OWNERSHIP
 
    ONE ownership truth: which actor must move. The persona-relative words
@@ -477,7 +517,7 @@ const REFUSE = {
 };
 
 module.exports = {
-  FULFILLMENT, TRADE,
+  FULFILLMENT, TRADE, cashDirection, cashReceipt,
   identityKey, isRaw, sameIdentity,
   STAGES, STAGE_IX, STAGE_LABEL,
   isEnded, isCompleted, isTerminal, isActive, isNegotiating,

@@ -422,6 +422,12 @@ const CSS = `
 .goal-deal-t { margin-left: auto; font-size: 12px; color: var(--muted); }
 /* Demo scaffolding, deliberately not product chrome: it must read as the
    tester standing in for the other side, never as a Collector action. */
+/* Direction is carried by the words; colour reinforces it and is never the
+   only signal. Outflow and inflow, not warning and success. */
+.dl-final.collector-to-tp > span:first-child { color: var(--danger); }
+.dl-final.tp-to-collector > span:first-child { color: var(--t1); }
+.dl-final.settled > span:first-child { color: var(--muted); }
+
 .dl-h { font-family: 'Archivo'; font-size: 11px; letter-spacing: .11em;
   text-transform: uppercase; font-weight: 700; color: var(--muted); margin: 16px 0 4px; }
 .dl-card { padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
@@ -3808,7 +3814,8 @@ function DealStage({ o, st, register }) {
   const cashOnly = (o.trade && o.trade.mode === "cash") || acceptedCards(o).length === 0;
   /* What the final agreement changed relative to the settled economics. Zero
      until somebody agrees a different figure. */
-  const adjustment = cash - calc;
+  /* One projection, so the rows below cannot disagree about direction. */
+  const receipt = D.cashReceipt(o);
 
   /* Agreement belongs to whoever gave it. Never inferred, never combined. */
   const iAgreed = !!deal.collectorAgreed;
@@ -3862,20 +3869,36 @@ function DealStage({ o, st, register }) {
         {/* THE DERIVATION, NOT JUST THE ANSWER: what the settled terms came to,
             what was then agreed instead, and what is actually owed. The middle
             line only appears when something actually changed. */}
+        {/* THE DIRECTION COMES FROM THE DOMAIN, NOT FROM A SIGN ON SCREEN.
+            Rendering Math.abs() of the balance is what lost it: a deal where the
+            trade was worth more than the card still read as "you pay". Each row
+            now states which way the money goes in words, and shows an unsigned
+            magnitude — a headline should never contain a negative number. */}
         <div className="row"><span className="k">Calculated cash balance</span>
-          <span className="mono">{money(Math.abs(calc))}</span></div>
-        {adjustment !== 0 && (
+          <span className="mono">
+            {money(receipt.calculated.amount)}
+            {receipt.calculated.direction === "tp-to-collector" ? " to you"
+              : receipt.calculated.direction === "collector-to-tp" ? ` to ${them}` : ""}
+          </span></div>
+        {receipt.adjustment !== 0 && (
+          /* Signed against the SIGNED balance, so -300 becoming -250 is +50 —
+             less owed to the collector, not a bigger discount. The neutral
+             label is used unless a reduction genuinely reads as one. */
           <div className="row"><span className="k">
-            {adjustment < 0 ? "Additional discount" : "Final cash adjustment"}
+            {receipt.adjustment < 0 && receipt.calculated.direction === "collector-to-tp"
+              ? "Additional discount" : "Final cash adjustment"}
           </span>
             <span className="mono">
-              {adjustment < 0 ? "−" : "+"}{money(Math.abs(adjustment))}
+              {receipt.adjustment < 0 ? "−" : "+"}{money(Math.abs(receipt.adjustment))}
             </span></div>
         )}
-        {/* Direction in words, because a sign is not an explanation. */}
-        <div className="row tot">
-          <span>{cash >= 0 ? `You pay ${them}` : `${them} pays you`}</span>
-          <span className="mono">{money(Math.abs(cash))}</span>
+        <div className={"row tot dl-final " + receipt.final.direction}>
+          <span>
+            {receipt.final.direction === "collector-to-tp" ? `You owe ${them}`
+              : receipt.final.direction === "tp-to-collector" ? `${them} owes you`
+                : "No cash owed"}
+          </span>
+          <span className="mono">{money(receipt.final.amount)}</span>
         </div>
       </div>
 
@@ -3887,7 +3910,11 @@ function DealStage({ o, st, register }) {
             calculated figure is shown first so a proposal is read as a change
             FROM something rather than as a fresh number. */}
         <div className="row"><span className="k">Calculated amount owed</span>
-          <span className="mono">{money(Math.abs(calc))}</span></div>
+          <span className="mono">
+            {money(receipt.calculated.amount)}
+            {receipt.calculated.direction === "tp-to-collector" ? " to you"
+              : receipt.calculated.direction === "collector-to-tp" ? ` to ${them}` : ""}
+          </span></div>
 
         <div style={{ fontSize: 14, margin: "12px 0" }}>
           {adjStanding == null
