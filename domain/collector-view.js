@@ -177,6 +177,36 @@ function collectorView(state, meId) {
     };
   };
 
+  /* HOW MUCH THEY HAVE, AND HOW RECENTLY IT GREW — derived, never stored.
+
+     Current inventory is unarchived rows for that partner, which is the same
+     definition every other surface uses: removing a copy archives it rather
+     than deleting it, so an archived row is history, not stock.
+
+     Freshness is grouped by CALENDAR DAY. A partner listing eight cards in one
+     sitting is one event to a collector reading it, and the day is the finest
+     grouping the data actually supports — there is no batch id, and inventing
+     session grouping would be inventing a fact.
+
+     Legacy rows have no addedAt. They still count toward the total, because
+     they are genuinely in stock, but they cannot contribute freshness — a copy
+     with no add date is not evidence of a recent addition. If NO current row is
+     timestamped, there is no freshness to report and the caller shows the total
+     alone rather than guessing. */
+  const partnerInventorySummary = (pid) => {
+    const current = E.inventoryOf(state.inventory, pid);
+    const dated = current.filter((i) => typeof i.addedAt === "string" && i.addedAt);
+    if (dated.length === 0) {
+      return { totalInventory: current.length, latestAddedAt: null, latestAddedCount: 0 };
+    }
+    const latestAddedAt = dated.reduce((a, i) => (i.addedAt > a ? i.addedAt : a), dated[0].addedAt);
+    return {
+      totalInventory: current.length,
+      latestAddedAt,
+      latestAddedCount: dated.filter((i) => i.addedAt === latestAddedAt).length,
+    };
+  };
+
   const partnerProfile = (pid) => {
     const stock = E.inventoryOf(state.inventory, pid);
     const held = new Set(stock.map((s) => s.cardId));
@@ -279,7 +309,7 @@ function collectorView(state, meId) {
     meId, cardById, partnerById, catalog: state.catalog,
     myGoals, myBinder, myOpps, myPrefs,
     partnersWith, interestIn, interestCountFrom, forYou, partnerProfile,
-    binderCopyState, partnerRelationship,
+    binderCopyState, partnerRelationship, partnerInventorySummary,
     copyPhotos, photoState, photoRequestFor, inventoryCopy, pursuitFor, pursuitStep,
     stateOf, openOppForGoal, goalFor, conversationsFor, tradeGroups, turnFor,
     threadWith, threadsForCard, partnersTalkedTo,

@@ -44,6 +44,17 @@ const ago = (d) => {
   const m = Math.round(n / 30);
   return m < 12 ? `${m} month${m === 1 ? "" : "s"} ago` : `${Math.round(n / 365)} yr ago`;
 };
+/* "37 cards · 8 added Aug 8" — one sentence, built from the one projection, so
+   the landing card and the profile header can never report different numbers.
+   Freshness is omitted rather than guessed when no current row is dated. */
+const inventoryLine = (sum) => {
+  const total = sum.totalInventory === 0 ? "No inventory yet"
+    : `${sum.totalInventory} card${sum.totalInventory === 1 ? "" : "s"}`;
+  if (!sum.latestAddedAt || sum.latestAddedCount === 0) return total;
+  return `${total} · ${sum.latestAddedCount} added ${fmtShort(sum.latestAddedAt)}`;
+};
+const fmtShort = (d) => new Date(d + "T12:00:00Z")
+  .toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 const fmtDate = (d) => new Date(d + "T12:00:00Z")
   .toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 
@@ -830,6 +841,7 @@ const CSS = `
   align-items: center; justify-content: center; color: #FFF; font-family: 'Archivo';
   font-weight: 700; font-size: 17px; }
 .pt-n { font-size: 18px; font-weight: 700; line-height: 1.2; }
+.pt-inv { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
 .pt-c { font-size: 13.5px; color: var(--muted); margin-top: 2px; }
 .pt-stats { display: flex; gap: 14px; margin-top: 18px; padding: 14px 4px;
   border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); }
@@ -2646,6 +2658,11 @@ function Partners({ st, go }) {
                 {i === 0 && x.primary > 0 && <span className="chip a">Best match</span>}
               </div>
               <div className="pt-c">{x.partner.city}</div>
+              {/* HOW BIG, AND HOW RECENTLY IT GREW. A collector should not have
+                  to infer the size of a collection from a "+31" on a thumbnail
+                  strip. Same projection as the profile header, so the two
+                  cannot disagree. */}
+              <div className="pt-inv">{inventoryLine(st.partnerInventorySummary(x.partner.id))}</div>
             </div>
           </div>
 
@@ -2730,8 +2747,7 @@ function PartnerDetail({ partnerId, st, go }) {
               NOW — that belongs in Goals, and repeating it here was the
               dashboard this page is meant not to be. */}
           <div className="faint" style={{ fontSize: 13, marginTop: 4 }}>
-            {stock.length === 0 ? "No inventory yet"
-              : `${stock.length} card${stock.length === 1 ? "" : "s"}`}
+            {inventoryLine(st.partnerInventorySummary(partnerId))}
             {rel.history.length > 0 && (
               <> · {rel.history.filter(D.isCompleted).length} completed deal
                 {rel.history.filter(D.isCompleted).length === 1 ? "" : "s"} together</>

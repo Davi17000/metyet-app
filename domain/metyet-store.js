@@ -70,7 +70,17 @@ function createStore(seed) {
     },
 
     /* ---- inventory: what a partner holds ---- */
-    addInventoryCopy(copy) { set({ ...s, inventory: [...s.inventory, copy] }); return copy.invId; },
+    /* WHEN THIS COPY ENTERED METYET — not when the partner obtained it.
+       `acquired` is provenance: a card bought in January and listed in August
+       is eight months old to its owner and new to everyone here. Reading
+       freshness from it would tell a collector something untrue, so a copy is
+       stamped with its own addedAt when it arrives. Callers pass `at` because
+       the app's time comes from its clock, not from this module. */
+    addInventoryCopy(copy, at) {
+      const row = copy.addedAt || !at ? copy : { ...copy, addedAt: at };
+      set({ ...s, inventory: [...s.inventory, row] });
+      return row.invId;
+    },
     removeInventoryCopy(invId) {
       set({ ...s, inventory: s.inventory.map((i) =>
         (i.invId === invId ? { ...i, archived: true } : i)) });
