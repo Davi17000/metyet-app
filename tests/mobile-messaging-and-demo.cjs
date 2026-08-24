@@ -339,21 +339,23 @@ describe("C. The partner can be driven from the phone, in DEV only", () => {
 
   test("the simulator never sets a stage, and adds no shortcut", () => {
     const sim = code(COL).slice(code(COL).indexOf("function SimulateTP("),
-      code(COL).indexOf("function SimulateTP(") + 4000);
-    /* The thing that must never exist: a way to skip the lifecycle. */
+      code(COL).indexOf("function SimulateTP(") + 6000);
     assert(!/stage:\s*["']/.test(sim), "no stage is ever written");
     assert(!/Advance stage|Force |Skip /i.test(sim), "and no generic advance control");
 
-    /* What IS there, stated honestly rather than asserted away: this pre-dating
-       engineering tool composes some partner moves by writing thread entries
-       through patchOpportunity, alongside canonical actions for the rest. It is
-       DEV-only and cannot reach a stage, but it is not purely canonical, and
-       this pass did not widen it. */
-    ["agreePrice", "dealAgree", "confirmHandoff", "sendMessage", "endOpportunity"]
+    /* CONTRACT CHANGE, tightened: the trade-review and value paths that used to
+       write state now take actions, so exactly ONE raw patch survives — the
+       partner's price counter, which has no canonical action to call. It is
+       named here so it cannot quietly become two. */
+    eq((sim.match(/A\.patchOpportunity/g) || []).length, 1,
+      "one remaining raw patch: the price counter, a known domain gap");
+    const counter = sim.slice(sim.indexOf("Counter at 96%"),
+      sim.indexOf("Counter at 96%") + 400);
+    assert(/priceThread/.test(counter), "and it appends to a thread, never a terminal field");
+
+    ["agreePrice", "reviewTradeCards", "tradeMarketRespond", "tradePercentRespond",
+      "dealAdjustRespond", "dealAgree", "confirmHandoff", "sendMessage", "endOpportunity"]
       .forEach((a) => assert(sim.includes("A." + a), a + " goes through the action set"));
-    assert(/A\.patchOpportunity/.test(sim),
-      "and the remaining moves compose thread entries directly — DEV tooling, "
-      + "never a stage setter");
   });
 });
 

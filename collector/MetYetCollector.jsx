@@ -2369,6 +2369,43 @@ function SimulateTP({ o, st }) {
   }
   if (o.stage === "value-trade") {
     const open2 = cards.filter((c) => !D.cardSettled(c));
+
+    /* ACCEPT IS A LEGAL MOVE, AND IT WAS MISSING.
+
+       This offered "propose" and nothing else, so a tester whose collector had
+       just put a number on the table could only counter it — the one thing a
+       real partner would rarely do. Whether accepting is available is not a
+       question this tool should answer for itself: negotiationState already
+       answers it for the real partner's seat, so it is asked here with the same
+       arguments. "theirs" means a proposal is on the table for this seat, which
+       is exactly when Accept is legal. */
+    const marketOpen = open2.find((c) =>
+      D.TRADE.negotiationState(c, "market", "tp").state === "theirs");
+    if (marketOpen) {
+      const ns = D.TRADE.negotiationState(marketOpen, "market", "tp");
+      const nm = (st.cardById(marketOpen.cardId) || {}).name || "that card";
+      actions.push([`Accept ${money(ns.standing)} for ${nm}`, () => {
+        /* Accept takes the STANDING proposal — the reducer reads it from the
+           card, so no draft or label value can be substituted. */
+        A.tradeMarketRespond({ oppId: o.id, tradeCardId: marketOpen.id, by: "tp",
+          action: "accept", at: AT });
+        did(`Agreed ${money(ns.standing)} market value`);
+      }]);
+    }
+    const pctOpen = open2.find((c) =>
+      D.TRADE.negotiationState(c, "percent", "tp").state === "theirs");
+    if (pctOpen) {
+      const ns = D.TRADE.negotiationState(pctOpen, "percent", "tp");
+      const nm = (st.cardById(pctOpen.cardId) || {}).name || "that card";
+      const worth = pctOpen.agreedMarket != null
+        ? ` · ${money(D.tradeValueAt(pctOpen.agreedMarket, ns.standing))}` : "";
+      actions.push([`Accept ${pct(ns.standing)}${worth} for ${nm}`, () => {
+        A.tradePercentRespond({ oppId: o.id, tradeCardId: pctOpen.id, by: "tp",
+          action: "accept", at: AT });
+        did(`Agreed ${pct(ns.standing)} on ${nm}`);
+      }]);
+    }
+
     if (open2.length) actions.push([`Propose values for ${open2.length} card${open2.length === 1 ? "" : "s"}`, () => {
       /* One proposal per card, through the same reducers the real partner uses,
          so the turn guards, the market-before-percentage gate and the threads
@@ -2385,6 +2422,25 @@ function SimulateTP({ o, st }) {
       });
       did("Proposed values");
     }]);
+  }
+  if (o.stage === "deal") {
+    /* The same omission in the cash phase: agreeing the DEAL was offered, but
+       accepting the collector's standing FIGURE was not, so a proposed final
+       cash amount could only be countered. dealAdjStanding is the canonical
+       answer to whose proposal is on the table. */
+    const standing = D.TRADE.dealAdjStanding(o.deal);
+    if (standing === "collector") {
+      const amt = o.deal.collectorAdj;
+      const dir = D.cashDirection(amt);
+      const them2 = partner ? partner.name : "the partner";
+      actions.push([`Accept ${money(dir.amount)} ${dir.direction === "tp-to-collector"
+        ? "to them" : dir.direction === "settled" ? "settled" : `to ${them2}`}`, () => {
+        /* Signed throughout: the action reads the standing figure from the deal,
+           so direction cannot be flattened on the way through. */
+        A.dealAdjustRespond({ oppId: o.id, by: "tp", action: "accept", at: AT });
+        did(`Agreed ${money(dir.amount)} final cash`);
+      }]);
+    }
   }
   if (o.stage === "deal" && !(o.deal && o.deal.tpAgreed)) {
     actions.push(["Agree the balance", () => {
