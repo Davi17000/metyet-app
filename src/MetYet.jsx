@@ -1055,9 +1055,19 @@ const TODAY = new Date("2026-08-09");
 const SELF_PARTNER = "p-self";
 const PARTNERS_SEED = [
   { id: "p-self", name: "Northline Cards", city: "Duluth, Minnesota", tradeRate: 0.8,
-    since: "2022-08-30", note: "Your shop." },
+    since: "2022-08-30", note: "Your shop.",
+    /* Profile the shop wrote about itself. Optional everywhere: a partner who
+       has filled nothing in still reads as a real relationship. */
+    about: "Independent Pokemon dealer working out of Duluth since 2022. "
+      + "Vintage grails, clean raw copies, and a soft spot for Neo-era holos.",
+    specialties: ["Vintage", "PSA", "WOTC"],
+    website: "northlinecards.example",
+    instagram: "@northlinecards",
+    email: "hello@northlinecards.example" },
   { id: "p2", name: "Complete Collectibles", city: "Roseville, Minnesota", tradeRate: 0.8,
-    since: "2023-04-11", note: "First pick on most Base Set breaks in the Twin Cities." },
+    since: "2023-04-11", note: "First pick on most Base Set breaks in the Twin Cities.",
+    /* A deliberately sparser profile, so the empty branches are demonstrable. */
+    specialties: ["Base Set", "Modern"] },
   { id: "p3", name: "Ryan's Collectibles", city: "Minneapolis, Minnesota", tradeRate: 0.78,
     since: "2024-02-20", note: "Hunts down Neo-era holos better than anyone." },
   { id: "p4", name: "Kane TCG", city: "Eagan, Minnesota", tradeRate: 0.8,
