@@ -276,7 +276,7 @@ describe("D. Guards, staleness and scope", () => {
   test("no stage is written and no mobile-only action was added", () => {
     assert(!/stage:\s*["']/.test(SIM()), "the lifecycle cannot be skipped");
     const shell = code(COL).slice(code(COL).indexOf("function MobileDeal("),
-      code(COL).indexOf("function MobileDeal(") + 9000);
+      code(COL).indexOf("function Deal({", code(COL).indexOf("function MobileDeal(")));
     ["tradeMarketRespond", "tradePercentRespond", "dealAdjustRespond"].forEach((a) =>
       assert(!shell.includes(a), "the mobile shell adds no " + a));
   });

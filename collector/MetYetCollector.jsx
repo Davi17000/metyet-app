@@ -470,6 +470,40 @@ const CSS = `
 .mdl-e.theirs { border-left-color: var(--accent-line); }
 .mdl-e.message { border-left-style: dotted; background: var(--panel-2);
   border-radius: 0 9px 9px 0; padding-right: 10px; }
+/* Three visual languages: people talk, the deal records, the card stays. */
+.mdl-cards { display: flex; gap: 8px; overflow-x: auto; padding: 10px 0 2px; }
+.mdl-card { display: flex; align-items: center; gap: 9px; flex: 0 0 auto;
+  max-width: 78%; padding: 7px 11px 7px 7px; border: 1px solid var(--line);
+  border-radius: 11px; background: var(--panel); text-align: left; }
+.mdl-card.sub { border-style: dashed; }
+.mdl-card-t { display: flex; flex-direction: column; min-width: 0; font-size: 12.5px; }
+.mdl-card-n { font-weight: 700; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+.mdl-card-p { font-size: 11.5px; color: var(--t1); font-weight: 600; }
+.mdl-badge { display: inline-block; min-width: 18px; margin-left: 6px; padding: 0 5px;
+  border-radius: 9px; background: var(--t1); color: #fff; font-size: 11px; font-weight: 700; }
+.mdl-new { display: flex; align-items: center; gap: 10px; margin: 12px 0 4px;
+  font-size: 11.5px; font-weight: 700; letter-spacing: .04em; color: var(--t1); }
+.mdl-new::before, .mdl-new::after { content: ""; flex: 1 1 auto; height: 1px;
+  background: var(--t1); opacity: .35; }
+.mdl-e.unseen { background: var(--accent-bg); border-radius: 0 9px 9px 0; }
+/* A message is a bubble with a side and a face. */
+.mdl-b { display: flex; gap: 8px; align-items: flex-end; }
+.mdl-b.mine { flex-direction: row-reverse; text-align: right; }
+.mdl-av { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: 11px;
+  font-weight: 700; display: flex; align-items: center; justify-content: center;
+  color: var(--muted); }
+.mdl-b-in { display: inline-flex; flex-direction: column; gap: 2px; padding: 8px 11px;
+  border-radius: 13px; background: var(--panel-2); border: 1px solid var(--line); }
+.mdl-b.mine .mdl-b-in { background: var(--accent-bg); border-color: var(--accent-line); }
+/* A milestone is never a bubble: full width, centred, checked. */
+.mdl-ms { display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; padding: 9px 12px; border-radius: 10px; background: var(--panel-2);
+  border: 1px solid var(--line); font-weight: 600; text-align: center; }
+.mdl-ms-k { color: var(--t1); font-weight: 700; }
+.mdl-e.chapter { border-left-color: transparent; padding-left: 0; }
+
 .mdl-comp { margin-top: 14px; }
 .mdl-comp .inp { font-size: 16px; min-height: 44px; }
 .mdl-e-who { font-size: 11.5px; font-weight: 700; color: var(--muted); }
@@ -3411,11 +3445,15 @@ function useNarrow() {
    Messages travel in the same chronology because that is how the deal actually
    happened, but they carry their own kind so they can never be read as
    agreement. */
-function dealTimeline(o, st) {
+function dealTimeline(o, st, viewer) {
+  /* WHOSE CHRONOLOGY THIS IS. The events are the same either way; only what
+     counts as "mine" changes. Passing the seat here is what stops a second
+     copy of this model being written the day a partner surface exists. */
+  const seat = viewer === "tp" ? "tp" : "collector";
   const ev = [];
   const them = (st.partnerById(o.partnerId) || {}).name || "the partner";
-  const who = (by) => (by === "collector" ? "You" : them);
-  const kind = (by) => (by === "collector" ? "mine" : "theirs");
+  const who = (by) => (by === seat ? "You" : them);
+  const kind = (by) => (by === seat ? "mine" : "theirs");
 
   (o.priceThread || []).forEach((e, i) => ev.push({
     key: "p" + i, at: e.at, kind: kind(e.by), stage: "agree-price",
@@ -3483,15 +3521,31 @@ function dealTimeline(o, st) {
        own kind so nothing can read them as commitments. */
     key: "c" + i, at: m.at,
     kind: m.kind === "event" ? "milestone" : "message",
-    text: m.text, by: m.by === "collector" ? "You" : them,
+    text: m.text, by: m.by, label: m.by === seat ? "You" : them,
+    /* Whose voice, and a stable pair of initials for the avatar. "Mine" is
+       decided by the seat reading, so this reads coherently from either. */
+    mine: m.by === seat,
+    initials: m.by === seat ? "You"
+      : them.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase(),
   }));
 
-  ev.forEach((e) => { if (e.kind !== "message") e.milestone = true; });
+  /* CHAPTER MARKERS, NOT EVERY EVENT. A milestone is a decision that STUCK:
+     an acceptance, or a stage that closed. Proposals and counters are the
+     conversation of the deal and stay ordinary, or the hierarchy collapses and
+     nothing stands out. Every figure shown is the canonical agreed one. */
+  ev.forEach((e) => {
+    if (e.kind === "message") return;
+    /* Actor, so "not mine" means the same thing for events as for messages. */
+    if (!e.by) e.by = e.kind === "mine" ? seat : (seat === "tp" ? "collector" : "tp");
+    e.milestone = true;
+    e.chapter = /agreed|accepted|handed the card over|confirmed you have/.test(e.text);
+  });
   return ev.filter((e) => e.at).sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
 }
 
 function MobileDeal({ o, st, go, embedded }) {
   const [openSummary, setOpenSummary] = useState(false);
+  const [photos, setPhotos] = useState(null);
   const [view, setView] = useState("timeline");
   const [bar, setBar] = useState(null);
   const register = useCallback((next) => setBar(next), []);
@@ -3502,7 +3556,29 @@ function MobileDeal({ o, st, go, embedded }) {
   const ix = D.RECEIPT_STAGES.indexOf(o.stage);
   const done = D.isCompleted(o);
   const receipt = D.cashReceipt(o);
-  const events = dealTimeline(o, st);
+  /* Collector-only today; the seat is stated at this boundary rather than
+     assumed inside the chronology. */
+  const SEAT = "collector";
+  const events = dealTimeline(o, st, SEAT);
+  const inv = st.inventoryCopy ? st.inventoryCopy(o.invId) : null;
+  const shots = st.copyPhotos ? st.copyPhotos(inv) : { actual: false };
+  const tradeCards = D.acceptedTradeCards(o);
+
+  /* Unread per surface, for this seat. */
+  const unread = D.unreadFor(events, o.viewedAt, SEAT);
+  const unseen = view === "messages" ? unread.messages : unread.timeline;
+  const unseenKeys = new Set(unseen.map((e) => e.key));
+  const firstNew = unseen.length ? unseen[0].key : null;
+
+  /* READING IS AN ACT, NOT A SIDE EFFECT OF EXISTING. The cursor advances when
+     somebody opens a surface — never merely because the shell mounted, which is
+     how a message arriving during a glance at the timeline used to mark itself
+     read before anyone had seen it. */
+  const review = (where) => st.markDealViewed(o.id, where);
+  const show = (where) => { setView(where); review(where); };
+  useEffect(() => { review(view); /* the surface actually on screen */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [o && o.id]);
   const stageProps = { o, st, register, go };
 
   return (
@@ -3552,10 +3628,69 @@ function MobileDeal({ o, st, go, embedded }) {
         )}
       </div>
 
+      {/* THE COLLECTIBLE STAYS IN CONTEXT. Compact by design: a strip, not a
+          hero, so the current decision keeps the screen. Photos are one tap
+          away and use the canonical copy record — tokens, not URLs, rendered by
+          the same viewer the rest of the app uses. A copy with no photographs
+          says so rather than showing a broken frame. */}
+      <div className="mdl-cards">
+        <button className="mdl-card" onClick={() => setPhotos({ photos: (inv && inv.photos) || null })}>
+          <Art card={c} size="sm" />
+          <span className="mdl-card-t">
+            <span className="mdl-card-n">{c ? c.name : "This card"}</span>
+            <span className="faint">{c ? gradeLine(c) : ""}</span>
+          </span>
+          <span className="mdl-card-p">{shots.actual ? "Photos" : "No photos"}</span>
+        </button>
+        {/* Multi-card trades: every collectible in the deal stays reachable. */}
+        {tradeCards.map((tc) => {
+          const tcCard = st.cardById(tc.cardId);
+          return (
+            <div key={tc.id} className="mdl-card sub">
+              <Art card={tcCard} size="sm" />
+              <span className="mdl-card-t">
+                <span className="mdl-card-n">{tcCard ? tcCard.name : tc.cardId}</span>
+                <span className="faint">Yours, in the trade</span>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {photos !== null && (
+        <div className="ovl" onClick={() => setPhotos(null)}>
+          <div className="sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="sheet-h">{c ? c.name : "Card"} · actual photos</div>
+            {shots.actual ? (
+              <div className="cx-ph">
+                {["front", "back"].map((side) => (
+                  <ActualCardPhoto key={side} photos={photos.photos} side={side}
+                    cardLabel={c ? c.name : "card"} />
+                ))}
+              </div>
+            ) : (
+              <div className="cx-ph-none">Actual card photos not available</div>
+            )}
+            <button className="btn wide" style={{ marginTop: 14 }}
+              onClick={() => setPhotos(null)}>Close</button>
+          </div>
+        </div>
+      )}
+
       <div className="mdl-tabs">
         {["timeline", "messages"].map((v) => (
           <button key={v} className={"mdl-tab" + (view === v ? " on" : "")}
-            onClick={() => setView(v)}>{v === "timeline" ? "Timeline" : "Messages"}</button>
+            onClick={() => show(v)}>
+            {v === "timeline" ? "Timeline" : "Messages"}
+            {/* Where the new activity is, counted from the same projection the
+                list uses — no separate notification records. */}
+            {/* Each tab counts its own surface, so one cannot clear the other. */}
+            {(v === "timeline" ? unread.timeline.length : unread.messages.length) > 0 && (
+              <span className="mdl-badge">
+                {v === "timeline" ? unread.timeline.length : unread.messages.length}
+              </span>
+            )}
+          </button>
         ))}
       </div>
 
@@ -3570,17 +3705,38 @@ function MobileDeal({ o, st, go, embedded }) {
             ? e.kind === "message" || e.kind === "milestone" || e.milestone
             : true))
           .map((e) => (
-            <li key={e.key} className={"mdl-e " + e.kind}>
-              {e.kind === "message" ? (
-                <>
-                  <span className="mdl-e-who">{e.by}</span>
-                  <span className="mdl-e-msg">{e.text}</span>
-                </>
-              ) : (
-                <span className="mdl-e-t">{e.text}</span>
+            <React.Fragment key={e.key}>
+              {/* WHERE THE NEW ACTIVITY BEGINS — a line in the history, so the
+                  reader can start exactly where they left off. */}
+              {firstNew === e.key && (
+                <li className="mdl-new"><span>New since you last looked</span></li>
               )}
-              <span className="mdl-e-at">{fmtDate(e.at)}</span>
-            </li>
+              <li className={"mdl-e " + e.kind
+                + (e.chapter ? " chapter" : "") + (unseenKeys.has(e.key) ? " unseen" : "")}>
+                {e.kind === "message" ? (
+                  /* PEOPLE TALK: a bubble, sided, with whose voice it is. Mine
+                     and theirs differ by alignment and treatment, not colour
+                     alone, and read the same way from either seat. */
+                  <span className={"mdl-b " + (e.mine ? "mine" : "theirs")}>
+                    <span className="mdl-av" aria-hidden="true">{e.initials}</span>
+                    <span className="mdl-b-in">
+                      <span className="mdl-e-who">{e.label || e.by}</span>
+                      <span className="mdl-e-msg">{e.text}</span>
+                    </span>
+                  </span>
+                ) : e.chapter ? (
+                  /* THE DEAL RECORDS DECISIONS: full-width, centred, checked —
+                     never a bubble, so it cannot be read as somebody speaking. */
+                  <span className="mdl-ms">
+                    <span className="mdl-ms-k" aria-hidden="true">✓</span>
+                    <span className="mdl-ms-t">{e.text}</span>
+                  </span>
+                ) : (
+                  <span className="mdl-e-t">{e.text}</span>
+                )}
+                <span className="mdl-e-at">{fmtDate(e.at)}</span>
+              </li>
+            </React.Fragment>
           ))}
         {events.length === 0 && (
           <li className="mdl-e empty">Nothing has happened yet.</li>
@@ -5261,6 +5417,9 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
       dealAdjustAccept: (id) =>
         A.dealAdjustRespond({ oppId: id, by: "collector", action: "accept", at: AT }),
       /* Editing a copy, never replacing it: the canonical action keeps the id. */
+      /* Reading position only: it records that this seat looked. */
+      markDealViewed: (oppId, surface) =>
+        A.markDealViewed({ oppId, by: "collector", surface, at: AT }),
       updateBinderCopy: (binderId, patch) =>
         A.updateBinderCopy({ binderId, patch, at: AT }),
       chooseCashOnly: (id) => A.chooseCashOnly({ oppId: id, at: AT }),

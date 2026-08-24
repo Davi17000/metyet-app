@@ -329,7 +329,7 @@ describe("E. One dominant decision, using canonical actions", () => {
 
   test("the shell renders no negotiation controls of its own", () => {
     const shell = code(COL).slice(code(COL).indexOf("function MobileDeal("),
-      code(COL).indexOf("function MobileDeal(") + 7000);
+      code(COL).indexOf("function Deal({", code(COL).indexOf("function MobileDeal(")));
     ["marketRespond", "pctRespond", "dealPropose", "confirmHandoff", "patchOpportunity"]
       .forEach((a) => assert(!shell.includes(a), "no " + a + " in the mobile shell"));
     ["<AgreePrice", "<SelectTrade", "<ValueTrade", "<DealStage", "<Fulfillment"]
@@ -409,7 +409,7 @@ describe("F. Canonical guarantees survive on mobile", () => {
     eq(D.cashReceipt(mk(700, 1000)).calculated.direction, "tp-to-collector", "they owe");
     eq(D.cashReceipt(mk(1000, 1000)).calculated.direction, "settled", "nobody owes");
     const shell = code(COL).slice(code(COL).indexOf("function MobileDeal("),
-      code(COL).indexOf("function MobileDeal(") + 7000);
+      code(COL).indexOf("function Deal({", code(COL).indexOf("function MobileDeal(")));
     assert(/tp-to-collector.*owes you|owes you/.test(shell), "and the phone says which");
     assert(!/Math\.abs\(D\.calculatedBalance/.test(shell), "without discarding the sign");
   });

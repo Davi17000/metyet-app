@@ -167,6 +167,39 @@ function createStore(seed) {
       return partnerId;
     },
 
+    /* WHEN DID THIS PERSON LAST LOOK?
+
+       The one fact in this pass that genuinely cannot be derived. Every event in
+       a deal is already timestamped, so "what happened" needs no new records —
+       but "what have I already seen" is not implied by anything the deal knows.
+       Two people read the same history at different times.
+
+       So it is two timestamps per opportunity, one per seat, and nothing else.
+       It records reading, never the deal: no stage, no terms, no agreement. A
+       collector who opens a deal and closes it again has changed only their own
+       reading position. */
+    /* ONE CURSOR PER SEAT PER SURFACE, and no more than that.
+
+       A single deal-level position could not tell "I read the timeline" from "I
+       read the messages", so a message arriving while somebody was looking at
+       the timeline marked itself read — the reader never saw it and the badge
+       was already gone. Two surfaces are genuinely two things to have read, so
+       there are two cursors; a third would be inventing a distinction the UI
+       does not make.
+
+       `surface` is "timeline" or "messages", `by` is the seat. Nothing else is
+       stored: no notification records, no per-event flags, and the deal itself
+       is untouched — reading is not acting. */
+    markDealViewed({ oppId, by, surface, at }) {
+      const seat = by === "tp" ? "tp" : "collector";
+      const where = surface === "messages" ? "messages" : "timeline";
+      return this.patchOpportunity(oppId, (o) => {
+        const prev = o.viewedAt || {};
+        return { ...o, viewedAt: { ...prev,
+          [seat]: { ...(prev[seat] || {}), [where]: at } } };
+      });
+    },
+
     /* ---- interest: a partner would consider an exact copy ---- */
     setInterest(partnerId, binderId, on, at) {
       const has = E.hasInterest(s.interests, partnerId, binderId);

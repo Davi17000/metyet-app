@@ -115,6 +115,35 @@ const finalBalance = (o) =>
    comes back unsigned because a headline should never show a negative: which
    way the money moves belongs in the words. Presentation maps `direction` to
    its own tokens; no colour or persona wording lives in the domain. */
+/* NEW SINCE YOU LAST LOOKED — derived by comparison, not by flagging.
+
+   An event is new to a seat when it happened after that seat last opened the
+   deal, and was not that seat's own doing: your own message is not news to you.
+   Nothing is written onto the events themselves, so two people can hold
+   different views of the same unchanged history. */
+const newSince = (events, viewedAt, viewer) => {
+  const since = viewedAt || null;
+  return events.filter((e) => {
+    if (!e.at) return false;
+    /* Your own move is never news to you — whichever seat you are reading from.
+       `by` carries the actor, so this holds when the same chronology is read
+       from the other side. */
+    if (e.by === viewer || e.mine === true) return false;
+    if (!viewer && e.kind === "mine") return false;
+    return !since || String(e.at) > String(since);
+  });
+};
+
+/* What is new on each surface, for one seat. Timeline holds everything;
+   Messages holds only what somebody said. Two questions, one chronology. */
+const unreadFor = (events, viewedAt, viewer) => {
+  const seat = (viewedAt || {})[viewer === "tp" ? "tp" : "collector"] || {};
+  const timeline = newSince(events, seat.timeline, viewer);
+  const messages = newSince(events.filter((e) => e.kind === "message"),
+    seat.messages, viewer);
+  return { timeline, messages };
+};
+
 const cashDirection = (amount) => {
   if (amount == null) return { direction: "unknown", amount: null };
   if (amount > 0) return { direction: "collector-to-tp", amount: Math.abs(amount) };
@@ -522,7 +551,7 @@ const REFUSE = {
 };
 
 module.exports = {
-  FULFILLMENT, TRADE, cashDirection, cashReceipt,
+  FULFILLMENT, TRADE, cashDirection, cashReceipt, newSince, unreadFor,
   identityKey, isRaw, sameIdentity,
   STAGES, STAGE_IX, STAGE_LABEL,
   isEnded, isCompleted, isTerminal, isActive, isNegotiating,

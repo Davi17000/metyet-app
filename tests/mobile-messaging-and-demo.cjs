@@ -159,7 +159,7 @@ describe("A. The Messages tab can actually be used", () => {
 
   test("the composer reuses the canonical send path", () => {
     const shell = code(COL).slice(code(COL).indexOf("function MobileDeal("),
-      code(COL).indexOf("function MobileDeal(") + 9000);
+      code(COL).indexOf("function Deal({", code(COL).indexOf("function MobileDeal(")));
     assert(/<DealChat[^>]*composerOnly/.test(shell), "it mounts DealChat");
     assert(!/sendMessage/.test(shell), "and never calls the action itself");
     eq((code(COL).match(/st\.sendMessage\(pid, cid, draft/g) || []).length, 1,
@@ -232,7 +232,7 @@ describe("B. Milestones travel with the conversation", () => {
     eq(D.cashReceipt(mk(1000, 275)).calculated.direction, "collector-to-tp", "you owe");
     eq(D.cashReceipt(mk(700, 1000)).calculated.direction, "tp-to-collector", "they owe");
     const shell = code(COL).slice(code(COL).indexOf("function MobileDeal("),
-      code(COL).indexOf("function MobileDeal(") + 9000);
+      code(COL).indexOf("function Deal({", code(COL).indexOf("function MobileDeal(")));
     assert(/owes you/.test(shell) && /You owe/.test(shell), "and the phone says which");
   });
 
@@ -267,7 +267,7 @@ describe("C. The partner can be driven from the phone, in DEV only", () => {
 
   test("it is the existing simulator, not a mobile copy", () => {
     const shell = code(COL).slice(code(COL).indexOf("function MobileDeal("),
-      code(COL).indexOf("function MobileDeal(") + 9000);
+      code(COL).indexOf("function Deal({", code(COL).indexOf("function MobileDeal(")));
     assert(/<SimulateTP o=\{o\} st=\{st\} \/>/.test(shell), "mounted, not reimplemented");
     eq((code(COL).match(/function SimulateTP\(/g) || []).length, 1, "one definition");
     ["tradeMarketRespond", "tradePercentRespond", "dealAgree", "reviewTradeCards"]
