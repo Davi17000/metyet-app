@@ -2354,18 +2354,35 @@ function SimulateTP({ o, st }) {
   if (o.stage === "select-trade" && o.trade && o.trade.submitted
       && (o.trade.cards || []).some((c) => c.inclusion === "proposed")) {
     actions.push(["Accept proposed cards", () => {
-      A.patchOpportunity(o.id, (x) => ({ ...x, trade: { ...x.trade,
-        cards: x.trade.cards.map((c) => (c.inclusion === "proposed"
-          ? { ...c, inclusion: "accepted" } : c)) } }));
+      /* THE CANONICAL REVIEW, not a hand-written inclusion.
+
+         Setting inclusion directly looked identical in the data and was not:
+         reviewTradeCards runs closeSelection, which is what ends the stage once
+         nothing is left unreviewed. Patching the field marked the cards
+         accepted and left the deal sitting in Select Trade with nothing anyone
+         could do — the same class of defect an earlier pass fixed in the
+         product, reintroduced here because this tool wrote state instead of
+         taking an action. It also records reviewedAt, which the timeline reads. */
+      A.reviewTradeCards({ oppId: o.id, decision: "accepted", at: AT });
       did("Reviewed the cards");
     }]);
   }
   if (o.stage === "value-trade") {
     const open2 = cards.filter((c) => !D.cardSettled(c));
     if (open2.length) actions.push([`Propose values for ${open2.length} card${open2.length === 1 ? "" : "s"}`, () => {
-      A.patchOpportunity(o.id, (x) => ({ ...x, trade: { ...x.trade,
-        cards: x.trade.cards.map((c) => (D.cardSettled(c) ? c
-          : { ...c, tpMarket: c.tpMarket != null ? c.tpMarket : 200, tpPercent: 0.8 })) } }));
+      /* One proposal per card, through the same reducers the real partner uses,
+         so the turn guards, the market-before-percentage gate and the threads
+         all behave exactly as they would in a real negotiation. Writing
+         tpMarket and tpPercent together skipped all three. */
+      open2.forEach((c) => {
+        if (c.agreedMarket == null) {
+          A.tradeMarketRespond({ oppId: o.id, tradeCardId: c.id, by: "tp",
+            action: "propose", amount: c.tpMarket != null ? c.tpMarket : 200, at: AT });
+        } else if (c.agreedPercent == null) {
+          A.tradePercentRespond({ oppId: o.id, tradeCardId: c.id, by: "tp",
+            action: "propose", percent: 0.8, at: AT });
+        }
+      });
       did("Proposed values");
     }]);
   }
