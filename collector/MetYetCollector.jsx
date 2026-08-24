@@ -841,6 +841,12 @@ const CSS = `
   align-items: center; justify-content: center; color: #FFF; font-family: 'Archivo';
   font-weight: 700; font-size: 17px; }
 .pt-n { font-size: 18px; font-weight: 700; line-height: 1.2; }
+.ab { margin-bottom: 16px; }
+.ab-t { font-size: 14px; line-height: 1.55; color: var(--text); }
+.ab-sp { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.ab-l { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px;
+  font-size: 13px; color: var(--t1); }
+
 .pt-inv { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
 .pt-c { font-size: 13.5px; color: var(--muted); margin-top: 2px; }
 .pt-stats { display: flex; gap: 14px; margin-top: 18px; padding: 14px 4px;
@@ -2572,9 +2578,90 @@ function Binder({ st, go }) {
 function BinderCopy({ b, st, onClose, go }) {
   const c = st.cardById(b.cardId);
   const who = st.interestIn(b.id);
+  /* Editing is a mode of this sheet, not a second screen: the collector is
+     correcting the copy they are already looking at. Opening it writes nothing;
+     the drafts are local until Save. */
+  const [editing, setEditing] = useState(false);
+  const [mkt, setMkt] = useState(b.market == null ? "" : String(b.market));
+  const [cert, setCert] = useState(b.cert || "");
+  const [note, setNote] = useState("");
+
+  const committed = st.binderCopyState(b.id).state === "in-deal";
+
+  const save = () => {
+    const res = st.updateBinderCopy(b.id, {
+      market: mkt === "" ? null : Number(mkt),
+      ...(committed ? {} : { cert: cert.trim() || null }),
+    });
+    if (res && res.refused) {
+      setNote(res.refused === D.REFUSE.copyCommitted
+        ? "This copy is in a live trade, so its certification can't change."
+        : res.refused === D.REFUSE.photosRequired
+          ? "A copy needs both faces photographed."
+          : "That couldn't be saved.");
+      return;
+    }
+    setEditing(false); setNote("");
+  };
+
+  if (editing) {
+    return (
+      <Sheet title={"Edit " + c.name} sub={cardFull(c)} onClose={onClose}
+        footer={(
+          <div className="act-2">
+            <button className="btn" onClick={() => {
+              /* Cancel restores the copy's own values: nothing was written. */
+              setMkt(b.market == null ? "" : String(b.market));
+              setCert(b.cert || ""); setNote(""); setEditing(false);
+            }}>Cancel</button>
+            <button className="btn pri" style={{ flex: 1 }} onClick={save}>Save changes</button>
+          </div>
+        )}>
+        {/* Identity is not editable. Condition and grade belong to the CARD, so
+            changing them would mean pointing this copy at a different card —
+            a different object, and one a live deal may already be about. */}
+        <div className="row"><span className="k">Card</span><span>{cardFull(c)}</span></div>
+        <div className="faint" style={{ fontSize: 12.5, marginTop: 4, marginBottom: 18 }}>
+          The card itself can't be changed here. If this is the wrong card,
+          remove the copy and add the right one.
+        </div>
+
+        <label className="pn-f" style={{ marginBottom: 16 }}>
+          <span className="pn-fl">What you think it's worth</span>
+          <span className="pn-w"><span className="pn-u">$</span>
+            <input className="inp" inputMode="decimal" value={mkt}
+              aria-label="What you think this copy is worth"
+              onChange={(e) => setMkt(e.target.value.replace(/[^\d.]/g, ""))} />
+          </span>
+        </label>
+        <div className="faint" style={{ fontSize: 12.5, marginTop: -10, marginBottom: 18 }}>
+          Only you can see this. Partners never see your number.
+        </div>
+
+        <label className="pn-f">
+          <span className="pn-fl">Certification number</span>
+          <input className="inp" value={cert} aria-label="Certification number"
+            disabled={committed} onChange={(e) => setCert(e.target.value)} />
+        </label>
+        {committed && (
+          <div className="faint" style={{ fontSize: 12.5, marginTop: 6 }}>
+            This copy is in a live trade. A partner is valuing this exact
+            certification, so it stays fixed until the deal ends.
+          </div>
+        )}
+        {note && <div className="ap-refused" style={{ marginTop: 14 }}>{note}</div>}
+      </Sheet>
+    );
+  }
+
   return (
     <Sheet title={c.name} sub={cardFull(c)} onClose={onClose}
-      footer={<button className="btn wide" onClick={onClose}>Close</button>}>
+      footer={(
+        <div className="act-2">
+          <button className="btn" onClick={() => setEditing(true)}>Edit card</button>
+          <button className="btn wide" style={{ flex: 1 }} onClick={onClose}>Close</button>
+        </div>
+      )}>
       <div style={{ display: "flex", gap: 14, justifyContent: "center", marginBottom: 20 }}>
         {["front", "back"].map((side) => (
           <div key={side} style={{ textAlign: "center" }}>
@@ -2755,6 +2842,29 @@ function PartnerDetail({ partnerId, st, go }) {
           </div>
         </div>
       </div>
+
+      {/* WHO THEY ARE, IN THEIR OWN WORDS. Every field is optional and omitted
+          when absent — a partner who has written nothing still reads as a real
+          relationship rather than a broken record. Read-only here: this is the
+          shop's profile, and a collector editing it would be editing somebody
+          else's shopfront. */}
+      {(p.about || (p.specialties || []).length > 0 || p.website || p.instagram || p.email) && (
+        <div className="card sec ab">
+          {p.about && <div className="ab-t">{p.about}</div>}
+          {(p.specialties || []).length > 0 && (
+            <div className="ab-sp">
+              {p.specialties.map((t) => <span key={t} className="chip">{t}</span>)}
+            </div>
+          )}
+          {(p.website || p.instagram || p.email) && (
+            <div className="ab-l">
+              {p.website && <span>{p.website}</span>}
+              {p.instagram && <span>{p.instagram}</span>}
+              {p.email && <span>{p.email}</span>}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* The relationship lives in its own tab now, not in a panel above the
           inventory. A collector usually opens a partner to browse what they
@@ -4730,6 +4840,9 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
         A.requestFulfillmentRevision({ oppId: id, note, at: AT }),
       dealAdjustAccept: (id) =>
         A.dealAdjustRespond({ oppId: id, by: "collector", action: "accept", at: AT }),
+      /* Editing a copy, never replacing it: the canonical action keeps the id. */
+      updateBinderCopy: (binderId, patch) =>
+        A.updateBinderCopy({ binderId, patch, at: AT }),
       chooseCashOnly: (id) => A.chooseCashOnly({ oppId: id, at: AT }),
       withdrawTradeCard: (id, tradeCardId) =>
         A.withdrawTradeCard({ oppId: id, tradeCardId, at: AT }),

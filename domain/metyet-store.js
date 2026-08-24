@@ -93,9 +93,78 @@ function createStore(seed) {
       set({ ...s, binder: [...s.binder, copy] });
       return copy.id;
     },
+    /* EDIT, NOT REPLACE. The copy keeps its id, so the partner interest attached
+       to it, the trade rows referencing it, and the history that mentions it all
+       remain attached to the same physical object. A delete-and-recreate dressed
+       up as an edit would quietly sever every one of those.
+
+       Card identity is NOT editable. Condition and grade live on the card, not
+       the copy, so "changing the grade" would mean pointing this copy at a
+       different card — which is a different object, and would corrupt any deal
+       already negotiating over it. Correcting identity means removing and
+       re-adding deliberately.
+
+       Cert is economic: a partner valuing a graded copy is valuing THAT
+       certification. While the copy is accepted into a live trade it is
+       read-only, enforced here rather than by a disabled input, so no caller can
+       route around it. Photos and the collector's private value stay editable
+       throughout — better pictures and a corrected private note cannot
+       misrepresent what is being traded. */
+    updateBinderCopy({ binderId, patch, at }) {
+      const copy = (s.binder || []).find((b) => b.id === binderId);
+      if (!copy) return { refused: D.REFUSE.copyUnavailable };
+
+      /* Identity is never editable through this path. */
+      if ("cardId" in patch || "id" in patch || "collectorId" in patch) {
+        return { refused: D.REFUSE.identityImmutable };
+      }
+
+      const committed = (s.opportunities || []).some((o) => D.isActive(o)
+        && ((o.trade && o.trade.cards) || []).some((c) => c.binderId === binderId
+          && c.inclusion === "accepted" && !c.withdrawn));
+      if (committed && "cert" in patch && patch.cert !== copy.cert) {
+        return { refused: D.REFUSE.copyCommitted };
+      }
+
+      const next = { ...copy, ...patch, id: copy.id, cardId: copy.cardId,
+        collectorId: copy.collectorId };
+      /* The same invariant the add path enforces: both faces or it does not
+         exist. An edit cannot leave a committed copy unshowable. */
+      if (!D.INVARIANTS.binderCopyPhotographed(next.photos)) {
+        return { refused: D.REFUSE.photosRequired };
+      }
+      if (next.market != null && !(Number(next.market) >= 0)) {
+        return { refused: D.REFUSE.invalidAmount };
+      }
+      set({ ...s, binder: s.binder.map((b) => (b.id === binderId
+        ? { ...next, updatedAt: at || b.updatedAt } : b)) });
+      return binderId;
+    },
+
     removeBinderCopy(binderId) {
       set({ ...s, binder: s.binder.filter((b) => b.id !== binderId),
         interests: s.interests.filter((i) => i.binderId !== binderId) });
+    },
+
+    /* THE PARTNER'S OWN PROFILE. Written by the partner, read by everyone —
+       one record, so a collector cannot see a different About than the shop
+       wrote, and there is no collector-side mirror to drift.
+
+       Bounded on purpose: who they are, what they deal in, and how to reach
+       them. No notes a collector authored about them, no score, no history —
+       that is a CRM, and the trusted relationship itself is the v1 signal. */
+    updatePartnerProfile({ partnerId, patch }) {
+      const p = (s.partners || []).find((x) => x.id === partnerId);
+      if (!p) return null;
+      const allowed = ["about", "specialties", "website", "instagram", "email", "phone"];
+      const clean = {};
+      allowed.forEach((k) => { if (k in patch) clean[k] = patch[k]; });
+      /* Specialties are stated, never inferred from what happens to be in
+         stock — a shop with one vintage card is not a vintage dealer. */
+      if ("specialties" in clean && !Array.isArray(clean.specialties)) return null;
+      set({ ...s, partners: s.partners.map((x) => (x.id === partnerId
+        ? { ...x, ...clean } : x)) });
+      return partnerId;
     },
 
     /* ---- interest: a partner would consider an exact copy ---- */

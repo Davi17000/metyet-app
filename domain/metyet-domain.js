@@ -514,6 +514,11 @@ const REFUSE = {
   copyCommitted: "copy-committed",
   /* Cash-only and a live trade card are contradictory intents. */
   tradeCardsSelected: "trade-cards-selected",
+  /* A copy's card identity cannot change; that would be a different object. */
+  identityImmutable: "identity-immutable",
+  /* Both faces, or the copy does not exist. */
+  photosRequired: "photos-required",
+  invalidAmount: "invalid-amount",
 };
 
 module.exports = {
