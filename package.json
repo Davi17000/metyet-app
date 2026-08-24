@@ -12,7 +12,8 @@
     "build:site": "node site.build.mjs",
     "smoke": "node tests/prod-smoke.mjs",
     "previews": "node build-preview.mjs && node build-preview-unified.mjs",
-    "verify": "npm run build && npm test && npm run prod && npm run smoke && npm run previews"
+    "verify": "npm run build && npm test && npm run prod && npm run smoke && npm run previews",
+    "ux:mobile-review": "node harness/mobile-ux-review.cjs"
   },
   "dependencies": {
     "esbuild": "^0.28.2",
