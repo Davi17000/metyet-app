@@ -200,9 +200,14 @@ describe("D. Conversation: one heading, and nothing escapes the column", () => {
     /* headless is opt-in, so nothing else lost its title. */
     assert(/embedded headless/.test(SRC), "only the inline column opts out");
     const uses = [...SRC.matchAll(/<DealChat[^>]*>/g)].map((m) => m[0]);
-    /* Two column-headed surfaces now: the deal workspace and Review Card. */
-    eq(uses.filter((u) => /headless/.test(u)).length, 2,
-      "only the column-headed surfaces suppress it");
+    /* CONTRACT CHANGE: a third headless mount joined them — the mobile Messages
+       composer, which is headless because the conversation is already on screen
+       above it. It is composerOnly, so it renders no stream and no heading;
+       asserted explicitly rather than folded into the count. */
+    const headless = uses.filter((u) => /headless/.test(u));
+    eq(headless.length, 3, "the two column-headed surfaces, plus the mobile composer");
+    eq(headless.filter((u) => /composerOnly/.test(u)).length, 1,
+      "exactly one of which is the composer");
   });
 
   test("the composer is inside the conversation column and can shrink", () => {

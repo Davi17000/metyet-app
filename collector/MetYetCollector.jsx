@@ -439,6 +439,50 @@ const CSS = `
 .dl-final.tp-to-collector > span:first-child { color: var(--t1); }
 .dl-final.settled > span:first-child { color: var(--muted); }
 
+/* ---- mobile deal timeline (prototype) ---- */
+.mdl { padding: 0 0 90px; }
+.mdl-h { position: sticky; top: 0; z-index: 20; background: var(--bg);
+  padding: 10px 0 12px; border-bottom: 1px solid var(--line); }
+.mdl-h.emb { position: static; padding-top: 0; border-bottom: 0; }
+.mdl-h-n { font-family: 'Archivo'; font-size: 19px; font-weight: 700; margin-top: 6px; }
+.mdl-h-c { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.mdl-steps { display: flex; list-style: none; margin: 12px 0 0; padding: 0; gap: 4px; }
+.mdl-step { flex: 1 1 0; min-width: 0; text-align: center; font-size: 11px; }
+.mdl-dot { display: block; width: 11px; height: 11px; border-radius: 50%; margin: 0 auto 5px;
+  border: 2px solid var(--line); background: var(--panel); }
+.mdl-step.done .mdl-dot { background: var(--t1); border-color: var(--t1); }
+.mdl-step.now .mdl-dot { border-color: var(--t1); box-shadow: 0 0 0 3px var(--accent-bg); }
+.mdl-step-l { color: var(--faint); }
+.mdl-step.done .mdl-step-l, .mdl-step.now .mdl-step-l { color: var(--text); font-weight: 600; }
+.mdl-sum-t { background: none; border: 0; padding: 8px 0 0; font-size: 12.5px;
+  color: var(--t1); text-decoration: underline; }
+.mdl-sum { margin-top: 8px; padding: 10px 12px; background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 10px; }
+.mdl-tabs { display: flex; gap: 8px; margin: 14px 0 10px; }
+.mdl-tab { flex: 1 1 0; min-height: 40px; border: 1px solid var(--line);
+  background: var(--panel); border-radius: 9px; font-size: 13.5px; }
+.mdl-tab.on { border-color: var(--t1); color: var(--t1); font-weight: 600; }
+.mdl-tl { list-style: none; margin: 0; padding: 0; }
+/* Kinds are distinguishable by shape and label, never by colour alone. */
+.mdl-e { display: flex; flex-direction: column; gap: 2px; padding: 9px 0 9px 14px;
+  border-left: 2px solid var(--line-soft); font-size: 13.5px; }
+.mdl-e.mine { border-left-color: var(--t1); }
+.mdl-e.theirs { border-left-color: var(--accent-line); }
+.mdl-e.message { border-left-style: dotted; background: var(--panel-2);
+  border-radius: 0 9px 9px 0; padding-right: 10px; }
+.mdl-comp { margin-top: 14px; }
+.mdl-comp .inp { font-size: 16px; min-height: 44px; }
+.mdl-e-who { font-size: 11.5px; font-weight: 700; color: var(--muted); }
+.mdl-e-msg { font-style: italic; }
+.mdl-e-at { font-size: 11.5px; color: var(--faint); }
+.mdl-e.empty { color: var(--faint); border-left-color: transparent; }
+.mdl-now { margin-top: 18px; padding: 14px; border: 1px solid var(--t1);
+  border-radius: 13px; background: var(--panel); }
+.mdl-now.done { border-color: var(--line); }
+.mdl-now-h { font-family: 'Archivo'; font-size: 11px; letter-spacing: .11em;
+  text-transform: uppercase; font-weight: 700; color: var(--t1); margin-bottom: 10px; }
+.mdl .btn { min-height: 44px; }
+
 .dl-h { font-family: 'Archivo'; font-size: 11px; letter-spacing: .11em;
   text-transform: uppercase; font-weight: 700; color: var(--muted); margin: 16px 0 4px; }
 .dl-card { padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
@@ -2389,7 +2433,7 @@ function SimulateTP({ o, st }) {
    alternative partner: the difference is whether an opportunity happens to be
    attached, never a second chat model. Sending a message NEVER touches deal
    state — it only appends to the thread. */
-function DealChat({ o, partnerId, cardId, st, bare, embedded, headless }) {
+function DealChat({ o, partnerId, cardId, st, bare, embedded, headless, composerOnly }) {
   const [draft, setDraft] = useState("");
   const [full, setFull] = useState(false);
   const pid = partnerId != null ? partnerId : (o && o.partnerId);
@@ -2410,6 +2454,23 @@ function DealChat({ o, partnerId, cardId, st, bare, embedded, headless }) {
     st.sendMessage(pid, cid, draft, o && o.partnerId === pid ? o.id : undefined);
     setDraft("");
   };
+
+  /* Composer without the stream: used where the conversation is already on
+     screen and only the ability to reply is missing. Same send, same action. */
+  if (composerOnly) {
+    return (
+      <div className="chat chat-bare">
+        <div className="chat-composer">
+          <textarea className="inp" rows={2} value={draft}
+            aria-label={"Message " + them + " about this card"}
+            placeholder={`Message ${them} about this card…`}
+            onChange={(ev) => setDraft(ev.target.value)}
+            onKeyDown={(ev) => { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) send(); }} />
+          <button className="btn pri sm" disabled={!draft.trim()} onClick={send}>Send</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={embedded ? "card sec chat chat-embed" : bare ? "chat chat-bare" : "card sec chat"}>
@@ -3135,6 +3196,14 @@ function StageDetails({ o, st }) {
 }
 
 function InlineDeal({ o, st, go }) {
+  /* THE COLLECTOR'S ACTUAL PATH. Goals -> Primary Goal -> Deal Flow is how a
+     deal is normally opened, so gating only the full-page route left the phone
+     showing the desktop workspace on the journey people really take. Same hook,
+     same 560px, same component — this is a second door onto one room, not a
+     second room. */
+  const narrow = useNarrow();
+  if (narrow) return <MobileDeal o={o} st={st} go={go} embedded />;
+
   /* Filled by whichever stage is mounted; null while waiting. Identical
      contract to the standalone shell, so stages need no inline special case. */
   const [bar, setBar] = useState(null);
@@ -3216,7 +3285,282 @@ function InlineDeal({ o, st, go }) {
    chrome only — the back link and the card/partner context the Goal already
    states. Every stage component, action registration, conversation, receipt and
    simulator below is the same code in both cases; nothing is cloned. */
+/* ============================================================ MOBILE DEAL
+
+   ONE DEAL · ONE TIMELINE · ONE NEXT DECISION.
+
+   A prototype, and deliberately a VIEW rather than a system. Every number here
+   is projected from the same opportunity the desktop deal renders, and every
+   control is the existing stage component — so a mobile action is the canonical
+   action, and there is no second negotiation model to drift.
+
+   The three layers are: a persistent header carrying identity and the five
+   canonical stages; a chronological timeline of what has happened; and one
+   dominant block for what must be decided now. History collapses to a line;
+   the current decision keeps its full controls. */
+
+/* The five canonical stages, named for a phone. Not a second lifecycle — the
+   ids are RECEIPT_STAGES, so this cannot drift from the domain. */
+const M_STEPS = [
+  { id: "agree-price", short: "Price" },
+  { id: "select-trade", short: "Trade" },
+  { id: "value-trade", short: "Value" },
+  { id: "deal", short: "Cash" },
+  { id: "fulfillment", short: "Handoff" },
+];
+
+/* A phone, by the widest existing narrow token in this stylesheet. Rendering
+   is decided in JS because the two shells are different components, not two
+   arrangements of one. */
+const MOBILE_MAX = 560;
+function useNarrow() {
+  const [narrow, setNarrow] = useState(() => (typeof window !== "undefined"
+    && typeof window.matchMedia === "function"
+    ? window.matchMedia(`(max-width: ${MOBILE_MAX}px)`).matches : false));
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return undefined;
+    const mq = window.matchMedia(`(max-width: ${MOBILE_MAX}px)`);
+    const on = () => setNarrow(mq.matches);
+    on();
+    if (mq.addEventListener) { mq.addEventListener("change", on); return () => mq.removeEventListener("change", on); }
+    mq.addListener(on); return () => mq.removeListener(on);
+  }, []);
+  return narrow;
+}
+
+/* THE TIMELINE, PROJECTED — never stored.
+
+   Every event below already exists in canonical state with its own timestamp:
+   the price thread, each trade card's market and percentage threads, the deal
+   adjustment thread, and the conversation. Nothing new is persisted, and no
+   event is invented; a stage the deal never reached simply contributes none.
+
+   Messages travel in the same chronology because that is how the deal actually
+   happened, but they carry their own kind so they can never be read as
+   agreement. */
+function dealTimeline(o, st) {
+  const ev = [];
+  const them = (st.partnerById(o.partnerId) || {}).name || "the partner";
+  const who = (by) => (by === "collector" ? "You" : them);
+  const kind = (by) => (by === "collector" ? "mine" : "theirs");
+
+  (o.priceThread || []).forEach((e, i) => ev.push({
+    key: "p" + i, at: e.at, kind: kind(e.by), stage: "agree-price",
+    text: e.type === "accept" ? `${who(e.by)} accepted ${money(e.amount)}`
+      : `${who(e.by)} ${i === 0 ? "offered" : "countered at"} ${money(e.amount)}`,
+  }));
+
+  const cards = (o.trade && o.trade.cards) || [];
+  cards.forEach((c, ci) => {
+    const nm = (st.cardById(c.cardId) || {}).name || "a card";
+    if (c.reviewedAt) {
+      ev.push({ key: "i" + ci, at: c.reviewedAt, kind: "theirs", stage: "select-trade",
+        text: `${them} ${c.inclusion === "accepted" ? "accepted" : "passed on"} ${nm}` });
+    }
+    (c.valueThread || []).forEach((e, i) => ev.push({
+      key: "m" + ci + "-" + i, at: e.at, kind: kind(e.by), stage: "value-trade",
+      text: e.type === "accept"
+        ? `${who(e.by)} agreed ${money(e.amount)} market value · ${nm}`
+        : `${who(e.by)} proposed ${money(e.amount)} market value · ${nm}`,
+    }));
+    (c.percentThread || []).forEach((e, i) => ev.push({
+      key: "q" + ci + "-" + i, at: e.at, kind: kind(e.by), stage: "value-trade",
+      /* Actor + action + value, with the dollars the percentage means. */
+      text: `${who(e.by)} ${e.type === "accept" ? "agreed" : "proposed"} `
+        + `${pct(e.percent)}${c.agreedMarket != null
+          ? " · " + money(D.tradeValueAt(c.agreedMarket, e.percent)) : ""} · ${nm}`,
+    }));
+    if (c.withdrawn && c.withdrawnAt) {
+      ev.push({ key: "w" + ci, at: c.withdrawnAt, kind: "mine", stage: "value-trade",
+        text: `You took ${nm} out of the trade` });
+    }
+  });
+
+  ((o.deal && o.deal.adjThread) || []).forEach((e, i) => ev.push({
+    key: "d" + i, at: e.at, kind: kind(e.by), stage: "deal",
+    text: `${who(e.by)} ${e.type === "accept" ? "agreed" : "proposed"} `
+      + `${money(Math.abs(e.amount))} final cash`,
+  }));
+
+  const f = o.fulfillment || {};
+  if (f.proposedAt) {
+    ev.push({ key: "f1", at: f.proposedAt, kind: "theirs", stage: "fulfillment",
+      text: `${them} proposed how to hand over` });
+  }
+  if (f.collectorConfirmedPlan && f.confirmedAt) {
+    ev.push({ key: "f2", at: f.confirmedAt, kind: "mine", stage: "fulfillment",
+      text: "You agreed the handoff plan" });
+  }
+  if (D.FULFILLMENT.handedOff(f)) {
+    ev.push({ key: "f3", at: o.completedAt || f.proposedAt, kind: "theirs",
+      stage: "fulfillment", text: `${them} handed the card over` });
+  }
+  if (D.FULFILLMENT.received(f)) {
+    ev.push({ key: "f4", at: o.completedAt || f.proposedAt, kind: "mine",
+      stage: "fulfillment", text: "You confirmed you have the card" });
+  }
+
+  /* Conversation shares the chronology, never the meaning. */
+  /* threadWith is keyed by cardId, not the card object. */
+  const thread = st.threadWith(o.partnerId, o.cardId);
+  ((thread && thread.entries) || []).forEach((m, i) => ev.push({
+    /* A lifecycle event already written into the shared thread is a milestone
+       that HAPPENED here — it is not re-derived from the stage threads, so
+       there is exactly one record of it either way. Human messages keep their
+       own kind so nothing can read them as commitments. */
+    key: "c" + i, at: m.at,
+    kind: m.kind === "event" ? "milestone" : "message",
+    text: m.text, by: m.by === "collector" ? "You" : them,
+  }));
+
+  ev.forEach((e) => { if (e.kind !== "message") e.milestone = true; });
+  return ev.filter((e) => e.at).sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+}
+
+function MobileDeal({ o, st, go, embedded }) {
+  const [openSummary, setOpenSummary] = useState(false);
+  const [view, setView] = useState("timeline");
+  const [bar, setBar] = useState(null);
+  const register = useCallback((next) => setBar(next), []);
+
+  const c = st.cardById(o.cardId);
+  const p = st.partnerById(o.partnerId);
+  const them = p ? p.name : "them";
+  const ix = D.RECEIPT_STAGES.indexOf(o.stage);
+  const done = D.isCompleted(o);
+  const receipt = D.cashReceipt(o);
+  const events = dealTimeline(o, st);
+  const stageProps = { o, st, register, go };
+
+  return (
+    <div className="mdl">
+      {/* 1. PERSISTENT HEADER — identity and the canonical five, compact.
+
+           Reached from inside a Goal, the card above already names the card and
+           the partner and already offers the way back, so repeating them would
+           put two deal headers on one phone screen. The progress rail and the
+           summary stay either way: those are the deal's, not the Goal's. */}
+      <div className={"mdl-h" + (embedded ? " emb" : "")}>
+        {!embedded && (
+          <>
+            <button className="link" onClick={() => go({ v: "goals" })}>← Goals</button>
+            <div className="mdl-h-n">{them}</div>
+            <div className="mdl-h-c">{c ? `${c.name} · ${gradeLine(c)}` : ""}</div>
+          </>
+        )}
+        <ol className="mdl-steps">
+          {M_STEPS.map((s2, i) => {
+            const state = done || i < ix ? "done" : i === ix ? "now" : "next";
+            return (
+              <li key={s2.id} className={"mdl-step " + state}>
+                <span className="mdl-dot" aria-hidden="true" />
+                <span className="mdl-step-l">{s2.short}</span>
+              </li>
+            );
+          })}
+        </ol>
+        <button className="mdl-sum-t" aria-expanded={openSummary}
+          onClick={() => setOpenSummary(!openSummary)}>
+          {openSummary ? "Hide deal summary" : "Deal summary"}
+        </button>
+        {openSummary && (
+          /* The canonical receipt, not a mobile recalculation. */
+          <div className="mdl-sum">
+            <div className="row"><span className="k">Purchase price</span>
+              <span className="mono">{money(o.agreedPrice)}</span></div>
+            <div className="row"><span className="k">Trade value</span>
+              <span className="mono">−{money(D.totalTradeValue(o))}</span></div>
+            <div className="row tot">
+              <span>{receipt.final.direction === "tp-to-collector" ? `${them} owes you`
+                : receipt.final.direction === "settled" ? "No cash owed" : `You owe ${them}`}</span>
+              <span className="mono">{money(receipt.final.amount)}</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="mdl-tabs">
+        {["timeline", "messages"].map((v) => (
+          <button key={v} className={"mdl-tab" + (view === v ? " on" : "")}
+            onClick={() => setView(v)}>{v === "timeline" ? "Timeline" : "Messages"}</button>
+        ))}
+      </div>
+
+      {/* 2. TIMELINE — history compact, in order, kinds distinguishable. */}
+      <ol className="mdl-tl">
+        {events
+          /* MESSAGES IS CHAT-FIRST, NOT CHAT-ONLY. Reading the conversation
+             without the deal around it loses the thread of what is being
+             discussed, so milestones stay — visually distinct, never
+             confusable with something somebody said. */
+          .filter((e) => (view === "messages"
+            ? e.kind === "message" || e.kind === "milestone" || e.milestone
+            : true))
+          .map((e) => (
+            <li key={e.key} className={"mdl-e " + e.kind}>
+              {e.kind === "message" ? (
+                <>
+                  <span className="mdl-e-who">{e.by}</span>
+                  <span className="mdl-e-msg">{e.text}</span>
+                </>
+              ) : (
+                <span className="mdl-e-t">{e.text}</span>
+              )}
+              <span className="mdl-e-at">{fmtDate(e.at)}</span>
+            </li>
+          ))}
+        {events.length === 0 && (
+          <li className="mdl-e empty">Nothing has happened yet.</li>
+        )}
+      </ol>
+
+      {/* THE COMPOSER, canonical. DealChat owns the send path already — draft is
+          local, Send calls the one conversation action once, and the message
+          lands in the same thread the Trusted Partner reads. Headless because
+          the stream above already showed the conversation. */}
+      {view === "messages" && (
+        <div className="mdl-comp">
+          <DealChat o={o} partnerId={o.partnerId} cardId={o.cardId} st={st}
+            bare headless composerOnly />
+        </div>
+      )}
+
+      {/* 3. CURRENT ACTION — the existing stage component, so every control is
+             the canonical one. Waiting states come from those components, which
+             already refuse to offer moves that cannot be made. */}
+      {view === "timeline" && (
+        done ? (
+          <div className="mdl-now done">
+            <div className="mdl-now-h">Deal completed</div>
+            <button className="btn wide" onClick={() => setOpenSummary(true)}>View receipt</button>
+          </div>
+        ) : (
+          <div className="mdl-now">
+            <div className="mdl-now-h">
+              {D.nextActor(o).actor === "collector" ? "Your move" : `Waiting on ${them}`}
+            </div>
+            {o.stage === "agree-price" && <AgreePrice {...stageProps} />}
+            {o.stage === "select-trade" && <SelectTrade {...stageProps} />}
+            {o.stage === "value-trade" && <ValueTrade {...stageProps} />}
+            {o.stage === "deal" && <DealStage {...stageProps} />}
+            {o.stage === "fulfillment" && <Fulfillment {...stageProps} />}
+            {/* ENGINEERING TOOLING, DEV-ONLY. SimulateTP gates on DEV itself and
+                already offers only the moves canonically available now, through
+                st.simulate. Nothing stage-specific is restated here. */}
+            <SimulateTP o={o} st={st} />
+            {bar && bar.label && (
+              <button className="btn pri wide" style={{ marginTop: 12 }}
+                disabled={bar.disabled} onClick={bar.run}>{bar.label}</button>
+            )}
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
 function Deal({ oppId, st, go }) {
+  const narrow = useNarrow();
   const o = st.opps.find((x) => x.id === oppId);
   const [chat, setChat] = useState(false);
   /* Which face is on screen, or null. Local to the shell, so opening it cannot
@@ -3242,6 +3586,9 @@ function Deal({ oppId, st, go }) {
   const boundCopy = o.invId ? st.inventoryCopy(o.invId) : null;
   const copyHasPhotos = !!boundCopy && D.INVARIANTS.copyPhotographed(boundCopy.photos);
   const stageProps = { o, st, register, go };
+  /* PROTOTYPE GATE. On a phone the deal renders as one timeline; at every other
+     width the existing desktop workspace renders unchanged. */
+  if (narrow) return <MobileDeal o={o} st={st} go={go} />;
 
   return (
     <div className="pg dw">
