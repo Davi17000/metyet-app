@@ -138,6 +138,7 @@ const CAPTURES = [
       : "expected fulfillment, got " + o.stage) },
 
   { id: "21-long-timeline-top", checkpoint: "handoff-partial", surface: "timeline",
+    scroll: "top",
     question: "With a full history, is the current area still readable?",
     /* Density is the whole chronology — thread entries plus the negotiation
        threads the timeline projects — not just what was said aloud. */

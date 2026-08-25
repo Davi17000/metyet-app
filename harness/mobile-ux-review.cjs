@@ -119,6 +119,7 @@ const pageHtml = (bundle, state) =>
   + "<script>" + bundle + "<\/script></body></html>";
 
 const makeShooter = (pw, browser, bundle) => async (ctx, cap, file) => {
+  let scrollInfo = null;
   const page = await browser.newPage({ viewport: {
     width: VIEWPORT.width, height: VIEWPORT.height },
     deviceScaleFactor: VIEWPORT.deviceScaleFactor });
@@ -151,28 +152,106 @@ const makeShooter = (pw, browser, bundle) => async (ctx, cap, file) => {
     });
     await page.waitForTimeout(120);
   }
-  if (cap.scroll === "bottom") {
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  /* 21 vs 22 must be genuinely different views of the same deal, or they are
+     two copies of one screenshot pretending to answer two questions.
+     "top" frames the current-action end; "history" frames the oldest events,
+     scrolled within the timeline itself rather than the page. */
+  if (cap.scroll === "top" || cap.scroll === "bottom") {
+    const moved = await page.evaluate((where) => {
+      const list = document.querySelector(".mdl-tl");
+      if (!list) return null;
+      const rows = list.querySelectorAll(".mdl-e");
+      if (!rows.length) return null;
+      const target = where === "bottom" ? rows[rows.length - 1] : rows[0];
+      target.scrollIntoView({ block: where === "bottom" ? "end" : "start" });
+      return { rows: rows.length, y: Math.round(window.scrollY) };
+    }, cap.scroll);
+    if (!moved) throw new Error("no timeline rows to frame for " + cap.scroll);
+    await page.waitForTimeout(150);
+    scrollInfo = moved;
   }
   await page.screenshot({ path: file, fullPage: false });
   await page.close();
+  return scrollInfo;
 };
 
 async function main() {
   const args = process.argv.slice(2);
+  /* SCREENSHOTS ARE THE POINT. A run that quietly produces no images is a
+     failure dressed as a success, so assertion-only is something you must ask
+     for by name — never somewhere the harness lands on its own. */
+  const assertOnly = args.includes("--assert-only");
   const outRoot = path.join(ROOT, "artifacts", "mobile-ux-review");
 
-  /* Is a browser available? Never assumed. */
-  let pw = null; let browserName = null; let browserInstance = null; let shoot = null;
+  let pw = null; let browserName = null; let browserInstance = null;
+  let shoot = null; let launchError = null;
+
+  /* THE BROWSER YOU ALREADY HAVE.
+
+     Chrome is on essentially every developer machine, and asking someone to
+     download a second Chromium just to look at screenshots is a poor trade —
+     especially on a managed work machine. Playwright drives an installed Chrome
+     through its `chrome` channel, which resolves the standard install location
+     per platform, so nothing here is tied to one user or one disk layout.
+
+     The ladder, in order of preference: installed Chrome, then installed Edge
+     (also Chromium, and present on many managed Windows/Mac fleets), then
+     Playwright's own Chromium if somebody happens to have it. A conventional
+     macOS application path is the last resort — the standard location, never a
+     username-specific one. */
+  const LAUNCH = [
+    { label: "Google Chrome (installed, via Playwright channel)",
+      opts: { channel: "chrome" } },
+    { label: "Microsoft Edge (installed, via Playwright channel)",
+      opts: { channel: "msedge" } },
+    { label: "Chromium (Playwright-managed)", opts: {} },
+    { label: "Google Chrome (macOS application path)",
+      opts: { executablePath:
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" } },
+  ];
+
+  const attempts = [];
   try {
     pw = require("playwright");
-    browserInstance = await pw.chromium.launch();  // throws if no binary
-    browserName = "chromium (playwright)";
-    shoot = makeShooter(pw, browserInstance, buildBundle());
   } catch (e) {
-    pw = null;
-    browserName = null;
+    launchError = "playwright is not installed (" + e.code + ")";
   }
+  if (pw) {
+    for (const cand of LAUNCH) {
+      try {
+        /* Headless throughout: a review run must never steal focus or touch a
+           real browsing session. */
+        browserInstance = await pw.chromium.launch({ ...cand.opts, headless: true });
+        browserName = cand.label;
+        shoot = makeShooter(pw, browserInstance, buildBundle());
+        break;
+      } catch (e) {
+        attempts.push(cand.label + ": "
+          + String(e && e.message ? e.message : e).split("\n")[0].slice(0, 90));
+      }
+    }
+    if (!browserInstance) launchError = attempts.join(" | ");
+  }
+
+  if (!assertOnly && !browserInstance) {
+    /* Fail loudly, and say what was looked for. Falling back to assertions here
+       is what produced a review package with no review in it. */
+    const say = (t) => process.stderr.write(t + "\n");
+    say("");
+    say("MOBILE UX REVIEW FAILED — no browser available, so no screenshots.");
+    say("  tried: " + (launchError || "playwright is not installed"));
+    say("");
+    say("  The harness drives the Chrome you already have. Check that Google");
+    say("  Chrome is installed, then:");
+    say("    npm install");
+    say("    npm run ux:mobile-review");
+    say("");
+    say("  For state assertions without images (no screenshots produced):");
+    say("    npm run ux:mobile-review:assert");
+    say("");
+    process.exit(2);
+  }
+
 
   const env = environment(browserName);
   const outDir = path.join(outRoot, env.shortSha + "-" + Date.now());
@@ -213,14 +292,15 @@ async function main() {
       results.push(rec); continue;
     }
 
-    if (!pw) { results.push(rec); continue; }
+    if (assertOnly) { rec.status = "asserted"; results.push(rec); continue; }
 
     /* Capture, then PROVE it. A status flag is not evidence: the file must
        exist and be large enough to be a rendered screen rather than a blank
        page, or this is recorded as a failure. */
     try {
       const file = path.join(outDir, rec.filename);
-      await shoot(ctx, cap, file);
+      const info = await shoot(ctx, cap, file);
+      if (info) rec.framedAt = info;
       const size = fs.existsSync(file) ? fs.statSync(file).size : 0;
       if (size < 5000) {
         rec.status = "failed";
@@ -239,6 +319,7 @@ async function main() {
     viewport: VIEWPORT, captures: results,
     summary: { total: results.length,
       captured: results.filter((r) => r.status === "captured").length,
+      asserted: results.filter((r) => r.status === "asserted").length,
       pending: results.filter((r) => r.status === "pending-capture").length,
       failed: failures } };
   fs.writeFileSync(path.join(outDir, "manifest.json"),
@@ -285,9 +366,9 @@ async function main() {
     + " | captured: " + manifest.summary.captured
     + " | pending: " + manifest.summary.pending
     + " | failed: " + manifest.summary.failed);
-  if (!pw) {
-    line("  NO BROWSER AVAILABLE — states were built and asserted, no images taken.");
-    line("  Install one with: npx playwright install chromium");
+  if (assertOnly) {
+    line("  ASSERTION-ONLY MODE — states were built and asserted; no images taken.");
+    line("  Run `npm run ux:mobile-review` for the screenshot package.");
   }
   if (browserInstance) await browserInstance.close();
   results.filter((r) => r.status === "failed")
@@ -295,7 +376,11 @@ async function main() {
 
   /* Nonzero when anything is missing, so a dry run is never mistaken for a
      visual review. */
-  process.exit(failures > 0 || manifest.summary.pending > 0 ? 1 : 0);
+  /* In screenshot mode, anything short of every capture on disk is a failure.
+     In assertion-only mode, pending is the expected outcome and only genuine
+     assertion failures matter. */
+  const bad = assertOnly ? failures : (failures > 0 || manifest.summary.pending > 0);
+  process.exit(bad ? 1 : 0);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
