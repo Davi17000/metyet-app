@@ -548,6 +548,24 @@ const CSS = `
   text-transform: uppercase; font-weight: 700; color: var(--t1); margin-bottom: 10px; }
 .mdl .btn { min-height: 44px; }
 
+/* One axis, zero in the middle: crossing it is what changes who pays. */
+.cs { position: relative; margin: 14px 0 4px; }
+/* At 390px three end labels cannot share a line — they ran together as
+   "EvenNorthline Cards owes you". Each gets its own column with room to wrap. */
+.cs-ends { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px;
+  align-items: end; font-size: 11px; font-weight: 700; color: var(--muted);
+  margin-bottom: 6px; }
+.cs-ends > :nth-child(2) { text-align: center; }
+.cs-ends > :last-child { text-align: right; }
+.cs-r { width: 100%; min-height: 44px; }
+.cs-zero { position: absolute; left: 50%; bottom: 6px; width: 1px; height: 18px;
+  background: var(--line); pointer-events: none; }
+/* Stacked, because side by side the switch overlapped the amount field. */
+.cs-in { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.cs-in > label { width: 100%; }
+.cs-flip { width: 100%; white-space: normal; min-height: 44px; }
+.cs-say { margin-top: 10px; font-size: 15px; font-weight: 700; }
+
 .dl-h { font-family: 'Archivo'; font-size: 11px; letter-spacing: .11em;
   text-transform: uppercase; font-weight: 700; color: var(--muted); margin: 16px 0 4px; }
 .dl-card { padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
@@ -4732,11 +4750,22 @@ function ValueCard({ o, tcd, st }) {
 /* Deal — the calculated balance, its derivation, then an optional final
    negotiation. Nothing here reopens a price, a value or a percentage. */
 function DealStage({ o, st, register }) {
-  const [amt, setAmt] = useState("");
+  /* THE DRAFT IS A SIGNED BALANCE, not a magnitude with a payer guessed after.
+     The old field stripped the minus sign and refused anything but a positive
+     number, so a collector owed $185 who proposed $200 sent +200 — silently
+     reversing who pays. Direction is a property of the number, so the number
+     carries it, and both controls edit that one value. */
+  const [signed, setSigned] = useState(null);      // null = untouched
+
   const calc = calcBalance(o);
+  /* Untouched, the draft IS the canonical calculated balance — so the control
+     opens where the deal actually stands. */
+  const draft = signed == null ? (calc || 0) : signed;
+  const draftDir = D.cashDirection(draft);
+  /* Room to move either way, and never less than the current position. */
+  const span = Math.max(500, Math.ceil((Math.abs(calc || 0) * 2) / 50) * 50);
   const p = st.partnerById(o.partnerId);
   const them = p ? p.name : "them";
-  const n = Number(amt);
 
   /* THE ADJUSTMENT, READ CANONICALLY. Pass 2 replaced `proposedAdj`/`proposedBy`
      with one standing position per side plus a thread; this screen was still
@@ -4880,19 +4909,67 @@ function DealStage({ o, st, register }) {
               onClick={() => st.dealAgree(o.id)}>
               Agree to this deal
             </button>
-            {/* Named where it can be seen, not only where a screen reader
-                finds it: the field holds the cash owed, nothing else. */}
             <div className="pn-fl">Final cash amount</div>
-            <input className="inp" inputMode="decimal" value={amt}
-              placeholder="Propose a different cash amount"
-              aria-label="Final cash amount"
-              onChange={(e) => setAmt(e.target.value.replace(/[^\d.]/g, ""))} />
+
+            {/* A LINE THROUGH ZERO. Owing and being owed are the same quantity
+                with opposite signs, so they belong on one axis with zero in the
+                middle — and the only way to change who pays is to cross it.
+                The slider makes that crossing something you do deliberately. */}
+            <div className="cs">
+              <div className="cs-ends">
+                <span>You owe {them}</span>
+                <span>Even</span>
+                <span>{them} owes you</span>
+              </div>
+              <input className="cs-r" type="range"
+                min={-span} max={span} step={1}
+                /* The slider reads LEFT as you-owe, so it is the negative of the
+                   canonical signed balance, converted at this one boundary. */
+                value={-draft}
+                aria-label={"Final cash balance, between you owing " + them
+                  + " and " + them + " owing you"}
+                onChange={(e) => setSigned(-Number(e.target.value))} />
+              <div className="cs-zero" aria-hidden="true" />
+            </div>
+
+            <div className="cs-in">
+              <label className="pn-f">
+                <span className="pn-fl">Amount</span>
+                <span className="pn-w"><span className="pn-u">$</span>
+                  <input className="inp" inputMode="decimal"
+                    aria-label="Final cash amount"
+                    value={Math.abs(draft) === 0 ? "" : String(Math.abs(draft))}
+                    onChange={(e) => {
+                      /* Typing changes the magnitude and keeps the side, so a
+                         number can never silently move the money. */
+                      const mag = Number(e.target.value.replace(/[^\d.]/g, "")) || 0;
+                      setSigned(draft < 0 ? -mag : mag);
+                    }} />
+                </span>
+              </label>
+              <button className="btn sm cs-flip" disabled={draft === 0}
+                onClick={() => setSigned(-draft)}>
+                Switch to {draft > 0 ? `${them} owing you` : "you owing " + them}
+              </button>
+            </div>
+
+            {/* Said in words, every time, so the control is never read by
+                position or colour alone. */}
+            <div className="cs-say">
+              {draftDir.direction === "settled" ? "Even — no cash owed"
+                : draftDir.direction === "tp-to-collector"
+                  ? `${them} pays you ${money(draftDir.amount)}`
+                  : `You pay ${them} ${money(draftDir.amount)}`}
+            </div>
+
             <div className="faint" style={{ fontSize: 12.5, marginTop: 6 }}>
               Only the cash changes. Card values and percentages stay exactly as agreed.
             </div>
-            <button className="btn wide" style={{ marginTop: 12 }} disabled={!(n > 0)}
-              onClick={() => { st.dealPropose(o.id, n); setAmt(""); }}>
-              Propose {money(n || 0)}
+            <button className="btn wide" style={{ marginTop: 12 }}
+              disabled={draft === calc}
+              onClick={() => { st.dealPropose(o.id, draft); setSigned(null); }}>
+              Propose {draftDir.direction === "settled" ? "an even split"
+                : money(draftDir.amount)}
             </button>
           </>
         )}

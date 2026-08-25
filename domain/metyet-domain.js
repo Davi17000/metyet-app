@@ -392,7 +392,9 @@ function dealApplyAdj(rawDeal, by, action, amount, at) {
       // a newly assembled deal must be confirmed again by both sides
       tpAgreed: false, collectorAgreed: false };
   }
-  if (typeof amount !== "number" || !isFinite(amount) || amount === 0) return deal;
+  /* Zero is a real settlement — "even, nobody owes" — not a missing value.
+     Rejecting it made an even split the one balance you could not propose. */
+  if (typeof amount !== "number" || !isFinite(amount)) return deal;
   /* ONE TURN AT A TIME, as everywhere else a number is negotiated. Without this
      a second Send silently replaced the figure the other party was already
      reading — the same defect fixed for market value and trade percentage. */

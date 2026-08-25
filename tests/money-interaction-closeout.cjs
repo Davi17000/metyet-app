@@ -408,7 +408,11 @@ describe("E. The screen says what the number is", () => {
       code(COL).indexOf("function Fulfillment("));
     ["agreedAdj:", "tpAgreed:", "collectorAgreed:", "stage:"].forEach((f) =>
       assert(!deal.includes(f), "no direct write of " + f));
-    assert(/st\.dealPropose\(o\.id, n\)/.test(deal), "it calls the canonical action");
+    /* CONTRACT CHANGE: the draft is now a SIGNED balance rather than a typed
+       magnitude, so the canonical action receives that signed value. */
+    assert(/st\.dealPropose\(o\.id, draft\)/.test(deal), "it calls the canonical action");
+    assert(/const draft = signed == null \? \(calc \|\| 0\) : signed;/.test(deal),
+      "with a draft that carries its own direction");
   });
 });
 
