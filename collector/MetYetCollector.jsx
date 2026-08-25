@@ -471,14 +471,26 @@ const CSS = `
 .mdl-e.message { border-left-style: dotted; background: var(--panel-2);
   border-radius: 0 9px 9px 0; padding-right: 10px; }
 /* Three visual languages: people talk, the deal records, the card stays. */
-.mdl-cards { display: flex; gap: 8px; overflow-x: auto; padding: 10px 0 2px; }
-.mdl-card { display: flex; align-items: center; gap: 9px; flex: 0 0 auto;
-  max-width: 78%; padding: 7px 11px 7px 7px; border: 1px solid var(--line);
+/* A DELIBERATE PEEK, NOT AN ACCIDENT. The second card used to be sliced
+   mid-word at 390px, which reads as breakage rather than as "there is more".
+   Each entry is now a fixed share of the width so the next one is visibly
+   half-shown, with snapping so a swipe lands cleanly. */
+.mdl-cards { display: flex; gap: 8px; padding: 10px 0 6px;
+  overflow-x: auto; scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch; }
+.mdl-cards::-webkit-scrollbar { height: 3px; }
+.mdl-cards::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+.mdl-cards > * { scroll-snap-align: start; }
+.mdl-more { flex: 0 0 auto; align-self: center; font-size: 11.5px; font-weight: 700;
+  color: var(--muted); padding: 0 4px; white-space: nowrap; }
+.mdl-card { display: flex; align-items: center; gap: 9px;
+  flex: 0 0 72%; min-width: 0; padding: 7px 11px 7px 7px; border: 1px solid var(--line);
   border-radius: 11px; background: var(--panel); text-align: left; }
 .mdl-card.sub { border-style: dashed; }
 .mdl-card-t { display: flex; flex-direction: column; min-width: 0; font-size: 12.5px; }
 .mdl-card-n { font-weight: 700; white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; }
+.mdl-card-t { flex: 1 1 auto; }
 .mdl-card-p { font-size: 11.5px; color: var(--t1); font-weight: 600; }
 .mdl-badge { display: inline-block; min-width: 18px; margin-left: 6px; padding: 0 5px;
   border-radius: 9px; background: var(--t1); color: #fff; font-size: 11px; font-weight: 700; }
@@ -503,6 +515,25 @@ const CSS = `
   border: 1px solid var(--line); font-weight: 600; text-align: center; }
 .mdl-ms-k { color: var(--t1); font-weight: 700; }
 .mdl-e.chapter { border-left-color: transparent; padding-left: 0; }
+
+.mdl-ph { display: flex; gap: 10px; }
+.mdl-ph-f { flex: 1 1 0; min-width: 0; margin: 0; }
+.mdl-ph-im { aspect-ratio: 5 / 7; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel-2); display: flex; align-items: center;
+  justify-content: center; overflow: hidden; padding: 6px; text-align: center; }
+.mdl-ph-im.missing { border-style: dashed; }
+.mdl-ph-t { font-size: 12px; color: var(--muted); }
+.mdl-ph-c { font-size: 12px; font-weight: 700; color: var(--muted);
+  margin-top: 7px; text-align: center; }
+
+.mdl-e.summary { padding-left: 0; border-left-color: transparent; }
+.mdl-sum-row { display: flex; align-items: center; gap: 10px; width: 100%;
+  min-height: 44px; padding: 10px 12px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--panel-2); text-align: left;
+  font-weight: 600; font-size: 13.5px; }
+.mdl-e.summary.open .mdl-sum-row { border-color: var(--t1); }
+.mdl-sum-x { margin-left: auto; font-size: 11.5px; font-weight: 700;
+  color: var(--t1); white-space: nowrap; }
 
 .mdl-comp { margin-top: 14px; }
 .mdl-comp .inp { font-size: 16px; min-height: 44px; }
@@ -3543,6 +3574,53 @@ function dealTimeline(o, st, viewer) {
   return ev.filter((e) => e.at).sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
 }
 
+/* WHAT A FINISHED STAGE CAME TO.
+
+   A completed stage is one fact — what was agreed — not the dozen moves that
+   produced it. Giving every old proposal the same weight as the decision it led
+   to is what buries the thing a returning reader actually needs.
+
+   So each closed stage collapses to its outcome, DERIVED from canonical state:
+   the agreed price, the cards accepted, each card's agreed terms and what they
+   came to, the settled cash, the handoff plan. Nothing is stored, nothing is
+   rewritten, and the underlying events stay exactly where they were — one tap
+   away, in full. */
+function stageSummary(o, st, stage) {
+  const money2 = (n) => money(n);
+  if (stage === "agree-price") {
+    return o.agreedPrice == null ? null : "Price agreed — " + money2(o.agreedPrice);
+  }
+  if (stage === "select-trade") {
+    const names = D.acceptedTradeCards(o)
+      .map((c) => (st.cardById(c.cardId) || {}).name || c.cardId);
+    if (!names.length) {
+      return (o.trade && o.trade.mode === "cash") ? "No cards traded — cash deal" : null;
+    }
+    return "Trade agreed — " + names.join(" · ");
+  }
+  if (stage === "value-trade") {
+    const cards = D.acceptedTradeCards(o).filter(D.cardSettled);
+    if (!cards.length) return null;
+    return "Value agreed — " + cards.map((c) => {
+      const nm = (st.cardById(c.cardId) || {}).name || c.cardId;
+      return nm + " " + money2(tradeValue(c)) + " (" + pct(c.agreedPercent) + ")";
+    }).join(" · ");
+  }
+  if (stage === "deal") {
+    const r = D.cashReceipt(o);
+    if (!(o.deal && o.deal.agreedAdj != null)) return null;
+    return "Cash agreed — " + money2(r.final.amount)
+      + (r.final.direction === "tp-to-collector" ? " to you" : "");
+  }
+  if (stage === "fulfillment") {
+    const f = o.fulfillment || {};
+    if (!f.collectorConfirmedPlan) return null;
+    const plan = [f.method, f.where, f.when].filter(Boolean).join(" · ");
+    return "Handoff agreed" + (plan ? " — " + plan : "");
+  }
+  return null;
+}
+
 function MobileDeal({ o, st, go, embedded }) {
   const [openSummary, setOpenSummary] = useState(false);
   const [photos, setPhotos] = useState(null);
@@ -3568,6 +3646,33 @@ function MobileDeal({ o, st, go, embedded }) {
   const unread = D.unreadFor(events, o.viewedAt, SEAT);
   const unseen = view === "messages" ? unread.messages : unread.timeline;
   const unseenKeys = new Set(unseen.map((e) => e.key));
+  const [openStages, setOpenStages] = useState({});
+  const toggleStage = (id) => setOpenStages((p) => ({ ...p, [id]: !p[id] }));
+
+  /* Everything before the current stage is history that can be summarised;
+     the stage in play stays open, because that is what is being decided. */
+  const currentIx = D.RECEIPT_STAGES.indexOf(o.stage);
+  /* ONE SUMMARY PER STAGE, not one per run of adjacent events. Messages sit
+     between proposals, so grouping only consecutive events split a single
+     stage into several — and the same "Price agreed" line appeared twice.
+     A closed stage is one thing that happened, wherever its pieces fell. */
+  const groups = [];
+  const byStage = new Map();
+  events.forEach((e) => {
+    const ix = e.stage ? D.RECEIPT_STAGES.indexOf(e.stage) : -1;
+    const closed = ix >= 0 && ix < currentIx;
+    if (!closed) {
+      const last = groups[groups.length - 1];
+      if (last && last.key === "__live") last.events.push(e);
+      else groups.push({ key: "__live", events: [e] });
+      return;
+    }
+    /* Every event of a closed stage joins that stage's single group, which
+       keeps the position where the stage first appeared. */
+    let g = byStage.get(e.stage);
+    if (!g) { g = { key: e.stage, events: [] }; byStage.set(e.stage, g); groups.push(g); }
+    g.events.push(e);
+  });
   const firstNew = unseen.length ? unseen[0].key : null;
 
   /* READING IS AN ACT, NOT A SIDE EFFECT OF EXISTING. The cursor advances when
@@ -3642,6 +3747,9 @@ function MobileDeal({ o, st, go, embedded }) {
           </span>
           <span className="mdl-card-p">{shots.actual ? "Photos" : "No photos"}</span>
         </button>
+        {tradeCards.length > 0 && (
+          <span className="mdl-more">+{tradeCards.length} yours →</span>
+        )}
         {/* Multi-card trades: every collectible in the deal stays reachable. */}
         {tradeCards.map((tc) => {
           const tcCard = st.cardById(tc.cardId);
@@ -3660,12 +3768,35 @@ function MobileDeal({ o, st, go, embedded }) {
       {photos !== null && (
         <div className="ovl" onClick={() => setPhotos(null)}>
           <div className="sheet" onClick={(e) => e.stopPropagation()}>
-            <div className="sheet-h">{c ? c.name : "Card"} · actual photos</div>
+            <div className="sheet-h">{c ? c.name : "Card"}</div>
+            <div className="faint" style={{ fontSize: 12.5, marginBottom: 12 }}>
+              {c ? gradeLine(c) : ""} · photographs of this exact copy
+            </div>
             {shots.actual ? (
-              <div className="cx-ph">
+              /* FRONT AND BACK, LABELLED AND SIDE BY SIDE. The old sheet listed
+                 the word "photo" twice under bare side names, which told a
+                 collector nothing about what they were looking at. */
+              <div className="mdl-ph">
                 {["front", "back"].map((side) => (
-                  <ActualCardPhoto key={side} photos={photos.photos} side={side}
-                    cardLabel={c ? c.name : "card"} />
+                  <figure key={side} className="mdl-ph-f">
+                    {/* The fixture stores photo TOKENS, not image data, so there
+                        is no picture to render. Saying that plainly is the only
+                        honest option — inventing artwork would make the
+                        prototype look finished where it is not. */}
+                    <div className={"mdl-ph-im" + (photos.photos && photos.photos[side]
+                      ? "" : " missing")}
+                      role="img"
+                      aria-label={side + " photograph of "
+                        + (c ? c.name : "this copy")}>
+                      <span className="mdl-ph-t">
+                        {photos.photos && photos.photos[side]
+                          ? "Photo on file" : "Not photographed"}
+                      </span>
+                    </div>
+                    <figcaption className="mdl-ph-c">
+                      {side === "front" ? "Front" : "Back"}
+                    </figcaption>
+                  </figure>
                 ))}
               </div>
             ) : (
@@ -3695,12 +3826,67 @@ function MobileDeal({ o, st, go, embedded }) {
       </div>
 
       {/* 2. TIMELINE — history compact, in order, kinds distinguishable. */}
+      {/* THE CURRENT DECISION COMES FIRST. It used to sit below the whole
+          history, so a returning reader scrolled past every settled proposal to
+          reach the one thing needing them. History is why the deal makes sense;
+          the open question is why they opened it. */}
+      {/* 3. CURRENT ACTION — the existing stage component, so every control is
+             the canonical one. Waiting states come from those components, which
+             already refuse to offer moves that cannot be made. */}
+      {view === "timeline" && (
+        done ? (
+          <div className="mdl-now done">
+            <div className="mdl-now-h">Deal completed</div>
+            <button className="btn wide" onClick={() => setOpenSummary(true)}>View receipt</button>
+          </div>
+        ) : (
+          <div className="mdl-now">
+            <div className="mdl-now-h">
+              {D.nextActor(o).actor === "collector" ? "Your move" : `Waiting on ${them}`}
+            </div>
+            {o.stage === "agree-price" && <AgreePrice {...stageProps} />}
+            {o.stage === "select-trade" && <SelectTrade {...stageProps} />}
+            {o.stage === "value-trade" && <ValueTrade {...stageProps} />}
+            {o.stage === "deal" && <DealStage {...stageProps} />}
+            {o.stage === "fulfillment" && <Fulfillment {...stageProps} />}
+            {/* ENGINEERING TOOLING, DEV-ONLY. SimulateTP gates on DEV itself and
+                already offers only the moves canonically available now, through
+                st.simulate. Nothing stage-specific is restated here. */}
+            <SimulateTP o={o} st={st} />
+            {bar && bar.label && (
+              <button className="btn pri wide" style={{ marginTop: 12 }}
+                disabled={bar.disabled} onClick={bar.run}>{bar.label}</button>
+            )}
+          </div>
+        )
+      )}
       <ol className="mdl-tl">
-        {events
-          /* MESSAGES IS CHAT-FIRST, NOT CHAT-ONLY. Reading the conversation
-             without the deal around it loses the thread of what is being
-             discussed, so milestones stay — visually distinct, never
-             confusable with something somebody said. */
+        {(view === "messages" ? [{ key: "__live", events }] : groups).flatMap((g) => {
+          /* A CLOSED STAGE IS ONE LINE UNTIL ASKED. The summary states the
+             outcome; opening it reveals every original event, unchanged. */
+          const sum = g.key === "__live" ? null : stageSummary(o, st, g.key);
+          const open = !!openStages[g.key];
+          if (sum && !open) {
+            return [(
+              <li key={"sum-" + g.key} className="mdl-e chapter summary">
+                <button className="mdl-sum-row" onClick={() => toggleStage(g.key)}>
+                  <span className="mdl-ms-k" aria-hidden="true">✓</span>
+                  <span className="mdl-ms-t">{sum}</span>
+                  <span className="mdl-sum-x">{g.events.length}</span>
+                </button>
+              </li>
+            )];
+          }
+          const head = sum ? [(
+            <li key={"sum-" + g.key} className="mdl-e chapter summary open">
+              <button className="mdl-sum-row" onClick={() => toggleStage(g.key)}>
+                <span className="mdl-ms-k" aria-hidden="true">✓</span>
+                <span className="mdl-ms-t">{sum}</span>
+                <span className="mdl-sum-x">Hide</span>
+              </button>
+            </li>
+          )] : [];
+          return head.concat(g.events
           .filter((e) => (view === "messages"
             ? e.kind === "message" || e.kind === "milestone" || e.milestone
             : true))
@@ -3737,7 +3923,8 @@ function MobileDeal({ o, st, go, embedded }) {
                 <span className="mdl-e-at">{fmtDate(e.at)}</span>
               </li>
             </React.Fragment>
-          ))}
+          )));
+        })}
         {events.length === 0 && (
           <li className="mdl-e empty">Nothing has happened yet.</li>
         )}
@@ -3754,36 +3941,7 @@ function MobileDeal({ o, st, go, embedded }) {
         </div>
       )}
 
-      {/* 3. CURRENT ACTION — the existing stage component, so every control is
-             the canonical one. Waiting states come from those components, which
-             already refuse to offer moves that cannot be made. */}
-      {view === "timeline" && (
-        done ? (
-          <div className="mdl-now done">
-            <div className="mdl-now-h">Deal completed</div>
-            <button className="btn wide" onClick={() => setOpenSummary(true)}>View receipt</button>
-          </div>
-        ) : (
-          <div className="mdl-now">
-            <div className="mdl-now-h">
-              {D.nextActor(o).actor === "collector" ? "Your move" : `Waiting on ${them}`}
-            </div>
-            {o.stage === "agree-price" && <AgreePrice {...stageProps} />}
-            {o.stage === "select-trade" && <SelectTrade {...stageProps} />}
-            {o.stage === "value-trade" && <ValueTrade {...stageProps} />}
-            {o.stage === "deal" && <DealStage {...stageProps} />}
-            {o.stage === "fulfillment" && <Fulfillment {...stageProps} />}
-            {/* ENGINEERING TOOLING, DEV-ONLY. SimulateTP gates on DEV itself and
-                already offers only the moves canonically available now, through
-                st.simulate. Nothing stage-specific is restated here. */}
-            <SimulateTP o={o} st={st} />
-            {bar && bar.label && (
-              <button className="btn pri wide" style={{ marginTop: 12 }}
-                disabled={bar.disabled} onClick={bar.run}>{bar.label}</button>
-            )}
-          </div>
-        )
-      )}
+
     </div>
   );
 }

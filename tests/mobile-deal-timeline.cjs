@@ -322,7 +322,13 @@ describe("E. One dominant decision, using canonical actions", () => {
     rerender();
     press(/^Accept \$3,700$/);
     rerender();
-    assert(events().some((e) => /accepted \$3,700/.test(e)), "the decision is now history");
+    /* CONTRACT CHANGE: a closed stage collapses to its outcome, so the
+       individual acceptance is inside the summary rather than beside it. The
+       decision is still history — one tap away, unchanged. */
+    const rows = cls(R, "mdl-e").map(txt);
+    assert(rows.some((e) => /Price agreed — \$3,700/.test(e))
+      || rows.some((e) => /accepted \$3,700/.test(e)),
+      "the decision is recorded as history: " + rows.join(" | "));
     const now = cls(R, "mdl-step").filter((n) => String(n.props.className).includes("now"));
     eq(txt(now[0]), "Trade", "and the next stage is current");
   });

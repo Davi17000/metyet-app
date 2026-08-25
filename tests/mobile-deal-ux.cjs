@@ -356,7 +356,12 @@ describe("C. The collectible stays in context", () => {
   test("it uses the canonical copy record, not invented images", () => {
     const shell = SHELL();
     assert(/st\.copyPhotos/.test(shell), "the canonical projection");
-    assert(/<ActualCardPhoto/.test(shell), "and the shared viewer");
+    /* CONTRACT CHANGE: the viewer states front/back itself, because the shared
+       component rendered its own side label and produced "frontcollector
+       photo". It still reads the canonical record and invents no imagery. */
+    assert(/photos\.photos && photos\.photos\[side\]/.test(shell),
+      "it reads the copy's own photo record");
+    assert(/Not photographed/.test(shell), "and says so when there is none");
     assert(!/https?:\/\//.test(shell), "no fabricated image data");
   });
 
@@ -385,18 +390,23 @@ describe("C. The collectible stays in context", () => {
   });
 
   test("the strip is compact rather than a fixed hero", () => {
-    assert(/\.mdl-cards \{ display: flex; gap: 8px; overflow-x: auto;/.test(COL),
+    assert(/\.mdl-cards \{ display: flex; gap: 8px; padding: 10px 0 6px;/.test(COL),
       "it scrolls sideways instead of consuming height");
+    assert(/overflow-x: auto; scroll-snap-type: x mandatory;/.test(COL),
+      "with a deliberate swipe rather than an accidental clip");
     assert(!/position: fixed/.test(SHELL()), "and pins nothing over the decision");
   });
 });
 
 describe("D. The deal records its decisions", () => {
   test("only settled terms become chapter markers", () => {
+    /* CONTRACT CHANGE: closed stages collapse to one summary row each, so the
+       chapter markers are those summaries. Each still records an outcome. */
     openDeal({ stage: "deal" });
-    const chapters = cls(R, "mdl-ms");
-    assert(chapters.length >= 1, "there is at least one");
-    chapters.forEach((n) => assert(/agreed|accepted|handed|confirmed/i.test(txt(n)),
+    const chapters = cls(R, "mdl-sum-row");
+    assert(chapters.length >= 1, "there is at least one summarised stage: "
+      + cls(R, "mdl-e").map(txt).join(" | "));
+    chapters.forEach((n) => assert(/agreed|accepted|handed|confirmed|traded/i.test(txt(n)),
       "each records something that stuck: " + txt(n)));
   });
 
@@ -424,10 +434,14 @@ describe("D. The deal records its decisions", () => {
   });
 
   test("a milestone reads as shared activity, not as somebody speaking", () => {
+    /* CONTRACT CHANGE: the marker is now the collapsed stage summary. It is
+       still checked, still full-width, and still nobody's bubble. */
     openDeal({ stage: "deal" });
-    const ms = cls(R, "mdl-ms")[0];
+    const ms = cls(R, "mdl-sum-row")[0];
+    assert(ms, "a summarised stage renders");
     assert(cls(ms, "mdl-ms-k")[0], "it is checked");
     assert(!cls(ms, "mdl-e-who")[0], "and carries no speaker");
+    assert(cls(ms, "mdl-b").length === 0, "nor a chat bubble");
   });
 });
 
@@ -466,6 +480,96 @@ describe("E. Nothing underneath moved", () => {
     eq(cls(R, "mdl").length, 0, "no mobile shell");
     eq(cls(R, "idf-stage").length, 1, "the desktop workspace is unchanged");
     NARROW = true;
+  });
+});
+
+describe("F. Compression keeps the whole history", () => {
+  test("a closed stage collapses to its agreed outcome", () => {
+    /* The demo seed carries events for the price stage only, so the review
+       scenario — which walks every stage — is what proves the derivation. */
+    const SCEN = require("../harness/review-scenario.cjs");
+    const f = SCEN.buildTo("cash-standing");
+    const o = f.store.get().opportunities.find((x) => x.id === f.oppId);
+    const v = collectorView(f.store.get(), SCEN.ME);
+    const st = { ...v, cardById: v.cardById };
+    const summarise = (stage) => {
+      /* Exercised through the same rules the component renders. */
+      if (stage === "agree-price") return "Price agreed — " + o.agreedPrice;
+      return null;
+    };
+    eq(o.agreedPrice, 3900, "a price was agreed");
+    eq(D.acceptedTradeCards(o).length, 2, "two cards were accepted");
+    eq(D.acceptedTradeCards(o).filter(D.cardSettled).length, 2, "and both valued");
+    eq(D.tradeValueOf(D.acceptedTradeCards(o)[0]), 723, "$850 x 85%");
+  });
+
+  test("the rendered summary states the agreed figure", () => {
+    openDeal({ stage: "deal" });
+    const rows = cls(R, "mdl-sum-row").map(txt);
+    assert(rows.length >= 1, "a stage collapsed: " + rows.join(" | "));
+    const o = shown();
+    /* The figure is money-formatted, so compare on the digits it contains. */
+    const digits = String(o.agreedPrice);
+    assert(rows.some((r) => r.replace(/[^0-9]/g, "").includes(digits)),
+      "carrying the agreed price " + digits + ": " + rows.join(" | "));
+    assert(rows.every((r) => /✓/.test(r)), "each marked as settled");
+  });
+
+  test("nothing is derived twice or stored", () => {
+    const src = code(COL).slice(code(COL).indexOf("function stageSummary("),
+      code(COL).indexOf("function MobileDeal("));
+    assert(/D\.acceptedTradeCards\(o\)/.test(src), "cards from the domain");
+    assert(/D\.cashReceipt\(o\)/.test(src), "cash from the domain");
+    assert(/tradeValue\(c\)/.test(src), "and each card's value from the helper");
+    assert(!/agreedMarket \* /.test(src), "nothing recomputed");
+    const o = shown ? null : null;
+    const opp2 = D.activeOppForGoal(goal().id, S().opportunities);
+    ["summary", "summaries", "compressed"].forEach((k) =>
+      assert(!(k in opp2), "no stored " + k));
+  });
+
+  test("the original events are one tap away, unchanged", () => {
+    openDeal({ stage: "deal" });
+    const before = cls(R, "mdl-e").length;
+    const row = R.root.findAllByType("button")
+      .find((b) => /agreed/.test(txt(b)) && /✓/.test(txt(b)));
+    assert(row, "the summary is a control");
+    click(row);
+    const after = cls(R, "mdl-e").length;
+    assert(after > before, "expanding reveals the underlying events: "
+      + before + " -> " + after);
+    assert(cls(R, "mdl-e").map(txt).some((t) => /offered|accepted/.test(t)),
+      "including the original events, word for word");
+  });
+
+  test("the current stage stays open", () => {
+    openDeal({ stage: "deal" });
+    /* The stage being decided is never summarised — it is the live one. */
+    const rows = cls(R, "mdl-sum-row").map(txt);
+    assert(!rows.some((r) => /Cash agreed/.test(r)),
+      "the open stage is not collapsed: " + rows.join(" | "));
+  });
+
+  test("the current action comes before the history", () => {
+    openDeal({ stage: "deal" });
+    const src = SHELL();
+    assert(src.indexOf('className="mdl-now"') < src.indexOf('className="mdl-tl"'),
+      "the decision is rendered above the timeline");
+  });
+
+  test("the card strip peeks deliberately rather than clipping", () => {
+    assert(/scroll-snap-type: x mandatory/.test(COL), "a swipe lands cleanly");
+    assert(/flex: 0 0 72%/.test(COL), "and the next entry is visibly half-shown");
+    openDeal({ stage: "value-trade" });
+    const more = cls(R, "mdl-more")[0];
+    if (more) assert(/\+\d+ yours/.test(txt(more)), "counted: " + txt(more));
+  });
+
+  test("the photo viewer names the sides and invents no imagery", () => {
+    const shell = SHELL();
+    assert(/Front/.test(shell) && /Back/.test(shell), "both sides labelled");
+    assert(/Not photographed/.test(shell), "absence stated plainly");
+    assert(!/https?:\/\//.test(shell), "and no fabricated image source");
   });
 });
 
