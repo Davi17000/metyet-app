@@ -180,14 +180,16 @@ describe("C. One signed draft, two controls", () => {
     assert(/const draftDir = D\.cashDirection\(draft\);/.test(d),
       "direction comes from the signed value");
     /* Math.abs appears only for DISPLAY, after direction is known. */
-    assert(/money\(draftDir\.amount\)/.test(d), "and the figure shown is unsigned");
+    assert(/money\(draftSet\.amount\)/.test(d), "and the figure shown is unsigned");
   });
 
   test("the interpretation is always in words", () => {
+    /* CONTRACT CHANGE: the live interpretation now comes from the shared
+       formatter, so the slider and the receipt cannot word it differently. */
     const d = DEAL();
-    assert(/`\$\{them\} pays you \$\{money\(draftDir\.amount\)\}`/.test(d), "one way");
-    assert(/`You pay \$\{them\} \$\{money\(draftDir\.amount\)\}`/.test(d), "the other");
-    assert(/"Even — no cash owed"/.test(d), "and neither");
+    assert(/draftSet\.sentence/.test(d), "phrased by the formatter");
+    assert(/const draftSet = settle\(draft, them\)/.test(d), "from the signed draft");
+    assert(/"Even — no cash owed"/.test(d), "with zero stated explicitly");
   });
 });
 

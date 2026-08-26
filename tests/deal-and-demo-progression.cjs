@@ -133,10 +133,14 @@ describe("A. Deal is a receipt of card-level agreements", () => {
       code(COL).indexOf("function Fulfillment("));
     /* CONTRACT CHANGE: direction now comes from the canonical projection, so
        the receipt names the payer explicitly instead of testing a sign. */
-    assert(/receipt\.final\.direction === "collector-to-tp" \? `You owe \$\{them\}`/.test(deal),
-      "the collector owing is said in words");
-    assert(/`\$\{them\} owes you`/.test(deal), "and so is the partner owing");
-    assert(/"No cash owed"/.test(deal), "with a settled case of its own");
+    /* CONTRACT CHANGE: one canonical formatter, D.settlement(), now produces
+       payer and recipient; surfaces no longer write their own sentence. */
+    assert(/settle\(cash, them\)\.sentence/.test(deal),
+      "the settlement line comes from the formatter");
+    assert(/const settle = \(amount, partnerName\)/.test(code(COL)), "declared once");
+    assert(/"No cash owed"/.test(code(
+      require("fs").readFileSync(require("path").join(ROOT, "domain", "metyet-domain.js"), "utf8"))),
+      "with a settled case handled in the helper");
   });
 
   test("a cash-only deal claims no trade", () => {

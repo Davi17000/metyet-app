@@ -414,10 +414,26 @@ describe("F. Canonical guarantees survive on mobile", () => {
     eq(D.cashReceipt(mk(1000, 275)).calculated.direction, "collector-to-tp", "you owe");
     eq(D.cashReceipt(mk(700, 1000)).calculated.direction, "tp-to-collector", "they owe");
     eq(D.cashReceipt(mk(1000, 1000)).calculated.direction, "settled", "nobody owes");
+    /* RE-ANCHORED, not weakened. The wording used to be written inside
+       MobileDeal; direction is now a sentence the domain produces and the shell
+       renders, so the assertion follows it to the canonical helper — a stronger
+       guarantee, since every seat reads the same one. */
     const shell = code(COL).slice(code(COL).indexOf("function MobileDeal("),
       code(COL).indexOf("function Deal({", code(COL).indexOf("function MobileDeal(")));
-    assert(/tp-to-collector.*owes you|owes you/.test(shell), "and the phone says which");
+    /* The shell reaches the helper through the file-level `settle` alias, so
+       accept either spelling — what matters is that it does not compose the
+       sentence itself. */
+    assert(/settle\(D\.finalBalance\(o\), them\)\.sentence/.test(shell)
+      || /D\.settlement\(/.test(shell),
+      "the phone says which way, through the canonical settlement helper");
+    assert(!/owes you`|\" owes you\"/.test(shell),
+      "and never assembles that sentence locally");
     assert(!/Math\.abs\(D\.calculatedBalance/.test(shell), "without discarding the sign");
+    /* And the helper genuinely says it, in both directions. */
+    eq(D.settlement(272, { viewer: "collector", partner: "NL" }).sentence,
+      "You pay NL", "the collector owing");
+    eq(D.settlement(-272, { viewer: "collector", partner: "NL" }).sentence,
+      "NL pays you", "and the partner owing");
   });
 
   test("a final cash agreement does not reopen upstream terms", () => {

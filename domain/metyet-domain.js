@@ -155,6 +155,42 @@ const cashDirection = (amount) => {
    an accepted final amount changed, and what is owed — each with its direction
    already resolved. The adjustment stays SIGNED against the signed balance, so
    -300 becoming -250 is +50 (less owed to the collector), not -50. */
+/* WHO PAYS WHOM, IN WORDS — the one place that decides.
+
+   The signed balance stays exactly as it was: it is the right internal model,
+   and reversing it would be a correctness change nobody asked for. What was
+   wrong is that half a dozen places each turned that sign into English on
+   their own, and one of them said "$272 to them" — leaving the reader to work
+   out who "them" was, in the one sentence where guessing costs money.
+
+   So direction becomes a sentence exactly once. `viewer` decides which side
+   says "You", which is what lets a collector and a partner read the same
+   agreement and both describe the same transaction correctly.
+
+   Zero is a real state, not a small debt: nobody pays anybody. */
+const settlement = (amount, { viewer = "collector", collector = "the collector",
+  partner = "them" } = {}) => {
+  const dir = cashDirection(amount);
+  const nameOf = (seat) => (seat === viewer ? "You"
+    : seat === "tp" ? partner : collector);
+  if (dir.direction === "unknown") {
+    return { ...dir, payer: null, payee: null, sentence: null };
+  }
+  if (dir.direction === "settled") {
+    return { ...dir, payer: null, payee: null, sentence: "No cash owed" };
+  }
+  const payerSeat = dir.direction === "collector-to-tp" ? "collector" : "tp";
+  const payeeSeat = payerSeat === "collector" ? "tp" : "collector";
+  const payer = nameOf(payerSeat);
+  const payee = nameOf(payeeSeat);
+  return { ...dir, payer, payee, payerSeat, payeeSeat,
+    /* "You pay X" / "X pays you" — never a pronoun, never a bare sign.
+       The reader is "You" at the start of a sentence and "you" inside one, so
+       the payee is lowercased when it is them; otherwise it reads "pays You". */
+    sentence: payer + (payer === "You" ? " pay " : " pays ")
+      + (payee === "You" ? "you" : payee) };
+};
+
 const cashReceipt = (o) => {
   const calc = calculatedBalance(o);
   const final = finalBalance(o);
@@ -553,7 +589,7 @@ const REFUSE = {
 };
 
 module.exports = {
-  FULFILLMENT, TRADE, cashDirection, cashReceipt, newSince, unreadFor,
+  FULFILLMENT, TRADE, cashDirection, cashReceipt, settlement, newSince, unreadFor,
   identityKey, isRaw, sameIdentity,
   STAGES, STAGE_IX, STAGE_LABEL,
   isEnded, isCompleted, isTerminal, isActive, isNegotiating,

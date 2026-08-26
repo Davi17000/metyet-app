@@ -55,6 +55,10 @@ const inventoryLine = (sum) => {
 };
 const fmtShort = (d) => new Date(d + "T12:00:00Z")
   .toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+/* One sentence-maker for the whole collector app. The partner's name comes
+   from the deal; the collector is always "You" from this seat. */
+const settle = (amount, partnerName) => D.settlement(amount, {
+  viewer: "collector", partner: partnerName || "them" });
 const fmtDate = (d) => new Date(d + "T12:00:00Z")
   .toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 
@@ -565,6 +569,9 @@ const CSS = `
 .cs-in > label { width: 100%; }
 .cs-flip { width: 100%; white-space: normal; min-height: 44px; }
 .cs-say { margin-top: 10px; font-size: 15px; font-weight: 700; }
+.cs-say-k { display: block; font-family: 'Archivo'; font-size: 11px;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
+  font-weight: 700; margin-bottom: 3px; }
 
 .dl-h { font-family: 'Archivo'; font-size: 11px; letter-spacing: .11em;
   text-transform: uppercase; font-weight: 700; color: var(--muted); margin: 16px 0 4px; }
@@ -1684,7 +1691,11 @@ function Receipt({ o, st, expanded, inline }) {
             {s2.id === "deal" && (
               <dl className="rc-f">
                 <dt>Balance</dt>
-                <dd>{s2.balance != null ? money(Math.abs(s2.balance)) + (s2.balance >= 0 ? " to them" : " to you")
+                <dd>{s2.balance != null ? (() => {
+                  const set = settle(s2.balance, s2.partner);
+                  return set.direction === "settled" ? set.sentence
+                    : `${set.sentence} ${money(set.amount)}`;
+                })()
                   : <span className="rc-p">{s2.state === "pending" ? "Pending" : "Not finalized"}</span>}</dd>
                 {s2.finalAdj != null && (<><dt>Final cash adjustment</dt><dd>{money(s2.finalAdj)}</dd></>)}
               </dl>
@@ -2514,10 +2525,15 @@ function SimulateTP({ o, st }) {
     const standing = D.TRADE.dealAdjStanding(o.deal);
     if (standing === "collector") {
       const amt = o.deal.collectorAdj;
-      const dir = D.cashDirection(amt);
-      const them2 = partner ? partner.name : "the partner";
-      actions.push([`Accept ${money(dir.amount)} ${dir.direction === "tp-to-collector"
-        ? "to them" : dir.direction === "settled" ? "settled" : `to ${them2}`}`, () => {
+      /* The simulator acts AS the partner, so it reads the same agreement from
+         the partner's seat — "You pay Casey" where the collector sees "Casey
+         pays you". One transaction, two correct descriptions. */
+      const set = D.settlement(amt, { viewer: "tp",
+        partner: partner ? partner.name : "the partner",
+        collector: (st.collectorById && st.collectorById(o.collectorId) || {}).name
+          || "the collector" });
+      actions.push([set.direction === "settled" ? "Accept an even split"
+        : `Accept: ${set.sentence} ${money(set.amount)}`, () => {
         /* Signed throughout: the action reads the standing figure from the deal,
            so direction cannot be flattened on the way through. */
         A.dealAdjustRespond({ oppId: o.id, by: "tp", action: "accept", at: AT });
@@ -3321,7 +3337,11 @@ function StageDetails({ o, st }) {
     add("Trade value", r.stages[2].total != null ? money(r.stages[2].total) : dash);
     add("Calculated", cur.calculated != null ? money(cur.calculated) : dash);
     add("Balance", cur.balance != null
-      ? money(Math.abs(cur.balance)) + (cur.balance >= 0 ? " to them" : " to you") : dash);
+      ? (() => {
+        const set = settle(cur.balance, cur.partner || st.partnerById(o.partnerId).name);
+        return set.direction === "settled" ? set.sentence
+          : `${set.sentence} ${money(set.amount)}`;
+      })() : dash);
   } else if (cur.id === "fulfillment") {
     add("How", cur.method || dash);
     add("Where", cur.location || dash);
@@ -3627,8 +3647,11 @@ function stageSummary(o, st, stage) {
   if (stage === "deal") {
     const r = D.cashReceipt(o);
     if (!(o.deal && o.deal.agreedAdj != null)) return null;
-    return "Cash agreed — " + money2(r.final.amount)
-      + (r.final.direction === "tp-to-collector" ? " to you" : "");
+    const set = D.settlement(D.finalBalance(o), { viewer: "collector",
+      partner: (st.partnerById(o.partnerId) || {}).name });
+    if (set.direction === "settled") return "Cash agreed — no cash owed";
+    return "Cash agreed — " + set.sentence + " " + money2(set.amount)
+      + "";
   }
   if (stage === "fulfillment") {
     const f = o.fulfillment || {};
@@ -3743,8 +3766,7 @@ function MobileDeal({ o, st, go, embedded }) {
             <div className="row"><span className="k">Trade value</span>
               <span className="mono">−{money(D.totalTradeValue(o))}</span></div>
             <div className="row tot">
-              <span>{receipt.final.direction === "tp-to-collector" ? `${them} owes you`
-                : receipt.final.direction === "settled" ? "No cash owed" : `You owe ${them}`}</span>
+              <span>{settle(D.finalBalance(o), them).sentence}</span>
               <span className="mono">{money(receipt.final.amount)}</span>
             </div>
           </div>
@@ -4766,6 +4788,9 @@ function DealStage({ o, st, register }) {
   const span = Math.max(500, Math.ceil((Math.abs(calc || 0) * 2) / 50) * 50);
   const p = st.partnerById(o.partnerId);
   const them = p ? p.name : "them";
+  /* The proposal's consequence, phrased once and reused by the live line and
+     the confirm button, so they cannot disagree. */
+  const draftSet = settle(draft, them);
 
   /* THE ADJUSTMENT, READ CANONICALLY. Pass 2 replaced `proposedAdj`/`proposedBy`
      with one standing position per side plus a thread; this screen was still
@@ -4840,11 +4865,11 @@ function DealStage({ o, st, register }) {
             now states which way the money goes in words, and shows an unsigned
             magnitude — a headline should never contain a negative number. */}
         <div className="row"><span className="k">Calculated cash balance</span>
-          <span className="mono">
-            {money(receipt.calculated.amount)}
-            {receipt.calculated.direction === "tp-to-collector" ? " to you"
-              : receipt.calculated.direction === "collector-to-tp" ? ` to ${them}` : ""}
-          </span></div>
+          <span>{(() => {
+            const set = settle(calc, them);
+            return set.direction === "settled" ? set.sentence
+              : `${set.sentence} ${money(set.amount)}`;
+          })()}</span></div>
         {receipt.adjustment !== 0 && (
           /* Signed against the SIGNED balance, so -300 becoming -250 is +50 —
              less owed to the collector, not a bigger discount. The neutral
@@ -4857,13 +4882,14 @@ function DealStage({ o, st, register }) {
               {receipt.adjustment < 0 ? "−" : "+"}{money(Math.abs(receipt.adjustment))}
             </span></div>
         )}
+        {/* CASH SETTLEMENT — the line the reader must not misread, so it says
+            payer and recipient outright and carries the section heading. */}
+        <div className="dl-h">Cash settlement</div>
         <div className={"row tot dl-final " + receipt.final.direction}>
-          <span>
-            {receipt.final.direction === "collector-to-tp" ? `You owe ${them}`
-              : receipt.final.direction === "tp-to-collector" ? `${them} owes you`
-                : "No cash owed"}
+          <span>{settle(cash, them).sentence}</span>
+          <span className="mono">
+            {receipt.final.direction === "settled" ? money(0) : money(receipt.final.amount)}
           </span>
-          <span className="mono">{money(receipt.final.amount)}</span>
         </div>
       </div>
 
@@ -4874,19 +4900,24 @@ function DealStage({ o, st, register }) {
             total, or the cash owed. It is the cash — and only the cash. The
             calculated figure is shown first so a proposal is read as a change
             FROM something rather than as a fresh number. */}
-        <div className="row"><span className="k">Calculated amount owed</span>
-          <span className="mono">
-            {money(receipt.calculated.amount)}
-            {receipt.calculated.direction === "tp-to-collector" ? " to you"
-              : receipt.calculated.direction === "collector-to-tp" ? ` to ${them}` : ""}
-          </span></div>
+        <div className="row"><span className="k">Calculated cash balance</span>
+          <span>{(() => {
+            const set = settle(calc, them);
+            return set.direction === "settled" ? set.sentence
+              : `${set.sentence} ${money(set.amount)}`;
+          })()}</span></div>
 
         <div style={{ fontSize: 14, margin: "12px 0" }}>
           {adjStanding == null
             ? <>Only the cash changes. The agreed price and everything you settled about the cards stay exactly as they are.</>
-            : fromPartner
-              ? <>{them} proposed <b className="mono">{money(adjStanding.amount)}</b> — your move.</>
-              : <>You proposed <b className="mono">{money(adjStanding.amount)}</b> — waiting on {them}.</>}
+            : (() => {
+              const set = settle(adjStanding.amount, them);
+              const said = set.direction === "settled" ? "an even split"
+                : `${set.sentence} ${money(set.amount)}`;
+              return fromPartner
+                ? <>{them} proposed: <b>{said}</b> — your move.</>
+                : <>You proposed: <b>{said}</b> — waiting on {them}.</>;
+            })()}
         </div>
 
         {/* Whose agreement is in, stated separately for each person. */}
@@ -4955,11 +4986,11 @@ function DealStage({ o, st, register }) {
 
             {/* Said in words, every time, so the control is never read by
                 position or colour alone. */}
+            {/* The consequence, before it is proposed. */}
             <div className="cs-say">
-              {draftDir.direction === "settled" ? "Even — no cash owed"
-                : draftDir.direction === "tp-to-collector"
-                  ? `${them} pays you ${money(draftDir.amount)}`
-                  : `You pay ${them} ${money(draftDir.amount)}`}
+              <span className="cs-say-k">Proposed cash balance</span>
+              {draftSet.direction === "settled" ? "Even — no cash owed"
+                : `${draftSet.sentence} ${money(draftSet.amount)}`}
             </div>
 
             <div className="faint" style={{ fontSize: 12.5, marginTop: 6 }}>
@@ -4968,8 +4999,9 @@ function DealStage({ o, st, register }) {
             <button className="btn wide" style={{ marginTop: 12 }}
               disabled={draft === calc}
               onClick={() => { st.dealPropose(o.id, draft); setSigned(null); }}>
-              Propose {draftDir.direction === "settled" ? "an even split"
-                : money(draftDir.amount)}
+              {draftSet.direction === "settled" ? "Propose an even split"
+                : `Propose ${draftSet.sentence.toLowerCase().replace(/^you /, "")} `
+                  + money(draftSet.amount)}
             </button>
           </>
         )}
@@ -5028,8 +5060,15 @@ function Fulfillment({ o, st, register }) {
       {term("How", f.method)}
       {term("Where", f.where)}
       {term("When", f.when)}
-      <div className="row"><span className="k">Settling up</span>
-        <span className="mono">{money(Math.abs(finalBalance(o)))} {finalBalance(o) >= 0 ? "to them" : "to you"}</span></div>
+      {/* WHO PAYS WHOM, not a sign and a pronoun. The handoff card stays
+          operational — how, where, when, and what cash is left — with the
+          richer economics behind Deal summary. */}
+      <div className="row"><span className="k">Cash settlement</span>
+        <span>{(() => {
+          const set = settle(finalBalance(o), p ? p.name : null);
+          return set.direction === "settled" ? set.sentence
+            : `${set.sentence} ${money(set.amount)}`;
+        })()}</span></div>
 
       {/* The plan and the exchange are reported separately, because they are
           separate facts: agreeing a Saturday meet is not having the card. */}

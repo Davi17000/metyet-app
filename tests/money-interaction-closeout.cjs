@@ -298,8 +298,9 @@ describe("C. The arithmetic, in both directions", () => {
     eq(D.calculatedBalance(owedToUs.get()), -100, "the partner owes $100");
     const level = atDeal({ price: 500, cards: [["ka", 500, 1]] });
     eq(D.calculatedBalance(level.get()), 0, "and a zero balance is possible");
-    assert(/`You owe \$\{them\}`/.test(code(COL)) && /`\$\{them\} owes you`/.test(code(COL)),
-      "each stated in words, not by a sign");
+    assert(/const settle = \(amount, partnerName\)/.test(code(COL)),
+      "one formatter states payer and recipient");
+    assert(/D\.settlement\(amount, \{/.test(code(COL)), "from the canonical helper");
   });
 
   test("a no-trade deal is all cash", () => {
@@ -372,7 +373,9 @@ describe("E. The screen says what the number is", () => {
   });
 
   test("the calculated figure is shown before anyone proposes one", () => {
-    assert(/Calculated amount owed/.test(code(COL)),
+    /* CONTRACT CHANGE: renamed to "Calculated cash balance" so the receipt and
+       the proposal area use one term for one quantity. */
+    assert(/Calculated cash balance/.test(code(COL)),
       "so a proposal reads as a change from something");
     assert(/Only the cash changes\./.test(code(COL)), "with the scope stated plainly");
   });
@@ -384,16 +387,22 @@ describe("E. The screen says what the number is", () => {
   });
 
   test("standing proposals use the shared actor language", () => {
-    assert(/You proposed <b className="mono">\{money\(adjStanding\.amount\)\}<\/b> — waiting on \{them\}/
-      .test(code(COL)), "waiting reads the same as everywhere else");
-    assert(/\{them\} proposed <b className="mono">\{money\(adjStanding\.amount\)\}<\/b> — your move/
-      .test(code(COL)), "as does the other side");
+    /* CONTRACT CHANGE: the standing proposal now states its consequence —
+       who would pay whom — rather than a bare figure. */
+    assert(/You proposed: <b>\{said\}<\/b> — waiting on \{them\}/.test(code(COL)),
+      "waiting reads the same as everywhere else");
+    assert(/\{them\} proposed: <b>\{said\}<\/b> — your move/.test(code(COL)),
+      "as does the other side");
+    assert(/settle\(adjStanding\.amount, them\)/.test(code(COL)),
+      "phrased by the shared formatter");
   });
 
   test("the receipt preserves the derivation", () => {
     assert(/Calculated cash balance/.test(code(COL)), "what the settled terms came to");
     assert(/Additional discount|Final cash adjustment/.test(code(COL)), "what changed");
-    assert(/`You owe \$\{them\}`/.test(code(COL)), "and what is actually owed");
+    assert(/Cash settlement/.test(code(COL)), "under its own heading");
+    assert(/settle\(cash, them\)\.sentence/.test(code(COL)),
+      "and who actually pays whom");
   });
 
   test("no percentage appears where cash has none", () => {

@@ -231,9 +231,11 @@ describe("B. Milestones travel with the conversation", () => {
       deal: {} });
     eq(D.cashReceipt(mk(1000, 275)).calculated.direction, "collector-to-tp", "you owe");
     eq(D.cashReceipt(mk(700, 1000)).calculated.direction, "tp-to-collector", "they owe");
+    /* CONTRACT CHANGE: the phone reads the same formatter as everywhere else. */
     const shell = code(COL).slice(code(COL).indexOf("function MobileDeal("),
       code(COL).indexOf("function Deal({", code(COL).indexOf("function MobileDeal(")));
-    assert(/owes you/.test(shell) && /You owe/.test(shell), "and the phone says which");
+    assert(/settle\(D\.finalBalance\(o\), them\)\.sentence/.test(shell),
+      "and the phone says which, through the shared formatter");
   });
 
   test("an event already in the shared thread is not projected twice", () => {

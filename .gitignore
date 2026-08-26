@@ -15,3 +15,6 @@ site/
 
 # generated UX review assets — evidence, never source
 artifacts/
+
+# superseded: preview output moved to dist/ and this was never regenerated
+previews/
