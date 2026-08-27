@@ -78,7 +78,7 @@ const real = ({ price, market, pct }) => {
   st.actions.tradePercentRespond({ oppId: o, tradeCardId: row.id, by: "collector", action: "accept", at: AT });
   return { st, o, id: row.id, get: () => st.get().opportunities.find((x) => x.id === o) };
 };
-const dealBlock = () => code(COL).slice(code(COL).indexOf("function DealStage("),
+const dealBlock = () => code(COL).slice(code(COL).indexOf("function DealReceipt("),
   code(COL).indexOf("function Fulfillment("));
 
 describe("A. The signed balance, and what it means", () => {

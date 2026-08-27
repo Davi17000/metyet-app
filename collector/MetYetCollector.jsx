@@ -439,6 +439,10 @@ const CSS = `
    tester standing in for the other side, never as a Collector action. */
 /* Direction is carried by the words; colour reinforces it and is never the
    only signal. Outflow and inflow, not warning and success. */
+.dl-cur { opacity: .72; }
+.dl-cur-s { font-size: 12.5px; color: var(--muted); margin: 2px 0 12px; }
+.dl-prop-s { font-size: 13px; font-weight: 600; margin-top: 3px; }
+
 .dl-final.collector-to-tp > span:first-child { color: var(--danger); }
 .dl-final.tp-to-collector > span:first-child { color: var(--t1); }
 .dl-final.settled > span:first-child { color: var(--muted); }
@@ -4782,77 +4786,27 @@ function ValueCard({ o, tcd, st }) {
 
 /* Deal — the calculated balance, its derivation, then an optional final
    negotiation. Nothing here reopens a price, a value or a percentage. */
-function DealStage({ o, st, register }) {
-  /* THE DRAFT IS A SIGNED BALANCE, not a magnitude with a payer guessed after.
-     The old field stripped the minus sign and refused anything but a positive
-     number, so a collector owed $185 who proposed $200 sent +200 — silently
-     reversing who pays. Direction is a property of the number, so the number
-     carries it, and both controls edit that one value. */
-  const [signed, setSigned] = useState(null);      // null = untouched
+/* THE ECONOMIC RECEIPT — what was agreed, as distinct from how it will happen.
 
+   It used to live inside the Deal stage only, so the moment a deal reached
+   Handoff the entire derivation vanished and the collector was left with
+   logistics and a single cash figure. "What did we agree to?" became
+   unanswerable exactly when somebody was about to hand over cards.
+
+   So it is a component both stages render. Every figure is canonical: the
+   agreed price, each card's agreed market value and percentage, the credited
+   value from the shared helper, and the settlement sentence from settlement().
+   Nothing here recomputes anything. */
+function DealReceipt({ o, st, them }) {
+  /* Derived here rather than passed in, so the receipt reads the same whichever
+     stage renders it and cannot drift from its host. */
   const calc = calcBalance(o);
-  const deal0 = o.deal || {};
-  const standing0 = deal0.agreedAdj == null && deal0.tpAdj != null
-    ? { amount: deal0.tpAdj, by: "tp" }
-    : deal0.agreedAdj == null && deal0.collectorAdj != null
-      ? { amount: deal0.collectorAdj, by: "collector" } : null;
-  /* WHOSE MOVE, FROM THE DEAL ITSELF — never a local "sent" flag, which would
-     be a second turn model able to disagree with the deal. You own the cash
-     move unless your own proposal is standing unanswered. */
-  const theirCounter = !!standing0 && standing0.by === "tp";
-  /* An AGREED figure ends the negotiation: there is no standing proposal, but
-     that is settlement rather than a returned turn. Without this the editor
-     reappeared the moment the partner accepted, inviting a change to something
-     both sides had just agreed. */
-  const cashSettled = deal0.agreedAdj != null;
-  const iOweTheMove = !cashSettled && (!standing0 || theirCounter);
-  /* The figure a proposal is measured against, and where the slider starts:
-     their counter once one exists, because that is what you would be changing;
-     otherwise the settled balance. */
-  const baseline = theirCounter ? standing0.amount : D.finalBalance(o);
-  /* Untouched, the draft IS the canonical calculated balance — so the control
-     opens where the deal actually stands. */
-  const draft = signed == null ? (baseline || 0) : signed;
-  const draftDir = D.cashDirection(draft);
-  /* Room to move either way, and never less than the current position. */
-  const span = Math.max(500, Math.ceil((Math.abs(calc || 0) * 2) / 50) * 50);
-  const p = st.partnerById(o.partnerId);
-  const them = p ? p.name : "them";
-  /* The proposal's consequence, phrased once and reused by the live line and
-     the confirm button, so they cannot disagree. */
-  const draftSet = settle(draft, them);
-
-  /* THE ADJUSTMENT, READ CANONICALLY. Pass 2 replaced `proposedAdj`/`proposedBy`
-     with one standing position per side plus a thread; this screen was still
-     reading the old fields and so showed nothing at all after a proposal. */
-  const deal = o.deal || {};
-  const adjStanding = deal.agreedAdj == null && deal.tpAdj != null ? { amount: deal.tpAdj, by: "tp" }
-    : deal.agreedAdj == null && deal.collectorAdj != null
-      ? { amount: deal.collectorAdj, by: "collector" } : null;
-  const fromPartner = !!adjStanding && adjStanding.by === "tp";
   const cash = D.finalBalance(o);
-  /* CURRENT is the canonical settled balance — an agreed adjustment if one
-     exists, otherwise the calculated balance. Never the draft. */
-  /* WHAT WAS SENT, measured against what it replaced — the settled balance,
-     since a collector proposal is a move away from that. */
-  const sentSet = settle(adjStanding ? adjStanding.amount : 0, them);
-  const sentCmp = D.compareCashSettlement(D.finalBalance(o),
-    adjStanding ? adjStanding.amount : 0, { viewer: "collector", partner: them });
-  const cmp = D.compareCashSettlement(baseline, draft, {
-    viewer: "collector", partner: them });
-  const cashOnly = (o.trade && o.trade.mode === "cash") || acceptedCards(o).length === 0;
-  /* What the final agreement changed relative to the settled economics. Zero
-     until somebody agrees a different figure. */
-  /* One projection, so the rows below cannot disagree about direction. */
   const receipt = D.cashReceipt(o);
-
-  /* Agreement belongs to whoever gave it. Never inferred, never combined. */
-  const iAgreed = !!deal.collectorAgreed;
-  const theyAgreed = !!deal.tpAgreed;
-
+  const cards = acceptedCards(o);
+  const cashOnly = (o.trade && o.trade.mode === "cash") || cards.length === 0;
   return (
-    <>
-      <div className="card sec">
+    <div className="card sec">
         <div className="sec-h">What this deal comes to</div>
 
         <div className="row"><span className="k">Price you agreed</span>
@@ -4923,14 +4877,127 @@ function DealStage({ o, st, register }) {
         )}
         {/* CASH SETTLEMENT — the line the reader must not misread, so it says
             payer and recipient outright and carries the section heading. */}
-        <div className="dl-h">Cash settlement</div>
-        <div className={"row tot dl-final " + receipt.final.direction}>
-          <span>{settle(cash, them).sentence}</span>
-          <span className="mono">
-            {receipt.final.direction === "settled" ? money(0) : money(receipt.final.amount)}
-          </span>
-        </div>
+        {/* TWO STATES WHILE A FIGURE IS UNANSWERED, never one ambiguous total.
+            A single "Cash settlement" line would show the settled figure with a
+            proposal sitting above it — the largest, last number contradicting
+            the offer just made. Current and proposed are different facts, so
+            they are labelled as such, and the proposal is marked unsettled. */}
+        {receipt.proposed ? (
+          <>
+            <div className="dl-h">Where the cash stands</div>
+            <div className={"row dl-cur " + receipt.final.direction}>
+              <span className="k">Current — agreed so far</span>
+              <span className="mono">
+                {receipt.final.direction === "settled" ? money(0)
+                  : money(receipt.final.amount)}
+              </span>
+            </div>
+            <div className="dl-cur-s">{settle(cash, them).sentence}</div>
+            <div className={"row tot dl-final " + receipt.proposed.balance.direction}>
+              <span>Proposed — {receipt.proposed.by === "collector"
+                ? "yours" : `${them}'s`}</span>
+              <span className="mono">
+                {receipt.proposed.balance.direction === "settled" ? money(0)
+                  : money(receipt.proposed.balance.amount)}
+              </span>
+            </div>
+            <div className="dl-prop-s">
+              {receipt.proposed.balance.direction === "settled"
+                ? settle(0, them).sentence
+                : `${settle(receipt.proposed.balance.direction === "collector-to-tp"
+                    ? 1 : -1, them).sentence} — not agreed yet`}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="dl-h">Cash settlement</div>
+            <div className={"row tot dl-final " + receipt.final.direction}>
+              <span>{settle(cash, them).sentence}</span>
+              <span className="mono">
+                {receipt.final.direction === "settled" ? money(0)
+                  : money(receipt.final.amount)}
+              </span>
+            </div>
+          </>
+        )}
       </div>
+  );
+}
+
+function DealStage({ o, st, register }) {
+  /* THE DRAFT IS A SIGNED BALANCE, not a magnitude with a payer guessed after.
+     The old field stripped the minus sign and refused anything but a positive
+     number, so a collector owed $185 who proposed $200 sent +200 — silently
+     reversing who pays. Direction is a property of the number, so the number
+     carries it, and both controls edit that one value. */
+  const [signed, setSigned] = useState(null);      // null = untouched
+
+  const calc = calcBalance(o);
+  const deal0 = o.deal || {};
+  const standing0 = deal0.agreedAdj == null && deal0.tpAdj != null
+    ? { amount: deal0.tpAdj, by: "tp" }
+    : deal0.agreedAdj == null && deal0.collectorAdj != null
+      ? { amount: deal0.collectorAdj, by: "collector" } : null;
+  /* WHOSE MOVE, FROM THE DEAL ITSELF — never a local "sent" flag, which would
+     be a second turn model able to disagree with the deal. You own the cash
+     move unless your own proposal is standing unanswered. */
+  const theirCounter = !!standing0 && standing0.by === "tp";
+  /* An AGREED figure ends the negotiation: there is no standing proposal, but
+     that is settlement rather than a returned turn. Without this the editor
+     reappeared the moment the partner accepted, inviting a change to something
+     both sides had just agreed. */
+  const cashSettled = deal0.agreedAdj != null;
+  /* Somebody has named a figure and nobody has agreed it yet: there is no
+     settled deal to agree to. */
+  const cashUnresolved = !cashSettled && !!standing0;
+  const iOweTheMove = !cashSettled && (!standing0 || theirCounter);
+  /* The figure a proposal is measured against, and where the slider starts:
+     their counter once one exists, because that is what you would be changing;
+     otherwise the settled balance. */
+  const baseline = theirCounter ? standing0.amount : D.finalBalance(o);
+  /* Untouched, the draft IS the canonical calculated balance — so the control
+     opens where the deal actually stands. */
+  const draft = signed == null ? (baseline || 0) : signed;
+  const draftDir = D.cashDirection(draft);
+  /* Room to move either way, and never less than the current position. */
+  const span = Math.max(500, Math.ceil((Math.abs(calc || 0) * 2) / 50) * 50);
+  const p = st.partnerById(o.partnerId);
+  const them = p ? p.name : "them";
+  /* The proposal's consequence, phrased once and reused by the live line and
+     the confirm button, so they cannot disagree. */
+  const draftSet = settle(draft, them);
+
+  /* THE ADJUSTMENT, READ CANONICALLY. Pass 2 replaced `proposedAdj`/`proposedBy`
+     with one standing position per side plus a thread; this screen was still
+     reading the old fields and so showed nothing at all after a proposal. */
+  const deal = o.deal || {};
+  const adjStanding = deal.agreedAdj == null && deal.tpAdj != null ? { amount: deal.tpAdj, by: "tp" }
+    : deal.agreedAdj == null && deal.collectorAdj != null
+      ? { amount: deal.collectorAdj, by: "collector" } : null;
+  const fromPartner = !!adjStanding && adjStanding.by === "tp";
+  const cash = D.finalBalance(o);
+  /* CURRENT is the canonical settled balance — an agreed adjustment if one
+     exists, otherwise the calculated balance. Never the draft. */
+  /* WHAT WAS SENT, measured against what it replaced — the settled balance,
+     since a collector proposal is a move away from that. */
+  const sentSet = settle(adjStanding ? adjStanding.amount : 0, them);
+  const sentCmp = D.compareCashSettlement(D.finalBalance(o),
+    adjStanding ? adjStanding.amount : 0, { viewer: "collector", partner: them });
+  const cmp = D.compareCashSettlement(baseline, draft, {
+    viewer: "collector", partner: them });
+  const cashOnly = (o.trade && o.trade.mode === "cash") || acceptedCards(o).length === 0;
+  /* What the final agreement changed relative to the settled economics. Zero
+     until somebody agrees a different figure. */
+  /* One projection, so the rows below cannot disagree about direction. */
+  const receipt = D.cashReceipt(o);
+
+  /* Agreement belongs to whoever gave it. Never inferred, never combined. */
+  const iAgreed = !!deal.collectorAgreed;
+  const theyAgreed = !!deal.tpAgreed;
+
+  return (
+    <>
+      <DealReceipt o={o} st={st} them={them} />
 
       <div className="card sec">
         <div className="sec-h">Final cash amount</div>
@@ -4978,10 +5045,15 @@ function DealStage({ o, st, register }) {
                 Accept {money(adjStanding.amount)}
               </button>
             )}
-            <button className="btn pri wide" style={{ marginBottom: 12 }}
-              onClick={() => st.dealAgree(o.id)}>
-              Agree to this deal
-            </button>
+            {/* Not while a cash figure is unanswered: there is no settled deal
+                to agree to, and the domain refuses it in any case. Accepting
+                their standing figure above is the way forward. */}
+            {!cashUnresolved && (
+              <button className="btn pri wide" style={{ marginBottom: 12 }}
+                onClick={() => st.dealAgree(o.id)}>
+                Agree to this deal
+              </button>
+            )}
             {/* NOTHING TO EDIT WHILE IT IS NOT YOUR MOVE.
 
                 A disabled slider still reads as a control — it invites a drag
@@ -5153,6 +5225,14 @@ function Fulfillment({ o, st, register }) {
   );
 
   return (
+    <>
+      {/* WHAT WAS AGREED, THEN HOW IT HAPPENS. Two questions, two cards.
+          Reaching Handoff used to erase the economics entirely, leaving a
+          collector about to hand over cards with a single cash figure and no
+          way to check what it came from. The receipt comes first because it is
+          the thing being carried out; the logistics card below is the doing. */}
+      <DealReceipt o={o} st={st} them={p ? p.name : "them"} />
+
     <div className="card sec">
       <div className="sec-h">Handoff</div>
 
@@ -5222,6 +5302,7 @@ function Fulfillment({ o, st, register }) {
         </button>
       )}
     </div>
+    </>
   );
 }
 

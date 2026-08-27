@@ -190,11 +190,16 @@ describe("E. Every settlement surface uses it", () => {
   });
 
   test("the receipt still reconciles the whole agreement", () => {
-    const deal = col.slice(col.indexOf("function DealStage("),
-      col.indexOf("function Fulfillment("));
+    /* CONTRACT CHANGE: the receipt is now its own component, so both the Deal
+       stage and Handoff can render the same derivation. The lines it must keep
+       are unchanged — only where they live. */
+    const rec = col.slice(col.indexOf("function DealReceipt("),
+      col.indexOf("function DealStage("));
     ["Price you agreed", "Agreed market value", "Agreed Trade %", "Trade value",
       "Total trade value", "Calculated cash balance"].forEach((line) =>
-      assert(deal.includes(line), "the receipt keeps: " + line));
+      assert(rec.includes(line), "the receipt keeps: " + line));
+    assert(/<DealReceipt o=\{o\} st=\{st\} them=\{them\} \/>/.test(col),
+      "and the deal stage renders it");
   });
 
   test("the arithmetic behind it is untouched", () => {

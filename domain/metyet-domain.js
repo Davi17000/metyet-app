@@ -238,6 +238,23 @@ const cashReceipt = (o) => {
     calculated: cashDirection(calc),
     final: cashDirection(final),
     adjustment: (calc == null || final == null) ? null : final - calc,
+    /* A PROPOSAL IS NOT YET A BALANCE — but it is a figure somebody is being
+       asked to answer, and the receipt could not describe it. `adjustment`
+       compares the AGREED figure to the calculated one, so while an offer is
+       merely standing it is zero and any row built on it disappears. The
+       receipt then showed a settled total directly beneath an unanswered
+       offer, which reads as though the offer had already taken effect.
+
+       So a standing proposal gets its own leg. Nothing is stored, and
+       `adjustment` keeps its meaning: agreed and offered are different facts. */
+    proposed: (() => {
+      const d = o.deal || {};
+      const by = dealAdjStanding(d);
+      const amount = by === "tp" ? d.tpAdj : by === "collector" ? d.collectorAdj : null;
+      if (by == null || amount == null) return null;
+      return { by, balance: cashDirection(amount),
+        delta: calc == null ? null : amount - calc };
+    })(),
   };
 };
 

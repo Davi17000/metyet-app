@@ -415,14 +415,14 @@ describe("E. The screen says what the number is", () => {
   });
 
   test("no percentage appears where cash has none", () => {
-    const deal = code(COL).slice(code(COL).indexOf("function DealStage("),
+    const deal = code(COL).slice(code(COL).indexOf("function DealReceipt("),
       code(COL).indexOf("function Fulfillment("));
     assert(!/<TradeFields/.test(deal), "the linked editor belongs to Value Trade only");
     assert(!/pn-u.*%/.test(deal), "and no percentage unit is offered");
   });
 
   test("the presentation writes nothing canonical", () => {
-    const deal = code(COL).slice(code(COL).indexOf("function DealStage("),
+    const deal = code(COL).slice(code(COL).indexOf("function DealReceipt("),
       code(COL).indexOf("function Fulfillment("));
     ["agreedAdj:", "tpAgreed:", "collectorAgreed:", "stage:"].forEach((f) =>
       assert(!deal.includes(f), "no direct write of " + f));

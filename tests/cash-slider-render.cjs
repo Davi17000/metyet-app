@@ -290,7 +290,7 @@ describe("D. Nothing underneath moves while editing", () => {
     assert(/settlement\(currentSigned, ctx\)/.test(cmpFn),
       "the comparison delegates to it");
     assert(/settlement\(proposedSigned, ctx\)/.test(cmpFn), "for both sides");
-    const deal = code(COL).slice(code(COL).indexOf("function DealStage("),
+    const deal = code(COL).slice(code(COL).indexOf("function DealReceipt("),
       code(COL).indexOf("function Fulfillment("));
     assert(!/> 0 \? "You pay"/.test(deal), "and no JSX re-derives it");
   });
@@ -343,7 +343,7 @@ describe("E. Turn state: editing, waiting, and back again", () => {
 
   test("styling and submittability can never disagree", () => {
     /* One expression drives both, so a lit-but-dead button is impossible. */
-    const d = code(COL).slice(code(COL).indexOf("function DealStage("),
+    const d = code(COL).slice(code(COL).indexOf("function DealReceipt("),
       code(COL).indexOf("function Fulfillment("));
     assert(/\(draft === baseline \? "" : " pri"\)/.test(d), "prominence");
     assert(/disabled=\{draft === baseline\}/.test(d), "and submittability");
@@ -372,7 +372,7 @@ describe("E. Turn state: editing, waiting, and back again", () => {
   test("the waiting block reads the deal, not a stale draft", () => {
     openAt(168); dragTo(200); click(proposeBtn()); rerender();
     eq(opp().deal.collectorAdj, 200, "the standing proposal is canonical");
-    const d = code(COL).slice(code(COL).indexOf("function DealStage("),
+    const d = code(COL).slice(code(COL).indexOf("function DealReceipt("),
       code(COL).indexOf("function Fulfillment("));
     assert(/settle\(adjStanding \? adjStanding\.amount : 0, them\)/.test(d),
       "and the block reads it");
@@ -445,7 +445,7 @@ describe("E. Turn state: editing, waiting, and back again", () => {
   });
 
   test("no local turn flag was introduced", () => {
-    const d = code(COL).slice(code(COL).indexOf("function DealStage("),
+    const d = code(COL).slice(code(COL).indexOf("function DealReceipt("),
       code(COL).indexOf("function Fulfillment("));
     ["proposalSent", "waiting", "isWaiting", "sent"].forEach((f) =>
       assert(!new RegExp("useState[^)]*" + f, "i").test(d),

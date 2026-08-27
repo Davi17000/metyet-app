@@ -400,6 +400,21 @@ function createStore(seed) {
     dealAgree({ oppId, by, at }) {
       return this.patchOpportunity(oppId, (o) => {
         if (o.stage !== "deal") return o;
+        /* AN UNANSWERED CASH PROPOSAL MEANS THERE IS NO DEAL TO AGREE TO.
+
+           Agreeing while a figure is still on the table would commit somebody
+           to terms the other side has not accepted — and worse, it was
+           reachable: the guard lived only in what the UI chose to render, so
+           any caller could walk past it. The rule belongs here, where every
+           seat meets it.
+
+           Resolution is canonical: a standing proposal is one that has been
+           made and not yet agreed. Once agreedAdj exists, the cash is settled
+           and agreement is available again. */
+        const d = o.deal || {};
+        const cashUnresolved = d.agreedAdj == null
+          && (d.collectorAdj != null || d.tpAdj != null);
+        if (cashUnresolved) return o;
         const deal = { ...(o.deal || {}),
           [by === "tp" ? "tpAgreed" : "collectorAgreed"]: true };
         const both = !!deal.tpAgreed && !!deal.collectorAgreed;

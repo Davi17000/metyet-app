@@ -23,7 +23,7 @@ const { createStore } = require("../domain/metyet-store.js");
 const ROOT = path.join(__dirname, "..");
 const COL = fs.readFileSync(path.join(ROOT, "collector", "MetYetCollector.jsx"), "utf8");
 const code = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
-const DEAL = () => code(COL).slice(code(COL).indexOf("function DealStage("),
+const DEAL = () => code(COL).slice(code(COL).indexOf("function DealReceipt("),
   code(COL).indexOf("function Fulfillment("));
 const AT = "2026-08-24";
 
