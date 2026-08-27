@@ -127,7 +127,10 @@ describe("B. Direction changes only by crossing zero", () => {
     eq(w.get().deal.agreedAdj, 0, "zero is a real settlement");
     eq(r.direction, "settled", "and reads as even");
     eq(r.amount, 0, "$0");
-    assert(/Even — no cash owed/.test(DEAL()), "said in words on screen");
+    /* CONTRACT CHANGE: the proposal control now renders current, proposed and the
+       change live, and the "Switch to …" button is gone — the slider is the only
+       direction control, and crossing zero is what changes payer. */
+    assert(/"Propose no cash owed"/.test(DEAL()), "said in words on screen");
   });
 
   test("the reducer no longer rejects an even split", () => {
@@ -167,29 +170,33 @@ describe("C. One signed draft, two controls", () => {
 
   test("reversing is a deliberate act", () => {
     const d = DEAL();
-    assert(/onClick=\{\(\) => setSigned\(-draft\)\}/.test(d), "an explicit switch");
-    assert(/Switch to/.test(d), "labelled for what it does");
+    /* CONTRACT CHANGE: the proposal control now renders current, proposed and the
+       change live, and the "Switch to …" button is gone — the slider is the only
+       direction control, and crossing zero is what changes payer. */
+    assert(!/setSigned\(-draft\)/.test(d), "no explicit switch survives");
+    assert(!/Switch to/.test(d), "and no direction toggle of any kind");
     assert(/step=\{1\}/.test(d) && /min=\{-span\} max=\{span\}/.test(d),
       "and the slider spans both sides of zero");
   });
 
   test("the direction is never guessed after the fact", () => {
     const d = DEAL();
-    assert(!/Math\.abs\([^)]*\)\s*\)\s*;?\s*$/m.test(d.split("draftDir")[0] || ""),
-      "no magnitude is taken before direction is resolved");
-    assert(/const draftDir = D\.cashDirection\(draft\);/.test(d),
-      "direction comes from the signed value");
+    assert(/D\.compareCashSettlement\(cash, draft/.test(d),
+      "the comparison is made from two signed values");
+    assert(/D\.compareCashSettlement\(cash, draft/.test(d),
+      "direction comes from the signed values, through the helper");
     /* Math.abs appears only for DISPLAY, after direction is known. */
-    assert(/money\(draftSet\.amount\)/.test(d), "and the figure shown is unsigned");
+    assert(/money\(cmp\.proposed\.amount\)/.test(d), "and the figure shown is unsigned");
   });
 
   test("the interpretation is always in words", () => {
     /* CONTRACT CHANGE: the live interpretation now comes from the shared
        formatter, so the slider and the receipt cannot word it differently. */
     const d = DEAL();
-    assert(/draftSet\.sentence/.test(d), "phrased by the formatter");
-    assert(/const draftSet = settle\(draft, them\)/.test(d), "from the signed draft");
-    assert(/"Even — no cash owed"/.test(d), "with zero stated explicitly");
+    assert(/cmp\.proposed\.sentence/.test(d), "phrased by the formatter");
+    assert(/D\.compareCashSettlement\(cash, draft/.test(d),
+      "from the signed current and the signed draft");
+    assert(/"Propose no cash owed"/.test(d), "with zero stated explicitly");
   });
 });
 

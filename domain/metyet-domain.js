@@ -191,6 +191,46 @@ const settlement = (amount, { viewer = "collector", collector = "the collector",
       + (payee === "You" ? "you" : payee) };
 };
 
+/* COMPARING TWO SETTLEMENTS — presentation, not a second economic model.
+
+   The slider could say what a move would settle AT, and not what it would DO.
+   Answering that in the receipt one layer above is why the same feedback kept
+   recurring: the control that needed the comparison never had it.
+
+   The subtlety is that a signed delta only means something while the payer
+   stays the same. Once a proposal crosses zero, "+$208" describes no experience
+   anybody has — the money did not grow by $208, it stopped flowing one way and
+   started flowing the other. A crossing is therefore a SWING, the distance to
+   zero plus the distance out the far side, and never carries a sign.
+
+   Payer semantics are untouched: every sentence still comes from settlement(). */
+const compareCashSettlement = (currentSigned, proposedSigned, ctx = {}) => {
+  const cur = settlement(currentSigned, ctx);
+  const prop = settlement(proposedSigned, ctx);
+  const a = Number(currentSigned) || 0;
+  const b = Number(proposedSigned) || 0;
+
+  const fromZero = a === 0 && b !== 0;
+  const toZero = b === 0 && a !== 0;
+  /* Strictly opposite sides. Zero is the crossing point, not a side. */
+  const crossesZero = a !== 0 && b !== 0 && (a > 0) !== (b > 0);
+  const samePayer = !crossesZero && !fromZero && !toZero && a !== 0;
+
+  const magnitude = crossesZero ? Math.abs(a) + Math.abs(b)
+    : Math.abs(Math.abs(b) - Math.abs(a));
+
+  const usd = (n) => "$" + Math.round(n).toLocaleString("en-US");
+  let label = null;
+  if (a === b) label = null;                       /* nothing changed, say nothing */
+  else if (fromZero) label = "New " + usd(Math.abs(b)) + " cash settlement";
+  else if (toZero) label = usd(Math.abs(a)) + " reduction from current";
+  else if (crossesZero) label = usd(magnitude) + " swing from current";
+  else label = (Math.abs(b) > Math.abs(a) ? "+" : "-") + usd(magnitude) + " from current";
+
+  return { current: cur, proposed: prop, samePayer, crossesZero, fromZero,
+    toZero, magnitude, label, changed: a !== b };
+};
+
 const cashReceipt = (o) => {
   const calc = calculatedBalance(o);
   const final = finalBalance(o);
@@ -589,7 +629,7 @@ const REFUSE = {
 };
 
 module.exports = {
-  FULFILLMENT, TRADE, cashDirection, cashReceipt, settlement, newSince, unreadFor,
+  FULFILLMENT, TRADE, cashDirection, cashReceipt, settlement, compareCashSettlement, newSince, unreadFor,
   identityKey, isRaw, sameIdentity,
   STAGES, STAGE_IX, STAGE_LABEL,
   isEnded, isCompleted, isTerminal, isActive, isNegotiating,

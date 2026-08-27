@@ -179,11 +179,14 @@ describe("E. Every settlement surface uses it", () => {
   test("the proposal control states the consequence before agreement", () => {
     const deal = col.slice(col.indexOf("function DealStage("),
       col.indexOf("function Fulfillment("));
-    assert(/draftDir/.test(deal), "the draft has a resolved direction");
-    assert(/draftSet\.sentence/.test(deal),
+    assert(/cmp\.proposed\.direction/.test(deal), "the draft has a resolved direction");
+    /* CONTRACT CHANGE: the proposal control now renders current, proposed and the
+       change live, and the "Switch to …" button is gone — the slider is the only
+       direction control, and crossing zero is what changes payer. */
+    assert(/cmp\.proposed\.sentence/.test(deal),
       "stated in words while proposing, through the helper");
-    assert(/Proposed cash balance/.test(deal), "and labelled as a proposal");
-    assert(/Even — no cash owed/.test(deal), "including the zero case");
+    assert(/Proposed cash settlement/.test(deal), "and labelled as a proposal");
+    assert(/"Propose no cash owed"/.test(deal), "including the zero case");
   });
 
   test("the receipt still reconciles the whole agreement", () => {

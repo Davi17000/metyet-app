@@ -381,9 +381,12 @@ describe("E. The screen says what the number is", () => {
   });
 
   test("the input is labelled for what it holds", () => {
-    assert(/aria-label="Final cash amount"/.test(code(COL)), "an accessible label");
-    assert(/<div className="pn-fl">Final cash amount<\/div>/.test(code(COL)),
-      "and a visible one");
+    /* CONTRACT CHANGE: the proposal control now renders current, proposed and the
+       change live, and the "Switch to …" button is gone — the slider is the only
+       direction control, and crossing zero is what changes payer. */
+    assert(/aria-label="Proposed cash amount"/.test(code(COL)), "an accessible label");
+    assert(/`Amount — \$\{cmp\.proposed\.sentence\}`/.test(code(COL)),
+      "and a visible one, naming the side it is on");
   });
 
   test("standing proposals use the shared actor language", () => {

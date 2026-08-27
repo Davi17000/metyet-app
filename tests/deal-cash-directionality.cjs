@@ -151,8 +151,17 @@ describe("B. The adjustment stays signed against the signed balance", () => {
   });
 
   test("no magnitude is taken before the arithmetic", () => {
-    assert(!/Math\.abs\([^)]*\)\s*-\s*Math\.abs\(/.test(code(DOM)),
-      "the domain subtracts signed values");
+    /* CONTRACT CHANGE, narrowed: cashReceipt still subtracts SIGNED values, which
+       is what this protects. compareCashSettlement compares magnitudes, but only
+       for a same-payer delta and never to decide direction. */
+    const receiptFn = code(DOM).slice(code(DOM).indexOf("const cashReceipt"),
+      code(DOM).indexOf("const cashReceipt") + 900);
+    assert(!/Math\.abs\([^)]*\)\s*-\s*Math\.abs\(/.test(receiptFn),
+      "the receipt subtracts signed values");
+    const cmpFn = code(DOM).slice(code(DOM).indexOf("const compareCashSettlement"),
+      code(DOM).indexOf("const cashReceipt"));
+    assert(/crossesZero \? Math\.abs\(a\) \+ Math\.abs\(b\)/.test(cmpFn),
+      "and a crossing is a swing, never a signed difference");
     const rec = code(DOM).slice(code(DOM).indexOf("const cashReceipt"),
       code(DOM).indexOf("const cashReceipt") + 500);
     assert(/final - calc/.test(rec), "adjustment = final - calculated, both signed");

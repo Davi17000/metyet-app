@@ -562,12 +562,20 @@ const CSS = `
 .cs-ends > :nth-child(2) { text-align: center; }
 .cs-ends > :last-child { text-align: right; }
 .cs-r { width: 100%; min-height: 44px; }
+.cs-help { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.45; }
+.cp-cur { display: block; margin-bottom: 12px; opacity: .72; }
+.cp-k { display: block; font-family: 'Archivo'; font-size: 11px; letter-spacing: .09em;
+  text-transform: uppercase; font-weight: 700; color: var(--muted); margin-bottom: 3px; }
+.cp-cur-v { font-size: 14px; }
+.cp-prop { display: block; margin: 14px 0 4px; }
+.cp-prop-v { display: block; font-size: 18px; font-weight: 700; line-height: 1.25; }
+.cp-delta { display: block; font-size: 13.5px; font-weight: 700; color: var(--t1);
+  margin-top: 4px; }
+.cp-in { display: block; margin-top: 12px; }
+
 .cs-zero { position: absolute; left: 50%; bottom: 6px; width: 1px; height: 18px;
   background: var(--line); pointer-events: none; }
 /* Stacked, because side by side the switch overlapped the amount field. */
-.cs-in { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
-.cs-in > label { width: 100%; }
-.cs-flip { width: 100%; white-space: normal; min-height: 44px; }
 .cs-say { margin-top: 10px; font-size: 15px; font-weight: 700; }
 .cs-say-k { display: block; font-family: 'Archivo'; font-size: 11px;
   letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
@@ -4801,6 +4809,10 @@ function DealStage({ o, st, register }) {
       ? { amount: deal.collectorAdj, by: "collector" } : null;
   const fromPartner = !!adjStanding && adjStanding.by === "tp";
   const cash = D.finalBalance(o);
+  /* CURRENT is the canonical settled balance — an agreed adjustment if one
+     exists, otherwise the calculated balance. Never the draft. */
+  const cmp = D.compareCashSettlement(cash, draft, {
+    viewer: "collector", partner: them });
   const cashOnly = (o.trade && o.trade.mode === "cash") || acceptedCards(o).length === 0;
   /* What the final agreement changed relative to the settled economics. Zero
      until somebody agrees a different figure. */
@@ -4940,68 +4952,97 @@ function DealStage({ o, st, register }) {
               onClick={() => st.dealAgree(o.id)}>
               Agree to this deal
             </button>
-            <div className="pn-fl">Final cash amount</div>
+            {/* THE CONTROL EXPLAINS ITSELF.
 
-            {/* A LINE THROUGH ZERO. Owing and being owed are the same quantity
-                with opposite signs, so they belong on one axis with zero in the
-                middle — and the only way to change who pays is to cross it.
-                The slider makes that crossing something you do deliberately. */}
+                Everything needed to judge a move is here, in order: where the
+                cash stands now, the axis, what the move would settle at, and
+                what it would change. Earlier rounds put this in the receipt
+                above, which meant reading the slider required looking somewhere
+                else — the reason the same feedback kept recurring. */}
+
+            {/* CURRENT. Muted: it is what is being changed FROM, not the
+                decision. It comes from the deal, never from the draft, so
+                dragging cannot move the thing you are comparing against. */}
+            <div className="cp-cur">
+              <span className="cp-k">Current cash settlement</span>
+              <span className="cp-cur-v">
+                {cmp.current.direction === "settled" ? cmp.current.sentence
+                  : `${cmp.current.sentence} ${money(cmp.current.amount)}`}
+              </span>
+            </div>
+
+            {/* A LINE THROUGH ZERO. Owing and being owed are one quantity with
+                opposite signs, so they share an axis with zero in the middle —
+                and crossing it is the only way to change who pays. There is no
+                switch: the crossing is the gesture. */}
             <div className="cs">
               <div className="cs-ends">
-                <span>You owe {them}</span>
-                <span>Even</span>
-                <span>{them} owes you</span>
+                <span>{settle(1, them).sentence}</span>
+                <span>{settle(0, them).sentence}</span>
+                <span>{settle(-1, them).sentence}</span>
               </div>
               <input className="cs-r" type="range"
                 min={-span} max={span} step={1}
                 /* The slider reads LEFT as you-owe, so it is the negative of the
                    canonical signed balance, converted at this one boundary. */
                 value={-draft}
-                aria-label={"Final cash balance, between you owing " + them
-                  + " and " + them + " owing you"}
+                aria-label={"Cash settlement, from " + settle(1, them).sentence
+                  + " to " + settle(-1, them).sentence + ". Currently "
+                  + (cmp.current.direction === "settled" ? "no cash owed"
+                    : cmp.current.sentence + " " + money(cmp.current.amount))
+                  + ". Proposed "
+                  + (cmp.proposed.direction === "settled" ? "no cash owed"
+                    : cmp.proposed.sentence + " " + money(cmp.proposed.amount))
+                  + (cmp.label ? ", " + cmp.label : "")}
                 onChange={(e) => setSigned(-Number(e.target.value))} />
               <div className="cs-zero" aria-hidden="true" />
+              <div className="cs-help">
+                Drag to change who pays. The middle is no cash either way.
+              </div>
             </div>
 
-            <div className="cs-in">
-              <label className="pn-f">
-                <span className="pn-fl">Amount</span>
-                <span className="pn-w"><span className="pn-u">$</span>
-                  <input className="inp" inputMode="decimal"
-                    aria-label="Final cash amount"
-                    value={Math.abs(draft) === 0 ? "" : String(Math.abs(draft))}
-                    onChange={(e) => {
-                      /* Typing changes the magnitude and keeps the side, so a
-                         number can never silently move the money. */
-                      const mag = Number(e.target.value.replace(/[^\d.]/g, "")) || 0;
-                      setSigned(draft < 0 ? -mag : mag);
-                    }} />
-                </span>
-              </label>
-              <button className="btn sm cs-flip" disabled={draft === 0}
-                onClick={() => setSigned(-draft)}>
-                Switch to {draft > 0 ? `${them} owing you` : "you owing " + them}
-              </button>
+            {/* PROPOSED, and what it would change. The delta is signed only
+                while the payer holds; a reversal is a swing, because the money
+                did not grow — it turned around. */}
+            <div className="cp-prop">
+              <span className="cp-k">Proposed cash settlement</span>
+              <span className="cp-prop-v">
+                {cmp.proposed.direction === "settled" ? cmp.proposed.sentence
+                  : `${cmp.proposed.sentence} ${money(cmp.proposed.amount)}`}
+              </span>
+              {cmp.label && <span className="cp-delta">{cmp.label}</span>}
             </div>
 
-            {/* Said in words, every time, so the control is never read by
-                position or colour alone. */}
-            {/* The consequence, before it is proposed. */}
-            <div className="cs-say">
-              <span className="cs-say-k">Proposed cash balance</span>
-              {draftSet.direction === "settled" ? "Even — no cash owed"
-                : `${draftSet.sentence} ${money(draftSet.amount)}`}
-            </div>
+            {/* The same value, typed. Magnitude only — the side belongs to the
+                axis, so a number can never silently move the money. */}
+            <label className="pn-f cp-in">
+              <span className="pn-fl">
+                {cmp.proposed.direction === "settled" ? "Amount"
+                  : `Amount — ${cmp.proposed.sentence}`}
+              </span>
+              <span className="pn-w"><span className="pn-u">$</span>
+                <input className="inp" inputMode="decimal"
+                  aria-label="Proposed cash amount"
+                  value={Math.abs(draft) === 0 ? "" : String(Math.abs(draft))}
+                  onChange={(e) => {
+                    const mag = Number(e.target.value.replace(/[^\d.]/g, "")) || 0;
+                    setSigned(draft < 0 ? -mag : mag);
+                  }} />
+              </span>
+            </label>
 
             <div className="faint" style={{ fontSize: 12.5, marginTop: 6 }}>
               Only the cash changes. Card values and percentages stay exactly as agreed.
             </div>
+            {/* The CTA is the settlement it would create, not the arithmetic:
+                the other person answers an outcome, not a movement. */}
             <button className="btn wide" style={{ marginTop: 12 }}
               disabled={draft === calc}
               onClick={() => { st.dealPropose(o.id, draft); setSigned(null); }}>
-              {draftSet.direction === "settled" ? "Propose an even split"
-                : `Propose ${draftSet.sentence.toLowerCase().replace(/^you /, "")} `
-                  + money(draftSet.amount)}
+              {cmp.proposed.direction === "settled" ? "Propose no cash owed"
+                : cmp.proposed.direction === "collector-to-tp"
+                  ? `Propose ${money(cmp.proposed.amount)} settlement`
+                  : `Propose: ${cmp.proposed.sentence} ${money(cmp.proposed.amount)}`}
             </button>
           </>
         )}
