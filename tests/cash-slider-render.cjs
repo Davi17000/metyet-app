@@ -304,4 +304,167 @@ describe("D. Nothing underneath moves while editing", () => {
   });
 });
 
+describe("E. Turn state: editing, waiting, and back again", () => {
+  const A = () => __store.get().actions;
+  const opp = () => __store.get().get().opportunities[0];
+  const editor = () => cls(R, "cs-r").length > 0;
+  const waiting = () => cls(R, "cp-wait").length > 0;
+  const proposeBtn = () => R.root.findAllByType("button")
+    .find((x) => /^Propose/.test(txt(x)));
+  const rerender = () => {
+    TR.act(() => { R.update(React.createElement(App)); });
+    const b = R.root.findAllByType("button").find((x) => /^Deal Flow/.test(txt(x)));
+    if (b && !b.props["aria-expanded"]) click(b);
+  };
+
+  test("your turn, unchanged draft: the CTA is quiet and unsubmittable", () => {
+    openAt(168);
+    const b = proposeBtn();
+    assert(b, "the CTA renders");
+    eq(b.props.disabled, true, "it cannot be pressed");
+    assert(!/\bpri\b/.test(String(b.props.className)),
+      "and is not styled as the primary action: " + b.props.className);
+  });
+
+  test("a real change lights it up", () => {
+    openAt(168); dragTo(200);
+    const b = proposeBtn();
+    eq(b.props.disabled, false, "it can be pressed");
+    assert(/\bpri\b/.test(String(b.props.className)),
+      "and takes the primary treatment: " + b.props.className);
+  });
+
+  test("returning to the current settlement makes it quiet again", () => {
+    openAt(168); dragTo(200); dragTo(168);
+    const b = proposeBtn();
+    eq(b.props.disabled, true, "unsubmittable once more");
+    assert(!/\bpri\b/.test(String(b.props.className)), "and quiet again");
+  });
+
+  test("styling and submittability can never disagree", () => {
+    /* One expression drives both, so a lit-but-dead button is impossible. */
+    const d = code(COL).slice(code(COL).indexOf("function DealStage("),
+      code(COL).indexOf("function Fulfillment("));
+    assert(/\(draft === baseline \? "" : " pri"\)/.test(d), "prominence");
+    assert(/disabled=\{draft === baseline\}/.test(d), "and submittability");
+  });
+
+  test("sending a proposal removes the editor entirely", () => {
+    openAt(168); dragTo(200);
+    assert(editor(), "the slider is there while it is your move");
+    click(proposeBtn());
+    rerender();
+    assert(!editor(), "and gone once the move is theirs");
+    eq(cls(R, "cp-cur").length, 0, "with no current row left behind");
+    eq(cls(R, "cp-prop").length, 0, "and no proposed row");
+    assert(!proposeBtn(), "and no propose button");
+  });
+
+  test("a compact waiting block replaces it", () => {
+    openAt(168); dragTo(200); click(proposeBtn()); rerender();
+    assert(waiting(), "the waiting block renders");
+    const w = txt(cls(R, "cp-wait")[0]);
+    assert(/Your proposal/.test(w), "labelled: " + w);
+    assert(/You pay Northline Cards \$200/.test(w), "with the exact figure sent");
+    assert(/Waiting on Northline Cards/.test(w), "and who holds it");
+  });
+
+  test("the waiting block reads the deal, not a stale draft", () => {
+    openAt(168); dragTo(200); click(proposeBtn()); rerender();
+    eq(opp().deal.collectorAdj, 200, "the standing proposal is canonical");
+    const d = code(COL).slice(code(COL).indexOf("function DealStage("),
+      code(COL).indexOf("function Fulfillment("));
+    assert(/settle\(adjStanding \? adjStanding\.amount : 0, them\)/.test(d),
+      "and the block reads it");
+    assert(!/settle\(draft, them\)[\s\S]{0,80}cp-wait/.test(d),
+      "never the local draft");
+  });
+
+  test("the waiting delta is phrased against the prior settlement", () => {
+    openAt(168); dragTo(200); click(proposeBtn()); rerender();
+    const w = txt(cls(R, "cp-wait")[0]);
+    assert(/\+\$32 from the prior settlement/.test(w), w);
+  });
+
+  test("a crossing still reads as a swing while waiting", () => {
+    openAt(168); dragTo(-40); click(proposeBtn()); rerender();
+    const w = txt(cls(R, "cp-wait")[0]);
+    assert(/Northline Cards pays you \$40/.test(w), "the figure: " + w);
+    assert(/\$208 swing from the prior settlement/.test(w), "the swing: " + w);
+  });
+
+  test("moving to zero reads as a reduction while waiting", () => {
+    openAt(168); dragTo(0); click(proposeBtn()); rerender();
+    const w = txt(cls(R, "cp-wait")[0]);
+    assert(/No cash owed/.test(w), "the figure: " + w);
+    assert(/\$168 reduction from the prior settlement/.test(w), "the change: " + w);
+  });
+
+  test("a partner counter brings the editor back", () => {
+    openAt(168); dragTo(200); click(proposeBtn()); rerender();
+    assert(!editor(), "gone while waiting");
+    TR.act(() => { A().dealAdjustRespond({ oppId: opp().id, by: "tp",
+      action: "propose", amount: 150, at: AT }); });
+    rerender();
+    assert(editor(), "back once it is your move");
+    assert(!waiting(), "and the waiting block is gone");
+  });
+
+  test("the draft re-anchors to their counter", () => {
+    openAt(168); dragTo(200); click(proposeBtn()); rerender();
+    TR.act(() => { A().dealAdjustRespond({ oppId: opp().id, by: "tp",
+      action: "propose", amount: 150, at: AT }); });
+    rerender();
+    assert(/You pay Northline Cards \$150/.test(proposed()),
+      "the slider starts at their figure, not the old draft: " + proposed());
+    const b = proposeBtn();
+    eq(b.props.disabled, true, "so proposing is quiet until you change it");
+  });
+
+  test("changing their counter lights the CTA again", () => {
+    openAt(168); dragTo(200); click(proposeBtn()); rerender();
+    TR.act(() => { A().dealAdjustRespond({ oppId: opp().id, by: "tp",
+      action: "propose", amount: 150, at: AT }); });
+    rerender();
+    dragTo(120);
+    const b = proposeBtn();
+    eq(b.props.disabled, false, "a counter to their counter is submittable");
+    assert(/\bpri\b/.test(String(b.props.className)), "and prominent");
+    assert(/-\$30 from current/.test(delta()), "measured against theirs: " + delta());
+  });
+
+  test("acceptance keeps the editor gone", () => {
+    openAt(168); dragTo(200); click(proposeBtn()); rerender();
+    TR.act(() => { A().dealAdjustRespond({ oppId: opp().id, by: "tp",
+      action: "accept", at: AT }); });
+    rerender();
+    eq(opp().deal.agreedAdj, 200, "the figure is agreed");
+    assert(!editor(), "and there is nothing left to edit");
+    assert(!waiting(), "nor anything to wait for");
+    eq(D.finalBalance(opp()), 200, "the balance follows the agreement");
+  });
+
+  test("no local turn flag was introduced", () => {
+    const d = code(COL).slice(code(COL).indexOf("function DealStage("),
+      code(COL).indexOf("function Fulfillment("));
+    ["proposalSent", "waiting", "isWaiting", "sent"].forEach((f) =>
+      assert(!new RegExp("useState[^)]*" + f, "i").test(d),
+        "no local " + f + " state"));
+    assert(/const iOweTheMove = !cashSettled && \(!standing0 \|\| theirCounter\);/.test(d),
+      "the turn is derived from the deal");
+    assert(/const cashSettled = deal0\.agreedAdj != null;/.test(d),
+      "and an agreed figure ends it rather than returning the turn");
+  });
+
+  test("waiting is materially shorter than editing", () => {
+    openAt(168); dragTo(200);
+    const editingRows = cls(R, "cs-r").length + cls(R, "cp-cur").length
+      + cls(R, "cp-prop").length + cls(R, "cp-in").length;
+    click(proposeBtn()); rerender();
+    const waitingRows = cls(R, "cp-wait").length;
+    assert(waitingRows < editingRows,
+      "fewer elements while waiting: " + waitingRows + " vs " + editingRows);
+  });
+});
+
 require("./run.cjs").run();

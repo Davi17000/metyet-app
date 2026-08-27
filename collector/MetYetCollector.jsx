@@ -571,6 +571,9 @@ const CSS = `
 .cp-prop-v { display: block; font-size: 18px; font-weight: 700; line-height: 1.25; }
 .cp-delta { display: block; font-size: 13.5px; font-weight: 700; color: var(--t1);
   margin-top: 4px; }
+.cp-wait { display: block; padding: 4px 0 2px; }
+.cp-wait-s { display: block; margin-top: 10px; font-size: 13px; font-weight: 700;
+  color: var(--muted); }
 .cp-in { display: block; margin-top: 12px; }
 
 .cs-zero { position: absolute; left: 50%; bottom: 6px; width: 1px; height: 18px;
@@ -4788,9 +4791,28 @@ function DealStage({ o, st, register }) {
   const [signed, setSigned] = useState(null);      // null = untouched
 
   const calc = calcBalance(o);
+  const deal0 = o.deal || {};
+  const standing0 = deal0.agreedAdj == null && deal0.tpAdj != null
+    ? { amount: deal0.tpAdj, by: "tp" }
+    : deal0.agreedAdj == null && deal0.collectorAdj != null
+      ? { amount: deal0.collectorAdj, by: "collector" } : null;
+  /* WHOSE MOVE, FROM THE DEAL ITSELF — never a local "sent" flag, which would
+     be a second turn model able to disagree with the deal. You own the cash
+     move unless your own proposal is standing unanswered. */
+  const theirCounter = !!standing0 && standing0.by === "tp";
+  /* An AGREED figure ends the negotiation: there is no standing proposal, but
+     that is settlement rather than a returned turn. Without this the editor
+     reappeared the moment the partner accepted, inviting a change to something
+     both sides had just agreed. */
+  const cashSettled = deal0.agreedAdj != null;
+  const iOweTheMove = !cashSettled && (!standing0 || theirCounter);
+  /* The figure a proposal is measured against, and where the slider starts:
+     their counter once one exists, because that is what you would be changing;
+     otherwise the settled balance. */
+  const baseline = theirCounter ? standing0.amount : D.finalBalance(o);
   /* Untouched, the draft IS the canonical calculated balance — so the control
      opens where the deal actually stands. */
-  const draft = signed == null ? (calc || 0) : signed;
+  const draft = signed == null ? (baseline || 0) : signed;
   const draftDir = D.cashDirection(draft);
   /* Room to move either way, and never less than the current position. */
   const span = Math.max(500, Math.ceil((Math.abs(calc || 0) * 2) / 50) * 50);
@@ -4811,7 +4833,12 @@ function DealStage({ o, st, register }) {
   const cash = D.finalBalance(o);
   /* CURRENT is the canonical settled balance — an agreed adjustment if one
      exists, otherwise the calculated balance. Never the draft. */
-  const cmp = D.compareCashSettlement(cash, draft, {
+  /* WHAT WAS SENT, measured against what it replaced — the settled balance,
+     since a collector proposal is a move away from that. */
+  const sentSet = settle(adjStanding ? adjStanding.amount : 0, them);
+  const sentCmp = D.compareCashSettlement(D.finalBalance(o),
+    adjStanding ? adjStanding.amount : 0, { viewer: "collector", partner: them });
+  const cmp = D.compareCashSettlement(baseline, draft, {
     viewer: "collector", partner: them });
   const cashOnly = (o.trade && o.trade.mode === "cash") || acceptedCards(o).length === 0;
   /* What the final agreement changed relative to the settled economics. Zero
@@ -4920,16 +4947,19 @@ function DealStage({ o, st, register }) {
           })()}</span></div>
 
         <div style={{ fontSize: 14, margin: "12px 0" }}>
+          {/* Your own standing proposal is stated in full by the waiting block
+              below, so repeating it here read as two separate offers. What is
+              left is the scope reminder, and their move when it is theirs. */}
           {adjStanding == null
             ? <>Only the cash changes. The agreed price and everything you settled about the cards stay exactly as they are.</>
-            : (() => {
-              const set = settle(adjStanding.amount, them);
-              const said = set.direction === "settled" ? "an even split"
-                : `${set.sentence} ${money(set.amount)}`;
-              return fromPartner
-                ? <>{them} proposed: <b>{said}</b> — your move.</>
-                : <>You proposed: <b>{said}</b> — waiting on {them}.</>;
-            })()}
+            : fromPartner
+              ? (() => {
+                const set = settle(adjStanding.amount, them);
+                const said = set.direction === "settled" ? "an even split"
+                  : `${set.sentence} ${money(set.amount)}`;
+                return <>{them} proposed: <b>{said}</b> — your move.</>;
+              })()
+              : <>Only the cash changes. Your figure is below.</>}
         </div>
 
         {/* Whose agreement is in, stated separately for each person. */}
@@ -4952,6 +4982,34 @@ function DealStage({ o, st, register }) {
               onClick={() => st.dealAgree(o.id)}>
               Agree to this deal
             </button>
+            {/* NOTHING TO EDIT WHILE IT IS NOT YOUR MOVE.
+
+                A disabled slider still reads as a control — it invites a drag
+                that does nothing, and leaves the longest block on screen at the
+                moment the collector has least to do. So the editor is not
+                disabled, it is absent, replaced by a short statement of what
+                was sent and who is holding it.
+
+                Everything below comes from the standing proposal in the deal,
+                not from local draft state, which would go stale the moment the
+                partner answered. */}
+            {!iOweTheMove && adjStanding && (
+              <div className="cp-wait">
+                <span className="cp-k">Your proposal</span>
+                <span className="cp-prop-v">
+                  {sentSet.direction === "settled" ? sentSet.sentence
+                    : `${sentSet.sentence} ${money(sentSet.amount)}`}
+                </span>
+                {sentCmp.label && (
+                  <span className="cp-delta">
+                    {sentCmp.label.replace(/from current$/, "from the prior settlement")}
+                  </span>
+                )}
+                <span className="cp-wait-s">Waiting on {them}</span>
+              </div>
+            )}
+
+            {iOweTheMove && (<>
             {/* THE CONTROL EXPLAINS ITSELF.
 
                 Everything needed to judge a move is here, in order: where the
@@ -5036,14 +5094,22 @@ function DealStage({ o, st, register }) {
             </div>
             {/* The CTA is the settlement it would create, not the arithmetic:
                 the other person answers an outcome, not a movement. */}
-            <button className="btn wide" style={{ marginTop: 12 }}
-              disabled={draft === calc}
+            {/* ONE FACT DRIVES BOTH. A quiet-but-clickable button, or a lit-up
+                disabled one, is a control disagreeing with itself — so
+                prominence and submittability come from the same expression:
+                is this genuinely a different settlement from the one on the
+                table? Returning the slider to where it started makes the
+                button go quiet again. */}
+            <button className={"btn wide" + (draft === baseline ? "" : " pri")}
+              style={{ marginTop: 12 }}
+              disabled={draft === baseline}
               onClick={() => { st.dealPropose(o.id, draft); setSigned(null); }}>
               {cmp.proposed.direction === "settled" ? "Propose no cash owed"
                 : cmp.proposed.direction === "collector-to-tp"
                   ? `Propose ${money(cmp.proposed.amount)} settlement`
                   : `Propose: ${cmp.proposed.sentence} ${money(cmp.proposed.amount)}`}
             </button>
+            </>)}
           </>
         )}
 

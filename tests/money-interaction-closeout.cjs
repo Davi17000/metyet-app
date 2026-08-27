@@ -390,10 +390,16 @@ describe("E. The screen says what the number is", () => {
   });
 
   test("standing proposals use the shared actor language", () => {
-    /* CONTRACT CHANGE: the standing proposal now states its consequence —
-       who would pay whom — rather than a bare figure. */
-    assert(/You proposed: <b>\{said\}<\/b> — waiting on \{them\}/.test(code(COL)),
+    /* CONTRACT CHANGE: your own standing proposal is now stated in full by the
+       waiting block, which replaces the editor while the partner holds the
+       move. Repeating it in this line read as two separate offers, so the line
+       keeps only the scope reminder; the figure and its delta live in one
+       place, asserted below. */
+    assert(/YOUR PROPOSAL|Your proposal/.test(code(COL)),
       "waiting reads the same as everywhere else");
+    assert(/Waiting on \{them\}/.test(code(COL)), "and names who holds it");
+    assert(/settle\(adjStanding \? adjStanding\.amount : 0, them\)/.test(code(COL)),
+      "from the canonical standing proposal");
     assert(/\{them\} proposed: <b>\{said\}<\/b> — your move/.test(code(COL)),
       "as does the other side");
     assert(/settle\(adjStanding\.amount, them\)/.test(code(COL)),
@@ -423,7 +429,9 @@ describe("E. The screen says what the number is", () => {
     /* CONTRACT CHANGE: the draft is now a SIGNED balance rather than a typed
        magnitude, so the canonical action receives that signed value. */
     assert(/st\.dealPropose\(o\.id, draft\)/.test(deal), "it calls the canonical action");
-    assert(/const draft = signed == null \? \(calc \|\| 0\) : signed;/.test(deal),
+    /* CONTRACT CHANGE: the draft seeds from the ACTIONABLE settlement, so a
+       partner counter re-anchors the slider instead of leaving a stale draft. */
+    assert(/const draft = signed == null \? \(baseline \|\| 0\) : signed;/.test(deal),
       "with a draft that carries its own direction");
   });
 });

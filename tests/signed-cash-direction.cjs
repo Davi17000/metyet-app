@@ -145,8 +145,13 @@ describe("B. Direction changes only by crossing zero", () => {
 
 describe("C. One signed draft, two controls", () => {
   test("the draft starts at the canonical calculated balance", () => {
-    assert(/const draft = signed == null \? \(calc \|\| 0\) : signed;/.test(DEAL()),
-      "untouched, it is the deal's own balance");
+    /* CONTRACT CHANGE: the comparison baseline is now the ACTIONABLE settlement —
+       a partner's standing counter when one exists, otherwise the settled
+       balance — because that is what a new proposal would be changing. */
+    assert(/const draft = signed == null \? \(baseline \|\| 0\) : signed;/.test(DEAL()),
+      "untouched, it is the actionable settlement");
+    assert(/const baseline = theirCounter \? standing0\.amount : D\.finalBalance\(o\);/
+      .test(DEAL()), "which is their counter, or the settled balance");
     assert(/calcBalance\(o\)/.test(DEAL()), "read from the canonical helper");
   });
 
@@ -181,9 +186,12 @@ describe("C. One signed draft, two controls", () => {
 
   test("the direction is never guessed after the fact", () => {
     const d = DEAL();
-    assert(/D\.compareCashSettlement\(cash, draft/.test(d),
+    /* CONTRACT CHANGE: the comparison baseline is now the ACTIONABLE settlement —
+       a partner's standing counter when one exists, otherwise the settled
+       balance — because that is what a new proposal would be changing. */
+    assert(/D\.compareCashSettlement\(baseline, draft/.test(d),
       "the comparison is made from two signed values");
-    assert(/D\.compareCashSettlement\(cash, draft/.test(d),
+    assert(/cmp\.proposed\.direction/.test(d),
       "direction comes from the signed values, through the helper");
     /* Math.abs appears only for DISPLAY, after direction is known. */
     assert(/money\(cmp\.proposed\.amount\)/.test(d), "and the figure shown is unsigned");
@@ -194,7 +202,7 @@ describe("C. One signed draft, two controls", () => {
        formatter, so the slider and the receipt cannot word it differently. */
     const d = DEAL();
     assert(/cmp\.proposed\.sentence/.test(d), "phrased by the formatter");
-    assert(/D\.compareCashSettlement\(cash, draft/.test(d),
+    assert(/D\.compareCashSettlement\(baseline, draft/.test(d),
       "from the signed current and the signed draft");
     assert(/"Propose no cash owed"/.test(d), "with zero stated explicitly");
   });
