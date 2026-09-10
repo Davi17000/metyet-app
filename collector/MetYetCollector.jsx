@@ -55,6 +55,10 @@ const inventoryLine = (sum) => {
 };
 const fmtShort = (d) => new Date(d + "T12:00:00Z")
   .toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+/* One sentence-maker for the whole collector app. The partner's name comes
+   from the deal; the collector is always "You" from this seat. */
+const settle = (amount, partnerName) => D.settlement(amount, {
+  viewer: "collector", partner: partnerName || "them" });
 const fmtDate = (d) => new Date(d + "T12:00:00Z")
   .toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 
@@ -435,9 +439,154 @@ const CSS = `
    tester standing in for the other side, never as a Collector action. */
 /* Direction is carried by the words; colour reinforces it and is never the
    only signal. Outflow and inflow, not warning and success. */
+.dl-cur { opacity: .72; }
+.dl-cur-s { font-size: 12.5px; color: var(--muted); margin: 2px 0 12px; }
+.dl-prop-s { font-size: 13px; font-weight: 600; margin-top: 3px; }
+
 .dl-final.collector-to-tp > span:first-child { color: var(--danger); }
 .dl-final.tp-to-collector > span:first-child { color: var(--t1); }
 .dl-final.settled > span:first-child { color: var(--muted); }
+
+/* ---- mobile deal timeline (prototype) ---- */
+.mdl { padding: 0 0 90px; }
+.mdl-h { position: sticky; top: 0; z-index: 20; background: var(--bg);
+  padding: 10px 0 12px; border-bottom: 1px solid var(--line); }
+.mdl-h.emb { position: static; padding-top: 0; border-bottom: 0; }
+.mdl-h-n { font-family: 'Archivo'; font-size: 19px; font-weight: 700; margin-top: 6px; }
+.mdl-h-c { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.mdl-steps { display: flex; list-style: none; margin: 12px 0 0; padding: 0; gap: 4px; }
+.mdl-step { flex: 1 1 0; min-width: 0; text-align: center; font-size: 11px; }
+.mdl-dot { display: block; width: 11px; height: 11px; border-radius: 50%; margin: 0 auto 5px;
+  border: 2px solid var(--line); background: var(--panel); }
+.mdl-step.done .mdl-dot { background: var(--t1); border-color: var(--t1); }
+.mdl-step.now .mdl-dot { border-color: var(--t1); box-shadow: 0 0 0 3px var(--accent-bg); }
+.mdl-step-l { color: var(--faint); }
+.mdl-step.done .mdl-step-l, .mdl-step.now .mdl-step-l { color: var(--text); font-weight: 600; }
+.mdl-sum-t { background: none; border: 0; padding: 8px 0 0; font-size: 12.5px;
+  color: var(--t1); text-decoration: underline; }
+.mdl-sum { margin-top: 8px; padding: 10px 12px; background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 10px; }
+.mdl-tabs { display: flex; gap: 8px; margin: 14px 0 10px; }
+.mdl-tab { flex: 1 1 0; min-height: 40px; border: 1px solid var(--line);
+  background: var(--panel); border-radius: 9px; font-size: 13.5px; }
+.mdl-tab.on { border-color: var(--t1); color: var(--t1); font-weight: 600; }
+.mdl-tl { list-style: none; margin: 0; padding: 0; }
+/* Kinds are distinguishable by shape and label, never by colour alone. */
+.mdl-e { display: flex; flex-direction: column; gap: 2px; padding: 9px 0 9px 14px;
+  border-left: 2px solid var(--line-soft); font-size: 13.5px; }
+.mdl-e.mine { border-left-color: var(--t1); }
+.mdl-e.theirs { border-left-color: var(--accent-line); }
+.mdl-e.message { border-left-style: dotted; background: var(--panel-2);
+  border-radius: 0 9px 9px 0; padding-right: 10px; }
+/* Three visual languages: people talk, the deal records, the card stays. */
+/* A DELIBERATE PEEK, NOT AN ACCIDENT. The second card used to be sliced
+   mid-word at 390px, which reads as breakage rather than as "there is more".
+   Each entry is now a fixed share of the width so the next one is visibly
+   half-shown, with snapping so a swipe lands cleanly. */
+.mdl-cards { display: flex; gap: 8px; padding: 10px 0 6px;
+  overflow-x: auto; scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch; }
+.mdl-cards::-webkit-scrollbar { height: 3px; }
+.mdl-cards::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+.mdl-cards > * { scroll-snap-align: start; }
+.mdl-more { flex: 0 0 auto; align-self: center; font-size: 11.5px; font-weight: 700;
+  color: var(--muted); padding: 0 4px; white-space: nowrap; }
+.mdl-card { display: flex; align-items: center; gap: 9px;
+  flex: 0 0 72%; min-width: 0; padding: 7px 11px 7px 7px; border: 1px solid var(--line);
+  border-radius: 11px; background: var(--panel); text-align: left; }
+.mdl-card.sub { border-style: dashed; }
+.mdl-card-t { display: flex; flex-direction: column; min-width: 0; font-size: 12.5px; }
+.mdl-card-n { font-weight: 700; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+.mdl-card-t { flex: 1 1 auto; }
+.mdl-card-p { font-size: 11.5px; color: var(--t1); font-weight: 600; }
+.mdl-badge { display: inline-block; min-width: 18px; margin-left: 6px; padding: 0 5px;
+  border-radius: 9px; background: var(--t1); color: #fff; font-size: 11px; font-weight: 700; }
+.mdl-new { display: flex; align-items: center; gap: 10px; margin: 12px 0 4px;
+  font-size: 11.5px; font-weight: 700; letter-spacing: .04em; color: var(--t1); }
+.mdl-new::before, .mdl-new::after { content: ""; flex: 1 1 auto; height: 1px;
+  background: var(--t1); opacity: .35; }
+.mdl-e.unseen { background: var(--accent-bg); border-radius: 0 9px 9px 0; }
+/* A message is a bubble with a side and a face. */
+.mdl-b { display: flex; gap: 8px; align-items: flex-end; }
+.mdl-b.mine { flex-direction: row-reverse; text-align: right; }
+.mdl-av { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: 11px;
+  font-weight: 700; display: flex; align-items: center; justify-content: center;
+  color: var(--muted); }
+.mdl-b-in { display: inline-flex; flex-direction: column; gap: 2px; padding: 8px 11px;
+  border-radius: 13px; background: var(--panel-2); border: 1px solid var(--line); }
+.mdl-b.mine .mdl-b-in { background: var(--accent-bg); border-color: var(--accent-line); }
+/* A milestone is never a bubble: full width, centred, checked. */
+.mdl-ms { display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; padding: 9px 12px; border-radius: 10px; background: var(--panel-2);
+  border: 1px solid var(--line); font-weight: 600; text-align: center; }
+.mdl-ms-k { color: var(--t1); font-weight: 700; }
+.mdl-e.chapter { border-left-color: transparent; padding-left: 0; }
+
+.mdl-ph { display: flex; gap: 10px; }
+.mdl-ph-f { flex: 1 1 0; min-width: 0; margin: 0; }
+.mdl-ph-im { aspect-ratio: 5 / 7; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel-2); display: flex; align-items: center;
+  justify-content: center; overflow: hidden; padding: 6px; text-align: center; }
+.mdl-ph-im.missing { border-style: dashed; }
+.mdl-ph-t { font-size: 12px; color: var(--muted); }
+.mdl-ph-c { font-size: 12px; font-weight: 700; color: var(--muted);
+  margin-top: 7px; text-align: center; }
+
+.mdl-e.summary { padding-left: 0; border-left-color: transparent; }
+.mdl-sum-row { display: flex; align-items: center; gap: 10px; width: 100%;
+  min-height: 44px; padding: 10px 12px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--panel-2); text-align: left;
+  font-weight: 600; font-size: 13.5px; }
+.mdl-e.summary.open .mdl-sum-row { border-color: var(--t1); }
+.mdl-sum-x { margin-left: auto; font-size: 11.5px; font-weight: 700;
+  color: var(--t1); white-space: nowrap; }
+
+.mdl-comp { margin-top: 14px; }
+.mdl-comp .inp { font-size: 16px; min-height: 44px; }
+.mdl-e-who { font-size: 11.5px; font-weight: 700; color: var(--muted); }
+.mdl-e-msg { font-style: italic; }
+.mdl-e-at { font-size: 11.5px; color: var(--faint); }
+.mdl-e.empty { color: var(--faint); border-left-color: transparent; }
+.mdl-now { margin-top: 18px; padding: 14px; border: 1px solid var(--t1);
+  border-radius: 13px; background: var(--panel); }
+.mdl-now.done { border-color: var(--line); }
+.mdl-now-h { font-family: 'Archivo'; font-size: 11px; letter-spacing: .11em;
+  text-transform: uppercase; font-weight: 700; color: var(--t1); margin-bottom: 10px; }
+.mdl .btn { min-height: 44px; }
+
+/* One axis, zero in the middle: crossing it is what changes who pays. */
+.cs { position: relative; margin: 14px 0 4px; }
+/* At 390px three end labels cannot share a line — they ran together as
+   "EvenNorthline Cards owes you". Each gets its own column with room to wrap. */
+.cs-ends { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px;
+  align-items: end; font-size: 11px; font-weight: 700; color: var(--muted);
+  margin-bottom: 6px; }
+.cs-ends > :nth-child(2) { text-align: center; }
+.cs-ends > :last-child { text-align: right; }
+.cs-r { width: 100%; min-height: 44px; }
+.cs-help { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.45; }
+.cp-cur { display: block; margin-bottom: 12px; opacity: .72; }
+.cp-k { display: block; font-family: 'Archivo'; font-size: 11px; letter-spacing: .09em;
+  text-transform: uppercase; font-weight: 700; color: var(--muted); margin-bottom: 3px; }
+.cp-cur-v { font-size: 14px; }
+.cp-prop { display: block; margin: 14px 0 4px; }
+.cp-prop-v { display: block; font-size: 18px; font-weight: 700; line-height: 1.25; }
+.cp-delta { display: block; font-size: 13.5px; font-weight: 700; color: var(--t1);
+  margin-top: 4px; }
+.cp-wait { display: block; padding: 4px 0 2px; }
+.cp-wait-s { display: block; margin-top: 10px; font-size: 13px; font-weight: 700;
+  color: var(--muted); }
+.cp-in { display: block; margin-top: 12px; }
+
+.cs-zero { position: absolute; left: 50%; bottom: 6px; width: 1px; height: 18px;
+  background: var(--line); pointer-events: none; }
+/* Stacked, because side by side the switch overlapped the amount field. */
+.cs-say { margin-top: 10px; font-size: 15px; font-weight: 700; }
+.cs-say-k { display: block; font-family: 'Archivo'; font-size: 11px;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
+  font-weight: 700; margin-bottom: 3px; }
 
 .dl-h { font-family: 'Archivo'; font-size: 11px; letter-spacing: .11em;
   text-transform: uppercase; font-weight: 700; color: var(--muted); margin: 16px 0 4px; }
@@ -1557,7 +1706,11 @@ function Receipt({ o, st, expanded, inline }) {
             {s2.id === "deal" && (
               <dl className="rc-f">
                 <dt>Balance</dt>
-                <dd>{s2.balance != null ? money(Math.abs(s2.balance)) + (s2.balance >= 0 ? " to them" : " to you")
+                <dd>{s2.balance != null ? (() => {
+                  const set = settle(s2.balance, s2.partner);
+                  return set.direction === "settled" ? set.sentence
+                    : `${set.sentence} ${money(set.amount)}`;
+                })()
                   : <span className="rc-p">{s2.state === "pending" ? "Pending" : "Not finalized"}</span>}</dd>
                 {s2.finalAdj != null && (<><dt>Final cash adjustment</dt><dd>{money(s2.finalAdj)}</dd></>)}
               </dl>
@@ -2310,20 +2463,98 @@ function SimulateTP({ o, st }) {
   if (o.stage === "select-trade" && o.trade && o.trade.submitted
       && (o.trade.cards || []).some((c) => c.inclusion === "proposed")) {
     actions.push(["Accept proposed cards", () => {
-      A.patchOpportunity(o.id, (x) => ({ ...x, trade: { ...x.trade,
-        cards: x.trade.cards.map((c) => (c.inclusion === "proposed"
-          ? { ...c, inclusion: "accepted" } : c)) } }));
+      /* THE CANONICAL REVIEW, not a hand-written inclusion.
+
+         Setting inclusion directly looked identical in the data and was not:
+         reviewTradeCards runs closeSelection, which is what ends the stage once
+         nothing is left unreviewed. Patching the field marked the cards
+         accepted and left the deal sitting in Select Trade with nothing anyone
+         could do — the same class of defect an earlier pass fixed in the
+         product, reintroduced here because this tool wrote state instead of
+         taking an action. It also records reviewedAt, which the timeline reads. */
+      A.reviewTradeCards({ oppId: o.id, decision: "accepted", at: AT });
       did("Reviewed the cards");
     }]);
   }
   if (o.stage === "value-trade") {
     const open2 = cards.filter((c) => !D.cardSettled(c));
+
+    /* ACCEPT IS A LEGAL MOVE, AND IT WAS MISSING.
+
+       This offered "propose" and nothing else, so a tester whose collector had
+       just put a number on the table could only counter it — the one thing a
+       real partner would rarely do. Whether accepting is available is not a
+       question this tool should answer for itself: negotiationState already
+       answers it for the real partner's seat, so it is asked here with the same
+       arguments. "theirs" means a proposal is on the table for this seat, which
+       is exactly when Accept is legal. */
+    const marketOpen = open2.find((c) =>
+      D.TRADE.negotiationState(c, "market", "tp").state === "theirs");
+    if (marketOpen) {
+      const ns = D.TRADE.negotiationState(marketOpen, "market", "tp");
+      const nm = (st.cardById(marketOpen.cardId) || {}).name || "that card";
+      actions.push([`Accept ${money(ns.standing)} for ${nm}`, () => {
+        /* Accept takes the STANDING proposal — the reducer reads it from the
+           card, so no draft or label value can be substituted. */
+        A.tradeMarketRespond({ oppId: o.id, tradeCardId: marketOpen.id, by: "tp",
+          action: "accept", at: AT });
+        did(`Agreed ${money(ns.standing)} market value`);
+      }]);
+    }
+    const pctOpen = open2.find((c) =>
+      D.TRADE.negotiationState(c, "percent", "tp").state === "theirs");
+    if (pctOpen) {
+      const ns = D.TRADE.negotiationState(pctOpen, "percent", "tp");
+      const nm = (st.cardById(pctOpen.cardId) || {}).name || "that card";
+      const worth = pctOpen.agreedMarket != null
+        ? ` · ${money(D.tradeValueAt(pctOpen.agreedMarket, ns.standing))}` : "";
+      actions.push([`Accept ${pct(ns.standing)}${worth} for ${nm}`, () => {
+        A.tradePercentRespond({ oppId: o.id, tradeCardId: pctOpen.id, by: "tp",
+          action: "accept", at: AT });
+        did(`Agreed ${pct(ns.standing)} on ${nm}`);
+      }]);
+    }
+
     if (open2.length) actions.push([`Propose values for ${open2.length} card${open2.length === 1 ? "" : "s"}`, () => {
-      A.patchOpportunity(o.id, (x) => ({ ...x, trade: { ...x.trade,
-        cards: x.trade.cards.map((c) => (D.cardSettled(c) ? c
-          : { ...c, tpMarket: c.tpMarket != null ? c.tpMarket : 200, tpPercent: 0.8 })) } }));
+      /* One proposal per card, through the same reducers the real partner uses,
+         so the turn guards, the market-before-percentage gate and the threads
+         all behave exactly as they would in a real negotiation. Writing
+         tpMarket and tpPercent together skipped all three. */
+      open2.forEach((c) => {
+        if (c.agreedMarket == null) {
+          A.tradeMarketRespond({ oppId: o.id, tradeCardId: c.id, by: "tp",
+            action: "propose", amount: c.tpMarket != null ? c.tpMarket : 200, at: AT });
+        } else if (c.agreedPercent == null) {
+          A.tradePercentRespond({ oppId: o.id, tradeCardId: c.id, by: "tp",
+            action: "propose", percent: 0.8, at: AT });
+        }
+      });
       did("Proposed values");
     }]);
+  }
+  if (o.stage === "deal") {
+    /* The same omission in the cash phase: agreeing the DEAL was offered, but
+       accepting the collector's standing FIGURE was not, so a proposed final
+       cash amount could only be countered. dealAdjStanding is the canonical
+       answer to whose proposal is on the table. */
+    const standing = D.TRADE.dealAdjStanding(o.deal);
+    if (standing === "collector") {
+      const amt = o.deal.collectorAdj;
+      /* The simulator acts AS the partner, so it reads the same agreement from
+         the partner's seat — "You pay Casey" where the collector sees "Casey
+         pays you". One transaction, two correct descriptions. */
+      const set = D.settlement(amt, { viewer: "tp",
+        partner: partner ? partner.name : "the partner",
+        collector: (st.collectorById && st.collectorById(o.collectorId) || {}).name
+          || "the collector" });
+      actions.push([set.direction === "settled" ? "Accept an even split"
+        : `Accept: ${set.sentence} ${money(set.amount)}`, () => {
+        /* Signed throughout: the action reads the standing figure from the deal,
+           so direction cannot be flattened on the way through. */
+        A.dealAdjustRespond({ oppId: o.id, by: "tp", action: "accept", at: AT });
+        did(`Agreed ${money(dir.amount)} final cash`);
+      }]);
+    }
   }
   if (o.stage === "deal" && !(o.deal && o.deal.tpAgreed)) {
     actions.push(["Agree the balance", () => {
@@ -2389,7 +2620,7 @@ function SimulateTP({ o, st }) {
    alternative partner: the difference is whether an opportunity happens to be
    attached, never a second chat model. Sending a message NEVER touches deal
    state — it only appends to the thread. */
-function DealChat({ o, partnerId, cardId, st, bare, embedded, headless }) {
+function DealChat({ o, partnerId, cardId, st, bare, embedded, headless, composerOnly }) {
   const [draft, setDraft] = useState("");
   const [full, setFull] = useState(false);
   const pid = partnerId != null ? partnerId : (o && o.partnerId);
@@ -2410,6 +2641,23 @@ function DealChat({ o, partnerId, cardId, st, bare, embedded, headless }) {
     st.sendMessage(pid, cid, draft, o && o.partnerId === pid ? o.id : undefined);
     setDraft("");
   };
+
+  /* Composer without the stream: used where the conversation is already on
+     screen and only the ability to reply is missing. Same send, same action. */
+  if (composerOnly) {
+    return (
+      <div className="chat chat-bare">
+        <div className="chat-composer">
+          <textarea className="inp" rows={2} value={draft}
+            aria-label={"Message " + them + " about this card"}
+            placeholder={`Message ${them} about this card…`}
+            onChange={(ev) => setDraft(ev.target.value)}
+            onKeyDown={(ev) => { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) send(); }} />
+          <button className="btn pri sm" disabled={!draft.trim()} onClick={send}>Send</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={embedded ? "card sec chat chat-embed" : bare ? "chat chat-bare" : "card sec chat"}>
@@ -3104,7 +3352,11 @@ function StageDetails({ o, st }) {
     add("Trade value", r.stages[2].total != null ? money(r.stages[2].total) : dash);
     add("Calculated", cur.calculated != null ? money(cur.calculated) : dash);
     add("Balance", cur.balance != null
-      ? money(Math.abs(cur.balance)) + (cur.balance >= 0 ? " to them" : " to you") : dash);
+      ? (() => {
+        const set = settle(cur.balance, cur.partner || st.partnerById(o.partnerId).name);
+        return set.direction === "settled" ? set.sentence
+          : `${set.sentence} ${money(set.amount)}`;
+      })() : dash);
   } else if (cur.id === "fulfillment") {
     add("How", cur.method || dash);
     add("Where", cur.location || dash);
@@ -3135,6 +3387,14 @@ function StageDetails({ o, st }) {
 }
 
 function InlineDeal({ o, st, go }) {
+  /* THE COLLECTOR'S ACTUAL PATH. Goals -> Primary Goal -> Deal Flow is how a
+     deal is normally opened, so gating only the full-page route left the phone
+     showing the desktop workspace on the journey people really take. Same hook,
+     same 560px, same component — this is a second door onto one room, not a
+     second room. */
+  const narrow = useNarrow();
+  if (narrow) return <MobileDeal o={o} st={st} go={go} embedded />;
+
   /* Filled by whichever stage is mounted; null while waiting. Identical
      contract to the standalone shell, so stages need no inline special case. */
   const [bar, setBar] = useState(null);
@@ -3216,7 +3476,533 @@ function InlineDeal({ o, st, go }) {
    chrome only — the back link and the card/partner context the Goal already
    states. Every stage component, action registration, conversation, receipt and
    simulator below is the same code in both cases; nothing is cloned. */
+/* ============================================================ MOBILE DEAL
+
+   ONE DEAL · ONE TIMELINE · ONE NEXT DECISION.
+
+   A prototype, and deliberately a VIEW rather than a system. Every number here
+   is projected from the same opportunity the desktop deal renders, and every
+   control is the existing stage component — so a mobile action is the canonical
+   action, and there is no second negotiation model to drift.
+
+   The three layers are: a persistent header carrying identity and the five
+   canonical stages; a chronological timeline of what has happened; and one
+   dominant block for what must be decided now. History collapses to a line;
+   the current decision keeps its full controls. */
+
+/* The five canonical stages, named for a phone. Not a second lifecycle — the
+   ids are RECEIPT_STAGES, so this cannot drift from the domain. */
+const M_STEPS = [
+  { id: "agree-price", short: "Price" },
+  { id: "select-trade", short: "Trade" },
+  { id: "value-trade", short: "Value" },
+  { id: "deal", short: "Cash" },
+  { id: "fulfillment", short: "Handoff" },
+];
+
+/* A phone, by the widest existing narrow token in this stylesheet. Rendering
+   is decided in JS because the two shells are different components, not two
+   arrangements of one. */
+const MOBILE_MAX = 560;
+function useNarrow() {
+  const [narrow, setNarrow] = useState(() => (typeof window !== "undefined"
+    && typeof window.matchMedia === "function"
+    ? window.matchMedia(`(max-width: ${MOBILE_MAX}px)`).matches : false));
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return undefined;
+    const mq = window.matchMedia(`(max-width: ${MOBILE_MAX}px)`);
+    const on = () => setNarrow(mq.matches);
+    on();
+    if (mq.addEventListener) { mq.addEventListener("change", on); return () => mq.removeEventListener("change", on); }
+    mq.addListener(on); return () => mq.removeListener(on);
+  }, []);
+  return narrow;
+}
+
+/* THE TIMELINE, PROJECTED — never stored.
+
+   Every event below already exists in canonical state with its own timestamp:
+   the price thread, each trade card's market and percentage threads, the deal
+   adjustment thread, and the conversation. Nothing new is persisted, and no
+   event is invented; a stage the deal never reached simply contributes none.
+
+   Messages travel in the same chronology because that is how the deal actually
+   happened, but they carry their own kind so they can never be read as
+   agreement. */
+function dealTimeline(o, st, viewer) {
+  /* WHOSE CHRONOLOGY THIS IS. The events are the same either way; only what
+     counts as "mine" changes. Passing the seat here is what stops a second
+     copy of this model being written the day a partner surface exists. */
+  const seat = viewer === "tp" ? "tp" : "collector";
+  const ev = [];
+  const them = (st.partnerById(o.partnerId) || {}).name || "the partner";
+  const who = (by) => (by === seat ? "You" : them);
+  const kind = (by) => (by === seat ? "mine" : "theirs");
+
+  (o.priceThread || []).forEach((e, i) => ev.push({
+    key: "p" + i, at: e.at, kind: kind(e.by), stage: "agree-price",
+    text: e.type === "accept" ? `${who(e.by)} accepted ${money(e.amount)}`
+      : `${who(e.by)} ${i === 0 ? "offered" : "countered at"} ${money(e.amount)}`,
+  }));
+
+  const cards = (o.trade && o.trade.cards) || [];
+  cards.forEach((c, ci) => {
+    const nm = (st.cardById(c.cardId) || {}).name || "a card";
+    if (c.reviewedAt) {
+      ev.push({ key: "i" + ci, at: c.reviewedAt, kind: "theirs", stage: "select-trade",
+        text: `${them} ${c.inclusion === "accepted" ? "accepted" : "passed on"} ${nm}` });
+    }
+    (c.valueThread || []).forEach((e, i) => ev.push({
+      key: "m" + ci + "-" + i, at: e.at, kind: kind(e.by), stage: "value-trade",
+      text: e.type === "accept"
+        ? `${who(e.by)} agreed ${money(e.amount)} market value · ${nm}`
+        : `${who(e.by)} proposed ${money(e.amount)} market value · ${nm}`,
+    }));
+    (c.percentThread || []).forEach((e, i) => ev.push({
+      key: "q" + ci + "-" + i, at: e.at, kind: kind(e.by), stage: "value-trade",
+      /* Actor + action + value, with the dollars the percentage means. */
+      text: `${who(e.by)} ${e.type === "accept" ? "agreed" : "proposed"} `
+        + `${pct(e.percent)}${c.agreedMarket != null
+          ? " · " + money(D.tradeValueAt(c.agreedMarket, e.percent)) : ""} · ${nm}`,
+    }));
+    if (c.withdrawn && c.withdrawnAt) {
+      ev.push({ key: "w" + ci, at: c.withdrawnAt, kind: "mine", stage: "value-trade",
+        text: `You took ${nm} out of the trade` });
+    }
+  });
+
+  ((o.deal && o.deal.adjThread) || []).forEach((e, i) => ev.push({
+    key: "d" + i, at: e.at, kind: kind(e.by), stage: "deal",
+    text: `${who(e.by)} ${e.type === "accept" ? "agreed" : "proposed"} `
+      + `${money(Math.abs(e.amount))} final cash`,
+  }));
+
+  const f = o.fulfillment || {};
+  if (f.proposedAt) {
+    ev.push({ key: "f1", at: f.proposedAt, kind: "theirs", stage: "fulfillment",
+      text: `${them} proposed how to hand over` });
+  }
+  if (f.collectorConfirmedPlan && f.confirmedAt) {
+    ev.push({ key: "f2", at: f.confirmedAt, kind: "mine", stage: "fulfillment",
+      text: "You agreed the handoff plan" });
+  }
+  if (D.FULFILLMENT.handedOff(f)) {
+    ev.push({ key: "f3", at: o.completedAt || f.proposedAt, kind: "theirs",
+      stage: "fulfillment", text: `${them} handed the card over` });
+  }
+  if (D.FULFILLMENT.received(f)) {
+    ev.push({ key: "f4", at: o.completedAt || f.proposedAt, kind: "mine",
+      stage: "fulfillment", text: "You confirmed you have the card" });
+  }
+
+  /* Conversation shares the chronology, never the meaning. */
+  /* threadWith is keyed by cardId, not the card object. */
+  const thread = st.threadWith(o.partnerId, o.cardId);
+  ((thread && thread.entries) || []).forEach((m, i) => ev.push({
+    /* A lifecycle event already written into the shared thread is a milestone
+       that HAPPENED here — it is not re-derived from the stage threads, so
+       there is exactly one record of it either way. Human messages keep their
+       own kind so nothing can read them as commitments. */
+    key: "c" + i, at: m.at,
+    kind: m.kind === "event" ? "milestone" : "message",
+    text: m.text, by: m.by, label: m.by === seat ? "You" : them,
+    /* Whose voice, and a stable pair of initials for the avatar. "Mine" is
+       decided by the seat reading, so this reads coherently from either. */
+    mine: m.by === seat,
+    initials: m.by === seat ? "You"
+      : them.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase(),
+  }));
+
+  /* CHAPTER MARKERS, NOT EVERY EVENT. A milestone is a decision that STUCK:
+     an acceptance, or a stage that closed. Proposals and counters are the
+     conversation of the deal and stay ordinary, or the hierarchy collapses and
+     nothing stands out. Every figure shown is the canonical agreed one. */
+  ev.forEach((e) => {
+    if (e.kind === "message") return;
+    /* Actor, so "not mine" means the same thing for events as for messages. */
+    if (!e.by) e.by = e.kind === "mine" ? seat : (seat === "tp" ? "collector" : "tp");
+    e.milestone = true;
+    e.chapter = /agreed|accepted|handed the card over|confirmed you have/.test(e.text);
+  });
+  return ev.filter((e) => e.at).sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+}
+
+/* WHAT A FINISHED STAGE CAME TO.
+
+   A completed stage is one fact — what was agreed — not the dozen moves that
+   produced it. Giving every old proposal the same weight as the decision it led
+   to is what buries the thing a returning reader actually needs.
+
+   So each closed stage collapses to its outcome, DERIVED from canonical state:
+   the agreed price, the cards accepted, each card's agreed terms and what they
+   came to, the settled cash, the handoff plan. Nothing is stored, nothing is
+   rewritten, and the underlying events stay exactly where they were — one tap
+   away, in full. */
+function stageSummary(o, st, stage) {
+  const money2 = (n) => money(n);
+  if (stage === "agree-price") {
+    return o.agreedPrice == null ? null : "Price agreed — " + money2(o.agreedPrice);
+  }
+  if (stage === "select-trade") {
+    const names = D.acceptedTradeCards(o)
+      .map((c) => (st.cardById(c.cardId) || {}).name || c.cardId);
+    if (!names.length) {
+      return (o.trade && o.trade.mode === "cash") ? "No cards traded — cash deal" : null;
+    }
+    return "Trade agreed — " + names.join(" · ");
+  }
+  if (stage === "value-trade") {
+    const cards = D.acceptedTradeCards(o).filter(D.cardSettled);
+    if (!cards.length) return null;
+    return "Value agreed — " + cards.map((c) => {
+      const nm = (st.cardById(c.cardId) || {}).name || c.cardId;
+      return nm + " " + money2(tradeValue(c)) + " (" + pct(c.agreedPercent) + ")";
+    }).join(" · ");
+  }
+  if (stage === "deal") {
+    const r = D.cashReceipt(o);
+    if (!(o.deal && o.deal.agreedAdj != null)) return null;
+    const set = D.settlement(D.finalBalance(o), { viewer: "collector",
+      partner: (st.partnerById(o.partnerId) || {}).name });
+    if (set.direction === "settled") return "Cash agreed — no cash owed";
+    return "Cash agreed — " + set.sentence + " " + money2(set.amount)
+      + "";
+  }
+  if (stage === "fulfillment") {
+    const f = o.fulfillment || {};
+    if (!f.collectorConfirmedPlan) return null;
+    const plan = [f.method, f.where, f.when].filter(Boolean).join(" · ");
+    return "Handoff agreed" + (plan ? " — " + plan : "");
+  }
+  return null;
+}
+
+function MobileDeal({ o, st, go, embedded }) {
+  const [openSummary, setOpenSummary] = useState(false);
+  const [photos, setPhotos] = useState(null);
+  const [view, setView] = useState("timeline");
+  const [bar, setBar] = useState(null);
+  const register = useCallback((next) => setBar(next), []);
+
+  const c = st.cardById(o.cardId);
+  const p = st.partnerById(o.partnerId);
+  const them = p ? p.name : "them";
+  const ix = D.RECEIPT_STAGES.indexOf(o.stage);
+  const done = D.isCompleted(o);
+  const receipt = D.cashReceipt(o);
+  /* Collector-only today; the seat is stated at this boundary rather than
+     assumed inside the chronology. */
+  const SEAT = "collector";
+  const events = dealTimeline(o, st, SEAT);
+  const inv = st.inventoryCopy ? st.inventoryCopy(o.invId) : null;
+  const shots = st.copyPhotos ? st.copyPhotos(inv) : { actual: false };
+  const tradeCards = D.acceptedTradeCards(o);
+
+  /* Unread per surface, for this seat. */
+  const unread = D.unreadFor(events, o.viewedAt, SEAT);
+  const unseen = view === "messages" ? unread.messages : unread.timeline;
+  const unseenKeys = new Set(unseen.map((e) => e.key));
+  const [openStages, setOpenStages] = useState({});
+  const toggleStage = (id) => setOpenStages((p) => ({ ...p, [id]: !p[id] }));
+
+  /* Everything before the current stage is history that can be summarised;
+     the stage in play stays open, because that is what is being decided. */
+  const currentIx = D.RECEIPT_STAGES.indexOf(o.stage);
+  /* ONE SUMMARY PER STAGE, not one per run of adjacent events. Messages sit
+     between proposals, so grouping only consecutive events split a single
+     stage into several — and the same "Price agreed" line appeared twice.
+     A closed stage is one thing that happened, wherever its pieces fell. */
+  const groups = [];
+  const byStage = new Map();
+  events.forEach((e) => {
+    const ix = e.stage ? D.RECEIPT_STAGES.indexOf(e.stage) : -1;
+    const closed = ix >= 0 && ix < currentIx;
+    if (!closed) {
+      const last = groups[groups.length - 1];
+      if (last && last.key === "__live") last.events.push(e);
+      else groups.push({ key: "__live", events: [e] });
+      return;
+    }
+    /* Every event of a closed stage joins that stage's single group, which
+       keeps the position where the stage first appeared. */
+    let g = byStage.get(e.stage);
+    if (!g) { g = { key: e.stage, events: [] }; byStage.set(e.stage, g); groups.push(g); }
+    g.events.push(e);
+  });
+  const firstNew = unseen.length ? unseen[0].key : null;
+
+  /* READING IS AN ACT, NOT A SIDE EFFECT OF EXISTING. The cursor advances when
+     somebody opens a surface — never merely because the shell mounted, which is
+     how a message arriving during a glance at the timeline used to mark itself
+     read before anyone had seen it. */
+  const review = (where) => st.markDealViewed(o.id, where);
+  const show = (where) => { setView(where); review(where); };
+  useEffect(() => { review(view); /* the surface actually on screen */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [o && o.id]);
+  const stageProps = { o, st, register, go };
+
+  return (
+    <div className="mdl">
+      {/* 1. PERSISTENT HEADER — identity and the canonical five, compact.
+
+           Reached from inside a Goal, the card above already names the card and
+           the partner and already offers the way back, so repeating them would
+           put two deal headers on one phone screen. The progress rail and the
+           summary stay either way: those are the deal's, not the Goal's. */}
+      <div className={"mdl-h" + (embedded ? " emb" : "")}>
+        {!embedded && (
+          <>
+            <button className="link" onClick={() => go({ v: "goals" })}>← Goals</button>
+            <div className="mdl-h-n">{them}</div>
+            <div className="mdl-h-c">{c ? `${c.name} · ${gradeLine(c)}` : ""}</div>
+          </>
+        )}
+        <ol className="mdl-steps">
+          {M_STEPS.map((s2, i) => {
+            const state = done || i < ix ? "done" : i === ix ? "now" : "next";
+            return (
+              <li key={s2.id} className={"mdl-step " + state}>
+                <span className="mdl-dot" aria-hidden="true" />
+                <span className="mdl-step-l">{s2.short}</span>
+              </li>
+            );
+          })}
+        </ol>
+        <button className="mdl-sum-t" aria-expanded={openSummary}
+          onClick={() => setOpenSummary(!openSummary)}>
+          {openSummary ? "Hide deal summary" : "Deal summary"}
+        </button>
+        {openSummary && (
+          /* The canonical receipt, not a mobile recalculation. */
+          <div className="mdl-sum">
+            <div className="row"><span className="k">Purchase price</span>
+              <span className="mono">{money(o.agreedPrice)}</span></div>
+            <div className="row"><span className="k">Trade value</span>
+              <span className="mono">−{money(D.totalTradeValue(o))}</span></div>
+            <div className="row tot">
+              <span>{settle(D.finalBalance(o), them).sentence}</span>
+              <span className="mono">{money(receipt.final.amount)}</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* THE COLLECTIBLE STAYS IN CONTEXT. Compact by design: a strip, not a
+          hero, so the current decision keeps the screen. Photos are one tap
+          away and use the canonical copy record — tokens, not URLs, rendered by
+          the same viewer the rest of the app uses. A copy with no photographs
+          says so rather than showing a broken frame. */}
+      <div className="mdl-cards">
+        <button className="mdl-card" onClick={() => setPhotos({ photos: (inv && inv.photos) || null })}>
+          <Art card={c} size="sm" />
+          <span className="mdl-card-t">
+            <span className="mdl-card-n">{c ? c.name : "This card"}</span>
+            <span className="faint">{c ? gradeLine(c) : ""}</span>
+          </span>
+          <span className="mdl-card-p">{shots.actual ? "Photos" : "No photos"}</span>
+        </button>
+        {tradeCards.length > 0 && (
+          <span className="mdl-more">+{tradeCards.length} yours →</span>
+        )}
+        {/* Multi-card trades: every collectible in the deal stays reachable. */}
+        {tradeCards.map((tc) => {
+          const tcCard = st.cardById(tc.cardId);
+          return (
+            <div key={tc.id} className="mdl-card sub">
+              <Art card={tcCard} size="sm" />
+              <span className="mdl-card-t">
+                <span className="mdl-card-n">{tcCard ? tcCard.name : tc.cardId}</span>
+                <span className="faint">Yours, in the trade</span>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {photos !== null && (
+        <div className="ovl" onClick={() => setPhotos(null)}>
+          <div className="sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="sheet-h">{c ? c.name : "Card"}</div>
+            <div className="faint" style={{ fontSize: 12.5, marginBottom: 12 }}>
+              {c ? gradeLine(c) : ""} · photographs of this exact copy
+            </div>
+            {shots.actual ? (
+              /* FRONT AND BACK, LABELLED AND SIDE BY SIDE. The old sheet listed
+                 the word "photo" twice under bare side names, which told a
+                 collector nothing about what they were looking at. */
+              <div className="mdl-ph">
+                {["front", "back"].map((side) => (
+                  <figure key={side} className="mdl-ph-f">
+                    {/* The fixture stores photo TOKENS, not image data, so there
+                        is no picture to render. Saying that plainly is the only
+                        honest option — inventing artwork would make the
+                        prototype look finished where it is not. */}
+                    <div className={"mdl-ph-im" + (photos.photos && photos.photos[side]
+                      ? "" : " missing")}
+                      role="img"
+                      aria-label={side + " photograph of "
+                        + (c ? c.name : "this copy")}>
+                      <span className="mdl-ph-t">
+                        {photos.photos && photos.photos[side]
+                          ? "Photo on file" : "Not photographed"}
+                      </span>
+                    </div>
+                    <figcaption className="mdl-ph-c">
+                      {side === "front" ? "Front" : "Back"}
+                    </figcaption>
+                  </figure>
+                ))}
+              </div>
+            ) : (
+              <div className="cx-ph-none">Actual card photos not available</div>
+            )}
+            <button className="btn wide" style={{ marginTop: 14 }}
+              onClick={() => setPhotos(null)}>Close</button>
+          </div>
+        </div>
+      )}
+
+      <div className="mdl-tabs">
+        {["timeline", "messages"].map((v) => (
+          <button key={v} className={"mdl-tab" + (view === v ? " on" : "")}
+            onClick={() => show(v)}>
+            {v === "timeline" ? "Timeline" : "Messages"}
+            {/* Where the new activity is, counted from the same projection the
+                list uses — no separate notification records. */}
+            {/* Each tab counts its own surface, so one cannot clear the other. */}
+            {(v === "timeline" ? unread.timeline.length : unread.messages.length) > 0 && (
+              <span className="mdl-badge">
+                {v === "timeline" ? unread.timeline.length : unread.messages.length}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* 2. TIMELINE — history compact, in order, kinds distinguishable. */}
+      {/* THE CURRENT DECISION COMES FIRST. It used to sit below the whole
+          history, so a returning reader scrolled past every settled proposal to
+          reach the one thing needing them. History is why the deal makes sense;
+          the open question is why they opened it. */}
+      {/* 3. CURRENT ACTION — the existing stage component, so every control is
+             the canonical one. Waiting states come from those components, which
+             already refuse to offer moves that cannot be made. */}
+      {view === "timeline" && (
+        done ? (
+          <div className="mdl-now done">
+            <div className="mdl-now-h">Deal completed</div>
+            <button className="btn wide" onClick={() => setOpenSummary(true)}>View receipt</button>
+          </div>
+        ) : (
+          <div className="mdl-now">
+            <div className="mdl-now-h">
+              {D.nextActor(o).actor === "collector" ? "Your move" : `Waiting on ${them}`}
+            </div>
+            {o.stage === "agree-price" && <AgreePrice {...stageProps} />}
+            {o.stage === "select-trade" && <SelectTrade {...stageProps} />}
+            {o.stage === "value-trade" && <ValueTrade {...stageProps} />}
+            {o.stage === "deal" && <DealStage {...stageProps} />}
+            {o.stage === "fulfillment" && <Fulfillment {...stageProps} />}
+            {/* ENGINEERING TOOLING, DEV-ONLY. SimulateTP gates on DEV itself and
+                already offers only the moves canonically available now, through
+                st.simulate. Nothing stage-specific is restated here. */}
+            <SimulateTP o={o} st={st} />
+            {bar && bar.label && (
+              <button className="btn pri wide" style={{ marginTop: 12 }}
+                disabled={bar.disabled} onClick={bar.run}>{bar.label}</button>
+            )}
+          </div>
+        )
+      )}
+      <ol className="mdl-tl">
+        {(view === "messages" ? [{ key: "__live", events }] : groups).flatMap((g) => {
+          /* A CLOSED STAGE IS ONE LINE UNTIL ASKED. The summary states the
+             outcome; opening it reveals every original event, unchanged. */
+          const sum = g.key === "__live" ? null : stageSummary(o, st, g.key);
+          const open = !!openStages[g.key];
+          if (sum && !open) {
+            return [(
+              <li key={"sum-" + g.key} className="mdl-e chapter summary">
+                <button className="mdl-sum-row" onClick={() => toggleStage(g.key)}>
+                  <span className="mdl-ms-k" aria-hidden="true">✓</span>
+                  <span className="mdl-ms-t">{sum}</span>
+                  <span className="mdl-sum-x">{g.events.length}</span>
+                </button>
+              </li>
+            )];
+          }
+          const head = sum ? [(
+            <li key={"sum-" + g.key} className="mdl-e chapter summary open">
+              <button className="mdl-sum-row" onClick={() => toggleStage(g.key)}>
+                <span className="mdl-ms-k" aria-hidden="true">✓</span>
+                <span className="mdl-ms-t">{sum}</span>
+                <span className="mdl-sum-x">Hide</span>
+              </button>
+            </li>
+          )] : [];
+          return head.concat(g.events
+          .filter((e) => (view === "messages"
+            ? e.kind === "message" || e.kind === "milestone" || e.milestone
+            : true))
+          .map((e) => (
+            <React.Fragment key={e.key}>
+              {/* WHERE THE NEW ACTIVITY BEGINS — a line in the history, so the
+                  reader can start exactly where they left off. */}
+              {firstNew === e.key && (
+                <li className="mdl-new"><span>New since you last looked</span></li>
+              )}
+              <li className={"mdl-e " + e.kind
+                + (e.chapter ? " chapter" : "") + (unseenKeys.has(e.key) ? " unseen" : "")}>
+                {e.kind === "message" ? (
+                  /* PEOPLE TALK: a bubble, sided, with whose voice it is. Mine
+                     and theirs differ by alignment and treatment, not colour
+                     alone, and read the same way from either seat. */
+                  <span className={"mdl-b " + (e.mine ? "mine" : "theirs")}>
+                    <span className="mdl-av" aria-hidden="true">{e.initials}</span>
+                    <span className="mdl-b-in">
+                      <span className="mdl-e-who">{e.label || e.by}</span>
+                      <span className="mdl-e-msg">{e.text}</span>
+                    </span>
+                  </span>
+                ) : e.chapter ? (
+                  /* THE DEAL RECORDS DECISIONS: full-width, centred, checked —
+                     never a bubble, so it cannot be read as somebody speaking. */
+                  <span className="mdl-ms">
+                    <span className="mdl-ms-k" aria-hidden="true">✓</span>
+                    <span className="mdl-ms-t">{e.text}</span>
+                  </span>
+                ) : (
+                  <span className="mdl-e-t">{e.text}</span>
+                )}
+                <span className="mdl-e-at">{fmtDate(e.at)}</span>
+              </li>
+            </React.Fragment>
+          )));
+        })}
+        {events.length === 0 && (
+          <li className="mdl-e empty">Nothing has happened yet.</li>
+        )}
+      </ol>
+
+      {/* THE COMPOSER, canonical. DealChat owns the send path already — draft is
+          local, Send calls the one conversation action once, and the message
+          lands in the same thread the Trusted Partner reads. Headless because
+          the stream above already showed the conversation. */}
+      {view === "messages" && (
+        <div className="mdl-comp">
+          <DealChat o={o} partnerId={o.partnerId} cardId={o.cardId} st={st}
+            bare headless composerOnly />
+        </div>
+      )}
+
+
+    </div>
+  );
+}
+
 function Deal({ oppId, st, go }) {
+  const narrow = useNarrow();
   const o = st.opps.find((x) => x.id === oppId);
   const [chat, setChat] = useState(false);
   /* Which face is on screen, or null. Local to the shell, so opening it cannot
@@ -3242,6 +4028,9 @@ function Deal({ oppId, st, go }) {
   const boundCopy = o.invId ? st.inventoryCopy(o.invId) : null;
   const copyHasPhotos = !!boundCopy && D.INVARIANTS.copyPhotographed(boundCopy.photos);
   const stageProps = { o, st, register, go };
+  /* PROTOTYPE GATE. On a phone the deal renders as one timeline; at every other
+     width the existing desktop workspace renders unchanged. */
+  if (narrow) return <MobileDeal o={o} st={st} go={go} />;
 
   return (
     <div className="pg dw">
@@ -3997,35 +4786,27 @@ function ValueCard({ o, tcd, st }) {
 
 /* Deal — the calculated balance, its derivation, then an optional final
    negotiation. Nothing here reopens a price, a value or a percentage. */
-function DealStage({ o, st, register }) {
-  const [amt, setAmt] = useState("");
+/* THE ECONOMIC RECEIPT — what was agreed, as distinct from how it will happen.
+
+   It used to live inside the Deal stage only, so the moment a deal reached
+   Handoff the entire derivation vanished and the collector was left with
+   logistics and a single cash figure. "What did we agree to?" became
+   unanswerable exactly when somebody was about to hand over cards.
+
+   So it is a component both stages render. Every figure is canonical: the
+   agreed price, each card's agreed market value and percentage, the credited
+   value from the shared helper, and the settlement sentence from settlement().
+   Nothing here recomputes anything. */
+function DealReceipt({ o, st, them }) {
+  /* Derived here rather than passed in, so the receipt reads the same whichever
+     stage renders it and cannot drift from its host. */
   const calc = calcBalance(o);
-  const p = st.partnerById(o.partnerId);
-  const them = p ? p.name : "them";
-  const n = Number(amt);
-
-  /* THE ADJUSTMENT, READ CANONICALLY. Pass 2 replaced `proposedAdj`/`proposedBy`
-     with one standing position per side plus a thread; this screen was still
-     reading the old fields and so showed nothing at all after a proposal. */
-  const deal = o.deal || {};
-  const adjStanding = deal.agreedAdj == null && deal.tpAdj != null ? { amount: deal.tpAdj, by: "tp" }
-    : deal.agreedAdj == null && deal.collectorAdj != null
-      ? { amount: deal.collectorAdj, by: "collector" } : null;
-  const fromPartner = !!adjStanding && adjStanding.by === "tp";
   const cash = D.finalBalance(o);
-  const cashOnly = (o.trade && o.trade.mode === "cash") || acceptedCards(o).length === 0;
-  /* What the final agreement changed relative to the settled economics. Zero
-     until somebody agrees a different figure. */
-  /* One projection, so the rows below cannot disagree about direction. */
   const receipt = D.cashReceipt(o);
-
-  /* Agreement belongs to whoever gave it. Never inferred, never combined. */
-  const iAgreed = !!deal.collectorAgreed;
-  const theyAgreed = !!deal.tpAgreed;
-
+  const cards = acceptedCards(o);
+  const cashOnly = (o.trade && o.trade.mode === "cash") || cards.length === 0;
   return (
-    <>
-      <div className="card sec">
+    <div className="card sec">
         <div className="sec-h">What this deal comes to</div>
 
         <div className="row"><span className="k">Price you agreed</span>
@@ -4077,11 +4858,11 @@ function DealStage({ o, st, register }) {
             now states which way the money goes in words, and shows an unsigned
             magnitude — a headline should never contain a negative number. */}
         <div className="row"><span className="k">Calculated cash balance</span>
-          <span className="mono">
-            {money(receipt.calculated.amount)}
-            {receipt.calculated.direction === "tp-to-collector" ? " to you"
-              : receipt.calculated.direction === "collector-to-tp" ? ` to ${them}` : ""}
-          </span></div>
+          <span>{(() => {
+            const set = settle(calc, them);
+            return set.direction === "settled" ? set.sentence
+              : `${set.sentence} ${money(set.amount)}`;
+          })()}</span></div>
         {receipt.adjustment !== 0 && (
           /* Signed against the SIGNED balance, so -300 becoming -250 is +50 —
              less owed to the collector, not a bigger discount. The neutral
@@ -4094,15 +4875,129 @@ function DealStage({ o, st, register }) {
               {receipt.adjustment < 0 ? "−" : "+"}{money(Math.abs(receipt.adjustment))}
             </span></div>
         )}
-        <div className={"row tot dl-final " + receipt.final.direction}>
-          <span>
-            {receipt.final.direction === "collector-to-tp" ? `You owe ${them}`
-              : receipt.final.direction === "tp-to-collector" ? `${them} owes you`
-                : "No cash owed"}
-          </span>
-          <span className="mono">{money(receipt.final.amount)}</span>
-        </div>
+        {/* CASH SETTLEMENT — the line the reader must not misread, so it says
+            payer and recipient outright and carries the section heading. */}
+        {/* TWO STATES WHILE A FIGURE IS UNANSWERED, never one ambiguous total.
+            A single "Cash settlement" line would show the settled figure with a
+            proposal sitting above it — the largest, last number contradicting
+            the offer just made. Current and proposed are different facts, so
+            they are labelled as such, and the proposal is marked unsettled. */}
+        {receipt.proposed ? (
+          <>
+            <div className="dl-h">Where the cash stands</div>
+            <div className={"row dl-cur " + receipt.final.direction}>
+              <span className="k">Current — agreed so far</span>
+              <span className="mono">
+                {receipt.final.direction === "settled" ? money(0)
+                  : money(receipt.final.amount)}
+              </span>
+            </div>
+            <div className="dl-cur-s">{settle(cash, them).sentence}</div>
+            <div className={"row tot dl-final " + receipt.proposed.balance.direction}>
+              <span>Proposed — {receipt.proposed.by === "collector"
+                ? "yours" : `${them}'s`}</span>
+              <span className="mono">
+                {receipt.proposed.balance.direction === "settled" ? money(0)
+                  : money(receipt.proposed.balance.amount)}
+              </span>
+            </div>
+            <div className="dl-prop-s">
+              {receipt.proposed.balance.direction === "settled"
+                ? settle(0, them).sentence
+                : `${settle(receipt.proposed.balance.direction === "collector-to-tp"
+                    ? 1 : -1, them).sentence} — not agreed yet`}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="dl-h">Cash settlement</div>
+            <div className={"row tot dl-final " + receipt.final.direction}>
+              <span>{settle(cash, them).sentence}</span>
+              <span className="mono">
+                {receipt.final.direction === "settled" ? money(0)
+                  : money(receipt.final.amount)}
+              </span>
+            </div>
+          </>
+        )}
       </div>
+  );
+}
+
+function DealStage({ o, st, register }) {
+  /* THE DRAFT IS A SIGNED BALANCE, not a magnitude with a payer guessed after.
+     The old field stripped the minus sign and refused anything but a positive
+     number, so a collector owed $185 who proposed $200 sent +200 — silently
+     reversing who pays. Direction is a property of the number, so the number
+     carries it, and both controls edit that one value. */
+  const [signed, setSigned] = useState(null);      // null = untouched
+
+  const calc = calcBalance(o);
+  const deal0 = o.deal || {};
+  const standing0 = deal0.agreedAdj == null && deal0.tpAdj != null
+    ? { amount: deal0.tpAdj, by: "tp" }
+    : deal0.agreedAdj == null && deal0.collectorAdj != null
+      ? { amount: deal0.collectorAdj, by: "collector" } : null;
+  /* WHOSE MOVE, FROM THE DEAL ITSELF — never a local "sent" flag, which would
+     be a second turn model able to disagree with the deal. You own the cash
+     move unless your own proposal is standing unanswered. */
+  const theirCounter = !!standing0 && standing0.by === "tp";
+  /* An AGREED figure ends the negotiation: there is no standing proposal, but
+     that is settlement rather than a returned turn. Without this the editor
+     reappeared the moment the partner accepted, inviting a change to something
+     both sides had just agreed. */
+  const cashSettled = deal0.agreedAdj != null;
+  /* Somebody has named a figure and nobody has agreed it yet: there is no
+     settled deal to agree to. */
+  const cashUnresolved = !cashSettled && !!standing0;
+  const iOweTheMove = !cashSettled && (!standing0 || theirCounter);
+  /* The figure a proposal is measured against, and where the slider starts:
+     their counter once one exists, because that is what you would be changing;
+     otherwise the settled balance. */
+  const baseline = theirCounter ? standing0.amount : D.finalBalance(o);
+  /* Untouched, the draft IS the canonical calculated balance — so the control
+     opens where the deal actually stands. */
+  const draft = signed == null ? (baseline || 0) : signed;
+  const draftDir = D.cashDirection(draft);
+  /* Room to move either way, and never less than the current position. */
+  const span = Math.max(500, Math.ceil((Math.abs(calc || 0) * 2) / 50) * 50);
+  const p = st.partnerById(o.partnerId);
+  const them = p ? p.name : "them";
+  /* The proposal's consequence, phrased once and reused by the live line and
+     the confirm button, so they cannot disagree. */
+  const draftSet = settle(draft, them);
+
+  /* THE ADJUSTMENT, READ CANONICALLY. Pass 2 replaced `proposedAdj`/`proposedBy`
+     with one standing position per side plus a thread; this screen was still
+     reading the old fields and so showed nothing at all after a proposal. */
+  const deal = o.deal || {};
+  const adjStanding = deal.agreedAdj == null && deal.tpAdj != null ? { amount: deal.tpAdj, by: "tp" }
+    : deal.agreedAdj == null && deal.collectorAdj != null
+      ? { amount: deal.collectorAdj, by: "collector" } : null;
+  const fromPartner = !!adjStanding && adjStanding.by === "tp";
+  const cash = D.finalBalance(o);
+  /* CURRENT is the canonical settled balance — an agreed adjustment if one
+     exists, otherwise the calculated balance. Never the draft. */
+  /* WHAT WAS SENT, measured against what it replaced — the settled balance,
+     since a collector proposal is a move away from that. */
+  const sentSet = settle(adjStanding ? adjStanding.amount : 0, them);
+  const sentCmp = D.compareCashSettlement(D.finalBalance(o),
+    adjStanding ? adjStanding.amount : 0, { viewer: "collector", partner: them });
+  const cmp = D.compareCashSettlement(baseline, draft, {
+    viewer: "collector", partner: them });
+  const cashOnly = (o.trade && o.trade.mode === "cash") || acceptedCards(o).length === 0;
+  /* What the final agreement changed relative to the settled economics. Zero
+     until somebody agrees a different figure. */
+  /* One projection, so the rows below cannot disagree about direction. */
+  const receipt = D.cashReceipt(o);
+
+  /* Agreement belongs to whoever gave it. Never inferred, never combined. */
+  const iAgreed = !!deal.collectorAgreed;
+  const theyAgreed = !!deal.tpAgreed;
+
+  return (
+    <>
+      <DealReceipt o={o} st={st} them={them} />
 
       <div className="card sec">
         <div className="sec-h">Final cash amount</div>
@@ -4111,19 +5006,27 @@ function DealStage({ o, st, register }) {
             total, or the cash owed. It is the cash — and only the cash. The
             calculated figure is shown first so a proposal is read as a change
             FROM something rather than as a fresh number. */}
-        <div className="row"><span className="k">Calculated amount owed</span>
-          <span className="mono">
-            {money(receipt.calculated.amount)}
-            {receipt.calculated.direction === "tp-to-collector" ? " to you"
-              : receipt.calculated.direction === "collector-to-tp" ? ` to ${them}` : ""}
-          </span></div>
+        <div className="row"><span className="k">Calculated cash balance</span>
+          <span>{(() => {
+            const set = settle(calc, them);
+            return set.direction === "settled" ? set.sentence
+              : `${set.sentence} ${money(set.amount)}`;
+          })()}</span></div>
 
         <div style={{ fontSize: 14, margin: "12px 0" }}>
+          {/* Your own standing proposal is stated in full by the waiting block
+              below, so repeating it here read as two separate offers. What is
+              left is the scope reminder, and their move when it is theirs. */}
           {adjStanding == null
             ? <>Only the cash changes. The agreed price and everything you settled about the cards stay exactly as they are.</>
             : fromPartner
-              ? <>{them} proposed <b className="mono">{money(adjStanding.amount)}</b> — your move.</>
-              : <>You proposed <b className="mono">{money(adjStanding.amount)}</b> — waiting on {them}.</>}
+              ? (() => {
+                const set = settle(adjStanding.amount, them);
+                const said = set.direction === "settled" ? "an even split"
+                  : `${set.sentence} ${money(set.amount)}`;
+                return <>{them} proposed: <b>{said}</b> — your move.</>;
+              })()
+              : <>Only the cash changes. Your figure is below.</>}
         </div>
 
         {/* Whose agreement is in, stated separately for each person. */}
@@ -4142,24 +5045,143 @@ function DealStage({ o, st, register }) {
                 Accept {money(adjStanding.amount)}
               </button>
             )}
-            <button className="btn pri wide" style={{ marginBottom: 12 }}
-              onClick={() => st.dealAgree(o.id)}>
-              Agree to this deal
-            </button>
-            {/* Named where it can be seen, not only where a screen reader
-                finds it: the field holds the cash owed, nothing else. */}
-            <div className="pn-fl">Final cash amount</div>
-            <input className="inp" inputMode="decimal" value={amt}
-              placeholder="Propose a different cash amount"
-              aria-label="Final cash amount"
-              onChange={(e) => setAmt(e.target.value.replace(/[^\d.]/g, ""))} />
+            {/* Not while a cash figure is unanswered: there is no settled deal
+                to agree to, and the domain refuses it in any case. Accepting
+                their standing figure above is the way forward. */}
+            {!cashUnresolved && (
+              <button className="btn pri wide" style={{ marginBottom: 12 }}
+                onClick={() => st.dealAgree(o.id)}>
+                Agree to this deal
+              </button>
+            )}
+            {/* NOTHING TO EDIT WHILE IT IS NOT YOUR MOVE.
+
+                A disabled slider still reads as a control — it invites a drag
+                that does nothing, and leaves the longest block on screen at the
+                moment the collector has least to do. So the editor is not
+                disabled, it is absent, replaced by a short statement of what
+                was sent and who is holding it.
+
+                Everything below comes from the standing proposal in the deal,
+                not from local draft state, which would go stale the moment the
+                partner answered. */}
+            {!iOweTheMove && adjStanding && (
+              <div className="cp-wait">
+                <span className="cp-k">Your proposal</span>
+                <span className="cp-prop-v">
+                  {sentSet.direction === "settled" ? sentSet.sentence
+                    : `${sentSet.sentence} ${money(sentSet.amount)}`}
+                </span>
+                {sentCmp.label && (
+                  <span className="cp-delta">
+                    {sentCmp.label.replace(/from current$/, "from the prior settlement")}
+                  </span>
+                )}
+                <span className="cp-wait-s">Waiting on {them}</span>
+              </div>
+            )}
+
+            {iOweTheMove && (<>
+            {/* THE CONTROL EXPLAINS ITSELF.
+
+                Everything needed to judge a move is here, in order: where the
+                cash stands now, the axis, what the move would settle at, and
+                what it would change. Earlier rounds put this in the receipt
+                above, which meant reading the slider required looking somewhere
+                else — the reason the same feedback kept recurring. */}
+
+            {/* CURRENT. Muted: it is what is being changed FROM, not the
+                decision. It comes from the deal, never from the draft, so
+                dragging cannot move the thing you are comparing against. */}
+            <div className="cp-cur">
+              <span className="cp-k">Current cash settlement</span>
+              <span className="cp-cur-v">
+                {cmp.current.direction === "settled" ? cmp.current.sentence
+                  : `${cmp.current.sentence} ${money(cmp.current.amount)}`}
+              </span>
+            </div>
+
+            {/* A LINE THROUGH ZERO. Owing and being owed are one quantity with
+                opposite signs, so they share an axis with zero in the middle —
+                and crossing it is the only way to change who pays. There is no
+                switch: the crossing is the gesture. */}
+            <div className="cs">
+              <div className="cs-ends">
+                <span>{settle(1, them).sentence}</span>
+                <span>{settle(0, them).sentence}</span>
+                <span>{settle(-1, them).sentence}</span>
+              </div>
+              <input className="cs-r" type="range"
+                min={-span} max={span} step={1}
+                /* The slider reads LEFT as you-owe, so it is the negative of the
+                   canonical signed balance, converted at this one boundary. */
+                value={-draft}
+                aria-label={"Cash settlement, from " + settle(1, them).sentence
+                  + " to " + settle(-1, them).sentence + ". Currently "
+                  + (cmp.current.direction === "settled" ? "no cash owed"
+                    : cmp.current.sentence + " " + money(cmp.current.amount))
+                  + ". Proposed "
+                  + (cmp.proposed.direction === "settled" ? "no cash owed"
+                    : cmp.proposed.sentence + " " + money(cmp.proposed.amount))
+                  + (cmp.label ? ", " + cmp.label : "")}
+                onChange={(e) => setSigned(-Number(e.target.value))} />
+              <div className="cs-zero" aria-hidden="true" />
+              <div className="cs-help">
+                Drag to change who pays. The middle is no cash either way.
+              </div>
+            </div>
+
+            {/* PROPOSED, and what it would change. The delta is signed only
+                while the payer holds; a reversal is a swing, because the money
+                did not grow — it turned around. */}
+            <div className="cp-prop">
+              <span className="cp-k">Proposed cash settlement</span>
+              <span className="cp-prop-v">
+                {cmp.proposed.direction === "settled" ? cmp.proposed.sentence
+                  : `${cmp.proposed.sentence} ${money(cmp.proposed.amount)}`}
+              </span>
+              {cmp.label && <span className="cp-delta">{cmp.label}</span>}
+            </div>
+
+            {/* The same value, typed. Magnitude only — the side belongs to the
+                axis, so a number can never silently move the money. */}
+            <label className="pn-f cp-in">
+              <span className="pn-fl">
+                {cmp.proposed.direction === "settled" ? "Amount"
+                  : `Amount — ${cmp.proposed.sentence}`}
+              </span>
+              <span className="pn-w"><span className="pn-u">$</span>
+                <input className="inp" inputMode="decimal"
+                  aria-label="Proposed cash amount"
+                  value={Math.abs(draft) === 0 ? "" : String(Math.abs(draft))}
+                  onChange={(e) => {
+                    const mag = Number(e.target.value.replace(/[^\d.]/g, "")) || 0;
+                    setSigned(draft < 0 ? -mag : mag);
+                  }} />
+              </span>
+            </label>
+
             <div className="faint" style={{ fontSize: 12.5, marginTop: 6 }}>
               Only the cash changes. Card values and percentages stay exactly as agreed.
             </div>
-            <button className="btn wide" style={{ marginTop: 12 }} disabled={!(n > 0)}
-              onClick={() => { st.dealPropose(o.id, n); setAmt(""); }}>
-              Propose {money(n || 0)}
+            {/* The CTA is the settlement it would create, not the arithmetic:
+                the other person answers an outcome, not a movement. */}
+            {/* ONE FACT DRIVES BOTH. A quiet-but-clickable button, or a lit-up
+                disabled one, is a control disagreeing with itself — so
+                prominence and submittability come from the same expression:
+                is this genuinely a different settlement from the one on the
+                table? Returning the slider to where it started makes the
+                button go quiet again. */}
+            <button className={"btn wide" + (draft === baseline ? "" : " pri")}
+              style={{ marginTop: 12 }}
+              disabled={draft === baseline}
+              onClick={() => { st.dealPropose(o.id, draft); setSigned(null); }}>
+              {cmp.proposed.direction === "settled" ? "Propose no cash owed"
+                : cmp.proposed.direction === "collector-to-tp"
+                  ? `Propose ${money(cmp.proposed.amount)} settlement`
+                  : `Propose: ${cmp.proposed.sentence} ${money(cmp.proposed.amount)}`}
             </button>
+            </>)}
           </>
         )}
 
@@ -4203,6 +5225,14 @@ function Fulfillment({ o, st, register }) {
   );
 
   return (
+    <>
+      {/* WHAT WAS AGREED, THEN HOW IT HAPPENS. Two questions, two cards.
+          Reaching Handoff used to erase the economics entirely, leaving a
+          collector about to hand over cards with a single cash figure and no
+          way to check what it came from. The receipt comes first because it is
+          the thing being carried out; the logistics card below is the doing. */}
+      <DealReceipt o={o} st={st} them={p ? p.name : "them"} />
+
     <div className="card sec">
       <div className="sec-h">Handoff</div>
 
@@ -4217,8 +5247,15 @@ function Fulfillment({ o, st, register }) {
       {term("How", f.method)}
       {term("Where", f.where)}
       {term("When", f.when)}
-      <div className="row"><span className="k">Settling up</span>
-        <span className="mono">{money(Math.abs(finalBalance(o)))} {finalBalance(o) >= 0 ? "to them" : "to you"}</span></div>
+      {/* WHO PAYS WHOM, not a sign and a pronoun. The handoff card stays
+          operational — how, where, when, and what cash is left — with the
+          richer economics behind Deal summary. */}
+      <div className="row"><span className="k">Cash settlement</span>
+        <span>{(() => {
+          const set = settle(finalBalance(o), p ? p.name : null);
+          return set.direction === "settled" ? set.sentence
+            : `${set.sentence} ${money(set.amount)}`;
+        })()}</span></div>
 
       {/* The plan and the exchange are reported separately, because they are
           separate facts: agreeing a Saturday meet is not having the card. */}
@@ -4265,6 +5302,7 @@ function Fulfillment({ o, st, register }) {
         </button>
       )}
     </div>
+    </>
   );
 }
 
@@ -4841,6 +5879,9 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
       dealAdjustAccept: (id) =>
         A.dealAdjustRespond({ oppId: id, by: "collector", action: "accept", at: AT }),
       /* Editing a copy, never replacing it: the canonical action keeps the id. */
+      /* Reading position only: it records that this seat looked. */
+      markDealViewed: (oppId, surface) =>
+        A.markDealViewed({ oppId, by: "collector", surface, at: AT }),
       updateBinderCopy: (binderId, patch) =>
         A.updateBinderCopy({ binderId, patch, at: AT }),
       chooseCashOnly: (id) => A.chooseCashOnly({ oppId: id, at: AT }),

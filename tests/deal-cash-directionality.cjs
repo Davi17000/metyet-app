@@ -78,7 +78,7 @@ const real = ({ price, market, pct }) => {
   st.actions.tradePercentRespond({ oppId: o, tradeCardId: row.id, by: "collector", action: "accept", at: AT });
   return { st, o, id: row.id, get: () => st.get().opportunities.find((x) => x.id === o) };
 };
-const dealBlock = () => code(COL).slice(code(COL).indexOf("function DealStage("),
+const dealBlock = () => code(COL).slice(code(COL).indexOf("function DealReceipt("),
   code(COL).indexOf("function Fulfillment("));
 
 describe("A. The signed balance, and what it means", () => {
@@ -151,8 +151,17 @@ describe("B. The adjustment stays signed against the signed balance", () => {
   });
 
   test("no magnitude is taken before the arithmetic", () => {
-    assert(!/Math\.abs\([^)]*\)\s*-\s*Math\.abs\(/.test(code(DOM)),
-      "the domain subtracts signed values");
+    /* CONTRACT CHANGE, narrowed: cashReceipt still subtracts SIGNED values, which
+       is what this protects. compareCashSettlement compares magnitudes, but only
+       for a same-payer delta and never to decide direction. */
+    const receiptFn = code(DOM).slice(code(DOM).indexOf("const cashReceipt"),
+      code(DOM).indexOf("const cashReceipt") + 900);
+    assert(!/Math\.abs\([^)]*\)\s*-\s*Math\.abs\(/.test(receiptFn),
+      "the receipt subtracts signed values");
+    const cmpFn = code(DOM).slice(code(DOM).indexOf("const compareCashSettlement"),
+      code(DOM).indexOf("const cashReceipt"));
+    assert(/crossesZero \? Math\.abs\(a\) \+ Math\.abs\(b\)/.test(cmpFn),
+      "and a crossing is a swing, never a signed difference");
     const rec = code(DOM).slice(code(DOM).indexOf("const cashReceipt"),
       code(DOM).indexOf("const cashReceipt") + 500);
     assert(/final - calc/.test(rec), "adjustment = final - calculated, both signed");
@@ -189,23 +198,28 @@ describe("C. The final amount carries direction too", () => {
 
 describe("D. The receipt says it in words", () => {
   test("each direction has its own sentence", () => {
-    const d = dealBlock();
-    assert(/`You owe \$\{them\}`/.test(d), "the collector owing");
-    assert(/`\$\{them\} owes you`/.test(d), "the partner owing");
-    assert(/"No cash owed"/.test(d), "and neither");
+    /* CONTRACT CHANGE: each direction is still its own sentence, but the
+       sentence is built once by D.settlement rather than per component. */
+    const ctx = { viewer: "collector", partner: "Northline Cards" };
+    eq(D.settlement(272, ctx).sentence, "You pay Northline Cards", "the collector owing");
+    eq(D.settlement(-272, ctx).sentence, "Northline Cards pays you", "the partner owing");
+    eq(D.settlement(0, ctx).sentence, "No cash owed", "and neither");
   });
 
   test("the headline shows an unsigned magnitude", () => {
     const d = dealBlock();
-    assert(/<span className="mono">\{money\(receipt\.final\.amount\)\}<\/span>/.test(d),
+    assert(/money\(receipt\.final\.amount\)/.test(d),
       "the projection's amount, which is never negative");
     assert(!/money\(Math\.abs\(cash\)\)/.test(d), "no local abs of a signed figure");
+    eq(D.settlement(-272, { partner: "X" }).amount, 272, "and the helper is unsigned too");
   });
 
   test("the calculated row is readable rather than signed", () => {
+    /* CONTRACT CHANGE: "to you" / "to them" were the ambiguous phrases this
+       pass removed. The row now names payer and recipient outright. */
     const d = dealBlock();
-    assert(/" to you"/.test(d), "money coming to the collector says so");
-    assert(/` to \$\{them\}`/.test(d), "and money going the other way");
+    assert(!/" to you"/.test(d) && !/" to them"/.test(d), "no pronouns for direction");
+    assert(/settle\(calc, them\)/.test(d), "the calculated row uses the formatter");
     assert(!/money\(Math\.abs\(calc\)\)/.test(d), "the bare magnitude is gone");
   });
 
@@ -215,8 +229,9 @@ describe("D. The receipt says it in words", () => {
       "the semantic direction becomes the class");
     ["collector-to-tp", "tp-to-collector", "settled"].forEach((k) =>
       assert(new RegExp("\\.dl-final\\." + k).test(COL), k + " has a treatment"));
-    /* Every direction also has a sentence, so colour is never the only signal. */
-    assert(/You owe/.test(d) && /owes you/.test(d) && /No cash owed/.test(d),
+    /* Every direction still has a sentence, so colour is never the only
+       signal — it just comes from the formatter now. */
+    assert(/settle\(cash, them\)\.sentence/.test(d),
       "each state is legible without colour");
   });
 
@@ -297,8 +312,11 @@ describe("F. Settled economics are untouched, and both seats agree", () => {
     const r = D.cashReceipt(o);
     eq(r.final.direction, "tp-to-collector", "one canonical direction");
     eq(r.final.amount, 500, "one magnitude");
-    assert(/`\$\{them\} owes you`/.test(dealBlock()),
-      "which the collector reads as the partner owing them");
+    eq(D.settlement(-500, { viewer: "collector", partner: "Northline Cards" }).sentence,
+      "Northline Cards pays you", "the collector reads it as the partner paying");
+    eq(D.settlement(-500, { viewer: "tp", partner: "Northline Cards",
+      collector: "Casey" }).sentence, "You pay Casey",
+      "and the partner reads the same agreement from their side");
   });
 
   test("the demo helper cannot bypass it", () => {

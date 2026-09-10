@@ -115,6 +115,35 @@ const finalBalance = (o) =>
    comes back unsigned because a headline should never show a negative: which
    way the money moves belongs in the words. Presentation maps `direction` to
    its own tokens; no colour or persona wording lives in the domain. */
+/* NEW SINCE YOU LAST LOOKED — derived by comparison, not by flagging.
+
+   An event is new to a seat when it happened after that seat last opened the
+   deal, and was not that seat's own doing: your own message is not news to you.
+   Nothing is written onto the events themselves, so two people can hold
+   different views of the same unchanged history. */
+const newSince = (events, viewedAt, viewer) => {
+  const since = viewedAt || null;
+  return events.filter((e) => {
+    if (!e.at) return false;
+    /* Your own move is never news to you — whichever seat you are reading from.
+       `by` carries the actor, so this holds when the same chronology is read
+       from the other side. */
+    if (e.by === viewer || e.mine === true) return false;
+    if (!viewer && e.kind === "mine") return false;
+    return !since || String(e.at) > String(since);
+  });
+};
+
+/* What is new on each surface, for one seat. Timeline holds everything;
+   Messages holds only what somebody said. Two questions, one chronology. */
+const unreadFor = (events, viewedAt, viewer) => {
+  const seat = (viewedAt || {})[viewer === "tp" ? "tp" : "collector"] || {};
+  const timeline = newSince(events, seat.timeline, viewer);
+  const messages = newSince(events.filter((e) => e.kind === "message"),
+    seat.messages, viewer);
+  return { timeline, messages };
+};
+
 const cashDirection = (amount) => {
   if (amount == null) return { direction: "unknown", amount: null };
   if (amount > 0) return { direction: "collector-to-tp", amount: Math.abs(amount) };
@@ -126,6 +155,82 @@ const cashDirection = (amount) => {
    an accepted final amount changed, and what is owed — each with its direction
    already resolved. The adjustment stays SIGNED against the signed balance, so
    -300 becoming -250 is +50 (less owed to the collector), not -50. */
+/* WHO PAYS WHOM, IN WORDS — the one place that decides.
+
+   The signed balance stays exactly as it was: it is the right internal model,
+   and reversing it would be a correctness change nobody asked for. What was
+   wrong is that half a dozen places each turned that sign into English on
+   their own, and one of them said "$272 to them" — leaving the reader to work
+   out who "them" was, in the one sentence where guessing costs money.
+
+   So direction becomes a sentence exactly once. `viewer` decides which side
+   says "You", which is what lets a collector and a partner read the same
+   agreement and both describe the same transaction correctly.
+
+   Zero is a real state, not a small debt: nobody pays anybody. */
+const settlement = (amount, { viewer = "collector", collector = "the collector",
+  partner = "them" } = {}) => {
+  const dir = cashDirection(amount);
+  const nameOf = (seat) => (seat === viewer ? "You"
+    : seat === "tp" ? partner : collector);
+  if (dir.direction === "unknown") {
+    return { ...dir, payer: null, payee: null, sentence: null };
+  }
+  if (dir.direction === "settled") {
+    return { ...dir, payer: null, payee: null, sentence: "No cash owed" };
+  }
+  const payerSeat = dir.direction === "collector-to-tp" ? "collector" : "tp";
+  const payeeSeat = payerSeat === "collector" ? "tp" : "collector";
+  const payer = nameOf(payerSeat);
+  const payee = nameOf(payeeSeat);
+  return { ...dir, payer, payee, payerSeat, payeeSeat,
+    /* "You pay X" / "X pays you" — never a pronoun, never a bare sign.
+       The reader is "You" at the start of a sentence and "you" inside one, so
+       the payee is lowercased when it is them; otherwise it reads "pays You". */
+    sentence: payer + (payer === "You" ? " pay " : " pays ")
+      + (payee === "You" ? "you" : payee) };
+};
+
+/* COMPARING TWO SETTLEMENTS — presentation, not a second economic model.
+
+   The slider could say what a move would settle AT, and not what it would DO.
+   Answering that in the receipt one layer above is why the same feedback kept
+   recurring: the control that needed the comparison never had it.
+
+   The subtlety is that a signed delta only means something while the payer
+   stays the same. Once a proposal crosses zero, "+$208" describes no experience
+   anybody has — the money did not grow by $208, it stopped flowing one way and
+   started flowing the other. A crossing is therefore a SWING, the distance to
+   zero plus the distance out the far side, and never carries a sign.
+
+   Payer semantics are untouched: every sentence still comes from settlement(). */
+const compareCashSettlement = (currentSigned, proposedSigned, ctx = {}) => {
+  const cur = settlement(currentSigned, ctx);
+  const prop = settlement(proposedSigned, ctx);
+  const a = Number(currentSigned) || 0;
+  const b = Number(proposedSigned) || 0;
+
+  const fromZero = a === 0 && b !== 0;
+  const toZero = b === 0 && a !== 0;
+  /* Strictly opposite sides. Zero is the crossing point, not a side. */
+  const crossesZero = a !== 0 && b !== 0 && (a > 0) !== (b > 0);
+  const samePayer = !crossesZero && !fromZero && !toZero && a !== 0;
+
+  const magnitude = crossesZero ? Math.abs(a) + Math.abs(b)
+    : Math.abs(Math.abs(b) - Math.abs(a));
+
+  const usd = (n) => "$" + Math.round(n).toLocaleString("en-US");
+  let label = null;
+  if (a === b) label = null;                       /* nothing changed, say nothing */
+  else if (fromZero) label = "New " + usd(Math.abs(b)) + " cash settlement";
+  else if (toZero) label = usd(Math.abs(a)) + " reduction from current";
+  else if (crossesZero) label = usd(magnitude) + " swing from current";
+  else label = (Math.abs(b) > Math.abs(a) ? "+" : "-") + usd(magnitude) + " from current";
+
+  return { current: cur, proposed: prop, samePayer, crossesZero, fromZero,
+    toZero, magnitude, label, changed: a !== b };
+};
+
 const cashReceipt = (o) => {
   const calc = calculatedBalance(o);
   const final = finalBalance(o);
@@ -133,6 +238,23 @@ const cashReceipt = (o) => {
     calculated: cashDirection(calc),
     final: cashDirection(final),
     adjustment: (calc == null || final == null) ? null : final - calc,
+    /* A PROPOSAL IS NOT YET A BALANCE — but it is a figure somebody is being
+       asked to answer, and the receipt could not describe it. `adjustment`
+       compares the AGREED figure to the calculated one, so while an offer is
+       merely standing it is zero and any row built on it disappears. The
+       receipt then showed a settled total directly beneath an unanswered
+       offer, which reads as though the offer had already taken effect.
+
+       So a standing proposal gets its own leg. Nothing is stored, and
+       `adjustment` keeps its meaning: agreed and offered are different facts. */
+    proposed: (() => {
+      const d = o.deal || {};
+      const by = dealAdjStanding(d);
+      const amount = by === "tp" ? d.tpAdj : by === "collector" ? d.collectorAdj : null;
+      if (by == null || amount == null) return null;
+      return { by, balance: cashDirection(amount),
+        delta: calc == null ? null : amount - calc };
+    })(),
   };
 };
 
@@ -363,7 +485,9 @@ function dealApplyAdj(rawDeal, by, action, amount, at) {
       // a newly assembled deal must be confirmed again by both sides
       tpAgreed: false, collectorAgreed: false };
   }
-  if (typeof amount !== "number" || !isFinite(amount) || amount === 0) return deal;
+  /* Zero is a real settlement — "even, nobody owes" — not a missing value.
+     Rejecting it made an even split the one balance you could not propose. */
+  if (typeof amount !== "number" || !isFinite(amount)) return deal;
   /* ONE TURN AT A TIME, as everywhere else a number is negotiated. Without this
      a second Send silently replaced the figure the other party was already
      reading — the same defect fixed for market value and trade percentage. */
@@ -522,7 +646,7 @@ const REFUSE = {
 };
 
 module.exports = {
-  FULFILLMENT, TRADE, cashDirection, cashReceipt,
+  FULFILLMENT, TRADE, cashDirection, cashReceipt, settlement, compareCashSettlement, newSince, unreadFor,
   identityKey, isRaw, sameIdentity,
   STAGES, STAGE_IX, STAGE_LABEL,
   isEnded, isCompleted, isTerminal, isActive, isNegotiating,

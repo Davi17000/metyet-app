@@ -1728,26 +1728,38 @@ const oppValue = (o) => (o.agreedPrice != null ? o.agreedPrice : o.listedPrice);
    it renders payer -> recipient and an absolute amount. */
 const baseCash = (opp) => (opp.agreedPrice == null ? null : opp.agreedPrice - totalCredit(opp));
 const agreedAdjustment = (opp) => opp.deal?.agreedAdj ?? 0;
+/* WHO PAYS WHOM IS DECIDED ONCE, IN THE DOMAIN.
+
+   This used to read the sign itself — `net > 0 ? "collector" : "tp"` — which
+   is the same judgement the Collector's seat makes, written a second time. Two
+   copies of one rule is how the two seats end up describing the same agreement
+   differently, and a settlement is the last place that should happen.
+
+   The signed model is unchanged; only the interpretation moves. `payer` and
+   `recipient` are kept so existing callers still work, but they now come from
+   SharedID.settlement rather than from arithmetic here. */
 const cashBalance = (opp) => {
   const base = baseCash(opp);
   if (base == null) return null;
   const net = base + agreedAdjustment(opp);
+  const set = SharedID.settlement(net, { viewer: "tp" });
   return {
     base, adjustment: agreedAdjustment(opp), net,
-    amount: Math.abs(net),
-    payer: net > 0 ? "collector" : net < 0 ? "tp" : null,
-    recipient: net > 0 ? "tp" : net < 0 ? "collector" : null,
-    zero: net === 0,
+    amount: set.amount,
+    payer: set.payerSeat || null,
+    recipient: set.payeeSeat || null,
+    zero: set.direction === "settled",
   };
 };
 /* Rendered wherever a cash figure appears. Never exposes a negative number. */
 const cashLabel = (opp, collectorShort) => {
   const c = cashBalance(opp);
   if (!c) return "—";
-  if (c.zero) return "No cash balance";
-  return c.payer === "collector"
-    ? `${collectorShort} pays you — ${money(c.amount)}`
-    : `You pay ${collectorShort} — ${money(c.amount)}`;
+  /* The same sentence the collector reads, told from this seat: one of them
+     says "You pay", the other "X pays you", about one transaction. */
+  const set = SharedID.settlement(c.net, { viewer: "tp", collector: collectorShort });
+  return set.direction === "settled" ? "No cash balance"
+    : `${set.sentence} — ${money(set.amount)}`;
 };
 // retained for callers that only need the signed figure
 const remainingCash = (opp) => { const c = cashBalance(opp); return c ? c.net : null; };
@@ -4501,7 +4513,9 @@ function DealSummary({ ctx, opp }) {
           </>)}
           <tr style={{ background: "#F2F6F6" }}>
             <td style={{ fontSize: 12.5, fontWeight: 600 }}>
-              {cb == null || cb.zero ? "Cash balance" : cb.payer === "collector" ? `${col.short} pays you` : `You pay ${col.short}`}
+              {cb == null ? "Cash balance"
+                : SharedID.settlement(cb.net, { viewer: "tp", collector: col.short })
+                  .sentence || "Cash balance"}
             </td>
             <td className="num mono" style={{ fontWeight: 600, fontSize: 14 }}>
               {cb == null ? "—" : cb.zero ? "No cash balance" : money(cb.amount)}

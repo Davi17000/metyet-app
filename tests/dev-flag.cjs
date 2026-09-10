@@ -53,8 +53,25 @@ describe("A. One definition, not three", () => {
       const full = path.join(dir, e.name);
       return e.isDirectory() ? walk(full) : [full];
     });
+    /* GENERATED BUNDLES ARE NOT AUTHORED SOURCE.
+
+       `dev/main.js` is esbuild's output for `dev/main.jsx`, and it necessarily
+       contains this string: it has shared/dev-flag.js compiled into it. Reading
+       it as authored source made the guard fail whenever somebody had actually
+       run the dev build — which is to say, whenever the dev flag mattered.
+
+       The exclusion is the compiled artifact, not the directory. Excluding
+       `dev/` wholesale would stop guarding `dev/main.jsx`, which IS authored and
+       must never re-derive the flag. A `.js` sitting beside a `.jsx` of the same
+       name is that file's build output, the same reasoning already applied to
+       dist/ and previews/. */
+    const isBuiltFrom = (f) => {
+      const m = f.match(/^(.*)\.js(\.map)?$/);
+      return !!m && fs.existsSync(m[1] + ".jsx");
+    };
     const offenders = walk(ROOT)
       .filter((f) => /\.(js|jsx|mjs)$/.test(f))
+      .filter((f) => !isBuiltFrom(f))                   // generated, not written
       .filter((f) => !/shared[\\/]dev-flag\.js$/.test(f))
       .filter((f) => !/dev-server\.mjs$/.test(f))      // injects it; does not gate on it
       .filter((f) => !/[\\/]tests[\\/]/.test(f))
@@ -63,6 +80,34 @@ describe("A. One definition, not three", () => {
     eq(offenders.length, 0,
       "only shared/dev-flag.js and the dev server may mention METYET_DEV: "
       + offenders.join(", "));
+  });
+
+  /* The two halves of the fix, asserted separately: the generated bundle is
+     ignored, and the authored source beside it is not. */
+  test("a generated bundle cannot trip the guard, but its source still can", () => {
+    const built = path.join(ROOT, "dev", "main.js");
+    const authored = path.join(ROOT, "dev", "main.jsx");
+    assert(fs.existsSync(authored), "dev/main.jsx is authored source");
+    if (fs.existsSync(built)) {
+      assert(/process\.env\.METYET_DEV/.test(fs.readFileSync(built, "utf8")),
+        "the built bundle does contain the string — that is why it must be excluded");
+    }
+
+    /* The guard must still catch a real reintroduction in authored source. */
+    const probe = path.join(ROOT, "dev", "__guard_probe.jsx");
+    fs.writeFileSync(probe, "export const X = process.env.METYET_DEV === \"1\";\n");
+    try {
+      const swept = fs.readdirSync(path.join(ROOT, "dev"))
+        .filter((n) => /\.(js|jsx|mjs)$/.test(n))
+        .filter((n) => !(/^(.*)\.js$/.test(n)
+          && fs.existsSync(path.join(ROOT, "dev", n.replace(/\.js$/, ".jsx")))))
+        .filter((n) => /process\.env\.METYET_DEV/
+          .test(fs.readFileSync(path.join(ROOT, "dev", n), "utf8")));
+      eq(swept.join(","), "__guard_probe.jsx",
+        "authored source in dev/ is still swept, and the bundle is not");
+    } finally {
+      fs.unlinkSync(probe);
+    }
   });
 
   test("the flag exposes one boolean and nothing else", () => {

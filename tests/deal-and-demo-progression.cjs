@@ -103,7 +103,7 @@ describe("A. Deal is a receipt of card-level agreements", () => {
   });
 
   test("every figure the screen shows comes from the domain", () => {
-    const deal = code(COL).slice(code(COL).indexOf("function DealStage("),
+    const deal = code(COL).slice(code(COL).indexOf("function DealReceipt("),
       code(COL).indexOf("function Fulfillment("));
     assert(/D\.totalTradeValue\(o\)/.test(deal), "the total is canonical");
     assert(/tradeValue\(tcd\)/.test(deal), "and each card's value");
@@ -112,7 +112,7 @@ describe("A. Deal is a receipt of card-level agreements", () => {
   });
 
   test("each card shows what was agreed, not just the result", () => {
-    const deal = code(COL).slice(code(COL).indexOf("function DealStage("),
+    const deal = code(COL).slice(code(COL).indexOf("function DealReceipt("),
       code(COL).indexOf("function Fulfillment("));
     assert(/Agreed market value/.test(deal), "the market value");
     assert(/Agreed Trade %/.test(deal), "the percentage");
@@ -122,21 +122,25 @@ describe("A. Deal is a receipt of card-level agreements", () => {
   });
 
   test("rows are keyed by their own identity", () => {
-    const deal = code(COL).slice(code(COL).indexOf("function DealStage("),
+    const deal = code(COL).slice(code(COL).indexOf("function DealReceipt("),
       code(COL).indexOf("function Fulfillment("));
     assert(/key=\{tcd\.id \|\| tcd\.binderId\}/.test(deal),
       "two rows for one binder copy stay distinct");
   });
 
   test("payment direction is stated in words", () => {
-    const deal = code(COL).slice(code(COL).indexOf("function DealStage("),
+    const deal = code(COL).slice(code(COL).indexOf("function DealReceipt("),
       code(COL).indexOf("function Fulfillment("));
     /* CONTRACT CHANGE: direction now comes from the canonical projection, so
        the receipt names the payer explicitly instead of testing a sign. */
-    assert(/receipt\.final\.direction === "collector-to-tp" \? `You owe \$\{them\}`/.test(deal),
-      "the collector owing is said in words");
-    assert(/`\$\{them\} owes you`/.test(deal), "and so is the partner owing");
-    assert(/"No cash owed"/.test(deal), "with a settled case of its own");
+    /* CONTRACT CHANGE: one canonical formatter, D.settlement(), now produces
+       payer and recipient; surfaces no longer write their own sentence. */
+    assert(/settle\(cash, them\)\.sentence/.test(deal),
+      "the settlement line comes from the formatter");
+    assert(/const settle = \(amount, partnerName\)/.test(code(COL)), "declared once");
+    assert(/"No cash owed"/.test(code(
+      require("fs").readFileSync(require("path").join(ROOT, "domain", "metyet-domain.js"), "utf8"))),
+      "with a settled case handled in the helper");
   });
 
   test("a cash-only deal claims no trade", () => {
@@ -146,7 +150,7 @@ describe("A. Deal is a receipt of card-level agreements", () => {
     w.st.actions.chooseCashOnly({ oppId: w.o, at: AT });
     eq(w.get().trade.mode, "cash", "the decision is recorded");
     eq(D.totalTradeValue(w.get()), 0, "and contributes nothing");
-    const deal = code(COL).slice(code(COL).indexOf("function DealStage("),
+    const deal = code(COL).slice(code(COL).indexOf("function DealReceipt("),
       code(COL).indexOf("function Fulfillment("));
     assert(/No cards are going into this trade/.test(deal),
       "the screen says so rather than showing empty rows");
@@ -157,7 +161,7 @@ describe("B. Deal agreement stays each person's own", () => {
   test("the final negotiation reads canonical fields", () => {
     /* The second silent break: this screen read proposedAdj/proposedBy, which
        Pass 2 stopped writing. A proposal was recorded and nothing appeared. */
-    const deal = code(COL).slice(code(COL).indexOf("function DealStage("),
+    const deal = code(COL).slice(code(COL).indexOf("function DealReceipt("),
       code(COL).indexOf("function Fulfillment("));
     assert(!/proposedAdj|proposedBy/.test(deal), "the stale fields are gone");
     assert(/deal\.tpAdj/.test(deal) && /deal\.collectorAdj/.test(deal),
@@ -184,7 +188,7 @@ describe("B. Deal agreement stays each person's own", () => {
   });
 
   test("both states are shown separately", () => {
-    const deal = code(COL).slice(code(COL).indexOf("function DealStage("),
+    const deal = code(COL).slice(code(COL).indexOf("function DealReceipt("),
       code(COL).indexOf("function Fulfillment("));
     assert(/iAgreed = !!deal\.collectorAgreed/.test(deal), "the collector's own bit");
     assert(/theyAgreed = !!deal\.tpAgreed/.test(deal), "and the partner's, read apart");

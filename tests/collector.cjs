@@ -175,7 +175,11 @@ describe("Goal lifecycle is derived, not stored", () => {
 /* ---------- 2. One negotiation per goal, enforced in the domain ---------- */
 describe("One active negotiation per goal", () => {
   test("the rule lives in the action, not the button", () => {
-    const fn = STORE().slice(STORE().indexOf("startOpportunity({"), STORE().indexOf("patchOpportunity("));
+    /* Sliced to this action's OWN end, so an unrelated action added elsewhere
+       in the store cannot widen or invert the window. */
+    const src = STORE();
+    const start = src.indexOf("startOpportunity({");
+    const fn = src.slice(start, src.indexOf("\n    },", start));
     assert(/oneNegotiationPerGoal\(goalId, s\.opportunities\)\)/.test(fn),
       "the shared action refuses a second negotiation regardless of caller");
     assert(/D\.INVARIANTS\.goalIsPursued\(goalId, s\.goals\)/.test(fn),

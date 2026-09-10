@@ -298,8 +298,9 @@ describe("C. The arithmetic, in both directions", () => {
     eq(D.calculatedBalance(owedToUs.get()), -100, "the partner owes $100");
     const level = atDeal({ price: 500, cards: [["ka", 500, 1]] });
     eq(D.calculatedBalance(level.get()), 0, "and a zero balance is possible");
-    assert(/`You owe \$\{them\}`/.test(code(COL)) && /`\$\{them\} owes you`/.test(code(COL)),
-      "each stated in words, not by a sign");
+    assert(/const settle = \(amount, partnerName\)/.test(code(COL)),
+      "one formatter states payer and recipient");
+    assert(/D\.settlement\(amount, \{/.test(code(COL)), "from the canonical helper");
   });
 
   test("a no-trade deal is all cash", () => {
@@ -372,43 +373,66 @@ describe("E. The screen says what the number is", () => {
   });
 
   test("the calculated figure is shown before anyone proposes one", () => {
-    assert(/Calculated amount owed/.test(code(COL)),
+    /* CONTRACT CHANGE: renamed to "Calculated cash balance" so the receipt and
+       the proposal area use one term for one quantity. */
+    assert(/Calculated cash balance/.test(code(COL)),
       "so a proposal reads as a change from something");
     assert(/Only the cash changes\./.test(code(COL)), "with the scope stated plainly");
   });
 
   test("the input is labelled for what it holds", () => {
-    assert(/aria-label="Final cash amount"/.test(code(COL)), "an accessible label");
-    assert(/<div className="pn-fl">Final cash amount<\/div>/.test(code(COL)),
-      "and a visible one");
+    /* CONTRACT CHANGE: the proposal control now renders current, proposed and the
+       change live, and the "Switch to …" button is gone — the slider is the only
+       direction control, and crossing zero is what changes payer. */
+    assert(/aria-label="Proposed cash amount"/.test(code(COL)), "an accessible label");
+    assert(/`Amount — \$\{cmp\.proposed\.sentence\}`/.test(code(COL)),
+      "and a visible one, naming the side it is on");
   });
 
   test("standing proposals use the shared actor language", () => {
-    assert(/You proposed <b className="mono">\{money\(adjStanding\.amount\)\}<\/b> — waiting on \{them\}/
-      .test(code(COL)), "waiting reads the same as everywhere else");
-    assert(/\{them\} proposed <b className="mono">\{money\(adjStanding\.amount\)\}<\/b> — your move/
-      .test(code(COL)), "as does the other side");
+    /* CONTRACT CHANGE: your own standing proposal is now stated in full by the
+       waiting block, which replaces the editor while the partner holds the
+       move. Repeating it in this line read as two separate offers, so the line
+       keeps only the scope reminder; the figure and its delta live in one
+       place, asserted below. */
+    assert(/YOUR PROPOSAL|Your proposal/.test(code(COL)),
+      "waiting reads the same as everywhere else");
+    assert(/Waiting on \{them\}/.test(code(COL)), "and names who holds it");
+    assert(/settle\(adjStanding \? adjStanding\.amount : 0, them\)/.test(code(COL)),
+      "from the canonical standing proposal");
+    assert(/\{them\} proposed: <b>\{said\}<\/b> — your move/.test(code(COL)),
+      "as does the other side");
+    assert(/settle\(adjStanding\.amount, them\)/.test(code(COL)),
+      "phrased by the shared formatter");
   });
 
   test("the receipt preserves the derivation", () => {
     assert(/Calculated cash balance/.test(code(COL)), "what the settled terms came to");
     assert(/Additional discount|Final cash adjustment/.test(code(COL)), "what changed");
-    assert(/`You owe \$\{them\}`/.test(code(COL)), "and what is actually owed");
+    assert(/Cash settlement/.test(code(COL)), "under its own heading");
+    assert(/settle\(cash, them\)\.sentence/.test(code(COL)),
+      "and who actually pays whom");
   });
 
   test("no percentage appears where cash has none", () => {
-    const deal = code(COL).slice(code(COL).indexOf("function DealStage("),
+    const deal = code(COL).slice(code(COL).indexOf("function DealReceipt("),
       code(COL).indexOf("function Fulfillment("));
     assert(!/<TradeFields/.test(deal), "the linked editor belongs to Value Trade only");
     assert(!/pn-u.*%/.test(deal), "and no percentage unit is offered");
   });
 
   test("the presentation writes nothing canonical", () => {
-    const deal = code(COL).slice(code(COL).indexOf("function DealStage("),
+    const deal = code(COL).slice(code(COL).indexOf("function DealReceipt("),
       code(COL).indexOf("function Fulfillment("));
     ["agreedAdj:", "tpAgreed:", "collectorAgreed:", "stage:"].forEach((f) =>
       assert(!deal.includes(f), "no direct write of " + f));
-    assert(/st\.dealPropose\(o\.id, n\)/.test(deal), "it calls the canonical action");
+    /* CONTRACT CHANGE: the draft is now a SIGNED balance rather than a typed
+       magnitude, so the canonical action receives that signed value. */
+    assert(/st\.dealPropose\(o\.id, draft\)/.test(deal), "it calls the canonical action");
+    /* CONTRACT CHANGE: the draft seeds from the ACTIONABLE settlement, so a
+       partner counter re-anchors the slider instead of leaving a stale draft. */
+    assert(/const draft = signed == null \? \(baseline \|\| 0\) : signed;/.test(deal),
+      "with a draft that carries its own direction");
   });
 });
 
