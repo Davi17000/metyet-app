@@ -12,7 +12,9 @@ const boundCardContext = (opts = {}) => {
   const inv = { invId: "inv-x", cardId: "i1", ask: 620, cert: opts.cert === null ? null : "PSA 70013457",
     photos: opts.photos || { front: null, back: null } };
   const ctx = { collector: () => ({ short: "Sarah M." }), goalsForIdentity: () => ({ primary: [], secondary: [] }),
-    setDrawer: () => {}, setNav: () => {}, say: () => {} };
+    setDrawer: () => {}, setNav: () => {}, say: () => {},
+    /* The workspace resolves the bound copy from the partner's own inventory record. */
+    boundCopyOf: (o) => (o && o.invId === inv.invId ? inv : null) };
   let r;
   TR.act(() => {
     r = TR.create(React.createElement(CardContext, {

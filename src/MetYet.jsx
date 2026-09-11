@@ -765,6 +765,23 @@ table.tbl { width: 100%; border-collapse: separate; border-spacing: 0; }
 .ws-inv-status { font-family: 'Archivo'; font-size: 10px; letter-spacing: .07em; text-transform: uppercase; font-weight: 600; }
 .ws-inv-status.ok { color: var(--t1); }
 .ws-inv-status.un { color: var(--amber); }
+/* PRIVATE COPY ECONOMICS. Once an opportunity is bound to a physical copy, what the
+   partner paid for it stays beside that copy for the whole lifecycle. Its presence
+   is constant; its weight follows the decision the stage is asking for. */
+.ws-econ { margin-top: 5px; }
+.ws-econ-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 2px 0; }
+.ws-econ-k { color: var(--muted); font-size: 11.5px; }
+.ws-econ-v { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; white-space: nowrap; }
+.ws-econ-row.primary .ws-econ-v { font-weight: 600; color: var(--text); }
+.ws-econ-row.secondary .ws-econ-k, .ws-econ-row.secondary .ws-econ-v { color: var(--faint); font-size: 11px; }
+.ws-priv { display: block; color: var(--faint); font-size: 10px; letter-spacing: .02em; }
+.ws-econ.high .ws-econ-row.cost .ws-econ-v { font-size: 15px; font-weight: 600; color: var(--text); }
+.ws-econ.medium .ws-econ-row.cost .ws-econ-v { font-size: 13.5px; font-weight: 500; color: var(--text); }
+.ws-econ.low .ws-econ-row.cost .ws-econ-v { font-size: 12px; font-weight: 400; color: var(--muted); }
+.ws-econ.low .ws-econ-k { font-size: 11px; }
+.ws-priv-rec { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 8px 12px;
+  border-top: 1px dashed var(--line); font-size: 12.5px; }
+.kv.sec .k, .kv.sec .v { color: var(--faint); font-size: 11.5px; }
 
 /* RIGHT > LEFT > CENTER. Fractional rather than fixed so the shell stays fluid.
    THE SINGLE VERTICAL SCROLL OWNER. One deal, one scrollbar: the three columns are
@@ -2773,6 +2790,14 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
   const collector = useCallback((id) => collectors.find((c) => c.id === id)
     || counterparties.find((c) => c.id === id), [collectors, counterparties]);
   const inNetwork = useCallback((id) => collectors.some((c) => c.id === id), [collectors]);
+  /* The physical copy an opportunity is bound to: this partner's own inventory
+     record, found by the opportunity's invId — whether the copy is still listed,
+     committed, sold or archived. It is the ONLY source of the copy's private
+     economics: nothing is copied onto the opportunity, and no cost is ever
+     inferred from another copy of the same card. No invId, no copy. */
+  const boundCopyOf = useCallback((opp) => (opp && opp.invId
+    ? inventory.find((i) => i.invId === opp.invId && i.partnerId === partnerId) || null
+    : null), [inventory, partnerId]);
   /* This partner's Relationship with a collector: relationship start (`at`) and
      the partner's own private notes and review time (D-1). */
   const relationshipWith = useCallback((id) =>
@@ -3361,7 +3386,7 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
     endOpportunity, dealMutuallyAgreed,
     collectorChooseCash, collectorStopPursuing, marketAction, percentAction, collectorWithdrawCard, dealAgree, dealAdjust, proposeFulfillment, collectorConfirmPlan, collectorRequestPlanRevision, confirmHandoff,
     inviteCollector, logActivity,
-    relationshipWith, inNetwork, invitations, counterparties,
+    relationshipWith, inNetwork, invitations, counterparties, boundCopyOf,
   };
 
   const SECTIONS = {
@@ -4471,7 +4496,10 @@ function AmountInput({ value, onChange, onSubmit, label, disabled, signed = fals
 }
 
 function DealSummary({ ctx, opp }) {
-  const { card, collector } = ctx;
+  const { card, collector, boundCopyOf } = ctx;
+  /* The completed record keeps what the partner paid for the copy — private, and
+     outside the shared terms above, which are all the collector's receipt holds. */
+  const privateCopy = opp.stage === "completed" ? boundCopyOf(opp) : null;
   const cards = settledCards(opp);
   const dropped = [...withdrawnCards(opp), ...rejectedCards(opp)];
   const cb = cashBalance(opp);
@@ -4547,6 +4575,12 @@ function DealSummary({ ctx, opp }) {
       <div className="faint" style={{ fontSize: 11, padding: "7px 12px", borderTop: "1px solid var(--line-soft)" }}>
         Every figure above was agreed card by card during Value Trade. Percentages differ per card because each was negotiated separately.
       </div>
+      {privateCopy && (
+        <div className="ws-priv-rec" data-econ="acquisition-cost-record">
+          <span>Acquisition cost<span className="ws-priv">Private to you · not part of the shared terms</span></span>
+          <span className="mono" style={{ fontWeight: 600 }}>{privateCopy.cost == null ? "Not recorded" : moneyExact(privateCopy.cost)}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -5318,8 +5352,14 @@ function StageWorkspace({ ctx, opp, goal, matches }) {
       {/* ---- DEAL STAGES: existing controls, unchanged ---- */}
       {opp && (<>
         <div className="sect-t">Terms</div>
-        <div className="kv"><span className="k">Listed price</span><span className="v"><Money v={opp.listedPrice} /></span></div>
-        <div className="kv"><span className="k">Agreed price</span><span className="v"><Money v={opp.agreedPrice} /></span></div>
+        {/* Once a price is agreed it is THE shared price; the listing recedes to history. */}
+        {opp.agreedPrice != null ? (<>
+          <div className="kv" data-term="agreed-price"><span className="k">Agreed price</span><span className="v"><Money v={opp.agreedPrice} /></span></div>
+          <div className="kv sec" data-term="listed-price"><span className="k">Listed price</span><span className="v"><Money v={opp.listedPrice} /></span></div>
+        </>) : (<>
+          <div className="kv" data-term="listed-price"><span className="k">Listed price</span><span className="v"><Money v={opp.listedPrice} /></span></div>
+          <div className="kv" data-term="agreed-price"><span className="k">Agreed price</span><span className="v"><Money v={opp.agreedPrice} /></span></div>
+        </>)}
         {opp.trade && <div className="kv"><span className="k">Trade</span><span className="v" style={{ fontSize: 12 }}>{opp.trade.mode === "cash" ? "Cash only" : settledCards(opp).length + " card(s)"}</span></div>}
         {opp.agreedPrice != null && opp.trade && <div className="kv"><span className="k">Cash balance</span><span className="v" style={{ fontSize: 12 }}>{cashLabel(opp, col.short)}</span></div>}
           {opp.stage === "agree-price" && (<>
@@ -5462,9 +5502,49 @@ function StageWorkspace({ ctx, opp, goal, matches }) {
 
 /* Top region. Card identity is the anchor and never scrolls away. Copy-specific
    detail only appears once an offer has bound the conversation to a physical copy. */
+/* How much the copy's private cost should weigh at each stage. Present at every one;
+   prominent where it informs the decision in front of the partner (pricing, valuing
+   incoming cards, the final deal, the permanent record), quiet where the task is
+   something else (reviewing the proposed cards, coordinating the handoff). */
+const COST_PROMINENCE = { "agree-price": "high", "select-trade": "low", "value-trade": "high",
+  deal: "medium", fulfillment: "low", completed: "high" };
+
+/* The bound copy's economics, read live from the copy and the opportunity. Before a
+   price is agreed: cost -> listed price -> the offer on the table. After: cost ->
+   agreed price, with the listing kept as quiet history. No margin or profit figure:
+   with trade credit and a final cash figure in play, a single number would mislead. */
+function CopyEconomics({ opp, copy }) {
+  const prominence = COST_PROMINENCE[opp.stage] || "medium";
+  const agreed = opp.agreedPrice != null;
+  const listed = opp.listedPrice != null ? opp.listedPrice : copy.ask;
+  const last = agreed ? null : lastEntry(opp.priceThread || []);
+  const row = (key, label, value, cls = "") => (
+    <div className={"ws-econ-row " + cls} data-econ={key}>
+      <span className="ws-econ-k">{label}</span><span className="ws-econ-v">{value}</span>
+    </div>
+  );
+  return (
+    <div className={"ws-econ " + prominence} data-prominence={prominence}>
+      <div className="ws-econ-row cost" data-econ="acquisition-cost">
+        <span className="ws-econ-k">Acquisition cost<span className="ws-priv">Private to you</span></span>
+        <span className="ws-econ-v">{copy.cost == null ? "Not recorded" : moneyExact(copy.cost)}</span>
+      </div>
+      {agreed ? (<>
+        {row("agreed-price", "Agreed price", money(opp.agreedPrice), "primary")}
+        {row("listed-price", "Listed price", money(listed), "secondary")}
+      </>) : (<>
+        {row("listed-price", "Listed price", money(listed))}
+        {last && row("current-offer", last.by === "tp" ? "Your counter" : "Current offer", money(last.amount), "primary")}
+      </>)}
+    </div>
+  );
+}
+
 function CardContext({ ctx, c, matches, opp, thread }) {
-  const { collector, goalsForIdentity, setDrawer, setNav } = ctx;
-  const boundInv = opp && opp.invId ? matches.find((m) => m.invId === opp.invId) : null;
+  const { collector, goalsForIdentity, setDrawer, setNav, boundCopyOf } = ctx;
+  /* The copy this opportunity is bound to, from the partner's own inventory record —
+     so it stays in view after the copy is committed, sold or archived. */
+  const boundInv = boundCopyOf(opp);
   const serves = goalsForIdentity(c.id);
   const others = serves.primary.length + serves.secondary.length;
   const asks = [...new Set(matches.map((m) => m.ask))].sort((a, b) => a - b);
@@ -5514,16 +5594,19 @@ function CardContext({ ctx, c, matches, opp, thread }) {
         </div>
       )}
       <div className="ws-invbox">
-        {matches.length === 0 ? (
+        {boundInv ? (
+          <>
+            <div className="ws-inv-status ok">
+              {opp.stage === "completed" ? "Sold · this specific copy"
+                : isActive(opp) ? "Negotiating one specific copy" : "This specific copy"}
+            </div>
+            <CopyEconomics opp={opp} copy={boundInv} />
+            <div className="faint mono" style={{ fontSize: 11 }}>{boundInv.cert || "no cert"}</div>
+          </>
+        ) : matches.length === 0 ? (
           <>
             <div className="ws-inv-status un">No matching inventory currently available</div>
             <div className="faint" style={{ fontSize: 11.5, marginTop: 3 }}>You can still talk about sourcing it.</div>
-          </>
-        ) : boundInv ? (
-          <>
-            <div className="ws-inv-status ok">Negotiating one specific copy</div>
-            <div className="mono" style={{ fontSize: 15, marginTop: 2 }}>{money(boundInv.ask)}</div>
-            <div className="faint mono" style={{ fontSize: 11 }}>{boundInv.cert || "no cert"}</div>
           </>
         ) : (
           <>
