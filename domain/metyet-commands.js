@@ -1,19 +1,29 @@
 /* ============================================================================
    THE COMMAND LAYER — ONE AUTHORITATIVE MUTATION BOUNDARY (Phase 1)
 
-     execute(state, actor, command, payload) -> { ok, state, value } | { ok:false, refused }
+     execute(state, actor, command, payload, runtime)
+       -> { ok, state, value } | { ok:false, refused }
 
    Every product mutation in MetYet is one of the commands below. Each is a pure
-   function of (current state, actor, payload): it validates first and returns
-   either the complete next state or a refusal, so a refused command changes
-   nothing — refusal is atomic by construction.
+   function of (current state, actor, payload, runtime context): it validates
+   first and returns either the complete next state or a refusal, so a refused
+   command changes nothing — refusal is atomic by construction.
+
+   THE RUNTIME OWNS TIME AND IDENTIFIERS (Phase 3). Every authoritative
+   timestamp a command writes is `ctx.at` / `ctx.now()`, and every record id it
+   mints is `ctx.id(prefix)` — see metyet-runtime.js. The payload's `at` is
+   removed before dispatch, so no command can read a caller's clock. A server
+   injects an authoritative runtime and every caller proposal (a time, an id) is
+   ignored; the in-process prototype store injects the explicit prototype
+   adapter, which honours them.
 
    THE ACTOR IS THE ONLY SOURCE OF IDENTITY. The seat (Trusted Partner or
    Collector) is derived from the actor's id and its existence in state. Nothing
    a caller puts in the payload — `by`, `partnerId`, `collectorId`, a seat, an
    owner — is trusted for authority. In production the actor comes from an
    authenticated session; in this in-process prototype the persona shell mints
-   it. That is the only difference Phase 3 needs to make.
+   it. That, and which runtime is injected, are the only differences Phase 3
+   needs to make.
 
    Rules enforced here, per METYET-DOMAIN-CONTRACT.md:
      participant / ownership / Relationship · lifecycle stage · active vs
@@ -25,12 +35,12 @@
    ========================================================================== */
 
 const D = require("./metyet-domain.js");
+const RT = require("./metyet-runtime.js");
 const R = D.REFUSE;
 
 /* ------------------------------------------------------------------ helpers */
 const refuse = (code) => ({ ok: false, refused: code });
 const done = (state, value) => ({ ok: true, state, value });
-const rid = (prefix) => prefix + Math.random().toString(36).slice(2, 9);
 const list = (xs) => xs || [];
 
 /* Derive the seat from identity. An actor names exactly one of partnerId or
@@ -97,7 +107,7 @@ const COMMANDS = {
   },
 
   /* ------------------------------------------------------------ goals */
-  addGoal(state, a, { cardId, tier, at, note }) {
+  addGoal(state, a, { cardId, tier, note }, ctx) {
     if (a.seat !== "collector") return refuse(R.notOwner);
     const card = cardById(state, cardId);
     if (!card) return refuse(R.notFound);
@@ -106,13 +116,14 @@ const COMMANDS = {
       && (g.cardId === cardId || D.identityKey(cardById(state, g.cardId)) === key))) {
       return refuse(R.duplicateGoal);
     }
-    const id = rid("g");
+    const id = ctx.id("g");
     const goal = { id, collectorId: a.collectorId, cardId,
-      tier: tier === "primary" ? "primary" : "secondary", since: at, note: note || "" };
+      tier: tier === "primary" ? "primary" : "secondary", since: ctx.at, note: note || "" };
     return done({ ...state, goals: [...list(state.goals), goal] }, id);
   },
 
-  updateGoalTier(state, a, { goalId, tier, at }) {
+  updateGoalTier(state, a, { goalId, tier }, ctx) {
+    const at = ctx.at;
     const g = list(state.goals).find((x) => x.id === goalId);
     if (!g) return refuse(R.notFound);
     if (a.seat !== "collector" || g.collectorId !== a.collectorId) return refuse(R.notOwner);
@@ -129,14 +140,15 @@ const COMMANDS = {
   },
 
   /* "This is still accurate." Changes only confirmedAt. */
-  confirmGoal(state, a, { goalId, at }) {
+  confirmGoal(state, a, { goalId }, ctx) {
+    const at = ctx.at;
     const g = list(state.goals).find((x) => x.id === goalId);
     if (!g) return refuse(R.notFound);
     if (a.seat !== "collector" || g.collectorId !== a.collectorId) return refuse(R.notOwner);
     return done({ ...state, goals: list(state.goals).map((x) => (x.id === goalId ? { ...x, confirmedAt: at || x.confirmedAt } : x)) }, goalId);
   },
 
-  removeGoal(state, a, { goalId }) {
+  removeGoal(state, a, { goalId }, ctx) {
     const g = list(state.goals).find((x) => x.id === goalId);
     if (!g) return refuse(R.notFound);
     if (a.seat !== "collector" || g.collectorId !== a.collectorId) return refuse(R.notOwner);
@@ -145,22 +157,24 @@ const COMMANDS = {
   },
 
   /* ------------------------------------------------------------ inventory */
-  addInventoryCopy(state, a, { copy, at }) {
+  addInventoryCopy(state, a, { copy }, ctx) {
     if (a.seat !== "tp") return refuse(R.notOwner);
     if (!copy || !cardById(state, copy.cardId)) return refuse(R.notFound);
     for (const k of ["ask", "cost"]) {
       if (copy[k] != null && !(validMoney(Number(copy[k])) && Number(copy[k]) >= 0)) return refuse(R.invalidAmount);
     }
-    let invId = copy.invId || ("inv" + copy.cardId + "-" + Math.random().toString(36).slice(2, 8));
+    const { invId: askedId, addedAt: askedAt, updatedAt, ...facts } = copy;
+    const invId = ctx.id("inv" + copy.cardId + "-", askedId);
     if (list(state.inventory).some((i) => i.invId === invId)) return refuse(R.copyInUse);
-    const row = { photos: { front: null, back: null }, archived: false, ...copy, invId,
-      partnerId: a.partnerId, ...(copy.addedAt || !at ? {} : { addedAt: at }) };
+    const row = { photos: { front: null, back: null }, archived: false, ...facts, invId,
+      partnerId: a.partnerId, ...(ctx.time(askedAt) ? { addedAt: ctx.time(askedAt) } : {}) };
     return done({ ...state, inventory: [...list(state.inventory), row] }, invId);
   },
 
   /* Copy-level facts only. Card identity and ownership are never editable;
      certification is locked while the copy is committed to a live deal. */
-  updateInventoryCopy(state, a, { invId, patch, at }) {
+  updateInventoryCopy(state, a, { invId, patch }, ctx) {
+    const at = ctx.at;
     const copy = list(state.inventory).find((i) => i.invId === invId);
     if (!copy) return refuse(R.notFound);
     if (a.seat !== "tp" || copy.partnerId !== a.partnerId) return refuse(R.notOwner);
@@ -178,7 +192,7 @@ const COMMANDS = {
       ? { ...i, ...clean, ...(at ? { updatedAt: at } : {}) } : i)) }, invId);
   },
 
-  removeInventoryCopy(state, a, { invId }) {
+  removeInventoryCopy(state, a, { invId }, ctx) {
     const copy = list(state.inventory).find((i) => i.invId === invId);
     if (!copy) return refuse(R.notFound);
     if (a.seat !== "tp" || copy.partnerId !== a.partnerId) return refuse(R.notOwner);
@@ -187,7 +201,8 @@ const COMMANDS = {
       ? { ...i, archived: true } : i)) }, invId);
   },
 
-  addCopyPhotos(state, a, { invId, front, back, at }) {
+  addCopyPhotos(state, a, { invId, front, back }, ctx) {
+    const at = ctx.at;
     const copy = list(state.inventory).find((i) => i.invId === invId);
     if (!copy) return refuse(R.notFound);
     if (a.seat !== "tp" || copy.partnerId !== a.partnerId) return refuse(R.notOwner);
@@ -201,22 +216,26 @@ const COMMANDS = {
   },
 
   /* ------------------------------------------------------------ binder */
-  addBinderCopy(state, a, { copy }) {
+  addBinderCopy(state, a, { copy }, ctx) {
     if (a.seat !== "collector") return refuse(R.notOwner);
     if (!copy || !cardById(state, copy.cardId)) return refuse(R.notFound);
     if (!D.INVARIANTS.binderCopyPhotographed(copy.photos)) return refuse(R.photosRequired);
     if (copy.market != null && !(Number(copy.market) >= 0)) return refuse(R.invalidAmount);
-    const id = copy.id || rid("b");
+    const { id: askedId, addedAt: askedAt, updatedAt, ...facts } = copy;
+    const id = ctx.id("b", askedId);
     if (list(state.binder).some((b) => b.id === id)) return refuse(R.copyInUse);
-    const row = { ...copy, id, collectorId: a.collectorId };
+    const addedAt = ctx.time(askedAt);
+    const row = { ...facts, id, collectorId: a.collectorId, ...(addedAt ? { addedAt } : {}) };
     return done({ ...state, binder: [...list(state.binder), row] }, id);
   },
 
-  updateBinderCopy(state, a, { binderId, patch, at }) {
+  updateBinderCopy(state, a, { binderId, patch }, ctx) {
+    const at = ctx.at;
     const copy = list(state.binder).find((b) => b.id === binderId);
     if (!copy) return refuse(R.copyUnavailable);
     if (a.seat !== "collector" || copy.collectorId !== a.collectorId) return refuse(R.notOwner);
-    const p = patch || {};
+    /* addedAt and updatedAt are the command's, never the patch's. */
+    const { addedAt, updatedAt, ...p } = patch || {};
     if ("cardId" in p || "id" in p || "collectorId" in p) return refuse(R.identityImmutable);
     const status = D.binderCopyStatus(binderId, state.opportunities);
     if ("cert" in p && p.cert !== copy.cert && (status === "committed" || status === "traded")) {
@@ -232,7 +251,7 @@ const COMMANDS = {
   /* A copy any deal references is part of that deal's record: while reserved
      or committed it holds the deal together, and afterwards it is history.
      Only a copy no opportunity has ever held can be removed. */
-  removeBinderCopy(state, a, { binderId }) {
+  removeBinderCopy(state, a, { binderId }, ctx) {
     const copy = list(state.binder).find((b) => b.id === binderId);
     if (!copy) return refuse(R.notFound);
     if (a.seat !== "collector" || copy.collectorId !== a.collectorId) return refuse(R.notOwner);
@@ -254,20 +273,20 @@ const COMMANDS = {
      record. A note typed at invitation belongs to the inviting partner, so it is
      kept on that partner's own Invitation; relationship dates (since, last,
      binderReviewedAt) do not exist until a Relationship does. */
-  inviteCollector(state, a, { collector, email, note, at }) {
+  inviteCollector(state, a, { collector, email, note }, ctx) {
     if (a.seat !== "tp") return refuse(R.notOwner);
     if (!collector || !collector.name) return refuse(R.notFound);
-    const id = collector.id || rid("c");
+    const id = ctx.id("c", collector.id);
     if (list(state.collectors).some((c) => c.id === id)) return refuse(R.copyInUse);
     const { note: typedNote, since, last, binderReviewedAt, ...profile } = collector;
     return done({ ...state,
       collectors: [...list(state.collectors), { ...profile, id, pending: true }],
-      invitations: [...list(state.invitations), { id: rid("inv-"), partnerId: a.partnerId,
-        collectorId: id, email: email || null, at: at || null, acceptedAt: null,
+      invitations: [...list(state.invitations), { id: ctx.id("inv-"), partnerId: a.partnerId,
+        collectorId: id, email: email || null, at: ctx.at || null, acceptedAt: null,
         note: note || typedNote || null }] }, id);
   },
 
-  updatePartnerProfile(state, a, { patch }) {
+  updatePartnerProfile(state, a, { patch }, ctx) {
     if (a.seat !== "tp") return refuse(R.notOwner);
     const p = list(state.partners).find((x) => x.id === a.partnerId);
     if (!p) return refuse(R.notFound);
@@ -283,17 +302,18 @@ const COMMANDS = {
      is that partner's (D-1), so it lives on THEIR Relationship with the
      collector — never on the shared Collector record, where every other partner
      related to the same collector would read it. */
-  markBinderReviewed(state, a, { collectorId, at }) {
+  markBinderReviewed(state, a, { collectorId }, ctx) {
     if (a.seat !== "tp") return refuse(R.notOwner);
     if (!isRelated(state, a.partnerId, collectorId)) return refuse(R.noRelationship);
     const mine = (r) => r.partnerId === a.partnerId && r.collectorId === collectorId
       && (r.status == null || r.status === "accepted");
     return done({ ...state, relationships: list(state.relationships).map((r) => (mine(r)
-      ? { ...r, binderReviewedAt: at } : r)) }, collectorId);
+      ? { ...r, binderReviewedAt: ctx.at } : r)) }, collectorId);
   },
 
   /* TPInterest references an exact BinderCopy in the partner's network. */
-  setInterest(state, a, { binderId, on, at }) {
+  setInterest(state, a, { binderId, on }, ctx) {
+    const at = ctx.at;
     if (a.seat !== "tp") return refuse(R.notOwner);
     const copy = list(state.binder).find((b) => b.id === binderId);
     if (!copy) return refuse(R.notFound);
@@ -308,7 +328,7 @@ const COMMANDS = {
   /* ------------------------------------------------------------ conversation */
   /* One thread per collector + partner + card identity. Reach out and messages
      never create an Opportunity. */
-  sendMessage(state, a, { collectorId, partnerId, cardId, text, oppId, at, event }) {
+  sendMessage(state, a, { collectorId, partnerId, cardId, text, oppId, event }, ctx) {
     const pid = a.seat === "tp" ? a.partnerId : partnerId;
     const cid = a.seat === "collector" ? a.collectorId : collectorId;
     const card = cardById(state, cardId);
@@ -323,14 +343,15 @@ const COMMANDS = {
     const entry = clean ? { kind: "message", by: a.seat, text: clean }
       : { kind: "event", by: "system", text: "Reached out" };
     return done({ ...state, conversations: D.appendThreadEntry(state.conversations, {
-      collectorId: cid, partnerId: pid, card, cardId, oppId, entry, at }) }, D.threadKey(cid, pid, card));
+      collectorId: cid, partnerId: pid, card, cardId, oppId, entry, at: ctx.now(), id: ctx.id("e") }) },
+      D.threadKey(cid, pid, card));
   },
 
   /* A lifecycle note: an entry in the participants' own thread and/or the
      partner's activity feed. Records reading of what happened; changes no term.
      The activity row is stamped with the acting partner (D-4): it is that
      partner's feed, and a row without an owner is projected to nobody. */
-  recordNote(state, a, { collectorId, cardId, oppId, milestone, activity, at }) {
+  recordNote(state, a, { collectorId, cardId, oppId, milestone, activity }, ctx) {
     const pid = a.seat === "tp" ? a.partnerId : null;
     const cid = a.seat === "collector" ? a.collectorId : collectorId;
     if (a.seat !== "tp") return refuse(R.notOwner);
@@ -345,43 +366,45 @@ const COMMANDS = {
       if (card) {
         next = { ...next, conversations: D.appendThreadEntry(next.conversations, {
           collectorId: cid, partnerId: pid, card, cardId, oppId,
-          entry: { kind: "event", by: "system", text: milestone }, at }) };
+          entry: { kind: "event", by: "system", text: milestone }, at: ctx.now(), id: ctx.id("e") }) };
       }
     }
     if (activity && activity.text) {
-      next = { ...next, activity: [{ id: rid("a"), partnerId: pid, collectorId: cid, type: activity.type || "stage",
-        text: activity.text, date: activity.date || at || null }, ...list(next.activity)] };
+      next = { ...next, activity: [{ id: ctx.id("a"), partnerId: pid, collectorId: cid, type: activity.type || "stage",
+        text: activity.text, date: ctx.time(activity.date) || null }, ...list(next.activity)] };
     }
     return done(next, true);
   },
 
   /* Reading position only. Allowed on any opportunity the actor is part of,
      terminal ones included — reading is not acting, and no term changes. */
-  markDealViewed(state, a, { oppId, surface, at }) {
+  markDealViewed(state, a, { oppId, surface }, ctx) {
     const o = oppById(state, oppId);
     if (!o) return refuse(R.notFound);
     if (!isParticipant(a, o)) return refuse(R.notParticipant);
     const where = surface === "messages" ? "messages" : "timeline";
     return done(withOpp(state, oppId, (x) => {
       const prev = x.viewedAt || {};
-      return { ...x, viewedAt: { ...prev, [a.seat]: { ...(prev[a.seat] || {}), [where]: at } } };
+      return { ...x, viewedAt: { ...prev, [a.seat]: { ...(prev[a.seat] || {}), [where]: ctx.at } } };
     }), oppId);
   },
 
   /* ------------------------------------------------------------ review card */
-  reviewCopy(state, a, { invId, at }) {
+  reviewCopy(state, a, { invId }, ctx) {
+    const at = ctx.at;
     if (a.seat !== "collector") return refuse(R.notOwner);
     const copy = list(state.inventory).find((i) => i.invId === invId);
     if (!copy || copy.archived || D.soldInventoryIds(state.opportunities).has(invId)) return refuse(R.copyUnavailable);
     if (!isRelated(state, copy.partnerId, a.collectorId)) return refuse(R.noRelationship);
     const open = list(state.copyReviews).find((r) => r.collectorId === a.collectorId && r.invId === invId && !r.endedAt);
     if (open) return done(state, open.id);
-    const id = rid("rv");
+    const id = ctx.id("rv");
     return done({ ...state, copyReviews: [...list(state.copyReviews),
       { id, collectorId: a.collectorId, partnerId: copy.partnerId, invId, at, endedAt: null }] }, id);
   },
 
-  endReview(state, a, { reviewId, at }) {
+  endReview(state, a, { reviewId }, ctx) {
+    const at = ctx.at;
     const r = list(state.copyReviews).find((x) => x.id === reviewId);
     if (!r) return refuse(R.notFound);
     if (a.seat !== "collector" || r.collectorId !== a.collectorId) return refuse(R.notOwner);
@@ -389,7 +412,8 @@ const COMMANDS = {
       (x.id === reviewId && !x.endedAt ? { ...x, endedAt: at || null } : x)) }, reviewId);
   },
 
-  requestPhotos(state, a, { invId, at }) {
+  requestPhotos(state, a, { invId }, ctx) {
+    const at = ctx.at;
     if (a.seat !== "collector") return refuse(R.notOwner);
     const copy = list(state.inventory).find((i) => i.invId === invId);
     if (!copy || copy.archived) return refuse(R.copyUnavailable);
@@ -398,7 +422,7 @@ const COMMANDS = {
     if (list(state.photoRequests).some((r) => r.collectorId === a.collectorId && r.invId === invId && !r.fulfilledAt)) {
       return done(state, null);
     }
-    const id = rid("pr");
+    const id = ctx.id("pr");
     const reviewing = list(state.copyReviews).some((r) => r.collectorId === a.collectorId && r.invId === invId && !r.endedAt);
     return done({ ...state,
       photoRequests: [...list(state.photoRequests),
@@ -411,7 +435,8 @@ const COMMANDS = {
   /* Only the collector opens a negotiation, only from a Primary Goal, only with
      a related partner, and only on the exact copy the goal names. The partner,
      card and listed price come from the canonical records — never the caller. */
-  startOpportunity(state, a, { goalId, invId, amount, at }) {
+  startOpportunity(state, a, { goalId, invId, amount }, ctx) {
+    const at = ctx.at;
     if (a.seat !== "collector") return refuse(R.notOwner);
     const g = list(state.goals).find((x) => x.id === goalId);
     if (!g) return refuse(R.noGoal);
@@ -427,7 +452,7 @@ const COMMANDS = {
     if (!isRelated(state, copy.partnerId, a.collectorId)) return refuse(R.noRelationship);
     if (!(validMoney(amount) && amount > 0)) return refuse(R.invalidAmount);
     const partner = list(state.partners).find((p) => p.id === copy.partnerId) || {};
-    const id = rid("o");
+    const id = ctx.id("o");
     const opp = { id, goalId, collectorId: a.collectorId, partnerId: copy.partnerId,
       cardId: g.cardId, invId, stage: "agree-price", listedPrice: copy.ask,
       agreedPrice: null, priceThread: [{ by: "collector", type: "offer", amount, at }],
@@ -440,7 +465,8 @@ const COMMANDS = {
 
   /* A counter. The actor must own the turn, which also means nobody can
      counter their own standing figure. */
-  proposePrice(state, a, { oppId, amount, at }) {
+  proposePrice(state, a, { oppId, amount }, ctx) {
+    const at = ctx.at;
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
     if (o.stage !== "agree-price") return refuse(R.wrongStage);
@@ -454,7 +480,8 @@ const COMMANDS = {
   /* Accepting the OTHER side's standing figure — never your own. Settling the
      price commits the exact InventoryCopy, so a copy already committed to
      another live deal cannot be settled again. */
-  acceptPrice(state, a, { oppId, at }) {
+  acceptPrice(state, a, { oppId }, ctx) {
+    const at = ctx.at;
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
     if (o.stage !== "agree-price") return refuse(R.wrongStage);
@@ -478,7 +505,8 @@ const COMMANDS = {
   /* Submitting the package. Draft selection lived in the collector's own UI
      until now and reserved nothing; submission reserves each exact copy. An
      empty package is the cash-only choice. */
-  proposeTradeSelection(state, a, { oppId, binderIds, at }) {
+  proposeTradeSelection(state, a, { oppId, binderIds }, ctx) {
+    const at = ctx.at;
     if (a.seat !== "collector") return refuse(R.notOwner);
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
@@ -496,7 +524,7 @@ const COMMANDS = {
       if (status === "reserved") return refuse(R.copyReserved);
       if (status === "committed") return refuse(R.copyCommitted);
       if (status === "traded") return refuse(R.copyUnavailable);
-      rows.push(D.emptyTradeCard(b.cardId, b.photos, b.cert, bid));
+      rows.push({ ...D.emptyTradeCard(b.cardId, b.photos, b.cert, bid), id: ctx.id("tc" + b.cardId + "-") });
     }
     if (!rows.length) {
       return done(withOpp(state, oppId, (x) => stamp({ ...x, stage: "deal",
@@ -509,7 +537,8 @@ const COMMANDS = {
 
   /* The partner's inclusion decision. Omitting tradeCardId decides every
      still-undecided row. Acceptance commits the exact copy. */
-  reviewTradeCard(state, a, { oppId, tradeCardId, decision, at }) {
+  reviewTradeCard(state, a, { oppId, tradeCardId, decision }, ctx) {
+    const at = ctx.at;
     if (a.seat !== "tp") return refuse(R.notOwner);
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
@@ -529,7 +558,8 @@ const COMMANDS = {
   /* Withdrawal is valid only for a RESERVED copy — submitted, not yet accepted.
      It is a retraction, so it does not wait for the collector's turn. A
      committed copy cannot be withdrawn unilaterally. */
-  withdrawTradeCard(state, a, { oppId, tradeCardId, at }) {
+  withdrawTradeCard(state, a, { oppId, tradeCardId }, ctx) {
+    const at = ctx.at;
     if (a.seat !== "collector") return refuse(R.notOwner);
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
@@ -543,16 +573,17 @@ const COMMANDS = {
   },
 
   /* ------------------------------------------------------------ value trade */
-  proposeMarketValue(state, a, p) { return valueStep(state, a, p, "market", "propose"); },
-  acceptMarketValue(state, a, p) { return valueStep(state, a, p, "market", "accept"); },
-  proposeTradePercent(state, a, p) { return valueStep(state, a, p, "percent", "propose"); },
-  acceptTradePercent(state, a, p) { return valueStep(state, a, p, "percent", "accept"); },
+  proposeMarketValue(state, a, p, ctx) { return valueStep(state, a, p, ctx, "market", "propose"); },
+  acceptMarketValue(state, a, p, ctx) { return valueStep(state, a, p, ctx, "market", "accept"); },
+  proposeTradePercent(state, a, p, ctx) { return valueStep(state, a, p, ctx, "percent", "propose"); },
+  acceptTradePercent(state, a, p, ctx) { return valueStep(state, a, p, ctx, "percent", "accept"); },
 
   /* ------------------------------------------------------------ deal */
   /* A new final cash figure. It supersedes the current economic state and
      clears every final agreement already given; confirmation restarts with the
      partner. Only the seat whose turn it is may change the figure. */
-  proposeFinalBalance(state, a, { oppId, amount, at }) {
+  proposeFinalBalance(state, a, { oppId, amount }, ctx) {
+    const at = ctx.at;
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
     if (o.stage !== "deal") return refuse(R.wrongStage);
@@ -570,7 +601,8 @@ const COMMANDS = {
   /* Final agreement to the CURRENT economic state. The partner confirms first,
      the collector second; the collector's confirmation advances to Fulfillment
      and records the agreed final figure. */
-  acceptDeal(state, a, { oppId, at }) {
+  acceptDeal(state, a, { oppId }, ctx) {
+    const at = ctx.at;
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
     if (o.stage !== "deal") return refuse(R.wrongStage);
@@ -590,20 +622,24 @@ const COMMANDS = {
   },
 
   /* ------------------------------------------------------------ fulfillment */
-  proposeFulfillment(state, a, { oppId, plan, at }) {
+  proposeFulfillment(state, a, { oppId, plan }, ctx) {
+    const at = ctx.at;
     if (a.seat !== "tp") return refuse(R.notOwner);
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
     if (o.stage !== "fulfillment") return refuse(R.wrongStage);
     if (!turnFor(a, o, "plan")) return refuse(R.notYourTurn);
     if (!plan || !plan.method) return refuse(R.planIncomplete);
-    const { proposedAt, collectorConfirmedPlan, revisionRequested, tpHandoff, collectorReceipt, ...terms } = plan;
+    /* The plan's meeting date and time are what the partner proposed; when it was
+       proposed and confirmed are the commands' own timestamps. */
+    const { proposedAt, confirmedAt, collectorConfirmedPlan, revisionRequested, tpHandoff, collectorReceipt, ...terms } = plan;
     return done(withOpp(state, oppId, (x) => stamp({ ...x, fulfillment: { ...D.emptyFulfillment(),
       ...(x.fulfillment || {}), ...terms, proposedAt: at || "proposed", revisionRequested: null,
       collectorConfirmedPlan: false } }, at)), oppId);
   },
 
-  confirmFulfillmentPlan(state, a, { oppId, at }) {
+  confirmFulfillmentPlan(state, a, { oppId }, ctx) {
+    const at = ctx.at;
     if (a.seat !== "collector") return refuse(R.notOwner);
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
@@ -613,7 +649,8 @@ const COMMANDS = {
       collectorConfirmedPlan: true, confirmedAt: at } }, at)), oppId);
   },
 
-  requestFulfillmentRevision(state, a, { oppId, note, at }) {
+  requestFulfillmentRevision(state, a, { oppId, note }, ctx) {
+    const at = ctx.at;
     if (a.seat !== "collector") return refuse(R.notOwner);
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
@@ -625,7 +662,8 @@ const COMMANDS = {
 
   /* The partner confirms the physical handoff first; the collector's receipt
      completes the Opportunity. */
-  confirmHandoff(state, a, { oppId, at }) {
+  confirmHandoff(state, a, { oppId }, ctx) {
+    const at = ctx.at;
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
     if (o.stage !== "fulfillment") return refuse(R.wrongStage);
@@ -640,7 +678,8 @@ const COMMANDS = {
   /* ------------------------------------------------------------ cancellation */
   /* Either participant, before Completed. After both final agreements a reason
      is required. Nothing is deleted and no term is rewritten. */
-  cancelOpportunity(state, a, { oppId, reason, at }) {
+  cancelOpportunity(state, a, { oppId, reason }, ctx) {
+    const at = ctx.at;
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
     const why = typeof reason === "string" ? reason.trim() : "";
@@ -654,7 +693,8 @@ const COMMANDS = {
 
 /* Value Trade: one card, one phase, one move. The actor must own the
    opportunity's turn AND the card's turn. */
-function valueStep(state, a, { oppId, tradeCardId, amount, percent, at }, phase, action) {
+function valueStep(state, a, { oppId, tradeCardId, amount, percent }, ctx, phase, action) {
+  const at = ctx.at;
   const { o, refused } = oppGate(state, a, oppId);
   if (refused) return refuse(refused);
   if (o.stage !== "value-trade") return refuse(R.wrongStage);
@@ -684,7 +724,8 @@ function valueStep(state, a, { oppId, tradeCardId, amount, percent, at }, phase,
 /* CASH-ONLY MEANS NO CARDS ARE GOING IN. Refused while any card is still in the
    package (proposed/reserved or accepted/committed); rejected and withdrawn rows
    are already out. */
-COMMANDS.chooseCashOnly = (state, a, { oppId, at }) => {
+COMMANDS.chooseCashOnly = (state, a, { oppId }, ctx) => {
+  const at = ctx.at;
   if (a.seat !== "collector") return refuse(R.notOwner);
   const { o, refused } = oppGate(state, a, oppId);
   if (refused) return refuse(refused);
@@ -695,15 +736,21 @@ COMMANDS.chooseCashOnly = (state, a, { oppId, at }) => {
     trade: { ...(x.trade || {}), mode: "cash", submitted: true, cards: (x.trade && x.trade.cards) || [], cashOnlyAt: at },
     deal: { ...D.emptyDeal(), ...(x.deal || {}), adjThread: (x.deal && x.deal.adjThread) || [] } }, at)), oppId);
 };
-COMMANDS.reachOut = (state, a, p) => COMMANDS.sendMessage(state, a, { ...p, event: !p.text });
+COMMANDS.reachOut = (state, a, p, ctx) => COMMANDS.sendMessage(state, a, { ...p, event: !p.text }, ctx);
 
 /* ------------------------------------------------------------------ execute */
-function execute(state, actor, command, payload) {
+/* The runtime is required. A missing one is a wiring error, not a refusal: it
+   throws before anything is read, so no command can run on an implicit clock.
+   The caller's `at` is consumed here — by the prototype adapter's context, and
+   by nobody under an authoritative runtime — and never reaches the command. */
+function execute(state, actor, command, payload, runtime) {
+  const ctx = RT.callContext(runtime, payload);
   const a = resolveActor(state, actor);
   if (!a) return refuse(R.unknownActor);
   const fn = Object.prototype.hasOwnProperty.call(COMMANDS, command) ? COMMANDS[command] : null;
   if (!fn) return refuse(R.unknownCommand);
-  const result = fn(state, a, payload || {});
+  const { at, ...args } = payload || {};
+  const result = fn(state, a, args, ctx);
   return result && result.ok ? result : refuse((result && result.refused) || R.notFound);
 }
 
