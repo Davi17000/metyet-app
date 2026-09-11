@@ -1975,7 +1975,7 @@ function networkProfile({ goals, cardById }) {
 }
 
 /* ==================== NETWORK DEMAND: EXACT CARDS ====================
-   Cultivate's ranking of concrete identities. It reads GOALS ONLY — inventory is
+   Curate's ranking of concrete identities. It reads GOALS ONLY — inventory is
    never an input, so what the TP happens to hold cannot change the ordering or the
    counts. Demand is measured in DISTINCT COLLECTORS: one collector with three goals
    at the same identity counts once.
@@ -3414,7 +3414,7 @@ function Sidebar({ ctx }) {
 const pctText = (r) => Math.round(r * 100) + "%";
 
 
-/* Cultivate: a ranked shopping list. The card list is the page; the reasoning that
+/* Curate (tab id `cultivate`, component Cultivate): a ranked shopping list. The card list is the page; the reasoning that
    produced the order sits underneath, behind a disclosure. Ordering still comes from
    networkIntelligence() — no score, no new weights. */
 /* Compact buying reference. Every count is visible without hover, bars are labelled
@@ -6134,13 +6134,13 @@ function Coverage({ ctx }) {
   );
 }
 
-/* Current -> Coverage -> Cultivate: what I have, how well it serves my network,
+/* Current -> Coverage -> Curate: what I have, how well it serves my network,
    what I should get next. The network is now the intelligence layer underneath
    Inventory rather than a destination of its own. */
 const INVENTORY_TABS = [
   { id: "mine", label: "Current", sub: "Everything you currently have in inventory." },
   { id: "coverage", label: "Coverage", sub: "See how your inventory connects to collector demand." },
-  { id: "cultivate", label: "Cultivate", sub: "Cards most relevant to your network that you don’t have." },
+  { id: "cultivate", label: "Curate", sub: "Cards most relevant to your network that you don’t have." },
 ];
 
 function InventoryView({ ctx }) {
@@ -6897,7 +6897,7 @@ function CollectorList({ ctx }) {
 
 /* Goal counts, not collector counts: within one profile the collector is always
    this collector, so the meaningful measure is how many of their goals share an
-   attribute. Same aggregation as Cultivate, read on a different axis. */
+   attribute. Same aggregation as Curate, read on a different axis. */
 function GoalCard({ ctx, g, tier }) {
   const { card, goalMatches, setDrawer, setModal } = ctx;
   const c = card(g.cardId);

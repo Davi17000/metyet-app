@@ -96,7 +96,7 @@ describe("6. Inventory sub-navigation is untouched", () => {
   test("the tabs keep their order", () => {
     const r = render();
     go(r, "Inventory");
-    eq(byClass(r, "tab").map(text).join(" > "), "Current > Coverage > Cultivate",
+    eq(byClass(r, "tab").map(text).join(" > "), "Current > Coverage > Curate",
       "sub-navigation is out of scope and unchanged");
   });
 
@@ -105,8 +105,8 @@ describe("6. Inventory sub-navigation is untouched", () => {
     go(r, "Inventory");
     click(btns(r, "Coverage")[0]);
     assert(allText(r).includes("Explicit demand"), "Coverage");
-    click(btns(r, "Cultivate")[0]);
-    assert(allText(r).includes("Network demand"), "Cultivate");
+    click(btns(r, "Curate")[0]);
+    assert(allText(r).includes("Network demand"), "Curate");
     click(btns(r, "Current")[0]);
     assert(byClass(r, "inv-row").length > 0, "Current");
   });
@@ -167,7 +167,7 @@ describe("10–11. State and alternate surfaces", () => {
     /* Sections have always remounted on switch, so Inventory returns to Current.
        That is pre-existing behaviour and the reorder must not alter it either way. */
     assert(byClass(r, "inv-row").length > 0, "Inventory reopens on Current, as it always did");
-    eq(byClass(r, "tab").map(text).join(","), "Current,Coverage,Cultivate", "with its tabs intact");
+    eq(byClass(r, "tab").map(text).join(","), "Current,Coverage,Curate", "with its tabs intact");
   });
 
   test("there is one navigation implementation, so no surface can drift", () => {
