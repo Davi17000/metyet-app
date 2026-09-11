@@ -141,17 +141,17 @@ describe("Trade Binder — shows everything the collector shared", () => {
     eq(imgs.length, 2, "one card image per binder card");
   });
 
+  /* PHASE 2 BATCH 2: a pending invitee has no profile before acceptance, so the
+     empty state is shown for a RELATED collector who has shared nothing. */
   test("a collector with no shared cards gets the quiet empty state", () => {
-    const r = render();
+    const React = require("react"); const TR = require("react-test-renderer");
+    const M = require("../dist/MetYet.cjs");
+    const seed = M.buildCanonicalSeed();
+    const store = require("../domain/metyet-store.js").createStore({ ...seed,
+      collectors: [...seed.collectors, { id: "c-wendy", name: "Wendy Okafor", short: "Wendy O.", city: "Fargo, ND", prefs: [] }],
+      relationships: [...seed.relationships, { partnerId: "p-self", collectorId: "c-wendy", status: "accepted", at: "2026-08-01" }] });
+    let r; TR.act(() => { r = TR.create(React.createElement(M.default, { store })); });
     click(btn(r, "Collector Network"));
-    click(btn(r, "Invite collector"));
-    const modal = byClass(r, "modal")[0] || r.root;
-    const inputs = modal.findAllByType("input");
-    const set = (idx, v) => require("react-test-renderer").act(() => {
-      inputs[idx].props.onChange({ target: { value: v } });
-    });
-    set(0, "Wendy Okafor"); set(1, "wendy@example.com"); set(2, "Fargo, ND");
-    click(btn(r, "Send invitation"));
     click(btnExact(r, "Wendy Okafor"));
     eq(binderSection(r).length, 0, "no binder cards");
     eq(binderCounts(r).total, 0, "count is zero");

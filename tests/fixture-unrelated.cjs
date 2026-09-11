@@ -138,7 +138,7 @@ function unrelatedWorld() {
       { partnerId: "pB", binderId: "bAB1", at: AT }, { partnerId: "pB", binderId: "bB", at: AT },
     ],
     conversations: [], opportunities: [],
-    /* Activity rows: two owned, one legacy row with no owner (as recordNote writes today). */
+    /* Activity rows: two owned, one legacy row with no owner (as recordNote wrote before Phase 2 Batch 2). */
     activity: [
       { id: "a1", partnerId: "pA", collectorId: "cAB", type: "note", text: MARK.actA, date: AT },
       { id: "a2", partnerId: "pB", collectorId: "cAB", type: "note", text: MARK.actB, date: AT },

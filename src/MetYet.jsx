@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { createStore } from "../domain/metyet-store.js";
+import { projectForActor } from "../domain/metyet-projection.js";
 import * as SharedID from "../domain/metyet-domain.js";
 import { DEV as SHARED_DEV } from "../shared/dev-flag.js";
 
@@ -2142,15 +2143,26 @@ export function demoDealStage(state, collectorId) {
     ? PRE_DEAL_READY : PRE_DEAL;
 }
 
+/* Partner-authored fields the seed's collector rows carry. They are Northline's:
+   the seed's collector list is Northline's own network (every row is related to
+   SELF_PARTNER from its `since`), and `binderReviewedAt` is by definition "the
+   last time the Trusted Partner opened that collector's profile" in this
+   workspace. D-1 puts them on the Relationship they describe. */
+const PARTNER_AUTHORED_COLLECTOR_FIELDS = ["note", "last", "binderReviewedAt"];
+
 function seedRelationships(world) {
   const pairs = new Map();
-  const add = (partnerId, collectorId, at) => {
+  const add = (partnerId, collectorId, at, authored) => {
     const k = partnerId + "::" + collectorId;
     if (partnerId && collectorId && !pairs.has(k)) {
-      pairs.set(k, { partnerId, collectorId, status: "accepted", at: at || null });
+      pairs.set(k, { partnerId, collectorId, status: "accepted", at: at || null, ...(authored || {}) });
     }
   };
-  world.collectors.forEach((c) => add(SELF_PARTNER, c.id, c.since));
+  /* Only Northline's rows receive the migrated metadata. No other pair's notes
+     or review dates are established by the seed, so none are invented. */
+  const authoredBy = (c) => Object.fromEntries(PARTNER_AUTHORED_COLLECTOR_FIELDS
+    .filter((f) => c[f] != null).map((f) => [f, c[f]]));
+  world.collectors.forEach((c) => add(SELF_PARTNER, c.id, c.since, authoredBy(c)));
   world.partners.forEach((p) => add(p.id, "c12", p.since));
   world.interests.forEach((i) => {
     const b = world.binder.find((x) => x.id === i.binderId);
@@ -2254,7 +2266,10 @@ export function buildCanonicalSeed(opts) {
     OTHER_INTEREST_SEED.forEach((x) => rows.push(x));
     return rows;
   })(),
-    activity: ACTIVITY_SEED.map((a, i) => ({ id: "a" + i, collectorId: a[0], type: a[1], text: a[2], date: a[3] })),
+    /* Northline's own activity feed: every row is written in the workspace's
+       voice ("You reached out…", "Called about…") about a collector in
+       Northline's network, so the owner is established (D-4). */
+    activity: ACTIVITY_SEED.map((a, i) => ({ id: "a" + i, partnerId: SELF_PARTNER, collectorId: a[0], type: a[1], text: a[2], date: a[3] })),
     /* One thread per Trusted Partner x Collector x card identity. Keyed on identity
        rather than goalId or oppId so it survives Secondary -> Primary and is
        inherited by the Opportunity when the collector makes an offer. */
@@ -2279,6 +2294,13 @@ export function buildCanonicalSeed(opts) {
      collector, Casey is related to every seeded partner she can see, and any
      pair that already shares an interest, a deal or a thread. */
   world.relationships = seedRelationships(world);
+  /* …and the shared Collector record no longer carries them. `since` is the
+     Northline relationship's start, now `relationship.at`. */
+  world.collectors = world.collectors.map((c) => {
+    const { since, ...rest } = c;
+    PARTNER_AUTHORED_COLLECTOR_FIELDS.forEach((f) => { delete rest[f]; });
+    return rest;
+  });
 
   if (!preDeal) return world;
 
@@ -2614,13 +2636,15 @@ function elapsed(dateStr) {
    two timestamps it comes from. Before the first visit, everything shared counts. */
 /* One definition of "new since you last looked", shared by the per-card badge and the
    Collector Network count so the two can never disagree. */
-const isUnseenAddition = (cc, collector) => {
-  const seenAt = collector?.binderReviewedAt || collector?.since || null;
+/* Both timestamps are this partner's: the review time and the relationship start
+   live on the partner's own Relationship with the collector (D-1). */
+const isUnseenAddition = (cc, relationship) => {
+  const seenAt = relationship?.binderReviewedAt || relationship?.at || null;
   if (!seenAt) return true;
   return !!(cc.addedAt && Date.parse(cc.addedAt) > Date.parse(seenAt));
 };
-const unseenAdditions = (binderCards, collector) =>
-  binderCards.filter((cc) => isUnseenAddition(cc, collector)).length;
+const unseenAdditions = (binderCards, relationship) =>
+  binderCards.filter((cc) => isUnseenAddition(cc, relationship)).length;
 
 const cardTitle = (c) => `${c.year} ${c.name} — ${c.set}${c.num && c.num !== "—" ? " #" + c.num : ""}${c.grade ? " · " + c.grade : ""}`;
 const cardShort = (c) => `${c.name} — ${c.set}`;
@@ -2675,10 +2699,20 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
   /* Open on the network for the same reason: it establishes the inputs before their
      consequences. The TP can still go straight to Opportunities. */
   const [nav, setNav] = useState({ section: "collectors" });
-  /* READ-ONLY canonical state. This workspace never writes a collection: every
-     change below is a canonical command through store.execute, which derives
-     the seat from the actor and enforces the domain contract. */
-  const canon = useSyncExternalStore(store.sub, store.get, store.get);
+  /* The seat this workspace acts as, from identity (Phase 1 convention). */
+  const tpActor = useMemo(() => ({ partnerId }), [partnerId]);
+  /* THE PROJECTION HANDOFF (Phase 2). Canonical state exists once, in the store.
+     This workspace subscribes to it and immediately projects it for THIS
+     partner; nothing below the next line ever sees the canonical world — only
+     what projectForActor allows this partner to receive. Every change is still a
+     canonical command through store.execute, and the projection is recomputed
+     from the new canonical state on the next render: one mutation, one canonical
+     change, every perspective re-derived, no synchronisation. */
+  const world = useSyncExternalStore(store.sub, store.get, store.get);
+  const canon = useMemo(() => projectForActor(world, tpActor), [world, tpActor]);
+  /* The same projection, read at call time — for handlers that must see the
+     state a command has just produced, before React re-renders. */
+  const readView = () => projectForActor(store.get(), tpActor);
   const cardDb = canon.catalog;
   const inventory = canon.inventory;
   const photoRequests = canon.photoRequests;
@@ -2689,12 +2723,14 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
   const interests = canon.interests;
   const activity = canon.activity || [];
   const threads = canon.conversations;
+  const relationships = canon.relationships;       // this partner's own, with its private notes
+  const invitations = canon.invitations;           // this partner's own
+  const counterparties = canon.counterparties;     // bare identity, never network
   const DAY = TODAY.toISOString().slice(0, 10);
   /* The seat this workspace acts as. asCollector is used ONLY by the prototype's
      collector-simulation panels (SimBlock), which act as the collector on that
      record and meet exactly the same command rules. Outside DEV it yields no
      actor at all, so those commands are refused (see collectorSimActor). */
-  const tpActor = useMemo(() => ({ partnerId }), [partnerId]);
   const asCollector = collectorSimActor;
   const run = (actor, command, payload) => store.execute(actor, command, { at: DAY, ...payload });
   const catalog = useMemo(() => {
@@ -2731,7 +2767,16 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
 
   /* ---- derived model ---- */
   const card = useCallback((id) => cardDb.find((c) => c.id === id), [cardDb]);
-  const collector = useCallback((id) => collectors.find((c) => c.id === id), [collectors]);
+  /* A network collector, or — for a record this partner takes part in with
+     someone outside the network — that person's bare identity. Network lists and
+     calculations read `collectors` directly, never this. */
+  const collector = useCallback((id) => collectors.find((c) => c.id === id)
+    || counterparties.find((c) => c.id === id), [collectors, counterparties]);
+  const inNetwork = useCallback((id) => collectors.some((c) => c.id === id), [collectors]);
+  /* This partner's Relationship with a collector: relationship start (`at`) and
+     the partner's own private notes and review time (D-1). */
+  const relationshipWith = useCallback((id) =>
+    relationships.find((r) => r.collectorId === id) || null, [relationships]);
 
   /* THE TP SEES ONLY ITS OWN SHELF. Inventory is partner-owned, so every TP
      surface scopes to the active partner. Other partners' stock lives in the
@@ -2854,11 +2899,11 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
       const done = s.done;                                  // stage === "completed" only
       const mine = goals.filter((g) => g.collectorId === id);
       const covered = mine.filter((g) => goalMatches(g).length > 0);
-      const c = collector(id);
+      const rel = relationshipWith(id);
       const binder = collectorCards.filter((cc) => cc.collectorId === id);
       return {
-        memberSince: c ? c.since : null,                    // existing join date, not re-stored
-        memberDays: c ? daysSince(c.since) : null,          // derived from the date
+        memberSince: rel ? rel.at : null,                   // the Relationship's start, not re-stored
+        memberDays: rel && rel.at ? daysSince(rel.at) : null, // derived from the date
         completedDeals: done.length,
         dealValue: done.reduce((a, o) => a + (o.agreedPrice || 0), 0),
         coverage: mine.length ? covered.length / mine.length : null,
@@ -2867,13 +2912,13 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
         /* Every card shared, whatever the Trusted Partner thinks of it — interest
            is a TP opinion and has no bearing on how big the binder is. */
         binderTotal: binder.length,
-        binderNew: unseenAdditions(binder, c),
+        binderNew: unseenAdditions(binder, rel),
         /* What this partner said they'd consider. Read off the interest relationship
            every render, never stored. */
         binderOpen: binder.filter((cc) => interestedIn(cc.id)).length,
       };
     },
-    [collectorStats, goals, goalMatches, collector, collectorCards, interestedIn]
+    [collectorStats, goals, goalMatches, relationshipWith, collectorCards, interestedIn]
   );
 
 
@@ -2916,10 +2961,10 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
   const NOW = DAY;
   /* One command, then — only if it was accepted — the notes describing it. */
   const act = (actor, command, payload, note, type = "stage") => {
-    const before = payload.oppId ? store.get().opportunities.find((o) => o.id === payload.oppId) : null;
+    const before = payload.oppId ? readView().opportunities.find((o) => o.id === payload.oppId) : null;
     const r = run(actor, command, payload);
     if (r.ok && note && before) {
-      const after = store.get().opportunities.find((o) => o.id === payload.oppId);
+      const after = readView().opportunities.find((o) => o.id === payload.oppId);
       const text = note(after, before);
       if (text) {
         logActivity(before.collectorId, type, text);
@@ -2929,7 +2974,7 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
     return r;
   };
   const seatActor = (o, by) => (by === "tp" ? tpActor : asCollector(o.collectorId));
-  const oppOf = (oppId) => store.get().opportunities.find((o) => o.id === oppId) || null;
+  const oppOf = (oppId) => readView().opportunities.find((o) => o.id === oppId) || null;
 
   /* --- INTENT (Collector-owned; simulated until the Collector app exists) --- */
 
@@ -3269,10 +3314,11 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
   };
 
   const inviteCollector = (draft) => {
-    const r = run(tpActor, "inviteCollector", { email: draft.email, collector: {
+    /* The note is this partner's, so it travels on the partner's own Invitation;
+       relationship dates do not exist until the invitation is accepted (D-1). */
+    const r = run(tpActor, "inviteCollector", { email: draft.email, note: draft.note, collector: {
       name: draft.name, short: draft.name.split(" ")[0] + " " + (draft.name.split(" ")[1]?.[0] || "") + ".",
-      city: draft.city, since: DAY, last: DAY, prefs: draft.prefs, note: draft.note,
-      binderReviewedAt: TODAY.toISOString() } });
+      city: draft.city, prefs: draft.prefs } });
     if (!r.ok) { say("That invitation could not be created."); return; }
     logActivity(r.value, "manual", `Invitation sent to ${draft.email}`);
     say(`Invitation sent to ${draft.name}. They'll appear as pending until they set their goals.`);
@@ -3293,7 +3339,7 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
         front: faces.front ? "copy:" + invId + ":front" : undefined,
         back: faces.back ? "copy:" + invId + ":back" : undefined });
       if (!r.ok) return;
-      const next = (store.get().inventory.find((i) => i.invId === invId) || {}).photos || {};
+      const next = (readView().inventory.find((i) => i.invId === invId) || {}).photos || {};
       if (next.front && next.back) {
         say("Front and back photos added. Collectors who asked can now make an offer.");
       } else {
@@ -3315,6 +3361,7 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
     endOpportunity, dealMutuallyAgreed,
     collectorChooseCash, collectorStopPursuing, marketAction, percentAction, collectorWithdrawCard, dealAgree, dealAdjust, proposeFulfillment, collectorConfirmPlan, collectorRequestPlanRevision, confirmHandoff,
     inviteCollector, logActivity,
+    relationshipWith, inNetwork, invitations, counterparties,
   };
 
   const SECTIONS = {
@@ -3346,7 +3393,12 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
           {nav.section === "opportunities" && <Opportunities ctx={ctx} />}
           {nav.section === "inventory" && <InventoryView ctx={ctx} />}
           {nav.section === "collectors" && (nav.collectorId
-            ? <CollectorProfile ctx={ctx} id={nav.collectorId} />
+            /* A collector profile is network data: only an accepted Relationship
+               opens it. Anyone else (a pending invitee, an ended relationship)
+               has no profile here. */
+            ? (inNetwork(nav.collectorId)
+              ? <CollectorProfile ctx={ctx} id={nav.collectorId} />
+              : <NotInNetwork ctx={ctx} id={nav.collectorId} />)
             : <CollectorNetwork ctx={ctx} />)}
         </div>
       </div>
@@ -6603,7 +6655,7 @@ function CollectorNetwork({ ctx }) {
    this asks "what does my whole network have, what is new, and who already wants it?"
    No parallel card model, no second interest flag, no relevance score. */
 function NetworkBinder({ ctx }) {
-  const { collectorCards, collectors, card, collector, setTradeInterest, setNav, setDrawer, goalsForIdentity, interestedIn } = ctx;
+  const { collectorCards, collectors, card, collector, setTradeInterest, setNav, setDrawer, goalsForIdentity, interestedIn, relationshipWith } = ctx;
   const [q, setQ] = useState("");
   const [only, setOnly] = useState(null);            // "new" | "notReviewed" | "interested"
   const [demandOnly, setDemandOnly] = useState(false); // composes with the above
@@ -6629,12 +6681,12 @@ function NetworkBinder({ ctx }) {
       const primary = dedupe(g.primary);              // distinct collectors, never the owner
       const secondary = dedupe(g.secondary);
       return { cc, c, col, primary, secondary,
-        isNew: isUnseenAddition(cc, col),
+        isNew: isUnseenAddition(cc, relationshipWith(cc.collectorId)),
         /* Not reviewed is DERIVED from the absence of interest — no second flag, and
            no implication that the TP rejected anything. */
         notReviewed: !interestedIn(cc.id) };
     })
-    .filter(Boolean), [collectorCards, inNetwork, card, collector, goalsForIdentity, interestedIn]);
+    .filter(Boolean), [collectorCards, inNetwork, card, collector, goalsForIdentity, interestedIn, relationshipWith]);
 
   const query = q.trim().toLowerCase();
   const shown = useMemo(() => {
@@ -6797,7 +6849,7 @@ function NetworkBinder({ ctx }) {
 }
 
 function CollectorList({ ctx }) {
-  const { collectors, collectorFacts, setNav } = ctx;
+  const { collectors, collectorFacts, setNav, invitations, counterparties } = ctx;
   const [q, setQ] = useState("");
   const [sort, setSort] = useState(NET_DEFAULT);
   /* Same column re-clicked reverses; a new column starts from its natural direction. */
@@ -6812,6 +6864,19 @@ function CollectorList({ ctx }) {
     return [...r].sort(netCompare(col, sort.dir));
   }, [collectors, collectorFacts, q, sort]);
 
+  /* PENDING INVITATIONS (Phase 2, C1). An invitation-management row, built only
+     from this partner's own Invitation and the invitee's bare identity. The
+     invitee is NOT a network member: no profile link, no binder, goals, tags,
+     history or notes — those arrive with an accepted Relationship. Kept below
+     the network rows and outside its sort, so no network fact is implied. */
+  const pending = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    return invitations
+      .filter((i) => !i.acceptedAt && !collectors.some((c) => c.id === i.collectorId))
+      .map((i) => ({ inv: i, name: (counterparties.find((c) => c.id === i.collectorId) || {}).name || i.email || "Invited collector" }))
+      .filter(({ inv, name }) => !t || (name + " " + (inv.email || "")).toLowerCase().includes(t));
+  }, [invitations, counterparties, collectors, q]);
+
 
   return (
     <>
@@ -6821,7 +6886,7 @@ function CollectorList({ ctx }) {
             <span style={{ position: "absolute", left: 8, top: 7, color: "var(--faint)" }}><Icon n="search" s={14} /></span>
             <input className="inp" style={{ paddingLeft: 27 }} placeholder="Search name or city" value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
-          <span className="note">{q.trim() ? `${rows.length} of ${collectors.length}` : `${collectors.length} collectors`}</span>
+          <span className="note">{q.trim() ? `${rows.length} of ${collectors.length}` : `${collectors.length} collectors`}{pending.length > 0 ? ` · ${pending.length} invite${pending.length === 1 ? "" : "s"} pending` : ""}</span>
         </div>
         <table className="tbl net-tbl">
           <colgroup>
@@ -6843,7 +6908,7 @@ function CollectorList({ ctx }) {
             })}
           </tr></thead>
           <tbody>
-            {rows.length === 0 && (
+            {rows.length === 0 && pending.length === 0 && (
               <tr><td colSpan={NET_COLUMNS.length} className="empty">No collectors match that search.</td></tr>
             )}
             {rows.map(({ c, f }) => {
@@ -6887,6 +6952,25 @@ function CollectorList({ ctx }) {
                 </tr>
               );
             })}
+            {pending.map(({ inv, name }) => (
+              <tr key={"inv-" + inv.id} className="net-pending" data-invitation={inv.id}>
+                <td>
+                  <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                    <span className="av">{initials(name)}</span>
+                    <div>
+                      <span style={{ fontWeight: 600 }}>{name}</span>
+                      <span className="tag" style={{ marginLeft: 6 }}>Invite pending</span>
+                      <div className="faint" style={{ fontSize: 11.5 }}>
+                        {[inv.email, inv.at ? "sent " + fmtDate(String(inv.at).slice(0, 10)) : null].filter(Boolean).join(" · ")}
+                      </div>
+                    </div>
+                  </div>
+                </td>
+                <td colSpan={NET_COLUMNS.length - 1} className="faint" style={{ fontSize: 12.5 }}>
+                  Joins your network when they accept.
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
@@ -7109,9 +7193,24 @@ function BinderCopyDrawer({ ctx, ccId }) {
   );
 }
 
+/* A profile route for someone outside the network — a pending invitee, or a
+   relationship that is no longer accepted. Nothing of the network profile is
+   shown; the partner's own records with them stay where they are. */
+function NotInNetwork({ ctx, id }) {
+  const { collector, setNav } = ctx;
+  const who = collector(id);
+  return (
+    <div className="cp-wrap">
+      <button className="btn sm" style={{ marginBottom: 12 }} onClick={() => setNav({ section: "collectors" })}><Icon n="back" s={13} />All collectors</button>
+      <div className="panel empty">{who ? who.name + " is" : "This collector is"} not in your Collector Network.</div>
+    </div>
+  );
+}
+
 function CollectorProfile({ ctx, id }) {
   const { nav, collector, collectorStats, collectorFacts, card, setNav, setModal, setDrawer, activity, opps } = ctx;
   const c = collector(id);
+  const rel = ctx.relationshipWith(id);          // this partner's own notes about them (D-1)
   const s = collectorStats(id);
   const f = collectorFacts(id);
   const [showSec, setShowSec] = useState(false);
@@ -7175,7 +7274,7 @@ function CollectorProfile({ ctx, id }) {
             </div>
           </div>
 
-          {c.note && <div className="cp-note">{c.note}</div>}
+          {rel && rel.note && <div className="cp-note">{rel.note}</div>}
           <div className="cp-prefs">
             {c.prefs.map((t) => <span key={t} className="tag">{T[t] || t}</span>)}
           </div>
