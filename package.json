@@ -23,6 +23,7 @@
     "react-test-renderer": "^18.3.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "playwright": "^1.56.0"
   }
 }
