@@ -215,7 +215,7 @@ export default function MetYetPrototype() {
                 onChange={(e) => {
                   const next = demoDealFixture(store.get(),
                     { collectorId: SELF_COLLECTOR, demoStage: e.target.value });
-                  if (next) { store.set(next); setEpoch((n) => n + 1); }
+                  if (next) { store.fixture.set(next); setEpoch((n) => n + 1); }
                 }}>
                 {/* Kept in its own group: these come BEFORE a deal exists, and
                     must never read as a sixth Deal Flow stage. */}
@@ -237,7 +237,7 @@ export default function MetYetPrototype() {
                perspectives, because there is only one reality to restore. */
             /* Reset returns to the demo baseline, not a world the scenarios
                can no longer address. */
-            store.reset(buildCanonicalSeed({ review: DEMO }));
+            store.fixture.reset(buildCanonicalSeed({ review: DEMO }));
             setEpoch((e) => e + 1);
             setMenu(false);
           }}>Reset demo</button>

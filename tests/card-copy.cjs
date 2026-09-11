@@ -46,9 +46,16 @@ const installDom = () => {
 };
 const removeDom = () => Object.defineProperty(globalThis, "document", { configurable: true, value: undefined });
 
+/* PHASE 1 CLOSEOUT: this suite drives the Trusted Partner workspace's
+   Collector simulation (SimBlock — acting as the collector from the partner's
+   screen). That is engineering tooling and now renders only under DEV
+   (shared/dev-flag.js), so the suite runs in DEV. Product and pilot builds
+   never show it: tests/phase1-closeout.cjs. */
+process.env.METYET_DEV = "1";
+
 const { describe, test, assert, eq } = require("./run.cjs");
 const TR = require("react-test-renderer");
-const { render, text, allText, btn, btns, btnExact, click, byClass, byClassIn, goProfile } = require("./util.cjs");
+const { render, text, allText, btn, btns, btnExact, click, byClass, byClassIn, goProfile, answerStandingTradePct } = require("./util.cjs");
 
 const groups = (r) => byClass(r, "ccopy");
 const copyBtns = (r) => groups(r).flatMap((n) => n.findAllByType("button"));
@@ -351,7 +358,8 @@ describe("Copying changes nothing", () => {
 
   test("copying during negotiation preserves the counter inputs", () => {
     setClipboard(working);
-    const r = openOpp(render(), "Hiro Tanaka");
+    /* PHASE 1: one Value Trade turn — answer the standing trade % first (util.cjs). */
+    const r = answerStandingTradePct(openOpp(render(), "Hiro Tanaka"));
     const mkt = () => byClass(r, "pn").filter((n) =>
       /market value|Opening market/.test(text(n)) && !/trade %/i.test(text(n)))[0];
     TR.act(() => { mkt().findAllByType("input")[0].props.onChange({ target: { value: "123" } }); });

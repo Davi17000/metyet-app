@@ -30,6 +30,16 @@ const endDeal = (r, reason) => {
   }
 };
 const opportunities = () => { const r = render(); click(btnExact(r, "Opportunities22")); return r; };
+/* PHASE 1: the trade table's FIGURE rows — every row except the live decision
+   rows (vt-act). A terminal Opportunity is immutable, so its decision rows are
+   no longer rendered; before Phase 1 they stayed on screen, offering Accept on
+   an ended deal. The figures are what must survive byte-identical. */
+const figureRows = (r) => byClass(r, "tbl")[0].findAllByType("tr")
+  .filter((tr) => !String(tr.props.className || "").split(/\s+/).includes("vt-act"))
+  .map(text).join("\n");
+/* PHASE 1 (contract, Cancellation): after both final agreements a reason is
+   required, so a cancellation from Fulfillment gives one. */
+const CANCEL_REASON = "Changed my mind";
 
 describe("1. The exit is persistent but subordinate", () => {
   test("every active stage exposes the deal menu in the header", () => {
@@ -91,10 +101,11 @@ describe("2. End deal before mutual agreement", () => {
   test("3. ending preserves every upstream term", () => {
     const r = atStage("Hiro Tanaka", "Value Trade");
     const before = terms(r);
-    const rows = text(byClass(r, "tbl")[0]);
+    const rows = figureRows(r);
     endDeal(r);
     eq(terms(r), before, "price and trade value unchanged");
-    eq(text(byClass(r, "tbl")[0]), rows, "and every trade card, market value and percentage");
+    eq(figureRows(r), rows, "and every trade card, market value and percentage");
+    eq(byClass(r, "vt-act").length, 0, "with no live decision left on the ended record");
   });
 
   test("2. ending makes the opportunity terminal", () => {
@@ -182,7 +193,7 @@ describe("5. Cancel after mutual agreement", () => {
     const r = atStage("Hiro Tanaka", "Fulfillment");
     const before = terms(r);
     const summary = text(stageWork(r));
-    endDeal(r);
+    endDeal(r, CANCEL_REASON);
     eq(terms(r), before, "the agreed figures survive");
     assert(text(stageWork(r)).includes("Total trade value"), "and the breakdown remains: " + summary.slice(0, 60));
     assert(allText(r).includes("cancelled the agreed deal during Fulfillment"),
@@ -191,7 +202,7 @@ describe("5. Cancel after mutual agreement", () => {
 
   test("8. cancelled opportunities become terminal", () => {
     const r = atStage("Hiro Tanaka", "Fulfillment");
-    endDeal(r);
+    endDeal(r, CANCEL_REASON);
     eq(byClass(r, "dm-btn").length, 0, "no further deal actions");
     click(btnExact(r, "Opportunities22"));
     const fulfil = byClass(r, "lc-row").find((n) => String(n.props.className).includes("n-fulfillment"));
@@ -208,7 +219,7 @@ describe("5. Cancel after mutual agreement", () => {
       "ended reads as ended");
 
     const b = atStage("Hiro Tanaka", "Fulfillment");
-    endDeal(b);
+    endDeal(b, CANCEL_REASON);
     click(btnExact(b, "Opportunities22"));
     const rowB = byClass(b, "lc-row").find((n) => String(n.props.className).includes("n-archived"));
     click(rowB.findAllByType("button")[0]);
@@ -263,10 +274,10 @@ describe("6 & 10. Completed and existing archives", () => {
 describe("9. Upstream chapters are never reopened", () => {
   test("ending during Value Trade leaves settled cards settled", () => {
     const r = atStage("Hiro Tanaka", "Value Trade");
-    const row = text(byClass(r, "tbl")[0]);
+    const row = figureRows(r);
     assert(/\$\d/.test(row), "there are settled figures to preserve");
     endDeal(r);
-    eq(text(byClass(r, "tbl")[0]), row, "market values and percentages are byte-identical");
+    eq(figureRows(r), row, "market values and percentages are byte-identical");
   });
 
   test("the stage it ended in is retained", () => {

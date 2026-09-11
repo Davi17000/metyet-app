@@ -340,8 +340,8 @@ describe("B. Conversation is embedded, not a destination", () => {
     assert(/st\.threadWith\(pid, cid\)/.test(src), "the workspace reads the canonical thread");
     assert(!/useState\(\[\]\)[^;]*messages/i.test(src), "and keeps no local message list");
     assert(!/activityLog|historyStore|dealEvents\s*=/.test(src), "no parallel history store");
-    const store = readSrc("domain/metyet-store.js");
-    assert(/appendThreadEntry/.test(store), "writes go through the canonical append");
+    const store = readSrc("domain/metyet-commands.js");   // PHASE 1: writes are commands
+    assert(/D\.appendThreadEntry/.test(store), "writes go through the canonical append");
   });
 });
 

@@ -18,7 +18,7 @@ const fs = require("fs");
 const path = require("path");
 const D = require("../domain/metyet-domain.js");
 const M = require("../dist/MetYet.cjs");
-const { createStore } = require("../domain/metyet-store.js");
+const { createStore, settleFinalCash, collectorProposesCash } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
 
 const ROOT = path.join(__dirname, "..");
 const COL = fs.readFileSync(path.join(ROOT, "collector", "MetYetCollector.jsx"), "utf8");
@@ -51,9 +51,10 @@ const atCash = (price, market) => {
   st.actions.patchOpportunity(o, (x) => ({ ...x, stage: "select-trade",
     trade: { ...x.trade, submitted: true, cards: [row] } }));
   st.actions.reviewTradeCards({ oppId: o, decision: "accepted", at: AT });
-  st.actions.tradeMarketRespond({ oppId: o, tradeCardId: row.id, by: "tp",
-    action: "propose", amount: market, at: AT });
+  /* PHASE 1: the collector opens market value (D.cardOwner); the partner accepts. */
   st.actions.tradeMarketRespond({ oppId: o, tradeCardId: row.id, by: "collector",
+    action: "propose", amount: market, at: AT });
+  st.actions.tradeMarketRespond({ oppId: o, tradeCardId: row.id, by: "tp",
     action: "accept", at: AT });
   st.actions.tradePercentRespond({ oppId: o, tradeCardId: row.id, by: "tp",
     action: "propose", percent: 1, at: AT });
@@ -65,10 +66,12 @@ const atCash = (price, market) => {
 const collectorOwes = () => atCash(685, 500);
 const partnerOwes = () => atCash(315, 500);
 
+/* PHASE 1: settlement follows the canonical final-balance order (partner
+   confirms, collector proposes, partner confirms, collector confirms) — see
+   fixture-store.cjs. The signed figure under test is unchanged. */
 const settle = (w, amount) => {
-  w.st.actions.dealAdjustRespond({ oppId: w.o, by: "collector", action: "propose",
-    amount, at: AT });
-  w.st.actions.dealAdjustRespond({ oppId: w.o, by: "tp", action: "accept", at: AT });
+  const r = settleFinalCash(w.st, w.o, amount, AT);
+  assert(r.ok, "the canonical settlement sequence ran: " + JSON.stringify(r));
   return D.cashReceipt(w.get()).final;
 };
 
@@ -219,12 +222,13 @@ describe("D. Nothing upstream moves", () => {
   });
 
   test("accept settles the exact standing signed proposal", () => {
+    /* PHASE 1: the partner confirms before the collector may propose, and the
+       collector's confirmation is the one that records the agreed figure. */
     const w = partnerOwes();
-    w.st.actions.dealAdjustRespond({ oppId: w.o, by: "collector", action: "propose",
-      amount: -200, at: AT });
-    /* A stale amount on the accept cannot change it. */
-    w.st.actions.dealAdjustRespond({ oppId: w.o, by: "tp", action: "accept",
-      amount: 999, at: AT });
+    collectorProposesCash(w.st, w.o, -200, AT);
+    /* A stale amount on either confirmation cannot change it. */
+    w.st.execute({ partnerId: w.get().partnerId }, "acceptDeal", { oppId: w.o, amount: 999, at: AT });
+    w.st.execute({ collectorId: w.get().collectorId }, "acceptDeal", { oppId: w.o, amount: 999, at: AT });
     eq(w.get().deal.agreedAdj, -200, "the standing figure, sign and all");
   });
 
@@ -245,9 +249,7 @@ describe("D. Nothing upstream moves", () => {
     assert(!/Math\.abs\(o\.deal\.collectorAdj\)/.test(sim),
       "and never flattens the figure first");
     const w = partnerOwes();
-    w.st.actions.dealAdjustRespond({ oppId: w.o, by: "collector", action: "propose",
-      amount: -200, at: AT });
-    w.st.actions.dealAdjustRespond({ oppId: w.o, by: "tp", action: "accept", at: AT });
+    settle(w, -200);   // PHASE 1: canonical final-balance order
     eq(D.cashReceipt(w.get()).final.direction, "tp-to-collector", "direction survives");
   });
 

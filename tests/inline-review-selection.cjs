@@ -273,8 +273,9 @@ describe("E. The rest of the pursuit is unchanged", () => {
   test("nothing canonical moved", () => {
     eq(D.PURSUIT_STEPS.length, 6, "six pursuit steps");
     eq(D.RECEIPT_STAGES.length, 5, "five negotiation stages");
-    const store = readSrc("domain/metyet-store.js");
-    assert(/reviewCopy\(\{/.test(store), "reviewCopy is still the canonical action");
+    /* PHASE 1: canonical actions are commands in the command layer. */
+    const store = readSrc("domain/metyet-commands.js");
+    assert(/reviewCopy\(state, a/.test(store), "reviewCopy is still the canonical action");
     assert(!/reviewCopy/.test(readSrc("domain/collector-view.js").replace(/copyReviews/g, "")),
       "and the view derives rather than writes");
   });

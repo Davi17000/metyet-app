@@ -27,7 +27,7 @@ const fs = require("fs");
 const path = require("path");
 const D = require("../domain/metyet-domain.js");
 const M = require("../dist/MetYet.cjs");
-const { createStore } = require("../domain/metyet-store.js");
+const { createStore, settleFinalCash } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
 
 const ROOT = path.join(__dirname, "..");
 const COL = fs.readFileSync(path.join(ROOT, "collector", "MetYetCollector.jsx"), "utf8");
@@ -72,8 +72,9 @@ const real = ({ price, market, pct }) => {
   st.actions.patchOpportunity(o, (x) => ({ ...x, stage: "select-trade",
     trade: { ...x.trade, submitted: true, cards: [row] } }));
   st.actions.reviewTradeCards({ oppId: o, decision: "accepted", at: AT });
-  st.actions.tradeMarketRespond({ oppId: o, tradeCardId: row.id, by: "tp", action: "propose", amount: market, at: AT });
-  st.actions.tradeMarketRespond({ oppId: o, tradeCardId: row.id, by: "collector", action: "accept", at: AT });
+  /* PHASE 1: the collector opens market value (D.cardOwner); the partner accepts. */
+  st.actions.tradeMarketRespond({ oppId: o, tradeCardId: row.id, by: "collector", action: "propose", amount: market, at: AT });
+  st.actions.tradeMarketRespond({ oppId: o, tradeCardId: row.id, by: "tp", action: "accept", at: AT });
   st.actions.tradePercentRespond({ oppId: o, tradeCardId: row.id, by: "tp", action: "propose", percent: pct, at: AT });
   st.actions.tradePercentRespond({ oppId: o, tradeCardId: row.id, by: "collector", action: "accept", at: AT });
   return { st, o, id: row.id, get: () => st.get().opportunities.find((x) => x.id === o) };
@@ -286,9 +287,9 @@ describe("F. Settled economics are untouched, and both seats agree", () => {
     eq(D.calculatedBalance(w.get()), -300, "the partner owes $300");
     const before = JSON.stringify({ cards: w.get().trade.cards,
       price: w.get().agreedPrice, thread: w.get().priceThread });
-    w.st.actions.dealAdjustRespond({ oppId: w.o, by: "collector", action: "propose",
-      amount: -250, at: AT });
-    w.st.actions.dealAdjustRespond({ oppId: w.o, by: "tp", action: "accept", at: AT });
+    /* PHASE 1: canonical final-balance order (partner confirms, collector
+       proposes, partner confirms, collector confirms) — fixture-store.cjs. */
+    assert(settleFinalCash(w.st, w.o, -250, AT).ok, "settled through the canonical sequence");
     eq(D.finalBalance(w.get()), -250, "the cash moved");
     eq(JSON.stringify({ cards: w.get().trade.cards, price: w.get().agreedPrice,
       thread: w.get().priceThread }), before,
@@ -297,9 +298,9 @@ describe("F. Settled economics are untouched, and both seats agree", () => {
 
   test("the direction survives the negotiation", () => {
     const w = real({ price: 700, market: 1000, pct: 1 });
-    w.st.actions.dealAdjustRespond({ oppId: w.o, by: "collector", action: "propose",
-      amount: -250, at: AT });
-    w.st.actions.dealAdjustRespond({ oppId: w.o, by: "tp", action: "accept", at: AT });
+    /* PHASE 1: canonical final-balance order (partner confirms, collector
+       proposes, partner confirms, collector confirms) — fixture-store.cjs. */
+    assert(settleFinalCash(w.st, w.o, -250, AT).ok, "settled through the canonical sequence");
     const r = D.cashReceipt(w.get());
     eq(r.final.direction, "tp-to-collector", "the partner still owes");
     eq(r.adjustment, 50, "having reduced what they owe by $50");

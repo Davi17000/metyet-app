@@ -13,7 +13,7 @@
 const { describe, test, assert, eq } = require("./run.cjs");
 const D = require("../domain/metyet-domain.js");
 const E = require("../domain/metyet-entities.js");
-const { createStore } = require("../domain/metyet-store.js");
+const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
 
 const AT = "2026-08-14";
 const card = (id, o = {}) => ({ id, name: o.name || "Charizard", set: o.set || "Base Set",
@@ -35,6 +35,20 @@ const world = () => createStore({
   opportunities: [],
   preferences: [{ collectorId: "c1", tags: ["base-set", "holo"] }],
 });
+
+/* PHASE 1 (contract §4): an Opportunity is opened on ONE exact InventoryCopy,
+   and its partner is that copy's owner — the command layer refuses an offer
+   with no copy. These worlds start with an empty shelf, so an offer first lists
+   the copy it is made on, through the canonical addInventoryCopy. Previously an
+   offer could name a partner and a card with no copy behind it. */
+const listed = (st, partnerId, cardId, ask) => {
+  const have = st.get().inventory.find((i) => i.partnerId === partnerId && i.cardId === cardId && !i.archived);
+  if (have) return have.invId;
+  const invId = `inv-${partnerId}-${cardId}`;
+  st.actions.addInventoryCopy({ invId, partnerId, cardId, ask,
+    photos: { front: `copy:${invId}:front`, back: `copy:${invId}:back` } });
+  return invId;
+};
 
 /* The two projections. Neither holds state; both read the one store. */
 const asPartner = (s, partnerId) => ({
@@ -205,9 +219,9 @@ describe("H. One negotiation per goal", () => {
     const st = world();
     const gid = st.actions.addGoal({ collectorId: "c1", cardId: "k1", tier: "primary", at: AT });
     const a = st.actions.startOpportunity({ goalId: gid, collectorId: "c1", partnerId: "p2",
-      cardId: "k1", listedPrice: 4200, amount: 3700, at: AT });
+      cardId: "k1", invId: listed(st, "p2", "k1", 4200), listedPrice: 4200, amount: 3700, at: AT });
     const b = st.actions.startOpportunity({ goalId: gid, collectorId: "c1", partnerId: "p-self",
-      cardId: "k1", listedPrice: 4300, amount: 3800, at: AT });
+      cardId: "k1", invId: listed(st, "p-self", "k1", 4300), listedPrice: 4300, amount: 3800, at: AT });
 
     assert(a, "the first is created");
     eq(b && b.refused, "already-negotiating", "the second is refused by the action itself");
@@ -220,13 +234,16 @@ describe("H. One negotiation per goal", () => {
     st.actions.addInventoryCopy({ invId: "i2", partnerId: "p-self", cardId: "k1", ask: 4300, photos: { front: "copy:i2:front", back: "copy:i2:back" } });
     const gid = st.actions.addGoal({ collectorId: "c1", cardId: "k1", tier: "primary", at: AT });
     st.actions.startOpportunity({ goalId: gid, collectorId: "c1", partnerId: "p2",
-      cardId: "k1", listedPrice: 4200, amount: 3700, at: AT });
+      cardId: "k1", invId: listed(st, "p2", "k1", 4200), listedPrice: 4200, amount: 3700, at: AT });
 
     eq(asCollector(st.get(), "c1").supplyFor("k1").length, 2, "both partners remain visible");
-    /* p2 holds the negotiation; p3 is the alternative, and is still reachable. */
-    st.actions.reachOut({ collectorId: "c1", partnerId: "p3", cardId: "k1", text: "Interested?", at: AT });
+    /* p2 holds the negotiation; p-self is the alternative, and is still reachable.
+       PHASE 1: this used to reach out to "p3", a partner that does not exist in
+       this world. Network actions now require a Relationship with a real partner
+       (contract §2), so the alternative is the partner actually holding supply. */
+    st.actions.reachOut({ collectorId: "c1", partnerId: "p-self", cardId: "k1", text: "Interested?", at: AT });
     eq(st.get().conversations.length, 1, "the alternative can still be contacted");
-    eq(st.get().conversations[0].partnerId, "p3", "in their own private thread");
+    eq(st.get().conversations[0].partnerId, "p-self", "in their own private thread");
     eq(st.get().opportunities.length, 1, "without creating a second negotiation");
   });
 });
@@ -236,7 +253,7 @@ describe("I. Agree on Price", () => {
     const st = world();
     const gid = st.actions.addGoal({ collectorId: "c1", cardId: "k1", tier: "primary", at: AT });
     const oid = st.actions.startOpportunity({ goalId: gid, collectorId: "c1", partnerId: "p2",
-      cardId: "k1", listedPrice: 4200, amount: 3700, at: AT });
+      cardId: "k1", invId: listed(st, "p2", "k1", 4200), listedPrice: 4200, amount: 3700, at: AT });
 
     st.actions.patchOpportunity(oid, (o) => ({ ...o,
       priceThread: [...o.priceThread, { by: "partner", type: "counter", amount: 3980, at: AT }] }));
@@ -259,7 +276,7 @@ describe("J. Select Trade", () => {
     st.actions.setInterest("p2", "b1", true, AT);
     const gid = st.actions.addGoal({ collectorId: "c1", cardId: "k1", tier: "primary", at: AT });
     const oid = st.actions.startOpportunity({ goalId: gid, collectorId: "c1", partnerId: "p2",
-      cardId: "k1", listedPrice: 4200, amount: 3700, at: AT });
+      cardId: "k1", invId: listed(st, "p2", "k1", 4200), listedPrice: 4200, amount: 3700, at: AT });
 
     /* Every copy is eligible; interest only orders them. */
     const keen = E.binderCopiesInterestedBy(st.get().interests, "p2");
@@ -288,7 +305,7 @@ describe("K. Value Trade", () => {
       addedAt: AT, photos: { front: "f", back: "b" } });
     const gid = st.actions.addGoal({ collectorId: "c1", cardId: "k1", tier: "primary", at: AT });
     const oid = st.actions.startOpportunity({ goalId: gid, collectorId: "c1", partnerId: "p2",
-      cardId: "k1", listedPrice: 4200, amount: 3700, at: AT });
+      cardId: "k1", invId: listed(st, "p2", "k1", 4200), listedPrice: 4200, amount: 3700, at: AT });
     st.actions.patchOpportunity(oid, (o) => ({ ...o, agreedPrice: 3980, stage: "value-trade",
       trade: { submitted: true, cards: [{ binderId: "b1", inclusion: "accepted",
         agreedMarket: 650, agreedPercent: 0.8 }] } }));
@@ -309,7 +326,7 @@ describe("L. Deal", () => {
       addedAt: AT, photos: { front: "f", back: "b" } });
     const gid = st.actions.addGoal({ collectorId: "c1", cardId: "k1", tier: "primary", at: AT });
     const oid = st.actions.startOpportunity({ goalId: gid, collectorId: "c1", partnerId: "p2",
-      cardId: "k1", listedPrice: 4200, amount: 3700, at: AT });
+      cardId: "k1", invId: listed(st, "p2", "k1", 4200), listedPrice: 4200, amount: 3700, at: AT });
     st.actions.patchOpportunity(oid, (o) => ({ ...o, agreedPrice: 3980, stage: "deal",
       trade: { submitted: true, cards: [{ binderId: "b1", inclusion: "accepted",
         agreedMarket: 650, agreedPercent: 0.8 }] } }));
@@ -326,7 +343,7 @@ describe("M. Fulfillment -> completion satisfies the Goal", () => {
     const st = world();
     const gid = st.actions.addGoal({ collectorId: "c1", cardId: "k1", tier: "primary", at: AT });
     const oid = st.actions.startOpportunity({ goalId: gid, collectorId: "c1", partnerId: "p2",
-      cardId: "k1", listedPrice: 4200, amount: 3700, at: AT });
+      cardId: "k1", invId: listed(st, "p2", "k1", 4200), listedPrice: 4200, amount: 3700, at: AT });
     eq(D.goalState(gid, st.get().opportunities), "negotiating", "negotiating first");
 
     st.actions.patchOpportunity(oid, (o) => ({ ...o, stage: "completed", completedAt: AT }));
@@ -345,7 +362,7 @@ describe("N. Failed negotiation unlocks the Goal", () => {
     const st = world();
     const gid = st.actions.addGoal({ collectorId: "c1", cardId: "k1", tier: "primary", at: AT });
     const first = st.actions.startOpportunity({ goalId: gid, collectorId: "c1", partnerId: "p2",
-      cardId: "k1", listedPrice: 4200, amount: 3700, at: AT });
+      cardId: "k1", invId: listed(st, "p2", "k1", 4200), listedPrice: 4200, amount: 3700, at: AT });
     st.actions.patchOpportunity(first, (o) => ({ ...o, agreedPrice: 3980 }));
 
     st.actions.endOpportunity(first, "collector", AT);
@@ -355,7 +372,7 @@ describe("N. Failed negotiation unlocks the Goal", () => {
     eq(D.goalState(gid, st.get().opportunities), "seeking", "the goal derives Seeking again");
 
     const second = st.actions.startOpportunity({ goalId: gid, collectorId: "c1", partnerId: "p-self",
-      cardId: "k1", listedPrice: 4300, amount: 3800, at: AT });
+      cardId: "k1", invId: listed(st, "p-self", "k1", 4300), listedPrice: 4300, amount: 3800, at: AT });
     assert(second, "another partner can now receive an offer");
     eq(st.get().opportunities.length, 2, "two records: one ended, one live");
     eq(D.goalState(gid, st.get().opportunities), "negotiating", "and the goal is negotiating again");
@@ -399,7 +416,7 @@ describe("The governing rule holds", () => {
     st.actions.setInterest("p-self", "b1", true, AT);
     st.actions.reachOut({ collectorId: "c1", partnerId: "p2", cardId: "k1", text: "hi", at: AT });
     st.actions.startOpportunity({ goalId: gid, collectorId: "c1", partnerId: "p2",
-      cardId: "k1", listedPrice: 4200, amount: 3700, at: AT });
+      cardId: "k1", invId: listed(st, "p2", "k1", 4200), listedPrice: 4200, amount: 3700, at: AT });
 
     const s = st.get();
     eq(s.goals.length, 1, "one goal");
@@ -450,16 +467,25 @@ describe("Opportunity references its Goal", () => {
     const src = require("fs").readFileSync(
       require("path").join(__dirname, "..", "src", "MetYet.jsx"), "utf8");
     assert(/const goalIdFor = \(collectorId, cardId\)/.test(src), "resolved at hydration");
-    /* goalState and the invariant must key on goalId, never on the pair. */
-    assert(/o2\.goalId === goalId/.test(src), "the invariant keys on goalId");
+    /* goalState and the invariant must key on goalId, never on the pair.
+       PHASE 1: the TP no longer re-checks the invariant itself — the command
+       layer enforces it, keyed on goalId, for every caller. */
+    const dom = require("fs").readFileSync(require("path").join(__dirname, "..", "domain", "metyet-domain.js"), "utf8");
+    const cmd = require("fs").readFileSync(require("path").join(__dirname, "..", "domain", "metyet-commands.js"), "utf8");
+    assert(/opps\.find\(\(o\) => o\.goalId === goalId && isNegotiating\(o\)\)/.test(dom), "the invariant keys on goalId");
+    assert(/D\.INVARIANTS\.oneNegotiationPerGoal\(goalId, state\.opportunities\)/.test(cmd),
+      "and the command boundary applies it");
   });
 
   test("a new opportunity sets goalId explicitly", () => {
     const src = require("fs").readFileSync(
       require("path").join(__dirname, "..", "src", "MetYet.jsx"), "utf8");
-    assert(/emptyOpp\(g\.collectorId, g\.cardId, inv\.invId, inv\.ask, NOW, goalId,/.test(src),
+    /* PHASE 1: the offer is one canonical command; the record is built at the
+       command boundary, where the partner is the owner of the exact copy. */
+    assert(/run\(asCollector\(g\.collectorId\), "startOpportunity", \{ goalId, invId: inv\.invId, amount \}\)/.test(src),
       "collectorMakeOffer passes the goal through");
-    assert(/inv\.partnerId \|\| SELF_PARTNER\)/.test(src),
+    const cmd = require("fs").readFileSync(require("path").join(__dirname, "..", "domain", "metyet-commands.js"), "utf8");
+    assert(/const opp = \{ id, goalId, collectorId: a\.collectorId, partnerId: copy\.partnerId,/.test(cmd),
       "and names the partner who owns the copy being bought");
   });
 
@@ -502,7 +528,9 @@ describe("Inventory ownership is scoped, not assumed", () => {
   test("the TP scopes its shelf to the active partner", () => {
     const src = require("fs").readFileSync(
       require("path").join(__dirname, "..", "src", "MetYet.jsx"), "utf8");
-    assert(/i\.partnerId === SELF_PARTNER/.test(src),
+    /* PHASE 1: scoped to the acting partner (the workspace's actor), not a
+       hard-coded seat. */
+    assert(/i\.partnerId === partnerId/.test(src),
       "activeInv filters to the partner who owns the copy");
   });
 
@@ -510,14 +538,17 @@ describe("Inventory ownership is scoped, not assumed", () => {
     const src = require("fs").readFileSync(
       require("path").join(__dirname, "..", "src", "MetYet.jsx"), "utf8");
     const block = src.slice(src.indexOf("function buildCanonicalSeed"),
-      src.indexOf("function useShared"));
+      src.indexOf("function buildOpps"));   // PHASE 1: useShared removed; the seed block ends where buildOpps begins
     const records = block.match(/\{ invId: "[^"]+"/g) || [];
     records.forEach((r) => {
       const i = block.indexOf(r);
       assert(/partnerId:/.test(block.slice(i, i + 160)), "owned: " + r);
     });
-    const add = src.slice(src.indexOf('invId: "inv" + cardId + "-"'), src.indexOf('invId: "inv" + cardId + "-"') + 200);
-    assert(/partnerId: SELF_PARTNER/.test(add), "runtime copies are owned too");
+    /* PHASE 1: a runtime copy's owner is set at the command boundary from the
+       acting partner — the component cannot name another owner. */
+    const cmd = require("fs").readFileSync(require("path").join(__dirname, "..", "domain", "metyet-commands.js"), "utf8");
+    const add = cmd.slice(cmd.indexOf("addInventoryCopy(state"), cmd.indexOf("addInventoryCopy(state") + 700);
+    assert(/partnerId: a\.partnerId/.test(add), "runtime copies are owned too");
   });
 });
 
@@ -574,7 +605,7 @@ describe("Casey's canonical scenario coverage", () => {
     const src = require("fs").readFileSync(
       require("path").join(__dirname, "..", "src", "MetYet.jsx"), "utf8");
     const block = src.slice(src.indexOf("function buildCanonicalSeed"),
-      src.indexOf("function useShared"));
+      src.indexOf("function buildOpps"));   // PHASE 1: useShared removed; the seed block ends where buildOpps begins
     /* Other partners' stock lives in the same collection, distinguished only by
        who owns it — there is no separate partner-inventory table. */
     ["p2", "p3", "p4"].forEach((p) =>
@@ -586,7 +617,7 @@ describe("Casey's canonical scenario coverage", () => {
     const src = require("fs").readFileSync(
       require("path").join(__dirname, "..", "src", "MetYet.jsx"), "utf8");
     const block = src.slice(src.indexOf("function buildCanonicalSeed"),
-      src.indexOf("function useShared"));
+      src.indexOf("function buildOpps"));   // PHASE 1: useShared removed; the seed block ends where buildOpps begins
     const owners = (cardId) => {
       const set = new Set();
       const re = new RegExp('partnerId: "([^"]+)", cardId: "' + cardId + '"', "g");
@@ -635,7 +666,7 @@ describe("Casey's canonical scenario coverage", () => {
        TP sees; other partners' stock must not appear in any of them. */
     const src = require("fs").readFileSync(
       require("path").join(__dirname, "..", "src", "MetYet.jsx"), "utf8");
-    assert(/i\.partnerId === SELF_PARTNER/.test(src), "TP inventory stays scoped");
+    assert(/i\.partnerId === partnerId/.test(src), "TP inventory stays scoped");   // PHASE 1: the acting partner
   });
 });
 
@@ -665,7 +696,8 @@ describe("Trusted Partner runtime is the shared store", () => {
       ["collectors", "collectors"], ["opps", "opportunities"],
       ["collectorCards", "binder"], ["interests", "interests"],
       ["activity", "activity"], ["threads", "conversations"]].forEach(([local, key]) =>
-      assert(new RegExp("\\[" + local + ", set\\w+\\] = useShared\\(store, \"" + key + "\"\\)").test(root),
+      /* PHASE 1: read-only canonical reads — no setter exists to write back. */
+      assert(new RegExp("const " + local + " = canon\\." + key + "\\b").test(root),
         local + " -> store." + key));
   });
 
@@ -676,13 +708,15 @@ describe("Trusted Partner runtime is the shared store", () => {
         k + " is UI state and stays local"));
   });
 
+  /* PHASE 1: superseded "writes back to it" — the per-collection setter
+     adapter (useShared → store.set) was a product mutation bypass. The TP now
+     subscribes read-only and every change is a canonical command. */
   test("the adapter writes the canonical store, with no shadow copy", () => {
-    const fn = src().slice(src().indexOf("function useShared"),
-      src().indexOf("function useShared") + 600);
-    assert(/useSyncExternalStore\(store\.sub, store\.get, store\.get\)/.test(fn),
+    const root = src();
+    assert(/const canon = useSyncExternalStore\(store\.sub, store\.get, store\.get\);/.test(root),
       "it subscribes to the store rather than copying it");
-    assert(/store\.set\(\{ \.\.\.cur, \[key\]: next \}\)/.test(fn), "and writes back to it");
-    assert(!/useState|useEffect/.test(fn), "no shadow state and no sync effect");
+    assert(/store\.execute\(actor, command,/.test(root), "and writes only through the command boundary");
+    assert(!/function useShared/.test(root) && !/store\.set\(/.test(root), "no setter adapter and no raw store write");
   });
 
   test("an injected store wins, so a shell can share one runtime", () => {
@@ -700,10 +734,14 @@ describe("Trusted Partner runtime is the shared store", () => {
   });
 
   test("two mounts sharing one store see one universe", () => {
-    const { createStore } = require("../domain/metyet-store.js");
+    const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
+    /* PHASE 1: addGoal is validated at the command boundary (the collector and
+       the card must exist), so the world names them. */
     const st = createStore({ goals: [{ id: "g1" }], inventory: [], binder: [],
-      interests: [], conversations: [], opportunities: [], catalog: [],
-      collectors: [], partners: [], preferences: [] });
+      interests: [], conversations: [], opportunities: [],
+      catalog: [{ id: "i17", name: "Charizard", set: "Base Set", num: "4/102", print: "Holo",
+        edition: "Unlimited", language: "English", grade: "PSA 9", condition: null }],
+      collectors: [{ id: "c12" }], partners: [], preferences: [] });
     const before = st.get();
     st.actions.addGoal({ collectorId: "c12", cardId: "i17", tier: "primary", at: "2026-08-14" });
     assert(st.get() !== before, "state advanced");
@@ -820,7 +858,7 @@ describe("Card identity search is shared, not duplicated", () => {
    deal can begin against it — enforced in the action, not in a button.
    ========================================================================= */
 describe("Secondary goal gating", () => {
-  const { createStore } = require("../domain/metyet-store.js");
+  const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
   const { buildCanonicalSeed } = require("../dist/MetYet.cjs");
   const world = () => createStore({
     /* A conversation is about a card, so the catalog must contain it. */
@@ -833,8 +871,12 @@ describe("Secondary goal gating", () => {
       { id: "gp", collectorId: "c1", cardId: "k2", tier: "primary" }],
     inventory: [], binder: [], interests: [], conversations: [], opportunities: [],
   });
-  const offer = (st, goalId) => st.actions.startOpportunity({ goalId, collectorId: "c1",
-    partnerId: "p2", cardId: "k1", listedPrice: 100, amount: 90, at: "2026-08-14" });
+  /* PHASE 1: the offer is made on a listed copy of the goal's card (see listed()). */
+  const offer = (st, goalId) => {
+    const cardId = st.get().goals.find((g) => g.id === goalId).cardId;
+    return st.actions.startOpportunity({ goalId, collectorId: "c1", partnerId: "p2", cardId,
+      invId: listed(st, "p2", cardId, 100), listedPrice: 100, amount: 90, at: "2026-08-14" });
+  };
 
   test("1/2. the action refuses a Secondary goal, with a reason", () => {
     const st = world();
@@ -844,9 +886,10 @@ describe("Secondary goal gating", () => {
   });
 
   test("2. the rule lives in the domain, not in a component", () => {
+    /* PHASE 1: startOpportunity lives in the command layer. */
     const src = require("fs").readFileSync(
-      require("path").join(__dirname, "..", "domain", "metyet-store.js"), "utf8");
-    assert(/D\.INVARIANTS\.goalIsPursued\(goalId, s\.goals\)/.test(src),
+      require("path").join(__dirname, "..", "domain", "metyet-commands.js"), "utf8");
+    assert(/D\.INVARIANTS\.goalIsPursued\(goalId, state\.goals\)/.test(src),
       "startOpportunity checks the invariant itself");
     const dom = require("fs").readFileSync(
       require("path").join(__dirname, "..", "domain", "metyet-domain.js"), "utf8");
@@ -901,8 +944,16 @@ describe("Secondary goal gating", () => {
       require("path").join(__dirname, "..", "src", "MetYet.jsx"), "utf8");
     const fn = src.slice(src.indexOf("const collectorMakeOffer ="),
       src.indexOf("const collectorMakeOffer =") + 900);
-    assert(/if \(g\.tier !== "primary"\) return;/.test(fn),
-      "the TP path refuses a non-primary goal");
+    /* PHASE 1: the TP path no longer carries its own tier check — it issues the
+       canonical command, which refuses a non-primary goal for every caller, and
+       a partner cannot issue the collector's command at all. */
+    assert(/"startOpportunity"/.test(fn), "the TP path uses the canonical command");
+    const st = world();
+    eq(offer(st, "gs").refused, D.REFUSE.notPrimary, "the TP path refuses a non-primary goal");
+    const inv = st.get().inventory[0].invId;
+    st.actions.updateGoalTier("gs", "primary");
+    eq(st.execute({ partnerId: "p2" }, "startOpportunity", { goalId: "gs", invId: inv, amount: 90 }).refused,
+      D.REFUSE.notOwner, "and a partner cannot open a negotiation for the collector");
     assert(!/setGoals|updateGoalTier/.test(fn), "and never promotes on the collector's behalf");
   });
 
@@ -1111,7 +1162,7 @@ describe("Progressive deal receipt", () => {
    same thread — and in no other partner's thread.
    ========================================================================= */
 describe("Shared conversation", () => {
-  const { createStore } = require("../domain/metyet-store.js");
+  const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
   const { buildCanonicalSeed } = require("../dist/MetYet.cjs");
   const world = () => createStore(buildCanonicalSeed());
   const CARD = "i17";                       // Rayquaza Gold Star, Casey's primary goal
@@ -1201,9 +1252,14 @@ describe("Shared conversation", () => {
       require("path").join(__dirname, "..", "src", "MetYet.jsx"), "utf8");
     const col = require("fs").readFileSync(
       require("path").join(__dirname, "..", "domain", "metyet-store.js"), "utf8");
-    assert(/SharedID\.appendThreadEntry/.test(tp), "the TP appends through the shared function");
-    assert(/D\.appendThreadEntry/.test(col), "and so does the collector's store");
-    assert(!/newConversation/.test(col), "the old per-reach-out record is gone");
+    /* PHASE 1: both personas send through the "sendMessage" command, and the
+       command layer appends through the one shared function. */
+    const cmd = require("fs").readFileSync(
+      require("path").join(__dirname, "..", "domain", "metyet-commands.js"), "utf8");
+    assert(/run\(tpActor, "sendMessage",/.test(tp) && !/appendThreadEntry|conversations:/.test(tp.slice(tp.indexOf("export default function MetYet("))),
+      "the TP appends through the shared function");
+    assert(/D\.appendThreadEntry/.test(cmd), "and so does the collector's store");
+    assert(!/newConversation/.test(col) && !/newConversation/.test(cmd), "the old per-reach-out record is gone");
   });
 
   test("reaching out still creates no opportunity", () => {

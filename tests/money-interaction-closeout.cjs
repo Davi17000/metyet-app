@@ -34,7 +34,7 @@ const fs = require("fs");
 const path = require("path");
 const D = require("../domain/metyet-domain.js");
 const M = require("../dist/MetYet.cjs");
-const { createStore } = require("../domain/metyet-store.js");
+const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
 
 const ROOT = path.join(__dirname, "..");
 const COL = fs.readFileSync(path.join(ROOT, "collector", "MetYetCollector.jsx"), "utf8");
@@ -97,19 +97,26 @@ const atDeal = ({ price = 1000, cards = [["ka", 500, 0.55]] } = {}) => {
   st.actions.patchOpportunity(o, (x) => ({ ...x, stage: "select-trade",
     trade: { ...x.trade, submitted: true, cards: rows } }));
   st.actions.reviewTradeCards({ oppId: o, decision: "accepted", at: AT });
-  cards.forEach(([, mkt, p], i) => {
-    const id = rows[i].id;
-    st.actions.tradeMarketRespond({ oppId: o, tradeCardId: id, by: "tp", action: "propose", amount: mkt, at: AT });
-    st.actions.tradeMarketRespond({ oppId: o, tradeCardId: id, by: "collector", action: "accept", at: AT });
-    st.actions.tradePercentRespond({ oppId: o, tradeCardId: id, by: "tp", action: "propose", percent: p, at: AT });
-    st.actions.tradePercentRespond({ oppId: o, tradeCardId: id, by: "collector", action: "accept", at: AT });
-  });
+  /* PHASE 1: the collector opens market value (D.cardOwner) and the Value Trade
+     turn is one owner per Opportunity (D.nextActor), so each seat works through
+     every card it holds before the other answers. The terms are unchanged. */
+  const each = (fn) => cards.forEach((c, i) => fn(rows[i].id, c));
+  each((id, [, mkt]) => st.actions.tradeMarketRespond({ oppId: o, tradeCardId: id, by: "collector", action: "propose", amount: mkt, at: AT }));
+  each((id) => st.actions.tradeMarketRespond({ oppId: o, tradeCardId: id, by: "tp", action: "accept", at: AT }));
+  each((id, [, , p]) => st.actions.tradePercentRespond({ oppId: o, tradeCardId: id, by: "tp", action: "propose", percent: p, at: AT }));
+  each((id) => st.actions.tradePercentRespond({ oppId: o, tradeCardId: id, by: "collector", action: "accept", at: AT }));
   return { st, o, get, ids: rows.map((r) => r.id) };
 };
-const propose = (w, by, amount) => w.st.actions.dealAdjustRespond({
-  oppId: w.o, by, action: "propose", amount, at: AT });
-const accept = (w, by) => w.st.actions.dealAdjustRespond({
-  oppId: w.o, by, action: "accept", at: AT });
+/* PHASE 1 (contract §4): final confirmation is ordered. The partner confirms the
+   current state first; any new figure lapses every confirmation and the partner
+   confirms again; the collector's confirmation records the agreed figure. So a
+   collector proposes only after a partner confirmation, a partner's counter is
+   followed by the partner's own confirmation, and "accept" is `acceptDeal` by
+   the seat whose turn it is. Every step goes through store.execute. */
+const seat = (by) => (by === "tp" ? { partnerId: "nl" } : { collectorId: "casey" });
+const propose = (w, by, amount) => w.st.execute(seat(by), "proposeFinalBalance", { oppId: w.o, amount, at: AT });
+const confirm = (w, by, extra) => w.st.execute(seat(by), "acceptDeal", { oppId: w.o, at: AT, ...(extra || {}) });
+const accept = confirm;
 
 describe("A. The dollar field belongs to whoever is typing in it", () => {
   test("it shows the digits entered, not a re-derived figure", () => {
@@ -212,6 +219,7 @@ describe("B. Final cash: the action works, and says what it means", () => {
        the reducer spread one that never existed. */
     const w = atDeal();
     eq(D.calculatedBalance(w.get()), 725, "$1,000 - $275 = $725");
+    confirm(w, "tp");
     propose(w, "collector", 700);
     eq(w.get().deal.collectorAdj, 700, "the proposal is recorded");
     eq(w.get().deal.adjThread.length, 1, "with one entry in the thread");
@@ -232,6 +240,7 @@ describe("B. Final cash: the action works, and says what it means", () => {
 
   test("the sender cannot send again while waiting", () => {
     const w = atDeal();
+    confirm(w, "tp");
     propose(w, "collector", 700);
     propose(w, "collector", 650);
     eq(w.get().deal.adjThread.length, 1, "one move, one entry");
@@ -241,11 +250,13 @@ describe("B. Final cash: the action works, and says what it means", () => {
 
   test("the recipient can accept or counter, and the turn alternates", () => {
     const w = atDeal();
+    confirm(w, "tp");
     propose(w, "collector", 700);
     eq(D.TRADE.dealAdjStanding(w.get().deal), "collector", "the collector holds the table");
     propose(w, "tp", 715);
     eq(D.TRADE.dealAdjStanding(w.get().deal), "tp", "a counter passes it over");
     eq(w.get().deal.adjThread.length, 2, "both moves recorded");
+    confirm(w, "tp");
     accept(w, "collector");
     eq(w.get().deal.agreedAdj, 715, "acceptance settles at the standing figure");
   });
@@ -253,8 +264,8 @@ describe("B. Final cash: the action works, and says what it means", () => {
   test("accept takes the standing proposal, never stale input", () => {
     const w = atDeal();
     propose(w, "tp", 800);
-    w.st.actions.dealAdjustRespond({ oppId: w.o, by: "collector", action: "accept",
-      amount: 99, at: AT });
+    confirm(w, "tp");
+    confirm(w, "collector", { amount: 99 });
     eq(w.get().deal.agreedAdj, 800, "the passed amount is ignored");
   });
 });
@@ -265,8 +276,10 @@ describe("C. The arithmetic, in both directions", () => {
     eq(w.get().agreedPrice, 1000, "agreed price $1,000");
     eq(D.totalTradeValue(w.get()), 275, "value of trade $275");
     eq(D.calculatedBalance(w.get()), 725, "calculated cash balance $725");
+    confirm(w, "tp");
     propose(w, "collector", 700);
     accept(w, "tp");
+    accept(w, "collector");
     eq(D.finalBalance(w.get()), 700, "final amount owed $700");
     eq(D.finalBalance(w.get()) - D.calculatedBalance(w.get()), -25,
       "final cash adjustment -$25");
@@ -275,6 +288,7 @@ describe("C. The arithmetic, in both directions", () => {
   test("an increase is not called a discount", () => {
     const w = atDeal();
     propose(w, "tp", 800);
+    confirm(w, "tp");
     accept(w, "collector");
     eq(D.finalBalance(w.get()) - D.calculatedBalance(w.get()), 75, "an adjustment of +$75");
     assert(/"Additional discount" : "Final cash adjustment"/.test(code(COL)),
@@ -283,8 +297,10 @@ describe("C. The arithmetic, in both directions", () => {
 
   test("an equal proposal changes nothing", () => {
     const w = atDeal();
+    confirm(w, "tp");
     propose(w, "collector", 725);
     accept(w, "tp");
+    accept(w, "collector");
     eq(D.finalBalance(w.get()), 725, "the same figure");
     eq(D.finalBalance(w.get()) - D.calculatedBalance(w.get()), 0, "no adjustment");
     assert(/\{receipt\.adjustment !== 0 && \(/.test(code(COL)),
@@ -307,8 +323,10 @@ describe("C. The arithmetic, in both directions", () => {
     const w = atDeal({ price: 500, cards: [] });
     eq(D.totalTradeValue(w.get()), 0, "no trade value");
     eq(D.calculatedBalance(w.get()), 500, "so the balance is the price");
+    confirm(w, "tp");
     propose(w, "collector", 450);
     accept(w, "tp");
+    accept(w, "collector");
     eq(D.finalBalance(w.get()), 450, "and it can still be adjusted");
   });
 
@@ -317,8 +335,10 @@ describe("C. The arithmetic, in both directions", () => {
     eq(D.totalTradeValue(w.get()), 2520, "$1,845 + $675");
     eq(D.calculatedBalance(w.get()), 1480, "calculated balance");
     const before = JSON.stringify(w.get().trade.cards);
+    confirm(w, "tp");
     propose(w, "collector", 1400);
     accept(w, "tp");
+    accept(w, "collector");
     eq(D.finalBalance(w.get()), 1400, "the cash moved");
     eq(JSON.stringify(w.get().trade.cards), before, "and not one card term did");
   });
@@ -329,36 +349,44 @@ describe("D. Settled terms stay settled", () => {
     const w = atDeal();
     const before = JSON.stringify({ cards: w.get().trade.cards,
       price: w.get().agreedPrice, thread: w.get().priceThread });
+    confirm(w, "tp");
     propose(w, "collector", 700);
     propose(w, "tp", 690);
+    confirm(w, "tp");
     accept(w, "collector");
+    eq(w.get().deal.agreedAdj, 690, "the cash did settle");
     eq(JSON.stringify({ cards: w.get().trade.cards, price: w.get().agreedPrice,
       thread: w.get().priceThread }), before,
       "price, market values, percentages and inclusion all byte-identical");
   });
 
+  /* PHASE 1: confirmation order is partner first, collector second (§4). */
   test("agreement flags stay actor-specific", () => {
     const w = atDeal();
-    w.st.actions.dealAgree({ oppId: w.o, by: "collector", at: AT });
-    eq(w.get().deal.collectorAgreed, true, "the collector's own");
-    assert(!w.get().deal.tpAgreed, "not the partner's");
+    eq(confirm(w, "collector").refused, D.REFUSE.notYourTurn, "the collector cannot confirm first");
+    confirm(w, "tp");
+    eq(w.get().deal.tpAgreed, true, "the partner's own");
+    assert(!w.get().deal.collectorAgreed, "not the collector's");
     eq(w.get().stage, "deal", "and the deal waits for both");
   });
 
   test("a new proposal withdraws both confirmations", () => {
     const w = atDeal();
-    w.st.actions.dealAgree({ oppId: w.o, by: "collector", at: AT });
-    propose(w, "tp", 690);
+    confirm(w, "tp");
+    eq(w.get().deal.tpAgreed, true, "the partner had confirmed");
+    propose(w, "collector", 690);
     assert(!w.get().deal.collectorAgreed && !w.get().deal.tpAgreed,
       "nobody has agreed to a figure they have not seen");
   });
 
   test("the lifecycle still progresses canonically", () => {
     const w = atDeal();
+    confirm(w, "tp");
     propose(w, "collector", 700);
     accept(w, "tp");
-    w.st.actions.dealAgree({ oppId: w.o, by: "collector", at: AT });
-    w.st.actions.dealAgree({ oppId: w.o, by: "tp", at: AT });
+    eq(w.get().stage, "deal", "one confirmation is not both");
+    accept(w, "collector");
+    eq(w.get().deal.agreedAdj, 700, "the agreed figure is recorded");
     eq(w.get().stage, "fulfillment", "on to the handoff");
     const f = w.get().fulfillment;
     ["method", "where", "when"].forEach((k) => assert(f[k] == null, k + " is unset"));

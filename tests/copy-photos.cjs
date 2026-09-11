@@ -21,7 +21,7 @@ const { describe, test, assert, eq } = require("./run.cjs");
 const React = require("react");
 const TR = require("react-test-renderer");
 const D = require("../domain/metyet-domain.js");
-const { createStore } = require("../domain/metyet-store.js");
+const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
 const { collectorView } = require("../domain/collector-view.js");
 const App = require("../dist/Collector.cjs").default;
 const { __store } = require("../dist/Collector.cjs");
@@ -113,11 +113,12 @@ describe("A. The rule itself", () => {
   });
 
   test("the copy itself is still enforced in the domain", () => {
-    const store = readSrc("domain/metyet-store.js");
-    const guard = store.slice(store.indexOf("startOpportunity({"), store.indexOf("const id = \"o\""));
-    assert(/REFUSE\.copyUnavailable/.test(guard),
+    /* PHASE 1: startOpportunity is a command (R = D.REFUSE there). */
+    const store = readSrc("domain/metyet-commands.js");
+    const guard = store.slice(store.indexOf("startOpportunity(state"), store.indexOf("const id = rid(\"o\")"));
+    assert(/R\.copyUnavailable/.test(guard),
       "a deal names one physical card, which must exist and be available");
-    assert(!/REFUSE\.photosNeeded/.test(guard),
+    assert(!/R\.photosNeeded/.test(guard),
       "but photographs are no longer a precondition of negotiating");
   });
 });

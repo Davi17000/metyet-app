@@ -32,7 +32,7 @@ const fs = require("fs");
 const path = require("path");
 const D = require("../domain/metyet-domain.js");
 const M = require("../dist/MetYet.cjs");
-const { createStore } = require("../domain/metyet-store.js");
+const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
 const { collectorView } = require("../domain/collector-view.js");
 const App = require("../dist/Collector.cjs").default;
 const { __store } = require("../dist/Collector.cjs");
@@ -137,10 +137,12 @@ describe("A. A proposal is a turn (Defect A)", () => {
     eq(w.card(w.ids[0]).valueThread.length, 1, "and nothing was appended");
   });
 
+  /* PHASE 1: the collector opens market value (D.cardOwner, contract §6); the
+     partner answers. Only the opener changed — the rule under test is the same. */
   test("the same rule holds for percentages", () => {
     const w = world();
-    market(w, w.ids[0], "tp", "propose", 2050);
-    market(w, w.ids[0], "collector", "accept");
+    market(w, w.ids[0], "collector", "propose", 2050);
+    market(w, w.ids[0], "tp", "accept");
     percent(w, w.ids[0], "tp", "propose", 0.9);
     percent(w, w.ids[0], "collector", "propose", 0.8);
     percent(w, w.ids[0], "collector", "propose", 0.8);
@@ -172,10 +174,10 @@ describe("A. A proposal is a turn (Defect A)", () => {
 describe("B. The inert percentage send (Defect B)", () => {
   test("the partner opens the percentage phase — the collector cannot", () => {
     /* Not missing copy: the reducer correctly refuses, and the UI was offering
-       a control that could never work. */
+       a control that could never work. PHASE 1: collector opens market value. */
     const w = world();
-    market(w, w.ids[0], "tp", "propose", 2050);
-    market(w, w.ids[0], "collector", "accept");
+    market(w, w.ids[0], "collector", "propose", 2050);
+    market(w, w.ids[0], "tp", "accept");
     percent(w, w.ids[0], "collector", "propose", 0.9);
     eq(w.card(w.ids[0]).percentThread.length, 0, "the domain refuses, as designed");
   });
@@ -198,9 +200,10 @@ describe("B. The inert percentage send (Defect B)", () => {
   });
 
   test("the collector's counter is recorded once and hands the turn back", () => {
+    /* PHASE 1: collector opens market value; the percentage rule is unchanged. */
     const w = world();
-    market(w, w.ids[0], "tp", "propose", 2050);
-    market(w, w.ids[0], "collector", "accept");
+    market(w, w.ids[0], "collector", "propose", 2050);
+    market(w, w.ids[0], "tp", "accept");
     percent(w, w.ids[0], "tp", "propose", 0.9);
     percent(w, w.ids[0], "collector", "propose", 0.8);
     eq(w.card(w.ids[0]).percentThread.length, 2, "recorded exactly once");
@@ -261,9 +264,11 @@ describe("C. One state, read the same way by both seats", () => {
   });
 
   test("accept takes the standing proposal, not a stale parameter", () => {
+    /* PHASE 1: the collector opens market value, so the partner is the seat
+       that accepts; the stale-parameter rule is unchanged. */
     const w = world();
-    market(w, w.ids[0], "tp", "propose", 2050);
-    market(w, w.ids[0], "collector", "accept", 99);
+    market(w, w.ids[0], "collector", "propose", 2050);
+    market(w, w.ids[0], "tp", "accept", 99);
     eq(w.card(w.ids[0]).agreedMarket, 2050, "the amount argument cannot alter it");
   });
 });
@@ -310,9 +315,10 @@ describe("D. Dollars and percentages are one proposal", () => {
   });
 
   test("the sent proposal is the same either way", () => {
+    /* PHASE 1: collector opens market value. */
     const w = world();
-    market(w, w.ids[0], "tp", "propose", 2050);
-    market(w, w.ids[0], "collector", "accept");
+    market(w, w.ids[0], "collector", "propose", 2050);
+    market(w, w.ids[0], "tp", "accept");
     percent(w, w.ids[0], "tp", "propose", 0.95);
     percent(w, w.ids[0], "collector", "propose", 0.9);
     eq(w.card(w.ids[0]).collectorPercent, 0.9, "stored as the canonical fraction");
@@ -323,15 +329,18 @@ describe("D. Dollars and percentages are one proposal", () => {
 
 describe("E. Multi-card independence and identity", () => {
   test("two rows negotiate entirely separately", () => {
+    /* PHASE 1: the collector opens market value, and the Value Trade turn is
+       one canonical owner per Opportunity (D.nextActor): a seat works through
+       every card it holds before the other side answers. The values under test
+       are unchanged. */
     const w = world(2);
-    market(w, w.ids[0], "tp", "propose", 2050);
-    market(w, w.ids[0], "collector", "accept");
+    market(w, w.ids[0], "collector", "propose", 2050);
+    market(w, w.ids[1], "collector", "propose", 900);
+    market(w, w.ids[0], "tp", "accept");
+    market(w, w.ids[1], "tp", "accept");
     percent(w, w.ids[0], "tp", "propose", 0.9);
-    percent(w, w.ids[0], "collector", "accept");
-
-    market(w, w.ids[1], "tp", "propose", 900);
-    market(w, w.ids[1], "collector", "accept");
     percent(w, w.ids[1], "tp", "propose", 0.75);
+    percent(w, w.ids[0], "collector", "accept");
     percent(w, w.ids[1], "collector", "accept");
 
     eq(D.tradeValueOf(w.card(w.ids[0])), 1845, "$2,050 x 90%");
@@ -355,15 +364,29 @@ describe("E. Multi-card independence and identity", () => {
     eq(w.card(w.ids[1]).collectorMarket, null, "and certainly not a sibling");
   });
 
+  /* PHASE 1 (contract §4, §8): a copy the partner accepted is COMMITTED and
+     the collector cannot withdraw it unilaterally — withdrawTradeCard is valid
+     only for a Reserved copy. The old expectation (withdrawing an accepted row
+     at Value Trade closes the stage) is superseded. What remains true: a refused
+     withdrawal changes nothing, history is preserved, and the stage still closes
+     canonically when the last term settles. */
   test("withdrawal preserves history and the stage rule", () => {
     const w = world(2);
-    market(w, w.ids[0], "tp", "propose", 2050);
-    market(w, w.ids[0], "collector", "accept");
+    market(w, w.ids[0], "collector", "propose", 2050);
+    market(w, w.ids[1], "collector", "propose", 900);
+    market(w, w.ids[0], "tp", "accept");
     percent(w, w.ids[0], "tp", "propose", 0.9);
+    eq(w.get().stage, "value-trade", "one row still unsettled");
+    const before = JSON.stringify(w.get());
+    w.st.actions.withdrawTradeCard({ oppId: w.o, tradeCardId: w.ids[1], at: AT });
+    eq(JSON.stringify(w.get()), before, "a committed copy cannot be withdrawn — nothing changes");
+    eq(w.card(w.ids[1]).inclusion, "accepted", "it stays committed");
+    market(w, w.ids[1], "tp", "accept");
+    percent(w, w.ids[1], "tp", "propose", 0.75);
     percent(w, w.ids[0], "collector", "accept");
     eq(w.get().stage, "value-trade", "one row still unsettled");
-    w.st.actions.withdrawTradeCard({ oppId: w.o, tradeCardId: w.ids[1], at: AT });
-    eq(w.get().stage, "deal", "removing it closes the stage canonically");
+    percent(w, w.ids[1], "collector", "accept");
+    eq(w.get().stage, "deal", "settling the last term closes the stage canonically");
     eq(w.card(w.ids[0]).valueThread.length, 2, "and history is untouched");
   });
 });
@@ -377,9 +400,10 @@ describe("F. Nothing else moved", () => {
   });
 
   test("stage progression is still canonical", () => {
+    /* PHASE 1: collector opens market value. */
     const w = world();
-    market(w, w.ids[0], "tp", "propose", 2050);
-    market(w, w.ids[0], "collector", "accept");
+    market(w, w.ids[0], "collector", "propose", 2050);
+    market(w, w.ids[0], "tp", "accept");
     percent(w, w.ids[0], "tp", "propose", 0.9);
     eq(w.get().stage, "value-trade", "an open percentage keeps the stage");
     percent(w, w.ids[0], "collector", "accept");

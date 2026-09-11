@@ -20,7 +20,7 @@ process.env.METYET_DEV = "1";                 // before requiring the bundles
 
 const { describe, test, assert, eq } = require("./run.cjs");
 const D = require("../domain/metyet-domain.js");
-const { createStore } = require("../domain/metyet-store.js");
+const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
 const { collectorView } = require("../domain/collector-view.js");
 const { buildCanonicalSeed } = require("../dist/MetYet.cjs");
 
@@ -267,12 +267,15 @@ describe("4. Secondary -> Primary graduation", () => {
     const st = world();
     const g = goalNoted(st.get(), /^Review promotion/);
     /* Before promotion the domain refuses: a Secondary goal is not pursued. */
-    const early = st.actions.startOpportunity({ goalId: g.id, collectorId: ME,
+    /* PHASE 1: an offer names the exact InventoryCopy it is made on (§4). */
+    const copyOf = (pid) => (st.get().inventory.find((i) => i.partnerId === pid
+      && i.cardId === g.cardId && !i.archived) || {}).invId;
+    const early = st.actions.startOpportunity({ goalId: g.id, collectorId: ME, invId: copyOf("p-self"),
       partnerId: "p-self", cardId: g.cardId, listedPrice: 2400, amount: 2200, at: "2026-08-17" });
     assert(early && early.refused === D.REFUSE.notPrimary, "Secondary cannot open a deal");
 
     st.actions.updateGoalTier(g.id, "primary");
-    const ok = st.actions.startOpportunity({ goalId: g.id, collectorId: ME,
+    const ok = st.actions.startOpportunity({ goalId: g.id, collectorId: ME, invId: copyOf("p-self"),
       partnerId: "p-self", cardId: g.cardId, listedPrice: 2400, amount: 2200, at: "2026-08-17" });
     assert(typeof ok === "string", "after promotion a deal may begin");
 

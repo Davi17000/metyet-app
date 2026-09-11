@@ -1401,7 +1401,7 @@ const STAGE_LABEL = Object.fromEntries(STAGES.map((s) => [s.id, s.label]));
 /* How a terminal opportunity reads in history. The distinction is deliberate: a deal
    that ended before mutual agreement is not the same as one cancelled after it. */
 const outcomeLabel = (o) => {
-  const where = STAGE_LABEL[o.archivedFrom || o.stage];
+  const where = STAGE_LABEL[o.endedStage || o.archivedFrom || o.stage];
   if (o.outcome === "cancelled") return `Cancelled during ${where}`;
   if (o.outcome === "ended") return `Ended during ${where}`;
   return `archived from ${where}`;                 // records closed before this existed
@@ -1604,25 +1604,8 @@ const lastEntry = (thread) => thread[thread.length - 1] || null;
      economics  — what is it worth and what credit does it earn? (Value Trade)
    Everything about the economic phase is DERIVED from the structured fields below
    via cardPhase(); there is no second synchronised state to drift. */
-const emptyTradeCard = (cardId, photos, cert, binderId) => ({
-  id: "tc" + cardId + "-" + Math.random().toString(36).slice(2, 7),  // stable across stages
-  cardId,
-  binderId: binderId || null,     // link back to the collector's binder copy
-  inclusion: "proposed",           // proposed | accepted | rejected   (TP-owned, Select Trade)
-  reviewedAt: null,                // when the TP made the inclusion decision
-  withdrawn: false,                // collector pulled it over economics (Value Trade)
-  withdrawnAt: null,
-  collectorMarket: null,           // collector's current market position
-  tpMarket: null,                  // TP's current market position
-  agreedMarket: null,              // OUTPUT only — never typed directly
-  valueThread: [],                 // {by, type:'propose'|'accept', amount, at}
-  collectorPercent: null,          // collector's current % position
-  tpPercent: null,                 // TP's current % position
-  agreedPercent: null,             // OUTPUT only — never typed directly
-  percentThread: [],               // {by, type:'propose'|'accept', percent, at}
-  cert: cert || null,
-  photos: photos || { front: null, back: null },
-});
+/* One trade-row shape for both seats — the canonical factory. */
+const emptyTradeCard = SharedID.emptyTradeCard;
 
 /* ---- card selectors. Names say exactly what they mean. ---------------------- */
 /* The cards array is the historical record and is never gated on mode: an
@@ -1655,24 +1638,15 @@ function cardPhase(tc) {
 
 /* Whose turn is it on this row, and what is the action? Derived, never stored. */
 function cardOwner(tc) {
+  const owner = SharedID.cardOwner(tc);
   switch (cardPhase(tc)) {
     case PHASE.rejected:  return { owner: null, label: "Rejected", tone: "gone" };
     case PHASE.withdrawn: return { owner: null, label: "Withdrawn", tone: "gone" };
     case PHASE.inclusion: return { owner: "tp", label: "Review card", tone: "tp" };
-    case PHASE.market: {
-      if (tc.collectorMarket == null) return { owner: "collector", label: "Propose market", tone: "collector" };
-      const last = lastEntry(tc.valueThread);
-      return last && last.by === "tp"
-        ? { owner: "collector", label: "Review market", tone: "collector" }
-        : { owner: "tp", label: "Review market", tone: "tp" };
-    }
-    case PHASE.percent: {
-      if (tc.tpPercent == null) return { owner: "tp", label: "Propose trade %", tone: "tp" };
-      const last = lastEntry(tc.percentThread);
-      return last && last.by === "tp"
-        ? { owner: "collector", label: "Review trade %", tone: "collector" }
-        : { owner: "tp", label: "Review trade %", tone: "tp" };
-    }
+    case PHASE.market:
+      return { owner, tone: owner, label: tc.collectorMarket == null ? "Propose market" : "Review market" };
+    case PHASE.percent:
+      return { owner, tone: owner, label: tc.tpPercent == null ? "Propose trade %" : "Review trade %" };
     default: return { owner: null, label: "Agreed", tone: "ok" };
   }
 }
@@ -1727,7 +1701,15 @@ const oppValue = (o) => (o.agreedPrice != null ? o.agreedPrice : o.listedPrice);
    collector-owes balance is a NEGATIVE adjustment. The UI never renders the sign;
    it renders payer -> recipient and an absolute amount. */
 const baseCash = (opp) => (opp.agreedPrice == null ? null : opp.agreedPrice - totalCredit(opp));
-const agreedAdjustment = (opp) => opp.deal?.agreedAdj ?? 0;
+/* PHASE 1: `deal.agreedAdj` is the agreed FINAL signed balance (the domain's
+   finalBalance / currentCashFigure), not a delta. This workspace used to add it
+   to the base — and to propose deltas — so the same agreement read as two
+   different figures on the two seats. The adjustment is derived from it. */
+const agreedAdjustment = (opp) => {
+  const base = baseCash(opp);
+  const fin = opp.deal?.agreedAdj;
+  return fin == null || base == null ? 0 : fin - base;
+};
 /* WHO PAYS WHOM IS DECIDED ONCE, IN THE DOMAIN.
 
    This used to read the sign itself — `net > 0 ? "collector" : "tp"` — which
@@ -2023,68 +2005,70 @@ function networkDemandCards({ goals, cardById }) {
 }
 
 /* Whose turn is it, and what can they do? Derived, never stored. */
+/* WHOSE MOVE, WORDED FOR THE TRUSTED PARTNER.
+
+   The OWNER is never decided here. It comes from the one canonical turn engine
+   (SharedID.nextActor), the same answer the Collector's seat reads — this
+   function only chooses the partner's words for it. */
 function nextAction(opp) {
   if (isArchived(opp)) return { owner: null, label: "Archived — closed without completing" };
-  switch (opp.stage) {
-    case "secondary":
-      return { owner: "collector", label: "Collector to promote to Primary Goal" };
-    case "primary":
-      return { owner: "collector", label: "Collector to make an offer" };
-    case "agree-price": {
-      const last = lastEntry(opp.priceThread);
-      if (!last) return { owner: "collector", label: "Collector to make an offer" };
-      return last.by === "collector"
-        ? { owner: "tp", label: "You: accept or counter their offer" }
-        : { owner: "collector", label: "Collector to accept or counter" };
-    }
-    case "select-trade": {
+  if (opp.stage === "secondary") return { owner: "collector", label: "Collector to promote to Primary Goal" };
+  if (opp.stage === "completed") return { owner: null, label: "Completed" };
+  const t = SharedID.nextActor(opp);
+  const owner = SharedID.seatOfActor(t.actor);
+  switch (t.reason) {
+    case "offer":
+      return { owner, label: "Collector to make an offer" };
+    case "price":
+      return owner === "tp"
+        ? { owner, label: "You: accept or counter their offer" }
+        : { owner, label: "Collector to accept or counter" };
+    case "choose-trade": {
       const cards = tradeCards(opp);
-      if (!cards.length) return { owner: "collector", label: "Collector to add trade cards or choose cash" };
-      if (!opp.trade.submitted) return { owner: "collector", label: `Collector assembling package · ${cards.length} card${cards.length === 1 ? "" : "s"}` };
-      const unreviewed = proposedCards(opp).length;
-      if (unreviewed) return { owner: "tp", label: `You: accept or reject ${unreviewed} proposed card${unreviewed === 1 ? "" : "s"}` };
-      return includedCards(opp).length
-        ? { owner: null, label: "Package settled" }
-        : { owner: "collector", label: "Every card rejected — collector to re-propose or choose cash" };
+      return { owner, label: cards.length
+        ? `Collector assembling package · ${cards.length} card${cards.length === 1 ? "" : "s"}`
+        : "Collector to add trade cards or choose cash" };
     }
-    case "value-trade": {
-      if (allWithdrawn(opp)) return { owner: "collector", label: "Collector to continue as cash only or stop pursuing" };
+    case "review-trade": {
+      const unreviewed = proposedCards(opp).filter((c) => !c.withdrawn).length;
+      return { owner, label: `You: accept or reject ${unreviewed} proposed card${unreviewed === 1 ? "" : "s"}` };
+    }
+    case "trade-reviewed":
+      return { owner, label: "Package settled" };
+    case "value": {
       const active = activeTradeCards(opp);
       const settled = active.filter(fullyAgreed).length;
-      const mine = active.filter((c) => cardOwner(c).owner === "tp");
-      if (mine.length) {
+      if (owner === "tp") {
+        const mine = active.filter((c) => SharedID.cardOwner(c) === "tp");
         const m = mine.filter((c) => cardPhase(c) === PHASE.market).length;
-        return { owner: "tp", label: m
+        return { owner, label: m
           ? `You: review market on ${m} card${m === 1 ? "" : "s"} · ${settled} of ${active.length} settled`
           : `You: trade % on ${mine.length} card${mine.length === 1 ? "" : "s"} · ${settled} of ${active.length} settled` };
       }
-      return { owner: "collector", label: `Collector to respond · ${settled} of ${active.length} settled` };
+      return { owner, label: `Collector to respond · ${settled} of ${active.length} settled` };
     }
-    case "deal": {
-      const d = opp.deal;
-      if (adjOpen(d)) {
-        const last = lastEntry(d.adjThread);
-        return last.by === "collector"
-          ? { owner: "tp", label: "You: accept or counter the final balance" }
-          : { owner: "collector", label: "Collector to accept or counter the final balance" };
-      }
-      if (!d.tpAgreed) return { owner: "tp", label: "You: agree to the deal as assembled" };
-      if (!d.collectorAgreed) return { owner: "collector", label: "Collector to agree to the deal" };
+    case "values-settled":
+      return { owner, label: "Collector to continue" };
+    case "final":
+      return owner === "tp"
+        ? { owner, label: adjOpen(opp.deal || {}) ? "You: agree to the collector's figure or propose another" : "You: agree to the deal as assembled" }
+        : { owner, label: "Collector to agree to the deal" };
+    case "agreed":
       return { owner: null, label: "Both agreed" };
-    }
-    case "fulfillment": {
-      const f = opp.fulfillment;
-      if (f.revisionRequested) return { owner: "tp", label: "You: revise the fulfillment plan" };
-      if (!planProposed(f)) return { owner: "tp", label: "You: propose a fulfillment plan" };
-      if (!f.collectorConfirmedPlan) return { owner: "collector", label: "Collector to confirm the fulfillment plan" };
-      if (!f.tpHandoff) return { owner: "tp", label: `You: confirm handoff — ${fulfillmentSummary(f)}` };
-      if (!f.collectorReceipt) return { owner: "collector", label: "Collector to confirm receipt" };
+    case "plan":
+      return (opp.fulfillment || {}).revisionRequested
+        ? { owner, label: "You: revise the fulfillment plan" }
+        : { owner, label: "You: propose a fulfillment plan" };
+    case "confirm-plan":
+      return { owner, label: "Collector to confirm the fulfillment plan" };
+    case "handoff":
+      return { owner, label: `You: confirm handoff — ${fulfillmentSummary(opp.fulfillment || {})}` };
+    case "receipt":
+      return { owner, label: "Collector to confirm receipt" };
+    case "done":
       return { owner: null, label: "Both confirmed" };
-    }
-    case "completed":
-      return { owner: null, label: "Completed" };
     default:
-      return { owner: "collector", label: "Collector-owned" };
+      return { owner: owner || null, label: "Collector-owned" };
   }
 }
 
@@ -2156,6 +2140,25 @@ export function demoDealStage(state, collectorId) {
   if (!copies.length) return null;
   return copies.some((i) => SharedID.INVARIANTS.copyPhotographed(i.photos))
     ? PRE_DEAL_READY : PRE_DEAL;
+}
+
+function seedRelationships(world) {
+  const pairs = new Map();
+  const add = (partnerId, collectorId, at) => {
+    const k = partnerId + "::" + collectorId;
+    if (partnerId && collectorId && !pairs.has(k)) {
+      pairs.set(k, { partnerId, collectorId, status: "accepted", at: at || null });
+    }
+  };
+  world.collectors.forEach((c) => add(SELF_PARTNER, c.id, c.since));
+  world.partners.forEach((p) => add(p.id, "c12", p.since));
+  world.interests.forEach((i) => {
+    const b = world.binder.find((x) => x.id === i.binderId);
+    if (b) add(i.partnerId, b.collectorId, i.at);
+  });
+  world.opportunities.forEach((o) => add(o.partnerId, o.collectorId, o.updated));
+  world.conversations.forEach((t) => add(t.partnerId, t.collectorId, null));
+  return [...pairs.values()];
 }
 
 export function buildCanonicalSeed(opts) {
@@ -2271,6 +2274,12 @@ export function buildCanonicalSeed(opts) {
     }] : [],
   };
 
+  /* THE COLLECTOR NETWORK, SEEDED (contract §2). Relationships are explicit
+     records. The demo world's pairs: Northline's network is every seeded
+     collector, Casey is related to every seeded partner she can see, and any
+     pair that already shares an interest, a deal or a thread. */
+  world.relationships = seedRelationships(world);
+
   if (!preDeal) return world;
 
   /* Shape the copies behind the review goal so the collector meets the state
@@ -2286,19 +2295,6 @@ export function buildCanonicalSeed(opts) {
     /* Nobody has asked yet: the loop starts from the first click. */
     photoRequests: [],
   };
-}
-
-/* Store-backed [value, setter] adapter. Existing TP call sites — setInventory(fn),
-   setOpps(fn) — keep working unchanged, but the write lands on the ONE canonical
-   collection. No shadow state, no mirror, no effect syncing two copies. */
-function useShared(store, key) {
-  const state = useSyncExternalStore(store.sub, store.get, store.get);
-  const set = useCallback((updater) => {
-    const cur = store.get();
-    const next = typeof updater === "function" ? updater(cur[key]) : updater;
-    store.set({ ...cur, [key]: next });
-  }, [store, key]);
-  return [state[key], set];
 }
 
 function buildOpps(seed, goalsSeed = GOALS_SEED) {
@@ -2679,15 +2675,28 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
   /* Open on the network for the same reason: it establishes the inputs before their
      consequences. The TP can still go straight to Opportunities. */
   const [nav, setNav] = useState({ section: "collectors" });
-  const [cardDb, setCardDb] = useShared(store, "catalog");
-  const [inventory, setInventory] = useShared(store, "inventory");
-  const [photoRequests, setPhotoRequests] = useShared(store, "photoRequests");
-  const [goals, setGoals] = useShared(store, "goals");
-  const [collectors, setCollectors] = useShared(store, "collectors");
-  const [opps, setOpps] = useShared(store, "opportunities");
-  const [collectorCards, setCollectorCards] = useShared(store, "binder");
-  const [interests, setInterests] = useShared(store, "interests");
-  const [activity, setActivity] = useShared(store, "activity");
+  /* READ-ONLY canonical state. This workspace never writes a collection: every
+     change below is a canonical command through store.execute, which derives
+     the seat from the actor and enforces the domain contract. */
+  const canon = useSyncExternalStore(store.sub, store.get, store.get);
+  const cardDb = canon.catalog;
+  const inventory = canon.inventory;
+  const photoRequests = canon.photoRequests;
+  const goals = canon.goals;
+  const collectors = canon.collectors;
+  const opps = canon.opportunities;
+  const collectorCards = canon.binder;
+  const interests = canon.interests;
+  const activity = canon.activity || [];
+  const threads = canon.conversations;
+  const DAY = TODAY.toISOString().slice(0, 10);
+  /* The seat this workspace acts as. asCollector is used ONLY by the prototype's
+     collector-simulation panels (SimBlock), which act as the collector on that
+     record and meet exactly the same command rules. Outside DEV it yields no
+     actor at all, so those commands are refused (see collectorSimActor). */
+  const tpActor = useMemo(() => ({ partnerId }), [partnerId]);
+  const asCollector = collectorSimActor;
+  const run = (actor, command, payload) => store.execute(actor, command, { at: DAY, ...payload });
   const catalog = useMemo(() => {
     const groups = new Map();
     for (const c of cardDb) {
@@ -2705,18 +2714,10 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
   const resolveCanonicalCard = (printed, copy) => {
     const target = { ...printed, edition: copy.edition, grade: copy.grade, condition: copy.condition };
     delete target.variants;
-    const k = identityKey(target);
-    const hit = cardDb.find((c) => identityKey(c) === k);
-    if (hit) return { id: hit.id, card: hit };
-    const id = "c" + k.replace(/[^a-z0-9]+/g, "").slice(0, 24) + "-" + cardDb.length;
-    /* Built once and returned immediately. setCardDb is queued, so a caller reading
-       cardDb back in this same call stack would not see it until the next render —
-       handing the record over directly is what makes the add a single click. */
-    const resolved = { ...target, id };
-    setCardDb((db) => [...db, resolved]);
-    return { id, card: resolved };
+    const r = run(tpActor, "resolveCardIdentity", { identity: target });
+    return r.ok ? r.value : { id: null, card: null };
   };
-  const [threads, setThreads] = useShared(store, "conversations");
+
   /* Interest readers, derived from the one canonical relationship. */
   const interestedIn = useCallback((binderId, pid = partnerId) =>
     interests.some((i) => i.binderId === binderId && i.partnerId === pid), [interests, partnerId]);
@@ -2735,8 +2736,10 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
   /* THE TP SEES ONLY ITS OWN SHELF. Inventory is partner-owned, so every TP
      surface scopes to the active partner. Other partners' stock lives in the
      same canonical collection — it simply is not this partner's to manage. */
-  const activeInv = useMemo(
-    () => inventory.filter((i) => !i.archived && i.partnerId === SELF_PARTNER), [inventory]);
+  const activeInv = useMemo(() => {
+    const sold = SharedID.soldInventoryIds(opps);
+    return inventory.filter((i) => !i.archived && i.partnerId === partnerId && !sold.has(i.invId));
+  }, [inventory, opps, partnerId]);
   const ownedIds = useMemo(() => new Set(activeInv.map((i) => i.cardId)), [activeInv]);
 
   // preference matches: shared tags, excluding pairs that already have an explicit goal
@@ -2874,63 +2877,67 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
   );
 
 
-  /* ---- actions ---- */
-  /* Thread semantics are canonical and shared — see metyet-domain. Both personas
-     append through the same function, so one conversation per collector + card
-     identity holds across both experiences. */
-  /* This workspace IS one Trusted Partner, so every thread it touches is scoped
-     to that partner. Another partner holding the same identity has their own. */
+  /* ---- actions ----
+     Every write is ONE canonical command (store.execute). Refusals come from the
+     domain; these handlers only choose the words and the follow-up notes. */
   const threadKeyFor = useCallback((collectorId, cardId) => SharedID.threadKey(collectorId, partnerId, card(cardId)), [card, partnerId]);
   const threadFor = useCallback(
     (collectorId, cardId) => SharedID.findThread(threads, collectorId, partnerId, card(cardId)),
     [threads, card, partnerId]
   );
-  const appendEntry = (collectorId, cardId, entry) => {
-    setThreads((ts) => SharedID.appendThreadEntry(ts, {
-      collectorId, partnerId, card: card(cardId), cardId, entry }));
-  };
-  const sendMessage = (collectorId, cardId, by, text) => {
-    appendEntry(collectorId, cardId, { kind: "message", by, text });
-    if (by === "tp") logActivity(collectorId, "outreach", `You messaged about ${cardShort(card(cardId))} — ${text.slice(0, 60)}`);
-  };
-  /* Structured lifecycle events land in the same thread, chronologically. */
-  const logMilestone = (collectorId, cardId, text) => appendEntry(collectorId, cardId, { kind: "event", by: "system", text });
   const hasConversation = useCallback(
     (collectorId, cardId) => SharedID.hasConversation(threads, collectorId, partnerId, card(cardId)),
     [threads, card, partnerId]
   );
 
+  /* Notes: the partner's own activity feed and the participants' thread. */
   const logActivity = (collectorId, type, text, date) =>
-    setActivity((a) => [{ id: "a" + Date.now() + Math.random(), collectorId, type, text, date: date || TODAY.toISOString().slice(0, 10) }, ...a]);
+    run(tpActor, "recordNote", { collectorId, activity: { type, text, date: date || DAY } });
+  const logMilestone = (collectorId, cardId, text, oppId) =>
+    run(tpActor, "recordNote", { collectorId, cardId, oppId, milestone: text });
+
+  const sendMessage = (collectorId, cardId, by, text) => {
+    const r = by === "tp"
+      ? run(tpActor, "sendMessage", { collectorId, cardId, text })
+      : run(asCollector(collectorId), "sendMessage", { partnerId, cardId, text });
+    if (r.ok && by === "tp") logActivity(collectorId, "outreach", `You messaged about ${cardShort(card(cardId))} — ${text.slice(0, 60)}`);
+    return r;
+  };
 
   // Outreach is communication only. It never moves the opportunity.
   const startOutreach = (collectorId, cardId, goalTier, message) => {
     const c = card(cardId);
-    if (message) appendEntry(collectorId, cardId, { kind: "message", by: "tp", text: message });
+    if (message) run(tpActor, "sendMessage", { collectorId, cardId, text: message });
     logActivity(collectorId, "outreach", `You reached out about ${cardShort(c)} (${goalTier} goal)${message ? " — " + message.slice(0, 60) : ""}`);
     say(`Outreach sent to ${collector(collectorId).short}. The stage is unchanged — only they can start a negotiation.`);
     setModal(null);
   };
 
-  const NOW = TODAY.toISOString().slice(0, 10);
-  const patchOpp = (id, fn, note, type = "stage") => {
-    const cur = opps.find((o) => o.id === id);
-    if (!cur) return;
-    const next = { ...fn(cur), updated: NOW };
-    setOpps((os) => os.map((o) => (o.id === id ? next : o)));
-    if (note) {
-      const text = note(next, cur);
-      logActivity(cur.collectorId, type, text);
-      logMilestone(cur.collectorId, cur.cardId, text);
+  const NOW = DAY;
+  /* One command, then — only if it was accepted — the notes describing it. */
+  const act = (actor, command, payload, note, type = "stage") => {
+    const before = payload.oppId ? store.get().opportunities.find((o) => o.id === payload.oppId) : null;
+    const r = run(actor, command, payload);
+    if (r.ok && note && before) {
+      const after = store.get().opportunities.find((o) => o.id === payload.oppId);
+      const text = note(after, before);
+      if (text) {
+        logActivity(before.collectorId, type, text);
+        logMilestone(before.collectorId, before.cardId, text, before.id);
+      }
     }
+    return r;
   };
+  const seatActor = (o, by) => (by === "tp" ? tpActor : asCollector(o.collectorId));
+  const oppOf = (oppId) => store.get().opportunities.find((o) => o.id === oppId) || null;
 
   /* --- INTENT (Collector-owned; simulated until the Collector app exists) --- */
 
   const collectorPromoteGoal = (goalId) => {
     const g = goals.find((x) => x.id === goalId);
     if (!g || g.tier !== "secondary") return;
-    setGoals((gs) => gs.map((x) => (x.id === goalId ? { ...x, tier: "primary", since: NOW, secondarySince: x.secondarySince || x.since, confirmedAt: NOW } : x)));
+    const r = run(asCollector(g.collectorId), "updateGoalTier", { goalId, tier: "primary" });
+    if (!r.ok) return;
     logActivity(g.collectorId, "goal", `Secondary goal promoted to Primary — ${cardShort(card(g.cardId))} (secondary since ${fmtDate(g.since)})`);
     logMilestone(g.collectorId, g.cardId, "Secondary Goal promoted to Primary Goal");
     say(`${collector(g.collectorId).short} promoted this to a Primary Goal.`);
@@ -2941,7 +2948,8 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
   const collectorConfirmGoal = (goalId) => {
     const g = goals.find((x) => x.id === goalId);
     if (!g) return;
-    setGoals((gs) => gs.map((x) => (x.id === goalId ? { ...x, confirmedAt: NOW } : x)));
+    const r = run(asCollector(g.collectorId), "confirmGoal", { goalId });
+    if (!r.ok) return;
     logActivity(g.collectorId, "goal", `${STAGE_LABEL[g.tier]} confirmed — ${cardShort(card(g.cardId))}`);
     logMilestone(g.collectorId, g.cardId, `${STAGE_LABEL[g.tier]} confirmed as still accurate`);
     say(`${collector(g.collectorId).short} confirmed this goal is still accurate.`);
@@ -2951,124 +2959,86 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
     const g = goals.find((x) => x.id === goalId);
     const inv = inventory.find((i) => i.invId === invId && !i.archived);
     if (!g || !inv) return;
-    /* A deal is evidence of active pursuit, so the goal must be Primary. A
-       Trusted Partner cannot promote a collector's goal on their behalf — that
-       is the collector's own statement of intent. */
-    if (g.tier !== "primary") return;
-    /* ONE active negotiation per goal, enforced where the opportunity is made —
-       not by whichever surface happened to call. */
-    if (opps.some((o2) => o2.goalId === goalId && isActive(o2)
-      && STAGE_MAP.indexOf(o2.stage) >= STAGE_MAP.indexOf("agree-price"))) return;
-    const o = emptyOpp(g.collectorId, g.cardId, inv.invId, inv.ask, NOW, goalId, inv.partnerId || SELF_PARTNER);
-    o.priceThread = [{ by: "collector", type: "offer", amount, at: NOW }];
-    setOpps((os) => [...os, o]);
-    // Making an offer is a stronger reaffirmation than pressing Confirm, so it
-    // refreshes confirmedAt. Identity, priority and history are untouched, and the
-    // offer's own activity event already documents the reaffirming action.
-    setGoals((gs) => gs.map((x) => (x.id === goalId ? { ...x, confirmedAt: NOW } : x)));
+    const r = run(asCollector(g.collectorId), "startOpportunity", { goalId, invId: inv.invId, amount });
+    if (!r.ok) {
+      if (r.refused === SharedID.REFUSE.copyCommitted) say("That copy is already committed to another deal.");
+      return;
+    }
+    // Making an offer is a stronger reaffirmation than pressing Confirm.
+    run(asCollector(g.collectorId), "confirmGoal", { goalId });
     logActivity(g.collectorId, "stage", `Made an offer of ${money(amount)} on ${cardShort(card(g.cardId))} (listed ${money(inv.ask)})`);
-    logMilestone(g.collectorId, g.cardId, `Collector made an offer — ${money(amount)} against a listed ${money(inv.ask)}`);
-    /* The conversation is not recreated. The existing thread for this collector x card
-       identity is adopted by the new opportunity. */
-    const key = g.collectorId + "::" + identityKey(card(g.cardId));
-    setThreads((ts) => ts.map((t) => (t.key === key ? { ...t, oppId: o.id, invId: inv.invId } : t)));
+    logMilestone(g.collectorId, g.cardId, `Collector made an offer — ${money(amount)} against a listed ${money(inv.ask)}`, r.value);
     say(`${collector(g.collectorId).short} opened a negotiation at ${money(amount)}.`);
   };
 
   /* --- AGREE ON PRICE --- */
-
-  /* SETTLING A PRICE IS A COMMITMENT OF THE PHYSICAL COPY, so acceptance goes
-     through the canonical action that enforces that — the same one the
-     Collector uses. Patching agreedPrice here would let this seat commit a copy
-     another deal had already taken, which is not a thing that can be true of
-     one physical card. Counters and declines are ordinary edits and stay here. */
   const priceRespond = (oppId, by, action, amount) => {
+    const o = oppOf(oppId);
+    if (!o) return null;
+    const actor = seatActor(o, by);
     if (action === "accept") {
-      const o = store.get().opportunities.find((x) => x.id === oppId);
-      const settled = o && lastEntry(o.priceThread);
-      const res = store.actions.agreePrice({ oppId, by,
-        amount: settled ? settled.amount : amount, at: NOW });
-      if (res && res.refused) {
+      const res = run(actor, "acceptPrice", { oppId });
+      if (!res.ok) {
         /* Says only that the copy is taken — never by whom, or for how much. */
         say(res.refused === SharedID.REFUSE.copyCommitted
           ? "That copy is already committed to another deal."
           : "That price could not be agreed.");
         return null;
       }
-      const now = store.get().opportunities.find((x) => x.id === oppId);
+      const now = oppOf(oppId);
       say(`Price agreed at ${money(now.agreedPrice)} — ${cardShort(card(now.cardId))}`);
       return now;
     }
-    return patchOpp(oppId, (o) => {
-      const thread = [...o.priceThread, { by, type: action, amount, at: NOW }];
-      return {
-        ...o, priceThread: thread,
-        stage: action === "decline" ? o.stage : o.stage,
-        declined: action === "decline" ? true : o.declined,
-      };
-    }, (n, o) => {
-      const who = by === "tp" ? "You" : collector(o.collectorId).short;
-      if (action === "decline") return `${who} stopped pursuing ${cardShort(card(o.cardId))}`;
-      return `${who} countered at ${money(amount)} — ${cardShort(card(o.cardId))}`;
-    });
+    const who = by === "tp" ? "You" : collector(o.collectorId).short;
+    if (action === "decline") {
+      return act(actor, "cancelOpportunity", { oppId },
+        () => `${who} stopped pursuing ${cardShort(card(o.cardId))}`);
+    }
+    return act(actor, "proposePrice", { oppId, amount },
+      () => `${who} countered at ${money(amount)} — ${cardShort(card(o.cardId))}`);
   };
 
-  /* --- SELECT TRADE (Collector-owned) --- */
+  /* --- SELECT TRADE --------------------------------------------------------
+     The simulated collector's DRAFT lives in this component, not in canonical
+     state: drafting reserves nothing and nobody else sees it. Submitting the
+     package is one command, and that is what reserves the exact copies. */
+  const [tradeDrafts, setTradeDrafts] = useState({});
+  const draftRows = (opp) => tradeDrafts[opp.id]
+    || (opp.trade && !opp.trade.submitted ? tradeCards(opp) : []);
 
-  /* --- SELECT TRADE: the collector assembles the package --------------------
-     Draft edits (adding, removing, revising a proposed market, attaching photos)
-     write to the same opp.trade.cards the later stages read. They deliberately
-     produce no valuation history and no milestones: drafting is not negotiating. */
-
-  const draftPatch = (oppId, fn) => {
-    const cur = opps.find((o) => o.id === oppId);
-    if (!cur) return;
-    setOpps((os) => os.map((o) => (o.id === oppId ? { ...fn(o), updated: NOW } : o)));
+  const tradeAddCard = (oppId, cardId) => {
+    const o = oppOf(oppId);
+    if (!o || o.trade?.submitted) return;
+    const rows = draftRows(o);
+    if (rows.some((c) => c.cardId === cardId)) return;
+    const b = collectorCards.find((cc) => cc.cardId === cardId && cc.collectorId === o.collectorId);
+    setTradeDrafts((d) => ({ ...d, [oppId]: [...rows, emptyTradeCard(cardId, b?.photos, b?.cert, b?.id)] }));
   };
 
-  const tradeAddCard = (oppId, cardId) =>
-    draftPatch(oppId, (o) => {
-      if (o.trade?.submitted) return o;                    // package is under TP review
-      const b = collectorCards.find((cc) => cc.cardId === cardId && cc.collectorId === o.collectorId);
-      const existing = o.trade?.cards || [];
-      if (existing.some((c) => c.cardId === cardId)) return o;
-      return { ...o, trade: { mode: "trade", submitted: false, cards: [...existing, emptyTradeCard(cardId, b?.photos, b?.cert, b?.id)] } };
-    });
+  /* Draft removal only — a submitted row is history. */
+  const tradeRemoveCard = (oppId, rowId) => {
+    const o = oppOf(oppId);
+    if (!o || o.trade?.submitted) return;
+    setTradeDrafts((d) => ({ ...d, [oppId]: draftRows(o).filter((c) => c.id !== rowId) }));
+  };
 
-  /* Draft removal only. Once the TP has made an inclusion decision the row is
-     transaction history and can never be deleted. */
-  const tradeRemoveCard = (oppId, rowId) =>
-    draftPatch(oppId, (o) => {
-      const tc = o.trade.cards.find((c) => c.id === rowId);
-      if (!tc || tc.inclusion !== "proposed" || o.trade.submitted) return o;
-      return { ...o, trade: { ...o.trade, cards: o.trade.cards.filter((c) => c.id !== rowId) } };
-    });
+  const submitPackageForReview = (oppId) => {
+    const o = oppOf(oppId);
+    if (!o) return null;
+    const rows = draftRows(o);
+    if (!rows.length) return null;
+    const r = act(asCollector(o.collectorId), "proposeTradeSelection",
+      { oppId, binderIds: rows.map((c) => c.binderId) },
+      () => `Collector proposed ${rows.length} card${rows.length === 1 ? "" : "s"} for the trade`);
+    if (r.ok) setTradeDrafts((d) => { const n = { ...d }; delete n[oppId]; return n; });
+    else if (r.refused === SharedID.REFUSE.copyReserved || r.refused === SharedID.REFUSE.copyCommitted) {
+      say("One of those cards is already in another deal.");
+    }
+    return r;
+  };
 
-  /* The collector hands the package to the TP for inclusion review. No economics
-     are required — this stage is only about which cards participate. */
-  const submitPackageForReview = (oppId) =>
-    patchOpp(oppId, (o) => ({ ...o, trade: { ...o.trade, submitted: true } }),
-      (n, o) => `Collector proposed ${o.trade.cards.length} card${o.trade.cards.length === 1 ? "" : "s"} for the trade`);
-
-  /* Select Trade closes the moment no card is awaiting review and at least one was
-     accepted. Accepted rows carry straight into Value Trade — same records, same ids. */
-  /* A fully reviewed package with at least one acceptance opens Value Trade. A fully
-     reviewed package with ZERO acceptances has nothing left to value, so it resolves
-     to a cash-only Deal rather than stranding the collector in Select Trade. Neither
-     applies while the package is a draft or any card is still unreviewed. */
-  const selectionExhausted = (o) =>
-    !!o.trade?.submitted && proposedCards(o).length === 0 && includedCards(o).length === 0;
-  /* One rule, in the domain, so both seats close a selection the same way. */
-  const maybeCloseSelection = SharedID.TRADE.closeSelection;
-
-  /* Same row-identity rule as the valuation actions: a decision is about one
-     proposed row, even when two rows name the same card. */
   const tpReviewInclusion = (oppId, rowId, action) =>
-    patchOpp(oppId, (o) => {
-      if (o.stage !== "select-trade" || isTerminal(o)) return o;   // inclusion closes with the stage
-      const cards = o.trade.cards.map((c) => (c.id === rowId ? tcReviewInclusion(c, action, NOW) : c));
-      return maybeCloseSelection({ ...o, trade: { ...o.trade, cards } });
-    }, (n, o) => {
+    act(tpActor, "reviewTradeCard", { oppId, tradeCardId: rowId, decision: action }, (n) => {
       const row = n.trade.cards.find((c) => c.id === rowId);
       const nm = card(row.cardId).name;
       const base = action === "accept" ? `You accepted ${nm} into the trade` : `You rejected ${nm} from the trade`;
@@ -3079,234 +3049,194 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
       return base;
     });
 
-  const collectorChooseCash = (oppId) =>
-    patchOpp(oppId, (o) => (isTerminal(o) || !["select-trade", "value-trade"].includes(o.stage)
-      ? o
-      : { ...o, trade: { ...(o.trade || {}), mode: "cash", submitted: true, cards: o.trade?.cards || [] }, stage: "deal" }),
-      (n, o) => `Chose cash only, no trade — ${cardShort(card(o.cardId))}`);
+  const collectorChooseCash = (oppId) => {
+    const o = oppOf(oppId);
+    if (!o) return null;
+    return act(asCollector(o.collectorId), "chooseCashOnly", { oppId },
+      () => `Chose cash only, no trade — ${cardShort(card(o.cardId))}`);
+  };
 
-  /* Either party may stop an opportunity that has not completed. This reuses the one
-     existing terminal flag (`declined`) so every lifecycle rule — isActive, stage
-     counts, Needs you, ownership — keeps working untouched; what is added is only a
-     discriminator describing HOW it ended.
+  /* Either participant may cancel before completion. After both final agreements
+     a reason is required, and history shows it as cancelled after agreement. */
+  const dealMutuallyAgreed = (o) => SharedID.finalAgreementGiven(o);
 
-     Before both parties agree in Deal, the deal simply ENDED. Once both have agreed a
-     commitment threshold has been crossed, so stopping is a CANCELLATION of an agreed
-     deal. The two are kept distinct in history rather than collapsed.
-
-     Nothing upstream is reset: price, trade selections, agreed markets, percentages
-     and the calculated balance are all left exactly as they were. */
-  const dealMutuallyAgreed = (o) => !!(o.deal && o.deal.tpAgreed && o.deal.collectorAgreed);
-
-  const endOpportunity = (oppId, by, reason) =>
-    patchOpp(oppId, (o) => (isTerminal(o) ? o : {
-      ...o,
-      declined: true,                          // the existing terminal flag
-      archivedAt: NOW,
-      archivedFrom: o.stage,                   // the stage it stopped in
-      outcome: dealMutuallyAgreed(o) ? "cancelled" : "ended",
-      endedBy: by,
-      endedReason: reason || null,
-    }), (n, o) => {
+  const endOpportunity = (oppId, by, reason) => {
+    const o = oppOf(oppId);
+    if (!o) return null;
+    return act(seatActor(o, by), "cancelOpportunity", { oppId, reason: reason || null }, (n) => {
       const who = by === "tp" ? "You" : collector(o.collectorId).short;
       const verb = n.outcome === "cancelled" ? "cancelled the agreed deal" : "ended the deal";
-      const where = STAGE_LABEL[o.stage];
-      return `${who} ${verb} during ${where}${n.endedReason ? ` — ${n.endedReason}` : ""}`;
+      return `${who} ${verb} during ${STAGE_LABEL[o.stage]}${n.endedReason ? ` — ${n.endedReason}` : ""}`;
     });
+  };
 
-  /* Archiving closes the opportunity without completing it. The record is preserved
-     in full; it simply leaves the active funnel. */
-  const collectorStopPursuing = (oppId) =>
-    patchOpp(oppId, (o) => (isTerminal(o) ? o : { ...o, declined: true, archivedAt: NOW, archivedFrom: o.stage }),
-      (n, o) => `${collector(o.collectorId).short} stopped pursuing ${cardShort(card(o.cardId))} — archived from ${STAGE_LABEL[o.stage]}`);
+  const collectorStopPursuing = (oppId) => {
+    const o = oppOf(oppId);
+    if (!o) return null;
+    return act(asCollector(o.collectorId), "cancelOpportunity", { oppId },
+      () => `${collector(o.collectorId).short} stopped pursuing ${cardShort(card(o.cardId))} — archived from ${STAGE_LABEL[o.stage]}`);
+  };
 
-  /* --- VALUE TRADE --- */
-
-  /* Deal is reached only when every included card is fully agreed (market AND
-     percentage) or withdrawn. If everything was withdrawn the opportunity waits
-     here for an explicit collector decision rather than silently becoming cash. */
-  const maybeCloseValuation = SharedID.TRADE.closeValuation;
-
-  /* ADDRESSED BY ROW, NOT BY CARD. Matching on cardId meant a collector who put
-     two copies of the same card into a trade would have both mutated by one
-     proposal — two independent negotiations moving as one. The trade-card row
-     id is the thing being negotiated over. */
-  const patchCard = (oppId, rowId, fn, note, type = "stage") =>
-    patchOpp(oppId, (o) => {
-      if (o.stage !== "value-trade" || isTerminal(o)) return o;    // terms close with the stage
-      const cards = o.trade.cards.map((c) => (c.id === rowId ? fn(c) : c));
-      return maybeCloseValuation({ ...o, trade: { ...o.trade, cards } });
-    }, note, type);
-
-  const marketAction = (oppId, rowId, by, action, amount) =>
-    patchCard(oppId, rowId, (c) => tcApplyMarket(c, by, action, amount, NOW), (n, o) => {
-      const row = n.trade.cards.find((c) => c.id === rowId);
-      const nm = card(row.cardId).name;
-      const who = by === "tp" ? "You" : collector(o.collectorId).short;
-      const after = row;
-      if (action === "accept") return `Market agreed on ${nm} at ${money(after.agreedMarket)}`;
-      return `${who} proposed ${money(amount)} market value for ${nm}`;
-    });
-
-  const percentAction = (oppId, rowId, by, action, percent) =>
-    patchCard(oppId, rowId, (c) => tcApplyPercent(c, by, action, percent, NOW), (n, o) => {
-      const row = n.trade.cards.find((c) => c.id === rowId);
-      const nm = card(row.cardId).name;
-      const who = by === "tp" ? "You" : collector(o.collectorId).short;
-      const after = row;
-      if (action === "accept") return `Trade % agreed on ${nm} at ${pct(after.agreedPercent)} — trade value ${money(creditFor(after))}`;
-      return `${who} proposed a ${pct(percent)} trade rate on ${nm}`;
-    });
-
-  const collectorWithdrawCard = (oppId, rowId) =>
-    patchCard(oppId, rowId, (c) => tcWithdraw(c, NOW),
-      (n, o) => {
+  /* --- VALUE TRADE --- rows addressed by row id, never by card. */
+  const marketAction = (oppId, rowId, by, action, amount) => {
+    const o = oppOf(oppId);
+    if (!o) return null;
+    return act(seatActor(o, by), action === "accept" ? "acceptMarketValue" : "proposeMarketValue",
+      { oppId, tradeCardId: rowId, amount }, (n) => {
         const row = n.trade.cards.find((c) => c.id === rowId);
-        return `${collector(o.collectorId).short} withdrew ${card(row.cardId).name} from the trade — keeping the card at these economics`;
+        const nm = card(row.cardId).name;
+        const who = by === "tp" ? "You" : collector(o.collectorId).short;
+        if (action === "accept") return `Market agreed on ${nm} at ${money(row.agreedMarket)}`;
+        return `${who} proposed ${money(amount)} market value for ${nm}`;
       });
+  };
 
-  /* --- DEAL --- */
+  const percentAction = (oppId, rowId, by, action, percent) => {
+    const o = oppOf(oppId);
+    if (!o) return null;
+    return act(seatActor(o, by), action === "accept" ? "acceptTradePercent" : "proposeTradePercent",
+      { oppId, tradeCardId: rowId, percent }, (n) => {
+        const row = n.trade.cards.find((c) => c.id === rowId);
+        const nm = card(row.cardId).name;
+        const who = by === "tp" ? "You" : collector(o.collectorId).short;
+        if (action === "accept") return `Trade % agreed on ${nm} at ${pct(row.agreedPercent)} — trade value ${money(creditFor(row))}`;
+        return `${who} proposed a ${pct(percent)} trade rate on ${nm}`;
+      });
+  };
 
-  const dealAgree = (oppId, by) =>
-    patchOpp(oppId, (o) => {
-      if (o.stage !== "deal" || isTerminal(o) || adjOpen(o.deal)) return o;
-      const deal = { ...o.deal, [by === "tp" ? "tpAgreed" : "collectorAgreed"]: true };
-      const both = deal.tpAgreed && deal.collectorAgreed;
-      return { ...o, deal, stage: both ? "fulfillment" : o.stage };
-    }, (n, o) => n.stage === "fulfillment"
-      ? `Deal confirmed — ${cashLabel(n, collector(o.collectorId).short)}`
-      : `${by === "tp" ? "You" : collector(o.collectorId).short} agreed to the deal`);
-
-  /* The single Deal-level revision mechanism. It moves the assembled cash balance
-     and nothing else: price, market values, percentages and per-card credit are
-     already settled and stay settled. */
-  const dealAdjust = (oppId, by, action, amount) =>
-    patchOpp(oppId, (o) => {
-      if (o.stage !== "deal" || isTerminal(o)) return o;
-      return { ...o, deal: dealApplyAdj(o.deal, by, action, amount, NOW) };
-    }, (n, o) => {
-      const who = by === "tp" ? "You" : collector(o.collectorId).short;
-      const short = collector(o.collectorId).short;
-      if (action === "accept") return `Final balance agreed — ${cashLabel(n, short)}`;
-      const dir = amount < 0 ? "reduce" : "increase";
-      return `${who} proposed a ${money(Math.abs(amount))} ${dir} to the cash balance`;
+  /* Withdrawal is valid only for a reserved card (submitted, not yet accepted).
+     A committed card cannot be withdrawn unilaterally; the command refuses it. */
+  const collectorWithdrawCard = (oppId, rowId) => {
+    const o = oppOf(oppId);
+    if (!o) return null;
+    return act(asCollector(o.collectorId), "withdrawTradeCard", { oppId, tradeCardId: rowId }, (n) => {
+      const row = n.trade.cards.find((c) => c.id === rowId);
+      return `${collector(o.collectorId).short} withdrew ${card(row.cardId).name} from the package`;
     });
+  };
+
+  /* --- DEAL --- final agreement belongs to the current economic state: the
+     partner confirms first, the collector second, and any new figure clears
+     both confirmations. */
+  const dealAgree = (oppId, by) => {
+    const o = oppOf(oppId);
+    if (!o) return null;
+    return act(seatActor(o, by), "acceptDeal", { oppId }, (n) => (n.stage === "fulfillment"
+      ? `Deal confirmed — ${cashLabel(n, collector(o.collectorId).short)}`
+      : `${by === "tp" ? "You" : collector(o.collectorId).short} agreed to the deal`));
+  };
+
+  const dealAdjust = (oppId, by, action, amount) => {
+    const o = oppOf(oppId);
+    if (!o) return null;
+    if (action === "accept") return dealAgree(oppId, by);
+    return act(seatActor(o, by), "proposeFinalBalance", { oppId, amount }, (n) => {
+      const who = by === "tp" ? "You" : collector(o.collectorId).short;
+      /* `amount` is the proposed final signed balance, read the domain's way. */
+      return `${who} proposed a final cash balance — ${cashLabel({ ...n, deal: { ...n.deal, agreedAdj: amount } }, collector(o.collectorId).short)}`;
+    });
+  };
 
   /* --- FULFILLMENT / COMPLETED --- */
-
-  /* Coordination. The TP proposes; the collector confirms or sends it back. */
   const proposeFulfillment = (oppId, plan) =>
-    patchOpp(oppId, (o) => ({
-      ...o,
-      fulfillment: { ...o.fulfillment, ...plan, proposedAt: NOW, revisionRequested: null, collectorConfirmedPlan: false },
-    }), (n) => `Fulfillment plan proposed — ${fulfillmentSummary(n.fulfillment)}`);
+    act(tpActor, "proposeFulfillment", { oppId, plan },
+      (n) => `Fulfillment plan proposed — ${fulfillmentSummary(n.fulfillment)}`);
 
-  const collectorConfirmPlan = (oppId) =>
-    patchOpp(oppId, (o) => (planProposed(o.fulfillment)
-      ? { ...o, fulfillment: { ...o.fulfillment, collectorConfirmedPlan: true } } : o),
+  const collectorConfirmPlan = (oppId) => {
+    const o = oppOf(oppId);
+    if (!o) return null;
+    return act(asCollector(o.collectorId), "confirmFulfillmentPlan", { oppId },
       (n) => `Fulfillment agreed — ${fulfillmentSummary(n.fulfillment)}`);
+  };
 
-  const collectorRequestPlanRevision = (oppId, note) =>
-    patchOpp(oppId, (o) => ({
-      ...o, fulfillment: { ...o.fulfillment, collectorConfirmedPlan: false, revisionRequested: { note, at: NOW } },
-    }), (n, o) => `${collector(o.collectorId).short} asked to change the fulfillment plan — ${note}`);
+  const collectorRequestPlanRevision = (oppId, revision) => {
+    const o = oppOf(oppId);
+    if (!o) return null;
+    return act(asCollector(o.collectorId), "requestFulfillmentRevision", { oppId, note: revision },
+      () => `${collector(o.collectorId).short} asked to change the fulfillment plan — ${revision}`);
+  };
 
-  /* Completion. Blocked until the plan is agreed, and neither side alone finishes it. */
-  const confirmHandoff = (oppId, by) =>
-    patchOpp(oppId, (o) => {
-      if (!planAgreed(o.fulfillment)) return o;
-      const f = { ...o.fulfillment, [by === "tp" ? "tpHandoff" : "collectorReceipt"]: true };
-      const done = f.tpHandoff && f.collectorReceipt;
-      return { ...o, fulfillment: f, stage: done ? "completed" : o.stage, completedAt: done ? NOW : o.completedAt };
-    }, (n, o) => n.stage === "completed"
+  /* The partner confirms the handoff first; the collector's receipt completes. */
+  const confirmHandoff = (oppId, by) => {
+    const o = oppOf(oppId);
+    if (!o) return null;
+    return act(seatActor(o, by), "confirmHandoff", { oppId }, (n) => (n.stage === "completed"
       ? `Transaction completed — ${cardShort(card(o.cardId))} (${money(o.agreedPrice)})`
-      : by === "tp" ? "You confirmed handoff" : `${collector(o.collectorId).short} confirmed receipt`,
-      "completed");
+      : by === "tp" ? "You confirmed handoff" : `${collector(o.collectorId).short} confirmed receipt`),
+    "completed");
+  };
 
-  /* The enforcement boundary. Refuses outright without both faces, so the invariant
-     holds regardless of what any UI does. */
+  /* The binder invariant lives in the command: both faces or no copy. */
   const collectorAddBinderCard = (collectorId, cardId, market, photos, cert) => {
     if (!hasBothPhotos(photos)) { say("A trade binder copy needs both a front and a back photo."); return false; }
-    setCollectorCards((cs) => [...cs, {
+    const r = run(asCollector(collectorId), "addBinderCopy", { copy: {
       id: "cc" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
-      cardId, collectorId,
+      cardId,
       market: market == null || market === "" ? null : Number(market),
       photos: { front: photos.front, back: photos.back },
       cert: cert || null,
       addedAt: new Date().toISOString(),
-    }]);
+    } });
+    if (!r.ok) { say("That copy could not be added to the trade binder."); return false; }
     say("Copy added to the trade binder with front and back photos.");
     return true;
   };
 
   const attachBinderPhotos = (ccId) => {
-    setCollectorCards((cs) => cs.map((c) => (c.id === ccId
-      ? { ...c, photos: { front: "binder:" + c.cardId + ":front", back: "binder:" + c.cardId + ":back" } } : c)));
-    say("Photos added to the collector's trade binder.");
+    const cc = collectorCards.find((c) => c.id === ccId);
+    if (!cc) return;
+    const r = run(asCollector(cc.collectorId), "updateBinderCopy", { binderId: ccId,
+      patch: { photos: { front: "binder:" + cc.cardId + ":front", back: "binder:" + cc.cardId + ":back" } } });
+    if (r.ok) say("Photos added to the collector's trade binder.");
   };
 
-  /* Opening the profile is the review. No acknowledge button, and nothing about the
-     binder itself changes — only the timestamp the unseen count is measured against. */
+  /* Opening the profile is the review. Only the timestamp the unseen count is
+     measured against changes. */
   const markBinderReviewed = useCallback((collectorId) => {
-    const at = new Date().toISOString();
-    setCollectors((cs) => cs.map((c) => (c.id === collectorId ? { ...c, binderReviewedAt: at } : c)));
-  }, [setCollectors]);
+    store.execute(tpActor, "markBinderReviewed", { collectorId, at: new Date().toISOString() });
+  }, [store, tpActor]);
 
-  const setTradeInterest = (ccId, on, partnerId = SELF_PARTNER) => {
-    setInterests((xs) => (on
-      ? (xs.some((i) => i.binderId === ccId && i.partnerId === partnerId) ? xs
-        : [...xs, { partnerId, binderId: ccId, at: NOW }])
-      : xs.filter((i) => !(i.binderId === ccId && i.partnerId === partnerId))));
+  const setTradeInterest = (ccId, on) => {
+    const r = run(tpActor, "setInterest", { binderId: ccId, on });
+    if (!r.ok) return;
     say(on ? "Marked open to trade. It can now be added in Select Trade." : "No longer marked open to trade. It won't appear in Select Trade.");
   };
 
-  /* Adds a copy of a card that already exists in the catalog. Reuses the same
-     inventory record shape as saveCard — invId, cardId, ask, cost, acquired, cert —
-     so there is no Cultivate-only schema and no new card identity is minted. */
+  /* Adds a physical copy of an existing canonical card to this partner's shelf. */
   const addCopyToInventory = (cardId, draft, resolvedCard) => {
-    /* Callers that just created the identity pass it in; everyone else looks it up.
-       The guard still protects the lookup path. */
     const c = resolvedCard || card(cardId);
     if (!c) return;
-    /* Cost and listing price are OPTIONAL. Blank stays blank — stored as null, never
-       coerced to 0 and never substituted from the card's estimated value. Anything
-       actually entered must still be a valid non-negative number. */
+    /* Cost and listing price are OPTIONAL. Blank stays blank — never 0. */
     const money2 = (v, round) => {
       const raw = String(v ?? "").trim();
-      if (raw === "") return null;                     // blank is not zero
+      if (raw === "") return null;
       const n = Number(raw);
-      if (!isFinite(n) || n < 0) return undefined;     // entered but invalid
+      if (!isFinite(n) || n < 0) return undefined;
       return round ? Math.round(n) : n;
     };
     const cost = money2(draft.cost, false);
-    const ask = money2(draft.ask, true);               // listing value stays whole dollars
+    const ask = money2(draft.ask, true);
     if (cost === undefined || ask === undefined) return;
-    setInventory((iv) => [...iv, {
+    const r = run(tpActor, "addInventoryCopy", { copy: {
       invId: "inv" + cardId + "-" + Date.now(),
-      partnerId: SELF_PARTNER,          // a copy belongs to the partner who added it
-      cardId,
-      ask,
-      cost,
-      /* Provenance: when the PARTNER got it. Blank means they did not say. */
+      cardId, ask, cost,
       acquired: draft.acquired || NOW,
-      /* Freshness: when it entered MetYet. Always now, never the draft — this
-         is a fact about the listing, not something a partner types. */
       addedAt: NOW,
       cert: draft.cert ? draft.cert.trim() : null,
       archived: false,
       photos: { front: null, back: null },
-    }]);
+    } });
+    if (!r.ok) { say("That copy could not be added."); return; }
     say(cost == null ? `Added to Current — ${c.name}.` : `Added to Current — ${c.name} at ${moneyExact(cost)}.`);
     setModal(null);
   };
 
-  /* EDIT ONLY. The new-card branch that minted an identity ("n" + Date.now()) is
-     removed: inventory is created by addCopyToInventory against an existing
-     canonical card, so nothing here may add to cardDb. */
+  /* EDIT THE COPY, NEVER THE CARD. Card identity is immutable (contract §1); this
+     saves only the copy's listing price and cost. */
   const saveCard = (draft, invId) => {
     if (!invId) return;
-    setCardDb((db) => db.map((c) => (c.id === draft.id ? { ...c, ...draft } : c)));
-    setInventory((iv) => iv.map((i) => (i.invId === invId ? { ...i, ask: draft.ask, cost: draft.cost } : i)));
+    const r = run(tpActor, "updateInventoryCopy", { invId, patch: { ask: draft.ask, cost: draft.cost } });
+    if (!r.ok) { say("That copy could not be updated."); return; }
     say(`${draft.name} updated.`);
     setModal(null);
   };
@@ -3326,41 +3256,45 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
     const inv = inventory.find((i) => i.invId === invId);
     if (!inv) return;
     if (!confirmed && archiveRisk(inv.cardId).blocking) { setModal({ type: "archive", invId }); return; }
-    setInventory((iv) => iv.map((i) => (i.invId === invId ? { ...i, archived: true } : i)));
-    setDrawer(null);
+    const r = run(tpActor, "removeInventoryCopy", { invId });
     setModal(null);
+    if (!r.ok) {
+      say(r.refused === SharedID.REFUSE.copyCommitted
+        ? "This copy is committed to a deal with an agreed price, so it can't be archived."
+        : "This copy could not be archived.");
+      return;
+    }
+    setDrawer(null);
     say("Card archived. It no longer counts toward coverage. No collectors were notified.");
   };
 
-
   const inviteCollector = (draft) => {
-    const id = "c" + Date.now();
-    setCollectors((cs) => [...cs, { id, name: draft.name, short: draft.name.split(" ")[0] + " " + (draft.name.split(" ")[1]?.[0] || "") + ".", city: draft.city, since: TODAY.toISOString().slice(0, 10), last: TODAY.toISOString().slice(0, 10), prefs: draft.prefs, note: draft.note, pending: true, binderReviewedAt: TODAY.toISOString() }]);
-    logActivity(id, "manual", `Invitation sent to ${draft.email}`);
+    const r = run(tpActor, "inviteCollector", { email: draft.email, collector: {
+      name: draft.name, short: draft.name.split(" ")[0] + " " + (draft.name.split(" ")[1]?.[0] || "") + ".",
+      city: draft.city, since: DAY, last: DAY, prefs: draft.prefs, note: draft.note,
+      binderReviewedAt: TODAY.toISOString() } });
+    if (!r.ok) { say("That invitation could not be created."); return; }
+    logActivity(r.value, "manual", `Invitation sent to ${draft.email}`);
     say(`Invitation sent to ${draft.name}. They'll appear as pending until they set their goals.`);
     setModal(null);
   };
 
-  /* ACTUAL PHOTOS. One canonical record: the photos live on the inventory copy,
-     and a request is a small copy-specific relationship. Nothing here is
-     duplicated per collector — one photo set serves everyone who asked. */
+  /* ACTUAL PHOTOS. The photos live on the inventory copy; a request is a small
+     copy-specific relationship fulfilled when both faces exist. */
   const photos = {
     state: photoRequests,
     requestsFor: (invId) => (photoRequests || [])
       .filter((r) => r.invId === invId && !r.fulfilledAt)
       .map((r) => ({ ...r, name: (collectors.find((c) => c.id === r.collectorId) || {}).name || r.collectorId })),
-    /* Marks the faces the partner has photographed. Front and back are accepted
-       independently, but the copy is only offer-ready once both exist. */
     addCopyPhotos: (invId, faces) => {
       const inv = inventory.find((i) => i.invId === invId);
       if (!inv) return;
-      const next = { ...(inv.photos || {}) };
-      if (faces.front) next.front = "copy:" + invId + ":front";
-      if (faces.back) next.back = "copy:" + invId + ":back";
-      setInventory(inventory.map((i) => (i.invId === invId ? { ...i, photos: next } : i)));
+      const r = run(tpActor, "addCopyPhotos", { invId,
+        front: faces.front ? "copy:" + invId + ":front" : undefined,
+        back: faces.back ? "copy:" + invId + ":back" : undefined });
+      if (!r.ok) return;
+      const next = (store.get().inventory.find((i) => i.invId === invId) || {}).photos || {};
       if (next.front && next.back) {
-        setPhotoRequests((photoRequests || []).map((r) => (r.invId === invId && !r.fulfilledAt
-          ? { ...r, fulfilledAt: NOW } : r)));
         say("Front and back photos added. Collectors who asked can now make an offer.");
       } else {
         say(next.front ? "Front photo added. The back is still needed."
@@ -3377,7 +3311,7 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
     collectorCards, setTradeInterest, interests, interestedIn, partnersInterested, attachBinderPhotos, markBinderReviewed, collectorAddBinderCard, hasBothPhotos,
     threads, threadFor, sendMessage, hasConversation,
     collectorPromoteGoal, collectorConfirmGoal, collectorMakeOffer, priceRespond,
-    tradeAddCard, tradeRemoveCard, submitPackageForReview, tpReviewInclusion,
+    tradeAddCard, tradeRemoveCard, submitPackageForReview, tpReviewInclusion, draftRows,
     endOpportunity, dealMutuallyAgreed,
     collectorChooseCash, collectorStopPursuing, marketAction, percentAction, collectorWithdrawCard, dealAgree, dealAdjust, proposeFulfillment, collectorConfirmPlan, collectorRequestPlanRevision, confirmHandoff,
     inviteCollector, logActivity,
@@ -4100,8 +4034,22 @@ const OwnerBadge = ({ owner, label }) => (
 
 /* Collector-owned actions have no Collector UI yet. They are simulated here, and
    deliberately fenced off so the ownership model stays honest: the Trusted Partner
-   is never given authority to perform them for real. */
+   is never given authority to perform them for real.
+
+   PHASE 1 CLOSEOUT — THE SIMULATION IS ENGINEERING TOOLING, GATED ON DEV.
+   Acting as the other seat is exactly what shared/demo-flag.js reserves for DEV:
+   the pilot build (app.metyet.io) is a DEMO build, and a tester there switches
+   persona rather than letting a partner act for a collector. So outside DEV:
+     - no SimBlock and no "Send as … (demo)" control renders, and
+     - collectorSimActor() returns no actor, so every Collector-owned command
+       this workspace could issue is refused by the command layer
+       (unknown-actor) — there is no Collector mutation path to reach.
+   The command layer's own authorization remains the final boundary either way. */
+const COLLECTOR_SIMULATION = SHARED_DEV;
+export const collectorSimActor = (collectorId) =>
+  (COLLECTOR_SIMULATION && collectorId ? { collectorId } : null);
 function SimBlock({ children, who }) {
+  if (!COLLECTOR_SIMULATION) return null;
   return (
     <div style={{ border: "1px dashed var(--amber-line)", background: "var(--amber-bg)", borderRadius: 4, padding: 11, marginTop: 12 }}>
       <div style={{ fontFamily: "Archivo", fontSize: 9.5, letterSpacing: ".1em", textTransform: "uppercase", fontWeight: 600, color: "var(--amber)", marginBottom: 7 }}>
@@ -4168,6 +4116,7 @@ const validAmount = (amt) => amt !== "" && isFinite(Number(amt)) && Number(amt) 
 
 /* Shared with the Collector so both seats negotiate price through one
    implementation: same conversion, same guards, same canonical dollar value. */
+export { nextAction, cardOwner as tpCardOwner };
 export { emptyTradeCard, TradeFields,
   CounterFields, validAmount, canCounter, percentageOf, amountFromPercentage,
   ActualCardPhoto, FaceSwitch };
@@ -4445,11 +4394,26 @@ function PriceDecision({ opp, col, na, priceRespond, by = "tp" }) {
   );
 }
 
-function AmountInput({ value, onChange, onSubmit, label, disabled }) {
+/* A SIGNED cash amount, read the domain's way: positive = the collector pays
+   the partner, negative = the partner pays the collector, zero = no cash changes
+   hands. Returns the number, or null when the entry is not an amount. Direction
+   is never stored beside it — it is derived from the sign (SharedID.settlement). */
+const signedAmount = (v) => {
+  const raw = String(v ?? "").trim();
+  if (!/^-?\d+(\.\d{1,2})?$/.test(raw)) return null;
+  const n = Number(raw);
+  return n === 0 ? 0 : n;
+};
+
+function AmountInput({ value, onChange, onSubmit, label, disabled, signed = false, ariaLabel }) {
+  /* Offers and counters must be positive; a final cash balance (signed) may
+     also be zero or negative. */
+  const valid = signed ? signedAmount(value) !== null : !!Number(value);
   return (
     <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-      <input className="inp" style={{ width: 96 }} type="number" value={value} onChange={(e) => onChange(e.target.value)} />
-      <button className="btn sm" disabled={disabled || !Number(value)} onClick={onSubmit}>{label}</button>
+      <input className="inp" style={{ width: 96 }} type="number" value={value} aria-label={ariaLabel}
+        onChange={(e) => onChange(e.target.value)} />
+      <button className="btn sm" disabled={disabled || !valid} onClick={onSubmit}>{label}</button>
     </span>
   );
 }
@@ -4604,10 +4568,12 @@ function Conversation({ ctx, thread, collectorId, cardId, disabled }) {
             <Icon n="send" s={12} />Send
           </button>
           <span className="faint" style={{ fontSize: 11 }}>No terms change. No stage change.</span>
-          <button className="btn sm" style={{ marginLeft: "auto", borderStyle: "dashed", color: "var(--amber)", borderColor: "var(--amber-line)" }}
-            disabled={!draft.trim()} onClick={() => send("collector")} title="Demo control">
-            Send as {col.short} (demo)
-          </button>
+          {COLLECTOR_SIMULATION && (
+            <button className="btn sm" style={{ marginLeft: "auto", borderStyle: "dashed", color: "var(--amber)", borderColor: "var(--amber-line)" }}
+              disabled={!draft.trim()} onClick={() => send("collector")} title="Demo control">
+              Send as {col.short} (demo)
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -4635,7 +4601,16 @@ function TradeRow({ ctx, opp, tc }) {
   const col = collector(opp.collectorId);
   const phase = cardPhase(tc);
   const st = cardOwner(tc);
+  /* The opportunity has one actor at a time (SharedID.nextActor). A card this
+     seat owns still waits while the other seat holds the turn. */
+  const turnSeat = SharedID.seatOfActor(SharedID.nextActor(opp).actor);
+  const tpMoves = st.owner === "tp" && turnSeat === "tp";
+  const collectorMoves = st.owner === "collector" && turnSeat === "collector";
   const dead = phase === PHASE.rejected || phase === PHASE.withdrawn;
+  /* PHASE 1: a Completed or Cancelled Opportunity is immutable. Its figures
+     stay on the row, but no decision, simulator or "waiting on" line is shown —
+     nobody holds a move on a terminal record. */
+  const closed = SharedID.isTerminal(opp);
   const defaultPct = Math.round(opp.tradeRate * 100);
 
   return (
@@ -4677,7 +4652,7 @@ function TradeRow({ ctx, opp, tc }) {
       </tr>
 
       {/* --- VALUE TRADE, MARKET PHASE --- */}
-      {phase === PHASE.market && (
+      {phase === PHASE.market && !closed && (
         <tr className="vt-act"><td colSpan={5}>
           {/* The copy the number is about, right next to the number. The TP evaluates
               and negotiates in one place — no profile, binder, inventory or stage hop. */}
@@ -4699,25 +4674,22 @@ function TradeRow({ ctx, opp, tc }) {
               <CardCopyActions ctx={ctx} card={c} copy={tc} />
             </div>
             <div className="vt-mkt-dec">
-          {st.owner === "tp" ? (
+          {tpMoves ? (
             <MarketDecision tc={tc} by="tp" party={col}
               theirHeading="Their market value" myHeading="Your market value"
               onAccept={() => marketAction(opp.id, tc.id, "tp", "accept")}
               onPropose={(a) => marketAction(opp.id, tc.id, "tp", "propose", a)} />
           ) : (<>
             <MarketWaiting tc={tc} by="tp" who={col.short} party={col} />
-            <SimBlock who={col.short}>
-              {/* Same negotiation, read from the collector's seat: the TP's standing
-                  number is the one they are measuring against. */}
+            {collectorMoves && <SimBlock who={col.short}>
+              {/* Same negotiation, read from the collector's seat. The collector's
+                  private binder value is never shown or prefilled on this screen. */}
               <MarketDecision tc={tc} by="collector"
-                /* Their own private binder reference, offered back to them as a
-                   convenience. It reaches the TP only once they press send. */
-                defaultAmount={binderRef ? binderRef.market : null}
                 theirHeading="Your market value" myHeading={col.short + "'s market value"}
                 onAccept={() => marketAction(opp.id, tc.id, "collector", "accept")}
                 onPropose={(a) => marketAction(opp.id, tc.id, "collector",
                   tc.collectorMarket == null ? "propose" : "counter", a)} />
-            </SimBlock>
+            </SimBlock>}
           </>)}
             </div>
           </div>
@@ -4725,26 +4697,21 @@ function TradeRow({ ctx, opp, tc }) {
       )}
 
       {/* --- VALUE TRADE, PERCENTAGE PHASE --- */}
-      {phase === PHASE.percent && (
+      {phase === PHASE.percent && !closed && (
         <tr className="vt-act"><td colSpan={5}>
-          {st.owner === "tp" ? (
+          {tpMoves ? (
             <TradeDecision tc={tc} by="tp" party={col} defaultPct={defaultPct}
               onAccept={() => percentAction(opp.id, tc.id, "tp", "accept")}
               onPropose={(frac) => percentAction(opp.id, tc.id, "tp", "propose", frac)} />
           ) : (<>
             <TradeWaiting tc={tc} by="tp" who={col.short} party={col} />
-            <SimBlock who={col.short}>
-              {/* Same negotiation from the collector's seat. Proposals and counters are
-                  one domain operation, so both send "propose". */}
+            {collectorMoves && <SimBlock who={col.short}>
+              {/* Same negotiation from the collector's seat. A card accepted into
+                  the trade is committed, so there is no unilateral withdrawal. */}
               <TradeDecision tc={tc} by="collector"
                 onAccept={() => percentAction(opp.id, tc.id, "collector", "accept")}
                 onPropose={(frac) => percentAction(opp.id, tc.id, "collector", "propose", frac)} />
-              <div className="vt-actions" style={{ marginTop: 9 }}>
-                <button className="btn sm dgr" onClick={() => collectorWithdrawCard(opp.id, tc.id)}>
-                  Withdraw — keep the card
-                </button>
-              </div>
-            </SimBlock>
+            </SimBlock>}
           </>)}
         </td></tr>
       )}
@@ -4889,9 +4856,10 @@ function ResolvedCardRow({ ctx, tc, accepted }) {
 
 function SelectTradeReview({ ctx, opp }) {
   const { collectorCards, card, collector, tradeAddCard, submitPackageForReview,
-    collectorChooseCash, setDrawer, setNav, interestedIn } = ctx;
+    collectorChooseCash, setDrawer, setNav, interestedIn, draftRows, opps } = ctx;
   const col = collector(opp.collectorId);
-  const cards = tradeCards(opp);
+  /* Until submission the package is the collector's private draft. */
+  const cards = opp.trade?.submitted ? tradeCards(opp) : draftRows(opp);
 
   /* Derived groups — the underlying array is never reordered. */
   const toReview = cards.filter((tc) => tc.inclusion === "proposed");
@@ -4899,7 +4867,11 @@ function SelectTradeReview({ ctx, opp }) {
   const rejected = cards.filter((tc) => tc.inclusion === "rejected");
 
   const inPackage = new Set(cards.map((c) => c.cardId));
-  const addable = collectorCards.filter((cc) => cc.collectorId === opp.collectorId && interestedIn(cc.id) && !inPackage.has(cc.cardId));
+  /* Only copies that could legally enter this package: a copy reserved or
+     committed in another active Opportunity, or already Traded, is not offered
+     (contract §4 — one exact BinderCopy, one active package). */
+  const addable = collectorCards.filter((cc) => cc.collectorId === opp.collectorId && interestedIn(cc.id) && !inPackage.has(cc.cardId)
+    && SharedID.binderCopyStatus(cc.id, opps, opp.id) === "available");
 
   const summary = [
     accepted.length ? `${accepted.length} accepted` : null,
@@ -4953,7 +4925,7 @@ function SelectTradeReview({ ctx, opp }) {
             </div>
           )}
           {addable.length === 0 && cards.length === 0 && (
-            <div style={{ fontSize: 12, marginBottom: 9 }}>None of their cards are flagged as trade-eligible, so cash is the only option.</div>
+            <div style={{ fontSize: 12, marginBottom: 9 }}>None of their cards marked “Open to trade” are free to offer right now, so cash is the only option.</div>
           )}
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <button className="btn sm pri" disabled={!cards.length} onClick={() => submitPackageForReview(opp.id)}>
@@ -5069,6 +5041,7 @@ function FulfillmentPanel({ ctx, opp }) {
   const f = opp.fulfillment;
   const col = collector(opp.collectorId);
   const agreed = planAgreed(f);
+  const step = SharedID.nextActor(opp).reason;
   const [draft, setDraft] = useState({ method: f.method, show: f.show, date: f.date, time: f.time, location: f.location, note: f.note });
   const [revNote, setRevNote] = useState("");
   const set = (k, v) => setDraft((d) => ({ ...d, [k]: v }));
@@ -5125,7 +5098,7 @@ function FulfillmentPanel({ ctx, opp }) {
 
         {draft.method && (
           <div className="vt-actions">
-            <button className="btn pri sm" disabled={!ready} onClick={() => proposeFulfillment(opp.id, draft)}>
+            <button className="btn pri sm" disabled={!ready || step !== "plan"} onClick={() => proposeFulfillment(opp.id, draft)}>
               {f.proposedAt ? "Resubmit plan" : "Propose fulfillment plan"}
             </button>
             {!ready && <span className="faint" style={{ fontSize: 11 }}>
@@ -5152,7 +5125,7 @@ function FulfillmentPanel({ ctx, opp }) {
         <div className="faint" style={{ fontSize: 12 }}>Locked until the plan is agreed. Coordinate first.</div>
       ) : (<>
         <div className="vt-actions">
-          <button className="btn pri sm" disabled={f.tpHandoff} onClick={() => confirmHandoff(opp.id, "tp")}>
+          <button className="btn pri sm" disabled={step !== "handoff"} onClick={() => confirmHandoff(opp.id, "tp")}>
             {f.tpHandoff ? "You confirmed handoff" : "Confirm handoff"}
           </button>
           <span className="faint" style={{ fontSize: 11.5 }}>
@@ -5163,7 +5136,7 @@ function FulfillmentPanel({ ctx, opp }) {
           {f.collectorReceipt ? `${col.short} confirmed receipt.` : `${col.short} has not confirmed receipt.`}
         </div>
         <SimBlock who={col.short}>
-          <button className="btn sm" disabled={f.collectorReceipt} onClick={() => confirmHandoff(opp.id, "collector")}>Confirm receipt</button>
+          <button className="btn sm" disabled={step !== "receipt"} onClick={() => confirmHandoff(opp.id, "collector")}>Confirm receipt</button>
         </SimBlock>
       </>)}
     </div>
@@ -5338,14 +5311,15 @@ function StageWorkspace({ ctx, opp, goal, matches }) {
             const open = adjOpen(d);
             const last = lastEntry(d.adjThread);
             const mine = open && last.by === "collector";
-            /* An adjustment is expressed as the balance the proposer wants to land on,
-               so nobody has to reason about a signed delta. */
-            const targetToAdj = (target) => {
-              const t = Number(target);
-              if (!isFinite(t)) return null;
-              const signed = cb.base >= 0 ? t : -t;   // keep the current payer direction
-              return signed - cb.base;
-            };
+            /* A proposal is the balance the proposer wants to land on — the same
+               signed final figure the Collector proposes (PHASE 1: never a delta).
+               PHASE 1 CLOSEOUT: the entry IS that signed figure. It used to be a
+               magnitude forced onto the current payer's side, so the partner
+               could neither reverse who pays nor propose that no cash changes
+               hands. Positive, negative and $0 are all proposals now. */
+            const targetToAdj = signedAmount;
+            const draftFigure = signedAmount(adjDraft);
+            const standingFigure = open ? last.amount : cb.net;
             const preview = (adj) => cashLabel({ ...opp, deal: { ...d, agreedAdj: adj } }, col.short);
             return (<>
               <div style={{ marginTop: 12 }} className="sect-t">Final negotiation</div>
@@ -5367,43 +5341,51 @@ function StageWorkspace({ ctx, opp, goal, matches }) {
                 <div className="vt-actions" style={{ marginTop: 8 }}>
                   {/* only when their proposal is on the table awaiting your answer */}
                   {mine && open && <NegotiationParty c={col} label="Their proposed balance" />}
-                  {mine && (
+                  {mine && na.owner === "tp" && (
                     <button className="btn pri sm" onClick={() => dealAdjust(opp.id, "tp", "accept")}>
                       Accept — {preview(last.amount)}
                     </button>
                   )}
-                  <AmountInput value={adjDraft} onChange={setAdjDraft}
+                  <AmountInput value={adjDraft} onChange={setAdjDraft} signed ariaLabel="Final cash balance"
                     label={open ? "Counter balance" : "Propose balance"}
-                    onSubmit={() => { const a = targetToAdj(adjDraft); if (a !== null && a !== 0) dealAdjust(opp.id, "tp", "propose", a); setAdjDraft(""); }} />
+                    onSubmit={() => { const a = targetToAdj(adjDraft); if (a !== null && a !== standingFigure) dealAdjust(opp.id, "tp", "propose", a); setAdjDraft(""); }} />
                   <span className="faint" style={{ fontSize: 10.5 }}>
                     Propose a final cash amount — all agreed card values and trade percentages stay unchanged.
+                  </span>
+                  {/* What the entry means, in words from the one settlement formatter. */}
+                  <span className="faint tp-cash-preview" style={{ fontSize: 10.5 }}>
+                    {draftFigure === null
+                      ? `Positive: ${col.short} pays you · Negative: you pay ${col.short} · 0: no cash changes hands`
+                      : `Proposes: ${preview(draftFigure)}`}
                   </span>
                 </div>
               )}
 
               <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center" }}>
-                <button className="btn pri sm" disabled={d.tpAgreed || open} onClick={() => dealAgree(opp.id, "tp")}>
+                <button className="btn pri sm" disabled={na.owner !== "tp"} onClick={() => dealAgree(opp.id, "tp")}>
                   {d.tpAgreed ? "You agreed" : "Agree to this deal"}
                 </button>
                 <span className="faint" style={{ fontSize: 11.5 }}>
-                  {open ? "Settle the final balance first" : d.collectorAgreed ? col.short + " has agreed" : col.short + " has not agreed yet"}
+                  {d.collectorAgreed ? col.short + " has agreed"
+                    : d.tpAgreed ? col.short + " has not agreed yet"
+                      : "You confirm first, then " + col.short}
                 </span>
               </div>
 
               <SimBlock who={col.short}>
                 <div style={{ marginBottom: 8 }}>
-                  <button className="btn sm" disabled={d.collectorAgreed || open} onClick={() => dealAgree(opp.id, "collector")}>Agree to this deal</button>
+                  <button className="btn sm" disabled={na.owner !== "collector"} onClick={() => dealAgree(opp.id, "collector")}>Agree to this deal</button>
                 </div>
                 {d.agreedAdj == null && (
                   <div className="vt-actions">
-                    {open && last.by === "tp" && (
+                    {open && last.by === "tp" && na.owner === "collector" && (
                       <button className="btn sm" onClick={() => dealAdjust(opp.id, "collector", "accept")}>
                         Accept — {preview(last.amount)}
                       </button>
                     )}
-                    <AmountInput value={adjDraft} onChange={setAdjDraft}
+                    <AmountInput value={adjDraft} onChange={setAdjDraft} signed
                       label={open ? "Counter balance" : "Propose balance"}
-                      onSubmit={() => { const a = targetToAdj(adjDraft); if (a !== null && a !== 0) dealAdjust(opp.id, "collector", "propose", a); setAdjDraft(""); }} />
+                      onSubmit={() => { const a = targetToAdj(adjDraft); if (a !== null && a !== standingFigure) dealAdjust(opp.id, "collector", "propose", a); setAdjDraft(""); }} />
                   </div>
                 )}
               </SimBlock>
@@ -5550,10 +5532,11 @@ function EndDealModal({ ctx, oppId }) {
 
   if (step === "reason") {
     return (
-      <Modal title="Why did it end?" sub="Optional — this is only for your own history."
-        onClose={() => finish(null)}
+      <Modal title={cancelling ? "Why are you cancelling?" : "Why did it end?"}
+        sub={cancelling ? "Required — an agreed deal keeps its reason in history." : "Optional — this is only for your own history."}
+        onClose={() => (cancelling ? setStep("confirm") : finish(null))}
         footer={<>
-          <button className="btn" onClick={() => finish(null)}>Skip</button>
+          {!cancelling && <button className="btn" onClick={() => finish(null)}>Skip</button>}
           <button className="btn pri" disabled={!reason} onClick={() => finish(reason)}>Save</button>
         </>}>
         <div className="dm-reasons">

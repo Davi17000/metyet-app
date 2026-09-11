@@ -29,7 +29,7 @@ const fs = require("fs");
 const path = require("path");
 const D = require("../domain/metyet-domain.js");
 const M = require("../dist/MetYet.cjs");
-const { createStore } = require("../domain/metyet-store.js");
+const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
 const { collectorView } = require("../domain/collector-view.js");
 
 const ROOT = path.join(__dirname, "..");
@@ -126,8 +126,9 @@ describe("A. Editing preserves the copy", () => {
     const w = world();
     edit(w, "b1", { market: 1500 });
     eq(w.st.get().binder.length, 2, "still two copies");
-    const src = code(fs.readFileSync(path.join(ROOT, "domain", "metyet-store.js"), "utf8"));
-    const fn = src.slice(src.indexOf("updateBinderCopy({"), src.indexOf("removeBinderCopy("));
+    /* PHASE 1: the edit is the updateBinderCopy command. */
+    const src = code(fs.readFileSync(path.join(ROOT, "domain", "metyet-commands.js"), "utf8"));
+    const fn = src.slice(src.indexOf("updateBinderCopy(state"), src.indexOf("removeBinderCopy(state"));
     assert(!/filter\(/.test(fn), "the action removes nothing");
     assert(/id: copy\.id, cardId: copy\.cardId/.test(fn), "and pins identity explicitly");
   });
@@ -321,7 +322,7 @@ describe("E. The partner profile is the partner's", () => {
   test("nothing is inferred from what happens to be in stock", () => {
     const view = code(fs.readFileSync(path.join(ROOT, "domain", "collector-view.js"), "utf8"));
     assert(!/specialties = .*inventory/.test(view), "specialties are not derived");
-    const store = code(fs.readFileSync(path.join(ROOT, "domain", "metyet-store.js"), "utf8"));
+    const store = code(fs.readFileSync(path.join(ROOT, "domain", "metyet-commands.js"), "utf8"));   // PHASE 1: command layer
     assert(/if \("specialties" in clean && !Array\.isArray/.test(store),
       "only an explicit list is stored");
   });

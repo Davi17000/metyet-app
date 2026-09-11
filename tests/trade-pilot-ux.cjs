@@ -27,7 +27,7 @@ const fs = require("fs");
 const path = require("path");
 const D = require("../domain/metyet-domain.js");
 const M = require("../dist/MetYet.cjs");
-const { createStore } = require("../domain/metyet-store.js");
+const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
 const { collectorView } = require("../domain/collector-view.js");
 const App = require("../dist/Collector.cjs").default;
 const { __store } = require("../dist/Collector.cjs");
@@ -71,18 +71,23 @@ const twoCardTrade = () => {
   st.actions.agreePrice({ oppId: o, amount: 3600, by: "tp", at: AT });
   const a = M.emptyTradeCard("ka", null, null, "b-a");
   const b = M.emptyTradeCard("kb", null, null, "b-b");
-  st.actions.patchOpportunity(o, (x) => ({ ...x, trade: { ...x.trade, submitted: true,
+  /* Fixture: two cards the partner has accepted, so the deal sits at Value Trade. */
+  st.actions.patchOpportunity(o, (x) => ({ ...x, stage: "value-trade", trade: { ...x.trade, submitted: true,
     cards: [{ ...a, inclusion: "accepted" }, { ...b, inclusion: "accepted" }] } }));
   const get = () => st.get().opportunities.find((x) => x.id === o);
   return { st, o, A: a.id, B: b.id, get,
     card: (id) => get().trade.cards.find((c) => c.id === id) };
 };
-const settleMarket = (w, id, amount) => {
-  w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "tp",
-    action: "propose", amount, at: AT });
+/* PHASE 1 turn rules (D.nextActor / D.cardOwner): the collector opens market
+   value on each card, the partner answers; the turn stays with whoever moved
+   last while they still hold a card. So the collector opens BOTH markets before
+   the partner answers either. */
+const openMarkets = (w, pairs) => pairs.forEach(([id, amount]) =>
   w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "collector",
-    action: "accept", at: AT });
-};
+    action: "propose", amount, at: AT }));
+const acceptMarket = (w, id) => w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: id,
+  by: "tp", action: "accept", at: AT });
+const settleBoth = (w, a, b) => { openMarkets(w, [[w.A, a], [w.B, b]]); acceptMarket(w, w.A); acceptMarket(w, w.B); };
 
 describe("A. The regression that started this pass", () => {
   test("trade rows are addressed by their own id, never the binder copy", () => {
@@ -112,29 +117,34 @@ describe("A. The regression that started this pass", () => {
 describe("B. Each card negotiates its market value alone", () => {
   test("two cards hold different market states at once", () => {
     const w = twoCardTrade();
-    w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: w.A, by: "tp",
+    w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: w.A, by: "collector",
       action: "propose", amount: 1804, at: AT });
-    eq(w.card(w.A).tpMarket, 1804, "one card has a standing proposal");
-    eq(w.card(w.B).tpMarket, null, "the other has none");
+    eq(w.card(w.A).collectorMarket, 1804, "one card has a standing proposal");
+    eq(w.card(w.B).collectorMarket, null, "the other has none");
   });
 
   test("settling one does not settle the other", () => {
     const w = twoCardTrade();
-    settleMarket(w, w.A, 1804);
+    openMarkets(w, [[w.A, 1804], [w.B, 900]]);
+    acceptMarket(w, w.A);
     eq(w.card(w.A).agreedMarket, 1804, "card A is agreed");
-    eq(w.card(w.B).agreedMarket, null, "card B is untouched");
+    eq(w.card(w.B).agreedMarket, null, "card B is not");
   });
 
   test("the full exchange is preserved per card", () => {
     const w = twoCardTrade();
     const a = w.st.actions;
+    a.tradeMarketRespond({ oppId: w.o, tradeCardId: w.B, by: "collector", action: "propose", amount: 900, at: AT });
     a.tradeMarketRespond({ oppId: w.o, tradeCardId: w.A, by: "collector", action: "propose", amount: 1900, at: AT });
     a.tradeMarketRespond({ oppId: w.o, tradeCardId: w.A, by: "tp", action: "propose", amount: 1804, at: AT });
+    /* The partner still holds card B, so it answers that before the turn passes. */
+    a.tradeMarketRespond({ oppId: w.o, tradeCardId: w.B, by: "tp", action: "accept", at: AT });
+    a.tradePercentRespond({ oppId: w.o, tradeCardId: w.B, by: "tp", action: "propose", percent: 0.75, at: AT });
     a.tradeMarketRespond({ oppId: w.o, tradeCardId: w.A, by: "collector", action: "accept", at: AT });
     eq(w.card(w.A).valueThread.map((e) => e.by + ":" + e.type + ":" + e.amount).join(" | "),
       "collector:propose:1900 | tp:propose:1804 | collector:accept:1804",
       "the history is the record, not the final number");
-    eq(w.card(w.B).valueThread.length, 0, "and belongs to that card only");
+    eq(w.card(w.B).valueThread.map((e) => e.amount).join(","), "900,900", "and belongs to that card only");
   });
 });
 
@@ -149,7 +159,8 @@ describe("C. Trade % is per card, and waits its turn", () => {
 
   test("locking is per card, not per stage", () => {
     const w = twoCardTrade();
-    settleMarket(w, w.A, 1804);
+    openMarkets(w, [[w.A, 1804], [w.B, 900]]);
+    acceptMarket(w, w.A);
     w.st.actions.tradePercentRespond({ oppId: w.o, tradeCardId: w.A, by: "tp", action: "propose", percent: 0.8, at: AT });
     w.st.actions.tradePercentRespond({ oppId: w.o, tradeCardId: w.B, by: "tp", action: "propose", percent: 0.75, at: AT });
     eq(w.card(w.A).tpPercent, 0.8, "the settled card can proceed");
@@ -158,8 +169,7 @@ describe("C. Trade % is per card, and waits its turn", () => {
 
   test("the partner can propose a different percentage per card", () => {
     const w = twoCardTrade();
-    settleMarket(w, w.A, 1804);
-    settleMarket(w, w.B, 900);
+    settleBoth(w, 1804, 900);
     w.st.actions.tradePercentRespond({ oppId: w.o, tradeCardId: w.A, by: "tp", action: "propose", percent: 0.8, at: AT });
     w.st.actions.tradePercentRespond({ oppId: w.o, tradeCardId: w.B, by: "tp", action: "propose", percent: 0.75, at: AT });
     eq(w.card(w.A).tpPercent, 0.8, "80% here");
@@ -168,8 +178,7 @@ describe("C. Trade % is per card, and waits its turn", () => {
 
   test("the collector can accept one and counter the other", () => {
     const w = twoCardTrade();
-    settleMarket(w, w.A, 1804);
-    settleMarket(w, w.B, 900);
+    settleBoth(w, 1804, 900);
     const a = w.st.actions;
     a.tradePercentRespond({ oppId: w.o, tradeCardId: w.A, by: "tp", action: "propose", percent: 0.8, at: AT });
     a.tradePercentRespond({ oppId: w.o, tradeCardId: w.B, by: "tp", action: "propose", percent: 0.75, at: AT });
@@ -183,13 +192,12 @@ describe("C. Trade % is per card, and waits its turn", () => {
 
   test("the economics come out of the domain", () => {
     const w = twoCardTrade();
-    settleMarket(w, w.A, 1804);
-    settleMarket(w, w.B, 900);
+    settleBoth(w, 1804, 900);
     const a = w.st.actions;
-    [[w.A, 0.8], [w.B, 0.75]].forEach(([id, p]) => {
-      a.tradePercentRespond({ oppId: w.o, tradeCardId: id, by: "tp", action: "propose", percent: p, at: AT });
-      a.tradePercentRespond({ oppId: w.o, tradeCardId: id, by: "collector", action: "accept", at: AT });
-    });
+    [[w.A, 0.8], [w.B, 0.75]].forEach(([id, p]) =>
+      a.tradePercentRespond({ oppId: w.o, tradeCardId: id, by: "tp", action: "propose", percent: p, at: AT }));
+    [w.A, w.B].forEach((id) =>
+      a.tradePercentRespond({ oppId: w.o, tradeCardId: id, by: "collector", action: "accept", at: AT }));
     eq(D.tradeValueOf(w.card(w.A)), 1443, "$1,804 x 80% = $1,443");
     eq(D.tradeValueOf(w.card(w.B)), 675, "$900 x 75% = $675");
     eq(D.totalTradeValue(w.get()), 2118, "totalling $2,118");
@@ -205,36 +213,45 @@ describe("D. Removing a card keeps what happened", () => {
     assert(typeof w.st.actions.withdrawTradeCard === "function", "and reachable as an action");
   });
 
-  test("withdrawal affects only the card withdrawn", () => {
+  /* PHASE 1 (contract §4, Invariant 18): only a RESERVED card — submitted, not yet
+     accepted — can be withdrawn. A card the partner accepted is COMMITTED and
+     cannot be withdrawn unilaterally. */
+  const reservedTrade = () => {
     const w = twoCardTrade();
-    settleMarket(w, w.A, 1804);
+    w.st.actions.patchOpportunity(w.o, (x) => ({ ...x, stage: "select-trade", trade: { ...x.trade,
+      cards: x.trade.cards.map((c) => ({ ...c, inclusion: "proposed" })) } }));
+    return w;
+  };
+
+  test("withdrawal affects only the card withdrawn", () => {
+    const w = reservedTrade();
     w.st.actions.withdrawTradeCard({ oppId: w.o, tradeCardId: w.A, at: AT });
     eq(w.card(w.A).withdrawn, true, "that card is out");
     eq(w.card(w.B).withdrawn, false, "its sibling is not");
-  });
-
-  test("history survives removal", () => {
-    const w = twoCardTrade();
-    settleMarket(w, w.A, 1804);
-    const before = w.card(w.A).valueThread.length;
-    w.st.actions.withdrawTradeCard({ oppId: w.o, tradeCardId: w.A, at: AT });
-    eq(w.card(w.A).valueThread.length, before, "the negotiation still happened");
-    eq(w.card(w.A).agreedMarket, 1804, "and what was agreed is still readable");
     assert(w.card(w.A).withdrawnAt, "with the moment it left recorded");
   });
 
-  test("a withdrawn card stops contributing", () => {
+  test("a committed card cannot be withdrawn, and its history stands", () => {
     const w = twoCardTrade();
-    settleMarket(w, w.A, 1804);
-    settleMarket(w, w.B, 900);
+    openMarkets(w, [[w.A, 1804], [w.B, 900]]);
+    acceptMarket(w, w.A);
+    const before = JSON.stringify(w.card(w.A));
+    w.st.actions.withdrawTradeCard({ oppId: w.o, tradeCardId: w.A, at: AT });
+    eq(JSON.stringify(w.card(w.A)), before, "refused: the card is committed to the deal");
+    eq(w.card(w.A).agreedMarket, 1804, "and what was agreed is still readable");
+  });
+
+  test("a committed card keeps contributing", () => {
+    const w = twoCardTrade();
+    settleBoth(w, 1804, 900);
     const a = w.st.actions;
-    [[w.A, 0.8], [w.B, 0.75]].forEach(([id, p]) => {
-      a.tradePercentRespond({ oppId: w.o, tradeCardId: id, by: "tp", action: "propose", percent: p, at: AT });
-      a.tradePercentRespond({ oppId: w.o, tradeCardId: id, by: "collector", action: "accept", at: AT });
-    });
+    [[w.A, 0.8], [w.B, 0.75]].forEach(([id, p]) =>
+      a.tradePercentRespond({ oppId: w.o, tradeCardId: id, by: "tp", action: "propose", percent: p, at: AT }));
+    [w.A, w.B].forEach((id) =>
+      a.tradePercentRespond({ oppId: w.o, tradeCardId: id, by: "collector", action: "accept", at: AT }));
     eq(D.totalTradeValue(w.get()), 2118, "both counted");
     a.withdrawTradeCard({ oppId: w.o, tradeCardId: w.A, at: AT });
-    eq(D.totalTradeValue(w.get()), 675, "and only the remaining card after");
+    eq(D.totalTradeValue(w.get()), 2118, "no unilateral withdrawal changes the economics");
   });
 
   test("the row is never deleted", () => {
@@ -242,7 +259,11 @@ describe("D. Removing a card keeps what happened", () => {
     w.st.actions.withdrawTradeCard({ oppId: w.o, tradeCardId: w.A, at: AT });
     eq(w.get().trade.cards.length, 2, "a flag, not a delete");
     const src = code(COL);
-    assert(/st\.withdrawTradeCard\(o\.id, tcd\.id\)/.test(src), "the UI calls the action");
+    /* PHASE 1: the Value Trade card has no removal control (a committed card
+       cannot be withdrawn), so the only withdrawal path left in the Collector is
+       its canonical command adapter. */
+    assert(/withdrawTradeCard: \(id, tradeCardId\) => lg\(exec\("withdrawTradeCard", \{ oppId: id, tradeCardId \}\)\)/.test(src),
+      "the UI calls the action");
     assert(!/withdrawn: true/.test(src), "and never sets the flag itself");
   });
 });
@@ -308,9 +329,13 @@ describe("F. Select Trade keeps its canonical paths", () => {
   });
 
   test("proposed cards still use the canonical factory", () => {
+    /* PHASE 1: the Collector submits exact binder ids through the canonical
+       command; the command builds each row with the shared factory. */
     const active = code(COL);
-    assert(/emptyTradeCard\(/.test(active), "the shared factory");
+    assert(/exec\("proposeTradeSelection"/.test(active), "the canonical submission command");
     assert(!/inclusion: "proposed"/.test(active), "not a hand-built reduced object");
+    const cmds = code(fs.readFileSync(path.join(ROOT, "domain", "metyet-commands.js"), "utf8"));
+    assert(/D\.emptyTradeCard\(/.test(cmds), "the shared factory");
   });
 
   test("engineering tooling remains DEV-only", () => {

@@ -12,6 +12,10 @@ const readSrc = (rel) => require("fs").readFileSync(require("path").join(__dirna
    rules live in the domain, not in the Collector component. */
 const DOMAIN = () => readSrc("domain/metyet-domain.js");
 const STORE = () => readSrc("domain/metyet-store.js");
+/* PHASE 1: every write is a command in the canonical command layer. Source
+   assertions that used to read the store's action bodies read the command
+   bodies instead — same rule, one authoritative place. */
+const COMMANDS = () => readSrc("domain/metyet-commands.js");
 const VIEW = () => readSrc("domain/collector-view.js");
 const SEEDSRC = () => readSrc("src/MetYet.jsx");
 
@@ -177,12 +181,12 @@ describe("One active negotiation per goal", () => {
   test("the rule lives in the action, not the button", () => {
     /* Sliced to this action's OWN end, so an unrelated action added elsewhere
        in the store cannot widen or invert the window. */
-    const src = STORE();
-    const start = src.indexOf("startOpportunity({");
-    const fn = src.slice(start, src.indexOf("\n    },", start));
-    assert(/oneNegotiationPerGoal\(goalId, s\.opportunities\)\)/.test(fn),
+    const src = COMMANDS();
+    const start = src.indexOf("startOpportunity(state");
+    const fn = src.slice(start, src.indexOf("\n  },", start));
+    assert(/oneNegotiationPerGoal\(goalId, state\.opportunities\)\)/.test(fn),
       "the shared action refuses a second negotiation regardless of caller");
-    assert(/D\.INVARIANTS\.goalIsPursued\(goalId, s\.goals\)/.test(fn),
+    assert(/D\.INVARIANTS\.goalIsPursued\(goalId, state\.goals\)/.test(fn),
       "and refuses a goal that is not being actively pursued");
   });
 
@@ -273,7 +277,7 @@ describe("Reach out never becomes a negotiation", () => {
   });
 
   test("it keeps goal, partner and exact card context", () => {
-    const fn = STORE().slice(STORE().indexOf("reachOut({"), STORE().indexOf("sendMessage({"));
+    const fn = COMMANDS().slice(COMMANDS().indexOf("sendMessage(state"), COMMANDS().indexOf("recordNote(state"));
     assert(/appendThreadEntry/.test(fn), "it appends to the canonical shared thread");
     assert(!/startOpportunity|stage:/i.test(fn), "and touches no opportunity or stage");
     const dom = DOMAIN();
@@ -751,7 +755,7 @@ describe("Goals: add a goal from the Goals screen", () => {
     assert(/<CardIdentityPicker/.test(picker), "it uses the shared identity picker");
     assert(/st\.addGoalForIdentity\(/.test(picker), "and delegates creation to the store action");
     const store = src.slice(src.indexOf("addGoalForIdentity:"), src.indexOf("addGoalForIdentity:") + 200);
-    assert(/A\.addGoal\(/.test(store), "which routes through the canonical goal action");
+    assert(/exec\("addGoal", \{ cardId: resolved\.id, tier \}\)/.test(store), "which routes through the canonical goal action");
   });
 
   test("a goal may be added when no partner stocks the card", () => {
@@ -795,13 +799,17 @@ describe("Goals: Primary and Secondary do different jobs", () => {
     const w0 = cls(r, "gwatch-r").length;
 
     /* Promote a watchlist goal. */
+    const printed = txt(cls(r, "gwatch-r")[0]).match(/#[\w/]+/)[0];
     click(byClassIn(cls(r, "gwatch-r")[0], "gwatch-m")[0]);
     click(btn(r, "Move to Primary"));
     eq(cls(r, "goal").length, p0 + 1, "it became a primary card");
     eq(cls(r, "gwatch-r").length, w0 - 1, "and left the watchlist");
 
-    /* Demote it back. */
-    const card = cls(r, "goal")[cls(r, "goal").length - 1];
+    /* Demote it back. PHASE 1: the card is found by its own identity, not by
+       position — a goal with an active negotiation is locked at Primary
+       (contract: an active Opportunity blocks demotion), and the last card is
+       not necessarily the one just promoted. */
+    const card = cls(r, "goal").find((n) => txt(n).includes(printed));
     openGoalMenu(r, card);
     click(btn(r, "Move to Secondary"));
     eq(cls(r, "goal").length, p0, "back to where it started");
@@ -920,6 +928,15 @@ describe("Goals: every holder stays reachable", () => {
 describe("Goals: empty states", () => {
   test("12. no primary goals explains the role and offers Add goal", () => {
     const r = mk();
+    /* PHASE 1: a goal with an active negotiation cannot be demoted (the
+       negotiation holds it at Primary). Casey's live negotiations are cancelled
+       first — cancellation releases the goal — then every goal is demoted. */
+    TR.act(() => {
+      const s = __store.get();
+      s.get().opportunities.filter((o) => o.collectorId === "c12" && require("../domain/metyet-domain.js").isActive(o))
+        .forEach((o) => s.execute({ collectorId: "c12" }, "cancelOpportunity",
+          { oppId: o.id, reason: "Clearing the board", at: "2026-08-14" }));
+    });
     /* Demote every primary goal. */
     let guard = 0;
     while (cls(r, "goal").length > 0 && guard++ < 10) {
@@ -1563,8 +1580,10 @@ describe("Stopping a deal is deliberate", () => {
       "the control follows the canonical distinction");
     assert(/agreed \? "Cancel this agreed deal\?" : "Stop this negotiation\?"/.test(src),
       "and so does the confirmation");
-    const tp = readSrc("src/MetYet.jsx");
-    assert(/outcome: dealMutuallyAgreed\(o\) \? "cancelled" : "ended"/.test(tp),
+    /* PHASE 1: the outcome is decided once, in the cancelOpportunity command,
+       for both personas. */
+    assert(/outcome: agreed \? "cancelled" : "ended"/.test(COMMANDS())
+      && /const agreed = D\.finalAgreementGiven\(o\);/.test(COMMANDS()),
       "matching the Trusted Partner's own semantics");
   });
 
@@ -1749,8 +1768,7 @@ describe("Collector shared chat", () => {
     const src = readSrc("collector/MetYetCollector.jsx");
     assert(/st\.threadWith\(pid, cid\)/.test(src), "it reads the shared thread");
     assert(!/useState\(\[\]\).*messages/i.test(src), "and keeps no local message list");
-    const store = readSrc("domain/metyet-store.js");
-    assert(/appendThreadEntry/.test(store), "writes go through the canonical append");
+    assert(/D\.appendThreadEntry/.test(COMMANDS()), "writes go through the canonical append");
   });
 
   test("history and messages interleave chronologically", () => {
@@ -1797,8 +1815,11 @@ describe("Development-only TP simulator", () => {
   test("it exposes canonical actions, never its own lifecycle logic", () => {
     const fn = src().slice(src().indexOf("function SimulateTP"), src().indexOf("/* THE SHARED CONVERSATION"));
     /* Everything it does goes through the shared store's actions. */
-    ["A.patchOpportunity", "A.sendMessage", "A.endOpportunity"].forEach((a) =>
+    /* PHASE 1: the price counter has a canonical command, so the simulator's
+       last raw patch is gone. */
+    ["A.proposePrice", "A.sendMessage", "A.endOpportunity"].forEach((a) =>
       assert(fn.includes(a), a + " is used"));
+    assert(!/patchOpportunity/.test(fn), "and nothing is patched");
     assert(!/store\.set\(/.test(fn), "it never writes state directly");
     assert(!/conversations:/.test(fn), "and never constructs a conversation itself");
     assert(!/declined: true/.test(fn), "terminal state comes from endOpportunity, not a flag");

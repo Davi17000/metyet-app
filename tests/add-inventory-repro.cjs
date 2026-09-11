@@ -159,7 +159,10 @@ describe("Add Inventory — reproduction", () => {
   test("no timer, effect or ref workaround was introduced", () => {
     const src = require("fs").readFileSync(
       require("path").join(__dirname, "..", "src", "MetYet.jsx"), "utf8");
-    const fn = src.slice(src.indexOf("const resolveCanonicalCard ="), src.indexOf("const [inventory, setInventory]"));
+    /* PHASE 1: the inventory setter is gone (canonical reads only), so the
+       window ends at the next declaration instead. */
+    const fn = src.slice(src.indexOf("const resolveCanonicalCard ="), src.indexOf("const interestedIn = useCallback"));
+    assert(fn.length > 0 && fn.length < 2000, "the resolver window is found");
     const add = src.slice(src.indexOf("const addCopyToInventory ="), src.indexOf("const addCopyToInventory =") + 1400);
     for (const bad of ["setTimeout", "requestAnimationFrame", "useEffect", "useRef", "queueMicrotask"]) {
       assert(!fn.includes(bad), `resolveCanonicalCard must not use ${bad}`);

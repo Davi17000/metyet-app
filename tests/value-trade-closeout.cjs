@@ -26,7 +26,7 @@ const fs = require("fs");
 const path = require("path");
 const D = require("../domain/metyet-domain.js");
 const M = require("../dist/MetYet.cjs");
-const { createStore } = require("../domain/metyet-store.js");
+const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
 const { collectorView } = require("../domain/collector-view.js");
 const App = require("../dist/Collector.cjs").default;
 const { __store } = require("../dist/Collector.cjs");
@@ -77,14 +77,20 @@ const world = (n = 1) => {
   return { st, o, get, ids: rows.map((r) => r.id),
     card: (id) => get().trade.cards.find((c) => c.id === id) };
 };
-const agreeMarket = (w, id, amount) => {
-  w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "tp", action: "propose", amount, at: AT });
-  w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "collector", action: "accept", at: AT });
+/* PHASE 1 turn rules (D.nextActor / D.cardOwner): the collector opens market
+   value and the partner answers; the partner opens trade % and the collector
+   answers; the turn stays with whoever moved last while they hold a card. The
+   helpers take every card at once so each seat finishes its side in turn. */
+const agreeMarkets = (w, pairs) => {
+  pairs.forEach(([id, amount]) => w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "collector", action: "propose", amount, at: AT }));
+  pairs.forEach(([id]) => w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "tp", action: "accept", at: AT }));
 };
-const agreePercent = (w, id, percent) => {
-  w.st.actions.tradePercentRespond({ oppId: w.o, tradeCardId: id, by: "tp", action: "propose", percent, at: AT });
-  w.st.actions.tradePercentRespond({ oppId: w.o, tradeCardId: id, by: "collector", action: "accept", at: AT });
+const agreePercents = (w, pairs) => {
+  pairs.forEach(([id, percent]) => w.st.actions.tradePercentRespond({ oppId: w.o, tradeCardId: id, by: "tp", action: "propose", percent, at: AT }));
+  pairs.forEach(([id]) => w.st.actions.tradePercentRespond({ oppId: w.o, tradeCardId: id, by: "collector", action: "accept", at: AT }));
 };
+const agreeMarket = (w, id, amount) => agreeMarkets(w, [[id, amount]]);
+const agreePercent = (w, id, percent) => agreePercents(w, [[id, percent]]);
 
 /* ---- rendered fixture: the screenshot state ----------------------------- */
 const S = () => __store.get().get();
@@ -181,8 +187,7 @@ describe("B. An agreed market value becomes context", () => {
 
   test("each card carries its own agreed value", () => {
     const w = world(2);
-    agreeMarket(w, w.ids[0], 1804);
-    agreeMarket(w, w.ids[1], 900);
+    agreeMarkets(w, [[w.ids[0], 1804], [w.ids[1], 900]]);
     eq(w.card(w.ids[0]).agreedMarket, 1804, "one card");
     eq(w.card(w.ids[1]).agreedMarket, 900, "the other, independently");
   });
@@ -235,10 +240,10 @@ describe("C. One grammar, two units", () => {
 
   test("accepting takes the canonical standing proposal, not the typed draft", () => {
     const w = world();
-    w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: w.ids[0], by: "tp",
+    w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: w.ids[0], by: "collector",
       action: "propose", amount: 1804, at: AT });
     /* An amount argument is ignored by the rule; acceptance means their figure. */
-    w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: w.ids[0], by: "collector",
+    w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: w.ids[0], by: "tp",
       action: "accept", amount: 99, at: AT });
     eq(w.card(w.ids[0]).agreedMarket, 1804, "settled at what was actually proposed");
   });
@@ -289,7 +294,12 @@ describe("D. The open question is the only one shaped like a decision", () => {
 
   test("one card may negotiate percentage while another negotiates market", () => {
     const w = world(2);
-    agreeMarket(w, w.ids[0], 1804);
+    w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: w.ids[0], by: "collector",
+      action: "propose", amount: 1804, at: AT });
+    w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: w.ids[1], by: "collector",
+      action: "propose", amount: 950, at: AT });
+    w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: w.ids[0], by: "tp",
+      action: "accept", at: AT });
     w.st.actions.tradePercentRespond({ oppId: w.o, tradeCardId: w.ids[0], by: "tp",
       action: "propose", percent: 0.8, at: AT });
     w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: w.ids[1], by: "tp",
@@ -322,8 +332,8 @@ describe("E. The resulting trade value", () => {
 
   test("each card keeps independent economics", () => {
     const w = world(2);
-    agreeMarket(w, w.ids[0], 1804); agreePercent(w, w.ids[0], 0.8);
-    agreeMarket(w, w.ids[1], 900); agreePercent(w, w.ids[1], 0.75);
+    agreeMarkets(w, [[w.ids[0], 1804], [w.ids[1], 900]]);
+    agreePercents(w, [[w.ids[0], 0.8], [w.ids[1], 0.75]]);
     eq(D.tradeValueOf(w.card(w.ids[0])), 1443, "one card");
     eq(D.tradeValueOf(w.card(w.ids[1])), 675, "the other, at its own percentage");
     eq(D.totalTradeValue(w.get()), 2118, "totalling from the per-card figures");
@@ -339,38 +349,46 @@ describe("E. The resulting trade value", () => {
 });
 
 describe("F. Removal, identity, and the lifecycle", () => {
+  /* PHASE 1: the Value Trade card has no removal path at all (the unreachable
+     "Remove it" confirmation was deleted — an accepted card is committed). The
+     only withdrawal the Collector can issue is the canonical command. */
   test("removal uses the canonical withdrawal", () => {
     const src = code(COL).slice(code(COL).indexOf("function ValueCard("),
       code(COL).indexOf("function ValueCard(") + 7000);
-    assert(/st\.withdrawTradeCard\(o\.id, tcd\.id\)/.test(src), "the canonical action");
+    assert(!/withdrawTradeCard|Remove it|confirmOut/.test(src), "no removal control on a committed card");
     assert(!/withdrawn:/.test(src), "and no raw patch of the flag");
+    assert(/withdrawTradeCard: \(id, tradeCardId\) => lg\(exec\("withdrawTradeCard", \{ oppId: id, tradeCardId \}\)\)/.test(code(COL)),
+      "the one withdrawal path is the canonical command");
   });
 
-  test("it is secondary to the negotiation", () => {
+  /* PHASE 1 (contract §4, Invariant 18): a card the partner accepted is
+     COMMITTED. Value Trade offers no unilateral removal, and the command refuses
+     one; only a RESERVED card (submitted, not yet accepted) can be withdrawn. */
+  test("a committed card offers no removal control", () => {
     const vc = render(SCREENSHOT);
     const b = vc.findAllByType("button").find((x) => /Remove from trade/.test(txt(x)));
-    assert(b, "the control exists");
-    const c = String(b.props.className || "");
-    assert(!/\bpri\b|\bdeep\b/.test(c), "styled quietly: " + c);
+    assert(!b, "no Remove from trade on a committed card");
   });
 
-  test("removal preserves history and drops the card from totals", () => {
+  test("a committed card cannot be withdrawn; totals and history stand", () => {
     const w = world(2);
-    agreeMarket(w, w.ids[0], 1804); agreePercent(w, w.ids[0], 0.8);
-    agreeMarket(w, w.ids[1], 900); agreePercent(w, w.ids[1], 0.75);
+    agreeMarkets(w, [[w.ids[0], 1804], [w.ids[1], 900]]);
+    agreePercents(w, [[w.ids[0], 0.8], [w.ids[1], 0.75]]);
     eq(D.totalTradeValue(w.get()), 2118, "both counted");
     w.st.actions.withdrawTradeCard({ oppId: w.o, tradeCardId: w.ids[0], at: AT });
-    eq(D.totalTradeValue(w.get()), 675, "one leaves the totals");
+    eq(D.totalTradeValue(w.get()), 2118, "refused: nothing leaves the totals");
     eq(w.card(w.ids[0]).valueThread.length, 2, "its history is intact");
     eq(w.card(w.ids[0]).agreedMarket, 1804, "and what was agreed is still readable");
   });
 
-  test("removing the last unsettled card still advances canonically", () => {
+  test("withdrawing the last reserved card still advances canonically", () => {
     const w = world(2);
-    agreeMarket(w, w.ids[0], 1804); agreePercent(w, w.ids[0], 0.8);
-    eq(w.get().stage, "value-trade", "one card outstanding");
+    w.st.actions.patchOpportunity(w.o, (x) => ({ ...x, stage: "select-trade",
+      trade: { ...x.trade, cards: x.trade.cards.map((c) => ({ ...c, inclusion: "proposed", reviewedAt: null })) } }));
+    w.st.actions.reviewTradeCards({ oppId: w.o, tradeCardId: w.ids[0], decision: "accepted", at: AT });
+    eq(w.get().stage, "select-trade", "one reserved card outstanding");
     w.st.actions.withdrawTradeCard({ oppId: w.o, tradeCardId: w.ids[1], at: AT });
-    eq(w.get().stage, "deal", "removing it resolves the stage");
+    eq(w.get().stage, "value-trade", "withdrawing it resolves the selection");
   });
 
   test("rows are addressed by their own id", () => {

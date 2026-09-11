@@ -23,7 +23,7 @@ const { describe, test, assert, eq } = require("./run.cjs");
 const React = require("react");
 const TR = require("react-test-renderer");
 const D = require("../domain/metyet-domain.js");
-const { createStore } = require("../domain/metyet-store.js");
+const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
 const App = require("../dist/Collector.cjs").default;
 const { __store } = require("../dist/Collector.cjs");
 const M = require("../dist/MetYet.cjs");
@@ -32,6 +32,8 @@ const readSrc = (rel) => require("fs").readFileSync(require("path").join(__dirna
 const COL = readSrc("collector/MetYetCollector.jsx");
 const TP = readSrc("src/MetYet.jsx");
 const STORE = readSrc("domain/metyet-store.js");
+/* PHASE 1: canonical actions are commands in the command layer. */
+const COMMANDS = readSrc("domain/metyet-commands.js");
 const txt = (n) => {
   if (!n) return "";
   const o = []; const w = (x) => { for (const c of x.children || []) {
@@ -70,7 +72,7 @@ const committed = (st, invId) => D.INVARIANTS.copyCommittedTo(invId, st.get().op
 describe("A. There is exactly one way to settle a price", () => {
   test("no runtime path writes agreedPrice except the canonical action", () => {
     const writes = [];
-    [["domain/metyet-store.js", STORE], ["src/MetYet.jsx", TP],
+    [["domain/metyet-store.js", STORE], ["domain/metyet-commands.js", COMMANDS], ["src/MetYet.jsx", TP],
       ["collector/MetYetCollector.jsx", COL]].forEach(([name, src]) => {
       src.split("\n").forEach((line, i) => {
         if (/agreedPrice:/.test(line) && !/agreedPrice: null/.test(line)) {
@@ -79,13 +81,13 @@ describe("A. There is exactly one way to settle a price", () => {
       });
     });
     eq(writes.length, 1, "one write site, not several: " + writes.join(", "));
-    assert(/^domain\/metyet-store\.js/.test(writes[0]),
-      "and it is in the domain, inside agreePrice");
+    assert(/^domain\/metyet-commands\.js/.test(writes[0]),
+      "and it is in the domain, inside acceptPrice");
   });
 
   test("both seats call the canonical action", () => {
-    assert(/A\.agreePrice\(\{ oppId: id/.test(COL), "the Collector's accept");
-    assert(/store\.actions\.agreePrice\(\{ oppId, by/.test(TP), "the Partner's accept");
+    assert(/exec\("acceptPrice", \{ oppId: id \}\)/.test(COL), "the Collector's accept");
+    assert(/run\(actor, "acceptPrice", \{ oppId \}\)/.test(TP), "the Partner's accept");
     /* Even the dev simulator, which could otherwise fake an impossible state. */
     assert(/A\.agreePrice\(\{ oppId: o\.id, amount: last\.amount, by: "partner"/.test(COL),
       "and the TP simulator");
@@ -96,9 +98,9 @@ describe("A. There is exactly one way to settle a price", () => {
   });
 
   test("the invariant lives with the action, once", () => {
-    const fn = STORE.slice(STORE.indexOf("agreePrice({"), STORE.indexOf("REVIEWING A SPECIFIC COPY"));
+    const fn = COMMANDS.slice(COMMANDS.indexOf("acceptPrice(state"), COMMANDS.indexOf("proposeTradeSelection(state"));
     assert(/copyCommittedTo\(o\.invId/.test(fn), "it checks the physical copy");
-    assert(/REFUSE\.copyCommitted/.test(fn), "and refuses");
+    assert(/R\.copyCommitted/.test(fn), "and refuses");
     /* Neither app re-implements the rule. */
     [COL, TP].forEach((src) => assert(!/copyCommittedTo\(/.test(src),
       "no app re-derives the commitment rule"));

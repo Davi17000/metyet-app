@@ -22,7 +22,7 @@ const fs = require("fs");
 const path = require("path");
 const D = require("../domain/metyet-domain.js");
 const M = require("../dist/MetYet.cjs");
-const { createStore } = require("../domain/metyet-store.js");
+const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
 
 const ROOT = path.join(__dirname, "..");
 const TP = fs.readFileSync(path.join(ROOT, "src", "MetYet.jsx"), "utf8");
@@ -85,30 +85,31 @@ describe("A. Both seats read one negotiation state", () => {
       "nor when it is waiting");
   });
 
+  /* PHASE 1: the collector opens market value (D.cardOwner); the partner answers. */
   test("the two views are mirror images", () => {
     const w = world();
-    market(w, w.ids[0], "tp", "propose", 2050);
+    market(w, w.ids[0], "collector", "propose", 2050);
     const fromTp = ns(w, w.ids[0], "market", "tp");
     const fromCol = ns(w, w.ids[0], "market", "collector");
-    eq(fromTp.state, "waiting", "the proposer waits");
-    eq(fromCol.state, "theirs", "the other side owes the move");
+    eq(fromCol.state, "waiting", "the proposer waits");
+    eq(fromTp.state, "theirs", "the other side owes the move");
     eq(fromTp.standing, fromCol.standing, "on the same figure");
     eq(fromTp.by, fromCol.by, "attributed to the same actor");
   });
 
   test("they swap cleanly when the turn passes", () => {
     const w = world();
-    market(w, w.ids[0], "tp", "propose", 2050);
-    market(w, w.ids[0], "collector", "propose", 1900);
-    eq(ns(w, w.ids[0], "market", "collector").state, "waiting", "now the collector waits");
-    eq(ns(w, w.ids[0], "market", "tp").state, "theirs", "and the partner answers");
-    eq(ns(w, w.ids[0], "market", "tp").standing, 1900, "on the new figure");
+    market(w, w.ids[0], "collector", "propose", 2050);
+    market(w, w.ids[0], "tp", "propose", 1900);
+    eq(ns(w, w.ids[0], "market", "tp").state, "waiting", "now the partner waits");
+    eq(ns(w, w.ids[0], "market", "collector").state, "theirs", "and the collector answers");
+    eq(ns(w, w.ids[0], "market", "collector").standing, 1900, "on the new figure");
   });
 
   test("settlement reads the same from both seats", () => {
     const w = world();
-    market(w, w.ids[0], "tp", "propose", 2050);
-    market(w, w.ids[0], "collector", "accept");
+    market(w, w.ids[0], "collector", "propose", 2050);
+    market(w, w.ids[0], "tp", "accept");
     ["tp", "collector"].forEach((v) =>
       eq(ns(w, w.ids[0], "market", v).state, "settled", v + " sees it settled"));
     eq(w.card(w.ids[0]).agreedMarket, 2050, "at the standing proposal");
@@ -116,8 +117,8 @@ describe("A. Both seats read one negotiation state", () => {
 
   test("the percentage phase opens for the partner only, from both views", () => {
     const w = world();
-    market(w, w.ids[0], "tp", "propose", 2050);
-    market(w, w.ids[0], "collector", "accept");
+    market(w, w.ids[0], "collector", "propose", 2050);
+    market(w, w.ids[0], "tp", "accept");
     eq(ns(w, w.ids[0], "percent", "tp").state, "open", "the partner may propose");
     eq(ns(w, w.ids[0], "percent", "collector").state, "blocked",
       "the collector waits rather than being offered a dead control");
@@ -127,10 +128,11 @@ describe("A. Both seats read one negotiation state", () => {
 describe("B. Turn guards protect both seats equally", () => {
   test("the partner cannot send twice while waiting", () => {
     const w = world();
+    market(w, w.ids[0], "collector", "propose", 2200);
     market(w, w.ids[0], "tp", "propose", 2050);
     market(w, w.ids[0], "tp", "propose", 2050);
     market(w, w.ids[0], "tp", "propose", 1);
-    eq(w.card(w.ids[0]).valueThread.length, 1, "one move, one entry");
+    eq(w.card(w.ids[0]).valueThread.length, 2, "one move, one entry");
     eq(w.card(w.ids[0]).tpMarket, 2050, "and the standing figure is unchanged");
   });
 
@@ -142,18 +144,20 @@ describe("B. Turn guards protect both seats equally", () => {
   });
 
   test("equivalent actions from either seat produce equivalent state", () => {
-    /* The clearest statement of parity: swap the actors and the shape of the
-       result is identical. */
+    /* PHASE 1: the collector always opens market value, so parity is stated as
+       acceptance: whichever seat accepts, the standing figure settles the same
+       way and the acceptance is recorded against the accepting seat. */
     const a = world(); const b = world();
-    market(a, a.ids[0], "tp", "propose", 2050);
-    market(a, a.ids[0], "collector", "accept");
-    market(b, b.ids[0], "collector", "propose", 2050);
-    market(b, b.ids[0], "tp", "accept");
+    market(a, a.ids[0], "collector", "propose", 2050);
+    market(a, a.ids[0], "tp", "accept");
+    market(b, b.ids[0], "collector", "propose", 2200);
+    market(b, b.ids[0], "tp", "propose", 2050);
+    market(b, b.ids[0], "collector", "accept");
     eq(a.card(a.ids[0]).agreedMarket, b.card(b.ids[0]).agreedMarket, "same agreed value");
-    eq(a.card(a.ids[0]).valueThread.length, b.card(b.ids[0]).valueThread.length,
-      "same number of moves");
-    eq(a.card(a.ids[0]).valueThread.map((e) => e.type).join(","),
-      b.card(b.ids[0]).valueThread.map((e) => e.type).join(","), "same shape of exchange");
+    const last = (w) => w.card(w.ids[0]).valueThread.slice(-1)[0];
+    eq(last(a).type + ":" + last(a).amount, last(b).type + ":" + last(b).amount, "same settling move");
+    eq(last(a).by, "tp", "attributed to the partner in one");
+    eq(last(b).by, "collector", "and to the collector in the other");
   });
 
   test("accept takes the standing proposal from either seat", () => {
@@ -179,17 +183,17 @@ describe("C. Identity: a negotiation belongs to a row", () => {
     const w = world(["ka", "ka"]);
     eq(w.card(w.ids[0]).cardId, w.card(w.ids[1]).cardId, "same card in both rows");
     assert(w.ids[0] !== w.ids[1], "but different rows");
-    market(w, w.ids[0], "tp", "propose", 2050);
-    eq(w.card(w.ids[0]).tpMarket, 2050, "the addressed row moved");
-    eq(w.card(w.ids[1]).tpMarket, null, "its twin did not");
+    market(w, w.ids[0], "collector", "propose", 2050);
+    eq(w.card(w.ids[0]).collectorMarket, 2050, "the addressed row moved");
+    eq(w.card(w.ids[1]).collectorMarket, null, "its twin did not");
     eq(w.card(w.ids[1]).valueThread.length, 0, "and recorded nothing");
   });
 
   test("the partner's actions address rows, not cards", () => {
+    /* PHASE 1: the TP names the row in the canonical command payload. */
     const tp = code(TP);
-    assert(/const patchCard = \(oppId, rowId, fn/.test(tp), "the patch helper takes a row id");
-    assert(/o\.trade\.cards\.map\(\(c\) => \(c\.id === rowId \? fn\(c\) : c\)\)/.test(tp),
-      "and matches on it");
+    assert(/\{ oppId, tradeCardId: rowId, amount \}/.test(tp), "the market command takes a row id");
+    assert(/\{ oppId, tradeCardId: rowId, percent \}/.test(tp), "and so does the percentage command");
     assert(!/c\.cardId === cardId \? fn\(c\)/.test(tp), "never on the card");
     ["marketAction", "percentAction"].forEach((fn) =>
       assert(new RegExp("const " + fn + " = \\(oppId, rowId,").test(tp),
@@ -224,14 +228,15 @@ describe("C. Identity: a negotiation belongs to a row", () => {
 
 describe("D. Multi-card independence across both seats", () => {
   const settled = () => {
+    /* PHASE 1: each seat works through the cards it holds before the turn passes. */
     const w = world(["ka", "kb"]);
-    market(w, w.ids[0], "tp", "propose", 2050);
-    market(w, w.ids[0], "collector", "accept");
+    market(w, w.ids[0], "collector", "propose", 2050);
+    market(w, w.ids[1], "collector", "propose", 900);
+    market(w, w.ids[0], "tp", "accept");
     percent(w, w.ids[0], "tp", "propose", 0.9);
-    percent(w, w.ids[0], "collector", "accept");
-    market(w, w.ids[1], "tp", "propose", 900);
-    market(w, w.ids[1], "collector", "accept");
+    market(w, w.ids[1], "tp", "accept");
     percent(w, w.ids[1], "tp", "propose", 0.75);
+    percent(w, w.ids[0], "collector", "accept");
     percent(w, w.ids[1], "collector", "accept");
     return w;
   };
@@ -245,17 +250,19 @@ describe("D. Multi-card independence across both seats", () => {
 
   test("one row waiting does not block a row this actor owns", () => {
     const w = world(["ka", "kb"]);
-    market(w, w.ids[0], "tp", "propose", 2050);
-    eq(ns(w, w.ids[0], "market", "tp").state, "waiting", "the partner waits on one row");
-    eq(ns(w, w.ids[1], "market", "tp").state, "open", "and may still open the other");
-    market(w, w.ids[1], "tp", "propose", 900);
-    eq(w.card(w.ids[1]).tpMarket, 900, "which works");
+    market(w, w.ids[0], "collector", "propose", 2050);
+    eq(ns(w, w.ids[0], "market", "collector").state, "waiting", "the collector waits on one row");
+    eq(ns(w, w.ids[1], "market", "collector").state, "open", "and may still open the other");
+    eq(D.nextActor(w.get()).actor, "collector", "the turn stays with the collector while it holds a card");
+    market(w, w.ids[1], "collector", "propose", 900);
+    eq(w.card(w.ids[1]).collectorMarket, 900, "which works");
   });
 
   test("both seats reconcile on every row", () => {
     const w = world(["ka", "kb"]);
-    market(w, w.ids[0], "tp", "propose", 2050);
+    market(w, w.ids[0], "collector", "propose", 2200);
     market(w, w.ids[1], "collector", "propose", 900);
+    market(w, w.ids[0], "tp", "propose", 2050);
     w.ids.forEach((id) => {
       const a = ns(w, id, "market", "tp");
       const b = ns(w, id, "market", "collector");
@@ -282,8 +289,8 @@ describe("E. Linked $ / % and the conversion helpers", () => {
 
   test("the Collector's linked editor submits one canonical value", () => {
     const w = world();
-    market(w, w.ids[0], "tp", "propose", 2050);
-    market(w, w.ids[0], "collector", "accept");
+    market(w, w.ids[0], "collector", "propose", 2050);
+    market(w, w.ids[0], "tp", "accept");
     percent(w, w.ids[0], "tp", "propose", 0.95);
     /* Whether the collector typed 90 or $1,845, the same fraction is sent. */
     percent(w, w.ids[0], "collector", "propose", 0.9);
@@ -311,8 +318,10 @@ describe("F. Agree on Price and Deal — audited, not disturbed", () => {
 
   test("Deal keeps one standing position per side", () => {
     const w = world();
+    /* PHASE 1: the partner confirms first, so the collector's figure is proposed
+       on the collector's turn — after that confirmation. */
     w.st.actions.patchOpportunity(w.o, (x) => ({ ...x, stage: "deal",
-      deal: { adjThread: [] } }));
+      deal: { adjThread: [], tpAgreed: true } }));
     w.st.actions.dealAdjustRespond({ oppId: w.o, by: "collector", action: "propose",
       amount: 1800, at: AT });
     eq(w.get().deal.collectorAdj, 1800, "the collector's standing figure");
@@ -366,9 +375,10 @@ describe("G. Demo and lifecycle parity", () => {
   });
 
   test("progression remains canonical", () => {
+    /* PHASE 1: collector opens market value. */
     const w = world();
-    market(w, w.ids[0], "tp", "propose", 2050);
-    market(w, w.ids[0], "collector", "accept");
+    market(w, w.ids[0], "collector", "propose", 2050);
+    market(w, w.ids[0], "tp", "accept");
     eq(w.get().stage, "value-trade", "an open percentage keeps the stage");
     percent(w, w.ids[0], "tp", "propose", 0.9);
     percent(w, w.ids[0], "collector", "accept");

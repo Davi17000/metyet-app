@@ -28,7 +28,7 @@ const { describe, test, assert, eq } = require("./run.cjs");
 const fs = require("fs");
 const path = require("path");
 const M = require("../dist/MetYet.cjs");
-const { createStore } = require("../domain/metyet-store.js");
+const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
 const { collectorView } = require("../domain/collector-view.js");
 
 const ROOT = path.join(__dirname, "..");
@@ -308,8 +308,11 @@ describe("E. Nothing else moved", () => {
   });
 
   test("the add action is still the single creation path", () => {
-    eq((code(require("fs").readFileSync(path.join(ROOT, "domain", "metyet-store.js"), "utf8"))
-      .match(/addInventoryCopy\(copy, at\)/g) || []).length, 1, "one canonical action");
+    /* PHASE 1: one command definition, and the TP calls only that command. */
+    eq((code(require("fs").readFileSync(path.join(ROOT, "domain", "metyet-commands.js"), "utf8"))
+      .match(/addInventoryCopy\(state, a/g) || []).length, 1, "one canonical action");
+    eq((code(require("fs").readFileSync(path.join(ROOT, "src", "MetYet.jsx"), "utf8"))
+      .match(/"addInventoryCopy"/g) || []).length, 1, "with one call site in the partner workspace");
   });
 
   test("the lifecycle is unchanged", () => {

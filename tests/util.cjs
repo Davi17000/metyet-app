@@ -61,4 +61,17 @@ function goProfile(r, name) {
   click(btnExact(r, name));
   return r;
 }
-module.exports = { React, TR, render, text, allText, buttons, btns, btn, btnExact, click, byClass, byClassIn, binderCounts, goProfile };
+/* PHASE 1 — one canonical Value Trade turn per Opportunity (D.nextActor,
+   contract §4). The seeded Hiro Tanaka Value Trade has the collector's 86%
+   counter on Charizard standing, so the PARTNER holds the turn; the untouched
+   Blastoise card only opens for the collector once that counter is answered.
+   Previously each card could be worked independently by either seat, so tests
+   drove Blastoise straight away. Tests that drive the untouched card now answer
+   the standing counter first, through the partner's real Accept control. */
+function answerStandingTradePct(r) {
+  const b = buttons(r).find((x) => /^Accept \d+%$/.test(text(x).trim()));
+  if (!b) throw new Error("no standing trade % to answer");
+  click(b);
+  return r;
+}
+module.exports = { React, TR, render, text, allText, buttons, btns, btn, btnExact, click, byClass, byClassIn, binderCounts, goProfile, answerStandingTradePct };

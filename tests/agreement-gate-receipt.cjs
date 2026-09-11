@@ -35,7 +35,7 @@ const { __store } = require("../dist/Collector.cjs");
 
 const ROOT = path.join(__dirname, "..");
 const COL = fs.readFileSync(path.join(ROOT, "collector", "MetYetCollector.jsx"), "utf8");
-const STORE = fs.readFileSync(path.join(ROOT, "domain", "metyet-store.js"), "utf8");
+const STORE = fs.readFileSync(path.join(ROOT, "domain", "metyet-commands.js"), "utf8");
 const code = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
 const AT = "2026-08-24";
 
@@ -69,12 +69,15 @@ const live = () => __store.get().get().opportunities
 
 describe("A. No final agreement while cash is unresolved", () => {
   test("the rule lives in the action, not in what the UI draws", () => {
-    /* The old guard was only a render condition, so any caller walked past it. */
-    const fn = code(STORE).slice(code(STORE).indexOf("dealAgree({ oppId, by, at })"),
-      code(STORE).indexOf("proposeFulfillment"));
-    assert(/const cashUnresolved = d\.agreedAdj == null/.test(fn),
-      "the action decides");
-    assert(/if \(cashUnresolved\) return o;/.test(fn), "and refuses");
+    /* PHASE 1: final agreement belongs to the CURRENT economic state (contract
+       §4, Invariants 19–20). The command enforces the order and the state: a
+       new figure clears confirmations, and the collector's agreement waits for
+       the partner's confirmation of that figure. */
+    const cmds = code(STORE);
+    const accept = cmds.slice(cmds.indexOf("acceptDeal(state, a"), cmds.indexOf("proposeFulfillment(state, a"));
+    assert(/if \(!d\.tpAgreed\) return refuse\(R\.notYourTurn\)/.test(accept), "the action decides");
+    const propose = cmds.slice(cmds.indexOf("proposeFinalBalance(state, a"), cmds.indexOf("acceptDeal(state, a"));
+    assert(/tpAgreed: false, collectorAgreed: false/.test(propose), "and a new figure clears agreement");
   });
 
   test("a standing collector proposal blocks agreement", () => {
@@ -97,18 +100,22 @@ describe("A. No final agreement while cash is unresolved", () => {
   });
 
   test("acceptance restores eligibility", () => {
+    /* PHASE 1: the partner accepting the standing figure IS the partner's
+       confirmation of that economic state; the collector's agreement then
+       settles it. There is no separate acceptance step. */
     const f = at("cash-standing");
     f.store.actions.dealAdjustRespond({ oppId: f.oppId, by: "tp",
       action: "accept", at: AT });
-    eq(oppOf(f).deal.agreedAdj, 2800, "the figure is agreed");
+    assert(oppOf(f).deal.tpAgreed, "the partner confirmed the figure on the table");
     f.store.actions.dealAgree({ oppId: f.oppId, by: "collector", at: AT });
     assert(oppOf(f).deal.collectorAgreed, "and agreement is available again");
+    eq(oppOf(f).deal.agreedAdj, 2800, "the figure both confirmed is the agreed one");
   });
 
   test("a resolved deal still progresses when both agree", () => {
+    /* cash-agreed: the partner has confirmed; the collector's confirmation completes it. */
     const f = at("cash-agreed");
     f.store.actions.dealAgree({ oppId: f.oppId, by: "collector", at: AT });
-    f.store.actions.dealAgree({ oppId: f.oppId, by: "tp", at: AT });
     eq(oppOf(f).stage, "fulfillment", "the lifecycle is unchanged");
   });
 
@@ -197,7 +204,8 @@ describe("B. The receipt says what was agreed", () => {
   });
 
   test("a negotiated difference is shown, and nothing when there is none", () => {
-    open("cash-agreed");
+    /* PHASE 1: the figure is agreed only once both have confirmed it. */
+    open("handoff-open");
     const r = D.cashReceipt(live());
     eq(r.adjustment, 73, "the agreed figure differs from calculated");
     assert(/Final cash adjustment|Additional discount/.test(receiptText()),
@@ -208,7 +216,7 @@ describe("B. The receipt says what was agreed", () => {
   });
 
   test("the final settlement is the strongest line", () => {
-    open("cash-agreed");
+    open("handoff-open");
     const t = receiptText();
     assert(/Cash settlement/.test(t), "headed");
     assert(cls(R, "dl-final")[0], "and given the total treatment");

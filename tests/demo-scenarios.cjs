@@ -104,7 +104,9 @@ describe("A. The demo world contains what the scenarios address", () => {
     assert(/buildCanonicalSeed\(\{ review: DEMO \}\)/.test(SHELL),
       "seeding follows the flag rather than hardwiring the demo world");
     eq((SHELL.match(/createStore\(/g) || []).length, 1, "one creation site");
-    eq((SHELL.match(/store\.reset\(/g) || []).length, 1, "one reset site");
+    /* PHASE 1: reset is an explicit fixture operation, not a product setter. */
+    eq((SHELL.match(/store\.fixture\.reset\(/g) || []).length, 1, "one reset site");
+    assert(!/store\.reset\(|store\.set\(/.test(SHELL), "and no raw store write");
   });
 });
 

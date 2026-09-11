@@ -95,11 +95,14 @@ function collectorView(state, meId) {
 
   const partnersWith = (cardId) => {
     const c = cardById(cardId);
+    /* A sold copy is no longer supply (contract §4). */
+    const sold = D.soldInventoryIds(state.opportunities);
     /* A partner may hold several physical copies of one identity. The collector
        asks "who has this", so the answer is one entry per PARTNER, showing their
        best (lowest) ask. The exact copy is still carried for the offer. */
     const best = new Map();
     E.partnersHolding(state.inventory, c, cardById).forEach((inv) => {
+      if (sold.has(inv.invId)) return;
       const cur = best.get(inv.partnerId);
       /* Prefer a copy the collector can actually judge: a price is a judgement
          about a specific physical card, and a stock image cannot support one.
@@ -151,13 +154,18 @@ function collectorView(state, meId) {
      Identity is the binder copy, never the card: two copies of the same card
      are two different objects and can be in two different places. */
   const binderCopyState = (binderId) => {
-    const rowIn = (o) => ((o.trade && o.trade.cards) || []).find((c) =>
-      c.binderId === binderId && c.inclusion === "accepted" && !c.withdrawn);
+    /* Contract §4: Available -> Reserved (in a submitted package) -> Committed
+       (accepted by the partner) -> Traded. "in-deal" is the committed state's
+       existing name on screen. */
+    const holds = (o, want) => ((o.trade && o.trade.cards) || []).some((c) =>
+      c.binderId === binderId && D.binderRowState(o, c) === want);
     const mine = state.opportunities.filter((o) => o.collectorId === meId);
-    const done = mine.find((o) => D.isCompleted(o) && rowIn(o));
+    const done = mine.find((o) => D.isCompleted(o) && holds(o, "committed"));
     if (done) return { state: "traded", opp: done };
-    const live = mine.find((o) => D.isActive(o) && rowIn(o));
+    const live = mine.find((o) => D.isActive(o) && holds(o, "committed"));
     if (live) return { state: "in-deal", opp: live };
+    const reserved = mine.find((o) => D.isActive(o) && holds(o, "reserved"));
+    if (reserved) return { state: "reserved", opp: reserved };
     return { state: "available", opp: null };
   };
 
@@ -271,7 +279,10 @@ function collectorView(state, meId) {
      the two groups; it never gates them. */
   const tradeGroups = (partnerId, opp) => {
     const used = new Set(((opp.trade && opp.trade.cards) || []).map((c) => c.binderId));
-    const open = myBinder().filter((b) => !used.has(b.id));
+    /* Availability gates; interest only orders. A copy reserved or committed in
+       another active package, or already traded, is not available to submit. */
+    const open = myBinder().filter((b) => !used.has(b.id)
+      && D.binderCopyStatus(b.id, state.opportunities, opp.id) === "available");
     const keen = (b) => E.hasInterest(state.interests, partnerId, b.id);
     return { interested: open.filter(keen), other: open.filter((b) => !keen(b)) };
   };
@@ -297,10 +308,11 @@ function collectorView(state, meId) {
       case "values-settled": return { who: "me", what: "Every card is settled. Time to look at the balance." };
       case "final": return mine
         ? { who: "me", what: "Agree to the balance, or propose a final figure." }
-        : { who: "partner", what: `Waiting on ${them} to answer your figure.` };
-      case "handoff": return mine
-        ? { who: "me", what: "Confirm once you've got the card and they've got yours." }
-        : { who: "partner", what: `You've confirmed. Waiting on ${them}.` };
+        : { who: "partner", what: `Waiting on ${them} to confirm the deal first.` };
+      case "plan": return { who: "partner", what: `Waiting on ${them} to propose the handoff plan.` };
+      case "confirm-plan": return { who: "me", what: "Confirm the handoff plan, or ask for a change." };
+      case "handoff": return { who: "partner", what: `Waiting on ${them} to confirm the handoff.` };
+      case "receipt": return { who: "me", what: "Confirm once you've got the card and they've got yours." };
       default: return { who: null, what: "" };
     }
   };

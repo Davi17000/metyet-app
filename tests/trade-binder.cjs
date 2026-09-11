@@ -1,3 +1,10 @@
+/* PHASE 1 CLOSEOUT: this suite drives the Trusted Partner workspace's
+   Collector simulation (SimBlock — acting as the collector from the partner's
+   screen). That is engineering tooling and now renders only under DEV
+   (shared/dev-flag.js), so the suite runs in DEV. Product and pilot builds
+   never show it: tests/phase1-closeout.cjs. */
+process.env.METYET_DEV = "1";
+
 const { describe, test, assert, eq } = require("./run.cjs");
 const { render, text, allText, btn, btns, btnExact, buttons, click, byClass, binderCounts, goProfile } = require("./util.cjs");
 
@@ -196,13 +203,30 @@ describe("Trade Binder — standing interest writes to tpInterest", () => {
 });
 
 describe("Select Trade — eligibility still derives from tpInterest", () => {
+  /* PHASE 1 (contract §4): a copy is offered into a package only if it is
+     flagged Open to trade AND available — not reserved or committed in another
+     active Opportunity, and not already Traded. Every flagged copy James Rivera
+     holds is now unavailable, so this uses Ellen Fisher, whose binder has all
+     four cases: flagged + available, flagged + committed, flagged + traded, and
+     unflagged. */
   test("only cards flagged Open to trade are addable in Select Trade", () => {
     const r = render();
-    openDraftSelectTrade(r, "James Rivera");
+    openDraftSelectTrade(r, "Ellen Fisher");
     assert(allText(r).includes("Add an eligible card"), "reached the Select Trade draft");
-    const names = addable(r);
-    assert(names.length === 3, "three flagged cards are addable, got: " + names.join(","));
-    assert(!names.includes("Poliwrath"), "the unflagged card must not be addable: " + names.join(","));
+    const names = addable(r).sort();
+    eq(names.join(","), "Charizard V (Alt Art),Umbreon V (Alt Art)",
+      "exactly the flagged copies that are free to offer");
+    assert(!names.includes("Pikachu VMAX"), "the unflagged card must not be addable: " + names.join(","));
+    ["Boss's Orders (Full Art)", "Iono (Full Art)", "Rayquaza V (Alt Art)"].forEach((n) =>
+      assert(!names.includes(n), n + " is committed or traded elsewhere, so it is not offered"));
+  });
+
+  test("a flagged copy committed elsewhere is not offered", () => {
+    const r = render();
+    openDraftSelectTrade(r, "James Rivera");
+    assert(!addable(r).some((n) => ["Electabuzz", "Chansey", "Scyther"].includes(n)),
+      "reserved, committed or traded copies stay out: " + addable(r).join(","));
+    assert(/cash is the only option/.test(allText(r)), "and the screen says why cash is what remains");
   });
 
   test("flagging from the profile makes that card addable afterwards", () => {
@@ -231,7 +255,7 @@ describe("Select Trade — eligibility still derives from tpInterest", () => {
 
   test("adding a binder card into a deal keeps its binder identity", () => {
     const r = render();
-    openDraftSelectTrade(r, "James Rivera");
+    openDraftSelectTrade(r, "Ellen Fisher");   // PHASE 1: James's flagged copies are all unavailable
     const first = btns(r, "+ ")[0];
     const name = text(first).replace("+", "").trim();
     click(first);

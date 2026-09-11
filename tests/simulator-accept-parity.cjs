@@ -24,7 +24,7 @@ const fs = require("fs");
 const path = require("path");
 const D = require("../domain/metyet-domain.js");
 const M = require("../dist/MetYet.cjs");
-const { createStore } = require("../domain/metyet-store.js");
+const { createStore, collectorProposesCash } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
 
 const ROOT = path.join(__dirname, "..");
 const COL = fs.readFileSync(path.join(ROOT, "collector", "MetYetCollector.jsx"), "utf8");
@@ -64,8 +64,9 @@ const atValueTrade = (price = 1000) => {
 const atCash = (price, market, percent) => {
   const w = atValueTrade(price);
   const a = w.st.actions;
-  a.tradeMarketRespond({ oppId: w.o, tradeCardId: w.row.id, by: "tp", action: "propose", amount: market, at: AT });
-  a.tradeMarketRespond({ oppId: w.o, tradeCardId: w.row.id, by: "collector", action: "accept", at: AT });
+  /* PHASE 1: the collector opens market value (D.cardOwner); the partner accepts. */
+  a.tradeMarketRespond({ oppId: w.o, tradeCardId: w.row.id, by: "collector", action: "propose", amount: market, at: AT });
+  a.tradeMarketRespond({ oppId: w.o, tradeCardId: w.row.id, by: "tp", action: "accept", at: AT });
   a.tradePercentRespond({ oppId: w.o, tradeCardId: w.row.id, by: "tp", action: "propose", percent, at: AT });
   a.tradePercentRespond({ oppId: w.o, tradeCardId: w.row.id, by: "collector", action: "accept", at: AT });
   return w;
@@ -133,8 +134,9 @@ describe("B. Trade percentage — the partner may accept", () => {
   const standing = () => {
     const w = atValueTrade();
     const a = w.st.actions;
-    a.tradeMarketRespond({ oppId: w.o, tradeCardId: w.row.id, by: "tp", action: "propose", amount: 500, at: AT });
-    a.tradeMarketRespond({ oppId: w.o, tradeCardId: w.row.id, by: "collector", action: "accept", at: AT });
+    /* PHASE 1: the collector opens market value (D.cardOwner); the partner accepts. */
+    a.tradeMarketRespond({ oppId: w.o, tradeCardId: w.row.id, by: "collector", action: "propose", amount: 500, at: AT });
+    a.tradeMarketRespond({ oppId: w.o, tradeCardId: w.row.id, by: "tp", action: "accept", at: AT });
     a.tradePercentRespond({ oppId: w.o, tradeCardId: w.row.id, by: "tp", action: "propose", percent: 0.75, at: AT });
     a.tradePercentRespond({ oppId: w.o, tradeCardId: w.row.id, by: "collector", action: "propose", percent: 0.9, at: AT });
     return w;
@@ -176,12 +178,20 @@ describe("B. Trade percentage — the partner may accept", () => {
   });
 });
 
+/* PHASE 1 (contract §4): final confirmation is ordered — the partner confirms
+   first, the collector second, and the collector's confirmation is what records
+   the agreed figure. So a collector's cash proposal is made after the partner's
+   first confirmation, the partner's "accept" confirms the standing figure, and
+   the settled `agreedAdj` appears once the collector confirms. The figures and
+   directions under test are unchanged. */
+const collectorConfirms = (w) =>
+  w.st.execute({ collectorId: w.get().collectorId }, "acceptDeal", { oppId: w.o, at: AT });
+
 describe("C. Final cash — the partner may accept, in either direction", () => {
   const proposing = (price, market, percent, delta) => {
     const w = atCash(price, market, percent);
     const calc = D.calculatedBalance(w.get());
-    w.st.actions.dealAdjustRespond({ oppId: w.o, by: "collector", action: "propose",
-      amount: calc + delta, at: AT });
+    collectorProposesCash(w.st, w.o, calc + delta, AT);
     return { w, calc };
   };
 
@@ -193,6 +203,9 @@ describe("C. Final cash — the partner may accept, in either direction", () => 
   test("accepting settles exactly that figure", () => {
     const { w, calc } = proposing(1000, 500, 1, -50);
     w.st.actions.dealAdjustRespond({ oppId: w.o, by: "tp", action: "accept", at: AT });
+    eq(w.get().deal.tpAgreed, true, "the partner confirmed the standing figure");
+    eq(D.currentCashFigure(w.get()), calc - 50, "which is the current economic state");
+    collectorConfirms(w);
     eq(w.get().deal.agreedAdj, calc - 50, "the standing amount, unchanged");
     eq(D.finalBalance(w.get()), calc - 50, "and the balance follows it");
   });
@@ -200,6 +213,7 @@ describe("C. Final cash — the partner may accept, in either direction", () => 
   test("the collector owing keeps its direction", () => {
     const { w } = proposing(1000, 500, 1, -50);       // calc +500 -> 450
     w.st.actions.dealAdjustRespond({ oppId: w.o, by: "tp", action: "accept", at: AT });
+    collectorConfirms(w);
     const r = D.cashReceipt(w.get());
     eq(r.final.direction, "collector-to-tp", "the collector still pays");
     eq(r.final.amount, 450, "$450");
@@ -210,6 +224,7 @@ describe("C. Final cash — the partner may accept, in either direction", () => 
     const { w } = proposing(400, 500, 1, 50);          // calc -100 -> -50
     eq(D.calculatedBalance(w.get()), -100, "the partner owes $100");
     w.st.actions.dealAdjustRespond({ oppId: w.o, by: "tp", action: "accept", at: AT });
+    collectorConfirms(w);
     const r = D.cashReceipt(w.get());
     eq(w.get().deal.agreedAdj, -50, "the signed figure is preserved");
     eq(r.final.direction, "tp-to-collector", "and they still pay");
@@ -223,13 +238,14 @@ describe("C. Final cash — the partner may accept, in either direction", () => 
   });
 
   test("agreement remains actor-specific and progression canonical", () => {
+    /* PHASE 1: the order is fixed — partner first, collector second. */
     const { w } = proposing(1000, 500, 1, -50);
+    eq(collectorConfirms(w).refused, D.REFUSE.notYourTurn, "the collector cannot confirm first");
     w.st.actions.dealAdjustRespond({ oppId: w.o, by: "tp", action: "accept", at: AT });
-    w.st.actions.dealAgree({ oppId: w.o, by: "collector", at: AT });
-    eq(w.get().deal.collectorAgreed, true, "one seat's agreement");
-    assert(!w.get().deal.tpAgreed, "not the other's");
+    eq(w.get().deal.tpAgreed, true, "one seat's agreement");
+    assert(!w.get().deal.collectorAgreed, "not the other's");
     eq(w.get().stage, "deal", "so the deal waits");
-    w.st.actions.dealAgree({ oppId: w.o, by: "tp", at: AT });
+    collectorConfirms(w);
     eq(w.get().stage, "fulfillment", "until both have agreed");
   });
 
@@ -263,14 +279,23 @@ describe("D. Guards, staleness and scope", () => {
   });
 
   test("accept is offered only when it is legal", () => {
-    /* Nobody has proposed: there is nothing to accept. */
+    /* Nobody has proposed: there is nothing to accept.
+       PHASE 1: the collector opens market value (D.cardOwner), so the partner
+       may neither open nor accept an unopened card — it reads "blocked", and a
+       partner opening is refused. */
     const w = atValueTrade();
-    eq(D.TRADE.negotiationState(w.card(), "market", "tp").state, "open",
-      "the partner may open, not accept");
+    eq(D.TRADE.negotiationState(w.card(), "market", "tp").state, "blocked",
+      "the partner may not open, nor accept");
+    const before = JSON.stringify(w.card());
     w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: w.row.id,
       by: "tp", action: "propose", amount: 500, at: AT });
-    eq(D.TRADE.negotiationState(w.card(), "market", "tp").state, "waiting",
-      "and having proposed, they wait rather than accept themselves");
+    eq(JSON.stringify(w.card()), before, "a partner opening is refused");
+    w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: w.row.id,
+      by: "collector", action: "propose", amount: 500, at: AT });
+    eq(D.TRADE.negotiationState(w.card(), "market", "collector").state, "waiting",
+      "and having proposed, the collector waits rather than accept themselves");
+    eq(D.TRADE.negotiationState(w.card(), "market", "tp").state, "theirs",
+      "while accept becomes legal for the partner");
   });
 
   test("no stage is written and no mobile-only action was added", () => {
@@ -281,12 +306,14 @@ describe("D. Guards, staleness and scope", () => {
       assert(!shell.includes(a), "the mobile shell adds no " + a));
   });
 
-  test("exactly one raw patch remains, and it is the known gap", () => {
-    eq((SIM().match(/A\.patchOpportunity/g) || []).length, 1,
-      "only the price counter, which has no canonical action");
+  /* PHASE 1: the known gap is closed. The price counter now has a canonical
+     command (proposePrice), so the simulator holds no raw patch at all. */
+  test("no raw patch remains — the price counter is canonical too", () => {
+    eq((SIM().match(/patchOpportunity/g) || []).length, 0, "no raw patch in the simulator");
     const counter = SIM().slice(SIM().indexOf("Counter at 96%"),
       SIM().indexOf("Counter at 96%") + 400);
-    assert(/priceThread/.test(counter), "appending to a thread, not setting a terminal field");
+    assert(/A\.proposePrice\(/.test(counter), "the counter goes through the canonical command");
+    assert(!/priceThread/.test(counter), "and writes no thread itself");
   });
 
   test("economics and lifecycle are untouched", () => {

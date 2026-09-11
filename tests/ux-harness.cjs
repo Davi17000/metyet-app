@@ -113,11 +113,12 @@ describe("B. The scenario is built from canonical actions", () => {
     assert(/at\.push\(\{ id, stage: get\(\)\.stage \}\)/.test(src),
       "it only reads the stage to label a checkpoint");
 
-    /* ONE HAND-WRITTEN FIELD REMAINS, named rather than hidden: submitting the
-       trade package. There is no canonical collector-side "send for review"
-       action, the same gap reported for the partner's price counter. */
+    /* PHASE 1 closed the last gap: submitting the trade package is now the
+       canonical proposeTradeSelection command, so the scenario writes nothing
+       by hand at all. */
     const patches = (src.match(/A\.patchOpportunity/g) || []).length;
-    eq(patches, 1, "exactly one raw patch: the trade submission, a known gap");
+    eq(patches, 0, "no raw patch remains");
+    assert(/A\.proposeTradeSelection\(/.test(src), "the package goes through the command");
   });
 
   test("progression uses canonical actions", () => {

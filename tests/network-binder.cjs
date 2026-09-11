@@ -1,3 +1,10 @@
+/* PHASE 1 CLOSEOUT: this suite drives the Trusted Partner workspace's
+   Collector simulation (SimBlock — acting as the collector from the partner's
+   screen). That is engineering tooling and now renders only under DEV
+   (shared/dev-flag.js), so the suite runs in DEV. Product and pilot builds
+   never show it: tests/phase1-closeout.cjs. */
+process.env.METYET_DEV = "1";
+
 const { describe, test, assert, eq } = require("./run.cjs");
 const TR = require("react-test-renderer");
 const { render, text, allText, btn, btns, btnExact, click, byClass, byClassIn, goProfile } = require("./util.cjs");
@@ -124,8 +131,12 @@ describe("Interest is the existing tpInterest state", () => {
     const r = binderTab();
     const idx = toggles(r).findIndex((b) => b.props["aria-pressed"] === "true");
     const name = text(byClassIn(cards(r)[idx], "nb-t")[0]);
+    const who = owners(r)[idx];
     click(toggles(r)[idx]);
-    click(byClassIn(cards(r)[idx], "nb-who")[0]);
+    /* The list re-sorts when interest changes, so the card is followed by its
+       name and owner rather than by its old position. */
+    const again = cards(r).findIndex((c, i) => names(r)[i] === name && owners(r)[i] === who);
+    click(byClassIn(cards(r)[again], "nb-who")[0]);
     const tile = byClass(r, "cp-bind").find((n) => text(n).includes(name));
     eq(byClassIn(tile, "cp-bind-x")[0].props["aria-pressed"], "false", "cleared on both surfaces");
   });

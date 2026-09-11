@@ -1,47 +1,45 @@
 /* ============================================================================
    THE SHARED STORE
 
-   One set of records, one set of actions. Both personas read and write HERE.
-   There is no TP copy and no Collector copy of anything below, and no sync
-   step: a mutation lands once and both projections re-derive from it.
+   One set of records. Both personas read HERE, and every product mutation goes
+   through ONE boundary:
 
-   This is deliberately a plain object graph with explicit actions rather than
-   a state-management framework. The point is to pin down the product contract,
-   not to choose David's production architecture.
+     store.execute(actor, command, payload)  ->  { ok, value } | { ok:false, refused }
+
+   The command layer (metyet-commands.js) derives the seat from the actor,
+   validates participant, ownership, Relationship, stage, terminal state, turn,
+   Goal locks and physical-copy rules, and either applies one complete state
+   change or refuses without changing anything.
+
+   PRODUCT SURFACE:  get · sub · execute · actorFor · cardById
+   TEST / FIXTURE SURFACE (never used by product code; a guard test enforces
+   it):  fixture.set · fixture.reset · fixture.patchOpportunity, and the legacy
+   `actions` facade below. The facade exists so the established test suites can
+   keep describing moves in their original vocabulary; every facade call still
+   runs through the same command layer and the same guards.
    ========================================================================== */
 
 const D = require("./metyet-domain.js");
-const E = require("./metyet-entities.js");
-
-/* ------------------------------------------------------------ THE ACTIONS
-
-   Every shared mutation has exactly one path. Persona permission is a wrapper
-   around these, never a second implementation. */
+const C = require("./metyet-commands.js");
 
 function createStore(seed) {
   let s = {
-    /* Spread first so a persona's canonical collections are never silently
-       dropped by this whitelist; the named keys below document the core set. */
     ...seed,
-    catalog: seed.catalog,                 // card identities
+    catalog: seed.catalog,
     collectors: seed.collectors,
     partners: seed.partners,
-    goals: seed.goals,                     // {id, collectorId, cardId, tier, since, note}
-    inventory: seed.inventory,             // {invId, partnerId, cardId, ask, cost, ...}
-    binder: seed.binder,                   // {id, collectorId, cardId, market, photos, cert, addedAt}
-    interests: seed.interests,             // {partnerId, binderId, at}
-    conversations: seed.conversations,     // shared threads; see domain.appendThreadEntry
-    /* Collector asks to see a specific physical copy. Not a deal. */
+    goals: seed.goals,
+    inventory: seed.inventory,
+    binder: seed.binder,
+    interests: seed.interests,
+    conversations: seed.conversations,
     photoRequests: seed.photoRequests || [],
-    /* Collector is looking at ONE physical copy with a view to pursuing it.
-       Deliberately separate from photoRequests: asking a partner to photograph
-       a card is work they must do, and the partner's inventory reads open
-       requests as demand. Merely deciding to look at a copy must not appear on
-       their shelf as a job. Non-financial, copy-specific, and it creates
-       nothing else. */
     copyReviews: seed.copyReviews || [],
     opportunities: seed.opportunities,
-    preferences: seed.preferences,         // {collectorId, tags[]}
+    preferences: seed.preferences,
+    /* The Relationship is the network boundary (contract §2). */
+    relationships: seed.relationships || [],
+    invitations: seed.invitations || [],
   };
   const subs = new Set();
   const get = () => s;
@@ -49,478 +47,136 @@ function createStore(seed) {
   const sub = (f) => { subs.add(f); return () => subs.delete(f); };
   const cardById = (id) => s.catalog.find((c) => c.id === id);
 
-  const actions = {
-    /* ---- goals: what a collector wants. Only the collector creates one. ---- */
-    addGoal({ collectorId, cardId, tier, at }) {
-      if (s.goals.some((g) => g.collectorId === collectorId && g.cardId === cardId)) return null;
-      const id = "g" + Math.random().toString(36).slice(2, 9);
-      set({ ...s, goals: [...s.goals, { id, collectorId, cardId,
-        tier: tier === "primary" ? "primary" : "secondary", since: at, note: "" }] });
-      return id;
-    },
-    updateGoalTier(goalId, tier) {
-      set({ ...s, goals: s.goals.map((g) => (g.id === goalId
-        ? { ...g, tier: tier === "primary" ? "primary" : "secondary" } : g)) });
-    },
-    removeGoal(goalId) {
-      /* A goal under negotiation cannot vanish and orphan the deal. */
-      if (D.activeOppForGoal(goalId, s.opportunities)) return false;
-      set({ ...s, goals: s.goals.filter((g) => g.id !== goalId) });
-      return true;
-    },
-
-    /* ---- inventory: what a partner holds ---- */
-    /* WHEN THIS COPY ENTERED METYET — not when the partner obtained it.
-       `acquired` is provenance: a card bought in January and listed in August
-       is eight months old to its owner and new to everyone here. Reading
-       freshness from it would tell a collector something untrue, so a copy is
-       stamped with its own addedAt when it arrives. Callers pass `at` because
-       the app's time comes from its clock, not from this module. */
-    addInventoryCopy(copy, at) {
-      const row = copy.addedAt || !at ? copy : { ...copy, addedAt: at };
-      set({ ...s, inventory: [...s.inventory, row] });
-      return row.invId;
-    },
-    removeInventoryCopy(invId) {
-      set({ ...s, inventory: s.inventory.map((i) =>
-        (i.invId === invId ? { ...i, archived: true } : i)) });
-    },
-
-    /* ---- binder: what a collector will trade ---- */
-    addBinderCopy(copy) {
-      /* THE BINDER INVARIANT. Both faces or the copy does not exist. */
-      if (!D.INVARIANTS.binderCopyPhotographed(copy.photos)) return null;
-      set({ ...s, binder: [...s.binder, copy] });
-      return copy.id;
-    },
-    /* EDIT, NOT REPLACE. The copy keeps its id, so the partner interest attached
-       to it, the trade rows referencing it, and the history that mentions it all
-       remain attached to the same physical object. A delete-and-recreate dressed
-       up as an edit would quietly sever every one of those.
-
-       Card identity is NOT editable. Condition and grade live on the card, not
-       the copy, so "changing the grade" would mean pointing this copy at a
-       different card — which is a different object, and would corrupt any deal
-       already negotiating over it. Correcting identity means removing and
-       re-adding deliberately.
-
-       Cert is economic: a partner valuing a graded copy is valuing THAT
-       certification. While the copy is accepted into a live trade it is
-       read-only, enforced here rather than by a disabled input, so no caller can
-       route around it. Photos and the collector's private value stay editable
-       throughout — better pictures and a corrected private note cannot
-       misrepresent what is being traded. */
-    updateBinderCopy({ binderId, patch, at }) {
-      const copy = (s.binder || []).find((b) => b.id === binderId);
-      if (!copy) return { refused: D.REFUSE.copyUnavailable };
-
-      /* Identity is never editable through this path. */
-      if ("cardId" in patch || "id" in patch || "collectorId" in patch) {
-        return { refused: D.REFUSE.identityImmutable };
-      }
-
-      const committed = (s.opportunities || []).some((o) => D.isActive(o)
-        && ((o.trade && o.trade.cards) || []).some((c) => c.binderId === binderId
-          && c.inclusion === "accepted" && !c.withdrawn));
-      if (committed && "cert" in patch && patch.cert !== copy.cert) {
-        return { refused: D.REFUSE.copyCommitted };
-      }
-
-      const next = { ...copy, ...patch, id: copy.id, cardId: copy.cardId,
-        collectorId: copy.collectorId };
-      /* The same invariant the add path enforces: both faces or it does not
-         exist. An edit cannot leave a committed copy unshowable. */
-      if (!D.INVARIANTS.binderCopyPhotographed(next.photos)) {
-        return { refused: D.REFUSE.photosRequired };
-      }
-      if (next.market != null && !(Number(next.market) >= 0)) {
-        return { refused: D.REFUSE.invalidAmount };
-      }
-      set({ ...s, binder: s.binder.map((b) => (b.id === binderId
-        ? { ...next, updatedAt: at || b.updatedAt } : b)) });
-      return binderId;
-    },
-
-    removeBinderCopy(binderId) {
-      set({ ...s, binder: s.binder.filter((b) => b.id !== binderId),
-        interests: s.interests.filter((i) => i.binderId !== binderId) });
-    },
-
-    /* THE PARTNER'S OWN PROFILE. Written by the partner, read by everyone —
-       one record, so a collector cannot see a different About than the shop
-       wrote, and there is no collector-side mirror to drift.
-
-       Bounded on purpose: who they are, what they deal in, and how to reach
-       them. No notes a collector authored about them, no score, no history —
-       that is a CRM, and the trusted relationship itself is the v1 signal. */
-    updatePartnerProfile({ partnerId, patch }) {
-      const p = (s.partners || []).find((x) => x.id === partnerId);
-      if (!p) return null;
-      const allowed = ["about", "specialties", "website", "instagram", "email", "phone"];
-      const clean = {};
-      allowed.forEach((k) => { if (k in patch) clean[k] = patch[k]; });
-      /* Specialties are stated, never inferred from what happens to be in
-         stock — a shop with one vintage card is not a vintage dealer. */
-      if ("specialties" in clean && !Array.isArray(clean.specialties)) return null;
-      set({ ...s, partners: s.partners.map((x) => (x.id === partnerId
-        ? { ...x, ...clean } : x)) });
-      return partnerId;
-    },
-
-    /* WHEN DID THIS PERSON LAST LOOK?
-
-       The one fact in this pass that genuinely cannot be derived. Every event in
-       a deal is already timestamped, so "what happened" needs no new records —
-       but "what have I already seen" is not implied by anything the deal knows.
-       Two people read the same history at different times.
-
-       So it is two timestamps per opportunity, one per seat, and nothing else.
-       It records reading, never the deal: no stage, no terms, no agreement. A
-       collector who opens a deal and closes it again has changed only their own
-       reading position. */
-    /* ONE CURSOR PER SEAT PER SURFACE, and no more than that.
-
-       A single deal-level position could not tell "I read the timeline" from "I
-       read the messages", so a message arriving while somebody was looking at
-       the timeline marked itself read — the reader never saw it and the badge
-       was already gone. Two surfaces are genuinely two things to have read, so
-       there are two cursors; a third would be inventing a distinction the UI
-       does not make.
-
-       `surface` is "timeline" or "messages", `by` is the seat. Nothing else is
-       stored: no notification records, no per-event flags, and the deal itself
-       is untouched — reading is not acting. */
-    markDealViewed({ oppId, by, surface, at }) {
-      const seat = by === "tp" ? "tp" : "collector";
-      const where = surface === "messages" ? "messages" : "timeline";
-      return this.patchOpportunity(oppId, (o) => {
-        const prev = o.viewedAt || {};
-        return { ...o, viewedAt: { ...prev,
-          [seat]: { ...(prev[seat] || {}), [where]: at } } };
-      });
-    },
-
-    /* ---- interest: a partner would consider an exact copy ---- */
-    setInterest(partnerId, binderId, on, at) {
-      const has = E.hasInterest(s.interests, partnerId, binderId);
-      if (on === has) return;
-      set({ ...s, interests: on
-        ? [...s.interests, { partnerId, binderId, at }]
-        : s.interests.filter((i) => !(i.partnerId === partnerId && i.binderId === binderId)) });
-    },
-
-    /* SETTLING THE PRICE — the partner's point of commitment.
-
-       Enforced here rather than in either app, because this is the moment the
-       physical copy stops being available to anyone else and both personas can
-       reach it. If another live deal settled this copy first, this one cannot
-       also settle it: the card exists once. */
-    agreePrice({ oppId, amount, by, at }) {
-      const o = (s.opportunities || []).find((x) => x.id === oppId);
-      if (!o) return { refused: D.REFUSE.noGoal };
-      const taken = D.INVARIANTS.copyCommittedTo(o.invId, s.opportunities, o.id);
-      if (taken) return { refused: D.REFUSE.copyCommitted };
-      set({ ...s, opportunities: s.opportunities.map((x) => (x.id === oppId ? { ...x,
-        agreedPrice: amount, stage: "select-trade",
-        /* Entering Select Trade means opening an empty trade package. */
-        trade: x.trade || { mode: "trade", submitted: false, cards: [] },
-        priceThread: [...x.priceThread,
-          { by: by || "collector", type: "accept", amount, at }] } : x)) });
-      return oppId;
-    },
-
-    /* ---- REVIEWING A SPECIFIC COPY ---------------------------------------
-       Choosing which copy to pursue. This is the moment the Goal acquires a
-       partner, and it is the whole of what Review Card needs to exist — no
-       offer, no price, no obligation, and nothing the partner has to act on. */
-    reviewCopy({ collectorId, partnerId, invId, at }) {
-      const copy = (s.inventory || []).find((i) => i.invId === invId);
-      if (!copy || copy.archived) return { refused: D.REFUSE.copyUnavailable };
-      const open = (s.copyReviews || []).find((r) => r.collectorId === collectorId
-        && r.invId === invId && !r.endedAt);
-      if (open) return open.id;                  // already looking at it
-      const id = "rv" + Math.random().toString(36).slice(2, 9);
-      set({ ...s, copyReviews: [...(s.copyReviews || []),
-        { id, collectorId, partnerId: partnerId || copy.partnerId, invId, at, endedAt: null }] });
-      return id;
-    },
-    /* Walking away before any offer. Ends the looking, nothing else. */
-    endReview(id, at) {
-      set({ ...s, copyReviews: (s.copyReviews || []).map((r) =>
-        (r.id === id && !r.endedAt ? { ...r, endedAt: at || null } : r)) });
-    },
-
-    /* ---- ACTUAL CARD PHOTOS ------------------------------------------------
-       A request is a low-commitment signal about one physical copy: "I want to
-       see this before I talk price." It is not a deal, so it creates no
-       opportunity, touches no goal, and consumes no negotiation slot.
-
-       It is its own small relationship rather than a conversation entry because
-       conversations are keyed on CARD IDENTITY, and this is about one exact
-       copy — a partner holding three of the same Charizard must be able to tell
-       which one was asked about. */
-    requestPhotos({ collectorId, partnerId, invId, at }) {
-      const copy = (s.inventory || []).find((i) => i.invId === invId);
-      if (!copy || copy.archived) return { refused: D.REFUSE.copyUnavailable };
-      /* Nothing to ask for, and repeated clicks must not pile up. */
-      if (D.INVARIANTS.copyPhotographed(copy.photos)) return null;
-      const already = (s.photoRequests || []).some((r) => r.collectorId === collectorId
-        && r.invId === invId && !r.fulfilledAt);
-      if (already) return null;
-      const id = "pr" + Math.random().toString(36).slice(2, 9);
-      /* Asking to see a copy IS reviewing it, so record that too when the
-         collector arrived by that route rather than by selecting first. */
-      const reviewing = (s.copyReviews || []).some((r) => r.collectorId === collectorId
-        && r.invId === invId && !r.endedAt);
-      set({ ...s,
-        photoRequests: [...(s.photoRequests || []),
-          { id, collectorId, partnerId: partnerId || copy.partnerId, invId, at, fulfilledAt: null }],
-        copyReviews: reviewing ? (s.copyReviews || []) : [...(s.copyReviews || []),
-          { id: "rv" + id, collectorId, partnerId: partnerId || copy.partnerId,
-            invId, at, endedAt: null }] });
-      return id;
-    },
-    /* The partner photographs the copy. This enriches the inventory record
-       permanently — it is not tied to whoever asked, so every later collector
-       benefits from the one piece of work. */
-    addCopyPhotos({ invId, front, back, at }) {
-      const copy = (s.inventory || []).find((i) => i.invId === invId);
-      if (!copy) return { refused: D.REFUSE.copyUnavailable };
-      const photos = { front: front !== undefined ? front : (copy.photos || {}).front,
-        back: back !== undefined ? back : (copy.photos || {}).back };
-      const complete = D.INVARIANTS.copyPhotographed(photos);
-      set({ ...s,
-        inventory: s.inventory.map((i) => (i.invId === invId ? { ...i, photos } : i)),
-        /* One face does not resolve the ask; the request stays open until the
-           collector can actually see the card. */
-        photoRequests: (s.photoRequests || []).map((r) => (r.invId === invId && !r.fulfilledAt
-          && complete ? { ...r, fulfilledAt: at || null } : r)) });
-      return complete;
-    },
-
-    /* ---- conversation: ONE thread per collector + partner + card identity,
-       shared with that Trusted Partner and no other. Reaching out creates NO
-       opportunity, ever — conversation and negotiation are different acts. ---- */
-    reachOut({ collectorId, partnerId, cardId, oppId, text, at, by = "collector" }) {
-      const card = cardById(cardId);
-      if (!card || !partnerId) return null;
-      const entry = text
-        ? { kind: "message", by, text }
-        : { kind: "event", by: "system", text: "Reached out" };
-      set({ ...s, conversations: D.appendThreadEntry(s.conversations, {
-        collectorId, partnerId, card, cardId, oppId, entry, at }) });
-      return D.threadKey(collectorId, partnerId, card);
-    },
-    sendMessage({ collectorId, partnerId, cardId, by, text, oppId, at }) {
-      const card = cardById(cardId);
-      if (!card || !partnerId || !text || !text.trim()) return null;
-      set({ ...s, conversations: D.appendThreadEntry(s.conversations, {
-        collectorId, partnerId, card, cardId, oppId,
-        entry: { kind: "message", by, text: text.trim() }, at }) });
-      return D.threadKey(collectorId, partnerId, card);
-    },
-    /* Lifecycle events land in the same thread, chronologically. A milestone
-       belongs to the partner the deal is with, so it never leaks to another. */
-    logMilestone({ collectorId, partnerId, cardId, text, oppId, at }) {
-      const card = cardById(cardId);
-      if (!card || !partnerId) return null;
-      set({ ...s, conversations: D.appendThreadEntry(s.conversations, {
-        collectorId, partnerId, card, cardId, oppId,
-        entry: { kind: "event", by: "system", text }, at }) });
-    },
-
-    /* ---- opportunity: the one structured negotiation ---- */
-    /* Returns the new opportunity id, or a refusal a caller can act on. Both
-       invariants live HERE so no persona, route or direct caller can bypass
-       them — the UI explains the refusal, it does not enforce it. */
-    startOpportunity({ goalId, collectorId, partnerId, cardId, invId, listedPrice, amount, at }) {
-      if (!s.goals.some((g) => g.id === goalId)) return { refused: D.REFUSE.noGoal };
-      /* A deal is evidence of active pursuit, so the goal must be Primary. */
-      if (!D.INVARIANTS.goalIsPursued(goalId, s.goals)) return { refused: D.REFUSE.notPrimary };
-      if (!D.INVARIANTS.oneNegotiationPerGoal(goalId, s.opportunities))
-        return { refused: D.REFUSE.alreadyNegotiating };
-      /* CONTRACT CHANGE. Actual photos used to be an absolute requirement here.
-         They are no longer: a graded card carries much of its condition in the
-         grade itself, and a collector who understands what they cannot see is
-         entitled to price accordingly. Seeing the card is now strongly
-         encouraged by the interface — with a confirmation when it is skipped —
-         rather than forbidden by the domain.
-
-         What remains absolute is the copy: a deal names one physical card, and
-         that card has to exist and still be available. */
-      if (invId != null) {
-        const copy = (s.inventory || []).find((i) => i.invId === invId);
-        if (!copy || copy.archived) return { refused: D.REFUSE.copyUnavailable };
-        /* Somebody has already settled a price on this exact copy. Offering on
-           it now could only end in disappointment, so it is refused here rather
-           than allowed to run and fail later. */
-        if (D.INVARIANTS.copyCommittedTo(invId, s.opportunities))
-          return { refused: D.REFUSE.copyCommitted };
-      }
-      const id = "o" + Math.random().toString(36).slice(2, 9);
-      const opp = {
-        id, goalId, collectorId, partnerId, cardId, invId,
-        stage: "agree-price", listedPrice, agreedPrice: null,
-        priceThread: [{ by: "collector", type: "offer", amount, at }],
-        trade: { submitted: false, cards: [] },
-        deal: {}, fulfillment: {}, declined: false, completedAt: null, updated: at,
-      };
-      set({ ...s, opportunities: [...s.opportunities, opp] });
-      return id;
-    },
-    /* ---- STAGE 4-6: one action per business event, called by BOTH seats.
-
-       Each is a thin canonical wrapper over the shared rule in D.TRADE or over
-       a single agreement bit. They exist so that neither React component owns a
-       business rule, and — critically — so that no seat can assert the other
-       seat's agreement: `by` names who is acting, and only that side's fields
-       move. */
-    tradeMarketRespond({ oppId, tradeCardId, by, action, amount, at }) {
-      /* Settling the last open term is what ends this stage. */
-      return this.patchOpportunity(oppId, (o) => D.TRADE.closeValuation({ ...o,
-        trade: { ...o.trade, cards: (o.trade?.cards || []).map((c) => (c.id !== tradeCardId
-          ? c : D.TRADE.applyMarket(c, by, action, amount, at))) } }));
-    },
-
-    tradePercentRespond({ oppId, tradeCardId, by, action, percent, at }) {
-      /* Settling the last open term is what ends this stage. */
-      return this.patchOpportunity(oppId, (o) => D.TRADE.closeValuation({ ...o,
-        trade: { ...o.trade, cards: (o.trade?.cards || []).map((c) => (c.id !== tradeCardId
-          ? c : D.TRADE.applyPercent(c, by, action, percent, at))) } }));
-    },
-
-    dealAdjustRespond({ oppId, by, action, amount, at }) {
-      return this.patchOpportunity(oppId, (o) => ({ ...o,
-        deal: D.TRADE.applyDealAdjustment(o.deal, by, action, amount, at) }));
-    },
-
-    /* AGREEMENT IS PER SEAT. One bit, belonging to whoever acted. The deal
-       becomes mutually agreed only because both bits are true — never because
-       one action set both. */
-    dealAgree({ oppId, by, at }) {
-      return this.patchOpportunity(oppId, (o) => {
-        if (o.stage !== "deal") return o;
-        /* AN UNANSWERED CASH PROPOSAL MEANS THERE IS NO DEAL TO AGREE TO.
-
-           Agreeing while a figure is still on the table would commit somebody
-           to terms the other side has not accepted — and worse, it was
-           reachable: the guard lived only in what the UI chose to render, so
-           any caller could walk past it. The rule belongs here, where every
-           seat meets it.
-
-           Resolution is canonical: a standing proposal is one that has been
-           made and not yet agreed. Once agreedAdj exists, the cash is settled
-           and agreement is available again. */
-        const d = o.deal || {};
-        const cashUnresolved = d.agreedAdj == null
-          && (d.collectorAdj != null || d.tpAdj != null);
-        if (cashUnresolved) return o;
-        const deal = { ...(o.deal || {}),
-          [by === "tp" ? "tpAgreed" : "collectorAgreed"]: true };
-        const both = !!deal.tpAgreed && !!deal.collectorAgreed;
-        /* Entering Fulfillment creates a fulfillment record with UNSET terms.
-           Anything else would put words in the partner's mouth: a plan nobody
-           proposed, presented to the collector as if they had. */
-        return { ...o, deal, stage: both ? "fulfillment" : o.stage,
-          fulfillment: both
-            ? (o.fulfillment || { method: null, where: null, when: null,
-                proposedAt: null, collectorConfirmedPlan: false,
-                revisionRequested: null, tpHandoff: false, collectorReceipt: false })
-            : o.fulfillment,
-          ...(both ? { at } : {}) };
-      });
-    },
-
-    /* The partner proposes how the exchange happens; the collector answers. */
-    proposeFulfillment({ oppId, plan, at }) {
-      return this.patchOpportunity(oppId, (o) => ({ ...o,
-        fulfillment: { ...(o.fulfillment || {}), ...plan, proposedAt: at,
-          revisionRequested: null, collectorConfirmedPlan: false } }));
-    },
-
-    confirmFulfillmentPlan({ oppId, at }) {
-      return this.patchOpportunity(oppId, (o) => {
-        const f = o.fulfillment || {};
-        if (!f.proposedAt || f.revisionRequested) return o;   // nothing to confirm
-        return { ...o, fulfillment: { ...f, collectorConfirmedPlan: true, confirmedAt: at } };
-      });
-    },
-
-    requestFulfillmentRevision({ oppId, note, at }) {
-      return this.patchOpportunity(oppId, (o) => ({ ...o,
-        fulfillment: { ...(o.fulfillment || {}), collectorConfirmedPlan: false,
-          revisionRequested: { note, at } } }));
-    },
-
-    /* COMPLETION IS TWO EVENTS. Handing the card over and confirming receipt are
-       different acts by different people; one action never sets both. */
-    confirmHandoff({ oppId, by, at }) {
-      return this.patchOpportunity(oppId, (o) => {
-        const f = o.fulfillment || {};
-        const planAgreed = !!f.proposedAt && !f.revisionRequested && !!f.collectorConfirmedPlan;
-        if (!planAgreed) return o;      // cannot complete what was never agreed
-        const next = { ...f, [by === "tp" ? "tpHandoff" : "collectorReceipt"]: true };
-        const done = D.FULFILLMENT.handedOff(next) && D.FULFILLMENT.received(next);
-        return { ...o, fulfillment: next,
-          stage: done ? "completed" : o.stage,
-          completedAt: done ? at : o.completedAt };
-      });
-    },
-
-    /* Either seat may take a card out of the trade; the rule is the same one. */
-    /* The partner's Select Trade decision. Omitting tradeCardId decides every
-       still-undecided row, which is what "accept these cards" means. */
-    reviewTradeCards({ oppId, tradeCardId, decision, at }) {
-      return this.patchOpportunity(oppId, (o) => D.TRADE.closeSelection({ ...o,
-        trade: { ...o.trade, cards: (o.trade?.cards || []).map((c) => (
-          (tradeCardId && c.id !== tradeCardId) ? c : D.TRADE.decide(c, decision, at))) } }));
-    },
-
-    withdrawTradeCard({ oppId, tradeCardId, at }) {
-      /* Withdrawing can also empty the selection, so the same rule applies. */
-      /* Withdrawing can empty a selection, and can also settle a valuation by
-         removing the last unagreed card, so both rules apply. */
-      return this.patchOpportunity(oppId, (o) => D.TRADE.closeValuation(
-        D.TRADE.closeSelection({ ...o,
-          trade: { ...o.trade, cards: (o.trade?.cards || []).map((c) => (c.id !== tradeCardId
-            ? c : D.TRADE.withdraw(c, at))) } })));
-    },
-
-    /* CASH-ONLY MEANS NO CARDS ARE GOING IN. Choosing it while cards are still
-       live in the trade produced a deal that was simultaneously a cash purchase
-       and a pending trade: mode "cash", stage "deal", and a row still sitting at
-       "proposed" that Value Trade was skipped over and could never resolve.
-
-       So the rule is a business invariant, not a matter of which button shows.
-       A card that is proposed or accepted-and-not-withdrawn is still IN the
-       trade; the collector must take those out before buying outright. Rejected
-       and withdrawn rows are already out and do not block anything. */
-    chooseCashOnly({ oppId, at }) {
-      const opp = (s.opportunities || []).find((x) => x.id === oppId);
-      if (opp && D.TRADE.liveTradeRows(opp).length > 0) {
-        return { refused: D.REFUSE.tradeCardsSelected };
-      }
-      return this.patchOpportunity(oppId, (o) => (
-        !["select-trade", "value-trade"].includes(o.stage) ? o
-          : { ...o, trade: { ...(o.trade || {}), mode: "cash", submitted: true,
-              cards: o.trade?.cards || [], cashOnlyAt: at }, stage: "deal",
-              deal: { adjThread: [], ...(o.deal || {}) } }));
-    },
-
-    patchOpportunity(oppId, fn) {
-      set({ ...s, opportunities: s.opportunities.map((o) => (o.id === oppId ? fn(o) : o)) });
-    },
-    endOpportunity(oppId, by, at) {
-      actions.patchOpportunity(oppId, (o) => (D.isActive(o)
-        ? { ...o, declined: true, endedBy: by, endedAt: at, endedStage: o.stage } : o));
-    },
+  /* ------------------------------------------------ THE AUTHORITATIVE BOUNDARY */
+  const execute = (actor, command, payload) => {
+    const r = C.execute(s, actor, command, payload);
+    if (!r.ok) return { ok: false, refused: r.refused };
+    if (r.state !== s) set(r.state);
+    return { ok: true, value: r.value };
+  };
+  /* An actor handle for a seat. Product shells mint these from identity; the
+     command layer re-derives the seat on every call regardless. */
+  const actorFor = (identity) => {
+    const a = C.resolveActor(s, identity);
+    return a ? (a.seat === "tp" ? { partnerId: a.partnerId } : { collectorId: a.collectorId }) : null;
   };
 
-  /* Test/demo isolation only. Production would create a store per session
-     rather than resetting a module-level one. */
-  const reset = (nextSeed) => set({ ...(nextSeed || seed) });
+  /* ------------------------------------------------ TEST / FIXTURE ONLY */
+  const patchOpportunity = (oppId, fn) => {
+    set({ ...s, opportunities: s.opportunities.map((o) => (o.id === oppId ? fn(o) : o)) });
+  };
+  const reset = (nextSeed) => set({ relationships: [], invitations: [], photoRequests: [],
+    copyReviews: [], ...(nextSeed || seed) });
+  const fixture = { set, reset, patchOpportunity };
 
-  return { get, set, sub, actions, cardById, reset };
+  /* LEGACY ACTION FACADE — test vocabulary only. The seat each call acts as is
+     read from the old argument shape (a `by`, or the record's owner), then the
+     call is handed to execute() like any other. It grants no authority the
+     command layer would not: every refusal still applies. */
+  const opp = (id) => s.opportunities.find((o) => o.id === id) || {};
+  const seatActor = (o, by) => (by === "tp" || by === "partner"
+    ? { partnerId: o.partnerId } : { collectorId: o.collectorId });
+  const legacy = (actor, command, payload, shape) => {
+    const r = execute(actor, command, payload);
+    if (shape === "raw") return r;
+    if (!r.ok) return shape === "id" ? null : shape === "bool" ? false : { refused: r.refused };
+    return shape === "id" || shape === "bool" ? r.value : (r.value === undefined ? true : r.value);
+  };
+
+  const actions = {
+    addGoal: ({ collectorId, cardId, tier, at, note }) =>
+      legacy({ collectorId }, "addGoal", { cardId, tier, at, note }, "id"),
+    updateGoalTier: (goalId, tier, at) => {
+      const g = s.goals.find((x) => x.id === goalId) || {};
+      return legacy({ collectorId: g.collectorId }, "updateGoalTier", { goalId, tier, at });
+    },
+    removeGoal: (goalId) => {
+      const g = s.goals.find((x) => x.id === goalId) || {};
+      return legacy({ collectorId: g.collectorId }, "removeGoal", { goalId }, "bool");
+    },
+    addInventoryCopy: (copy, at) => legacy({ partnerId: copy.partnerId }, "addInventoryCopy", { copy, at }, "id"),
+    updateInventoryCopy: ({ invId, patch, at }) => {
+      const i = s.inventory.find((x) => x.invId === invId) || {};
+      return legacy({ partnerId: i.partnerId }, "updateInventoryCopy", { invId, patch, at });
+    },
+    removeInventoryCopy: (invId) => {
+      const i = s.inventory.find((x) => x.invId === invId) || {};
+      return legacy({ partnerId: i.partnerId }, "removeInventoryCopy", { invId });
+    },
+    addBinderCopy: (copy) => legacy({ collectorId: copy.collectorId }, "addBinderCopy", { copy }, "id"),
+    updateBinderCopy: ({ binderId, patch, at }) => {
+      const b = s.binder.find((x) => x.id === binderId) || {};
+      const r = execute({ collectorId: b.collectorId }, "updateBinderCopy", { binderId, patch, at });
+      return r.ok ? r.value : { refused: r.refused === D.REFUSE.unknownActor ? D.REFUSE.copyUnavailable : r.refused };
+    },
+    removeBinderCopy: (binderId) => {
+      const b = s.binder.find((x) => x.id === binderId) || {};
+      return legacy({ collectorId: b.collectorId }, "removeBinderCopy", { binderId });
+    },
+    updatePartnerProfile: ({ partnerId, patch }) => legacy({ partnerId }, "updatePartnerProfile", { patch }, "id"),
+    markDealViewed: ({ oppId, by, surface, at }) =>
+      legacy(seatActor(opp(oppId), by), "markDealViewed", { oppId, surface, at }),
+    setInterest: (partnerId, binderId, on, at) => legacy({ partnerId }, "setInterest", { binderId, on, at }),
+    agreePrice: ({ oppId, by, at }) => legacy(seatActor(opp(oppId), by || "collector"), "acceptPrice", { oppId, at }),
+    reviewCopy: ({ collectorId, invId, at }) => legacy({ collectorId }, "reviewCopy", { invId, at }),
+    endReview: (reviewId, at) => {
+      const r = (s.copyReviews || []).find((x) => x.id === reviewId) || {};
+      return legacy({ collectorId: r.collectorId }, "endReview", { reviewId, at });
+    },
+    requestPhotos: ({ collectorId, invId, at }) => {
+      const r = execute({ collectorId }, "requestPhotos", { invId, at });
+      return r.ok ? r.value : { refused: r.refused };
+    },
+    addCopyPhotos: ({ invId, front, back, at }) => {
+      const i = s.inventory.find((x) => x.invId === invId) || {};
+      const r = execute({ partnerId: i.partnerId }, "addCopyPhotos", { invId, front, back, at });
+      return r.ok ? r.value : { refused: r.refused === D.REFUSE.unknownActor ? D.REFUSE.copyUnavailable : r.refused };
+    },
+    reachOut: ({ collectorId, partnerId, cardId, oppId, text, at, by = "collector" }) =>
+      legacy(by === "tp" ? { partnerId } : { collectorId }, "reachOut",
+        { collectorId, partnerId, cardId, oppId, text, at }, "id"),
+    sendMessage: ({ collectorId, partnerId, cardId, by, text, oppId, at }) =>
+      legacy(by === "tp" ? { partnerId } : { collectorId }, "sendMessage",
+        { collectorId, partnerId, cardId, text, oppId, at }, "id"),
+    logMilestone: ({ collectorId, partnerId, cardId, text, oppId, at }) =>
+      legacy({ partnerId }, "recordNote", { collectorId, cardId, oppId, milestone: text, at }),
+    startOpportunity: ({ goalId, collectorId, invId, amount, at }) => {
+      const r = execute({ collectorId }, "startOpportunity", { goalId, invId, amount, at });
+      return r.ok ? r.value : { refused: r.refused };
+    },
+    proposePrice: ({ oppId, by, amount, at }) => legacy(seatActor(opp(oppId), by), "proposePrice", { oppId, amount, at }),
+    tradeMarketRespond: ({ oppId, tradeCardId, by, action, amount, at }) =>
+      legacy(seatActor(opp(oppId), by), action === "accept" ? "acceptMarketValue" : "proposeMarketValue",
+        { oppId, tradeCardId, amount, at }),
+    tradePercentRespond: ({ oppId, tradeCardId, by, action, percent, at }) =>
+      legacy(seatActor(opp(oppId), by), action === "accept" ? "acceptTradePercent" : "proposeTradePercent",
+        { oppId, tradeCardId, percent, at }),
+    /* Contract §4: there is no separate "accept the figure" step any more. A
+       standing figure is answered by final agreement (acceptDeal) or a new
+       figure; the old accept maps to final agreement. */
+    dealAdjustRespond: ({ oppId, by, action, amount, at }) =>
+      legacy(seatActor(opp(oppId), by), action === "accept" ? "acceptDeal" : "proposeFinalBalance",
+        { oppId, amount, at }),
+    dealAgree: ({ oppId, by, at }) => legacy(seatActor(opp(oppId), by), "acceptDeal", { oppId, at }),
+    proposeFulfillment: ({ oppId, plan, at }) => legacy(seatActor(opp(oppId), "tp"), "proposeFulfillment", { oppId, plan, at }),
+    confirmFulfillmentPlan: ({ oppId, at }) => legacy(seatActor(opp(oppId), "collector"), "confirmFulfillmentPlan", { oppId, at }),
+    requestFulfillmentRevision: ({ oppId, note, at }) =>
+      legacy(seatActor(opp(oppId), "collector"), "requestFulfillmentRevision", { oppId, note, at }),
+    confirmHandoff: ({ oppId, by, at }) => legacy(seatActor(opp(oppId), by), "confirmHandoff", { oppId, at }),
+    reviewTradeCards: ({ oppId, tradeCardId, decision, at }) =>
+      legacy(seatActor(opp(oppId), "tp"), "reviewTradeCard", { oppId, tradeCardId, decision, at }),
+    proposeTradeSelection: ({ oppId, binderIds, at }) =>
+      legacy(seatActor(opp(oppId), "collector"), "proposeTradeSelection", { oppId, binderIds, at }),
+    withdrawTradeCard: ({ oppId, tradeCardId, at }) =>
+      legacy(seatActor(opp(oppId), "collector"), "withdrawTradeCard", { oppId, tradeCardId, at }),
+    chooseCashOnly: ({ oppId, at }) => legacy(seatActor(opp(oppId), "collector"), "chooseCashOnly", { oppId, at }),
+    endOpportunity: (oppId, by, at, reason) =>
+      legacy(seatActor(opp(oppId), by), "cancelOpportunity", { oppId, at, reason }),
+    /* Raw state edits for fixtures. Not a product action. */
+    patchOpportunity,
+  };
+
+  return { get, sub, execute, actorFor, cardById, fixture, actions };
 }
 
 module.exports = { createStore };
