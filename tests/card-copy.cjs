@@ -507,9 +507,9 @@ describe("Clipboard robustness", () => {
   });
 });
 
-/* ---- compact rollout: Inventory, goals, Cultivate ---------------------------- */
+/* ---- compact rollout: Inventory, goals, Curate ---------------------------- */
 const inventory = (r) => { click(btnExact(r, "Inventory37")); return r; };
-const cultivate = (r) => { inventory(r); click(btns(r, "Cultivate")[0]); return r; };
+const cultivate = (r) => { inventory(r); click(btns(r, "Curate")[0]); return r; };
 const actionsIn = (node) => byClassIn(node, "ccopy").flatMap((n) => n.findAllByType("button"));
 const labelsIn = (node) => actionsIn(node).map((b) => b.props["aria-label"]);
 
@@ -610,7 +610,7 @@ describe("Goal cards — compact Card Info", () => {
   });
 });
 
-describe("Cultivate rows — compact Card Info", () => {
+describe("Curate rows — compact Card Info", () => {
   test("every gap row carries exactly one copy action", () => {
     const r = cultivate(render());
     const rows = byClass(r, "cv-row");
@@ -726,7 +726,7 @@ describe("Compact copy changes nothing", () => {
     eq(byClass(r, "cp-bind-x").map((b) => b.props["aria-pressed"]).join(","), flags, "tpInterest unchanged");
   });
 
-  test("copying from Cultivate does not change its ranking", async () => {
+  test("copying from Curate does not change its ranking", async () => {
     installDom(); setClipboard(working);
     const r = cultivate(render());
     const before = byClass(r, "cv-row").map((n) => text(byClassIn(n, "cv-t")[0])).join("|");

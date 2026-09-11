@@ -5,7 +5,7 @@ const { render, text, allText, btn, btns, btnExact, click, byClass, byClassIn } 
 const cultivate = () => {
   const r = render();
   click(btnExact(r, "Inventory37"));
-  click(btns(r, "Cultivate")[0]);
+  click(btns(r, "Curate")[0]);
   return r;
 };
 const panel = (r, title) => byClass(r, "nw-cell").find((n) => text(byClassIn(n, "nw-t")[0]) === title);
@@ -123,7 +123,7 @@ describe("G–H. Exact-card demand", () => {
 });
 
 describe("I–J. Inventory is not an input", () => {
-  test("I. Cultivate exposes no inventory-relative measure", () => {
+  test("I. Curate exposes no inventory-relative measure", () => {
     // scoped to the rendered page: the app's stylesheet legitimately styles Coverage
     const r = cultivate();
     const t = byClass(r, "nw").map(text).join(" ")
@@ -131,7 +131,7 @@ describe("I–J. Inventory is not an input", () => {
       + text(byClass(r, "cv-intro")[0]) + text(byClass(r, "cv-sub")[0]);
     for (const banned of ["/ 37", "coverage", "Coverage", "you don't have", "uncovered",
       "inventory gap", "0 owned", "already have", "Cards to look for", "Closes"]) {
-      assert(!t.includes(banned), `Cultivate must not say "${banned}"`);
+      assert(!t.includes(banned), `Curate must not say "${banned}"`);
     }
     assert(!/\d+%/.test(text(byClass(r, "nw")[0])), "no percentages in the demand grid");
   });
@@ -157,7 +157,7 @@ describe("I–J. Inventory is not an input", () => {
       .map((p) => JSON.stringify(bars(before, p))).join("|");
     const exactBefore = exactRows(before).map((n) => text(byClassIn(n, "cv-t")[0])).join("|");
 
-    // archive a card through the real UI, then reopen Cultivate
+    // archive a card through the real UI, then reopen Curate
     const r = render();
     click(btnExact(r, "Inventory37"));
     click(btns(r, "Open").filter((b) => text(b).trim() === "Open")[0]);
@@ -169,7 +169,7 @@ describe("I–J. Inventory is not an input", () => {
       const go = confirm.findAllByType("button").find((b) => /Archive/.test(text(b)));
       if (go) click(go);
     }
-    click(btns(r, "Cultivate")[0]);
+    click(btns(r, "Curate")[0]);
     eq(["Characters", "Sets", "Format", "Grade"].map((p) => JSON.stringify(bars(r, p))).join("|"),
       snapshot, "the demand grid is unchanged by inventory");
     eq(exactRows(r).map((n) => text(byClassIn(n, "cv-t")[0])).join("|"), exactBefore,
