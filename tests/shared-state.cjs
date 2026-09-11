@@ -711,10 +711,13 @@ describe("Trusted Partner runtime is the shared store", () => {
   /* PHASE 1: superseded "writes back to it" — the per-collection setter
      adapter (useShared → store.set) was a product mutation bypass. The TP now
      subscribes read-only and every change is a canonical command. */
+  /* PHASE 2 BATCH 2: the subscription is immediately projected for this partner,
+     so `canon` is the partner's projection of the one canonical state — still a
+     subscription, still no copy kept, and nothing below it sees the world. */
   test("the adapter writes the canonical store, with no shadow copy", () => {
     const root = src();
-    assert(/const canon = useSyncExternalStore\(store\.sub, store\.get, store\.get\);/.test(root),
-      "it subscribes to the store rather than copying it");
+    assert(/const world = useSyncExternalStore\(store\.sub, store\.get, store\.get\);\s*\n\s*const canon = useMemo\(\(\) => projectForActor\(world, tpActor\), \[world, tpActor\]\);/.test(root),
+      "it subscribes to the store and projects it for this partner, rather than copying it");
     assert(/store\.execute\(actor, command,/.test(root), "and writes only through the command boundary");
     assert(!/function useShared/.test(root) && !/store\.set\(/.test(root), "no setter adapter and no raw store write");
   });

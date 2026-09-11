@@ -248,16 +248,23 @@ const COMMANDS = {
   /* ------------------------------------------------------------ relationships & profile */
   /* Minimal in-memory support: a pending collector created by a partner's
      invitation. Acceptance (and therefore the Relationship) is out of scope for
-     Phase 1, so an invited collector is not yet related. */
-  inviteCollector(state, a, { collector, email, at }) {
+     Phase 1, so an invited collector is not yet related.
+
+     PHASE 2 (D-1): partner-authored metadata never lands on the shared Collector
+     record. A note typed at invitation belongs to the inviting partner, so it is
+     kept on that partner's own Invitation; relationship dates (since, last,
+     binderReviewedAt) do not exist until a Relationship does. */
+  inviteCollector(state, a, { collector, email, note, at }) {
     if (a.seat !== "tp") return refuse(R.notOwner);
     if (!collector || !collector.name) return refuse(R.notFound);
     const id = collector.id || rid("c");
     if (list(state.collectors).some((c) => c.id === id)) return refuse(R.copyInUse);
+    const { note: typedNote, since, last, binderReviewedAt, ...profile } = collector;
     return done({ ...state,
-      collectors: [...list(state.collectors), { ...collector, id, pending: true }],
+      collectors: [...list(state.collectors), { ...profile, id, pending: true }],
       invitations: [...list(state.invitations), { id: rid("inv-"), partnerId: a.partnerId,
-        collectorId: id, email: email || null, at: at || null, acceptedAt: null }] }, id);
+        collectorId: id, email: email || null, at: at || null, acceptedAt: null,
+        note: note || typedNote || null }] }, id);
   },
 
   updatePartnerProfile(state, a, { patch }) {
@@ -272,12 +279,17 @@ const COMMANDS = {
       ? { ...x, ...clean } : x)) }, a.partnerId);
   },
 
-  /* Opening a collector's profile is the partner's binder review. */
+  /* Opening a collector's profile is the partner's binder review. The timestamp
+     is that partner's (D-1), so it lives on THEIR Relationship with the
+     collector — never on the shared Collector record, where every other partner
+     related to the same collector would read it. */
   markBinderReviewed(state, a, { collectorId, at }) {
     if (a.seat !== "tp") return refuse(R.notOwner);
     if (!isRelated(state, a.partnerId, collectorId)) return refuse(R.noRelationship);
-    return done({ ...state, collectors: list(state.collectors).map((c) => (c.id === collectorId
-      ? { ...c, binderReviewedAt: at } : c)) }, collectorId);
+    const mine = (r) => r.partnerId === a.partnerId && r.collectorId === collectorId
+      && (r.status == null || r.status === "accepted");
+    return done({ ...state, relationships: list(state.relationships).map((r) => (mine(r)
+      ? { ...r, binderReviewedAt: at } : r)) }, collectorId);
   },
 
   /* TPInterest references an exact BinderCopy in the partner's network. */
@@ -315,7 +327,9 @@ const COMMANDS = {
   },
 
   /* A lifecycle note: an entry in the participants' own thread and/or the
-     partner's activity feed. Records reading of what happened; changes no term. */
+     partner's activity feed. Records reading of what happened; changes no term.
+     The activity row is stamped with the acting partner (D-4): it is that
+     partner's feed, and a row without an owner is projected to nobody. */
   recordNote(state, a, { collectorId, cardId, oppId, milestone, activity, at }) {
     const pid = a.seat === "tp" ? a.partnerId : null;
     const cid = a.seat === "collector" ? a.collectorId : collectorId;
@@ -335,7 +349,7 @@ const COMMANDS = {
       }
     }
     if (activity && activity.text) {
-      next = { ...next, activity: [{ id: rid("a"), collectorId: cid, type: activity.type || "stage",
+      next = { ...next, activity: [{ id: rid("a"), partnerId: pid, collectorId: cid, type: activity.type || "stage",
         text: activity.text, date: activity.date || at || null }, ...list(next.activity)] };
     }
     return done(next, true);

@@ -198,7 +198,8 @@ describe("New since last review", () => {
     const src = require("fs").readFileSync(
       require("path").join(__dirname, "..", "src", "MetYet.jsx"), "utf8");
     assert(/const isUnseenAddition = /.test(src), "one shared rule");
-    assert(/const unseenAdditions = \(binderCards, collector\) =>\s*\n?\s*binderCards\.filter\(\(cc\) => isUnseenAddition/.test(src),
+    /* Phase 2 Batch 2: both read this partner's own Relationship (D-1). */
+    assert(/const unseenAdditions = \(binderCards, relationship\) =>\s*\n?\s*binderCards\.filter\(\(cc\) => isUnseenAddition/.test(src),
       "and the Collector Network count uses the same rule");
   });
 });

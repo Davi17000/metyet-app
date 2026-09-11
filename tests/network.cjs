@@ -17,6 +17,20 @@ const columnOrder = (r, col) => bodyRows(r).map((tr) => text(cells(tr)[COL[col]]
 const sortBy = (r, label) => click(headers(r).find((h) => text(h).includes(label)).findByType("button"));
 
 const net = () => toNetwork(render());
+const buttonsIn = (node) => node.findAllByType("button");
+/* A world with one more RELATED collector who has shared nothing. */
+const withEmptyNetworkCollector = () => {
+  const M = require("../dist/MetYet.cjs");
+  const seed = M.buildCanonicalSeed();
+  return require("../domain/metyet-store.js").createStore({ ...seed,
+    collectors: [...seed.collectors, { id: "c-wendy", name: "Wendy Okafor", short: "Wendy O.", city: "Fargo, ND", prefs: [] }],
+    relationships: [...seed.relationships, { partnerId: "p-self", collectorId: "c-wendy", status: "accepted", at: "2026-08-01" }] });
+};
+const renderWith = (store) => {
+  const React = require("react"); const TR = require("react-test-renderer");
+  let r; TR.act(() => { r = TR.create(React.createElement(require("../dist/MetYet.cjs").default, { store })); });
+  return r;
+};
 
 describe("Collector Network — column layout", () => {
   test("columns are in the specified order", () => {
@@ -50,7 +64,16 @@ describe("Collector Network — the three binder columns", () => {
     eq(triple(r, "Casey Lin"), "1 | 2 | 1", "a new unreviewed copy alongside her flagged one");
   });
 
+  /* PHASE 2 BATCH 2: an invited collector is not a network member until they
+     accept (closeout rule), so the empty-binder row is shown for a collector who
+     IS related and has shared nothing. The invitation itself is covered below. */
   test("a collector with nothing shared renders 0 | 0 | 0", () => {
+    const r = renderWith(withEmptyNetworkCollector());
+    click(btnExact(r, "Collector Network14"));
+    eq(triple(r, "Wendy Okafor"), "0 | 0 | 0", "empty binder");
+  });
+
+  test("an invited collector is an invitation row, not a network member (C1)", () => {
     const r = render();
     click(btnExact(r, "Collector Network13"));
     click(btn(r, "Invite collector"));
@@ -58,7 +81,12 @@ describe("Collector Network — the three binder columns", () => {
     const set = (i, v) => require("react-test-renderer").act(() => inputs[i].props.onChange({ target: { value: v } }));
     set(0, "Wendy Okafor"); set(1, "wendy@example.com"); set(2, "Fargo, ND");
     click(btn(r, "Send invitation"));
-    eq(triple(r, "Wendy Okafor"), "0 | 0 | 0", "empty binder");
+    const row = bodyRows(r).find((tr) => text(cells(tr)[0]).includes("Wendy Okafor"));
+    assert(row, "the invitation is listed");
+    assert(text(row).includes("Invite pending") && text(row).includes("wendy@example.com"), "name, pending state and email");
+    eq(cells(row).length, 2, "no binder, deal or coverage cells for an invitee");
+    assert(!buttonsIn(row).some((b) => text(b).includes("Wendy Okafor")), "no profile link");
+    assert(btns(r, "Collector Network13").length > 0, "the network count is unchanged");
   });
 
   test("every binder cell is a bare number, never a formatted string", () => {

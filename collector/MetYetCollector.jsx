@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect, useSyncExternalStore 
 import * as D from "../domain/metyet-domain.js";
 import * as E from "../domain/metyet-entities.js";
 import { createStore } from "../domain/metyet-store.js";
+import { projectForActor } from "../domain/metyet-projection.js";
 import { DEV as SHARED_DEV } from "../shared/dev-flag.js";
 import { DEMO as SHARED_DEMO } from "../shared/demo-flag.js";
 import { collectorView } from "../domain/collector-view.js";
@@ -2991,6 +2992,14 @@ These partners would consider this card in a trade. That's willingness to look a
    People, not vendor records. Each answers: can this person help me with what
    I actually want, and how has working with them gone? */
 
+/* "Known since" is the Relationship's start (`relationship.at`) — never a
+   partner-profile date. A relationship without a recorded start says nothing
+   rather than printing an invalid date. */
+const knownSince = (st, partnerId) => {
+  const rel = st.relationshipWith(partnerId);
+  return rel && rel.at ? " · known since " + fmtDate(String(rel.at).slice(0, 10)) : "";
+};
+
 function Partners({ st, go }) {
   const ranked = useMemo(() => st.partners.map((p) => st.partnerProfile(p.id))
     .sort((a, b) => b.primary - a.primary || b.secondary - a.secondary || b.deals - a.deals),
@@ -3052,8 +3061,8 @@ function Partners({ st, go }) {
 
           <div className="pt-hist">
             {x.deals > 0
-              ? <>{x.deals} deal{x.deals === 1 ? "" : "s"} completed together · known since {fmtDate(x.partner.since)}</>
-              : <>No deals yet · known since {fmtDate(x.partner.since)}</>}
+              ? <>{x.deals} deal{x.deals === 1 ? "" : "s"} completed together{knownSince(st, x.partner.id)}</>
+              : <>No deals yet{knownSince(st, x.partner.id)}</>}
           </div>
           <div className="faint" style={{ fontSize: 13.5, marginTop: 8 }}>{x.partner.note}</div>
 
@@ -5758,12 +5767,17 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
   const store = useMemo(() => injectedStore || __store.get(), [injectedStore]);
   /* Subscribe to canonical state. No local copy of anything shared exists in
      this component — when the domain changes, this re-renders from it. */
-  const state = useSyncExternalStore(store.sub, store.get, store.get);
+  const world = useSyncExternalStore(store.sub, store.get, store.get);
+  /* THE PROJECTION HANDOFF (Phase 2). The canonical world is projected for THIS
+     collector here, once, and only the projection reaches the selectors and the
+     screens. Writes still go to the canonical store through store.execute; the
+     next canonical state is projected again on the next render. */
+  const me = useMemo(() => ({ collectorId }), [collectorId]);
+  const state = useMemo(() => projectForActor(world, me), [world, me]);
   const [nav, setNav] = useState({ v: "goals" });
 
   const st = useMemo(() => {
     const v = collectorView(state, collectorId);
-    const me = { collectorId };
     const exec = (command, payload) => store.execute(me, command, { at: AT, ...payload });
     const lg = (r) => (r.ok ? (r.value === undefined ? true : r.value) : { refused: r.refused });
     const val = (r) => (r.ok ? r.value : null);
@@ -5773,7 +5787,15 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
       goals: v.myGoals(),
       binder: v.myBinder(),
       opps: v.myOpps(),
-      partners: state.partners,
+      partners: state.partners,                       // Trusted Partners: accepted Relationships only
+      /* A Trusted Partner, or — for a record this collector takes part in with a
+         partner outside the network — that partner's bare identity, so the
+         record can still name who it is with. Supply and network selectors keep
+         reading the network alone (collectorView's own partnerById). */
+      partnerById: (id) => v.partnerById(id)
+        || (state.counterparties || []).find((p) => p.id === id),
+      /* This collector's Relationship with a partner; `at` is when it began. */
+      relationshipWith: (pid) => (state.relationships || []).find((r) => r.partnerId === pid) || null,
       binderById: (id) => v.myBinder().find((b) => b.id === id),
       contactsFor: (goalId, partnerId) => v.conversationsFor(goalId, partnerId),
       eligibleFor: (pid, o) => v.tradeGroups(pid, o),
@@ -5850,7 +5872,7 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
       withdrawTradeCard: (id, tradeCardId) => lg(exec("withdrawTradeCard", { oppId: id, tradeCardId })),
       confirmHandoff: (id) => lg(exec("confirmHandoff", { oppId: id })),
     };
-  }, [state, store, collectorId]);
+  }, [state, store, collectorId, me]);
 
   const go = (n) => setNav(n);
   const tab = ["goals", "start", "deal"].includes(nav.v) ? "goals"
@@ -5877,7 +5899,11 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
         {nav.v === "goals" && <Goals st={st} go={go} />}
         {nav.v === "binder" && <Binder st={st} go={go} />}
         {nav.v === "partners" && <Partners st={st} go={go} />}
-        {nav.v === "partner" && <PartnerDetail partnerId={nav.partnerId} st={st} go={go} />}
+        {/* A partner page is network data: only a Trusted Partner (an accepted
+            Relationship) has one. Any other id lands on the Trusted Partners list. */}
+        {nav.v === "partner" && (st.partners.some((p) => p.id === nav.partnerId)
+          ? <PartnerDetail partnerId={nav.partnerId} st={st} go={go} />
+          : <Partners st={st} go={go} />)}
         {nav.v === "deal" && <Deal oppId={nav.oppId} st={st} go={go} />}
       </div>
 
