@@ -28,7 +28,7 @@ const fs = require("fs");
 const path = require("path");
 const D = require("../domain/metyet-domain.js");
 const M = require("../dist/MetYet.cjs");
-const { createStore } = require("../domain/metyet-store.js");
+const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
 const { collectorView } = require("../domain/collector-view.js");
 const App = require("../dist/Collector.cjs").default;
 const { __store } = require("../dist/Collector.cjs");
@@ -286,9 +286,12 @@ describe("D. Nothing upstream or downstream regressed", () => {
   });
 
   test("submitting still uses the canonical factory", () => {
+    /* PHASE 1: submission is the proposeTradeSelection command, which builds
+       every row with the shared factory; the Collector sends binder ids only. */
     const src = code(COL);
-    assert(/emptyTradeCard\(/.test(src), "the shared factory");
-    assert(!/inclusion: "proposed"/.test(src), "not a hand-built row");
+    const cmd = code(fs.readFileSync(path.join(ROOT, "domain", "metyet-commands.js"), "utf8"));
+    assert(/D\.emptyTradeCard\(b\.cardId, b\.photos, b\.cert, bid\)/.test(cmd), "the shared factory");
+    assert(!/inclusion: "proposed"/.test(src) && !/inclusion: "proposed"/.test(cmd), "not a hand-built row");
   });
 
   test("the lifecycle is unchanged", () => {

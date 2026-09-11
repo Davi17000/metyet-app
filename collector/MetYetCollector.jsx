@@ -10,7 +10,7 @@ import { collectorView } from "../domain/collector-view.js";
    (c12) is a collector in that network, not a fixture. */
 import { buildCanonicalSeed, demoDealFixture, Icon,
   CounterFields, validAmount, percentageOf,
-  ActualCardPhoto, FaceSwitch, emptyTradeCard, TradeFields } from "../src/MetYet.jsx";
+  ActualCardPhoto, FaceSwitch, TradeFields } from "../src/MetYet.jsx";
 import CardIdentityPicker from "../shared/CardIdentityPicker.jsx";
 
 const SELF_COLLECTOR = "c12";
@@ -2254,6 +2254,19 @@ const DEV = SHARED_DEV;
    simulating the other side of a negotiation is not, and stays on DEV. */
 const DEMO = SHARED_DEMO;
 
+/* PHASE 1 FINAL CLOSEOUT — ACTING AS THE PARTNER IS DEV-ONLY.
+   The hosted pilot is a DEMO build (DEMO on, DEV off). A Collector surface that
+   makes the Trusted Partner's moves is persona impersonation, the mirror image
+   of the partner workspace's Collector simulation (src/MetYet.jsx), and follows
+   the same rule: engineering tooling, gated on the canonical DEV flag. Outside
+   DEV the partner-response helper renders nothing, and partnerSimActor() yields
+   no actor, so st.simulate cannot issue a partner-owned command — the command
+   layer refuses it (unknown-actor). Scenario loading, reset and persona
+   switching are not impersonation and stay on DEMO. */
+const PARTNER_SIMULATION = DEV;
+export const partnerSimActor = (partnerId) =>
+  (PARTNER_SIMULATION && partnerId ? { partnerId } : null);
+
 /* Which seeded goal is which review scenario. Matched on the seed note rather
    than an index-derived id, so appending to the seed cannot break the harness.
    Nothing here renders unless DEV is on, so no internal vocabulary can reach a
@@ -2262,7 +2275,10 @@ const REVIEW_DEAL_NOTE = /^Review deal/;
 const REVIEW_PROMOTE_NOTE = /^Review promotion/;
 const REVIEW_ANY_NOTE = /^Review (deal|fixture|promotion)/;
 
-/* ------------------------------------------------ DEMO: PARTNER RESPONSE
+/* ------------------------------------------------ DEV: PARTNER RESPONSE
+
+   (PHASE 1 FINAL CLOSEOUT: DEV-only — see PARTNER_SIMULATION above. In the
+   hosted pilot a tester switches persona to make the partner's move.)
 
    Pilot testing is a one-person job: without this, moving a deal forward means
    switching persona, finding the matching workflow, acting, and switching back.
@@ -2273,17 +2289,12 @@ const REVIEW_ANY_NOTE = /^Review (deal|fixture|promotion)/;
    Trusted Partner seat uses — so a demo move cannot reach a state the product
    could not reach, and cannot skip a validation the real seat enforces.
 
-   That rule is also why this control is smaller than it might look like it
-   should be. Only price agreement currently has a shared canonical action
-   (store.actions.agreePrice). The later stages' partner moves — accepting
-   proposed cards, proposing values, agreeing the balance, confirming handoff —
-   live inside the Trusted Partner component itself, built on its own patch
-   helper with its own guards. Reaching them from here would mean duplicating
-   that decision logic, which is exactly the thing that makes a demo lie. So
-   where no canonical action exists, this control says so and points at the
-   real seat rather than offering a button that fakes it. */
+   PHASE 1: every partner move is now a canonical command (st.simulate is a
+   partner-seat client over store.execute), and a response is offered only
+   while D.nextActor gives the partner the turn — so the helper can never offer
+   a move the command layer would refuse. */
 function DemoPartnerResponse({ o, st }) {
-  if (!DEMO || !o) return null;
+  if (!PARTNER_SIMULATION || !o) return null;
   const partner = st.partnerById(o.partnerId);
   const them = partner ? partner.name : "the partner";
   const [note, setNote] = useState("");
@@ -2303,7 +2314,7 @@ function DemoPartnerResponse({ o, st }) {
   const responses = [];
   const say = (t) => setNote(t);
 
-  if (!D.isTerminal(o)) {
+  if (!D.isTerminal(o) && D.nextActor(o).actor === "partner") {
     if (o.stage === "agree-price") {
       const last = D.lastEntry(o.priceThread);
       if (last && last.by === "collector" && last.type !== "accept") {
@@ -2326,29 +2337,26 @@ function DemoPartnerResponse({ o, st }) {
       }
     }
 
-    /* Value Trade: market first, then percentage, one card at a time. */
+    /* Value Trade: market first, then percentage, one card at a time — on the
+       first card whose move is the partner's (D.cardOwner). The Opportunity's
+       turn is already the partner's here, so such a card exists. */
     if (o.stage === "value-trade") {
-      const active = D.acceptedTradeCards(o);
-      const needsMarket = active.find((c) => c.agreedMarket == null);
+      const mine = D.acceptedTradeCards(o).filter((c) => D.cardOwner(c) === "tp");
+      const needsMarket = mine.find((c) => c.agreedMarket == null);
       if (needsMarket) {
         const name = (st.cardById(needsMarket.cardId) || {}).name || "that card";
+        /* The collector opens market value, so the partner can only answer a
+           figure the collector sent. The collector's private binder value is
+           never used as a partner figure. */
         if (needsMarket.collectorMarket != null) {
           responses.push([`${them} accepts ${money(needsMarket.collectorMarket)} for ${name}`, () => {
             A.tradeMarketRespond({ oppId: o.id, tradeCardId: needsMarket.id, by: "tp",
               action: "accept", at: AT });
             say(`Market value agreed for ${name}.`);
           }]);
-        } else {
-          const b = st.binderById(needsMarket.binderId);
-          const ref = b && b.market ? b.market : 1000;
-          responses.push([`${them} proposes ${money(ref)} for ${name}`, () => {
-            A.tradeMarketRespond({ oppId: o.id, tradeCardId: needsMarket.id, by: "tp",
-              action: "propose", amount: ref, at: AT });
-            say(`${them} put ${money(ref)} on ${name}.`);
-          }]);
         }
       } else {
-        const needsPct = active.find((c) => c.agreedPercent == null);
+        const needsPct = mine.find((c) => c.agreedPercent == null);
         if (needsPct) {
           const name = (st.cardById(needsPct.cardId) || {}).name || "that card";
           if (needsPct.collectorPercent != null) {
@@ -2371,13 +2379,16 @@ function DemoPartnerResponse({ o, st }) {
     /* Deal: the partner's own agreement, and nothing else. */
     if (o.stage === "deal") {
       const d = o.deal || {};
-      if (d.agreedAdj == null && d.collectorAdj != null) {
+      /* One confirmation, named for what it confirms: the collector's standing
+         figure when there is one, otherwise the deal as it stands. */
+      const yourFigure = D.TRADE.dealAdjStanding(d) === "collector";
+      if (yourFigure) {
         responses.push([`${them} accepts ${money(d.collectorAdj)}`, () => {
           A.dealAdjustRespond({ oppId: o.id, by: "tp", action: "accept", at: AT });
           say(`${them} accepted your figure.`);
         }]);
       }
-      if (!d.tpAgreed) {
+      if (!yourFigure && !d.tpAgreed) {
         responses.push([`${them} agrees to this deal`, () => {
           A.dealAgree({ oppId: o.id, by: "tp", at: AT });
           say(`${them} has agreed. The deal moves on once you have too.`);
@@ -2445,8 +2456,7 @@ function SimulateTP({ o, st }) {
     const last = D.lastEntry(o.priceThread);
     if (last && last.by === "collector") {
       actions.push(["Counter at 96%", () => {
-        A.patchOpportunity(o.id, (x) => ({ ...x, priceThread: [...x.priceThread,
-          { by: "partner", type: "counter", amount: Math.round(x.listedPrice * 0.96), at: AT }] }));
+        A.proposePrice({ oppId: o.id, amount: Math.round(o.listedPrice * 0.96) });
         did("Countered");
       }]);
       actions.push(["Accept the offer", () => {
@@ -2476,8 +2486,12 @@ function SimulateTP({ o, st }) {
       did("Reviewed the cards");
     }]);
   }
-  if (o.stage === "value-trade") {
-    const open2 = cards.filter((c) => !D.cardSettled(c));
+  /* PHASE 1: one canonical Value Trade turn per Opportunity (D.nextActor). The
+     simulator offers value moves only while that turn is the partner's, and only
+     on the cards the partner owns (D.cardOwner) — a move the command layer would
+     refuse is not offered. */
+  if (o.stage === "value-trade" && turn.actor === "partner") {
+    const open2 = cards.filter((c) => !D.cardSettled(c) && D.cardOwner(c) === "tp");
 
     /* ACCEPT IS A LEGAL MOVE, AND IT WAS MISSING.
 
@@ -2538,7 +2552,9 @@ function SimulateTP({ o, st }) {
        cash amount could only be countered. dealAdjStanding is the canonical
        answer to whose proposal is on the table. */
     const standing = D.TRADE.dealAdjStanding(o.deal);
-    if (standing === "collector") {
+    /* PHASE 1: the partner's confirmation is the partner's move only while the
+       canonical turn is theirs (contract §4: partner first, collector second). */
+    if (standing === "collector" && turn.actor === "partner") {
       const amt = o.deal.collectorAdj;
       /* The simulator acts AS the partner, so it reads the same agreement from
          the partner's seat — "You pay Casey" where the collector sees "Casey
@@ -2552,11 +2568,11 @@ function SimulateTP({ o, st }) {
         /* Signed throughout: the action reads the standing figure from the deal,
            so direction cannot be flattened on the way through. */
         A.dealAdjustRespond({ oppId: o.id, by: "tp", action: "accept", at: AT });
-        did(`Agreed ${money(dir.amount)} final cash`);
+        did(`Agreed ${money(set.amount)} final cash`);
       }]);
     }
   }
-  if (o.stage === "deal" && !(o.deal && o.deal.tpAgreed)) {
+  if (o.stage === "deal" && turn.actor === "partner" && D.TRADE.dealAdjStanding(o.deal) !== "collector") {
     actions.push(["Agree the balance", () => {
       /* Through the canonical action, acting AS the partner — the simulator
          stands in for that seat rather than reaching past the rule. */
@@ -2564,7 +2580,7 @@ function SimulateTP({ o, st }) {
       did("Agreed");
     }]);
   }
-  if (o.stage === "fulfillment" && !(o.fulfillment && o.fulfillment.tpHandoff)) {
+  if (o.stage === "fulfillment" && turn.actor === "partner" && turn.reason === "handoff") {
     actions.push(["Confirm handoff", () => {
       A.confirmHandoff({ oppId: o.id, by: "tp", at: AT });
       did("Handed over");
@@ -2706,6 +2722,7 @@ function StopDeal({ o, st, onClose }) {
   const agreed = st.dealAgreed(o);
   const partner = st.partnerById(o.partnerId);
   const [busy, setBusy] = useState(false);
+  const [reason, setReason] = useState("");
   const them = partner ? partner.name : "your partner";
   return (
     <Sheet title={agreed ? "Cancel this agreed deal?" : "Stop this negotiation?"}
@@ -2715,8 +2732,8 @@ function StopDeal({ o, st, onClose }) {
         <button className="btn" style={{ flex: 1 }} onClick={onClose}>
           {agreed ? "Keep the deal" : "Keep negotiating"}
         </button>
-        <button className="btn danger" disabled={busy}
-          onClick={() => { if (busy) return; setBusy(true); st.endNegotiation(o.id); onClose(); }}>
+        <button className="btn danger" disabled={busy || (agreed && !reason.trim())}
+          onClick={() => { if (busy) return; setBusy(true); st.endNegotiation(o.id, reason.trim() || null); onClose(); }}>
           {agreed ? "Cancel deal" : "Stop negotiation"}
         </button>
       </>}>
@@ -2728,6 +2745,13 @@ function StopDeal({ o, st, onClose }) {
              ${them} is kept. The card goes back on your list, so you can pick it up with
              another partner whenever you like.`}
       </div>
+      {agreed && (
+        <label className="fld" style={{ display: "block", marginTop: 14 }}>
+          <span>Why are you cancelling? (required)</span>
+          <input className="inp" value={reason} onChange={(e) => setReason(e.target.value)}
+            aria-label="Reason for cancelling" />
+        </label>
+      )}
     </Sheet>
   );
 }
@@ -4149,7 +4173,7 @@ function Deal({ oppId, st, go }) {
       <DemoPartnerResponse o={o} st={st} />
       <SimulateTP o={o} st={st} />
 
-      {isOpen(o) && (
+      {isOpen(o) && !st.dealAgreed(o) && (
         <div style={{ textAlign: "center", padding: "6px 0 10px" }}>
           <button className="link" style={{ color: "var(--muted)" }}
             onClick={() => { st.endNegotiation(o.id); go({ v: "goals" }); }}>
@@ -4628,7 +4652,6 @@ function ValueCard({ o, tcd, st }) {
     ? String(tcd.collectorMarket) : String((b && b.market) ?? ""));
   const [pc, setPc] = useState(tcd.collectorPercent != null
     ? String(Math.round(tcd.collectorPercent * 100)) : "");
-  const [confirmOut, setConfirmOut] = useState(false);
 
   const partner = st.partnerById(o.partnerId);
   const them = partner ? partner.name : "them";
@@ -4751,35 +4774,11 @@ function ValueCard({ o, tcd, st }) {
             </div>
           )}
 
-          {/* Secondary by design: taking a card out is a valid move, not the
-              one being encouraged. */}
-          {!settled && (
-            <div className="vcard-out-a">
-              <button className="btn sm" onClick={() => setConfirmOut(true)}>
-                Remove from trade
-              </button>
-            </div>
-          )}
+          {/* No "remove from trade" here: the partner accepted this exact copy,
+              so it is committed to the deal until it completes or is cancelled. */}
         </>
       )}
 
-      {confirmOut && (
-        <div className="ovl" onClick={() => setConfirmOut(false)}>
-          <div className="sheet rv-confirm" onClick={(e) => e.stopPropagation()}>
-            <div className="sheet-h">Remove {c.name} from the trade?</div>
-            <div className="rv-confirm-t">
-              It stops counting toward the deal. What you and {them} agreed about
-              it is kept.
-            </div>
-            <div className="act-2" style={{ marginTop: 16 }}>
-              <button className="btn" onClick={() => setConfirmOut(false)}>Keep it in</button>
-              <button className="btn pri" onClick={() => {
-                st.withdrawTradeCard(o.id, tcd.id); setConfirmOut(false);
-              }}>Remove it</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -4950,7 +4949,11 @@ function DealStage({ o, st, register }) {
   /* Somebody has named a figure and nobody has agreed it yet: there is no
      settled deal to agree to. */
   const cashUnresolved = !cashSettled && !!standing0;
-  const iOweTheMove = !cashSettled && (!standing0 || theirCounter);
+  /* PHASE 1: the ONE canonical turn (D.nextActor, contract §4 — the partner
+     confirms first, the collector second). The editor is offered only on the
+     collector's move; otherwise a figure sent now would be refused. */
+  const myTurn = D.nextActor(o).actor === "collector";
+  const iOweTheMove = myTurn && !cashSettled && (!standing0 || theirCounter);
   /* The figure a proposal is measured against, and where the slider starts:
      their counter once one exists, because that is what you would be changing;
      otherwise the settled balance. */
@@ -5039,7 +5042,7 @@ function DealStage({ o, st, register }) {
 
         {!iAgreed && (
           <>
-            {adjStanding && fromPartner && (
+            {adjStanding && fromPartner && theyAgreed && (
               <button className="btn deep wide" style={{ marginBottom: 12 }}
                 onClick={() => st.dealAdjustAccept(o.id)}>
                 Accept {money(adjStanding.amount)}
@@ -5048,7 +5051,9 @@ function DealStage({ o, st, register }) {
             {/* Not while a cash figure is unanswered: there is no settled deal
                 to agree to, and the domain refuses it in any case. Accepting
                 their standing figure above is the way forward. */}
-            {!cashUnresolved && (
+            {/* Final agreement is to the CURRENT figure, once the partner has
+                confirmed it — including a figure you proposed yourself. */}
+            {theyAgreed && !(adjStanding && fromPartner) && (
               <button className="btn pri wide" style={{ marginBottom: 12 }}
                 onClick={() => st.dealAgree(o.id)}>
                 Agree to this deal
@@ -5065,7 +5070,10 @@ function DealStage({ o, st, register }) {
                 Everything below comes from the standing proposal in the deal,
                 not from local draft state, which would go stale the moment the
                 partner answered. */}
-            {!iOweTheMove && adjStanding && (
+            {!myTurn && !(adjStanding && !fromPartner) && (
+              <div className="dl-wait">Waiting on {them} to confirm the current figure first.</div>
+            )}
+            {!myTurn && adjStanding && !fromPartner && (
               <div className="cp-wait">
                 <span className="cp-k">Your proposal</span>
                 <span className="cp-prop-v">
@@ -5209,15 +5217,17 @@ function Fulfillment({ o, st, register }) {
   const proposed = !!f.proposedAt && !f.revisionRequested;
   const agreed = proposed && !!f.collectorConfirmedPlan;
   const received = D.FULFILLMENT.received(f);
+  /* The partner confirms the handoff first; only then can the collector confirm receipt. */
+  const handedOff = D.FULFILLMENT.handedOff(f);
 
   useEffect(() => {
     if (!register) return;
     register(
       !proposed ? null
         : !agreed ? { label: "Agree to this plan", run: () => st.confirmPlan(o.id) }
-          : !received ? { label: "I've got the card", run: () => st.confirmHandoff(o.id) }
+          : handedOff && !received ? { label: "I've got the card", run: () => st.confirmHandoff(o.id) }
             : null);
-  }, [register, o.id, proposed, agreed, received]);
+  }, [register, o.id, proposed, agreed, received, handedOff]);
 
   const term = (k, v) => (
     <div className="row"><span className="k">{k}</span>
@@ -5296,7 +5306,7 @@ function Fulfillment({ o, st, register }) {
         </div>
       )}
 
-      {agreed && !received && !register && (
+      {agreed && handedOff && !received && !register && (
         <button className="btn pri wide" style={{ marginTop: 16 }} onClick={() => st.confirmHandoff(o.id)}>
           I've got the card
         </button>
@@ -5708,8 +5718,39 @@ let __fallback = null;
 export const __store = {
   get: () => (__fallback || (__fallback = createStore(buildCanonicalSeed()))),
   reset: (seed) => { (__fallback || (__fallback = createStore(buildCanonicalSeed())))
-    .reset(seed || buildCanonicalSeed()); },
+    .fixture.reset(seed || buildCanonicalSeed()); },
 };
+
+/* DEV counterparty client. Each call acts as the Trusted Partner on that
+   opportunity — through store.execute, so the partner's command rules apply
+   exactly as on the partner's own screen. Never used by a product path, and
+   outside DEV it holds no partner actor at all (partnerSimActor), so every call
+   is refused by the command layer and changes nothing. */
+export function partnerDemo(store) {
+  const seatOn = (oppId) => {
+    const o = store.get().opportunities.find((x) => x.id === oppId);
+    return o ? partnerSimActor(o.partnerId) : null;
+  };
+  const lg = (r) => (r.ok ? (r.value === undefined ? true : r.value) : { refused: r.refused });
+  const on = (oppId, command, payload) => lg(store.execute(seatOn(oppId), command, { at: AT, ...payload, oppId }));
+  return {
+    proposePrice: ({ oppId, amount }) => on(oppId, "proposePrice", { amount }),
+    agreePrice: ({ oppId }) => on(oppId, "acceptPrice", {}),
+    reviewTradeCards: ({ oppId, tradeCardId, decision }) => on(oppId, "reviewTradeCard", { tradeCardId, decision }),
+    tradeMarketRespond: ({ oppId, tradeCardId, action, amount }) =>
+      on(oppId, action === "accept" ? "acceptMarketValue" : "proposeMarketValue", { tradeCardId, amount }),
+    tradePercentRespond: ({ oppId, tradeCardId, action, percent }) =>
+      on(oppId, action === "accept" ? "acceptTradePercent" : "proposeTradePercent", { tradeCardId, percent }),
+    dealAdjustRespond: ({ oppId, action, amount }) =>
+      on(oppId, action === "accept" ? "acceptDeal" : "proposeFinalBalance", { amount }),
+    dealAgree: ({ oppId }) => on(oppId, "acceptDeal", {}),
+    proposeFulfillment: ({ oppId, plan }) => on(oppId, "proposeFulfillment", { plan }),
+    confirmHandoff: ({ oppId }) => on(oppId, "confirmHandoff", {}),
+    sendMessage: ({ collectorId, partnerId, cardId, text }) =>
+      lg(store.execute(partnerSimActor(partnerId), "sendMessage", { collectorId, cardId, text, at: AT })),
+    endOpportunity: (oppId, by, at, reason) => on(oppId, "cancelOpportunity", { reason }),
+  };
+}
 
 export default function MetYetCollector({ store: injectedStore, collectorId = SELF_COLLECTOR }) {
   /* Injected store wins; the fallback is built only when nothing was passed, so
@@ -5722,7 +5763,10 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
 
   const st = useMemo(() => {
     const v = collectorView(state, collectorId);
-    const A = store.actions;
+    const me = { collectorId };
+    const exec = (command, payload) => store.execute(me, command, { at: AT, ...payload });
+    const lg = (r) => (r.ok ? (r.value === undefined ? true : r.value) : { refused: r.refused });
+    const val = (r) => (r.ok ? r.value : null);
     return {
       /* ---- canonical reads, via the persona selector ---- */
       ...v,
@@ -5734,160 +5778,77 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
       contactsFor: (goalId, partnerId) => v.conversationsFor(goalId, partnerId),
       eligibleFor: (pid, o) => v.tradeGroups(pid, o),
 
-      /* ---- canonical writes. Every one of these is a shared action; nothing
-             here mutates a local array. ---- */
-      addGoal: (cardId, tier) =>
-        A.addGoal({ collectorId, cardId, tier, at: AT }),
-      /* Resolve an exact identity to a canonical catalog record, creating one if
-         this printing/grade combination has never been seen. The SAME rule the
-         Trusted Partner uses when adding a copy — one catalog, one identityKey. */
-      resolveIdentity: (identity) => {
-        const key = D.identityKey(identity);
-        const hit = state.catalog.find((c) => D.identityKey(c) === key);
-        if (hit) return { id: hit.id, card: hit };
-        const id = "c" + key.replace(/[^a-z0-9]+/g, "").slice(0, 24) + "-" + state.catalog.length;
-        const card = { ...identity, id };
-        store.set({ ...store.get(), catalog: [...store.get().catalog, card] });
-        return { id, card };
-      },
-      /* A goal is intent at an exact identity. Creation still goes through the
-         one canonical action. */
-      addGoalForIdentity: (resolved, tier) =>
-        A.addGoal({ collectorId, cardId: resolved.id, tier, at: AT }),
-      setTier: (goalId, tier) => A.updateGoalTier(goalId, tier),
-      removeGoal: (goalId) => A.removeGoal(goalId),
-      addCopy: (cardId, mine, photos, cert) => A.addBinderCopy({
-        id: "b" + Date.now().toString(36), collectorId, cardId,
+      /* ---- canonical writes. Every one is ONE command through the store's
+             authoritative boundary, acting as THIS collector. The seat is
+             derived from identity by the command layer; nothing here names it. */
+      addGoal: (cardId, tier) => val(exec("addGoal", { cardId, tier })),
+      resolveIdentity: (identity) => val(exec("resolveCardIdentity", { identity })),
+      addGoalForIdentity: (resolved, tier) => val(exec("addGoal", { cardId: resolved.id, tier })),
+      setTier: (goalId, tier) => lg(exec("updateGoalTier", { goalId, tier })),
+      removeGoal: (goalId) => exec("removeGoal", { goalId }).ok,
+      addCopy: (cardId, mine, photos, cert) => val(exec("addBinderCopy", { copy: {
+        id: "b" + Date.now().toString(36), cardId,
         market: mine === "" ? null : Number(mine),
-        cert: cert && cert.trim() ? cert.trim() : null, addedAt: AT, photos }),
-      /* Reaching out writes to the SAME thread that Trusted Partner reads — and
-         only that one. An opportunity is inherited by the thread only when the
-         negotiation is actually with this partner, so chatting to an
-         alternative never inherits, or disturbs, the active deal. */
+        cert: cert && cert.trim() ? cert.trim() : null, addedAt: AT, photos } })),
+      /* Reaching out writes to the SAME thread the Trusted Partner reads. An
+         opportunity is linked only when the negotiation is with this partner. */
       reachOut: (goalId, partnerId, cardId, text) => {
         const open = v.openOppForGoal(goalId);
-        return A.reachOut({ collectorId, partnerId, cardId,
-          oppId: open && open.partnerId === partnerId ? open.id : undefined,
-          text: text || null, at: AT });
+        return val(exec("reachOut", { partnerId, cardId,
+          oppId: open && open.partnerId === partnerId ? open.id : undefined, text: text || null }));
       },
       sendMessage: (partnerId, cardId, text, oppId) =>
-        A.sendMessage({ collectorId, partnerId, cardId, by: "collector", text, oppId, at: AT }),
-      /* Development only — see SimulateTP. Every call is a canonical action. */
-      simulate: A,
-      /* Returns null when the one-negotiation invariant refuses it. The refusal
-         is the domain's, not this screen's. */
+        val(exec("sendMessage", { partnerId, cardId, text, oppId })),
+      /* DEV ONLY — the counterparty's moves, for one-person engineering testing.
+         Acts as the Trusted Partner on that record through the same commands
+         the partner's own screen uses; every rule still applies. Outside DEV
+         it has no partner actor, so nothing it is asked to do executes. */
+      simulate: partnerDemo(store),
       startOffer: (goalId, partnerId, amount) => {
         const g = v.myGoals().find((x) => x.id === goalId);
         const inv = v.partnersWith(g.cardId).find((x) => x.partner.id === partnerId);
-        /* The domain may refuse — a Secondary goal is not being pursued, and a
-           goal already in a negotiation cannot start another. The refusal is
-           handed back so the UI can offer the right next step. */
-        return A.startOpportunity({ goalId, collectorId, partnerId,
-          cardId: g.cardId, invId: inv ? inv.inv.invId : null,
-          listedPrice: inv ? inv.ask : amount, amount, at: AT });
+        return lg(exec("startOpportunity", { goalId, invId: inv ? inv.inv.invId : null, amount }));
       },
-      endNegotiation: (oppId) => A.endOpportunity(oppId, "collector", AT),
+      endNegotiation: (oppId, reason) => lg(exec("cancelOpportunity", { oppId, reason })),
 
-      /* Asking to see a specific physical copy. Not a deal: it creates no
-         opportunity, touches no goal, and repeated clicks do not pile up. */
-      requestPhotos: (inv) => (inv ? A.requestPhotos({ collectorId, partnerId: inv.partnerId,
-        invId: inv.invId, at: AT }) : null),
-      /* Choosing which copy to pursue. Creates no offer and asks nothing of the
-         partner — it simply makes the pursuit real and visible on the Goal. */
-      reviewCopy: (inv) => (inv ? A.reviewCopy({ collectorId, partnerId: inv.partnerId,
-        invId: inv.invId, at: AT }) : null),
-      endReview: (id) => A.endReview(id, AT),
+      requestPhotos: (inv) => (inv ? lg(exec("requestPhotos", { invId: inv.invId })) : null),
+      reviewCopy: (inv) => (inv ? lg(exec("reviewCopy", { invId: inv.invId })) : null),
+      endReview: (id) => lg(exec("endReview", { reviewId: id })),
 
-      /* ---- REVIEW HARNESS (development only) --------------------------------
-         Scoped restore of the designated review deal to its canonical starting
-         fixture. This is a FIXTURE swap, not a state editor: the replacement
-         record is rebuilt by buildCanonicalSeed/buildOpps, the same code that
-         produces it at hydration, so no stage is set by hand and no field is
-         edited individually. Everything outside the review scenario is left
-         exactly as it was. */
+      /* ---- REVIEW HARNESS (DEMO only) — a fixture swap, not a product action. */
       reviewGoal: () => v.myGoals().find((g) => REVIEW_DEAL_NOTE.test(g.note || "")),
       reviewPromoteGoal: () => v.myGoals().find((g) => REVIEW_PROMOTE_NOTE.test(g.note || "")),
-      /* Load the review deal at a requested canonical stage, or at its default
-         starting stage when none is named. Both are the SAME operation: rebuild
-         the fixture from the canonical seed builder and swap it in. Nothing
-         edits a stage field, so there is no stage setter to misuse. */
       resetReviewDeal: (demoStage) => {
         if (!DEMO) return null;
-        /* Delegates to the one shared loader, so the review panel and the
-           prototype header cannot drift apart. */
         const next = demoDealFixture(store.get(), { collectorId, demoStage });
         if (!next) return null;
-        store.set(next);
+        store.fixture.set(next);
         return "o-review";
       },
-      /* The canonical distinction the Trusted Partner already makes: once both
-         sides agree, ending it is a CANCELLATION rather than a stop. */
-      dealAgreed: (o) => !!(o && o.deal && o.deal.tpAgreed && o.deal.collectorAgreed),
+      dealAgreed: (o) => D.finalAgreementGiven(o),
 
-      priceRespond: (id, action, amount) => {
-        if (action === "accept") {
-          /* Settling the price commits the physical copy, so it goes through the
-             canonical action that enforces that — not a blind patch. Returns a
-             refusal when another deal settled this copy first. */
-          const o = store.get().opportunities.find((x) => x.id === id);
-          const last = o && D.lastEntry(o.priceThread);
-          return A.agreePrice({ oppId: id, amount: last ? last.amount : amount,
-            by: "collector", at: AT });
-        }
-        /* A counter is an ordinary edit; only acceptance commits anything. */
-        return A.patchOpportunity(id, (o) => ({ ...o,
-          priceThread: [...o.priceThread, { by: "collector", type: "counter", amount, at: AT }] }));
-      },
-      /* ONE TRADE-CARD SHAPE. This used to build {binderId, inclusion} — a
-         reduced object missing the stable row id, the cardId, both negotiation
-         threads and every market/percent field. A card created that way could
-         be proposed but could never be valued: the Value Trade model had
-         nothing to write into, and two rows for the same binder copy could not
-         be told apart. It now uses the same factory the Trusted Partner's own
-         path uses, so both seats observe one object.
-
-         Nothing is agreed on creation: inclusion starts "proposed", withdrawn
-         false, both threads empty, every agreed field null. Proposing a card is
-         not the partner accepting it. */
-      submitTrade: (id, binderIds) => A.patchOpportunity(id, (o) => ({
-        ...o,
-        trade: { ...(o.trade || {}), submitted: true,
-          cards: binderIds.map((bid) => {
-            const b = st.binderById(bid);
-            return emptyTradeCard(b ? b.cardId : null,
-              b ? b.photos : null, b ? b.cert : null, bid);
-          }) } })),
-      /* STAGE 4-6 GO THROUGH THE CANONICAL ACTIONS. These used to be local
-         shortcuts that wrote agreed values with no thread history, agreed on
-         the partner's behalf, and invented a fulfillment plan nobody proposed.
-         The rules now live in the domain, so this layer only names the actor.
-
-         Trade cards are addressed by their own row id — binderId could not tell
-         two rows for the same binder copy apart. */
+      priceRespond: (id, action, amount) => (action === "accept"
+        ? lg(exec("acceptPrice", { oppId: id }))
+        : lg(exec("proposePrice", { oppId: id, amount }))),
+      /* Submitting the package reserves the exact copies; the selection before
+         this call was private draft state in the screen. */
+      submitTrade: (id, binderIds) => lg(exec("proposeTradeSelection", { oppId: id, binderIds })),
       marketRespond: (id, tradeCardId, action, amount) =>
-        A.tradeMarketRespond({ oppId: id, tradeCardId, by: "collector", action, amount, at: AT }),
+        lg(exec(action === "accept" ? "acceptMarketValue" : "proposeMarketValue", { oppId: id, tradeCardId, amount })),
       pctRespond: (id, tradeCardId, action, frac) =>
-        A.tradePercentRespond({ oppId: id, tradeCardId, by: "collector", action, percent: frac, at: AT }),
-      dealPropose: (id, amount) =>
-        A.dealAdjustRespond({ oppId: id, by: "collector", action: "propose", amount, at: AT }),
-      /* Agreeing means agreeing for the collector. Whether the deal is mutually
-         agreed is derived from both bits, not asserted by one seat. */
-      dealAgree: (id) => A.dealAgree({ oppId: id, by: "collector", at: AT }),
-      confirmPlan: (id) => A.confirmFulfillmentPlan({ oppId: id, at: AT }),
-      requestPlanRevision: (id, note) =>
-        A.requestFulfillmentRevision({ oppId: id, note, at: AT }),
-      dealAdjustAccept: (id) =>
-        A.dealAdjustRespond({ oppId: id, by: "collector", action: "accept", at: AT }),
-      /* Editing a copy, never replacing it: the canonical action keeps the id. */
-      /* Reading position only: it records that this seat looked. */
-      markDealViewed: (oppId, surface) =>
-        A.markDealViewed({ oppId, by: "collector", surface, at: AT }),
-      updateBinderCopy: (binderId, patch) =>
-        A.updateBinderCopy({ binderId, patch, at: AT }),
-      chooseCashOnly: (id) => A.chooseCashOnly({ oppId: id, at: AT }),
-      withdrawTradeCard: (id, tradeCardId) =>
-        A.withdrawTradeCard({ oppId: id, tradeCardId, at: AT }),
-      confirmHandoff: (id) => A.confirmHandoff({ oppId: id, by: "collector", at: AT }),
+        lg(exec(action === "accept" ? "acceptTradePercent" : "proposeTradePercent", { oppId: id, tradeCardId, percent: frac })),
+      dealPropose: (id, amount) => lg(exec("proposeFinalBalance", { oppId: id, amount })),
+      dealAgree: (id) => lg(exec("acceptDeal", { oppId: id })),
+      confirmPlan: (id) => lg(exec("confirmFulfillmentPlan", { oppId: id })),
+      requestPlanRevision: (id, note) => lg(exec("requestFulfillmentRevision", { oppId: id, note })),
+      /* There is no separate "accept the figure" step: agreeing to the deal is
+         agreeing to the figure currently on the table. */
+      dealAdjustAccept: (id) => lg(exec("acceptDeal", { oppId: id })),
+      markDealViewed: (oppId, surface) => lg(exec("markDealViewed", { oppId, surface })),
+      updateBinderCopy: (binderId, patch) => lg(exec("updateBinderCopy", { binderId, patch })),
+      chooseCashOnly: (id) => lg(exec("chooseCashOnly", { oppId: id })),
+      withdrawTradeCard: (id, tradeCardId) => lg(exec("withdrawTradeCard", { oppId: id, tradeCardId })),
+      confirmHandoff: (id) => lg(exec("confirmHandoff", { oppId: id })),
     };
   }, [state, store, collectorId]);
 

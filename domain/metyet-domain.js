@@ -265,7 +265,19 @@ const cashReceipt = (o) => {
    they are never stored. */
 const lastEntry = (t) => (t && t.length ? t[t.length - 1] : null);
 
+/* ONE CANONICAL TURN OWNER (contract §4, Invariant 19).
+
+   Both personas and the command layer read THIS function. There is no second
+   turn engine: the Trusted Partner's labels and the Collector's wording are
+   chosen from `reason`, never re-derived.
+
+   Where both participants must confirm, the order is fixed — the partner
+   first, the collector second — so there is exactly one actor at every point.
+   Value Trade is per card, and a card's owner comes from cardOwner(); when
+   both seats hold cards, the partner moves first, so the opportunity still
+   has exactly one actor. */
 function nextActor(o) {
+  if (!o) return { actor: null, reason: "done" };
   if (isEnded(o)) return { actor: null, reason: "ended" };
   switch (o.stage) {
     case "secondary": case "primary":
@@ -279,34 +291,65 @@ function nextActor(o) {
     }
     case "select-trade":
       if (!o.trade || !o.trade.submitted) return { actor: "collector", reason: "choose-trade" };
-      return ((o.trade.cards || []).some((c) => c.inclusion === "proposed"))
+      return (tradeRows(o).some((c) => c.inclusion === "proposed" && !c.withdrawn))
         ? { actor: "partner", reason: "review-trade" }
         : { actor: "collector", reason: "trade-reviewed" };
     case "value-trade": {
-      const open = acceptedTradeCards(o).filter((c) => !cardSettled(c));
-      if (!open.length) return { actor: "collector", reason: "values-settled" };
-      const waiting = open.every((c) => (c.agreedMarket != null
-        ? c.collectorPercent != null : c.collectorMarket != null));
-      return waiting
-        ? { actor: "partner", reason: "value", count: open.length }
-        : { actor: "collector", reason: "value", count: open.length };
+      const owners = activeTradeCards(o).map(cardOwner);
+      const tp = owners.filter((x) => x === "tp").length;
+      const col = owners.filter((x) => x === "collector").length;
+      if (!tp && !col) return { actor: "collector", reason: "values-settled" };
+      /* Both seats hold cards: the turn stays with whoever moved last (the
+         last thread entry, contract §6) while they still hold a card, so a
+         seat can work through its cards in one sitting. With no ordered
+         history, the partner moves first. */
+      let seat = tp && !col ? "tp" : col && !tp ? "collector" : (lastValueMover(o) || "tp");
+      const count = seat === "tp" ? tp : col;
+      return { actor: seat === "tp" ? "partner" : "collector", reason: "value", count };
     }
     case "deal": {
       const d = o.deal || {};
-      if (d.tpAgreed && d.collectorAgreed) return { actor: null, reason: "agreed" };
-      if (d.proposedBy && d.proposedBy !== "collector") return { actor: "collector", reason: "final" };
-      if (d.proposedBy === "collector") return { actor: "partner", reason: "final" };
-      return { actor: "collector", reason: "final" };
+      if (!d.tpAgreed) return { actor: "partner", reason: "final" };
+      if (!d.collectorAgreed) return { actor: "collector", reason: "final" };
+      return { actor: null, reason: "agreed" };
     }
     case "fulfillment": {
       const f = o.fulfillment || {};
-      return FULFILLMENT.received(f) ? { actor: "partner", reason: "handoff" }
-        : { actor: "collector", reason: "handoff" };
+      if (!f.proposedAt || f.revisionRequested) return { actor: "partner", reason: "plan" };
+      if (!f.collectorConfirmedPlan) return { actor: "collector", reason: "confirm-plan" };
+      if (!FULFILLMENT.handedOff(f)) return { actor: "partner", reason: "handoff" };
+      if (!FULFILLMENT.received(f)) return { actor: "collector", reason: "receipt" };
+      return { actor: null, reason: "done" };
     }
     default:
       return { actor: null, reason: "done" };
   }
 }
+
+/* The seat that made the most recent Value Trade move on this opportunity,
+   read from the ordering stamp the command layer puts on each entry. */
+function lastValueMover(o) {
+  let best = null, seq = -1;
+  for (const c of activeTradeCards(o)) {
+    for (const e of [...(c.valueThread || []), ...(c.percentThread || [])]) {
+      if (typeof e.seq === "number" && e.seq > seq) { seq = e.seq; best = e.by; }
+    }
+  }
+  return best === "tp" || best === "collector" ? best : null;
+}
+const nextValueSeq = (o) => {
+  let seq = 0;
+  for (const c of tradeRows(o)) {
+    for (const e of [...(c.valueThread || []), ...(c.percentThread || [])]) {
+      if (typeof e.seq === "number" && e.seq >= seq) seq = e.seq + 1;
+    }
+  }
+  return seq;
+};
+
+/* The seat name for a nextActor actor. `by` fields store seats ("tp" /
+   "collector"); nextActor speaks "partner" / "collector". */
+const seatOfActor = (actor) => (actor === "partner" ? "tp" : actor === "collector" ? "collector" : null);
 
 /* ------------------------------------------------------------- INVARIANTS
 
@@ -370,6 +413,25 @@ const FULFILLMENT = {
    ========================================================================== */
 const marketAgreed = (tc) => tc.agreedMarket != null;
 
+/* WHOSE MOVE ON ONE TRADE CARD — the one per-card turn rule.
+   Market value: the collector opens it; after that the seat answering the
+   standing proposal owns the card. Trade %: the partner opens it; then the
+   same alternation. Rejected, withdrawn or settled cards have no owner. */
+function cardOwner(tc) {
+  if (!tc || tc.inclusion !== "accepted" || tc.withdrawn) return null;
+  if (tc.agreedMarket == null) {
+    if (tc.collectorMarket == null) return "collector";
+    const last = (tc.valueThread || [])[(tc.valueThread || []).length - 1];
+    return last && last.by === "tp" ? "collector" : "tp";
+  }
+  if (tc.agreedPercent == null) {
+    if (tc.tpPercent == null) return "tp";
+    const last = (tc.percentThread || [])[(tc.percentThread || []).length - 1];
+    return last && last.by === "tp" ? "collector" : "tp";
+  }
+  return null;
+}
+
 /* Who made the proposal currently on the table, or null if none is. The last
    thread entry is the authority: it is the move nobody has answered yet. */
 const marketStanding = (tc) => {
@@ -417,7 +479,9 @@ const negotiationState = (tc, phase, viewer) => {
   const who = marketStanding(tc);
   if (who === viewer) return { state: "waiting", standing: viewer === "tp" ? tc.tpMarket : tc.collectorMarket, by: viewer };
   if (who === other) return { state: "theirs", standing: other === "tp" ? tc.tpMarket : tc.collectorMarket, by: other };
-  return { state: "open", standing: null, by: null };
+  /* Nobody has proposed. The collector opens market value (cardOwner), so the
+     partner waits rather than being offered a control that would be refused. */
+  return { state: viewer === "tp" ? "blocked" : "open", standing: null, by: null };
 };
 
 function tcApplyMarket(tc, by, action, amount, at) {
@@ -503,8 +567,12 @@ function dealApplyAdj(rawDeal, by, action, amount, at) {
    contributing economics but its history stays readable. Only an accepted,
    not-already-withdrawn card can be withdrawn — the rule the TP seat already
    used, now reachable by both. */
-const tcWithdraw = (tc, at) => (tc.inclusion === "accepted" && !tc.withdrawn
-  ? { ...tc, withdrawn: true, withdrawnAt: at } : tc);
+/* CONTRACT §4 / Invariant 18: a COMMITTED copy (accepted by the partner)
+   cannot be withdrawn unilaterally. Only a RESERVED row — submitted, not yet
+   accepted — can be withdrawn, and withdrawing releases the reservation. The
+   row stays in the package as history. */
+const tcWithdraw = (tc, at) => (tc.inclusion === "proposed" && !tc.withdrawn
+  ? { ...tc, inclusion: "withdrawn", withdrawn: true, withdrawnAt: at } : tc);
 
 /* The partner's inclusion decision on a proposed card. Accepting brings it into
    the trade's economics; rejecting leaves the row and its history in place but
@@ -572,7 +640,7 @@ const closeValuation = (o) => {
 const liveTradeRows = (o) => tradeRows(o).filter((c) =>
   c.inclusion === "proposed" || (c.inclusion === "accepted" && !c.withdrawn));
 
-const TRADE = { applyMarket: tcApplyMarket, decide: tcDecide, liveTradeRows,
+const TRADE = { applyMarket: tcApplyMarket, decide: tcDecide, liveTradeRows, cardOwner,
   selectTradeSettled, selectionExhausted, closeSelection,
   valueTradeSettled, closeValuation, applyPercent: tcApplyPercent,
   applyDealAdjustment: dealApplyAdj, dealAdjStanding, withdraw: tcWithdraw, marketAgreed,
@@ -643,6 +711,27 @@ const REFUSE = {
   /* Both faces, or the copy does not exist. */
   photosRequired: "photos-required",
   invalidAmount: "invalid-amount",
+  /* Command-layer refusals (Phase 1). Deliberately terse: a refusal names the
+     rule, never another collector, deal or price. */
+  unknownActor: "unknown-actor",
+  unknownCommand: "unknown-command",
+  notFound: "not-found",
+  notParticipant: "not-participant",
+  notOwner: "not-owner",
+  noRelationship: "no-relationship",
+  wrongStage: "wrong-stage",
+  terminal: "terminal",
+  notYourTurn: "not-your-turn",
+  goalLocked: "goal-locked",
+  duplicateGoal: "duplicate-goal",
+  identityMismatch: "identity-mismatch",
+  copyReserved: "copy-reserved",
+  copyInUse: "copy-in-use",
+  copySold: "copy-sold",
+  reasonRequired: "reason-required",
+  planIncomplete: "plan-incomplete",
+  nothingToAccept: "nothing-to-accept",
+  alreadySubmitted: "already-submitted",
 };
 
 module.exports = {
@@ -653,7 +742,7 @@ module.exports = {
   activeOppForGoal, goalState,
   acceptedTradeCards, cardSettled, tradeValueOf, tradeValueAt, totalTradeValue,
   calculatedBalance, finalBalance,
-  lastEntry, nextActor,
+  lastEntry, nextActor, seatOfActor, cardOwner, nextValueSeq,
   INVARIANTS, REFUSE,
 };
 
@@ -929,3 +1018,90 @@ module.exports.hasConversation = hasConversation;
 module.exports.messagesOf = messagesOf;
 module.exports.threadsForCard = threadsForCard;
 module.exports.partnersInConversation = partnersInConversation;
+
+/* ============================================================================
+   PHASE 1 — CANONICAL DERIVATIONS THE COMMAND LAYER ENFORCES
+   ========================================================================== */
+
+/* Final agreement (contract §4, Invariants 19–20). Agreement belongs to the
+   current economic state: every economic change in Deal clears both flags, so a
+   flag that is set is, by construction, agreement to the state now in force. */
+const finalAgreementGiven = (o) => !!(o && o.deal && o.deal.tpAgreed && o.deal.collectorAgreed);
+/* Cancelled after agreement is DERIVED from the preserved agreement flags. */
+const cancelledAfterAgreement = (o) => !!(o && isEnded(o) && finalAgreementGiven(o));
+
+/* The final cash figure currently on the table: the latest proposal, or the
+   calculated balance when nobody has proposed one. */
+const currentCashFigure = (o) => {
+  const d = (o && o.deal) || {};
+  if (d.agreedAdj != null) return d.agreedAdj;
+  const thread = d.adjThread || [];
+  for (let i = thread.length - 1; i >= 0; i--) {
+    if (thread[i].type === "propose") return thread[i].amount;
+  }
+  return calculatedBalance(o);
+};
+
+/* PHYSICAL-COPY STATUS — derived from the opportunities, never stored (§6). */
+const inventoryCopyStatus = (invId, opps) => {
+  const mine = (opps || []).filter((o) => o.invId != null && o.invId === invId);
+  if (mine.some(isCompleted)) return "sold";
+  if (mine.some((o) => isActive(o) && o.agreedPrice != null)) return "committed";
+  return "available";
+};
+const soldInventoryIds = (opps) => new Set((opps || [])
+  .filter((o) => isCompleted(o) && o.invId != null).map((o) => o.invId));
+
+/* Which rows of an opportunity hold an exact BinderCopy, and how. */
+const binderRowState = (o, row) => {
+  if (!row || row.withdrawn) return null;
+  if (row.inclusion === "accepted") return "committed";
+  if (row.inclusion === "proposed" && o.trade && o.trade.submitted) return "reserved";
+  return null;                       // draft, rejected or withdrawn rows hold nothing
+};
+const binderCopyStatus = (binderId, opps, exceptOppId) => {
+  let status = "available";
+  for (const o of opps || []) {
+    if (o.id === exceptOppId) continue;
+    for (const row of tradeRows(o)) {
+      if (row.binderId !== binderId) continue;
+      const st = binderRowState(o, row);
+      if (!st) continue;
+      if (isCompleted(o) && st === "committed") return "traded";
+      if (!isActive(o)) continue;
+      if (st === "committed") status = "committed";
+      else if (st === "reserved" && status === "available") status = "reserved";
+    }
+  }
+  return status;
+};
+
+/* An active Opportunity locks its Goal at Primary (§4, Invariant 13). */
+const goalLocked = (goalId, opps) => activeOppForGoal(goalId, opps || []) != null;
+
+/* ---- canonical record factories (one shape for every seat) ---- */
+const emptyDeal = () => ({ collectorAgreed: false, tpAgreed: false, adjThread: [],
+  tpAdj: null, collectorAdj: null, agreedAdj: null });
+const emptyFulfillment = () => ({ method: null, show: "", date: "", time: "",
+  location: "", note: "", proposedAt: null, collectorConfirmedPlan: false,
+  revisionRequested: null, tpHandoff: false, collectorReceipt: false });
+const emptyTradeCard = (cardId, photos, cert, binderId) => ({
+  id: "tc" + cardId + "-" + Math.random().toString(36).slice(2, 7),
+  cardId, binderId: binderId || null, inclusion: "proposed", reviewedAt: null,
+  withdrawn: false, withdrawnAt: null,
+  collectorMarket: null, tpMarket: null, agreedMarket: null, valueThread: [],
+  collectorPercent: null, tpPercent: null, agreedPercent: null, percentThread: [],
+  cert: cert || null, photos: photos || { front: null, back: null },
+});
+
+module.exports.finalAgreementGiven = finalAgreementGiven;
+module.exports.cancelledAfterAgreement = cancelledAfterAgreement;
+module.exports.currentCashFigure = currentCashFigure;
+module.exports.inventoryCopyStatus = inventoryCopyStatus;
+module.exports.soldInventoryIds = soldInventoryIds;
+module.exports.binderCopyStatus = binderCopyStatus;
+module.exports.binderRowState = binderRowState;
+module.exports.goalLocked = goalLocked;
+module.exports.emptyDeal = emptyDeal;
+module.exports.emptyFulfillment = emptyFulfillment;
+module.exports.emptyTradeCard = emptyTradeCard;

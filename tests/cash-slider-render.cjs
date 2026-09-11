@@ -27,7 +27,7 @@ const fs = require("fs");
 const path = require("path");
 const D = require("../domain/metyet-domain.js");
 const M = require("../dist/MetYet.cjs");
-const { createStore } = require("../domain/metyet-store.js");
+const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
 const App = require("../dist/Collector.cjs").default;
 const { __store } = require("../dist/Collector.cjs");
 
@@ -75,14 +75,20 @@ const worldAt = (currentSigned) => {
   st.actions.patchOpportunity(o, (x) => ({ ...x, stage: "select-trade",
     trade: { ...x.trade, submitted: true, cards: [row] } }));
   st.actions.reviewTradeCards({ oppId: o, decision: "accepted", at: AT });
-  st.actions.tradeMarketRespond({ oppId: o, tradeCardId: row.id, by: "tp",
-    action: "propose", amount: market, at: AT });
+  /* PHASE 1: the collector opens market value (D.cardOwner); the partner accepts. */
   st.actions.tradeMarketRespond({ oppId: o, tradeCardId: row.id, by: "collector",
+    action: "propose", amount: market, at: AT });
+  st.actions.tradeMarketRespond({ oppId: o, tradeCardId: row.id, by: "tp",
     action: "accept", at: AT });
   st.actions.tradePercentRespond({ oppId: o, tradeCardId: row.id, by: "tp",
     action: "propose", percent: 1, at: AT });
   st.actions.tradePercentRespond({ oppId: o, tradeCardId: row.id, by: "collector",
     action: "accept", at: AT });
+  /* PHASE 1 (contract §4): final confirmation is partner first, collector
+     second, and only the seat holding the canonical turn may change the figure.
+     The partner confirms the current settlement, which is what puts the cash
+     editor in the collector's hands. */
+  st.execute({ partnerId: "p" }, "acceptDeal", { oppId: o, at: AT });
   return st.get();
 };
 
@@ -265,6 +271,8 @@ describe("D. Nothing underneath moves while editing", () => {
       by: "collector", action: "propose", amount: -40, at: AT }); });
     TR.act(() => { __store.get().actions.dealAdjustRespond({ oppId: o.id,
       by: "tp", action: "accept", at: AT }); });
+    /* PHASE 1: the collector's confirmation records the agreed figure. */
+    TR.act(() => { __store.get().actions.dealAgree({ oppId: o.id, by: "collector", at: AT }); });
     const after = __store.get().get().opportunities[0];
     eq(D.finalBalance(after), -40, "the agreed figure is the balance");
     const r = D.cashReceipt(after);
@@ -400,21 +408,28 @@ describe("E. Turn state: editing, waiting, and back again", () => {
     assert(/\$168 reduction from the prior settlement/.test(w), "the change: " + w);
   });
 
+  /* PHASE 1: a partner's counter is followed by the partner's own confirmation
+     before the move is the collector's (contract §4). */
+  const partnerCounters = (amount) => {
+    TR.act(() => { A().dealAdjustRespond({ oppId: opp().id, by: "tp",
+      action: "propose", amount, at: AT }); });
+    rerender();
+    assert(!editor(), "not yet the collector's move while the partner confirms");
+    TR.act(() => { A().dealAgree({ oppId: opp().id, by: "tp", at: AT }); });
+    rerender();
+  };
+
   test("a partner counter brings the editor back", () => {
     openAt(168); dragTo(200); click(proposeBtn()); rerender();
     assert(!editor(), "gone while waiting");
-    TR.act(() => { A().dealAdjustRespond({ oppId: opp().id, by: "tp",
-      action: "propose", amount: 150, at: AT }); });
-    rerender();
+    partnerCounters(150);
     assert(editor(), "back once it is your move");
     assert(!waiting(), "and the waiting block is gone");
   });
 
   test("the draft re-anchors to their counter", () => {
     openAt(168); dragTo(200); click(proposeBtn()); rerender();
-    TR.act(() => { A().dealAdjustRespond({ oppId: opp().id, by: "tp",
-      action: "propose", amount: 150, at: AT }); });
-    rerender();
+    partnerCounters(150);
     assert(/You pay Northline Cards \$150/.test(proposed()),
       "the slider starts at their figure, not the old draft: " + proposed());
     const b = proposeBtn();
@@ -423,9 +438,7 @@ describe("E. Turn state: editing, waiting, and back again", () => {
 
   test("changing their counter lights the CTA again", () => {
     openAt(168); dragTo(200); click(proposeBtn()); rerender();
-    TR.act(() => { A().dealAdjustRespond({ oppId: opp().id, by: "tp",
-      action: "propose", amount: 150, at: AT }); });
-    rerender();
+    partnerCounters(150);
     dragTo(120);
     const b = proposeBtn();
     eq(b.props.disabled, false, "a counter to their counter is submittable");
@@ -438,9 +451,15 @@ describe("E. Turn state: editing, waiting, and back again", () => {
     TR.act(() => { A().dealAdjustRespond({ oppId: opp().id, by: "tp",
       action: "accept", at: AT }); });
     rerender();
-    eq(opp().deal.agreedAdj, 200, "the figure is agreed");
+    /* PHASE 1: the partner's acceptance is their confirmation of the standing
+       figure; the collector's confirmation records it. */
+    eq(opp().deal.tpAgreed, true, "the partner confirmed the figure");
     assert(!editor(), "and there is nothing left to edit");
     assert(!waiting(), "nor anything to wait for");
+    const agree = R.root.findAllByType("button").find((x) => txt(x) === "Agree to this deal");
+    assert(agree, "the collector confirms through the real control");
+    click(agree);
+    eq(opp().deal.agreedAdj, 200, "the figure is agreed");
     eq(D.finalBalance(opp()), 200, "the balance follows the agreement");
   });
 
@@ -450,8 +469,12 @@ describe("E. Turn state: editing, waiting, and back again", () => {
     ["proposalSent", "waiting", "isWaiting", "sent"].forEach((f) =>
       assert(!new RegExp("useState[^)]*" + f, "i").test(d),
         "no local " + f + " state"));
-    assert(/const iOweTheMove = !cashSettled && \(!standing0 \|\| theirCounter\);/.test(d),
-      "the turn is derived from the deal");
+    /* PHASE 1: the deal-level turn now comes from the one canonical turn
+       engine as well as the deal's own standing figure. */
+    assert(/const myTurn = D\.nextActor\(o\)\.actor === "collector";/.test(d),
+      "the turn is the canonical one");
+    assert(/const iOweTheMove = myTurn && !cashSettled && \(!standing0 \|\| theirCounter\);/.test(d),
+      "and the cash move is derived from the deal");
     assert(/const cashSettled = deal0\.agreedAdj != null;/.test(d),
       "and an agreed figure ends it rather than returning the turn");
   });

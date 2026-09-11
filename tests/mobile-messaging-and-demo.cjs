@@ -309,7 +309,13 @@ describe("C. The partner can be driven from the phone, in DEV only", () => {
     open({ stage: "agree-price" });
     const id = opp().id;
     const before = anyOpp(id).priceThread.length;
-    /* Through the canonical action the simulator itself uses. */
+    /* Through the canonical action the simulator itself uses.
+       PHASE 1: the seeded Agree on Price is the COLLECTOR's move (the partner's
+       counter stands), and accepting takes the standing figure — the partner
+       can no longer settle an arbitrary amount. So the collector counters at
+       $3,555 first, and the partner's canonical accept settles that figure. */
+    TR.act(() => { __store.get().execute({ collectorId: anyOpp(id).collectorId }, "proposePrice",
+      { oppId: id, amount: 3555, at: AT }); });
     TR.act(() => { acts().agreePrice({ oppId: id, amount: 3555, by: "partner", at: AT }); });
     rerender();
     assert(anyOpp(id).priceThread.length > before, "the thread grew");
@@ -349,11 +355,13 @@ describe("C. The partner can be driven from the phone, in DEV only", () => {
        write state now take actions, so exactly ONE raw patch survives — the
        partner's price counter, which has no canonical action to call. It is
        named here so it cannot quietly become two. */
-    eq((sim.match(/A\.patchOpportunity/g) || []).length, 1,
-      "one remaining raw patch: the price counter, a known domain gap");
+    /* PHASE 1: the known gap is closed — the partner's price counter is the
+       proposePrice command, so no raw patch survives at all. */
+    eq((sim.match(/patchOpportunity/g) || []).length, 0, "no raw patch remains");
     const counter = sim.slice(sim.indexOf("Counter at 96%"),
       sim.indexOf("Counter at 96%") + 400);
-    assert(/priceThread/.test(counter), "and it appends to a thread, never a terminal field");
+    assert(/A\.proposePrice\(/.test(counter) && !/priceThread/.test(counter),
+      "the counter is a canonical command, never a thread write");
 
     ["agreePrice", "reviewTradeCards", "tradeMarketRespond", "tradePercentRespond",
       "dealAdjustRespond", "dealAgree", "confirmHandoff", "sendMessage", "endOpportunity"]

@@ -19,7 +19,7 @@ const { describe, test, assert, eq } = require("./run.cjs");
 const React = require("react");
 const TR = require("react-test-renderer");
 const D = require("../domain/metyet-domain.js");
-const { createStore } = require("../domain/metyet-store.js");
+const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
 const { collectorView } = require("../domain/collector-view.js");
 const M = require("../dist/MetYet.cjs");
 
@@ -45,7 +45,7 @@ const load = (which) => {
   const st = createStore(M.buildCanonicalSeed());
   const next = M.demoDealFixture(st.get(), { collectorId: ME, demoStage: which });
   assert(next, "the fixture loaded");
-  st.set(next);
+  st.fixture.set(next);
   return st;
 };
 const view = (st) => collectorView(st.get(), ME);
@@ -283,18 +283,20 @@ describe("D. State survives the persona switch", () => {
        the goal the scenarios address. The property protected here is unchanged
        — reseeding happens only on an explicit reset, never on a persona
        switch — so the assertion matches the call rather than its old argument. */
-    assert(/store\.reset\(buildCanonicalSeed\(\{ review: DEMO \}\)\)/.test(SHELL),
+    /* PHASE 1: the reset is an explicit, named fixture operation. */
+    assert(/store\.fixture\.reset\(buildCanonicalSeed\(\{ review: DEMO \}\)\)/.test(SHELL),
       "the shell reseeds only on an explicit reset");
-    eq((SHELL.match(/store\.reset\(/g) || []).length, 1, "from exactly one place");
+    eq((SHELL.match(/store\.fixture\.reset\(/g) || []).length, 1, "from exactly one place");
     /* The store is built once, and reseeded only by the explicit Reset demo
        button — never as a side effect of anything else. */
     assert(/storeRef\.current === null\)[\s\S]{0,120}?storeRef\.current = createStore\(buildCanonicalSeed\(\{ review: DEMO \}\)\)/
       .test(SHELL), "the world is created once");
     eq((SHELL.match(/createStore\(/g) || []).length, 1, "from exactly one place");
-    eq((SHELL.match(/store\.reset\(/g) || []).length, 1, "and reset exactly one way");
+    eq((SHELL.match(/store\.fixture\.reset\(/g) || []).length, 1, "and reset exactly one way");
+    assert(!/store\.reset\(|store\.set\(/.test(SHELL), "with no raw store write");
     const setPersona = SHELL.slice(SHELL.indexOf("setPersona("),
       SHELL.indexOf("setPersona(") + 400);
-    assert(!/buildCanonicalSeed|store\.reset/.test(setPersona),
+    assert(!/buildCanonicalSeed|store\.fixture\.reset|store\.reset/.test(setPersona),
       "switching persona never rebuilds the world");
   });
 
@@ -340,7 +342,7 @@ describe("E. The ready shortcut, and the existing harness", () => {
     const st = load("pre-deal");
     eq(liveOpp(st), null, "pre-deal has no deal");
     /* Reset demo rebuilds the canonical seed exactly as before. */
-    st.reset(M.buildCanonicalSeed());
+    st.fixture.reset(M.buildCanonicalSeed());
     const back = M.buildCanonicalSeed();
     eq(st.get().opportunities.length, back.opportunities.length, "the world is restored");
     eq(st.get().inventory.length, back.inventory.length, "including inventory");

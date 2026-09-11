@@ -1,3 +1,10 @@
+/* PHASE 1 CLOSEOUT: this suite drives the Trusted Partner workspace's
+   Collector simulation (SimBlock — acting as the collector from the partner's
+   screen). That is engineering tooling and now renders only under DEV
+   (shared/dev-flag.js), so the suite runs in DEV. Product and pilot builds
+   never show it: tests/phase1-closeout.cjs. */
+process.env.METYET_DEV = "1";
+
 const { describe, test, assert, eq } = require("./run.cjs");
 const TR = require("react-test-renderer");
 const { render, text, allText, btn, btns, btnExact, click, byClass, byClassIn, goProfile } = require("./util.cjs");
@@ -10,10 +17,19 @@ const selectTrade = () => {
   click(btns(r, "Open").filter((b) => text(b).trim() === "Open")[0]);
   return r;
 };
-/* A three-state package: one to review, one accepted, one rejected. */
+/* A three-state package: one to review, one accepted, one rejected.
+
+   PHASE 1: moved from James Rivera to Ellen Fisher. Every copy James has open
+   to trade is reserved, committed or already Traded in another Opportunity, and
+   one exact BinderCopy may be in only one active package (contract §4), so the
+   draft no longer offers them. Ellen has two available open-to-trade copies; the
+   partner marks her third (Pikachu VMAX) open through the real binder toggle. */
 const mixedPackage = () => {
   const r = render();
-  goProfile(r, "James Rivera");
+  goProfile(r, "Ellen Fisher");
+  const tile = byClass(r, "cp-bind").find((t) => text(t).startsWith("Pikachu VMAX"));
+  const toggle = tile.findAllByType("button").find((b) => text(b) === "Open to trade");
+  if (toggle.props["aria-pressed"] !== "true") click(toggle);
   click(btns(r, "Open").filter((b) => text(b).trim() === "Open")[0]);
   click(btns(r, "Accept $")[0]);                       // price agreed -> draft
   btns(r, "+ ").slice(0, 3).forEach((b) => click(btns(r, "+ ")[0]));

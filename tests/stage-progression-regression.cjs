@@ -28,7 +28,7 @@ const fs = require("fs");
 const path = require("path");
 const D = require("../domain/metyet-domain.js");
 const M = require("../dist/MetYet.cjs");
-const { createStore } = require("../domain/metyet-store.js");
+const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
 
 const ROOT = path.join(__dirname, "..");
 const COL = fs.readFileSync(path.join(ROOT, "collector", "MetYetCollector.jsx"), "utf8");
@@ -166,25 +166,33 @@ describe("C. The same defect one stage later", () => {
     w.st.actions.reviewTradeCards({ oppId: w.o, decision: "accepted", at: AT });
     return w;
   };
-  const settle = (w, id, market, percent) => {
+  /* PHASE 1: the collector opens market value (D.cardOwner), and the Value
+     Trade turn is one owner per Opportunity (D.nextActor) — a seat moves on
+     every card it holds before the other answers. `settle` takes [id, market,
+     percent] terms and walks them in that canonical order; `acceptPercents: false`
+     stops before the collector's final acceptances so a test can settle cards one by one. */
+  const settle = (w, terms, { acceptPercents = true } = {}) => {
     const a = w.st.actions;
-    a.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "tp", action: "propose", amount: market, at: AT });
-    a.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "collector", action: "accept", at: AT });
-    a.tradePercentRespond({ oppId: w.o, tradeCardId: id, by: "tp", action: "propose", percent, at: AT });
-    a.tradePercentRespond({ oppId: w.o, tradeCardId: id, by: "collector", action: "accept", at: AT });
+    terms.forEach(([id, market]) => a.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "collector", action: "propose", amount: market, at: AT }));
+    terms.forEach(([id]) => a.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "tp", action: "accept", at: AT }));
+    terms.forEach(([id, , percent]) => a.tradePercentRespond({ oppId: w.o, tradeCardId: id, by: "tp", action: "propose", percent, at: AT }));
+    if (acceptPercents) terms.forEach(([id]) => a.tradePercentRespond({ oppId: w.o, tradeCardId: id, by: "collector", action: "accept", at: AT }));
   };
+  const acceptPercent = (w, id) => w.st.actions.tradePercentRespond({ oppId: w.o, tradeCardId: id, by: "collector", action: "accept", at: AT });
 
   test("agreeing the market alone does not end valuation", () => {
     const w = atValueTrade();
     const id = w.rows()[0].id;
-    w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "tp", action: "propose", amount: 1804, at: AT });
-    w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "collector", action: "accept", at: AT });
+    /* PHASE 1: the collector opens market value; the partner accepts. */
+    w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "collector", action: "propose", amount: 1804, at: AT });
+    w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "tp", action: "accept", at: AT });
     eq(w.get().stage, "value-trade", "the percentage is still open");
+    eq(w.get().trade.cards[0].agreedMarket, 1804, "with the market agreed");
   });
 
   test("settling the last open term advances to Deal", () => {
     const w = atValueTrade();
-    settle(w, w.rows()[0].id, 1804, 0.8);
+    settle(w, [[w.rows()[0].id, 1804, 0.8]]);
     eq(w.get().stage, "deal", "nothing is left to negotiate about the cards");
     eq(D.totalTradeValue(w.get()), 1443, "$1,804 x 80% = $1,443, carried forward");
   });
@@ -192,21 +200,42 @@ describe("C. The same defect one stage later", () => {
   test("one settled card does not settle a valuation with two", () => {
     const w = atSelectTrade([cardA(), cardB()]);
     w.st.actions.reviewTradeCards({ oppId: w.o, decision: "accepted", at: AT });
-    settle(w, w.rows()[0].id, 1804, 0.8);
+    const [a, b] = w.rows();
+    settle(w, [[a.id, 1804, 0.8], [b.id, 900, 0.75]], { acceptPercents: false });
+    acceptPercent(w, a.id);
+    eq(D.cardSettled(w.rows()[0]), true, "the first card is settled");
     eq(w.get().stage, "value-trade", "the second card is still unagreed");
-    settle(w, w.rows()[1].id, 900, 0.75);
+    acceptPercent(w, b.id);
     eq(w.get().stage, "deal", "and only both together finish the stage");
     eq(D.totalTradeValue(w.get()), 2118, "$1,443 + $675");
   });
 
-  test("withdrawing the last unagreed card can also settle it", () => {
+  /* PHASE 1 (contract §4): a card the partner accepted is COMMITTED — the
+     collector cannot withdraw it unilaterally, so withdrawing an unagreed Value
+     Trade card no longer closes the stage. Superseded: "withdrawing the last
+     unagreed card can also settle it". What remains true, and is asserted: the
+     refused withdrawal changes nothing, and withdrawing the last RESERVED card
+     (not yet reviewed) resolves Select Trade just as a review would. */
+  test("a committed card cannot be withdrawn to settle the stage", () => {
     const w = atSelectTrade([cardA(), cardB()]);
     w.st.actions.reviewTradeCards({ oppId: w.o, decision: "accepted", at: AT });
-    settle(w, w.rows()[0].id, 1804, 0.8);
+    const [a, b] = w.rows();
+    settle(w, [[a.id, 1804, 0.8], [b.id, 900, 0.75]], { acceptPercents: false });
+    acceptPercent(w, a.id);
     eq(w.get().stage, "value-trade", "one card outstanding");
-    w.st.actions.withdrawTradeCard({ oppId: w.o, tradeCardId: w.rows()[1].id, at: AT });
-    eq(w.get().stage, "deal", "removing it leaves nothing unresolved");
-    eq(D.totalTradeValue(w.get()), 1443, "and it contributes nothing");
+    const before = JSON.stringify(w.get());
+    w.st.actions.withdrawTradeCard({ oppId: w.o, tradeCardId: b.id, at: AT });
+    eq(JSON.stringify(w.get()), before, "the withdrawal is refused and nothing moves");
+  });
+
+  test("withdrawing the last reserved card resolves Select Trade", () => {
+    const w = atSelectTrade([cardA(), cardB()]);
+    const [a, b] = w.rows();
+    w.st.actions.reviewTradeCards({ oppId: w.o, tradeCardId: a.id, decision: "accepted", at: AT });
+    eq(w.get().stage, "select-trade", "one card still awaiting review");
+    w.st.actions.withdrawTradeCard({ oppId: w.o, tradeCardId: b.id, at: AT });
+    eq(w.get().stage, "value-trade", "removing it leaves nothing unresolved");
+    eq(D.acceptedTradeCards(w.get()).map((c) => c.cardId).join(","), "ka", "and it is not valued");
   });
 });
 
@@ -219,12 +248,14 @@ describe("D. The whole lifecycle runs on canonical actions alone", () => {
 
     a.reviewTradeCards({ oppId: w.o, decision: "accepted", at: AT }); note();
     const id = w.rows()[0].id;
-    a.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "tp", action: "propose", amount: 1804, at: AT });
-    a.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "collector", action: "accept", at: AT });
+    /* PHASE 1: collector opens market value; final agreement is partner first,
+       collector second (contract §4). */
+    a.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "collector", action: "propose", amount: 1804, at: AT });
+    a.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "tp", action: "accept", at: AT });
     a.tradePercentRespond({ oppId: w.o, tradeCardId: id, by: "tp", action: "propose", percent: 0.8, at: AT });
     a.tradePercentRespond({ oppId: w.o, tradeCardId: id, by: "collector", action: "accept", at: AT }); note();
-    a.dealAgree({ oppId: w.o, by: "collector", at: AT });
-    a.dealAgree({ oppId: w.o, by: "tp", at: AT }); note();
+    a.dealAgree({ oppId: w.o, by: "tp", at: AT });
+    a.dealAgree({ oppId: w.o, by: "collector", at: AT }); note();
     a.proposeFulfillment({ oppId: w.o, plan: { method: "Meet in person", where: "Duluth", when: "Saturday" }, at: AT });
     a.confirmFulfillmentPlan({ oppId: w.o, at: AT });
     a.confirmHandoff({ oppId: w.o, by: "tp", at: AT });
@@ -256,8 +287,11 @@ describe("E. The rule lives in one place, and no shortcut exists", () => {
     assert(!/const maybeCloseSelection = \(o\) => \{/.test(tp), "no TP-local selection rule");
     assert(!/const maybeCloseValuation = \(o\) =>\s*\n?\s*valueTradeSettled/.test(tp),
       "no TP-local valuation rule");
-    assert(/SharedID\.TRADE\.closeSelection/.test(tp), "it calls the shared one");
-    assert(/SharedID\.TRADE\.closeValuation/.test(tp), "and the other");
+    /* PHASE 1: the TP issues canonical commands; the closing rules run inside
+       the command layer, for every caller. */
+    const cmd = code(fs.readFileSync(path.join(ROOT, "domain", "metyet-commands.js"), "utf8"));
+    assert(/"reviewTradeCard"/.test(tp) && /D\.TRADE\.closeSelection\(/.test(cmd), "it calls the shared one");
+    assert(/"acceptTradePercent"|percentAction/.test(tp) && /D\.TRADE\.closeValuation\(/.test(cmd), "and the other");
   });
 
   test("the demo helper takes no shortcut", () => {

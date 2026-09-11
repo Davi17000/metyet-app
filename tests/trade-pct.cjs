@@ -1,6 +1,13 @@
+/* PHASE 1 CLOSEOUT: this suite drives the Trusted Partner workspace's
+   Collector simulation (SimBlock — acting as the collector from the partner's
+   screen). That is engineering tooling and now renders only under DEV
+   (shared/dev-flag.js), so the suite runs in DEV. Product and pilot builds
+   never show it: tests/phase1-closeout.cjs. */
+process.env.METYET_DEV = "1";
+
 const { describe, test, assert, eq } = require("./run.cjs");
 const TR = require("react-test-renderer");
-const { render, text, allText, btn, btns, btnExact, click, byClass, byClassIn, goProfile } = require("./util.cjs");
+const { render, text, allText, btn, btns, btnExact, click, byClass, byClassIn, goProfile, answerStandingTradePct } = require("./util.cjs");
 
 /* Hiro Tanaka's Value Trade opportunity. Its third trade card sits in the market
    phase with no proposal on the table, so it can be driven to a settled market and
@@ -12,7 +19,7 @@ const valueTrade = () => {
   const r = render();
   goProfile(r, "Hiro Tanaka");
   click(btns(r, "Open").filter((b) => text(b).trim() === "Open")[0]);
-  return r;
+  return answerStandingTradePct(r);   // PHASE 1: one Value Trade turn — see util.cjs
 };
 const blocks = (r) => byClass(r, "pn");
 const last = (r) => blocks(r)[blocks(r).length - 1];

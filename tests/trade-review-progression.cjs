@@ -23,7 +23,7 @@ const fs = require("fs");
 const path = require("path");
 const D = require("../domain/metyet-domain.js");
 const M = require("../dist/MetYet.cjs");
-const { createStore } = require("../domain/metyet-store.js");
+const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
 
 const ROOT = path.join(__dirname, "..");
 const COL = fs.readFileSync(path.join(ROOT, "collector", "MetYetCollector.jsx"), "utf8");
@@ -159,9 +159,14 @@ describe("C. The simulator takes actions now", () => {
     const w = awaitingReview();
     w.st.actions.reviewTradeCards({ oppId: w.o, decision: "accepted", at: AT });
     const id = w.get().trade.cards[0].id;
+    /* PHASE 1: the collector opens market value (D.cardOwner), so the repeated
+       send is the collector's; a partner opening is refused outright. */
     w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "tp",
+      action: "propose", amount: 150, at: AT });
+    eq(w.get().trade.cards[0].valueThread.length, 0, "the partner cannot open market value");
+    w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "collector",
       action: "propose", amount: 200, at: AT });
-    w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "tp",
+    w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "collector",
       action: "propose", amount: 900, at: AT });
     eq(w.get().trade.cards[0].valueThread.length, 1, "one turn, one entry");
     w.st.actions.tradePercentRespond({ oppId: w.o, tradeCardId: id, by: "tp",

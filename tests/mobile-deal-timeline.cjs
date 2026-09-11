@@ -352,7 +352,7 @@ describe("F. Canonical guarantees survive on mobile", () => {
       edition: "Unlimited", language: "English", grade: "PSA 9", condition: null };
     const A = { id: "ka", name: "Mew ex", set: "DF", number: "1", variant: "",
       edition: "Unlimited", language: "English", grade: "PSA 8", condition: null };
-    const { createStore } = require("../domain/metyet-store.js");
+    const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
     const st = createStore({
       catalog: [A, CARD], collectors: [{ id: "casey", name: "Casey", prefs: [] }],
       partners: [{ id: "nl", name: "Northline Cards" }],
@@ -394,14 +394,15 @@ describe("F. Canonical guarantees survive on mobile", () => {
 
   test("multi-card values stay independent and reconcile", () => {
     const w = world();
-    const settle = (id, m, p) => {
-      w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "tp", action: "propose", amount: m, at: AT });
-      w.st.actions.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "collector", action: "accept", at: AT });
-      w.st.actions.tradePercentRespond({ oppId: w.o, tradeCardId: id, by: "tp", action: "propose", percent: p, at: AT });
-      w.st.actions.tradePercentRespond({ oppId: w.o, tradeCardId: id, by: "collector", action: "accept", at: AT });
-    };
-    settle(w.ids[0], 2050, 0.9);
-    settle(w.ids[1], 900, 0.75);
+    /* PHASE 1: the collector opens market value (D.cardOwner) and the Value
+       Trade turn is one owner per Opportunity (D.nextActor), so each seat moves
+       on every card it holds before the other answers. Values are unchanged. */
+    const A = w.st.actions;
+    const terms = [[w.ids[0], 2050, 0.9], [w.ids[1], 900, 0.75]];
+    terms.forEach(([id, m]) => A.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "collector", action: "propose", amount: m, at: AT }));
+    terms.forEach(([id]) => A.tradeMarketRespond({ oppId: w.o, tradeCardId: id, by: "tp", action: "accept", at: AT }));
+    terms.forEach(([id, , p]) => A.tradePercentRespond({ oppId: w.o, tradeCardId: id, by: "tp", action: "propose", percent: p, at: AT }));
+    terms.forEach(([id]) => A.tradePercentRespond({ oppId: w.o, tradeCardId: id, by: "collector", action: "accept", at: AT }));
     eq(D.tradeValueOf(w.card(w.ids[0])), 1845, "$2,050 x 90%");
     eq(D.tradeValueOf(w.card(w.ids[1])), 675, "$900 x 75%");
     eq(D.totalTradeValue(w.get()), 2520, "totalling $2,520");

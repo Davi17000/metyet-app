@@ -1,6 +1,13 @@
+/* PHASE 1 CLOSEOUT: this suite drives the Trusted Partner workspace's
+   Collector simulation (SimBlock — acting as the collector from the partner's
+   screen). That is engineering tooling and now renders only under DEV
+   (shared/dev-flag.js), so the suite runs in DEV. Product and pilot builds
+   never show it: tests/phase1-closeout.cjs. */
+process.env.METYET_DEV = "1";
+
 const { describe, test, assert, eq } = require("./run.cjs");
 const TR = require("react-test-renderer");
-const { render, text, allText, btn, btns, btnExact, click, byClass, byClassIn, goProfile } = require("./util.cjs");
+const { render, text, allText, btn, btns, btnExact, click, byClass, byClassIn, goProfile, answerStandingTradePct } = require("./util.cjs");
 
 const openBinderAdd = (r, who) => {
   goProfile(r, who);
@@ -254,6 +261,9 @@ describe("Copy continuity — the same physical copy through the deal", () => {
     const r = render();
     goProfile(r, "Hiro Tanaka");
     click(btns(r, "Open").filter((b) => text(b).trim() === "Open")[0]);
+    /* PHASE 1: the untouched card's market move is live once the standing trade %
+       is answered — one Value Trade turn per Opportunity (util.cjs). */
+    answerStandingTradePct(r);
     // photos and the market decision are in the same block
     const mkt = byClass(r, "vt-mkt")[0];
     assert(byClassIn(mkt, "copyph").length === 2, "copy is present");

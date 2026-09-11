@@ -1,12 +1,22 @@
+/* PHASE 1 CLOSEOUT: this suite drives the Trusted Partner workspace's
+   Collector simulation (SimBlock — acting as the collector from the partner's
+   screen). That is engineering tooling and now renders only under DEV
+   (shared/dev-flag.js), so the suite runs in DEV. Product and pilot builds
+   never show it: tests/phase1-closeout.cjs. */
+process.env.METYET_DEV = "1";
+
 const { describe, test, assert, eq } = require("./run.cjs");
 const TR = require("react-test-renderer");
-const { render, text, allText, btn, btns, btnExact, click, byClass, byClassIn, goProfile } = require("./util.cjs");
+const { render, text, allText, btn, btns, btnExact, click, byClass, byClassIn, goProfile, answerStandingTradePct } = require("./util.cjs");
 
 const openOpp = (r, who) => {
   goProfile(r, who);
   click(btns(r, "Open").filter((b) => text(b).trim() === "Open")[0]);
   return r;
 };
+/* PHASE 1: tests that drive Hiro Tanaka's untouched market card answer the
+   standing trade % first — one Value Trade turn per Opportunity (util.cjs). */
+const openHiroMarket = (r) => answerStandingTradePct(openOpp(r, "Hiro Tanaka"));
 const binderDrawer = (r, who, i = 0) => {
   goProfile(r, who);
   click(byClass(r, "cp-bind-view")[i]);
@@ -153,7 +163,7 @@ describe("Photo enlargement — available wherever a copy is shown", () => {
 
 describe("Photo enlargement — negotiation state survives", () => {
   test("a typed market counter survives opening, switching and closing", () => {
-    const r = openOpp(render(), "Hiro Tanaka");
+    const r = openHiroMarket(render());
     const mkt = () => mktBlocks(r)[0];
     const ins = () => mkt().findAllByType("input");
     // get to the TP's turn with their proposal on the table
@@ -213,7 +223,7 @@ describe("Collector identity in negotiation", () => {
   });
 
   test("Value Trade market shows the collector beside their proposal", () => {
-    const r = openOpp(render(), "Hiro Tanaka");
+    const r = openHiroMarket(render());
     const ins = mktBlocks(r)[0].findAllByType("input");
     TR.act(() => { ins[0].props.onChange({ target: { value: "123" } }); });
     click(byClassIn(mktBlocks(r)[0], "pn-send")[0]);
@@ -223,7 +233,7 @@ describe("Collector identity in negotiation", () => {
   });
 
   test("the waiting state keeps the person visible", () => {
-    const r = openOpp(render(), "Hiro Tanaka");
+    const r = openHiroMarket(render());
     const ins = () => mktBlocks(r)[0].findAllByType("input");
     TR.act(() => { ins()[0].props.onChange({ target: { value: "123" } }); });
     click(byClassIn(mktBlocks(r)[0], "pn-send")[0]);
@@ -250,7 +260,7 @@ describe("Collector identity in negotiation", () => {
   });
 
   test("the collector is not shown their own avatar on the demo side", () => {
-    const r = openOpp(render(), "Hiro Tanaka");
+    const r = openHiroMarket(render());
     const ins = () => mktBlocks(r)[0].findAllByType("input");
     TR.act(() => { ins()[0].props.onChange({ target: { value: "123" } }); });
     click(byClassIn(mktBlocks(r)[0], "pn-send")[0]);
@@ -277,7 +287,7 @@ describe("Collector identity — no duplicated name", () => {
   });
 
   test("Value Trade says 'Their market value', not 'Hiro T.'s market value'", () => {
-    const r = openOpp(render(), "Hiro Tanaka");
+    const r = openHiroMarket(render());
     const mkt = () => mktBlocks(r)[0];
     const ins = mkt().findAllByType("input");
     TR.act(() => { ins[0].props.onChange({ target: { value: "123" } }); });

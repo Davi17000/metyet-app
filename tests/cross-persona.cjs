@@ -274,6 +274,10 @@ describe("6. Collector Make an offer -> TP sees the same Opportunity id", () => 
     click(goalNow().findAllByType("button").find((b) => /^Make an offer/.test(txt(b).trim())));
     const cont = r.root.findAllByType("button").find((b) => txt(b).trim() === "Continue without photos");
     if (cont) click(cont);
+    /* PHASE 1: an offer must be a real positive amount — the command boundary
+       refuses an empty one (the Submit control is disabled until one is typed). */
+    const dollars = r.root.findAllByType("input").find((i) => i.props["aria-label"] === "Your offer in dollars");
+    TR.act(() => { dollars.props.onChange({ target: { value: "900" } }); });
     click(r.root.findAllByType("button")
       .find((b) => /^(Submit|Send) offer$/.test(txt(b).trim())));
 

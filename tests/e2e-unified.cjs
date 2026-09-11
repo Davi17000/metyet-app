@@ -316,8 +316,9 @@ describe("I (part). TP responds -> Collector sees it, turn flips", () => {
     eq(D.nextActor(o).actor, "partner", "it is the partner's move");
 
     switchTo(r, "Trusted Partner");
-    TR.act(() => { store(r).actions.patchOpportunity(o.id, (x) => ({ ...x,
-      priceThread: [...x.priceThread, { by: "partner", type: "counter", amount: 4321, at: "2026-08-14" }] })); });
+    /* PHASE 1: the counter is the partner's canonical command, not a thread patch. */
+    TR.act(() => { eq(store(r).execute({ partnerId: o.partnerId }, "proposePrice",
+      { oppId: o.id, amount: 4321, at: "2026-08-14" }).ok, true, "the partner's counter is accepted"); });
 
     switchTo(r, "Collector");
     const after = S(r).opportunities.find((x) => x.id === o.id);
@@ -470,8 +471,15 @@ const openNegotiation = (r) => {
   if (cont) click(cont);
   /* The deal-creating CTA is "Submit offer"; the sheet itself explains that it
      starts an active deal for this goal. */
+  /* PHASE 1: an offer must be a real positive amount — the command boundary
+     refuses an empty one. This used to press the (disabled) Submit with no
+     figure entered, which only worked because the old store accepted $0. */
+  const dollars = r.root.findAllByType("input").find((i) => i.props["aria-label"] === "Your offer in dollars");
+  assert(dollars, "the offer amount field");
+  TR.act(() => { dollars.props.onChange({ target: { value: "900" } }); });
   const send = r.root.findAllByType("button").find((b) => /^(Submit|Send) offer$/.test(txt(b).trim()));
   assert(send, "the submit control: " + r.root.findAllByType("button").map((b) => txt(b).trim()).filter(Boolean).join("|"));
+  assert(!send.props.disabled, "and it is submittable once an amount is entered");
   click(send);
   return { g, o: S(r).opportunities[S(r).opportunities.length - 1] };
 };
@@ -516,8 +524,9 @@ describe("I. Agree on Price, end to end across personas", () => {
 
     /* TP counters, through the shell's store — the same object the TP UI writes. */
     switchTo(r, "Trusted Partner");
-    TR.act(() => { store(r).actions.patchOpportunity(oppId, (x) => ({ ...x,
-      priceThread: [...x.priceThread, { by: "partner", type: "counter", amount: 3210, at: "2026-08-14" }] })); });
+    /* PHASE 1: the counter is the partner's canonical command, not a thread patch. */
+    TR.act(() => { eq(store(r).execute({ partnerId: o.partnerId }, "proposePrice",
+      { oppId, amount: 3210, at: "2026-08-14" }).ok, true, "the partner's counter is accepted"); });
     eq(D.nextActor(S(r).opportunities.find((x) => x.id === oppId)).actor, "collector",
       "the turn moved to the collector");
 
@@ -644,19 +653,24 @@ describe("M. Fulfillment through the rendered lifecycle wiring", () => {
     assert(gid, "it references a goal");
     eq(casey(r).stateOf(gid), "negotiating", "which is currently Negotiating");
 
-    /* The rendered control, not a store patch. Completion needs BOTH sides, so
-       the collector confirming alone must NOT complete it — that is the rule. */
-    const confirm = btn(r, "I've got the card");
-    assert(confirm, "the Collector's rendered confirmation is present");
-    click(confirm);
+    /* PHASE 1 (contract §4, Fulfillment): one canonical turn — the partner
+       confirms the handoff FIRST and the Collector's receipt SECOND, which is
+       what completes the Opportunity. Superseded: the collector confirming
+       first, then a store patch to "completed" standing in for the partner. */
+    assert(!btn(r, "I've got the card"), "receipt is not offered before the partner hands over");
+
+    switchTo(r, "Trusted Partner");
+    TR.act(() => { eq(store(r).execute({ partnerId: opp.partnerId }, "confirmHandoff",
+      { oppId: opp.id, at: "2026-08-14" }).ok, true, "the partner confirms the handoff"); });
     eq(S(r).opportunities.find((x) => x.id === opp.id).stage, "fulfillment",
       "one side confirming does not complete the deal");
 
-    /* The partner confirms too, and only then does it complete. */
-    switchTo(r, "Trusted Partner");
-    TR.act(() => { store(r).actions.patchOpportunity(opp.id, (x) => ({ ...x,
-      stage: "completed", completedAt: "2026-08-14" })); });
+    /* The rendered control, not a store patch. */
     switchTo(r, "Collector");
+    openDeal(r, opp.id);
+    const confirm = btn(r, "I've got the card");
+    assert(confirm, "the Collector's rendered confirmation is present");
+    click(confirm);
     const after = S(r).opportunities.find((x) => x.id === opp.id);
     eq(after.stage, "completed", "the shared record completed");
     eq(casey(r).stateOf(gid), "satisfied", "the Goal derives Satisfied");

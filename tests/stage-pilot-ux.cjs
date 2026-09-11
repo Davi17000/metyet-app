@@ -189,13 +189,20 @@ describe("C. Fulfillment: the exchange itself", () => {
     assert(/You Not yet/.test(t), "and the collector's, still outstanding");
   });
 
+  /* PHASE 1 (contract §4): one canonical turn — the partner confirms the
+     handoff first, the Collector's receipt second, and that receipt completes
+     the Opportunity. Superseded: the collector confirming receipt before the
+     partner had handed anything over. */
   test("confirming receipt completes only when both have acted", () => {
     agreedPlan();
-    press(/got the card/);
-    eq(D.FULFILLMENT.received(opp().fulfillment), true, "the collector confirmed");
-    eq(opp().stage, "fulfillment", "but the partner has not handed over");
+    const labels = () => cls(R, "goal").flatMap((n) => n.findAllByType("button")).map(txt);
+    assert(!labels().some((t) => /got the card/.test(t)), "receipt is not offered before the handoff");
     const id = opp().id;
     TR.act(() => { acts().confirmHandoff({ oppId: id, by: "tp", at: AT }); });
+    rerender();
+    eq(opp().stage, "fulfillment", "the partner's handoff alone does not complete it");
+    press(/got the card/);
+    eq(D.FULFILLMENT.received(S().opportunities.find((x) => x.id === id).fulfillment), true, "the collector confirmed");
     /* A completed deal is no longer "active", so it is read by id. */
     eq(S().opportunities.find((x) => x.id === id).stage, "completed",
       "and only both together complete it");
@@ -228,8 +235,8 @@ describe("D. Select Trade offers the cash path", () => {
   test("it invokes the canonical cash-only action", () => {
     const src = code(COL);
     assert(/st\.chooseCashOnly\(o\.id\)/.test(src), "wired to the canonical action");
-    assert(/chooseCashOnly: \(id\) => A\.chooseCashOnly/.test(src),
-      "which routes straight to the store");
+    assert(/chooseCashOnly: \(id\) => lg\(exec\("chooseCashOnly", \{ oppId: id \}\)\)/.test(src),
+      "which routes straight to the store");   // PHASE 1: one command through store.execute
     assert(!/mode: "cash"/.test(src), "the Collector does not set the mode itself");
   });
 

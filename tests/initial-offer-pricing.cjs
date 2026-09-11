@@ -24,7 +24,7 @@ const { describe, test, assert, eq } = require("./run.cjs");
 const React = require("react");
 const TR = require("react-test-renderer");
 const D = require("../domain/metyet-domain.js");
-const { createStore } = require("../domain/metyet-store.js");
+const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
 const { collectorView } = require("../domain/collector-view.js");
 const App = require("../dist/Collector.cjs").default;
 const { __store } = require("../dist/Collector.cjs");
@@ -331,10 +331,14 @@ describe("E. The partner's counter mirrors it, and commits nothing", () => {
   test("commitment still begins only at price finalisation", () => {
     const st = world();
     const { o } = opened(st);
-    st.actions.patchOpportunity(o, (x) => ({ ...x,
-      priceThread: [...x.priceThread, { by: "tp", type: "counter", amount: 3700, at: AT }] }));
+    /* PHASE 1: the partner's counter is the proposePrice command, and the seat
+       that agrees is the one answering it — the collector. (The partner used to
+       "agree" to its own counter.) */
+    st.execute({ partnerId: "nl" }, "proposePrice", { oppId: o, amount: 3700, at: AT });
     eq(D.INVARIANTS.copyCommittedTo("inv-1", st.get().opportunities), null, "not on counter");
-    eq(st.actions.agreePrice({ oppId: o, amount: 3700, by: "tp", at: AT }), o, "on agreement");
+    eq(st.actions.agreePrice({ oppId: o, amount: 3700, by: "tp", at: AT }).refused, D.REFUSE.notYourTurn,
+      "the partner cannot accept its own counter");
+    eq(st.actions.agreePrice({ oppId: o, amount: 3700, by: "collector", at: AT }), o, "on agreement");
     assert(D.INVARIANTS.copyCommittedTo("inv-1", st.get().opportunities), "the copy is committed");
   });
 });
@@ -366,9 +370,9 @@ describe("F. The pricing system is consistent everywhere", () => {
     const g = st.actions.addGoal({ collectorId: "casey", cardId: "k1", tier: "primary", at: AT });
     const o = st.actions.startOpportunity({ goalId: g, collectorId: "casey", partnerId: "nl",
       cardId: "k1", invId: "inv-1", listedPrice: 3950, amount: 3555, at: AT });
-    st.actions.patchOpportunity(o, (x) => ({ ...x,
-      priceThread: [...x.priceThread, { by: "tp", type: "counter", amount: 3700, at: AT }] }));
-    st.actions.agreePrice({ oppId: o, amount: 3700, by: "tp", at: AT });
+    /* PHASE 1: counter through proposePrice; the collector accepts it. */
+    st.execute({ partnerId: "nl" }, "proposePrice", { oppId: o, amount: 3700, at: AT });
+    st.actions.agreePrice({ oppId: o, amount: 3700, by: "collector", at: AT });
     const thread = st.get().opportunities.find((x) => x.id === o).priceThread;
     eq(thread.map((e) => e.type).join(","), "offer,counter,accept", "every step is recorded");
     eq(thread.map((e) => e.amount).join(","), "3555,3700,3700", "with its amount");

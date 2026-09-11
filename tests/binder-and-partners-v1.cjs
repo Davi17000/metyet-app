@@ -26,7 +26,7 @@ const fs = require("fs");
 const path = require("path");
 const D = require("../domain/metyet-domain.js");
 const M = require("../dist/MetYet.cjs");
-const { createStore } = require("../domain/metyet-store.js");
+const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
 const { collectorView } = require("../domain/collector-view.js");
 
 const ROOT = path.join(__dirname, "..");
@@ -79,12 +79,16 @@ describe("A. Availability is derived from the deals themselves", () => {
     eq(w.view().binderCopyState("b1").opp, null, "and no deal is named");
   });
 
-  test("a proposed copy is not yet spoken for", () => {
-    /* Matching the trade model: a proposal is not an acceptance, and the same
-       copy may sit in more than one until a partner decides. */
+  /* PHASE 1 (contract §4): submitting the package RESERVES each exact copy,
+     and one BinderCopy may sit in only one active submitted package at a time.
+     Superseded: "a proposed copy is not yet spoken for" (the same copy could sit
+     in several packages until a partner decided). A proposal is still not an
+     acceptance — reserved is not committed. */
+  test("a proposed copy is reserved, not yet committed", () => {
     const w = world();
     offering(w, ["b1"]);
-    eq(stateOf(w, "b1"), "available", "the partner has not accepted it");
+    eq(stateOf(w, "b1"), "reserved", "submitted, but the partner has not accepted it");
+    eq(stateOf(w, "b2"), "available", "its twin is untouched");
   });
 
   test("acceptance into an active deal claims it", () => {
@@ -109,11 +113,19 @@ describe("A. Availability is derived from the deals themselves", () => {
     rejected.st.actions.reviewTradeCards({ oppId: a.o, decision: "rejected", at: AT });
     eq(stateOf(rejected, "b1"), "available", "a rejected card is still yours to offer");
 
+    /* PHASE 1 (contract §4): withdrawal is valid only while the copy is
+       Reserved; once the partner accepts it, it is committed and the collector
+       cannot withdraw it alone. */
     const gone = world();
     const b = offering(gone, ["b1"]);
-    gone.st.actions.reviewTradeCards({ oppId: b.o, decision: "accepted", at: AT });
     gone.st.actions.withdrawTradeCard({ oppId: b.o, tradeCardId: b.rows[0].id, at: AT });
     eq(stateOf(gone, "b1"), "available", "as is a withdrawn one");
+
+    const kept = world();
+    const c = offering(kept, ["b1"]);
+    kept.st.actions.reviewTradeCards({ oppId: c.o, decision: "accepted", at: AT });
+    kept.st.actions.withdrawTradeCard({ oppId: c.o, tradeCardId: c.rows[0].id, at: AT });
+    eq(stateOf(kept, "b1"), "in-deal", "while an accepted one stays committed");
   });
 
   test("an ended deal releases it too", () => {

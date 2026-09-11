@@ -16,7 +16,7 @@
 const { describe, test, assert, eq } = require("./run.cjs");
 const D = require("../domain/metyet-domain.js");
 const E = require("../domain/metyet-entities.js");
-const { createStore } = require("../domain/metyet-store.js");
+const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
 const { collectorView } = require("../domain/collector-view.js");
 
 const AT = "2026-08-14";

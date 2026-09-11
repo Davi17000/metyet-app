@@ -25,7 +25,7 @@
 
 const { describe, test, assert, eq } = require("./run.cjs");
 const D = require("../domain/metyet-domain.js");
-const { createStore } = require("../domain/metyet-store.js");
+const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
 const { collectorView } = require("../domain/collector-view.js");
 
 const readSrc = (rel) => require("fs").readFileSync(require("path").join(__dirname, "..", rel), "utf8");
@@ -154,10 +154,11 @@ describe("B. The collector commits by offering, per goal", () => {
   });
 
   test("the rule lives in the domain, not the interface", () => {
-    const store = readSrc("domain/metyet-store.js");
-    const guard = store.slice(store.indexOf("startOpportunity({"), store.indexOf("const id = \"o\""));
+    /* PHASE 1: startOpportunity is a command (R = D.REFUSE there). */
+    const store = readSrc("domain/metyet-commands.js");
+    const guard = store.slice(store.indexOf("startOpportunity(state"), store.indexOf("const id = rid(\"o\")"));
     assert(/oneNegotiationPerGoal/.test(guard), "startOpportunity itself checks it");
-    assert(/REFUSE\.alreadyNegotiating/.test(guard), "and refuses with a reason");
+    assert(/R\.alreadyNegotiating/.test(guard), "and refuses with a reason");
   });
 });
 
@@ -273,13 +274,14 @@ describe("C. The partner commits by settling a price, per copy", () => {
   });
 
   test("the lock is enforced in the domain, reachable by either persona", () => {
-    const store = readSrc("domain/metyet-store.js");
-    const fn = store.slice(store.indexOf("agreePrice({"), store.indexOf("REVIEWING A SPECIFIC COPY"));
+    /* PHASE 1: accepting a price is the acceptPrice command. */
+    const store = readSrc("domain/metyet-commands.js");
+    const fn = store.slice(store.indexOf("acceptPrice(state"), store.indexOf("proposeTradeSelection(state"));
     assert(/copyCommittedTo\(o\.invId/.test(fn), "it checks the copy, not the goal");
-    assert(/REFUSE\.copyCommitted/.test(fn), "and refuses");
+    assert(/R\.copyCommitted/.test(fn), "and refuses");
     /* The collector app routes its accept through it rather than patching. */
     const ui = readSrc("collector/MetYetCollector.jsx");
-    assert(/A\.agreePrice\(\{ oppId: id/.test(ui),
+    assert(/exec\("acceptPrice", \{ oppId: id \}\)/.test(ui),
       "the collector's accept uses the canonical action");
   });
 });

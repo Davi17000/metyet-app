@@ -18,6 +18,7 @@
 
 const D = require("../domain/metyet-domain.js");
 const { createStore } = require("../domain/metyet-store.js");
+/* The scenario world declares its Relationship explicitly (contract §2). */
 const M = require("../dist/MetYet.cjs");
 
 /* Stable identities. Names chosen to be obvious in a screenshot. */
@@ -44,6 +45,7 @@ const seed = () => ({
     specialties: ["Vintage", "PSA", "WOTC"] }],
   goals: [], interests: [], conversations: [], opportunities: [],
   preferences: [], photoRequests: [], copyReviews: [],
+  relationships: [{ partnerId: TP, collectorId: ME, status: "accepted", at: DAY(1) }],
   /* Two copies the collector will offer, both photographed. */
   binder: [
     { id: "rev-copy-a", collectorId: ME, cardId: GIVE_A.id, market: 900,
@@ -98,33 +100,37 @@ const build = (stopAt, onStop) => {
   A.agreePrice({ oppId, amount: 3900, by: "tp", at: DAY(4) });
   mark("price-agreed");
 
-  /* Trade: two copies proposed, both accepted by the partner. */
-  const rows = [
-    { ...M.emptyTradeCard(GIVE_A.id, null, null, "rev-copy-a") },
-    { ...M.emptyTradeCard(GIVE_B.id, null, null, "rev-copy-b") },
-  ];
-  A.patchOpportunity(oppId, (o) => ({ ...o,
-    trade: { ...o.trade, submitted: true, cards: rows } }));
+  /* Trade: two copies proposed, both accepted by the partner. Submitting the
+     package reserves the exact copies; the partner's acceptance commits them. */
+  A.proposeTradeSelection({ oppId, binderIds: ["rev-copy-a", "rev-copy-b"], at: DAY(5) });
   mark("trade-selected");
   say("collector", "Adding the Blastoise and the Venusaur.", 5);
   A.reviewTradeCards({ oppId, decision: "accepted", at: DAY(5) });
   mark("trade-accepted");
 
-  /* Market value, per card, ending agreed. */
+  /* Market value, per card, ending agreed. PHASE 1: the collector opens market
+     value, and the turn stays with whoever moved last while they hold a card. */
   const ids = get().trade.cards.map((c) => c.id);
+  A.tradeMarketRespond({ oppId, tradeCardId: ids[0], by: "collector",
+    action: "propose", amount: 900, at: DAY(6) });
+  A.tradeMarketRespond({ oppId, tradeCardId: ids[1], by: "collector",
+    action: "propose", amount: 600, at: DAY(6) });
   A.tradeMarketRespond({ oppId, tradeCardId: ids[0], by: "tp",
     action: "propose", amount: 850, at: DAY(6) });
+  A.tradeMarketRespond({ oppId, tradeCardId: ids[1], by: "tp",
+    action: "accept", at: DAY(6) });
+  /* Accepting the Venusaur's market opens its trade %, which the partner opens. */
+  A.tradePercentRespond({ oppId, tradeCardId: ids[1], by: "tp",
+    action: "propose", percent: 0.75, at: DAY(6) });
   mark("market-standing");                         // awaiting the collector
   say("tp", "850 feels right for the Blastoise given the centring.", 6);
   A.tradeMarketRespond({ oppId, tradeCardId: ids[0], by: "collector",
     action: "accept", at: DAY(7) });
-  A.tradeMarketRespond({ oppId, tradeCardId: ids[1], by: "tp",
-    action: "propose", amount: 600, at: DAY(7) });
-  A.tradeMarketRespond({ oppId, tradeCardId: ids[1], by: "collector",
+  A.tradePercentRespond({ oppId, tradeCardId: ids[1], by: "collector",
     action: "accept", at: DAY(7) });
   mark("market-agreed");
 
-  /* Percentage, per card, ending agreed. */
+  /* Percentage on the Blastoise: the partner opens, the collector counters. */
   A.tradePercentRespond({ oppId, tradeCardId: ids[0], by: "tp",
     action: "propose", percent: 0.8, at: DAY(8) });
   mark("percent-standing");
@@ -133,23 +139,20 @@ const build = (stopAt, onStop) => {
     action: "propose", percent: 0.85, at: DAY(8) });
   A.tradePercentRespond({ oppId, tradeCardId: ids[0], by: "tp",
     action: "accept", at: DAY(9) });
-  A.tradePercentRespond({ oppId, tradeCardId: ids[1], by: "tp",
-    action: "propose", percent: 0.75, at: DAY(9) });
-  A.tradePercentRespond({ oppId, tradeCardId: ids[1], by: "collector",
-    action: "accept", at: DAY(9) });
   mark("value-complete");                          // closes into Deal
 
-  /* Cash: a standing proposal, then agreement. Direction stays signed. */
+  /* Cash. The partner confirms first; a new figure from the collector clears
+     that confirmation and hands the turn back; the partner confirms the new
+     figure, and the collector's confirmation completes final agreement. */
+  A.dealAgree({ oppId, by: "tp", at: DAY(10) });
   A.dealAdjustRespond({ oppId, by: "collector", action: "propose",
     amount: 2800, at: DAY(10) });
   mark("cash-standing");
   say("tp", "2800 works. Let us get it shipped.", 10);
-  A.dealAdjustRespond({ oppId, by: "tp", action: "accept", at: DAY(11) });
-  mark("cash-agreed");
-
-  /* Both agreements, then the handoff. */
-  A.dealAgree({ oppId, by: "collector", at: DAY(11) });
   A.dealAgree({ oppId, by: "tp", at: DAY(11) });
+  mark("cash-agreed");                             // partner confirmed 2800
+
+  A.dealAgree({ oppId, by: "collector", at: DAY(11) });
   mark("handoff-open");
   A.proposeFulfillment({ oppId, plan: { method: "Ship", where: "Duluth, Minnesota",
     when: "Friday" }, at: DAY(12) });

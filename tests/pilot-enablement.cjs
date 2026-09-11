@@ -44,9 +44,13 @@ const build = (dev, demo, out) => {
   delete require.cache[require.resolve(p)];
   return require(p).default;
 };
-let hostedC = null, plainC = null;
+let hostedC = null, plainC = null, devC = null;
 const hosted = () => (hostedC = hostedC || build(false, true, "PilotHosted.cjs"));
 const plain = () => (plainC = plainC || build(false, false, "PilotPlain.cjs"));
+/* PHASE 1 FINAL CLOSEOUT: the partner-response helper acts as the Trusted
+   Partner, so it is DEV-only. Its behaviour is exercised in an engineering
+   build; the hosted pilot (DEMO on, DEV off) must not show it. */
+const dev = () => (devC = devC || build(true, true, "PilotDev.cjs"));
 
 const txt = (n) => {
   if (!n) return "";
@@ -139,8 +143,8 @@ describe("A. Identity owns the top row", () => {
 
 describe("B. The partner can be answered, canonically", () => {
   /* Reach the point where the partner actually has something to answer. */
-  const atPartnersTurn = () => {
-    const r = enter(hosted());
+  const atPartnersTurn = (Shell = dev()) => {
+    const r = enter(Shell);
     scenario(r, "agree-price");
     expandAll(r);
     /* The scenario opens on the collector's move (the partner has countered),
@@ -157,7 +161,9 @@ describe("B. The partner can be answered, canonically", () => {
   };
 
   test("nothing is offered when the partner has no move to make", () => {
-    const r = enter(hosted());
+    /* PHASE 1 FINAL CLOSEOUT: asked of the DEV build, where the helper exists,
+       so its absence here is about the turn and not about the gate. */
+    const r = enter(dev());
     scenario(r, "agree-price");
     expandAll(r);
     /* The partner has already countered: it is the collector's turn, so there
@@ -166,6 +172,9 @@ describe("B. The partner can be answered, canonically", () => {
   });
 
   test("once it is the partner's turn, the response appears", () => {
+    /* PHASE 1 FINAL CLOSEOUT: superseded "appears in the hosted pilot". In the
+       pilot the same turn offers nothing — the tester switches persona. */
+    eq(cls(atPartnersTurn(hosted()), "dpr").length, 0, "the hosted pilot never offers it");
     const r = atPartnersTurn();
     const box = cls(r, "dpr")[0];
     assert(box, "the partner-response control is offered");
@@ -197,14 +206,17 @@ describe("B. The partner can be answered, canonically", () => {
     assert(!/patchOpportunity/.test(src), "and patches no fields directly");
     assert(!/stage:/.test(src), "and writes no stage");
     /* The same action the Trusted Partner's own accept routes through. */
-    assert(/store\.actions\.agreePrice\(\{ oppId, by/.test(TP),
+    /* PHASE 1: the partner seat issues the acceptPrice command, which the
+       simulator's agreePrice also resolves to (partnerDemo). */
+    assert(/run\(actor, "acceptPrice", \{ oppId \}\)/.test(TP)
+      && /agreePrice: \(\{ oppId \}\) => on\(oppId, "acceptPrice", \{\}\)/.test(COL),
       "which is exactly what the real partner seat calls");
   });
 
   test("using it produces real canonical state", () => {
     const r = atPartnersTurn();
     const box = cls(r, "dpr")[0];
-    if (!box) return;
+    assert(box, "the DEV build offers the response");
     const accept = box.findAllByType("button").find((b) => /accepts/.test(txt(b)));
     assert(accept, "an accept response");
     click(accept);
@@ -231,12 +243,26 @@ describe("B. The partner can be answered, canonically", () => {
   });
 });
 
-describe("C. It is demo scaffolding, not product, and not engineering", () => {
-  test("it is gated on DEMO, never on DEV", () => {
+/* PHASE 1 FINAL CLOSEOUT: superseded "demo scaffolding, not engineering". Making
+   the Trusted Partner's move from the Collector screen is persona impersonation,
+   so it is engineering tooling now, exactly like the partner workspace's
+   Collector simulation. */
+describe("C. It is engineering tooling, never product or pilot", () => {
+  test("it is gated on DEV, never on DEMO", () => {
     const src = COL.slice(COL.indexOf("function DemoPartnerResponse("),
       COL.indexOf("function SimulateTP("));
-    assert(/if \(!DEMO \|\| !o\) return null;/.test(src), "DEMO gates it");
-    assert(!/!DEV/.test(src), "and it does not depend on engineering mode");
+    assert(/if \(!PARTNER_SIMULATION \|\| !o\) return null;/.test(src), "DEV gates it");
+    assert(/const PARTNER_SIMULATION = DEV;/.test(COL), "through the canonical DEV flag");
+    assert(!/!DEMO/.test(src), "and DEMO alone never shows it");
+  });
+
+  test("the hosted pilot shows neither it nor the simulator", () => {
+    const r = enter(hosted());
+    ["agree-price", "select-trade", "value-trade", "deal", "fulfillment"].forEach((s) => {
+      scenario(r, s);
+      expandAll(r);
+      eq(cls(r, "dpr").length, 0, "no partner-response control at " + s);
+    });
   });
 
   test("a customer build shows neither it nor the simulator", () => {

@@ -1,7 +1,14 @@
+/* PHASE 1 CLOSEOUT: this suite drives the Trusted Partner workspace's
+   Collector simulation (SimBlock — acting as the collector from the partner's
+   screen). That is engineering tooling and now renders only under DEV
+   (shared/dev-flag.js), so the suite runs in DEV. Product and pilot builds
+   never show it: tests/phase1-closeout.cjs. */
+process.env.METYET_DEV = "1";
+
 const { describe, test, assert, eq } = require("./run.cjs");
 const TR = require("react-test-renderer");
 const { percentageOf, amountFromPercentage } = require("../dist/MetYet.test.cjs");
-const { render, text, allText, btn, btns, btnExact, click, byClass, byClassIn, goProfile } = require("./util.cjs");
+const { render, text, allText, btn, btns, btnExact, click, byClass, byClassIn, goProfile, answerStandingTradePct } = require("./util.cjs");
 
 /* Hiro Tanaka holds the seeded Value Trade opportunity. The market phase opens with
    no proposal on the table, so the collector proposes first and the TP then owns the
@@ -12,7 +19,7 @@ const valueTrade = () => {
   const r = render();
   goProfile(r, "Hiro Tanaka");
   click(btns(r, "Open").filter((b) => text(b).trim() === "Open")[0]);
-  return r;
+  return answerStandingTradePct(r);   // PHASE 1: one Value Trade turn — see util.cjs
 };
 /* Trade % now renders as a .pn block too, so the market block is selected by its own
    vocabulary rather than by position. */
@@ -311,18 +318,28 @@ describe("Market counter CTA reflects submittability", () => {
   });
 });
 
-/* The collector's binder value is a PRIVATE reference. It may seed their own
-   proposal field, but it must never reach the TP until they press send. */
+/* The collector's binder value is a PRIVATE reference. It must never reach the TP
+   until the collector sends a figure.
+
+   PHASE 1 changes to this group, both from the contract:
+   - The fixture moved from James Rivera's Chansey to Priya Raman's N (Full Art).
+     Chansey is COMMITTED in James Rivera's active Value Trade, and one exact
+     BinderCopy may be in only one active package (contract §4), so it can no
+     longer be offered into a second Opportunity. Every open-to-trade copy James
+     holds is reserved, committed or traded.
+   - The TP screen used to PRE-FILL the demo collector seat with this private
+     value (audit D-5, Invariant 8 leak). That pre-fill is removed; the test that
+     required it now requires its absence. */
 describe("The private reference value stays private until submitted", () => {
-  const PRIVATE = 320;                                  // James Rivera's binder value for Chansey
+  const PRIVATE = 450;                                  // Priya Raman's binder value for N (Full Art)
 
   /* Drive a binder copy all the way to the market phase through the real UI. */
   const toMarket = () => {
     const r = render();
-    goProfile(r, "James Rivera");
+    goProfile(r, "Priya Raman");
     click(btns(r, "Open").filter((b) => text(b).trim() === "Open")[0]);
     click(btns(r, "Accept $")[0]);                      // price agreed -> Select Trade draft
-    const add = btns(r, "+ ").find((b) => text(b).includes("Chansey"));
+    const add = btns(r, "+ ").find((b) => text(b).includes("N (Full Art)"));
     assert(add, "the binder copy is eligible");
     click(add);
     click(btns(r, "Send package for review")[0]);
@@ -334,7 +351,7 @@ describe("The private reference value stays private until submitted", () => {
 
   test("it is absent from the TP-facing Trade Binder", () => {
     const r = render();
-    goProfile(r, "James Rivera");
+    goProfile(r, "Priya Raman");
     const t = byClass(r, "cp-bind").map(text).join(" ");
     assert(!t.includes(String(PRIVATE)), "the tile never shows it");
     assert(!/\$\d/.test(t), "nor any other monetary value");
@@ -342,7 +359,7 @@ describe("The private reference value stays private until submitted", () => {
 
   test("it is absent from the copy inspection drawer", () => {
     const r = render();
-    goProfile(r, "James Rivera");
+    goProfile(r, "Priya Raman");
     click(byClass(r, "cp-bind-view")[0]);
     const d = text(byClass(r, "drawer")[0]);
     assert(!/Collector value/.test(d), "no value row in the drawer");
@@ -351,10 +368,10 @@ describe("The private reference value stays private until submitted", () => {
 
   test("it is absent from Select Trade card review", () => {
     const r = render();
-    goProfile(r, "James Rivera");
+    goProfile(r, "Priya Raman");
     click(btns(r, "Open").filter((b) => text(b).trim() === "Open")[0]);
     click(btns(r, "Accept $")[0]);
-    click(btns(r, "+ ").find((b) => b && text(b).includes("Chansey")));
+    click(btns(r, "+ ").find((b) => b && text(b).includes("N (Full Art)")));
     click(btns(r, "Send package for review")[0]);
     const review = byClass(r, "st-card").map(text).join(" ");
     assert(!review.includes(String(PRIVATE)), "not in the review card: " + review.slice(0, 140));
@@ -368,10 +385,14 @@ describe("The private reference value stays private until submitted", () => {
     assert(!row.includes(String(PRIVATE)), "and nothing in the trade row: " + row.slice(0, 140));
   });
 
-  test("the collector's own field is prepopulated with it", () => {
+  /* PHASE 1 (audit D-5): superseded "the collector's own field is prepopulated
+     with it". The demo collector seat is rendered on the PARTNER's screen, so a
+     pre-filled private value was a leak. */
+  test("the TP screen never pre-fills it, not even in the demo collector seat", () => {
     const r = toMarket();
-    eq(marketBlock(r).findAllByType("input").map((i) => i.props.value).join(""), String(PRIVATE),
-      "offered back to them as a starting point");
+    eq(marketBlock(r).findAllByType("input").map((i) => i.props.value).join(""), "",
+      "the private value is not placed on the partner's screen");
+    assert(!text(marketBlock(r)).includes(String(PRIVATE)), "nor shown anywhere in the block");
   });
 
   test("prepopulation creates no proposal, event or transition", () => {

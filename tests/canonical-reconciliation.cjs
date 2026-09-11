@@ -25,7 +25,7 @@ const fs = require("fs");
 const path = require("path");
 const D = require("../domain/metyet-domain.js");
 const M = require("../dist/MetYet.cjs");
-const { createStore } = require("../domain/metyet-store.js");
+const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
 
 const ROOT = path.join(__dirname, "..");
 const COL = fs.readFileSync(path.join(ROOT, "collector", "MetYetCollector.jsx"), "utf8");
@@ -120,10 +120,17 @@ describe("B. Turn logic and projections cannot disagree", () => {
       const turn = D.nextActor(o);
       /* The rail's question and the receipt's question resolve to the same
          underlying facts — that identity is the whole point of the fix. */
-      const received = F.received(o.fulfillment);
-      const expected = received ? "partner" : "collector";
+      /* PHASE 1 (contract §4, Fulfillment): the collector confirms the plan,
+         the partner confirms the handoff FIRST, the collector's receipt SECOND
+         (which completes). Superseded: receipt before handoff, and the partner
+         holding the turn after receipt. Every fact is read through the
+         canonical reader, so legacy spellings resolve identically. */
+      const fx = o.fulfillment;
+      const expected = !fx.collectorConfirmedPlan ? "collector"
+        : !F.handedOff(fx) ? "partner"
+          : !F.received(fx) ? "collector" : null;
       eq(turn.actor, expected,
-        "the turn follows the canonical receipt fact, not one seat's spelling");
+        "the turn follows the canonical handoff and receipt facts, not one seat's spelling");
     });
   });
 
@@ -164,7 +171,13 @@ describe("C. Collector trade cards use the canonical shape", () => {
 
   test("the factory is shared, not re-declared", () => {
     assert(typeof M.emptyTradeCard === "function", "the canonical factory is exported");
-    assert(/emptyTradeCard/.test(code(COL)), "and the Collector uses it");
+    /* PHASE 1: the Collector submits binder ids; the proposeTradeSelection
+       command builds every row with the one domain factory, which the partner
+       workspace re-exports rather than re-declaring. */
+    const cmd = code(require("fs").readFileSync(require("path").join(__dirname, "..", "domain", "metyet-commands.js"), "utf8"));
+    assert(/D\.emptyTradeCard\(/.test(cmd), "and the Collector's submission uses it");
+    assert(/const emptyTradeCard = SharedID\.emptyTradeCard;/.test(code(require("fs").readFileSync(require("path").join(__dirname, "..", "src", "MetYet.jsx"), "utf8"))),
+      "with no second declaration");
     eq((code(COL).match(/inclusion: "proposed"/g) || []).length, 0,
       "the Collector no longer hand-builds a reduced card");
   });

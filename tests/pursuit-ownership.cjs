@@ -290,8 +290,9 @@ describe("D. The handoffs still work end to end", () => {
 
 describe("E. Nothing underneath moved", () => {
   test("no domain action, invariant or projection changed", () => {
+    /* PHASE 1: canonical actions are commands in the command layer. */
     ["requestPhotos", "addCopyPhotos", "startOpportunity"].forEach((fn) =>
-      assert(new RegExp(fn + "\\(").test(readSrc("domain/metyet-store.js")),
+      assert(new RegExp(fn + "\\(state, a").test(readSrc("domain/metyet-commands.js")),
         fn + " is still the canonical action"));
     assert(D.INVARIANTS.copyPhotographed, "the photo invariant is intact");
     eq(D.PURSUIT_STEPS.length, 6, "six visible pursuit steps");
