@@ -61,6 +61,13 @@
      D-4  Activity is partner-private. A row reaches only the partner named in
           its `partnerId`; a row without one has no established owner and is
           projected to nobody. Collectors receive no activity.
+     READ POSITION  An Opportunity's `viewedAt` is each seat's own reading
+          position ({ tp: {...}, collector: {...} }). Canonical state keeps both;
+          a projection carries only the actor's own seat, and omits the field
+          entirely when the actor has never opened the deal — so its presence
+          cannot say the other side has. Marking a deal viewed writes nothing
+          else, so no other projected field moves either. There are no read
+          receipts (Phase 3 Batch 1).
      COPY STATUS  No status in a projection derives from a deal the actor is
           not in. A copy held or consumed by someone else's deal leaves the
           actor's supply exactly as a sold, traded or removed copy does, so
@@ -149,6 +156,17 @@ const INTEREST_FOR_COLLECTOR = ["partnerId", "binderId", "at"];
    private configuration are removed for the other side (D-3). */
 const OPPORTUNITY_PARTNER_PRIVATE = ["tradeRate"];
 
+/* READ POSITION — the actor's own seat, or nothing. `out` is already a fresh
+   copy, so it is edited in place. */
+const READ_POSITION = "viewedAt";
+function ownReadPosition(out, seat) {
+  if (!has(out, READ_POSITION)) return out;
+  const all = out[READ_POSITION];
+  delete out[READ_POSITION];
+  if (all && typeof all === "object" && has(all, seat)) out[READ_POSITION] = { [seat]: all[seat] };
+  return out;
+}
+
 /* A trade package is the collector's private draft until submitted (contract §3
    "Draft negotiation input — own, until submitted"; §4 Select Trade). Commands
    submit a package in one step, so canonical state normally never holds an
@@ -157,7 +175,7 @@ const submittedRows = (o) => (o.trade && o.trade.submitted === true ? list(o.tra
 const opportunityForPartner = (o) => {
   const out = clone(o);
   if (out.trade && out.trade.submitted !== true) out.trade = { ...out.trade, cards: [] };
-  return out;
+  return ownReadPosition(out, "tp");
 };
 
 /* ------------------------------------------------ A COPY SEEN BY A NON-OWNER
@@ -252,7 +270,7 @@ function projectForCollector(state, me) {
     interests: list(state.interests)
       .filter((x) => myBinderIds.has(x.binderId) && related(x.partnerId))
       .map((x) => pick(x, INTEREST_FOR_COLLECTOR)),
-    opportunities: opportunities.map((o) => omit(o, OPPORTUNITY_PARTNER_PRIVATE)),
+    opportunities: opportunities.map((o) => ownReadPosition(omit(o, OPPORTUNITY_PARTNER_PRIVATE), "collector")),
     conversations: clone(conversations),
     activity: [],                                          // D-4: partner-private
     photoRequests: clone(photoRequests),

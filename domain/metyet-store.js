@@ -11,6 +11,14 @@
    Goal locks and physical-copy rules, and either applies one complete state
    change or refuses without changing anything.
 
+   THE RUNTIME (Phase 3). The command layer takes its clock and its new record
+   ids from an injected runtime (metyet-runtime.js). This store is the
+   prototype's in-process stand-in for a server, so by default it injects the
+   explicit PROTOTYPE COMPATIBILITY ADAPTER, prototypeRuntime(): the persona
+   shells' demo `at` and the fixtures' named ids are honoured exactly as before.
+   Pass { runtime } to run the same store on an authoritative runtime — a server
+   or a test does, and then no caller-supplied time or id is used.
+
    PRODUCT SURFACE:  get · sub · execute · actorFor · cardById
    TEST / FIXTURE SURFACE (never used by product code; a guard test enforces
    it):  fixture.set · fixture.reset · fixture.patchOpportunity, and the legacy
@@ -21,8 +29,13 @@
 
 const D = require("./metyet-domain.js");
 const C = require("./metyet-commands.js");
+const RT = require("./metyet-runtime.js");
 
-function createStore(seed) {
+function createStore(seed, options = {}) {
+  /* Naming `runtime` and passing nothing usable is a wiring error, never a
+     quiet fall back to the prototype adapter. */
+  const runtime = "runtime" in options ? options.runtime : RT.prototypeRuntime();
+  if (!RT.isRuntime(runtime)) throw new TypeError("createStore: runtime must come from metyet-runtime.js");
   let s = {
     ...seed,
     catalog: seed.catalog,
@@ -49,7 +62,7 @@ function createStore(seed) {
 
   /* ------------------------------------------------ THE AUTHORITATIVE BOUNDARY */
   const execute = (actor, command, payload) => {
-    const r = C.execute(s, actor, command, payload);
+    const r = C.execute(s, actor, command, payload, runtime);
     if (!r.ok) return { ok: false, refused: r.refused };
     if (r.state !== s) set(r.state);
     return { ok: true, value: r.value };

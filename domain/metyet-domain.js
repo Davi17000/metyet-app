@@ -12,6 +12,8 @@
    VISIBILITY lives here, because visibility is a domain rule.
    ========================================================================== */
 
+const { randomToken } = require("./metyet-runtime.js");
+
 /* ---------------------------------------------------------------- IDENTITY */
 
 /* A card identity is exact. These eight dimensions are the whole of it, and the
@@ -974,14 +976,16 @@ const findThread = (threads, collectorId, partnerId, card) => {
   return (threads || []).find((t) => t.key === k) || null;
 };
 
-/* Returns the next threads array. Pure — callers decide how to store it. */
+/* Returns the next threads array. Pure — callers decide how to store it.
+   An entry's id and time are the caller's runtime's (Phase 3): the command layer
+   passes ctx.id("e") and ctx.now(). A helper that read the process clock or made
+   up an id would be a second, untrusted source of both, so it refuses instead. */
 function appendThreadEntry(threads, { collectorId, partnerId, card, cardId, oppId, entry, at, id }) {
+  if (!id || !at) {
+    throw new TypeError("appendThreadEntry: id and at are required — they come from the command runtime");
+  }
   const k = threadKey(collectorId, partnerId, card);
-  const stamped = {
-    id: id || "e" + Math.random().toString(36).slice(2, 10),
-    at: at || new Date().toISOString(),
-    ...entry,
-  };
+  const stamped = { id, at, ...entry };
   const found = (threads || []).find((t) => t.key === k);
   if (found) {
     return (threads || []).map((t) => (t.key === k
@@ -1085,8 +1089,11 @@ const emptyDeal = () => ({ collectorAgreed: false, tpAgreed: false, adjThread: [
 const emptyFulfillment = () => ({ method: null, show: "", date: "", time: "",
   location: "", note: "", proposedAt: null, collectorConfirmedPlan: false,
   revisionRequested: null, tpHandoff: false, collectorReceipt: false });
+/* The row id here labels a DRAFT row (the Trusted Partner's client-side package
+   editor and test fixtures). A row that enters canonical state is re-identified
+   by the command runtime at submission (proposeTradeSelection). */
 const emptyTradeCard = (cardId, photos, cert, binderId) => ({
-  id: "tc" + cardId + "-" + Math.random().toString(36).slice(2, 7),
+  id: "tc" + cardId + "-" + randomToken(8),
   cardId, binderId: binderId || null, inclusion: "proposed", reviewedAt: null,
   withdrawn: false, withdrawnAt: null,
   collectorMarket: null, tpMarket: null, agreedMarket: null, valueThread: [],
