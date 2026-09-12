@@ -82,6 +82,7 @@ function createApp({
   repository,
   accounts,
   verifier,
+  checkSchema,
   runtime = RT.systemRuntime(),
   logger = false,
   bodyLimit = DEFAULT_BODY_LIMIT,
@@ -122,8 +123,19 @@ function createApp({
   /* ------------------------------------------------------------ HEALTH */
   app.get("/api/health/live", async () => ({ status: "ok" }));
 
+  /* Ready means: the database answers AND its schema is the one this build
+     expects. A process that starts before its migrations have been applied says
+     so, instead of failing every request. */
   app.get("/api/health/ready", async (request, reply) => {
     try {
+      if (checkSchema) {
+        const schema = await checkSchema();
+        if (!schema.migrated || schema.pending.length) {
+          request.log.warn({ pending: schema.pending }, "schema is not up to date");
+          reply.code(503);
+          return { status: "unavailable", reason: "migrations-pending" };
+        }
+      }
       await repository.readVersion();
       return { status: "ready" };
     } catch (error) {

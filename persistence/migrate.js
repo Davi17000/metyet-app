@@ -64,4 +64,20 @@ async function migrate(db, { migrations = readMigrations() } = {}) {
   });
 }
 
-module.exports = { migrate, readMigrations, checksum, MIGRATIONS_DIR, MIGRATION_LOCK_SQL };
+/* What is applied and what is pending, without applying anything. The server
+   uses this for readiness: a process that starts before its migrations have run
+   should report itself unready rather than serve errors. */
+async function migrationStatus(db, { migrations = readMigrations() } = {}) {
+  const all = migrations.map((m) => m.version);
+  let applied = [];
+  try {
+    applied = await db.transaction(async (tx) =>
+      (await tx.query("select version from metyet.schema_migrations order by version")).rows.map((r) => r.version),
+    { readOnly: true });
+  } catch (error) {
+    return { migrated: false, applied: [], pending: all };
+  }
+  return { migrated: true, applied, pending: all.filter((v) => !applied.includes(v)) };
+}
+
+module.exports = { migrate, migrationStatus, readMigrations, checksum, MIGRATIONS_DIR, MIGRATION_LOCK_SQL };
