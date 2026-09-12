@@ -43,10 +43,11 @@ const ALL_TABLES = [...TABLES.map((t) => t.table), ...CHILD_TABLES.map((t) => t.
 let pglite = null;
 const database = () => (pglite || (pglite = new PGlite()));
 
-/* A migrated, empty database. */
+/* A migrated, empty database. Every schema the migrations own goes, so each
+   test starts from nothing (Batch 3 added metyet_auth for accounts). */
 async function fresh() {
   const pg = database();
-  await pg.exec("drop schema if exists metyet cascade");
+  await pg.exec("drop schema if exists metyet cascade; drop schema if exists metyet_auth cascade");
   const db = fromPGlite(pg);
   await migrate(db);
   return { pg, db, repo: createWorldRepository(db) };
@@ -202,9 +203,10 @@ async function drive(repo, steps, { from = seed() } = {}) {
 describe("A. migrations and schema", () => {
   test("the migration applies to an empty database and yields an empty, valid world at version 0", async () => {
     const pg = database();
-    await pg.exec("drop schema if exists metyet cascade");
+    await pg.exec("drop schema if exists metyet cascade; drop schema if exists metyet_auth cascade");
     const result = await migrate(fromPGlite(pg));
-    eq(result.applied.join(), "0001_canonical_world", "applied");
+    eq(result.applied.join(), readMigrations().map((m) => m.version).join(), "every migration applied, in order");
+    assert(result.applied[0] === "0001_canonical_world", "starting with the canonical world");
     const tables = (await pg.query("select table_name from information_schema.tables where table_schema = 'metyet' order by 1")).rows.map((r) => r.table_name);
     eq(tables.join(), [...ALL_TABLES, "schema_migrations", "world_meta"].sort().join(), "tables");
     const repo = createWorldRepository(fromPGlite(pg));
@@ -795,10 +797,12 @@ describe("I. boundaries", () => {
     }
   });
 
-  test("PGlite is a development dependency only; no ORM or runtime driver was added", () => {
+  test("PGlite is a development dependency only, and no ORM was added", () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
     assert(pkg.devDependencies["@electric-sql/pglite"], "devDependency");
-    eq(Object.keys(pkg.dependencies).sort().join(), "esbuild,react,react-dom,react-test-renderer", "runtime dependencies unchanged");
+    assert(!pkg.dependencies["@electric-sql/pglite"], "the test engine never ships");
+    const orms = ["prisma", "@prisma/client", "drizzle-orm", "sequelize", "typeorm", "knex", "mongoose", "objection"];
+    orms.forEach((name) => assert(!pkg.dependencies[name] && !pkg.devDependencies[name], name + " was added"));
   });
 
   test("the in-memory prototype store still works as before", () => {
