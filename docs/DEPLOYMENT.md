@@ -177,8 +177,14 @@ in-process store, and photo storage.
 
 - **Readiness is 503 with `migrations-pending`** — the migration step was
   skipped. Run `npm run db:migrate`.
-- **Readiness is 503 with no reason** — the database is unreachable. Check the
-  connection string is the session pooler URI and that `DATABASE_SSL=require`.
+- **Readiness is 503 with `schema-integrity`** — a migration file that had
+  already been applied was edited afterwards, so the database and this build no
+  longer agree about the schema. Restore the original file and add a new
+  migration; `npm run db:status` names the migrations that drifted.
+- **Readiness is 503 with no reason** — the database is unreachable, or refused
+  the connection. This is deliberately *not* reported as a missing migration.
+  Check the connection string is the session pooler URI and that
+  `DATABASE_SSL=require`.
 - **Every request is 401** — the project is still issuing legacy HS256 tokens,
   or `SUPABASE_URL` points at a different project. Check the JWKS endpoint.
 - **Every request is 403 `account_not_provisioned`** — the signed-in subject has

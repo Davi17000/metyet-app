@@ -72,6 +72,10 @@ const OPERATIONS = {
     }
     say(`schema:      ${schema.applied.length} applied, ${schema.pending.length} pending`
       + `${schema.pending.length ? ` (${schema.pending.join(", ")})` : ""}`);
+    if (schema.changed.length) {
+      say(`integrity:   ${schema.changed.join(", ")} no longer match the files in this build.`);
+      say("             Restore the original file and add a new migration instead.");
+    }
     const world = await repository.loadWorld();
     const version = await repository.readVersion();
     const counts = Object.entries(world).filter(([, rows]) => rows.length)

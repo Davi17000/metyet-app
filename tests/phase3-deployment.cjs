@@ -200,6 +200,96 @@ describe("C. the server never migrates itself", () => {
     eq(JSON.stringify(ready.json()), JSON.stringify({ status: "ready" }));
   });
 
+  /* A database that cannot be reached is a different problem from a database
+     that has not been migrated, and the fixes are different. Reporting the first
+     as the second sends an operator to run a migration command that will fail
+     for the same reason the server did. */
+  test("a database failure is not mistaken for a schema that was never migrated", async () => {
+    const context = await migrated();
+    for (const failure of [
+      Object.assign(new Error("connect ECONNREFUSED 10.0.0.1:5432"), { code: "ECONNREFUSED" }),
+      Object.assign(new Error("password authentication failed for user \"metyet\""), { code: "28P01" }),
+      Object.assign(new Error("permission denied for schema metyet"), { code: "42501" }),
+      Object.assign(new Error("self signed certificate in certificate chain"), { code: "SELF_SIGNED_CERT_IN_CHAIN" }),
+      new Error("the driver fell over"),
+    ]) {
+      const broken = { kind: "broken", transaction: async () => { throw failure; } };
+      let threw = null;
+      try { await migrationStatus(broken); } catch (e) { threw = e; }
+      eq(threw, failure, `${failure.code || "no code"} propagates instead of being reported as unmigrated`);
+
+      const app = createApp({ repository: context.repository, accounts: context.accounts,
+        verifier: { verify: async () => ({ subject: "sub" }) }, runtime: RT.systemRuntime(),
+        checkSchema: () => migrationStatus(broken) });
+      const ready = await app.inject({ method: "GET", url: "/api/health/ready" });
+      eq(ready.statusCode, 503, ready.body);
+      eq(ready.json().reason, undefined, "generically unavailable, not migrations-pending");
+      eq(JSON.stringify(ready.json()), JSON.stringify({ status: "unavailable" }), "and nothing about the database leaks out");
+    }
+  });
+
+  /* The one database error that does mean "never migrated" is the bookkeeping
+     table (or its schema) not existing, and that is read from the SQLSTATE
+     rather than the message. */
+  test("only a missing migration table reads as never migrated", async () => {
+    const context = await blank();
+    const status = await migrationStatus(context.db);
+    eq(status.migrated, false);
+    eq(status.pending.length, readMigrations().length, "everything is pending");
+    eq(status.changed.length, 0);
+    for (const code of ["42P01", "3F000"]) {
+      const absent = { kind: "absent", transaction: async () => { throw Object.assign(new Error("relation does not exist"), { code }); } };
+      eq((await migrationStatus(absent)).migrated, false, code + " means the schema is not there yet");
+    }
+  });
+
+  test("asking whether the schema is ready applies nothing to it", async () => {
+    const context = await blank();
+    const app = createApp({ repository: context.repository, accounts: context.accounts,
+      verifier: { verify: async () => ({ subject: "sub" }) }, runtime: RT.systemRuntime(),
+      checkSchema: () => migrationStatus(context.db) });
+    for (let i = 0; i < 3; i += 1) {
+      eq((await app.inject({ method: "GET", url: "/api/health/ready" })).statusCode, 503);
+    }
+    const schemas = (await context.pg.query("select count(*)::int as n from information_schema.schemata where schema_name in ('metyet','metyet_auth')")).rows[0].n;
+    eq(schemas, 0, "readiness created nothing, however often it is asked");
+    eq((await migrationStatus(context.db)).applied.length, 0, "and applied nothing");
+  });
+
+  /* migrate() refuses a migration file that was edited after it ran. Readiness
+     has to agree: the database and the build disagree about what the schema is,
+     and a green health check would hide that behind a service that looks fine. */
+  test("an applied migration that was edited afterwards cannot produce readiness 200", async () => {
+    const context = await migrated();
+    const real = readMigrations();
+    const edited = real.map((m, i) => (i === 0 ? { ...m, sql: m.sql + "\n-- a later edit\n", checksum: "0".repeat(64) } : m));
+
+    const drifted = await migrationStatus(context.db, { migrations: edited });
+    eq(drifted.migrated, true, "the bookkeeping table is still there");
+    eq(drifted.pending.length, 0, "and nothing is pending — only the contents disagree");
+    eq(drifted.changed.join(), real[0].version, "the drifted migration is named");
+
+    const app = createApp({ repository: context.repository, accounts: context.accounts,
+      verifier: { verify: async () => ({ subject: "sub" }) }, runtime: RT.systemRuntime(),
+      checkSchema: () => migrationStatus(context.db, { migrations: edited }) });
+    const ready = await app.inject({ method: "GET", url: "/api/health/ready" });
+    eq(ready.statusCode, 503, ready.body);
+    eq(ready.json().reason, "schema-integrity", "a stable reason, and not the same one as a pending migration");
+    eq(JSON.stringify(ready.json()), JSON.stringify({ status: "unavailable", reason: "schema-integrity" }),
+      "which version, and why, stays in the log");
+
+    /* Undoctored, the same database is ready — so this is drift, not breakage. */
+    const honest = createApp({ repository: context.repository, accounts: context.accounts,
+      verifier: { verify: async () => ({ subject: "sub" }) }, runtime: RT.systemRuntime(),
+      checkSchema: () => migrationStatus(context.db) });
+    eq((await honest.inject({ method: "GET", url: "/api/health/ready" })).statusCode, 200);
+
+    /* And the operator command says the same thing the health check does. */
+    const said = await cli(["status"], context);
+    eq(said.code, 0, said.out);
+    assert(!/integrity/.test(said.out), "nothing has drifted in the real files");
+  });
+
   test("the production bootstrap applies no migration itself", () => {
     const index = fs.readFileSync(path.join(ROOT, "server", "index.js"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
     assert(!/[^a-zA-Z]migrate\s*\(/.test(index), "server/index.js never calls migrate()");
