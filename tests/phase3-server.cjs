@@ -744,15 +744,35 @@ describe("J. boundaries and composition", () => {
   });
 
   test("the server owns no product rule and no second way to write", () => {
+    /* Two files are allowed what the rest are not, and only these two:
+       server/bootstrap.js writes the world directly — but only the empty one,
+       only when there is none, and only from an operator command (Batch 4's
+       suite holds it to that); server/db-pool.js is where the driver lives. */
+    const MAY_WRITE_WORLD = ["server/bootstrap.js"];
+    const MAY_KNOW_DRIVER = ["server/db-pool.js"];
     for (const [file, text] of serverFiles()) {
       const body = code(text);
       assert(!/metyet-commands|isRelated|nextActor|COMMANDS\[/.test(body), file + " reimplements or reaches around the command layer");
-      assert(!/saveWorld\(/.test(body), file + " writes state outside executeCommand");
-      if (file !== "server/index.js") assert(!/require\(["']pg["']\)/.test(body), file + " knows a database driver");
+      if (!MAY_WRITE_WORLD.includes(file)) assert(!/saveWorld\(/.test(body), file + " writes state outside executeCommand");
+      if (!MAY_KNOW_DRIVER.includes(file)) assert(!/require\(["']pg["']\)/.test(body), file + " knows a database driver");
     }
     const app = code(fs.readFileSync(path.join(ROOT, "server", "app.js"), "utf8"));
     assert(/executeCommand\(repository/.test(app), "writes go through the canonical command transaction");
     assert(/projectForActor\(/.test(app), "and reads through the projection");
+    /* The exemption cannot leak into a request: nothing the HTTP app loads can
+       reach bootstrap, so no route can create or overwrite a world. */
+    const reachable = new Set();
+    const follow = (relative) => {
+      if (reachable.has(relative)) return;
+      reachable.add(relative);
+      const full = path.join(ROOT, relative);
+      if (!fs.existsSync(full)) return;
+      for (const match of code(fs.readFileSync(full, "utf8")).matchAll(/require\(["'](\.[^"']+)["']\)/g)) {
+        follow(path.relative(ROOT, path.resolve(path.dirname(full), match[1])));
+      }
+    };
+    follow("server/app.js");
+    MAY_WRITE_WORLD.forEach((file) => assert(!reachable.has(file), file + " is reachable from an HTTP route"));
   });
 
   test("no credential, token or connection string is committed", () => {

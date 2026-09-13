@@ -82,6 +82,7 @@ function createApp({
   repository,
   accounts,
   verifier,
+  checkSchema,
   runtime = RT.systemRuntime(),
   logger = false,
   bodyLimit = DEFAULT_BODY_LIMIT,
@@ -122,8 +123,33 @@ function createApp({
   /* ------------------------------------------------------------ HEALTH */
   app.get("/api/health/live", async () => ({ status: "ok" }));
 
+  /* Ready means: the database answers AND its schema is the one this build
+     expects. A process that starts before its migrations have been applied says
+     so, instead of failing every request.
+
+     Three unready answers, and they are not interchangeable. "migrations-pending"
+     means the schema is behind and the fix is to run the migration command.
+     "schema-integrity" means an applied migration's file has been edited since,
+     so the database and this build disagree about what the schema IS — running
+     anything would be a guess. Anything else that goes wrong is unavailable with
+     no reason at all: a database that cannot be reached is not a database that
+     needs migrating, and saying so would send an operator after the wrong
+     problem. None of the three carries a database detail outward. */
   app.get("/api/health/ready", async (request, reply) => {
     try {
+      if (checkSchema) {
+        const schema = await checkSchema();
+        if (schema.changed && schema.changed.length) {
+          request.log.error({ versions: schema.changed }, "an applied migration no longer matches this build");
+          reply.code(503);
+          return { status: "unavailable", reason: "schema-integrity" };
+        }
+        if (!schema.migrated || schema.pending.length) {
+          request.log.warn({ pending: schema.pending }, "schema is not up to date");
+          reply.code(503);
+          return { status: "unavailable", reason: "migrations-pending" };
+        }
+      }
       await repository.readVersion();
       return { status: "ready" };
     } catch (error) {

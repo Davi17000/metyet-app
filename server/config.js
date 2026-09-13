@@ -1,26 +1,38 @@
 /* ============================================================================
    CONFIGURATION — FROM THE ENVIRONMENT, NEVER FROM THE REPOSITORY
 
-     loadServerConfig(env)  ->  { port, host, logLevel, database, auth }
+     loadDatabaseConfig(env) ->  { connectionString, poolMax, ssl, … }
+     loadAuthConfig(env)     ->  { jwksUrl, issuer, audience }
+     loadServerConfig(env)   ->  { port, host, logLevel, database, auth }
 
    Every value the server needs comes from environment variables. Nothing here
    has a production default that would work by accident, no secret is written
-   down in this repository, and a missing or malformed setting stops the server
+   down in this repository, and a missing or malformed setting stops the process
    at startup with the NAMES of what is missing — never their values.
 
-     DATABASE_URL          the Postgres connection string (Supabase's pooler in
-                           production: session mode, since the host is IPv4-only)
+   The three loaders are separate because the operator commands are: applying a
+   migration or provisioning an account needs the database and nothing else, and
+   should not demand an identity provider that it will never call.
+
+     DATABASE_URL          the Postgres connection string. On Supabase use the
+                           SESSION pooler URI (port 5432): the host is IPv4-only,
+                           and session pooling keeps a transaction — and its
+                           advisory lock — on one connection.
      DATABASE_SSL          require (default) · no-verify · disable
      DATABASE_CA_CERT      optional PEM, when a provider's CA must be pinned
      DATABASE_POOL_MAX     optional, default 10
+     DATABASE_STATEMENT_TIMEOUT_MS       optional, default 15000
+     DATABASE_IDLE_TX_TIMEOUT_MS         optional, default 20000
+                           A command holds one global lock; a statement that
+                           hangs would hold it with them. These bound both.
 
-     SUPABASE_URL          e.g. https://<project>.supabase.co — the JWKS URL and
-                           issuer are derived from it
+     SUPABASE_URL          e.g. https://<project-ref>.supabase.co — the JWKS URL
+                           and the issuer are derived from it
      SUPABASE_JWKS_URL     optional override
      SUPABASE_JWT_ISSUER   optional override
      SUPABASE_JWT_AUDIENCE optional, default "authenticated"
 
-     PORT, HOST, LOG_LEVEL  optional
+     PORT, HOST, LOG_LEVEL  optional (Render sets PORT)
 
    No vendor is contacted here and nothing is provisioned: this only reads what
    an operator set.
@@ -30,7 +42,7 @@ const SSL_MODES = ["require", "no-verify", "disable"];
 
 class ConfigError extends Error {
   constructor(problems) {
-    super(`The server configuration is incomplete: ${problems.join("; ")}`);
+    super(`The configuration is incomplete: ${problems.join("; ")}`);
     this.name = "ConfigError";
     this.code = "config.invalid";
     this.problems = problems;
@@ -38,19 +50,40 @@ class ConfigError extends Error {
 }
 
 const trimmed = (v) => (typeof v === "string" ? v.trim() : "");
-
-function loadServerConfig(env = process.env) {
-  const problems = [];
-  const need = (name) => {
+const collect = (problems) => ({
+  need: (name, env) => {
     const value = trimmed(env[name]);
     if (!value) problems.push(`${name} is not set`);
     return value;
-  };
+  },
+  whole: (name, env, fallback, min = 1) => {
+    const value = Number(trimmed(env[name]) || fallback);
+    if (!Number.isInteger(value) || value < min) problems.push(`${name} must be a whole number of at least ${min}`);
+    return value;
+  },
+});
 
-  const connectionString = need("DATABASE_URL");
+function databaseSettings(env, problems) {
+  const { need, whole } = collect(problems);
+  const connectionString = need("DATABASE_URL", env);
   const sslMode = trimmed(env.DATABASE_SSL) || "require";
   if (!SSL_MODES.includes(sslMode)) problems.push(`DATABASE_SSL must be one of ${SSL_MODES.join(", ")}`);
+  const ca = trimmed(env.DATABASE_CA_CERT);
+  return {
+    connectionString,
+    poolMax: whole("DATABASE_POOL_MAX", env, 10),
+    statementTimeoutMs: whole("DATABASE_STATEMENT_TIMEOUT_MS", env, 15000, 1000),
+    idleTransactionTimeoutMs: whole("DATABASE_IDLE_TX_TIMEOUT_MS", env, 20000, 1000),
+    /* A hosted database is reached over TLS. "no-verify" exists for providers
+       whose chain a container does not carry; "disable" is for a local
+       database only. */
+    ssl: sslMode === "disable" ? false
+      : { rejectUnauthorized: sslMode === "require", ...(ca ? { ca } : {}) },
+    sslMode,
+  };
+}
 
+function authSettings(env, problems) {
   const supabaseUrl = trimmed(env.SUPABASE_URL).replace(/\/+$/, "");
   const jwksUrl = trimmed(env.SUPABASE_JWKS_URL) || (supabaseUrl && `${supabaseUrl}/auth/v1/.well-known/jwks.json`);
   const issuer = trimmed(env.SUPABASE_JWT_ISSUER) || (supabaseUrl && `${supabaseUrl}/auth/v1`);
@@ -59,35 +92,39 @@ function loadServerConfig(env = process.env) {
   if (jwksUrl && !/^https:\/\//.test(jwksUrl) && !/^http:\/\/(localhost|127\.0\.0\.1)/.test(jwksUrl)) {
     problems.push("the JWKS URL must be https");
   }
+  return { jwksUrl, issuer, audience: trimmed(env.SUPABASE_JWT_AUDIENCE) || "authenticated" };
+}
 
-  const port = Number(trimmed(env.PORT) || 8080);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) problems.push("PORT must be a port number");
-  const poolMax = Number(trimmed(env.DATABASE_POOL_MAX) || 10);
-  if (!Number.isInteger(poolMax) || poolMax < 1) problems.push("DATABASE_POOL_MAX must be a positive whole number");
-
+const finish = (problems, value) => {
   if (problems.length) throw new ConfigError(problems);
+  return value;
+};
 
-  const ca = trimmed(env.DATABASE_CA_CERT);
-  return {
+/* What an operator command needs: a database, and nothing else. */
+function loadDatabaseConfig(env = process.env) {
+  const problems = [];
+  return finish(problems, databaseSettings(env, problems));
+}
+
+function loadAuthConfig(env = process.env) {
+  const problems = [];
+  return finish(problems, authSettings(env, problems));
+}
+
+function loadServerConfig(env = process.env) {
+  const problems = [];
+  const { whole } = collect(problems);
+  const database = databaseSettings(env, problems);
+  const auth = authSettings(env, problems);
+  const port = whole("PORT", env, 8080);
+  if (port > 65535) problems.push("PORT must be a port number");
+  return finish(problems, {
     port,
     host: trimmed(env.HOST) || "0.0.0.0",
     logLevel: trimmed(env.LOG_LEVEL) || "info",
-    database: {
-      connectionString,
-      poolMax,
-      /* A hosted database is reached over TLS. "no-verify" exists for providers
-         whose chain a container does not carry; "disable" is for a local
-         database only. */
-      ssl: sslMode === "disable" ? false
-        : { rejectUnauthorized: sslMode === "require", ...(ca ? { ca } : {}) },
-      sslMode,
-    },
-    auth: {
-      jwksUrl,
-      issuer,
-      audience: trimmed(env.SUPABASE_JWT_AUDIENCE) || "authenticated",
-    },
-  };
+    database,
+    auth,
+  });
 }
 
 /* What may be logged at startup: settings, never secrets. */
@@ -97,8 +134,9 @@ const describeConfig = (config) => ({
   logLevel: config.logLevel,
   databaseSsl: config.database.sslMode,
   databasePoolMax: config.database.poolMax,
+  databaseStatementTimeoutMs: config.database.statementTimeoutMs,
   jwksHost: (() => { try { return new URL(config.auth.jwksUrl).host; } catch { return "invalid"; } })(),
   audience: config.auth.audience,
 });
 
-module.exports = { loadServerConfig, describeConfig, ConfigError, SSL_MODES };
+module.exports = { loadServerConfig, loadDatabaseConfig, loadAuthConfig, describeConfig, ConfigError, SSL_MODES };

@@ -64,4 +64,48 @@ async function migrate(db, { migrations = readMigrations() } = {}) {
   });
 }
 
-module.exports = { migrate, readMigrations, checksum, MIGRATIONS_DIR, MIGRATION_LOCK_SQL };
+/* The only database errors that mean "this database has never been migrated":
+   the bookkeeping table, or the schema holding it, does not exist. Every other
+   failure — a refused connection, a TLS problem, a password, a permission, a
+   driver fault — means something else entirely and must not be dressed up as a
+   missing migration. PostgreSQL's SQLSTATE says which is which; the message
+   text does not, and is not consulted. */
+const NEVER_MIGRATED = new Set([
+  "42P01", // undefined_table       — metyet.schema_migrations is not there
+  "3F000", // invalid_schema_name   — the metyet schema is not there
+]);
+
+/* What is applied, what is pending, and whether what was applied is still what
+   this build contains — without applying anything. The server uses this for
+   readiness, so its three answers have to stay distinguishable:
+
+     migrated: false          nothing has been migrated yet          -> unready
+     pending:  [...]          the schema is behind this build        -> unready
+     changed:  [...]          an applied migration's file has since
+                              been edited, so the database and the
+                              code no longer agree about the schema  -> unready
+
+   Anything else that goes wrong THROWS, so a database that cannot be reached is
+   reported as a database that cannot be reached. */
+async function migrationStatus(db, { migrations = readMigrations() } = {}) {
+  const all = migrations.map((m) => m.version);
+  const expected = new Map(migrations.map((m) => [m.version, m.checksum]));
+  let rows;
+  try {
+    rows = await db.transaction(async (tx) =>
+      (await tx.query("select version, checksum from metyet.schema_migrations order by version")).rows,
+    { readOnly: true });
+  } catch (error) {
+    if (!NEVER_MIGRATED.has(error && error.code)) throw error;
+    return { migrated: false, applied: [], pending: all, changed: [] };
+  }
+  const applied = rows.map((r) => r.version);
+  /* Only a version this build also has can have drifted. One the build does not
+     have at all is a database ahead of the code — a different situation, and not
+     one this check invents an answer for. */
+  const changed = rows.filter((r) => expected.has(r.version) && expected.get(r.version) !== r.checksum)
+    .map((r) => r.version);
+  return { migrated: true, applied, pending: all.filter((v) => !applied.includes(v)), changed };
+}
+
+module.exports = { migrate, migrationStatus, readMigrations, checksum, MIGRATIONS_DIR, MIGRATION_LOCK_SQL, NEVER_MIGRATED };

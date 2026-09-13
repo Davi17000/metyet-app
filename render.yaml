@@ -1,0 +1,48 @@
+# =============================================================================
+# Render blueprint for the MetYet API (Phase 3 Batch 4).
+#
+# This file describes the service; it creates nothing by itself and carries no
+# secret, no service id and no account. An operator applies it in Render, sets
+# the four secret-bearing variables below by hand, and runs the migration
+# command once before the first deploy (see docs/DEPLOYMENT.md).
+#
+#   build    npm ci --omit=dev     production dependencies only; there is no
+#                                  bundling step for the server
+#   start    npm start             node server/index.js
+#   health   /api/health/ready     answers 503 while the schema is behind, so a
+#                                  deploy that skipped the migration is obvious
+#   migrate  npm run db:migrate    run deliberately, never at startup
+#
+# `plan: starter` is a paid instance (about $7/month at the time of writing) and
+# is the smallest plan that does not sleep. Change it before applying if that is
+# not what you want. `region` should match the Supabase project's region.
+# =============================================================================
+
+services:
+  - type: web
+    name: metyet-api
+    runtime: node
+    plan: starter
+    region: oregon
+    branch: main
+    autoDeploy: false
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /api/health/ready
+    envVars:
+      # The Node version the server is built and run on.
+      - key: NODE_VERSION
+        value: "22"
+      # Supabase: the SESSION pooler connection string (port 5432). Set by hand.
+      - key: DATABASE_URL
+        sync: false
+      # Supabase project URL, e.g. https://<project-ref>.supabase.co — the JWKS
+      # endpoint and the token issuer are derived from it. Set by hand.
+      - key: SUPABASE_URL
+        sync: false
+      - key: DATABASE_SSL
+        value: require
+      - key: DATABASE_POOL_MAX
+        value: "10"
+      - key: LOG_LEVEL
+        value: info
