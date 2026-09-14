@@ -45,6 +45,29 @@ const DEFAULT_TIMEOUT_MS = 5000;
 /* Addresses are compared, never parsed: the same rule the invitation uses. */
 const LOOKS_LIKE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/* WHERE A PROVIDER ENDPOINT MAY LIVE.
+
+   This request carries the person's bearer token and the project's API key, and
+   the JWKS request carries the keys every other request is trusted against.
+   Neither may cross a plaintext connection: a token on the wire is a session in
+   somebody else's hands, and a substituted key set is every session at once.
+
+   So: https for anything that is not this machine, and http only for a loopback
+   address, where there is no wire. The host is compared after parsing, never by
+   matching the front of the string — "http://localhost.example.com/" starts with
+   "http://localhost" and is a stranger's server.
+
+   One definition, used by the identity directory below and by config.js for
+   both endpoints, so the rule cannot drift between them. */
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+function isSafeProviderUrl(value) {
+  if (typeof value !== "string" || !value) return false;
+  let url;
+  try { url = new URL(value); } catch (error) { return false; }
+  if (url.protocol === "https:") return true;
+  return url.protocol === "http:" && LOOPBACK.has(url.hostname);
+}
+
 class IdentityError extends Error {
   constructor(reason, message) {
     super(message);
@@ -77,8 +100,14 @@ function isSecretKey(key) {
 }
 
 function createIdentityDirectory({ userUrl, apiKey, timeoutMs = DEFAULT_TIMEOUT_MS, fetchUser } = {}) {
-  if (typeof userUrl !== "string" || !/^https?:\/\//.test(userUrl)) {
+  if (typeof userUrl !== "string" || !userUrl) {
     throw new TypeError("createIdentityDirectory: userUrl (the provider's user endpoint) is required");
+  }
+  /* Enforced here as well as in config.js, because this is the boundary that
+     puts a bearer token on the wire — and it may be built without that config. */
+  if (!isSafeProviderUrl(userUrl)) {
+    throw new TypeError("createIdentityDirectory: the user endpoint must be https "
+      + "(http is accepted only for localhost). This request carries a bearer token.");
   }
   if (!fetchUser && (typeof apiKey !== "string" || !apiKey)) {
     throw new TypeError("createIdentityDirectory: apiKey (the project's publishable key) is required");
@@ -134,4 +163,4 @@ function createIdentityDirectory({ userUrl, apiKey, timeoutMs = DEFAULT_TIMEOUT_
   };
 }
 
-module.exports = { createIdentityDirectory, IdentityError, isSecretKey, DEFAULT_TIMEOUT_MS };
+module.exports = { createIdentityDirectory, IdentityError, isSecretKey, isSafeProviderUrl, DEFAULT_TIMEOUT_MS };

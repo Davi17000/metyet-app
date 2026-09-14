@@ -47,6 +47,8 @@
    injected JWKS fetch — no network, no provider account.
    ========================================================================== */
 
+const { isSafeProviderUrl } = require("./identity.js");
+
 const DEFAULT_ALGORITHMS = ["ES256", "RS256"];
 const DEFAULT_AUDIENCE = "authenticated";
 const DEFAULT_CACHE_MS = 10 * 60 * 1000;
@@ -86,8 +88,15 @@ function createTokenVerifier({
   timeoutMs = DEFAULT_TIMEOUT_MS,
   fetchJwks,
 } = {}) {
-  if (typeof jwksUrl !== "string" || !/^https?:\/\//.test(jwksUrl)) {
+  if (typeof jwksUrl !== "string" || !jwksUrl) {
     throw new TypeError("createTokenVerifier: jwksUrl (the provider's JWKS endpoint) is required");
+  }
+  /* The same rule the identity endpoint is held to, and for a stronger reason:
+     these are the keys every request is trusted against, so a key set fetched
+     over plaintext is every session at once. http for loopback only. */
+  if (!isSafeProviderUrl(jwksUrl)) {
+    throw new TypeError("createTokenVerifier: the JWKS endpoint must be https "
+      + "(http is accepted only for localhost). These are the keys every token is verified against.");
   }
   if (typeof issuer !== "string" || !issuer) throw new TypeError("createTokenVerifier: issuer is required");
   if (algorithms.some((a) => /^HS/.test(a) || a === "none")) {

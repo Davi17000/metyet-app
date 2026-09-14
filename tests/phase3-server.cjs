@@ -685,12 +685,20 @@ describe("H. token verification", () => {
   });
 
   test("the verifier refuses to be built without a trustworthy source", async () => {
-    const bad = [{}, { jwksUrl: "not-a-url", issuer: "x" }, { jwksUrl: "ftp://x/y", issuer: "x" }, { jwksUrl: JWKS_URL }];
+    const bad = [{}, { jwksUrl: "not-a-url", issuer: "x" }, { jwksUrl: "ftp://x/y", issuer: "x" }, { jwksUrl: JWKS_URL },
+      /* A key set fetched over plaintext is every session at once: whoever is
+         on the wire substitutes the keys and mints their own tokens. The host
+         is compared after parsing, so a lookalike is not a loopback. */
+      { jwksUrl: "http://project.supabase.co/auth/v1/.well-known/jwks.json", issuer: "x" },
+      { jwksUrl: "http://localhost.example.com/auth/v1/.well-known/jwks.json", issuer: "x" }];
     for (const options of bad) {
       let threw = null;
       try { createTokenVerifier(options); } catch (e) { threw = e; }
       assert(threw instanceof TypeError, JSON.stringify(options));
     }
+    /* Loopback is for local development, and still builds. */
+    assert(createTokenVerifier({ jwksUrl: "http://localhost:54321/auth/v1/.well-known/jwks.json", issuer: "x" }),
+      "a local provider is usable");
   });
 });
 

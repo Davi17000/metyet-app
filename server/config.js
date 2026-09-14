@@ -46,7 +46,7 @@
    an operator set.
    ========================================================================== */
 
-const { isSecretKey } = require("./auth/identity.js");
+const { isSecretKey, isSafeProviderUrl } = require("./auth/identity.js");
 
 const SSL_MODES = ["require", "no-verify", "disable"];
 
@@ -99,8 +99,12 @@ function authSettings(env, problems) {
   const issuer = trimmed(env.SUPABASE_JWT_ISSUER) || (supabaseUrl && `${supabaseUrl}/auth/v1`);
   if (!jwksUrl) problems.push("SUPABASE_URL (or SUPABASE_JWKS_URL) is not set");
   if (!issuer) problems.push("SUPABASE_URL (or SUPABASE_JWT_ISSUER) is not set");
-  if (jwksUrl && !/^https:\/\//.test(jwksUrl) && !/^http:\/\/(localhost|127\.0\.0\.1)/.test(jwksUrl)) {
-    problems.push("the JWKS URL must be https");
+  /* Both provider endpoints carry something that must not cross a plaintext
+     connection — the JWKS is the keys every session is trusted against, and the
+     user endpoint carries the person's own bearer token — so both are held to
+     the same rule, defined once in auth/identity.js. */
+  if (jwksUrl && !isSafeProviderUrl(jwksUrl)) {
+    problems.push("the JWKS URL must be https (http is accepted only for localhost)");
   }
   /* Registration asks the Auth server itself whether an address was confirmed
      (server/auth/identity.js), because no token claim answers that. The gateway
@@ -112,6 +116,9 @@ function authSettings(env, problems) {
   if (!apiKey) problems.push("SUPABASE_PUBLISHABLE_KEY (the project's publishable/anon key) is not set");
   else if (isSecretKey(apiKey)) problems.push("SUPABASE_PUBLISHABLE_KEY must be the publishable (anon) key, not a secret or service-role key");
   if (!userUrl) problems.push("SUPABASE_URL (or SUPABASE_USER_URL) is not set");
+  else if (!isSafeProviderUrl(userUrl)) {
+    problems.push("the identity user URL must be https (http is accepted only for localhost)");
+  }
 
   return { jwksUrl, issuer, audience: trimmed(env.SUPABASE_JWT_AUDIENCE) || "authenticated", userUrl, apiKey };
 }

@@ -30,9 +30,10 @@ const { migrate } = require("../persistence/migrate.js");
 const { createWorldRepository } = require("../persistence/world-repository.js");
 const { createAccountDirectory } = require("../server/auth/accounts.js");
 const { createInvitationDirectory, hashToken, statusOf, MAX_TTL_DAYS } = require("../server/auth/invitations.js");
-const { createIdentityDirectory, isSecretKey } = require("../server/auth/identity.js");
+const { createIdentityDirectory, isSecretKey, isSafeProviderUrl } = require("../server/auth/identity.js");
 const { redeemPartnerInvitation, REFUSALS } = require("../server/registration.js");
 const { createApp } = require("../server/app.js");
+const { loadAuthConfig } = require("../server/config.js");
 const { runCommand } = require("../server/cli.js");
 const { emptyWorld } = require("../server/bootstrap.js");
 
@@ -627,6 +628,70 @@ describe("D2. the verified address comes from the provider, never from the token
     let missing = null;
     try { createIdentityDirectory({ userUrl: "https://projectref.supabase.co/auth/v1/user" }); } catch (e) { missing = e; }
     assert(missing instanceof TypeError, "and no key at all is refused too");
+  });
+
+  test("the question is only ever asked over a connection nobody can read", () => {
+    /* That request carries the person's bearer token and the project's key. On
+       a plaintext connection to anything but this machine, both are somebody
+       else's the moment they are sent. */
+    const accepted = ["https://projectref.supabase.co/auth/v1/user", "https://localhost/auth/v1/user",
+      "http://localhost/auth/v1/user", "http://localhost:54321/auth/v1/user",
+      "http://127.0.0.1/auth/v1/user", "http://127.0.0.1:54321/auth/v1/user", "http://[::1]:54321/auth/v1/user"];
+    const rejected = ["http://example.com/auth/v1/user", "http://projectref.supabase.co/auth/v1/user",
+      /* Starts with "http://localhost" and is a stranger's server: the host is
+         compared after parsing, never by matching the front of the string. */
+      "http://localhost.example.com/auth/v1/user", "http://127.0.0.1.example.com/auth/v1/user",
+      "http://user@example.com/auth/v1/user", "ftp://projectref.supabase.co/auth/v1/user",
+      "//projectref.supabase.co/auth/v1/user", "/auth/v1/user", "not-a-url", "", null, undefined];
+
+    accepted.forEach((url) => assert(isSafeProviderUrl(url), "accepted: " + url));
+    rejected.forEach((url) => assert(!isSafeProviderUrl(url), "rejected: " + String(url)));
+
+    /* And the directory itself refuses, so the rule holds even when it is built
+       without the configuration that also checks. */
+    accepted.forEach((userUrl) => {
+      assert(createIdentityDirectory({ userUrl, apiKey: "sb_publishable_test" }), "builds for " + userUrl);
+    });
+    rejected.forEach((userUrl) => {
+      let threw = null;
+      try { createIdentityDirectory({ userUrl, apiKey: "sb_publishable_test" }); } catch (e) { threw = e; }
+      assert(threw instanceof TypeError, "refuses " + String(userUrl));
+    });
+    /* An accepted one still works end to end. */
+    const local = createIdentityDirectory({ userUrl: "http://localhost:54321/auth/v1/user",
+      apiKey: "sb_publishable_test",
+      fetchUser: async () => ({ status: 200, json: async () => ({ id: "s", email: EMAIL,
+        email_confirmed_at: "2026-09-01T10:00:00Z" }) }) });
+    return local.confirmedEmail("bearer", { subject: "s" })
+      .then((answer) => eq(JSON.stringify(answer), JSON.stringify({ email: EMAIL }), "a local provider still answers"));
+  });
+
+  test("configuration refuses a plaintext provider endpoint too", () => {
+    const base = { DATABASE_URL: "postgresql://user:pw@db.example:5432/metyet",
+      SUPABASE_URL: "https://projectref.supabase.co", SUPABASE_PUBLISHABLE_KEY: "sb_publishable_example" };
+    eq(loadAuthConfig(base).userUrl, "https://projectref.supabase.co/auth/v1/user", "derived, and https");
+
+    for (const [override, what] of [
+      [{ SUPABASE_USER_URL: "http://example.com/auth/v1/user" }, "a plaintext override"],
+      [{ SUPABASE_USER_URL: "http://localhost.example.com/auth/v1/user" }, "a lookalike host"],
+      [{ SUPABASE_URL: "http://projectref.supabase.co" }, "a plaintext project URL, which derives both endpoints"],
+      /* The key set every token is verified against is held to the same rule,
+         and is checked on its own — pointing it at plaintext while the user
+         endpoint stays https must still be refused. */
+      [{ SUPABASE_JWKS_URL: "http://example.com/auth/v1/.well-known/jwks.json" }, "a plaintext JWKS override"],
+      [{ SUPABASE_JWKS_URL: "http://localhost.example.com/.well-known/jwks.json" }, "a lookalike JWKS host"],
+    ]) {
+      let threw = null;
+      try { loadAuthConfig({ ...base, ...override }); } catch (e) { threw = e; }
+      assert(threw && threw.code === "config.invalid", what + " is refused");
+      assert(/must be https/.test(threw.message), "and says why: " + threw.message);
+    }
+    /* Local development still works — both endpoints, on loopback. */
+    const local = loadAuthConfig({ ...base, SUPABASE_URL: "http://localhost:54321" });
+    eq(local.userUrl, "http://localhost:54321/auth/v1/user");
+    eq(local.jwksUrl, "http://localhost:54321/auth/v1/.well-known/jwks.json");
+    eq(loadAuthConfig({ ...base, SUPABASE_USER_URL: "http://127.0.0.1:54321/auth/v1/user" }).userUrl,
+      "http://127.0.0.1:54321/auth/v1/user", "and an explicit loopback override");
   });
 
   test("the provider is asked before anything is opened or claimed", () => {
