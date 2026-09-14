@@ -34,6 +34,9 @@ npm run account:link -- --subject=<provider sub> --role=collector --actor=<id>
 npm run partner:invite -- --email=<address> --name=<store name> [--contact=<person>]
 npm run partner:invitations # every invitation, and what became of it
 npm run partner:revoke -- --id=<invitation id>
+
+npm run auth:check          # is the identity provider set up the way this server requires?
+npm run auth:check -- --token-file=<path>   # ...and does a real sign-in verify, end to end?
 ```
 
 `npm start` also needs `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`, because
@@ -90,7 +93,7 @@ will not be accepted — deliberately.
 | **Do** | In the project's JWT signing keys settings, migrate the legacy JWT secret into the new key system, create a standby asymmetric key (ES256), rotate to it, and revoke the legacy key once old tokens have expired. |
 | **Environment variables** | none — the JWKS URL, the issuer and the user endpoint are derived from `SUPABASE_URL` |
 | **Cost** | none |
-| **Check** | `curl https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json` returns a key whose `alg` is `ES256` (or `RS256`) with a `kid`. |
+| **Check** | `SUPABASE_URL=… SUPABASE_PUBLISHABLE_KEY=… npm run auth:check` prints the issuer and audience this server requires and reports at least one **asymmetric** key. It fails, and says so, while the project is still signing with the legacy shared secret. |
 
 Verified against Supabase's documentation (September 2026): the issuer is
 `https://<project-ref>.supabase.co/auth/v1`, the JWKS endpoint is
@@ -103,6 +106,26 @@ If the Supabase project is still issuing legacy HS256 tokens, or if it is on
 the legacy `anon`/`service_role` API keys, both are worth migrating before the
 pilot: the server refuses HS256 outright, and refuses a secret key where the
 publishable one belongs.
+
+### 2.3a The sign-in email: one message, a code and a link
+
+The locked experience is one email carrying **both** a six-digit code and a
+one-click sign-in link. Supabase supports this, and it is template
+configuration — no code change and no product compromise:
+
+| | |
+|---|---|
+| **Provider** | Supabase → Authentication → Email Templates → **Magic Link** |
+| **Do** | Put both `{{ .Token }}` (the six-digit code) and `{{ .ConfirmationURL }}` (the one-click link) in that one template. |
+| **Why it works** | Email OTPs and Magic Links share one implementation and one underlying token. The client verifies a typed code with `verifyOtp({ email, token, type: 'email' })`, and GoTrue's `email` verification deliberately checks **both** the confirmation and recovery token columns — so a code from a magic-link request verifies. Clicking the link and typing the code are two doors to the same token. |
+| **Consequence** | Whichever is used first spends the token and the other stops working. That is correct: one sign-in, one credential. |
+| **Cost** | none |
+| **Check** | Send yourself one. The email contains a code and a link; either signs you in, and the second then fails. |
+
+`signInWithOtp` must keep creating users (`shouldCreateUser` left at its
+default) — an invited Trusted Partner has no account until their first sign-in.
+That is not a way in: an auth user is not a MetYet actor, and only an invitation
+creates one.
 
 ### 2.4 Render web service
 
@@ -129,6 +152,12 @@ can fill in: the only way into the network is an invitation you issue.
 | **Cost** | none |
 | **Check** | `npm run partner:invitations` shows it as `accepted`, with the partner id it created. `npm run account:list` shows their sign-in. |
 
+**Before sending the first one, note who can receive it.** Supabase's built-in
+email service refuses to deliver to anyone who is not a member of the project —
+at two messages an hour — so the first Trusted Partner can be **you**, at an
+address on the project team, with no email provider configured at all. Inviting
+anyone else needs custom SMTP first (2.7).
+
 The credential is printed once and stored only as a hash; a lost one is
 replaced by `partner:revoke` and a fresh `partner:invite`, never recovered.
 It expires in 14 days by default (`--days=`, up to 90), is single-use, and is
@@ -154,7 +183,7 @@ their token — see "Why the publishable key is needed" below.
 
 | Action | Why it is not yet | Cost |
 |---|---|---|
-| **Resend custom SMTP** in Supabase Auth | Sign-in emails are a later batch, and so is sending the invitation itself — today you write that email yourself. Supabase's built-in SMTP only emails project members, at a couple of messages an hour, so real sign-ins need this before launch. | Free tier covers a pilot (3,000 emails/month) |
+| **Resend custom SMTP** in Supabase Auth | Required before anyone outside the project team can sign in: the built-in service refuses non-members and allows two messages an hour, and Supabase documents it as best-effort and not for production. Sending the *invitation* is still yours to write by hand. | Free tier covers a pilot (3,000 emails/month) |
 | **DNS for `app.metyet.io` / `demo.metyet.io`** | The React clients still run the in-memory prototype; there is nothing to point production at yet. | none beyond the domain |
 | **Sentry** | Optional. Render's logs are enough for a pilot. | free tier |
 

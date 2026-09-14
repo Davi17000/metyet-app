@@ -169,4 +169,12 @@ const describeConfig = (config) => ({
   identityKeyConfigured: Boolean(config.auth.apiKey),
 });
 
-module.exports = { loadServerConfig, loadDatabaseConfig, loadAuthConfig, describeConfig, ConfigError, SSL_MODES };
+/* What the server refuses to start without, and therefore what any deployment
+   description has to carry. Declared here, beside the loaders that enforce it,
+   so a blueprint cannot quietly fall behind the contract — which is exactly what
+   happened when registration began requiring a publishable key and render.yaml
+   still listed two variables. A test holds the blueprint to this list. */
+const REQUIRED_SERVER_ENV = Object.freeze(["DATABASE_URL", "SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY"]);
+
+module.exports = { loadServerConfig, loadDatabaseConfig, loadAuthConfig, describeConfig,
+  ConfigError, SSL_MODES, REQUIRED_SERVER_ENV };

@@ -14,6 +14,7 @@
        invitations                 every invitation and what became of it
        invitation --id=<id>        one invitation, in full
        revoke-invitation --id=<id> withdraw one that is still pending
+       auth-check [--token-file=<path>]   is the identity provider set up right?
 
    Every one of these is a decision someone makes on purpose. None of them runs
    by itself: the server never migrates at startup (a rolling restart would
@@ -35,6 +36,7 @@ const { migrate, migrationStatus } = require("../persistence/migrate.js");
 const { withDatabase } = require("./db-pool.js");
 const { bootstrapWorld, emptyWorld } = require("./bootstrap.js");
 const { linkActorAccount, listActors } = require("./provisioning.js");
+const { checkAuth } = require("./auth-check.js");
 
 const USAGE = `MetYet operator commands
 
@@ -49,9 +51,12 @@ const USAGE = `MetYet operator commands
   node server/cli.js invitations
   node server/cli.js invitation --id=<invitation id>
   node server/cli.js revoke-invitation --id=<invitation id>
+  node server/cli.js auth-check [--token-file=<path holding one access token>]
 
 The database is read from DATABASE_URL (and DATABASE_SSL, DATABASE_CA_CERT,
-DATABASE_POOL_MAX). Nothing here starts a server or contacts a vendor.`;
+DATABASE_POOL_MAX); auth-check reads SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY
+instead and needs no database. Nothing here starts a server, and only auth-check
+contacts a vendor — to ask it a question, never to change anything.`;
 
 /* A message a person can act on, with nothing secret in it: a connection string
    that reached an error from the driver is removed rather than printed. */
@@ -68,6 +73,11 @@ function parseFlags(argv) {
   }
   return { flags, unknown: null };
 }
+
+/* Commands that talk to the identity provider rather than the database, and so
+   must not demand DATABASE_URL to run: an operator configuring Supabase has not
+   necessarily configured Postgres yet, and should not have to. */
+const WITHOUT_DATABASE = new Set(["auth-check"]);
 
 /* The operator operations. Named so it is never confused with the domain's
    command layer: nothing here authors canonical state. */
@@ -140,6 +150,11 @@ const OPERATIONS = {
     return 0;
   },
 
+  /* The other half of the environment. Reads no database and writes nothing. */
+  async "auth-check"(_context, flags, say) {
+    return checkAuth({ env: this.env, say, tokenFile: flags["token-file"] });
+  },
+
   /* MetYet invites Trusted Partners. This is where that decision is recorded,
      and the credential below is printed ONCE — it is stored only as a hash, so
      a lost one is re-issued with a new invitation, never recovered. */
@@ -209,8 +224,9 @@ async function runCommand(argv = [], { env = process.env, say = console.log, dat
   const { flags, unknown } = parseFlags(rest);
   if (unknown) { say(`unexpected argument "${unknown}"`); say(USAGE); return 2; }
 
-  const run = (context) => command(context, flags, say);
+  const run = (context) => command.call({ env }, context, flags, say);
   try {
+    if (WITHOUT_DATABASE.has(name)) return await run({});
     return database ? await run(database) : await withDatabase(run, { env });
   } catch (error) {
     say(`failed:      ${safeMessage(error)}`);

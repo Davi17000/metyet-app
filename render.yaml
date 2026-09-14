@@ -37,8 +37,16 @@ services:
       - key: DATABASE_URL
         sync: false
       # Supabase project URL, e.g. https://<project-ref>.supabase.co — the JWKS
-      # endpoint and the token issuer are derived from it. Set by hand.
+      # endpoint, the token issuer and the Auth user endpoint are derived from
+      # it. Set by hand.
       - key: SUPABASE_URL
+        sync: false
+      # The project's PUBLISHABLE (anon) key. Registration asks the Auth server
+      # whether an address was confirmed, and its gateway wants an apikey header;
+      # this is that header, and it is not authority — the person's own verified
+      # token is. A SECRET or service-role key here is refused, not used.
+      # Set by hand, and never a value in this file.
+      - key: SUPABASE_PUBLISHABLE_KEY
         sync: false
       - key: DATABASE_SSL
         value: require

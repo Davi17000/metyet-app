@@ -27,7 +27,8 @@ const { createApp } = require("../server/app.js");
 const { runCommand, safeMessage, USAGE } = require("../server/cli.js");
 const { emptyWorld, bootstrapWorld, COLLECTIONS } = require("../server/bootstrap.js");
 const { linkActorAccount, listActors } = require("../server/provisioning.js");
-const { loadServerConfig, loadDatabaseConfig, loadAuthConfig, describeConfig } = require("../server/config.js");
+const { loadServerConfig, loadDatabaseConfig, loadAuthConfig, describeConfig,
+  REQUIRED_SERVER_ENV } = require("../server/config.js");
 
 const ROOT = path.join(__dirname, "..");
 const SECRET = "sup3r-s3cret-password";
@@ -522,7 +523,12 @@ describe("G. deployment artifacts and the runbook", () => {
   test("the blueprint carries no secret: every value-bearing variable is safe to read", () => {
     const withValues = [...render.matchAll(/- key: (\w+)\n\s+value: (.*)/g)].map((m) => [m[1], m[2].replace(/"/g, "")]);
     const secretish = [...render.matchAll(/- key: (\w+)\n\s+sync: false/g)].map((m) => m[1]);
-    eq(secretish.sort().join(), "DATABASE_URL,SUPABASE_URL", "the two an operator sets by hand");
+    /* The hand-set variables are exactly the ones the server refuses to start
+       without — derived from the contract, not a snapshot of what the file said
+       on the day it was written. Batch 5 added a third and this assertion, as a
+       fixed list, would have gone on insisting there were two. */
+    eq(secretish.sort().join(), [...REQUIRED_SERVER_ENV].sort().join(),
+      "the ones an operator sets by hand are exactly the ones that are required");
     withValues.forEach(([key, value]) => assert(!/URL|SECRET|KEY|TOKEN|PASSWORD/i.test(key) || value === "", `${key} has a value in the file`));
     eq(withValues.find(([k]) => k === "DATABASE_SSL")[1], "require", "TLS is on in the blueprint");
   });

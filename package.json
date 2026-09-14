@@ -16,6 +16,7 @@
     "partner:invite": "node server/cli.js invite-partner",
     "partner:invitations": "node server/cli.js invitations",
     "partner:revoke": "node server/cli.js revoke-invitation",
+    "auth:check": "node server/cli.js auth-check",
     "test": "node tests/all.cjs",
     "prod": "node prod.build.mjs",
     "build:site": "node site.build.mjs",
