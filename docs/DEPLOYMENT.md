@@ -90,10 +90,10 @@ will not be accepted — deliberately.
 | | |
 |---|---|
 | **Provider** | Supabase |
-| **Do** | In the project's JWT signing keys settings, migrate the legacy JWT secret into the new key system, create a standby asymmetric key (ES256), rotate to it, and revoke the legacy key once old tokens have expired. |
+| **Do** | In the project's JWT signing keys settings, migrate the legacy JWT secret into the new key system, create a standby key on **ES256** (or RS256 — those two, and no others, are what the server accepts), rotate to it, and revoke the legacy key once old tokens have expired. |
 | **Environment variables** | none — the JWKS URL, the issuer and the user endpoint are derived from `SUPABASE_URL` |
 | **Cost** | none |
-| **Check** | `SUPABASE_URL=… SUPABASE_PUBLISHABLE_KEY=… npm run auth:check` prints the issuer and audience this server requires and reports at least one **asymmetric** key. It fails, and says so, while the project is still signing with the legacy shared secret. |
+| **Check** | `SUPABASE_URL=… SUPABASE_PUBLISHABLE_KEY=… npm run auth:check` prints the issuer, audience and accepted algorithms, and requires at least one key on **ES256 or RS256** — the exact list the server verifies with. It fails while the project is on the legacy shared secret, and equally if the project's key is asymmetric but on another algorithm (ES384, PS256, EdDSA), because every token signed with one of those would be refused. |
 
 Verified against Supabase's documentation (September 2026): the issuer is
 `https://<project-ref>.supabase.co/auth/v1`, the JWKS endpoint is

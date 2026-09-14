@@ -21,7 +21,8 @@ const { describe, test, assert, eq, run } = require("./run.cjs");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { checkAuth, describeKeys } = require("../server/auth-check.js");
+const { checkAuth, describeKeys, verdict } = require("../server/auth-check.js");
+const { DEFAULT_ALGORITHMS } = require("../server/auth/token-verifier.js");
 const { runCommand, USAGE } = require("../server/cli.js");
 const { REQUIRED_SERVER_ENV, loadServerConfig } = require("../server/config.js");
 
@@ -123,7 +124,8 @@ describe("B. auth-check, without a token", () => {
     assert(/issuer: *https:\/\/projectref\.supabase\.co\/auth\/v1/.test(result.out), "the issuer it requires");
     assert(/audience: *authenticated/.test(result.out), "the audience it requires");
     assert(/user: *https:\/\/projectref\.supabase\.co\/auth\/v1\/user/.test(result.out), "where it asks about a person");
-    assert(/asymmetric key/.test(result.out), "and what it found");
+    assert(/algorithms: *ES256, RS256/.test(result.out), "the algorithms it accepts, stated up front");
+    assert(/accepted algorithm/.test(result.out), "and what it found");
   });
 
   test("a project still signing with the legacy shared secret fails, and says so", async () => {
@@ -134,6 +136,61 @@ describe("B. auth-check, without a token", () => {
       "and the fix is named: " + result.out);
   });
 
+  /* THE CHECK CERTIFIES THE VERIFIER'S CONTRACT, NOT A BROADER IDEA OF IT.
+     ES384, PS256 and EdDSA are genuinely asymmetric and every token signed with
+     one is refused by the real server, so a check that passed them would be
+     green about an environment where nobody can sign in. */
+  test("every algorithm the verifier accepts passes, and only those", async () => {
+    for (const alg of DEFAULT_ALGORITHMS) {
+      const result = await check({ fetchJwks: jwks(KEY(alg)) });
+      eq(result.code, 0, `${alg} is accepted: ${result.out}`);
+      assert(result.out.includes("supported"), alg + " is called supported");
+    }
+    eq(DEFAULT_ALGORITHMS.join(), "ES256,RS256", "and this is the list being certified");
+  });
+
+  test("an asymmetric key on an algorithm this server does not accept fails", async () => {
+    for (const alg of ["ES384", "ES512", "PS256", "PS384", "RS384", "RS512", "EdDSA"]) {
+      const result = await check({ fetchJwks: jwks(KEY(alg, "modern")) });
+      eq(result.code, 1, `${alg} must not pass: ${result.out}`);
+      assert(/asymmetric, but NOT accepted by this server/.test(result.out), alg + " is classified honestly");
+      /* The sentence an operator needs, wrapped across lines in the output. */
+      assert(/An asymmetric key is\s+not enough on its own/.test(result.out.replace(/\s+/g, " ")),
+        "and the output explains that asymmetric is not the bar: " + result.out);
+      assert(result.out.includes(alg), "naming the algorithm that would be refused");
+      assert(!/legacy shared secret/.test(result.out), "this is not the symmetric problem, and is not described as one");
+    }
+  });
+
+  test("a key set passes only when one of its keys is on an accepted algorithm", async () => {
+    const mixedUnsupported = await check({ fetchJwks: jwks(KEY("HS256", "legacy"), KEY("ES384", "modern")) });
+    eq(mixedUnsupported.code, 1, "symmetric plus unsupported-asymmetric is still no");
+    assert(/SYMMETRIC/.test(mixedUnsupported.out) && /NOT accepted/.test(mixedUnsupported.out),
+      "and each key is explained on its own terms: " + mixedUnsupported.out);
+
+    const mixedSupported = await check({ fetchJwks: jwks(KEY("HS256", "legacy"), KEY("ES384", "modern"), KEY("RS256", "current")) });
+    eq(mixedSupported.code, 0, "one accepted key is enough: " + mixedSupported.out);
+    assert(/1 key on an accepted algorithm \(ES256, RS256\)/.test(mixedSupported.out), mixedSupported.out);
+  });
+
+  test("a key with no readable algorithm is never counted as supported", async () => {
+    const noAlg = await check({ fetchJwks: async () => ({ keys: [{ kid: "x", kty: "EC" }] }) });
+    eq(noAlg.code, 1, "an EC key with no alg is not a supported signing key");
+    assert(/no alg/.test(noAlg.out), "it is described: " + noAlg.out);
+    const blank = await check({ fetchJwks: async () => ({ keys: [{ kid: "x", kty: "RSA", alg: "" }] }) });
+    eq(blank.code, 1, "and neither is a blank one");
+  });
+
+  test("the check reads the verifier's list rather than keeping its own", () => {
+    const source = fs.readFileSync(path.join(ROOT, "server", "auth-check.js"), "utf8");
+    const body = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    assert(/DEFAULT_ALGORITHMS[^\n]*require\("\.\/auth\/token-verifier\.js"\)/.test(body),
+      "the allowlist is imported from the verifier");
+    /* A second copy is the whole defect this fixes: it would go on agreeing
+       with the verifier right up until one of them changed. */
+    assert(!/["']ES256["']|["']RS256["']/.test(body), "and not restated here, where it could drift");
+  });
+
   test("an empty key set fails rather than passing quietly", async () => {
     const empty = await check({ fetchJwks: jwks() });
     eq(empty.code, 1);
@@ -142,10 +199,10 @@ describe("B. auth-check, without a token", () => {
     eq(nothing.code, 1, "and so does an answer with no keys at all");
   });
 
-  test("a mixed key set passes on the asymmetric ones", async () => {
+  test("a mixed key set passes on the supported ones", async () => {
     const result = await check({ fetchJwks: jwks(KEY("HS256", "legacy"), KEY("ES256", "current")) });
     eq(result.code, 0, result.out);
-    assert(/1 asymmetric key published/.test(result.out), result.out);
+    assert(/1 key on an accepted algorithm/.test(result.out), result.out);
     assert(/SYMMETRIC/.test(result.out), "and the legacy one is still shown, because it is still there");
   });
 
@@ -173,10 +230,15 @@ describe("B. auth-check, without a token", () => {
       { kid: "a", alg: "ES256", kty: "EC", x: "PUBLIC-X", y: "PUBLIC-Y" },
       { kid: "b", alg: "RS256", kty: "RSA", n: "PUBLIC-N", e: "AQAB" },
       { kid: "c", alg: "HS256", kty: "oct" },
+      { kid: "d", alg: "ES384", kty: "EC" },
       { kty: "EC" },
     ] });
-    eq(described.map((k) => `${k.kid}:${k.alg}:${k.asymmetric}`).join(),
-      "a:ES256:true,b:RS256:true,c:HS256:false,(none):(kty EC):true");
+    eq(described.map((k) => `${k.kid}:${k.alg}:${k.supported}`).join(),
+      "a:ES256:true,b:RS256:true,c:HS256:false,d:ES384:false,(none):(kty EC, no alg):false");
+    eq(described.map(verdict).join(" | "),
+      "supported | supported | SYMMETRIC — never accepted | asymmetric, but NOT accepted by this server"
+      + " | asymmetric, but NOT accepted by this server",
+      "three states, told apart");
     assert(!JSON.stringify(described).includes("PUBLIC-X"), "no key material, even public key material");
   });
 });

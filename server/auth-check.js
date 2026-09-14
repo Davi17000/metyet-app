@@ -11,10 +11,11 @@
 
    WITHOUT A TOKEN it reads the configuration (which enforces the https rules and
    refuses a secret key), then fetches the project's published JWKS and reports
-   what is there. It FAILS if the key set is empty or contains no asymmetric key,
-   because that is the project still signing with the legacy shared secret — the
-   one condition that makes every future sign-in fail while everything else looks
-   fine.
+   what is there. It FAILS unless at least one published key uses an algorithm
+   THE PRODUCTION VERIFIER ACCEPTS — its own allowlist, imported rather than
+   restated. "Asymmetric" is not the bar: a project publishing only ES384 or
+   PS256 has perfectly real asymmetric keys and every one of its tokens would be
+   refused, so certifying that would be the most misleading green available.
 
    WITH A TOKEN it does what a request does: verifies the signature against that
    JWKS, checks the issuer, the audience and the expiry, and then asks the Auth
@@ -33,20 +34,51 @@
 
 const fs = require("fs");
 const { loadAuthConfig } = require("./config.js");
-const { createTokenVerifier } = require("./auth/token-verifier.js");
+const { createTokenVerifier, DEFAULT_ALGORITHMS } = require("./auth/token-verifier.js");
 const { createIdentityDirectory } = require("./auth/identity.js");
 
-const ASYMMETRIC = /^(ES|RS|PS|Ed)/;
+/* Symmetric, or otherwise never a signature this server would accept. Used only
+   to tell an operator WHY a key is unusable; what makes a key usable is the
+   allowlist below, never this. */
+const SYMMETRIC = /^(HS|none$)/i;
 
 /* A JWKS as the provider publishes it, reduced to what an operator needs to
    see. A public key's own material is not printed even though it is public:
-   nothing here is made clearer by a page of base64. */
-const describeKeys = (jwks) => (jwks && Array.isArray(jwks.keys) ? jwks.keys : []).map((key) => ({
-  kid: typeof key.kid === "string" ? key.kid : "(none)",
-  alg: typeof key.alg === "string" ? key.alg : (typeof key.kty === "string" ? `(kty ${key.kty})` : "(unknown)"),
-  kty: key.kty,
-  asymmetric: typeof key.alg === "string" ? ASYMMETRIC.test(key.alg) : key.kty !== "oct",
-}));
+   nothing here is made clearer by a page of base64.
+
+   THE ONLY THING THAT MAKES A KEY "SUPPORTED" IS THE VERIFIER'S OWN ALLOWLIST.
+   A readiness check that certified a broader idea of "asymmetric" would pass a
+   project publishing only ES384 or PS256 — genuinely asymmetric, and refused by
+   every real request, which is the most misleading kind of green there is. So
+   `algorithms` comes from token-verifier.js and the comparison is exact.
+
+   Three states, because an operator needs to tell them apart: symmetric (the
+   legacy shared secret — migrate the project), asymmetric but not on the
+   allowlist (a real key this server does not accept — change the key's
+   algorithm, or change the server deliberately), and supported. A key with no
+   readable `alg` is never supported: it is described, and it counts for
+   nothing. */
+const describeKeys = (jwks, { algorithms = DEFAULT_ALGORITHMS } = {}) =>
+  (jwks && Array.isArray(jwks.keys) ? jwks.keys : []).map((key) => {
+    const alg = typeof key.alg === "string" && key.alg ? key.alg : null;
+    const supported = alg !== null && algorithms.includes(alg);
+    return {
+      kid: typeof key.kid === "string" && key.kid ? key.kid : "(none)",
+      alg: alg || (typeof key.kty === "string" ? `(kty ${key.kty}, no alg)` : "(unknown)"),
+      kty: key.kty,
+      supported,
+      /* Only meaningful when it is not supported, and only as an explanation. */
+      symmetric: alg === null ? key.kty === "oct" : SYMMETRIC.test(alg),
+    };
+  });
+
+/* What an operator is told about one key, in the order that matters: is it
+   usable, and if not, which kind of not-usable is it? */
+const verdict = (key) => {
+  if (key.supported) return "supported";
+  if (key.symmetric) return "SYMMETRIC — never accepted";
+  return "asymmetric, but NOT accepted by this server";
+};
 
 async function fetchJwksOnce(url, { timeoutMs = 5000, fetchImpl = fetch } = {}) {
   const response = await fetchImpl(url, { headers: { accept: "application/json" },
@@ -62,10 +94,14 @@ async function fetchJwksOnce(url, { timeoutMs = 5000, fetchImpl = fetch } = {}) 
 async function checkAuth({ env = process.env, say = console.log, tokenFile, deps = {} } = {}) {
   const config = loadAuthConfig(env);
   const host = (() => { try { return new URL(config.jwksUrl).host; } catch (error) { return "(unreadable)"; } })();
+  /* The verifier's own list, not a second opinion about it. If a configuration
+     ever carries one, this certifies that one — the two cannot disagree. */
+  const algorithms = config.algorithms || DEFAULT_ALGORITHMS;
 
   say(`project:     ${host}`);
   say(`issuer:      ${config.issuer}`);
   say(`audience:    ${config.audience}`);
+  say(`algorithms:  ${algorithms.join(", ")} — a key on any other algorithm is refused`);
   say(`jwks:        ${config.jwksUrl}`);
   say(`user:        ${config.userUrl}`);
   say("key:         configured (a publishable key; a secret one would have been refused)");
@@ -73,7 +109,7 @@ async function checkAuth({ env = process.env, say = console.log, tokenFile, deps
   /* ---------------------------------------------------------------- JWKS */
   let keys;
   try {
-    keys = describeKeys(await (deps.fetchJwks || fetchJwksOnce)(config.jwksUrl));
+    keys = describeKeys(await (deps.fetchJwks || fetchJwksOnce)(config.jwksUrl), { algorithms });
   } catch (error) {
     say("");
     say(`FAILED:      the JWKS could not be read (${error && error.message})`);
@@ -87,17 +123,28 @@ async function checkAuth({ env = process.env, say = console.log, tokenFile, deps
     say("             The project has no published signing key, so no token can verify.");
     return 1;
   }
-  keys.forEach((key) => say(`signing key: ${key.alg.padEnd(8)} ${key.asymmetric ? "asymmetric" : "SYMMETRIC — not accepted"}  kid ${key.kid}`));
-  const usable = keys.filter((key) => key.asymmetric);
+  keys.forEach((key) => say(`signing key: ${key.alg.padEnd(18)} ${verdict(key)}  kid ${key.kid}`));
+  const usable = keys.filter((key) => key.supported);
   if (!usable.length) {
+    const asymmetricButUnsupported = keys.filter((key) => !key.symmetric);
     say("");
-    say("FAILED:      every published key is symmetric.");
-    say("             The project is still signing with the legacy shared secret. Migrate to");
-    say("             asymmetric JWT signing keys (see docs/DEPLOYMENT.md, step 2.3); until");
-    say("             then every request will be refused, deliberately.");
+    if (asymmetricButUnsupported.length) {
+      /* The dangerous case, and the reason this check compares exactly: these
+         are real asymmetric keys, and every token signed with one is refused. */
+      say("FAILED:      no published key uses an algorithm this server accepts.");
+      say(`             It accepts ${algorithms.join(" and ")}, and nothing else. An asymmetric key is`);
+      say("             not enough on its own — these are asymmetric, and would still be");
+      say(`             refused: ${asymmetricButUnsupported.map((key) => key.alg).join(", ")}.`);
+      say("             Give the project a signing key on one of the accepted algorithms.");
+    } else {
+      say("FAILED:      every published key is symmetric.");
+      say("             The project is still signing with the legacy shared secret. Migrate to");
+      say("             asymmetric JWT signing keys (see docs/DEPLOYMENT.md, step 2.3); until");
+      say("             then every request will be refused, deliberately.");
+    }
     return 1;
   }
-  say(`ok:          ${usable.length} asymmetric key${usable.length === 1 ? "" : "s"} published`);
+  say(`ok:          ${usable.length} key${usable.length === 1 ? "" : "s"} on an accepted algorithm (${algorithms.join(", ")})`);
 
   if (!tokenFile) {
     say("");
@@ -157,4 +204,4 @@ async function checkAuth({ env = process.env, say = console.log, tokenFile, deps
   return 0;
 }
 
-module.exports = { checkAuth, describeKeys, fetchJwksOnce };
+module.exports = { checkAuth, describeKeys, verdict, fetchJwksOnce };
