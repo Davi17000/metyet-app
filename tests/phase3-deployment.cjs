@@ -34,6 +34,7 @@ const SECRET = "sup3r-s3cret-password";
 const ENV = {
   DATABASE_URL: `postgresql://metyet:${SECRET}@db.example.supabase.co:5432/postgres`,
   SUPABASE_URL: "https://projectref.supabase.co",
+  SUPABASE_PUBLISHABLE_KEY: "sb_publishable_example",
 };
 
 let pglite = null;
@@ -443,10 +444,10 @@ describe("E. provisioning a sign-in for an actor that exists", () => {
     const actors = await cli(["actors"], context);
     eq(actors.code, 0);
     assert(/partners: *none/.test(actors.out) && /collectors: *none/.test(actors.out), actors.out);
-    assert(/no command that/.test(actors.out), "and names the gap: " + actors.out);
+    assert(/partner:invite/.test(actors.out), "and says where a Trusted Partner comes from: " + actors.out);
     eq(JSON.stringify(await listActors(context.repository)), JSON.stringify({ collectors: [], partners: [] }));
     const attempt = await cli(["link-account", "--subject=sub-first-tp", "--role=tp", "--actor=p1"], context);
-    eq(attempt.code, 1, "so the first Trusted Partner cannot be provisioned by a script");
+    eq(attempt.code, 1, "so the first Trusted Partner is still not provisioned by a script");
   });
 
   test("an account can be listed and disabled", async () => {
@@ -494,7 +495,11 @@ describe("F. secrets stay out of every output", () => {
       const text = fs.readFileSync(path.join(ROOT, file), "utf8");
       assert(!/eyJ[A-Za-z0-9_-]{20,}/.test(text), file + " contains something like a token");
       assert(!/postgres(ql)?:\/\/[^\s"'`]*:[^\s"'`]*@/.test(text), file + " contains a connection string with a password");
-      assert(!/service_role|anon_key|BEGIN (RSA )?PRIVATE KEY|srv-[a-z0-9]{16,}/.test(text), file + " contains a key or a service id");
+      assert(!/BEGIN (RSA )?PRIVATE KEY|srv-[a-z0-9]{16,}/.test(text), file + " contains a private key or a service id");
+      /* Key MATERIAL, not the words: the runbook has to be able to NAME a
+         service-role key in order to tell the founder not to use one. */
+      assert(!/sb_(secret|publishable)_[A-Za-z0-9_-]{10,}/.test(text), file + " contains an API key");
+      assert(!/(service_role|anon_key)["']?\s*[:=]\s*["'][^"']{8,}/.test(text), file + " assigns a key");
     }
   });
 });
@@ -536,11 +541,18 @@ describe("G. deployment artifacts and the runbook", () => {
     ["Supabase", "Render", "Resend", "DNS"].forEach((vendor) => assert(runbook.includes(vendor), vendor + " is covered"));
     assert(/\$7\/month|\$7 /.test(runbook) && /\$25\/month/.test(runbook), "the paid choices are named");
     assert(/Check\b/.test(runbook), "each action has a verification");
-    assert(/no command that/.test(runbook) || /cannot create/.test(runbook), "the Trusted Partner gap is written down");
+    /* Batch 4 asserted that the missing Trusted Partner path was written down.
+       Batch 5 built it, so what the runbook must now carry is the path itself —
+       how one comes into being, and that it is still by invitation only. */
+    assert(/How a Trusted Partner comes into being/.test(runbook), "the Trusted Partner path is written down");
+    assert(/partner:invite/.test(runbook), "and the command that starts it");
+    assert(/single-use/.test(runbook) && /never stored|only hashed|only as a hash/.test(runbook),
+      "and what the credential is, and is not");
   });
 
   test("the operator commands the runbook names exist", () => {
-    ["db:status", "db:migrate", "db:bootstrap", "account:link", "account:list", "start"].forEach((script) => {
+    ["db:status", "db:migrate", "db:bootstrap", "account:link", "account:list",
+      "partner:invite", "partner:invitations", "partner:revoke", "start"].forEach((script) => {
       assert(pkg.scripts[script], script + " is missing from package.json");
       assert(runbook.includes(script), script + " is not in the runbook");
     });

@@ -734,6 +734,13 @@ const REFUSE = {
   planIncomplete: "plan-incomplete",
   nothingToAccept: "nothing-to-accept",
   alreadySubmitted: "already-submitted",
+  /* Registration (Phase 3 Batch 5). The one authoring path whose authority is a
+     redeemed invitation rather than an existing actor — see
+     metyet-registration.js. Terse for the same reason as the rest: a refusal
+     names the rule and nothing about who else is registered. */
+  nameRequired: "name-required",
+  invitationRequired: "invitation-required",
+  alreadyRegistered: "already-registered",
 };
 
 module.exports = {

@@ -57,8 +57,13 @@ const toAccount = (row) => ({
 
 function createAccountDirectory(db) {
   if (!db || typeof db.transaction !== "function") throw new TypeError("createAccountDirectory: a database adapter is required");
-  const one = async (sql, params, { readOnly = false } = {}) =>
-    db.transaction(async (tx) => (await tx.query(sql, params)).rows, { readOnly });
+  /* `tx` lets a caller run inside a transaction it already owns, so an account
+     can be created in the same transaction as the world change that justified
+     it (registration, Batch 5) and roll back with it. Every other call opens
+     its own transaction, exactly as before. */
+  const one = async (sql, params, { readOnly = false, tx } = {}) => (tx
+    ? (await tx.query(sql, params)).rows
+    : db.transaction(async (t) => (await t.query(sql, params)).rows, { readOnly }));
 
   return {
     /* The only lookup the request path uses. */
@@ -81,7 +86,7 @@ function createAccountDirectory(db) {
     /* ADMIN. Provision one account for one actor. The database refuses a second
        active account for the same subject or the same actor; that refusal is
        reported as a conflict rather than resolved here. */
-    async linkAccount({ subject, role, collectorId = null, partnerId = null } = {}) {
+    async linkAccount({ subject, role, collectorId = null, partnerId = null } = {}, tx) {
       if (!isId(subject)) throw new AccountError("account.invalid-subject", "linkAccount needs the provider's subject");
       if (role !== "collector" && role !== "tp") throw new AccountError("account.invalid-role", 'linkAccount needs role "collector" or "tp"');
       const wantsCollector = role === "collector";
@@ -89,7 +94,7 @@ function createAccountDirectory(db) {
         throw new AccountError("account.invalid-actor", `a ${role} account names exactly one ${wantsCollector ? "collectorId" : "partnerId"}`);
       }
       try {
-        const rows = await one(INSERT_ACCOUNT, [randomToken(16), subject, role, collectorId, partnerId]);
+        const rows = await one(INSERT_ACCOUNT, [randomToken(16), subject, role, collectorId, partnerId], { tx });
         return toAccount(rows[0]);
       } catch (error) {
         if (/accounts_active_(subject|collector|partner)_key/.test(String(error && error.message))) {

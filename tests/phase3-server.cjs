@@ -685,25 +685,34 @@ describe("H. token verification", () => {
   });
 
   test("the verifier refuses to be built without a trustworthy source", async () => {
-    const bad = [{}, { jwksUrl: "not-a-url", issuer: "x" }, { jwksUrl: "ftp://x/y", issuer: "x" }, { jwksUrl: JWKS_URL }];
+    const bad = [{}, { jwksUrl: "not-a-url", issuer: "x" }, { jwksUrl: "ftp://x/y", issuer: "x" }, { jwksUrl: JWKS_URL },
+      /* A key set fetched over plaintext is every session at once: whoever is
+         on the wire substitutes the keys and mints their own tokens. The host
+         is compared after parsing, so a lookalike is not a loopback. */
+      { jwksUrl: "http://project.supabase.co/auth/v1/.well-known/jwks.json", issuer: "x" },
+      { jwksUrl: "http://localhost.example.com/auth/v1/.well-known/jwks.json", issuer: "x" }];
     for (const options of bad) {
       let threw = null;
       try { createTokenVerifier(options); } catch (e) { threw = e; }
       assert(threw instanceof TypeError, JSON.stringify(options));
     }
+    /* Loopback is for local development, and still builds. */
+    assert(createTokenVerifier({ jwksUrl: "http://localhost:54321/auth/v1/.well-known/jwks.json", issuer: "x" }),
+      "a local provider is usable");
   });
 });
 
 /* ============================================================== I */
 describe("I. configuration", () => {
   const ENV = { DATABASE_URL: "postgresql://user:hunter2@db.example:5432/metyet",
-    SUPABASE_URL: "https://project.supabase.co/", PORT: "8080" };
+    SUPABASE_URL: "https://project.supabase.co/", SUPABASE_PUBLISHABLE_KEY: "sb_publishable_example", PORT: "8080" };
 
   test("configuration comes from the environment and derives the provider's endpoints", () => {
     const config = loadServerConfig(ENV);
     eq(config.auth.jwksUrl, "https://project.supabase.co/auth/v1/.well-known/jwks.json");
     eq(config.auth.issuer, "https://project.supabase.co/auth/v1");
     eq(config.auth.audience, "authenticated");
+    eq(config.auth.userUrl, "https://project.supabase.co/auth/v1/user", "where registration asks about a person");
     eq(config.port, 8080);
     eq(JSON.stringify(config.database.ssl), JSON.stringify({ rejectUnauthorized: true }), "TLS on by default");
     eq(loadServerConfig({ ...ENV, DATABASE_SSL: "no-verify" }).database.ssl.rejectUnauthorized, false, "a provider chain can be trusted loosely");
@@ -715,6 +724,14 @@ describe("I. configuration", () => {
     try { loadServerConfig({ DATABASE_SSL: "sometimes" }); } catch (e) { threw = e; }
     assert(threw && threw.code === "config.invalid", "it refuses to start");
     assert(/DATABASE_URL/.test(threw.message) && /SUPABASE_URL/.test(threw.message), threw.message);
+    assert(/SUPABASE_PUBLISHABLE_KEY/.test(threw.message), "including the key registration needs: " + threw.message);
+    /* Its older name is accepted, and a SECRET key is refused rather than used. */
+    eq(loadServerConfig({ ...ENV, SUPABASE_PUBLISHABLE_KEY: "", SUPABASE_ANON_KEY: "sb_publishable_old" }).auth.apiKey,
+      "sb_publishable_old", "SUPABASE_ANON_KEY still works");
+    let secret = null;
+    try { loadServerConfig({ ...ENV, SUPABASE_PUBLISHABLE_KEY: "sb_secret_abc123" }); } catch (e) { secret = e; }
+    assert(secret && /publishable/.test(secret.message), "a secret key is refused");
+    assert(secret && !/sb_secret_abc123/.test(secret.message), "and the message does not repeat it");
     let leaked = null;
     try { loadServerConfig({ ...ENV, PORT: "0" }); } catch (e) { leaked = e; }
     assert(leaked && !/hunter2/.test(leaked.message), "no secret in the message");
@@ -744,11 +761,15 @@ describe("J. boundaries and composition", () => {
   });
 
   test("the server owns no product rule and no second way to write", () => {
-    /* Two files are allowed what the rest are not, and only these two:
+    /* Three files are allowed what the rest are not, and only these three:
        server/bootstrap.js writes the world directly — but only the empty one,
        only when there is none, and only from an operator command (Batch 4's
-       suite holds it to that); server/db-pool.js is where the driver lives. */
-    const MAY_WRITE_WORLD = ["server/bootstrap.js"];
+       suite holds it to that); server/registration.js writes it when a Trusted
+       Partner redeems an invitation, through the domain's own registration
+       module and never around it (Batch 5's suite holds it to that);
+       server/db-pool.js is where the driver lives. */
+    const MAY_WRITE_WORLD = ["server/bootstrap.js", "server/registration.js"];
+    const UNREACHABLE_FROM_ROUTES = ["server/bootstrap.js"];
     const MAY_KNOW_DRIVER = ["server/db-pool.js"];
     for (const [file, text] of serverFiles()) {
       const body = code(text);
@@ -759,8 +780,15 @@ describe("J. boundaries and composition", () => {
     const app = code(fs.readFileSync(path.join(ROOT, "server", "app.js"), "utf8"));
     assert(/executeCommand\(repository/.test(app), "writes go through the canonical command transaction");
     assert(/projectForActor\(/.test(app), "and reads through the projection");
-    /* The exemption cannot leak into a request: nothing the HTTP app loads can
-       reach bootstrap, so no route can create or overwrite a world. */
+    /* One exemption cannot leak into a request at all: nothing the HTTP app
+       loads can reach bootstrap, so no route can create or overwrite a world.
+       The other is reachable on purpose, and is held to a narrower rule — it
+       authors through the domain, and only what the domain gives it. */
+    const registration = code(fs.readFileSync(path.join(ROOT, "server", "registration.js"), "utf8"));
+    assert(/registerPartner\(/.test(registration), "registration authors through the domain");
+    assert(/validateWorld\(/.test(registration), "and validates what the domain produced");
+    assert(/expectedVersion: version/.test(registration), "and saves only the version it loaded");
+    assert(!/partners:\s*\[|\.partners\s*=/.test(registration), "it never assembles a partner itself");
     const reachable = new Set();
     const follow = (relative) => {
       if (reachable.has(relative)) return;
@@ -772,7 +800,7 @@ describe("J. boundaries and composition", () => {
       }
     };
     follow("server/app.js");
-    MAY_WRITE_WORLD.forEach((file) => assert(!reachable.has(file), file + " is reachable from an HTTP route"));
+    UNREACHABLE_FROM_ROUTES.forEach((file) => assert(!reachable.has(file), file + " is reachable from an HTTP route"));
   });
 
   test("no credential, token or connection string is committed", () => {
@@ -780,7 +808,12 @@ describe("J. boundaries and composition", () => {
       fs.readFileSync(path.join(ROOT, "persistence", "migrations", "0002_accounts.sql"), "utf8")]]) {
       assert(!/eyJ[A-Za-z0-9_-]{20,}/.test(text), file + " contains something that looks like a token");
       assert(!/postgres(ql)?:\/\/[^\s"']*:[^\s"']*@/.test(text), file + " contains a connection string with a password");
-      assert(!/service_role|anon_key|BEGIN (RSA )?PRIVATE KEY/.test(text), file + " contains a key");
+      assert(!/BEGIN (RSA )?PRIVATE KEY/.test(text), file + " contains a private key");
+      /* Key MATERIAL, not the words. A file is allowed to name `service_role`
+         or `sb_secret_` in order to REFUSE one (server/auth/identity.js does
+         exactly that); what it may never contain is an actual key. */
+      assert(!/sb_(secret|publishable)_[A-Za-z0-9_-]{10,}/.test(text), file + " contains an API key");
+      assert(!/(service_role|anon_key)["']?\s*[:=]\s*["'][^"']{8,}/.test(text), file + " assigns a key");
     }
   });
 

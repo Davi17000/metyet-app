@@ -30,10 +30,15 @@ npm run db:migrate          # apply pending migrations (forward-only)
 npm run db:bootstrap        # create the EMPTY canonical world
 npm run account:list        # the sign-ins that are provisioned
 npm run account:link -- --subject=<provider sub> --role=collector --actor=<id>
+
+npm run partner:invite -- --email=<address> --name=<store name> [--contact=<person>]
+npm run partner:invitations # every invitation, and what became of it
+npm run partner:revoke -- --id=<invitation id>
 ```
 
-`npm start` also needs `SUPABASE_URL`, because the server verifies real tokens.
-Without it the process refuses to start and names what is missing.
+`npm start` also needs `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`, because
+the server verifies real tokens and asks the Auth server whether an address was
+confirmed. Without them the process refuses to start and names what is missing.
 
 **The commands are deliberate and repeatable.** Nothing migrates at startup;
 `db:migrate` applies only what is pending and refuses a migration file that
@@ -41,6 +46,11 @@ changed after it ran; `db:bootstrap` refuses the moment the database already
 holds a world; `account:link` refuses a second active account for a subject or
 an actor, and refuses an actor that is not in the canonical world. No command
 prints a connection string, a token or a key.
+
+`partner:invite` is the exception, and deliberately so: it prints the
+invitation credential **once**, because only its hash is stored. Nothing —
+not the database, not a backup, not a log — can show it again. Send it to the
+person yourself; if it is lost, revoke the invitation and issue a new one.
 
 ---
 
@@ -54,8 +64,8 @@ Each is something only you can do. None is done yet.
 |---|---|
 | **Provider** | Supabase |
 | **Create** | One project. Choose a region close to the Render region you will pick. |
-| **Setting to copy** | The project URL (`https://<project-ref>.supabase.co`) and the **session pooler** connection string (port 5432 — Render is IPv4-only, and session pooling keeps a transaction and its advisory lock on one connection). |
-| **Environment variables** | `SUPABASE_URL`, `DATABASE_URL` |
+| **Setting to copy** | The project URL (`https://<project-ref>.supabase.co`), the **session pooler** connection string (port 5432 — Render is IPv4-only, and session pooling keeps a transaction and its advisory lock on one connection), and the project's **publishable** key (`sb_publishable_…`). Not the secret key: the server refuses one. |
+| **Environment variables** | `SUPABASE_URL`, `DATABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` |
 | **Cost** | Free tier to start; Pro is $25/month and is what a pilot with real data should sit on (daily backups, no pausing). |
 | **Check** | `DATABASE_URL=… npm run db:status` prints `schema: not migrated` — that is a successful connection. |
 
@@ -78,7 +88,7 @@ will not be accepted — deliberately.
 |---|---|
 | **Provider** | Supabase |
 | **Do** | In the project's JWT signing keys settings, migrate the legacy JWT secret into the new key system, create a standby asymmetric key (ES256), rotate to it, and revoke the legacy key once old tokens have expired. |
-| **Environment variables** | none — the JWKS URL and issuer are derived from `SUPABASE_URL` |
+| **Environment variables** | none — the JWKS URL, the issuer and the user endpoint are derived from `SUPABASE_URL` |
 | **Cost** | none |
 | **Check** | `curl https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json` returns a key whose `alg` is `ES256` (or `RS256`) with a `kid`. |
 
@@ -89,6 +99,11 @@ audience is `authenticated`, and access tokens default to a one-hour expiry.
 Those are exactly what `server/config.js` derives and `server/auth/token-verifier.js`
 requires, so no change was needed.
 
+If the Supabase project is still issuing legacy HS256 tokens, or if it is on
+the legacy `anon`/`service_role` API keys, both are worth migrating before the
+pilot: the server refuses HS256 outright, and refuses a secret key where the
+publishable one belongs.
+
 ### 2.4 Render web service
 
 | | |
@@ -96,11 +111,35 @@ requires, so no change was needed.
 | **Provider** | Render |
 | **Create** | A web service from `render.yaml` (Render's Blueprints feature reads it), or a Node web service configured by hand with the same four settings. |
 | **Settings** | build `npm ci --omit=dev`, start `npm start`, health check path `/api/health/ready`, Node 22 (`.node-version` and `NODE_VERSION`). |
-| **Environment variables to set by hand** | `DATABASE_URL`, `SUPABASE_URL`. `DATABASE_SSL=require`, `DATABASE_POOL_MAX=10` and `LOG_LEVEL=info` come from the blueprint. `PORT` is provided by Render. |
+| **Environment variables to set by hand** | `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`. `DATABASE_SSL=require`, `DATABASE_POOL_MAX=10` and `LOG_LEVEL=info` come from the blueprint. `PORT` is provided by Render. |
 | **Cost** | `plan: starter` in the blueprint is about **$7/month** and does not sleep. A free instance sleeps and would make the pilot look broken. Change the plan before applying if you disagree. |
 | **Check** | The service reaches "live" (its health check is the readiness endpoint), and `curl https://<service>/api/health/live` returns `{"status":"ok"}`. |
 
-### 2.5 Every release after the first
+### 2.5 The first Trusted Partner
+
+MetYet decides who this is. There is no page anyone can find and no form anyone
+can fill in: the only way into the network is an invitation you issue.
+
+| | |
+|---|---|
+| **Provider** | none — your command against the production database |
+| **Do** | `npm run partner:invite -- --email=<their address> --name=<their store> --contact=<their name>` |
+| **Then** | Email them yourself: what MetYet is, that they were chosen, and the credential the command printed. The wording that matters — "You've been invited to become a MetYet Trusted Partner" — is yours to write; nothing in the system sends it. |
+| **They** | sign in with that address, and accept. That single act creates their Trusted Partner, binds their sign-in to it, and spends the invitation. |
+| **Cost** | none |
+| **Check** | `npm run partner:invitations` shows it as `accepted`, with the partner id it created. `npm run account:list` shows their sign-in. |
+
+The credential is printed once and stored only as a hash; a lost one is
+replaced by `partner:revoke` and a fresh `partner:invite`, never recovered.
+It expires in 14 days by default (`--days=`, up to 90), is single-use, and is
+not a way to sign in: once they have registered, their own verified sign-in is
+what they use.
+
+**Their address must be one Supabase has confirmed, and it must be the one you
+invited.** That is checked by asking the Auth server about them, not by reading
+their token — see "Why the publishable key is needed" below.
+
+### 2.6 Every release after the first
 
 1. Push to `main` (or trigger a deploy — the blueprint sets `autoDeploy: false`).
 2. If the release adds a migration, run `npm run db:migrate` against the
@@ -111,11 +150,11 @@ requires, so no change was needed.
    `503 {"status":"unavailable","reason":"migrations-pending"}` instead of
    serving errors.
 
-### 2.6 Later, not now
+### 2.7 Later, not now
 
 | Action | Why it is not yet | Cost |
 |---|---|---|
-| **Resend custom SMTP** in Supabase Auth | Sign-in emails are a later batch. Supabase's built-in SMTP only emails project members, at a couple of messages an hour, so real sign-ins need this before launch. | Free tier covers a pilot (3,000 emails/month) |
+| **Resend custom SMTP** in Supabase Auth | Sign-in emails are a later batch, and so is sending the invitation itself — today you write that email yourself. Supabase's built-in SMTP only emails project members, at a couple of messages an hour, so real sign-ins need this before launch. | Free tier covers a pilot (3,000 emails/month) |
 | **DNS for `app.metyet.io` / `demo.metyet.io`** | The React clients still run the in-memory prototype; there is nothing to point production at yet. | none beyond the domain |
 | **Sentry** | Optional. Render's logs are enough for a pilot. | free tier |
 
@@ -133,7 +172,8 @@ that do not.
 | Variable | Needed by | Default | What it is |
 |---|---|---|---|
 | `DATABASE_URL` | every command, and the server | none — required | The Supabase **session pooler** connection string (port 5432). |
-| `SUPABASE_URL` | the server only | none — required | `https://<project-ref>.supabase.co`. The issuer and JWKS endpoint are derived from it. |
+| `SUPABASE_URL` | the server only | none — required | `https://<project-ref>.supabase.co`. The issuer, the JWKS endpoint and the user endpoint are derived from it. |
+| `SUPABASE_PUBLISHABLE_KEY` | the server only | none — required | The project's **publishable** key (`sb_publishable_…`), or its older name `SUPABASE_ANON_KEY`. It is the `apikey` header the provider's gateway requires when registration asks whether an address was confirmed. It is safe to hold — it grants nothing by itself, and the authority in that call is the person's own token. **A secret or service-role key here is refused, not used.** |
 | `DATABASE_SSL` | both | `require` | `require` (TLS, chain verified), `no-verify` (TLS, chain not verified — only if a provider's CA is unavailable) or `disable` (local Postgres only). |
 | `DATABASE_CA_CERT` | both | none | A PEM certificate, only when a provider's CA must be pinned. Supabase's pooler does not need one. |
 | `DATABASE_POOL_MAX` | both | `10` | Connections in the pool. Keep it well under the pooler's limit. |
@@ -141,35 +181,65 @@ that do not.
 | `DATABASE_IDLE_TX_TIMEOUT_MS` | both | `20000` | An open transaction that stops doing work is cancelled, so the world lock is never held by a dead client. |
 | `SUPABASE_JWT_ISSUER` | the server | derived | Override only if the project's issuer is not `<SUPABASE_URL>/auth/v1`. |
 | `SUPABASE_JWKS_URL` | the server | derived | Override only to point verification at a different key set. |
+| `SUPABASE_USER_URL` | the server | derived | Override only to point the confirmed-address check at a different Auth server. |
 | `SUPABASE_JWT_AUDIENCE` | the server | `authenticated` | The audience a user token must carry. |
 | `PORT` | the server | `8080` | Render sets this itself; do not set it there. |
 | `HOST` | the server | `0.0.0.0` | |
 | `LOG_LEVEL` | the server | `info` | |
 
-The three `SUPABASE_JWT*`/`JWKS` overrides exist for a migration or a test rig.
-Setting them wrong points verification at keys the project does not sign with,
-so leave them alone unless you are deliberately doing that.
+The `SUPABASE_JWT*`, `JWKS` and `USER_URL` overrides exist for a migration or a
+test rig. Setting them wrong points verification at keys the project does not
+sign with, or asks the wrong server who somebody is, so leave them alone unless
+you are deliberately doing that.
+
+### Why the publishable key is needed, and why it is only that
+
+Registration has to know that the provider **confirmed** the address a person is
+redeeming an invitation with — not merely what address their token says. A
+Supabase access token cannot establish that: its documented claims contain no
+`email_verified` at any level, and the one that appears in practice sits inside
+`user_metadata`, which any signed-in user can write to. Believing it would let
+anyone with any sign-in claim any invited address.
+
+So the server asks the Auth server instead — `GET /auth/v1/user`, carrying that
+person's own verified token — and believes only `email_confirmed_at`, which
+Supabase sets and no user can write. That request needs an `apikey` header,
+which is the only reason this key exists in the configuration. It is the
+publishable key precisely because it is not authority: the person's token is.
 
 ---
 
-## What is not possible yet — and why
+## How a Trusted Partner comes into being
 
-**There is no way to create the first Trusted Partner.** Production starts from
-an empty world by design, and `account:link` refuses to link a sign-in to an
-actor that does not exist. But the domain has no command that brings a Trusted
-Partner into being: `inviteCollector` creates a pending Collector and only a
-partner can send it. Writing that row with SQL would put a record in canonical
-state that no command authored, which is the one thing the command layer exists
-to prevent — so this batch surfaces the gap instead.
+Production starts empty and `account:link` refuses to link a sign-in to an actor
+that does not exist — which is right, and which used to mean the first Trusted
+Partner could not be created at all. An invitation is what closes that, and it
+closes it without loosening anything:
 
-Closing it is a product decision, not a script: MetYet needs an admin-authored
-domain command (for example `registerPartner`, run by the founder, invite-only
-by construction) with its own rules and tests. Until then the pilot can be
-deployed and its health checked, but nobody can sign in as a Trusted Partner.
+1. **You invite them.** `partner:invite` records the decision and mints a
+   single-use credential. The store's name is written here, by MetYet, because
+   MetYet approved it — not typed in later by whoever holds the credential.
+2. **You send it.** Today, by hand. What you write is the invitation; nothing
+   about it is automated yet.
+3. **They accept.** They sign in normally, and `POST /api/registration/partner`
+   takes the credential. In one transaction it spends the invitation, creates
+   their Trusted Partner through the domain, and binds their sign-in to it. Any
+   failure rolls all three back and the invitation is still theirs to use.
+4. **They start.** An empty shop, and the first useful thing to do with it is
+   add inventory.
 
-Also still ahead: the sign-in email itself (one message carrying both a six-digit
-code and a one-click link), the React clients calling this API instead of their
-in-process store, and photo storage.
+The guarantees, in one place: the credential is never stored, only hashed; it is
+single-use, expiring and revocable; the redeemer's address must be the one
+invited and the provider must have verified it; one sign-in remains one actor;
+and nothing about the request decides the partner's name or id. There is no
+route that creates an invitation, and registration is not a command, so no
+request body can name it.
+
+Still ahead: sending that invitation email from the product rather than from
+you, the sign-in email itself (one message carrying both a six-digit code and a
+one-click link), inviting Collectors from a Trusted Partner who has inventory,
+the React clients calling this API instead of their in-process store, and photo
+storage.
 
 ---
 

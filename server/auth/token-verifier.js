@@ -23,6 +23,20 @@
    token's, so a provider that starts issuing extra claims cannot grant
    authority here.
 
+   WHY NOT THE EMAIL CLAIM. A Supabase access token does carry `email`, and it
+   is tempting: registration has to know whether the person redeeming an
+   invitation is the person it was addressed to. But the token says only what
+   the address IS, never that the provider confirmed it — Supabase's documented
+   claim set has no `email_verified` at any level. The `email_verified` that
+   appears in practice sits inside `user_metadata`, and GoTrue lets any signed-in
+   user write arbitrary keys there with PUT /user. Reading it would therefore let
+   anyone with any sign-in claim any invited address.
+
+   So this module returns no address at all, and registration asks the Auth
+   server itself instead (server/auth/identity.js). The rule that a claim is
+   worth only what its issuer controls is easier to keep when the tempting claim
+   is simply not in the return value.
+
    The verification itself is `jose` (audited, no dependencies of its own),
    loaded with a dynamic import so this CommonJS server runs it on any
    supported Node. Key rotation is handled by re-fetching the JWKS once when a
@@ -32,6 +46,8 @@
    this implementation is itself tested against locally minted keys with an
    injected JWKS fetch — no network, no provider account.
    ========================================================================== */
+
+const { isSafeProviderUrl } = require("./identity.js");
 
 const DEFAULT_ALGORITHMS = ["ES256", "RS256"];
 const DEFAULT_AUDIENCE = "authenticated";
@@ -72,8 +88,15 @@ function createTokenVerifier({
   timeoutMs = DEFAULT_TIMEOUT_MS,
   fetchJwks,
 } = {}) {
-  if (typeof jwksUrl !== "string" || !/^https?:\/\//.test(jwksUrl)) {
+  if (typeof jwksUrl !== "string" || !jwksUrl) {
     throw new TypeError("createTokenVerifier: jwksUrl (the provider's JWKS endpoint) is required");
+  }
+  /* The same rule the identity endpoint is held to, and for a stronger reason:
+     these are the keys every request is trusted against, so a key set fetched
+     over plaintext is every session at once. http for loopback only. */
+  if (!isSafeProviderUrl(jwksUrl)) {
+    throw new TypeError("createTokenVerifier: the JWKS endpoint must be https "
+      + "(http is accepted only for localhost). These are the keys every token is verified against.");
   }
   if (typeof issuer !== "string" || !issuer) throw new TypeError("createTokenVerifier: issuer is required");
   if (algorithms.some((a) => /^HS/.test(a) || a === "none")) {
