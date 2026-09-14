@@ -28,6 +28,7 @@ const { migrationStatus } = require("../persistence/migrate.js");
 const { createAccountDirectory } = require("./auth/accounts.js");
 const { createInvitationDirectory } = require("./auth/invitations.js");
 const { createTokenVerifier } = require("./auth/token-verifier.js");
+const { createIdentityDirectory } = require("./auth/identity.js");
 const { systemRuntime } = require("../domain/metyet-runtime.js");
 const { createApp } = require("./app.js");
 
@@ -40,6 +41,7 @@ async function main() {
     accounts: createAccountDirectory(db),
     invitations: createInvitationDirectory(db),
     verifier: createTokenVerifier(config.auth),
+    identity: createIdentityDirectory(config.auth),
     checkSchema: () => migrationStatus(db),
     runtime: systemRuntime(),
     logger: { level: config.logLevel },

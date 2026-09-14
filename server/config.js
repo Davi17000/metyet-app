@@ -2,7 +2,7 @@
    CONFIGURATION — FROM THE ENVIRONMENT, NEVER FROM THE REPOSITORY
 
      loadDatabaseConfig(env) ->  { connectionString, poolMax, ssl, … }
-     loadAuthConfig(env)     ->  { jwksUrl, issuer, audience }
+     loadAuthConfig(env)     ->  { jwksUrl, issuer, audience, userUrl, apiKey }
      loadServerConfig(env)   ->  { port, host, logLevel, database, auth }
 
    Every value the server needs comes from environment variables. Nothing here
@@ -26,10 +26,18 @@
                            A command holds one global lock; a statement that
                            hangs would hold it with them. These bound both.
 
-     SUPABASE_URL          e.g. https://<project-ref>.supabase.co — the JWKS URL
-                           and the issuer are derived from it
+     SUPABASE_URL          e.g. https://<project-ref>.supabase.co — the JWKS URL,
+                           the issuer and the user endpoint are derived from it
+     SUPABASE_PUBLISHABLE_KEY  the project's PUBLISHABLE (anon) key — or
+                           SUPABASE_ANON_KEY, its older name. Required: it is the
+                           `apikey` header the provider's gateway wants when
+                           registration asks whether an address was confirmed
+                           (server/auth/identity.js). It is safe to hold — it
+                           grants nothing by itself — and a SECRET or
+                           service-role key here is REFUSED, not used.
      SUPABASE_JWKS_URL     optional override
      SUPABASE_JWT_ISSUER   optional override
+     SUPABASE_USER_URL     optional override
      SUPABASE_JWT_AUDIENCE optional, default "authenticated"
 
      PORT, HOST, LOG_LEVEL  optional (Render sets PORT)
@@ -37,6 +45,8 @@
    No vendor is contacted here and nothing is provisioned: this only reads what
    an operator set.
    ========================================================================== */
+
+const { isSecretKey } = require("./auth/identity.js");
 
 const SSL_MODES = ["require", "no-verify", "disable"];
 
@@ -92,7 +102,18 @@ function authSettings(env, problems) {
   if (jwksUrl && !/^https:\/\//.test(jwksUrl) && !/^http:\/\/(localhost|127\.0\.0\.1)/.test(jwksUrl)) {
     problems.push("the JWKS URL must be https");
   }
-  return { jwksUrl, issuer, audience: trimmed(env.SUPABASE_JWT_AUDIENCE) || "authenticated" };
+  /* Registration asks the Auth server itself whether an address was confirmed
+     (server/auth/identity.js), because no token claim answers that. The gateway
+     requires an apikey header on the way; the PUBLISHABLE (anon) key is what
+     belongs there, and it is not authority — the user's own verified token is.
+     A secret key is refused rather than used. */
+  const userUrl = trimmed(env.SUPABASE_USER_URL) || (supabaseUrl && `${supabaseUrl}/auth/v1/user`);
+  const apiKey = trimmed(env.SUPABASE_PUBLISHABLE_KEY) || trimmed(env.SUPABASE_ANON_KEY);
+  if (!apiKey) problems.push("SUPABASE_PUBLISHABLE_KEY (the project's publishable/anon key) is not set");
+  else if (isSecretKey(apiKey)) problems.push("SUPABASE_PUBLISHABLE_KEY must be the publishable (anon) key, not a secret or service-role key");
+  if (!userUrl) problems.push("SUPABASE_URL (or SUPABASE_USER_URL) is not set");
+
+  return { jwksUrl, issuer, audience: trimmed(env.SUPABASE_JWT_AUDIENCE) || "authenticated", userUrl, apiKey };
 }
 
 const finish = (problems, value) => {
@@ -137,6 +158,8 @@ const describeConfig = (config) => ({
   databaseStatementTimeoutMs: config.database.statementTimeoutMs,
   jwksHost: (() => { try { return new URL(config.auth.jwksUrl).host; } catch { return "invalid"; } })(),
   audience: config.auth.audience,
+  /* That a key is configured, never which one, and never any part of it. */
+  identityKeyConfigured: Boolean(config.auth.apiKey),
 });
 
 module.exports = { loadServerConfig, loadDatabaseConfig, loadAuthConfig, describeConfig, ConfigError, SSL_MODES };

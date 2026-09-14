@@ -1,8 +1,8 @@
 /* ============================================================================
    REDEMPTION — AN INVITATION BECOMES A TRUSTED PARTNER, ONCE, OR NOT AT ALL
 
-     redeemPartnerInvitation({ repository, accounts, invitations, runtime },
-                             { token, subject, email })
+     redeemPartnerInvitation({ repository, accounts, invitations, identity, runtime },
+                             { token, subject, bearer })
        -> { ok: true,  partner, accountId, invitationId, version }
         | { ok: false, refused }
 
@@ -28,9 +28,18 @@
    MetYet had mailed out.
 
    NOTHING THE CALLER SAYS IS TRUSTED. The request carries one thing — the
-   credential — and the subject and email come from the verified token. The
-   store's name is the invitation's, not the request's; the partner's id is the
-   runtime's, not the request's. There is no field a redeemer can set.
+   credential. The subject comes from the verified token, and the ADDRESS comes
+   from the Auth server itself, asked with that person's own token
+   (server/auth/identity.js), because no claim in a Supabase token establishes
+   that an address was confirmed: the `email_verified` that appears there lives
+   in `user_metadata`, which any signed-in user can write. The store's name is
+   the invitation's, not the request's; the partner's id is the runtime's, not
+   the request's. There is no field a redeemer can set.
+
+   THE PROVIDER IS ASKED BEFORE THE TRANSACTION OPENS. That call is a network
+   round trip, and the transaction takes a global lock: doing it inside would
+   hold the lock for as long as somebody else's server takes to answer. It also
+   means a provider outage costs nothing — the invitation has not been touched.
 
    REFUSALS SAY LITTLE. A credential that is unknown, expired, revoked or
    already spent all give the same answer, because distinguishing them would let
@@ -51,16 +60,22 @@ const REFUSALS = Object.freeze({
   invitationUnusable: "invitation-unusable",
   /* The invitation was addressed to somebody else. */
   wrongRecipient: "wrong-recipient",
-  /* The sign-in has no verified address, so it cannot be shown to be the one
-     invited. Not a refusal of the person — a refusal to guess. */
+  /* The provider has no confirmed address for this sign-in, so it cannot be
+     shown to be the one invited. Not a refusal of the person — a refusal to
+     guess. */
   emailUnverified: "email-unverified",
   /* This sign-in is already somebody in MetYet. */
   alreadyLinked: "already-linked",
+  /* The provider could not be asked. Nothing was attempted, nothing was spent,
+     and trying again later is the whole remedy. */
+  identityUnavailable: "identity-unavailable",
 });
 
-async function redeemPartnerInvitation({ repository, accounts, invitations, runtime } = {},
-  { token, subject, email } = {}) {
-  if (!repository || !accounts || !invitations) throw new TypeError("redeemPartnerInvitation: repository, accounts and invitations are required");
+async function redeemPartnerInvitation({ repository, accounts, invitations, identity, runtime } = {},
+  { token, subject, bearer } = {}) {
+  if (!repository || !accounts || !invitations || !identity) {
+    throw new TypeError("redeemPartnerInvitation: repository, accounts, invitations and identity are required");
+  }
   if (!RT.isRuntime(runtime) || runtime.mode !== RT.MODES.authoritative) {
     throw new PersistenceError(CODES.runtimeNotAuthoritative,
       "registration requires an authoritative runtime (systemRuntime); the prototype runtime trusts caller times and ids.");
@@ -68,11 +83,19 @@ async function redeemPartnerInvitation({ repository, accounts, invitations, runt
   if (typeof subject !== "string" || !subject) throw new TypeError("redeemPartnerInvitation: the verified subject is required");
   if (typeof token !== "string" || !token) return { ok: false, refused: REFUSALS.invitationUnusable };
 
-  /* The address must come from the token, and the provider must have verified
-     it. MetYet invites a person at an address; without one there is nothing to
-     check the redeemer against, and "probably them" is not a standard this
-     path applies. */
-  const verified = normalizeEmail(email);
+  /* THE ADDRESS COMES FROM THE PROVIDER, NOT FROM THE TOKEN. MetYet invites a
+     person at an address; without a CONFIRMED one there is nothing to check the
+     redeemer against, and "probably them" is not a standard this path applies.
+     Asked before anything is opened or claimed. */
+  let answer;
+  try {
+    answer = await identity.confirmedEmail(bearer, { subject });
+  } catch (error) {
+    /* The reason word is the caller's to log; nothing of the provider's answer
+       travels further than this line. */
+    return { ok: false, refused: REFUSALS.identityUnavailable, reason: (error && error.reason) || "unavailable" };
+  }
+  const verified = normalizeEmail(answer && answer.email);
   if (!verified) return { ok: false, refused: REFUSALS.emailUnverified };
 
   /* One clock reading for the whole redemption: the claim's expiry check, the

@@ -30,7 +30,7 @@ const { migrate } = require("../persistence/migrate.js");
 const { createWorldRepository } = require("../persistence/world-repository.js");
 const { createAccountDirectory } = require("../server/auth/accounts.js");
 const { createInvitationDirectory, hashToken, statusOf, MAX_TTL_DAYS } = require("../server/auth/invitations.js");
-const { verifiedEmail } = require("../server/auth/token-verifier.js");
+const { createIdentityDirectory, isSecretKey } = require("../server/auth/identity.js");
 const { redeemPartnerInvitation, REFUSALS } = require("../server/registration.js");
 const { createApp } = require("../server/app.js");
 const { runCommand } = require("../server/cli.js");
@@ -57,19 +57,41 @@ async function world({ seeded = null } = {}) {
     runtime: RT.systemRuntime() };
 }
 
-/* A verifier that answers for tokens this suite has minted, exactly as a
-   provider would: a subject, and an address only when it was verified. */
+/* A verifier that answers for tokens this suite has minted, exactly as the real
+   one does: the subject, and NOTHING ELSE. No address — the token cannot
+   establish one, so nothing downstream may receive one from here. */
 const verifierFor = (people) => ({
   async verify(token) {
     const person = people[token];
     if (!person) { const e = new Error("no"); e.code = "token.invalid"; e.reason = "signature"; throw e; }
-    return { subject: person.subject, expiresAt: 1, ...(person.email ? { email: person.email } : {}) };
+    return { subject: person.subject, expiresAt: 1 };
+  },
+});
+
+/* The Auth server, answering GET /auth/v1/user about whoever presents a token.
+   `email` is the address on the account; `confirmed` is whether the provider
+   confirmed it — the two are separate here exactly as they are there. A person
+   may also carry `claims`, which is what their TOKEN would say: this suite uses
+   it to prove that what the token says never decides anything. */
+const identityFor = (people, { fail } = {}) => createIdentityDirectory({
+  userUrl: "https://projectref.supabase.co/auth/v1/user",
+  apiKey: "sb_publishable_test",
+  fetchUser: async (token) => {
+    if (fail) return fail(token);
+    const person = people[token];
+    if (!person) return { status: 401, json: async () => ({ message: "invalid token" }) };
+    return { status: 200, json: async () => ({
+      id: person.subject,
+      email: person.email || null,
+      email_confirmed_at: person.confirmed === false || !person.email ? null : "2026-09-01T10:00:00Z",
+      ...(person.claims || {}),
+    }) };
   },
 });
 
 const appFor = (context, people, extra = {}) => createApp({
   repository: context.repository, accounts: context.accounts, invitations: context.invitations,
-  verifier: verifierFor(people), runtime: context.runtime, ...extra });
+  verifier: verifierFor(people), identity: identityFor(people), runtime: context.runtime, ...extra });
 
 const redeem = (app, bearer, body) => app.inject({ method: "POST", url: "/api/registration/partner",
   headers: { authorization: `Bearer ${bearer}` }, payload: body });
@@ -83,6 +105,12 @@ async function cli(args, context) {
 
 const invite = async (context, overrides = {}) => context.invitations.createInvitation({
   email: EMAIL, storeName: "Northline Cards", ...overrides });
+
+/* Redemption called directly, with the provider confirming this subject's
+   address — the route's own checks are exercised in C, D and G. */
+const direct = (context, token, subject, email = EMAIL) => redeemPartnerInvitation(
+  { ...context, identity: identityFor({ [subject]: { subject, email } }) },
+  { token, subject, bearer: subject });
 
 /* ============================================================== A */
 describe("A. the invitation itself", () => {
@@ -424,23 +452,22 @@ describe("D. everything that must not work", () => {
     eq((await context.invitations.findById(invitation.id)).status, "pending", "the invitation is untouched");
   });
 
-  test("an address the provider has not verified is not an address", async () => {
+  test("an address the provider has not confirmed is not an address", async () => {
     const context = await world();
     const { token } = await invite(context);
+    /* Signed in, the right address on the account — and the provider has not
+       confirmed it. */
     const { response, refused } = await only(context, { token }, "casey",
-      { casey: { subject: "sub-casey" } });                       // signed in, no verified address
+      { casey: { subject: "sub-casey", email: EMAIL, confirmed: false } });
     eq(response.statusCode, 409);
     eq(refused, REFUSALS.emailUnverified);
     eq((await context.repository.loadWorld()).partners.length, 0);
 
-    /* The verifier is where that is decided, and it drops an unvouched address
-       rather than passing it on. */
-    eq(verifiedEmail({ email: EMAIL }), null, "no claim that it was verified");
-    eq(verifiedEmail({ email: EMAIL, email_verified: false }), null);
-    eq(verifiedEmail({ email: EMAIL, user_metadata: { email_verified: false } }), null);
-    eq(verifiedEmail({ email: EMAIL, email_verified: true }), EMAIL);
-    eq(verifiedEmail({ email: "  OWNER@Northline.Example ", user_metadata: { email_verified: true } }), EMAIL);
-    eq(verifiedEmail({ user_metadata: { email_verified: true } }), null, "nothing to verify");
+    /* And a sign-in with no address at all — a phone sign-in, say. */
+    const noAddress = await only(context, { token }, "robin", { robin: { subject: "sub-robin" } });
+    eq(noAddress.response.statusCode, 409);
+    eq(noAddress.refused, REFUSALS.emailUnverified);
+    eq((await context.repository.loadWorld()).partners.length, 0);
   });
 
   test("a sign-in that is already somebody cannot become somebody else", async () => {
@@ -474,6 +501,144 @@ describe("D. everything that must not work", () => {
   });
 });
 
+/* ==============================================================  D2
+   WHERE "VERIFIED EMAIL" COMES FROM.
+
+   A Supabase access token carries `email`, and — in practice, though not in the
+   documented claim set — an `email_verified` inside `user_metadata`. GoTrue lets
+   any signed-in user write arbitrary keys into `user_metadata` through
+   PUT /user. Believing that claim would therefore let anyone holding any
+   sign-in assert any invited address and register as that Trusted Partner.
+
+   So registration asks the Auth server instead, with the person's own token, and
+   believes only `email_confirmed_at` — which GoTrue sets and no user can write.
+   These tests exist to keep it that way.
+   ========================================================================== */
+describe("D2. the verified address comes from the provider, never from the token", () => {
+  test("a token that says it is verified proves nothing", async () => {
+    const context = await world();
+    const { token, invitation } = await invite(context);
+
+    /* The forged claim, exactly as a user could write it with PUT /user — and
+       an account whose address the provider has NOT confirmed. */
+    const people = { mallory: { subject: "sub-mallory", email: EMAIL, confirmed: false,
+      claims: { user_metadata: { email_verified: true, email: EMAIL }, email_verified: true } } };
+    const app = appFor(context, people);
+    const response = await redeem(app, "mallory", { token });
+
+    eq(response.statusCode, 409, response.body);
+    eq(response.json().error.refused, REFUSALS.emailUnverified, "a claim is worth what its issuer controls");
+    eq((await context.repository.loadWorld()).partners.length, 0, "nothing was created");
+    eq((await context.accounts.listAccounts()).length, 0, "and nothing was bound");
+    eq((await context.invitations.findById(invitation.id)).status, "pending", "the invitation is untouched");
+  });
+
+  test("the token verifier hands out no address to be tempted by", async () => {
+    const verified = await verifierFor({ casey: { subject: "sub-casey", email: EMAIL } }).verify("casey");
+    eq(Object.keys(verified).sort().join(), "expiresAt,subject", "a subject and an expiry, and nothing else");
+    /* And the real one is written the same way. */
+    const source = fs.readFileSync(path.join(ROOT, "server", "auth", "token-verifier.js"), "utf8");
+    const body = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    assert(!/user_metadata|email_verified/.test(body), "it reads no metadata and no verification claim");
+    assert(!/payload\.email/.test(body), "and no address at all");
+    assert(/return \{ subject: sub, expiresAt: exp \};/.test(body), "what it returns is exactly that");
+  });
+
+  test("only what the provider says it confirmed is confirmed", async () => {
+    const answers = [
+      [{ id: "s", email: EMAIL, email_confirmed_at: "2026-09-01T10:00:00Z" }, { email: EMAIL }, "confirmed"],
+      [{ id: "s", email: EMAIL, confirmed_at: "2026-09-01T10:00:00Z" }, { unconfirmed: true }, "a different field is not that field"],
+      [{ id: "s", email: EMAIL, email_confirmed_at: null }, { unconfirmed: true }, "never confirmed"],
+      [{ id: "s", email: EMAIL, email_confirmed_at: "" }, { unconfirmed: true }, "blank is not a time"],
+      [{ id: "s", email: EMAIL, email_confirmed_at: "whenever" }, { unconfirmed: true }, "and neither is a word"],
+      [{ id: "s", email: EMAIL, user_metadata: { email_verified: true } }, { unconfirmed: true },
+        "the user's own metadata is not the provider's word"],
+      [{ id: "s", email: null, email_confirmed_at: "2026-09-01T10:00:00Z" }, { unconfirmed: true }, "no address"],
+      [{ id: "s", email: "not-an-address", email_confirmed_at: "2026-09-01T10:00:00Z" }, { unconfirmed: true }, "not an address"],
+      [{ id: "s", email: "  OWNER@Northline.Example ", email_confirmed_at: "2026-09-01T10:00:00Z" },
+        { email: EMAIL }, "normalized the way the invitation is"],
+    ];
+    for (const [user, expected, what] of answers) {
+      const identity = createIdentityDirectory({ userUrl: "https://projectref.supabase.co/auth/v1/user",
+        apiKey: "sb_publishable_test", fetchUser: async () => ({ status: 200, json: async () => user }) });
+      eq(JSON.stringify(await identity.confirmedEmail("bearer", { subject: "s" })), JSON.stringify(expected), what);
+    }
+  });
+
+  test("an answer about somebody else is not an answer", async () => {
+    const identity = createIdentityDirectory({ userUrl: "https://projectref.supabase.co/auth/v1/user",
+      apiKey: "sb_publishable_test",
+      fetchUser: async () => ({ status: 200, json: async () => ({ id: "someone-else", email: EMAIL,
+        email_confirmed_at: "2026-09-01T10:00:00Z" }) }) });
+    let threw = null;
+    try { await identity.confirmedEmail("bearer", { subject: "sub-casey" }); } catch (e) { threw = e; }
+    eq(threw && threw.code, "identity.unavailable");
+    eq(threw && threw.reason, "subject-mismatch");
+  });
+
+  test("a provider that cannot be asked refuses the registration, and says nothing", async () => {
+    const context = await world();
+    const { token, invitation } = await invite(context);
+    const failures = [
+      [() => { throw new Error("connect ECONNREFUSED 10.0.0.1:443"); }, "unreachable"],
+      [() => { const e = new Error("timed out"); e.name = "TimeoutError"; throw e; }, "unreachable"],
+      [() => ({ status: 500, json: async () => ({ message: "boom" }) }), "status-500"],
+      [() => ({ status: 401, json: async () => ({ message: "invalid" }) }), "status-401"],
+      [() => ({ status: 200, json: async () => { throw new Error("not json"); } }), "malformed"],
+      [() => ({ status: 200, json: async () => "a string" }), "malformed"],
+      [() => ({ status: 200, json: async () => [1, 2, 3] }), "malformed"],
+      [() => ({ nonsense: true }), "malformed"],
+    ];
+    for (const [fail, reason] of failures) {
+      const lines = [];
+      const app = createApp({ repository: context.repository, accounts: context.accounts,
+        invitations: context.invitations, verifier: verifierFor({ casey: { subject: "sub-casey" } }),
+        identity: identityFor({}, { fail }), runtime: context.runtime,
+        logger: { level: "info", stream: { write: (l) => lines.push(l) } } });
+      const response = await redeem(app, "casey", { token });
+
+      eq(response.statusCode, 503, reason);
+      eq(JSON.stringify(response.json().error.code), '"service_unavailable"', "generic, and about the service");
+      eq(response.json().error.refused, undefined, "a refusal code would suggest they were judged");
+      const said = lines.join("\n");
+      assert(!said.includes(token) && !response.body.includes(token), "no invitation credential");
+      assert(!said.includes("casey") || !said.includes("Bearer"), "and no bearer token");
+      assert(said.includes(reason), "the reason is in the log, where it belongs: " + reason);
+    }
+    eq((await context.repository.loadWorld()).partners.length, 0, "nothing was created by any of it");
+    eq((await context.invitations.findById(invitation.id)).status, "pending", "and nothing was spent");
+  });
+
+  test("the key that asks is the publishable one, and a secret key is refused", () => {
+    /* The authority in that call is the person's own token. A secret key would
+       add nothing and lose everything if it leaked. */
+    assert(isSecretKey("sb_secret_abc123"), "the current spelling");
+    const legacyServiceRole = "x." + Buffer.from(JSON.stringify({ role: "service_role" })).toString("base64url") + ".y";
+    assert(isSecretKey(legacyServiceRole), "and the legacy service-role JWT");
+    const legacyAnon = "x." + Buffer.from(JSON.stringify({ role: "anon" })).toString("base64url") + ".y";
+    assert(!isSecretKey(legacyAnon) && !isSecretKey("sb_publishable_abc") && !isSecretKey(undefined), "publishable keys are fine");
+
+    for (const apiKey of ["sb_secret_abc123", legacyServiceRole]) {
+      let threw = null;
+      try { createIdentityDirectory({ userUrl: "https://projectref.supabase.co/auth/v1/user", apiKey }); } catch (e) { threw = e; }
+      assert(threw instanceof TypeError, "a secret key is refused outright");
+      assert(/publishable/.test(threw.message) && !threw.message.includes(apiKey), "and the message does not repeat it");
+    }
+    let missing = null;
+    try { createIdentityDirectory({ userUrl: "https://projectref.supabase.co/auth/v1/user" }); } catch (e) { missing = e; }
+    assert(missing instanceof TypeError, "and no key at all is refused too");
+  });
+
+  test("the provider is asked before anything is opened or claimed", () => {
+    const source = fs.readFileSync(path.join(ROOT, "server", "registration.js"), "utf8");
+    const body = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    const asked = body.indexOf("identity.confirmedEmail");
+    const opened = body.indexOf("repository.withTransaction");
+    assert(asked > 0 && opened > 0 && asked < opened,
+      "a network round trip inside the transaction would hold the world lock on somebody else's server");
+  });
+});
+
 /* ============================================================== E */
 describe("E. nothing survives a failed redemption", () => {
   /* Each failure is injected at a different step of the same transaction. What
@@ -496,7 +661,7 @@ describe("E. nothing survives a failed redemption", () => {
 
       let threw = null;
       try {
-        await redeemPartnerInvitation(context, { token, subject: "sub-casey", email: EMAIL });
+        await direct(context, token, "sub-casey");
       } catch (e) { threw = e; }
       assert(threw, "the failure was not swallowed");
 
@@ -512,7 +677,7 @@ describe("E. nothing survives a failed redemption", () => {
 
       /* And it still works, which is the point of rolling back rather than
          cleaning up: the person tries again and it simply goes through. */
-      const done = await redeemPartnerInvitation(context, { token, subject: "sub-casey", email: EMAIL });
+      const done = await direct(context, token, "sub-casey");
       eq(done.ok, true, JSON.stringify(done));
       eq((await context.repository.loadWorld()).partners.length, 1);
     });
@@ -527,7 +692,7 @@ describe("E. nothing survives a failed redemption", () => {
       { ...state, partners: [{ name: "no id" }] }, tx, opts);
 
     let threw = null;
-    try { await redeemPartnerInvitation(context, { token, subject: "sub-casey", email: EMAIL }); } catch (e) { threw = e; }
+    try { await direct(context, token, "sub-casey"); } catch (e) { threw = e; }
     assert(threw && /persistence\./.test(String(threw.code)), `expected a persistence refusal, got ${threw && threw.code}`);
 
     context.repository.saveWorld = realSave;
@@ -540,8 +705,8 @@ describe("E. nothing survives a failed redemption", () => {
     const { token } = await invite(context);
     /* PGlite is a single session, so these serialize rather than truly race —
        what is asserted is the outcome either order must produce. */
-    const first = await redeemPartnerInvitation(context, { token, subject: "sub-casey", email: EMAIL });
-    const second = await redeemPartnerInvitation(context, { token, subject: "sub-robin", email: EMAIL });
+    const first = await direct(context, token, "sub-casey");
+    const second = await direct(context, token, "sub-robin");
     eq(first.ok, true);
     eq(second.ok, false);
     eq(second.refused, REFUSALS.invitationUnusable);

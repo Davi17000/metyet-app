@@ -36,8 +36,9 @@ npm run partner:invitations # every invitation, and what became of it
 npm run partner:revoke -- --id=<invitation id>
 ```
 
-`npm start` also needs `SUPABASE_URL`, because the server verifies real tokens.
-Without it the process refuses to start and names what is missing.
+`npm start` also needs `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`, because
+the server verifies real tokens and asks the Auth server whether an address was
+confirmed. Without them the process refuses to start and names what is missing.
 
 **The commands are deliberate and repeatable.** Nothing migrates at startup;
 `db:migrate` applies only what is pending and refuses a migration file that
@@ -63,8 +64,8 @@ Each is something only you can do. None is done yet.
 |---|---|
 | **Provider** | Supabase |
 | **Create** | One project. Choose a region close to the Render region you will pick. |
-| **Setting to copy** | The project URL (`https://<project-ref>.supabase.co`) and the **session pooler** connection string (port 5432 — Render is IPv4-only, and session pooling keeps a transaction and its advisory lock on one connection). |
-| **Environment variables** | `SUPABASE_URL`, `DATABASE_URL` |
+| **Setting to copy** | The project URL (`https://<project-ref>.supabase.co`), the **session pooler** connection string (port 5432 — Render is IPv4-only, and session pooling keeps a transaction and its advisory lock on one connection), and the project's **publishable** key (`sb_publishable_…`). Not the secret key: the server refuses one. |
+| **Environment variables** | `SUPABASE_URL`, `DATABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` |
 | **Cost** | Free tier to start; Pro is $25/month and is what a pilot with real data should sit on (daily backups, no pausing). |
 | **Check** | `DATABASE_URL=… npm run db:status` prints `schema: not migrated` — that is a successful connection. |
 
@@ -87,7 +88,7 @@ will not be accepted — deliberately.
 |---|---|
 | **Provider** | Supabase |
 | **Do** | In the project's JWT signing keys settings, migrate the legacy JWT secret into the new key system, create a standby asymmetric key (ES256), rotate to it, and revoke the legacy key once old tokens have expired. |
-| **Environment variables** | none — the JWKS URL and issuer are derived from `SUPABASE_URL` |
+| **Environment variables** | none — the JWKS URL, the issuer and the user endpoint are derived from `SUPABASE_URL` |
 | **Cost** | none |
 | **Check** | `curl https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json` returns a key whose `alg` is `ES256` (or `RS256`) with a `kid`. |
 
@@ -98,6 +99,11 @@ audience is `authenticated`, and access tokens default to a one-hour expiry.
 Those are exactly what `server/config.js` derives and `server/auth/token-verifier.js`
 requires, so no change was needed.
 
+If the Supabase project is still issuing legacy HS256 tokens, or if it is on
+the legacy `anon`/`service_role` API keys, both are worth migrating before the
+pilot: the server refuses HS256 outright, and refuses a secret key where the
+publishable one belongs.
+
 ### 2.4 Render web service
 
 | | |
@@ -105,7 +111,7 @@ requires, so no change was needed.
 | **Provider** | Render |
 | **Create** | A web service from `render.yaml` (Render's Blueprints feature reads it), or a Node web service configured by hand with the same four settings. |
 | **Settings** | build `npm ci --omit=dev`, start `npm start`, health check path `/api/health/ready`, Node 22 (`.node-version` and `NODE_VERSION`). |
-| **Environment variables to set by hand** | `DATABASE_URL`, `SUPABASE_URL`. `DATABASE_SSL=require`, `DATABASE_POOL_MAX=10` and `LOG_LEVEL=info` come from the blueprint. `PORT` is provided by Render. |
+| **Environment variables to set by hand** | `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`. `DATABASE_SSL=require`, `DATABASE_POOL_MAX=10` and `LOG_LEVEL=info` come from the blueprint. `PORT` is provided by Render. |
 | **Cost** | `plan: starter` in the blueprint is about **$7/month** and does not sleep. A free instance sleeps and would make the pilot look broken. Change the plan before applying if you disagree. |
 | **Check** | The service reaches "live" (its health check is the readiness endpoint), and `curl https://<service>/api/health/live` returns `{"status":"ok"}`. |
 
@@ -127,7 +133,11 @@ The credential is printed once and stored only as a hash; a lost one is
 replaced by `partner:revoke` and a fresh `partner:invite`, never recovered.
 It expires in 14 days by default (`--days=`, up to 90), is single-use, and is
 not a way to sign in: once they have registered, their own verified sign-in is
-what they use. Their verified address must be the one you invited.
+what they use.
+
+**Their address must be one Supabase has confirmed, and it must be the one you
+invited.** That is checked by asking the Auth server about them, not by reading
+their token — see "Why the publishable key is needed" below.
 
 ### 2.6 Every release after the first
 
@@ -162,7 +172,8 @@ that do not.
 | Variable | Needed by | Default | What it is |
 |---|---|---|---|
 | `DATABASE_URL` | every command, and the server | none — required | The Supabase **session pooler** connection string (port 5432). |
-| `SUPABASE_URL` | the server only | none — required | `https://<project-ref>.supabase.co`. The issuer and JWKS endpoint are derived from it. |
+| `SUPABASE_URL` | the server only | none — required | `https://<project-ref>.supabase.co`. The issuer, the JWKS endpoint and the user endpoint are derived from it. |
+| `SUPABASE_PUBLISHABLE_KEY` | the server only | none — required | The project's **publishable** key (`sb_publishable_…`), or its older name `SUPABASE_ANON_KEY`. It is the `apikey` header the provider's gateway requires when registration asks whether an address was confirmed. It is safe to hold — it grants nothing by itself, and the authority in that call is the person's own token. **A secret or service-role key here is refused, not used.** |
 | `DATABASE_SSL` | both | `require` | `require` (TLS, chain verified), `no-verify` (TLS, chain not verified — only if a provider's CA is unavailable) or `disable` (local Postgres only). |
 | `DATABASE_CA_CERT` | both | none | A PEM certificate, only when a provider's CA must be pinned. Supabase's pooler does not need one. |
 | `DATABASE_POOL_MAX` | both | `10` | Connections in the pool. Keep it well under the pooler's limit. |
@@ -170,14 +181,31 @@ that do not.
 | `DATABASE_IDLE_TX_TIMEOUT_MS` | both | `20000` | An open transaction that stops doing work is cancelled, so the world lock is never held by a dead client. |
 | `SUPABASE_JWT_ISSUER` | the server | derived | Override only if the project's issuer is not `<SUPABASE_URL>/auth/v1`. |
 | `SUPABASE_JWKS_URL` | the server | derived | Override only to point verification at a different key set. |
+| `SUPABASE_USER_URL` | the server | derived | Override only to point the confirmed-address check at a different Auth server. |
 | `SUPABASE_JWT_AUDIENCE` | the server | `authenticated` | The audience a user token must carry. |
 | `PORT` | the server | `8080` | Render sets this itself; do not set it there. |
 | `HOST` | the server | `0.0.0.0` | |
 | `LOG_LEVEL` | the server | `info` | |
 
-The three `SUPABASE_JWT*`/`JWKS` overrides exist for a migration or a test rig.
-Setting them wrong points verification at keys the project does not sign with,
-so leave them alone unless you are deliberately doing that.
+The `SUPABASE_JWT*`, `JWKS` and `USER_URL` overrides exist for a migration or a
+test rig. Setting them wrong points verification at keys the project does not
+sign with, or asks the wrong server who somebody is, so leave them alone unless
+you are deliberately doing that.
+
+### Why the publishable key is needed, and why it is only that
+
+Registration has to know that the provider **confirmed** the address a person is
+redeeming an invitation with — not merely what address their token says. A
+Supabase access token cannot establish that: its documented claims contain no
+`email_verified` at any level, and the one that appears in practice sits inside
+`user_metadata`, which any signed-in user can write to. Believing it would let
+anyone with any sign-in claim any invited address.
+
+So the server asks the Auth server instead — `GET /auth/v1/user`, carrying that
+person's own verified token — and believes only `email_confirmed_at`, which
+Supabase sets and no user can write. That request needs an `apikey` header,
+which is the only reason this key exists in the configuration. It is the
+publishable key precisely because it is not authority: the person's token is.
 
 ---
 

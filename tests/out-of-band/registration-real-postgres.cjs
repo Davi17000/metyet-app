@@ -27,8 +27,16 @@ const { migrate } = require("../../persistence/migrate.js");
 const { createWorldRepository } = require("../../persistence/world-repository.js");
 const { createAccountDirectory } = require("../../server/auth/accounts.js");
 const { createInvitationDirectory } = require("../../server/auth/invitations.js");
+const { createIdentityDirectory } = require("../../server/auth/identity.js");
 const { redeemPartnerInvitation, REFUSALS } = require("../../server/registration.js");
 const { emptyWorld } = require("../../server/bootstrap.js");
+
+/* Which address the provider reports for a given bearer token, matching the
+   invitations each section creates. */
+const emailFor = (token) => {
+  const numbered = /^bearer-sub-(\d+)$/.exec(token);
+  return numbered ? `owner${numbered[1]}@northline.example` : "owner@northline.example";
+};
 
 const URL = process.env.DATABASE_URL;
 if (!URL) { console.error("DATABASE_URL is required"); process.exit(2); }
@@ -44,7 +52,14 @@ async function fresh(pool) {
   const repository = createWorldRepository(db);
   await repository.saveWorld(emptyWorld());
   return { db, repository, accounts: createAccountDirectory(db),
-    invitations: createInvitationDirectory(db), runtime: RT.systemRuntime() };
+    invitations: createInvitationDirectory(db), runtime: RT.systemRuntime(),
+    /* The Auth server, answering about whoever presents a token. The real one
+       is exercised by the in-process suite; what this suite is for is the
+       DATABASE behaviour on real connections. */
+    identity: createIdentityDirectory({ userUrl: "https://projectref.supabase.co/auth/v1/user",
+      apiKey: "sb_publishable_test",
+      fetchUser: async (token) => ({ status: 200, json: async () => ({
+        id: token.replace(/^bearer-/, ""), email: emailFor(token), email_confirmed_at: "2026-09-01T10:00:00Z" }) }) }) };
 }
 const invite = (c, email = "owner@northline.example") =>
   c.invitations.createInvitation({ email, storeName: "Northline Cards" });
@@ -56,7 +71,7 @@ async function main() {
   {
     const c = await fresh(pool);
     const { token, invitation } = await invite(c);
-    const result = await redeemPartnerInvitation(c, { token, subject: "sub-casey", email: "owner@northline.example" });
+    const result = await redeemPartnerInvitation(c, { token, subject: "sub-casey", bearer: "bearer-sub-casey" });
     ok(result.ok, "it registered");
     const world = await c.repository.loadWorld();
     eq(world.partners.length, 1, "one partner");
@@ -79,7 +94,7 @@ async function main() {
       linkAccount: c.accounts.linkAccount, completeRedemption: c.invitations.completeRedemption };
     breakIt(c);
     let threw = null;
-    try { await redeemPartnerInvitation(c, { token, subject: "sub-casey", email: "owner@northline.example" }); }
+    try { await redeemPartnerInvitation(c, { token, subject: "sub-casey", bearer: "bearer-sub-casey" }); }
     catch (e) { threw = e; }
     Object.assign(c.repository, { loadWorld: real.loadWorld, saveWorld: real.saveWorld });
     c.accounts.linkAccount = real.linkAccount;
@@ -96,7 +111,7 @@ async function main() {
     const c = await fresh(pool);
     const { token } = await invite(c);
     const attempts = ["sub-a", "sub-b", "sub-c", "sub-d"].map((subject) =>
-      redeemPartnerInvitation(c, { token, subject, email: "owner@northline.example" }));
+      redeemPartnerInvitation(c, { token, subject, bearer: `bearer-${subject}` }));
     const results = await Promise.all(attempts);
     eq(results.filter((r) => r.ok).length, 1, "exactly one succeeded");
     ok(results.filter((r) => !r.ok).every((r) => r.refused === REFUSALS.invitationUnusable),
@@ -111,7 +126,7 @@ async function main() {
     const invites = [];
     for (let i = 0; i < 4; i += 1) invites.push(await invite(c, `owner${i}@northline.example`));
     const results = await Promise.all(invites.map((inv, i) =>
-      redeemPartnerInvitation(c, { token: inv.token, subject: `sub-${i}`, email: `owner${i}@northline.example` })));
+      redeemPartnerInvitation(c, { token: inv.token, subject: `sub-${i}`, bearer: `bearer-sub-${i}` })));
     eq(results.filter((r) => r.ok).length, 4, "all four registered");
     const world = await c.repository.loadWorld();
     eq(world.partners.length, 4, "four partners");

@@ -697,13 +697,14 @@ describe("H. token verification", () => {
 /* ============================================================== I */
 describe("I. configuration", () => {
   const ENV = { DATABASE_URL: "postgresql://user:hunter2@db.example:5432/metyet",
-    SUPABASE_URL: "https://project.supabase.co/", PORT: "8080" };
+    SUPABASE_URL: "https://project.supabase.co/", SUPABASE_PUBLISHABLE_KEY: "sb_publishable_example", PORT: "8080" };
 
   test("configuration comes from the environment and derives the provider's endpoints", () => {
     const config = loadServerConfig(ENV);
     eq(config.auth.jwksUrl, "https://project.supabase.co/auth/v1/.well-known/jwks.json");
     eq(config.auth.issuer, "https://project.supabase.co/auth/v1");
     eq(config.auth.audience, "authenticated");
+    eq(config.auth.userUrl, "https://project.supabase.co/auth/v1/user", "where registration asks about a person");
     eq(config.port, 8080);
     eq(JSON.stringify(config.database.ssl), JSON.stringify({ rejectUnauthorized: true }), "TLS on by default");
     eq(loadServerConfig({ ...ENV, DATABASE_SSL: "no-verify" }).database.ssl.rejectUnauthorized, false, "a provider chain can be trusted loosely");
@@ -715,6 +716,14 @@ describe("I. configuration", () => {
     try { loadServerConfig({ DATABASE_SSL: "sometimes" }); } catch (e) { threw = e; }
     assert(threw && threw.code === "config.invalid", "it refuses to start");
     assert(/DATABASE_URL/.test(threw.message) && /SUPABASE_URL/.test(threw.message), threw.message);
+    assert(/SUPABASE_PUBLISHABLE_KEY/.test(threw.message), "including the key registration needs: " + threw.message);
+    /* Its older name is accepted, and a SECRET key is refused rather than used. */
+    eq(loadServerConfig({ ...ENV, SUPABASE_PUBLISHABLE_KEY: "", SUPABASE_ANON_KEY: "sb_publishable_old" }).auth.apiKey,
+      "sb_publishable_old", "SUPABASE_ANON_KEY still works");
+    let secret = null;
+    try { loadServerConfig({ ...ENV, SUPABASE_PUBLISHABLE_KEY: "sb_secret_abc123" }); } catch (e) { secret = e; }
+    assert(secret && /publishable/.test(secret.message), "a secret key is refused");
+    assert(secret && !/sb_secret_abc123/.test(secret.message), "and the message does not repeat it");
     let leaked = null;
     try { loadServerConfig({ ...ENV, PORT: "0" }); } catch (e) { leaked = e; }
     assert(leaked && !/hunter2/.test(leaked.message), "no secret in the message");
@@ -791,7 +800,12 @@ describe("J. boundaries and composition", () => {
       fs.readFileSync(path.join(ROOT, "persistence", "migrations", "0002_accounts.sql"), "utf8")]]) {
       assert(!/eyJ[A-Za-z0-9_-]{20,}/.test(text), file + " contains something that looks like a token");
       assert(!/postgres(ql)?:\/\/[^\s"']*:[^\s"']*@/.test(text), file + " contains a connection string with a password");
-      assert(!/service_role|anon_key|BEGIN (RSA )?PRIVATE KEY/.test(text), file + " contains a key");
+      assert(!/BEGIN (RSA )?PRIVATE KEY/.test(text), file + " contains a private key");
+      /* Key MATERIAL, not the words. A file is allowed to name `service_role`
+         or `sb_secret_` in order to REFUSE one (server/auth/identity.js does
+         exactly that); what it may never contain is an actual key. */
+      assert(!/sb_(secret|publishable)_[A-Za-z0-9_-]{10,}/.test(text), file + " contains an API key");
+      assert(!/(service_role|anon_key)["']?\s*[:=]\s*["'][^"']{8,}/.test(text), file + " assigns a key");
     }
   });
 

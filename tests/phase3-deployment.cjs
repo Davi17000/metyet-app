@@ -34,6 +34,7 @@ const SECRET = "sup3r-s3cret-password";
 const ENV = {
   DATABASE_URL: `postgresql://metyet:${SECRET}@db.example.supabase.co:5432/postgres`,
   SUPABASE_URL: "https://projectref.supabase.co",
+  SUPABASE_PUBLISHABLE_KEY: "sb_publishable_example",
 };
 
 let pglite = null;
@@ -494,7 +495,11 @@ describe("F. secrets stay out of every output", () => {
       const text = fs.readFileSync(path.join(ROOT, file), "utf8");
       assert(!/eyJ[A-Za-z0-9_-]{20,}/.test(text), file + " contains something like a token");
       assert(!/postgres(ql)?:\/\/[^\s"'`]*:[^\s"'`]*@/.test(text), file + " contains a connection string with a password");
-      assert(!/service_role|anon_key|BEGIN (RSA )?PRIVATE KEY|srv-[a-z0-9]{16,}/.test(text), file + " contains a key or a service id");
+      assert(!/BEGIN (RSA )?PRIVATE KEY|srv-[a-z0-9]{16,}/.test(text), file + " contains a private key or a service id");
+      /* Key MATERIAL, not the words: the runbook has to be able to NAME a
+         service-role key in order to tell the founder not to use one. */
+      assert(!/sb_(secret|publishable)_[A-Za-z0-9_-]{10,}/.test(text), file + " contains an API key");
+      assert(!/(service_role|anon_key)["']?\s*[:=]\s*["'][^"']{8,}/.test(text), file + " assigns a key");
     }
   });
 });
