@@ -744,11 +744,15 @@ describe("J. boundaries and composition", () => {
   });
 
   test("the server owns no product rule and no second way to write", () => {
-    /* Two files are allowed what the rest are not, and only these two:
+    /* Three files are allowed what the rest are not, and only these three:
        server/bootstrap.js writes the world directly — but only the empty one,
        only when there is none, and only from an operator command (Batch 4's
-       suite holds it to that); server/db-pool.js is where the driver lives. */
-    const MAY_WRITE_WORLD = ["server/bootstrap.js"];
+       suite holds it to that); server/registration.js writes it when a Trusted
+       Partner redeems an invitation, through the domain's own registration
+       module and never around it (Batch 5's suite holds it to that);
+       server/db-pool.js is where the driver lives. */
+    const MAY_WRITE_WORLD = ["server/bootstrap.js", "server/registration.js"];
+    const UNREACHABLE_FROM_ROUTES = ["server/bootstrap.js"];
     const MAY_KNOW_DRIVER = ["server/db-pool.js"];
     for (const [file, text] of serverFiles()) {
       const body = code(text);
@@ -759,8 +763,15 @@ describe("J. boundaries and composition", () => {
     const app = code(fs.readFileSync(path.join(ROOT, "server", "app.js"), "utf8"));
     assert(/executeCommand\(repository/.test(app), "writes go through the canonical command transaction");
     assert(/projectForActor\(/.test(app), "and reads through the projection");
-    /* The exemption cannot leak into a request: nothing the HTTP app loads can
-       reach bootstrap, so no route can create or overwrite a world. */
+    /* One exemption cannot leak into a request at all: nothing the HTTP app
+       loads can reach bootstrap, so no route can create or overwrite a world.
+       The other is reachable on purpose, and is held to a narrower rule — it
+       authors through the domain, and only what the domain gives it. */
+    const registration = code(fs.readFileSync(path.join(ROOT, "server", "registration.js"), "utf8"));
+    assert(/registerPartner\(/.test(registration), "registration authors through the domain");
+    assert(/validateWorld\(/.test(registration), "and validates what the domain produced");
+    assert(/expectedVersion: version/.test(registration), "and saves only the version it loaded");
+    assert(!/partners:\s*\[|\.partners\s*=/.test(registration), "it never assembles a partner itself");
     const reachable = new Set();
     const follow = (relative) => {
       if (reachable.has(relative)) return;
@@ -772,7 +783,7 @@ describe("J. boundaries and composition", () => {
       }
     };
     follow("server/app.js");
-    MAY_WRITE_WORLD.forEach((file) => assert(!reachable.has(file), file + " is reachable from an HTTP route"));
+    UNREACHABLE_FROM_ROUTES.forEach((file) => assert(!reachable.has(file), file + " is reachable from an HTTP route"));
   });
 
   test("no credential, token or connection string is committed", () => {

@@ -23,6 +23,7 @@ const { Pool } = require("pg");
 const { fromPgPool } = require("../persistence/database.js");
 const { createWorldRepository } = require("../persistence/world-repository.js");
 const { createAccountDirectory } = require("./auth/accounts.js");
+const { createInvitationDirectory } = require("./auth/invitations.js");
 const { loadDatabaseConfig } = require("./config.js");
 
 function createPool(database, { applicationName = "metyet" } = {}) {
@@ -49,7 +50,8 @@ async function withDatabase(fn, { env = process.env, applicationName = "metyet-a
   const pool = createPool(database, { applicationName });
   const db = fromPgPool(pool);
   try {
-    return await fn({ pool, db, repository: createWorldRepository(db), accounts: createAccountDirectory(db) });
+    return await fn({ pool, db, repository: createWorldRepository(db),
+      accounts: createAccountDirectory(db), invitations: createInvitationDirectory(db) });
   } finally {
     await pool.end();
   }

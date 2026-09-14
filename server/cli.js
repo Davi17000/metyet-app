@@ -10,6 +10,10 @@
        accounts                    the provisioned sign-ins
        link-account --subject=… --role=collector|tp --actor=<id>
        disable-account --account=<id>
+       invite-partner --email=… --name=… [--contact=…] [--days=…] [--note=…]
+       invitations                 every invitation and what became of it
+       invitation --id=<id>        one invitation, in full
+       revoke-invitation --id=<id> withdraw one that is still pending
 
    Every one of these is a decision someone makes on purpose. None of them runs
    by itself: the server never migrates at startup (a rolling restart would
@@ -41,6 +45,10 @@ const USAGE = `MetYet operator commands
   node server/cli.js accounts
   node server/cli.js link-account --subject=<provider sub> --role=collector|tp --actor=<id>
   node server/cli.js disable-account --account=<account id>
+  node server/cli.js invite-partner --email=<address> --name=<store name> [--contact=<person>] [--days=14] [--note=<text>]
+  node server/cli.js invitations
+  node server/cli.js invitation --id=<invitation id>
+  node server/cli.js revoke-invitation --id=<invitation id>
 
 The database is read from DATABASE_URL (and DATABASE_SSL, DATABASE_CA_CERT,
 DATABASE_POOL_MAX). Nothing here starts a server or contacts a vendor.`;
@@ -103,8 +111,9 @@ const OPERATIONS = {
     say(`partners:    ${partners.length ? partners.map((p) => `${p.id} (${p.name || "unnamed"})`).join(", ") : "none"}`);
     say(`collectors:  ${collectors.length ? collectors.map((c) => `${c.id} (${c.name || "unnamed"})`).join(", ") : "none"}`);
     if (!partners.length && !collectors.length) {
-      say("There is nobody to link an account to yet. The domain has no command that");
-      say("creates a Trusted Partner, so this is a product decision, not a script.");
+      say("There is nobody to link an account to yet. A Trusted Partner is not made");
+      say("by a script: invite one (`npm run partner:invite`) and they register");
+      say("themselves, which is what creates them.");
     }
     return 0;
   },
@@ -128,6 +137,64 @@ const OPERATIONS = {
     const account = await accounts.disableAccount(flags.account);
     if (!account) { say("no active account with that id; nothing changed"); return 1; }
     say(`disabled:    ${account.accountId}  ${account.role}  ${JSON.stringify(account.actor)}`);
+    return 0;
+  },
+
+  /* MetYet invites Trusted Partners. This is where that decision is recorded,
+     and the credential below is printed ONCE — it is stored only as a hash, so
+     a lost one is re-issued with a new invitation, never recovered. */
+  async "invite-partner"({ invitations }, flags, say) {
+    const { invitation, token } = await invitations.createInvitation({
+      email: flags.email, storeName: flags.name, contactName: flags.contact,
+      note: flags.note, ttlDays: flags.days === undefined ? undefined : Number(flags.days) });
+    say(`invited:     ${invitation.storeName} <${invitation.email}>`);
+    say(`invitation:  ${invitation.id}`);
+    say(`expires:     ${invitation.expiresAt}`);
+    say("");
+    say(`credential:  ${token}`);
+    say("");
+    say("Send that credential to them yourself; it is shown here once and is not");
+    say("stored anywhere. It lets them register this Trusted Partner one time.");
+    say("It is not a way to sign in: once they have registered, their own");
+    say("verified sign-in is what they use from then on.");
+    return 0;
+  },
+
+  async invitations({ invitations }, _flags, say) {
+    const rows = await invitations.listInvitations();
+    if (!rows.length) { say("invitations: none"); return 0; }
+    rows.forEach((i) => say(`${i.status.padEnd(9)}    ${i.id}  ${i.storeName} <${i.email}>`
+      + `${i.partnerId ? `  -> ${i.partnerId}` : ""}`));
+    return 0;
+  },
+
+  async invitation({ invitations }, flags, say) {
+    const found = await invitations.findById(flags.id);
+    if (!found) { say("no invitation with that id"); return 1; }
+    say(`invitation:  ${found.id}`);
+    say(`status:      ${found.status}`);
+    say(`partner:     ${found.storeName} <${found.email}>${found.contactName ? `  (${found.contactName})` : ""}`);
+    say(`created:     ${found.createdAt}`);
+    say(`expires:     ${found.expiresAt}`);
+    if (found.acceptedAt) {
+      say(`accepted:    ${found.acceptedAt}`);
+      say(`created:     partner ${found.partnerId}, account ${found.accountId}`);
+    }
+    if (found.revokedAt) say(`revoked:     ${found.revokedAt}`);
+    if (found.note) say(`note:        ${found.note}`);
+    say("The credential itself is not stored and cannot be shown.");
+    return 0;
+  },
+
+  /* Withdrawing is one-way. To let someone in after this, invite them again:
+     a new invitation with a new credential, so what happened to the old one
+     stays readable. */
+  async "revoke-invitation"({ invitations }, flags, say) {
+    const revoked = await invitations.revokeInvitation(flags.id);
+    if (!revoked) { say("no pending invitation with that id; nothing changed"); return 1; }
+    say(`revoked:     ${revoked.id}  ${revoked.storeName} <${revoked.email}>`);
+    say("That credential can no longer register anything. Invite them again to");
+    say("issue a new one.");
     return 0;
   },
 };

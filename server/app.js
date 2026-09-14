@@ -13,6 +13,14 @@
                -> executeCommand()              for writes: the durable, locked,
                                                 atomic canonical transaction
 
+   ONE ROUTE TAKES THE SECOND STEP DIFFERENTLY, and only that one. Registration
+   (POST /api/registration/partner) is reached by somebody who has a verified
+   sign-in and is nobody in MetYet yet — which is the state every Trusted
+   Partner is in exactly once. It verifies the token and stops: what authorizes
+   it is the invitation credential in the body, and what it produces is the
+   account that every later request will need. See server/registration.js. There
+   is no route that creates an invitation; MetYet invites Trusted Partners.
+
    What this file does NOT contain: a product rule, a visibility rule, a copy
    of any domain check, or a second way to write state. execute() decides what
    may happen, projectForActor() decides what may be seen, validateWorld() and
@@ -34,6 +42,7 @@ const Fastify = require("fastify");
 const { projectForActor } = require("../domain/metyet-projection.js");
 const RT = require("../domain/metyet-runtime.js");
 const { executeCommand } = require("../persistence/command-transaction.js");
+const { redeemPartnerInvitation } = require("./registration.js");
 const { apiError, toApiError, errorBody } = require("./errors.js");
 
 /* Fields a request may not carry: they name authority, and authority comes from
@@ -82,6 +91,7 @@ function createApp({
   repository,
   accounts,
   verifier,
+  invitations,
   checkSchema,
   runtime = RT.systemRuntime(),
   logger = false,
@@ -118,6 +128,23 @@ function createApp({
     }
     /* The only identity that exists from here on. */
     request.metyet = { actor: account.actor, accountId: account.accountId, role: account.role };
+  }
+
+  /* Registration is the one route reached by someone who is authenticated but
+     is nobody in MetYet yet — that is the whole point of it. So it verifies the
+     token and stops there: a subject, and the address the provider vouched for.
+     No account lookup, no actor, and nothing a request body says. */
+  async function verifyOnly(request) {
+    const header = request.headers.authorization;
+    const match = typeof header === "string" && header.match(/^Bearer +(\S+)$/i);
+    if (!match) throw apiError("unauthenticated", { detail: "no bearer token" });
+    try {
+      const verified = await verifier.verify(match[1]);
+      request.metyet = { subject: verified.subject, email: verified.email };
+    } catch (error) {
+      request.log.info({ reason: error && error.reason }, "bearer token rejected");
+      throw apiError("unauthenticated", { detail: (error && error.reason) || "not verified" });
+    }
   }
 
   /* ------------------------------------------------------------ HEALTH */
@@ -187,6 +214,44 @@ function createApp({
     if (!state.actor) throw apiError("actor_unknown");
     return { ok: true, version: result.version, value: result.value === undefined ? null : result.value, state };
   });
+
+  /* ------------------------------------------------------------ REGISTRATION
+     "You've been invited to become a MetYet Trusted Partner." This is the
+     accept. It exists only when an invitation directory is wired in, it takes
+     one field — the credential from that invitation — and it cannot be reached
+     without a verified sign-in. There is no route that CREATES an invitation:
+     MetYet invites Trusted Partners, and nobody applies. */
+  if (invitations) {
+    app.post("/api/registration/partner", { preHandler: verifyOnly }, async (request, reply) => {
+      const body = request.body;
+      if (!isPlainObject(body)) throw apiError("invalid_request", { detail: "a JSON object is required" });
+      const unknown = Object.keys(body).filter((k) => k !== "token");
+      if (unknown.length) throw apiError("invalid_request", { detail: `unknown field(s): ${unknown.join(", ")}` });
+      if (typeof body.token !== "string" || !body.token) {
+        throw apiError("invalid_request", { detail: "token must be a non-empty string" });
+      }
+
+      const { subject, email } = request.metyet;
+      const result = await redeemPartnerInvitation({ repository, accounts, invitations, runtime },
+        { token: body.token, subject, email });
+
+      if (!result.ok) {
+        /* The credential is never logged, not even in part. */
+        request.log.info({ refused: result.refused }, "registration refused");
+        reply.code(409);
+        return errorBody(apiError("command_refused", { refused: result.refused }), request.id);
+      }
+
+      request.log.info({ partnerId: result.partner.id, invitationId: result.invitationId }, "Trusted Partner registered");
+      /* They receive what they would receive from /api/view: their own new,
+         empty shop. The canonical world does not leave this process here
+         either. */
+      const actor = { partnerId: result.partner.id };
+      const state = projectForActor(await repository.loadWorld(), actor);
+      if (!state.actor) throw apiError("actor_unknown");
+      return { ok: true, version: result.version, state };
+    });
+  }
 
   /* ------------------------------------------------------------ FAILURES */
   app.setNotFoundHandler((request, reply) => {

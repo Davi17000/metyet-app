@@ -30,6 +30,10 @@ npm run db:migrate          # apply pending migrations (forward-only)
 npm run db:bootstrap        # create the EMPTY canonical world
 npm run account:list        # the sign-ins that are provisioned
 npm run account:link -- --subject=<provider sub> --role=collector --actor=<id>
+
+npm run partner:invite -- --email=<address> --name=<store name> [--contact=<person>]
+npm run partner:invitations # every invitation, and what became of it
+npm run partner:revoke -- --id=<invitation id>
 ```
 
 `npm start` also needs `SUPABASE_URL`, because the server verifies real tokens.
@@ -41,6 +45,11 @@ changed after it ran; `db:bootstrap` refuses the moment the database already
 holds a world; `account:link` refuses a second active account for a subject or
 an actor, and refuses an actor that is not in the canonical world. No command
 prints a connection string, a token or a key.
+
+`partner:invite` is the exception, and deliberately so: it prints the
+invitation credential **once**, because only its hash is stored. Nothing —
+not the database, not a backup, not a log — can show it again. Send it to the
+person yourself; if it is lost, revoke the invitation and issue a new one.
 
 ---
 
@@ -100,7 +109,27 @@ requires, so no change was needed.
 | **Cost** | `plan: starter` in the blueprint is about **$7/month** and does not sleep. A free instance sleeps and would make the pilot look broken. Change the plan before applying if you disagree. |
 | **Check** | The service reaches "live" (its health check is the readiness endpoint), and `curl https://<service>/api/health/live` returns `{"status":"ok"}`. |
 
-### 2.5 Every release after the first
+### 2.5 The first Trusted Partner
+
+MetYet decides who this is. There is no page anyone can find and no form anyone
+can fill in: the only way into the network is an invitation you issue.
+
+| | |
+|---|---|
+| **Provider** | none — your command against the production database |
+| **Do** | `npm run partner:invite -- --email=<their address> --name=<their store> --contact=<their name>` |
+| **Then** | Email them yourself: what MetYet is, that they were chosen, and the credential the command printed. The wording that matters — "You've been invited to become a MetYet Trusted Partner" — is yours to write; nothing in the system sends it. |
+| **They** | sign in with that address, and accept. That single act creates their Trusted Partner, binds their sign-in to it, and spends the invitation. |
+| **Cost** | none |
+| **Check** | `npm run partner:invitations` shows it as `accepted`, with the partner id it created. `npm run account:list` shows their sign-in. |
+
+The credential is printed once and stored only as a hash; a lost one is
+replaced by `partner:revoke` and a fresh `partner:invite`, never recovered.
+It expires in 14 days by default (`--days=`, up to 90), is single-use, and is
+not a way to sign in: once they have registered, their own verified sign-in is
+what they use. Their verified address must be the one you invited.
+
+### 2.6 Every release after the first
 
 1. Push to `main` (or trigger a deploy — the blueprint sets `autoDeploy: false`).
 2. If the release adds a migration, run `npm run db:migrate` against the
@@ -111,11 +140,11 @@ requires, so no change was needed.
    `503 {"status":"unavailable","reason":"migrations-pending"}` instead of
    serving errors.
 
-### 2.6 Later, not now
+### 2.7 Later, not now
 
 | Action | Why it is not yet | Cost |
 |---|---|---|
-| **Resend custom SMTP** in Supabase Auth | Sign-in emails are a later batch. Supabase's built-in SMTP only emails project members, at a couple of messages an hour, so real sign-ins need this before launch. | Free tier covers a pilot (3,000 emails/month) |
+| **Resend custom SMTP** in Supabase Auth | Sign-in emails are a later batch, and so is sending the invitation itself — today you write that email yourself. Supabase's built-in SMTP only emails project members, at a couple of messages an hour, so real sign-ins need this before launch. | Free tier covers a pilot (3,000 emails/month) |
 | **DNS for `app.metyet.io` / `demo.metyet.io`** | The React clients still run the in-memory prototype; there is nothing to point production at yet. | none beyond the domain |
 | **Sentry** | Optional. Render's logs are enough for a pilot. | free tier |
 
@@ -152,24 +181,37 @@ so leave them alone unless you are deliberately doing that.
 
 ---
 
-## What is not possible yet — and why
+## How a Trusted Partner comes into being
 
-**There is no way to create the first Trusted Partner.** Production starts from
-an empty world by design, and `account:link` refuses to link a sign-in to an
-actor that does not exist. But the domain has no command that brings a Trusted
-Partner into being: `inviteCollector` creates a pending Collector and only a
-partner can send it. Writing that row with SQL would put a record in canonical
-state that no command authored, which is the one thing the command layer exists
-to prevent — so this batch surfaces the gap instead.
+Production starts empty and `account:link` refuses to link a sign-in to an actor
+that does not exist — which is right, and which used to mean the first Trusted
+Partner could not be created at all. An invitation is what closes that, and it
+closes it without loosening anything:
 
-Closing it is a product decision, not a script: MetYet needs an admin-authored
-domain command (for example `registerPartner`, run by the founder, invite-only
-by construction) with its own rules and tests. Until then the pilot can be
-deployed and its health checked, but nobody can sign in as a Trusted Partner.
+1. **You invite them.** `partner:invite` records the decision and mints a
+   single-use credential. The store's name is written here, by MetYet, because
+   MetYet approved it — not typed in later by whoever holds the credential.
+2. **You send it.** Today, by hand. What you write is the invitation; nothing
+   about it is automated yet.
+3. **They accept.** They sign in normally, and `POST /api/registration/partner`
+   takes the credential. In one transaction it spends the invitation, creates
+   their Trusted Partner through the domain, and binds their sign-in to it. Any
+   failure rolls all three back and the invitation is still theirs to use.
+4. **They start.** An empty shop, and the first useful thing to do with it is
+   add inventory.
 
-Also still ahead: the sign-in email itself (one message carrying both a six-digit
-code and a one-click link), the React clients calling this API instead of their
-in-process store, and photo storage.
+The guarantees, in one place: the credential is never stored, only hashed; it is
+single-use, expiring and revocable; the redeemer's address must be the one
+invited and the provider must have verified it; one sign-in remains one actor;
+and nothing about the request decides the partner's name or id. There is no
+route that creates an invitation, and registration is not a command, so no
+request body can name it.
+
+Still ahead: sending that invitation email from the product rather than from
+you, the sign-in email itself (one message carrying both a six-digit code and a
+one-click link), inviting Collectors from a Trusted Partner who has inventory,
+the React clients calling this API instead of their in-process store, and photo
+storage.
 
 ---
 

@@ -2,7 +2,7 @@
    TOKEN VERIFICATION — A SIGNATURE, OR NOTHING
 
      const verifier = createTokenVerifier({ jwksUrl, issuer, audience })
-     await verifier.verify(token)  ->  { subject, expiresAt }
+     await verifier.verify(token)  ->  { subject, expiresAt, email? }
 
    The server's only source of authenticated identity. A bearer token is
    accepted when, and only when:
@@ -17,11 +17,18 @@
      - it carries an expiry and is inside it (with a small clock tolerance).
 
    Nothing is ever decoded "just to read a claim": there is no code path that
-   returns anything from an unverified token. What comes back is the provider's
-   stable subject and nothing else — no email, no name, no role. Which MetYet
-   actor that subject may act as is the account directory's answer, not the
-   token's, so a provider that starts issuing extra claims cannot grant
-   authority here.
+   returns anything from an unverified token. Which MetYet actor a subject may
+   act as is the account directory's answer, not the token's, so a provider that
+   starts issuing extra claims cannot grant authority here.
+
+   ONE CLAIM BESIDES THE SUBJECT, AND ONLY WHEN THE PROVIDER VOUCHES FOR IT.
+   `email` is returned only if the token also says the provider verified that
+   address (Supabase puts `email_verified` in `user_metadata`; a top-level claim
+   is accepted too). An unverified address is dropped entirely rather than
+   passed on with a flag, so nothing downstream can use one by mistake. It is
+   still not authority: it is used in exactly one place — checking that the
+   person redeeming an invitation is the person it was addressed to (Batch 5) —
+   and never to find, choose or create an account.
 
    The verification itself is `jose` (audited, no dependencies of its own),
    loaded with a dynamic import so this CommonJS server runs it on any
@@ -60,6 +67,17 @@ const REASONS = {
   ERR_JWS_INVALID: "malformed",
   ERR_JWT_INVALID: "malformed",
 };
+
+/* The address the PROVIDER says it verified, normalized, or nothing. A claim
+   the provider has not vouched for is not returned at all: half an answer here
+   would eventually be treated as a whole one somewhere else. */
+const isTrue = (v) => v === true || v === "true";
+function verifiedEmail(payload) {
+  const address = typeof payload.email === "string" ? payload.email.trim().toLowerCase() : "";
+  if (!address || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) return null;
+  const meta = payload.user_metadata && typeof payload.user_metadata === "object" ? payload.user_metadata : {};
+  return isTrue(payload.email_verified) || isTrue(meta.email_verified) ? address : null;
+}
 
 function createTokenVerifier({
   jwksUrl,
@@ -139,9 +157,10 @@ function createTokenVerifier({
       const { sub, exp } = result.payload;
       if (typeof sub !== "string" || !sub) throw new TokenError("no-subject", "the bearer token names no subject");
       if (typeof exp !== "number") throw new TokenError("no-expiry", "the bearer token has no expiry");
-      return { subject: sub, expiresAt: exp };
+      const email = verifiedEmail(result.payload);
+      return { subject: sub, expiresAt: exp, ...(email ? { email } : {}) };
     },
   };
 }
 
-module.exports = { createTokenVerifier, TokenError, DEFAULT_ALGORITHMS, DEFAULT_AUDIENCE };
+module.exports = { createTokenVerifier, TokenError, verifiedEmail, DEFAULT_ALGORITHMS, DEFAULT_AUDIENCE };

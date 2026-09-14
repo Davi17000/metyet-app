@@ -26,6 +26,7 @@ const { fromPgPool } = require("../persistence/database.js");
 const { createWorldRepository } = require("../persistence/world-repository.js");
 const { migrationStatus } = require("../persistence/migrate.js");
 const { createAccountDirectory } = require("./auth/accounts.js");
+const { createInvitationDirectory } = require("./auth/invitations.js");
 const { createTokenVerifier } = require("./auth/token-verifier.js");
 const { systemRuntime } = require("../domain/metyet-runtime.js");
 const { createApp } = require("./app.js");
@@ -37,6 +38,7 @@ async function main() {
   const app = createApp({
     repository: createWorldRepository(db),
     accounts: createAccountDirectory(db),
+    invitations: createInvitationDirectory(db),
     verifier: createTokenVerifier(config.auth),
     checkSchema: () => migrationStatus(db),
     runtime: systemRuntime(),
