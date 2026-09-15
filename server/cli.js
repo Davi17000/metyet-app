@@ -14,6 +14,10 @@
        invitations                 every invitation and what became of it
        invitation --id=<id>        one invitation, in full
        revoke-invitation --id=<id> withdraw one that is still pending
+       auth-check [--token-file=<path>]   is the identity provider set up right?
+       sign-in --email=… [--out=<path>]   get one real access token, to check with
+       register-partner [--url=…]         accept an invitation, against a running server
+       view [--url=…]                     what this sign-in can see, as itself
 
    Every one of these is a decision someone makes on purpose. None of them runs
    by itself: the server never migrates at startup (a rolling restart would
@@ -35,6 +39,9 @@ const { migrate, migrationStatus } = require("../persistence/migrate.js");
 const { withDatabase } = require("./db-pool.js");
 const { bootstrapWorld, emptyWorld } = require("./bootstrap.js");
 const { linkActorAccount, listActors } = require("./provisioning.js");
+const { checkAuth } = require("./auth-check.js");
+const { signIn } = require("./auth-signin.js");
+const { registerPartner, view } = require("./partner-register.js");
 
 const USAGE = `MetYet operator commands
 
@@ -49,15 +56,97 @@ const USAGE = `MetYet operator commands
   node server/cli.js invitations
   node server/cli.js invitation --id=<invitation id>
   node server/cli.js revoke-invitation --id=<invitation id>
+  node server/cli.js auth-check [--token-file=<path holding one access token>]
+  node server/cli.js sign-in --email=<address> [--out=<path for the access token>]
+  node server/cli.js register-partner [--url=<server>] [--token-file=<path>]
+  node server/cli.js view [--url=<server>] [--token-file=<path>]
 
-The database is read from DATABASE_URL (and DATABASE_SSL, DATABASE_CA_CERT,
-DATABASE_POOL_MAX). Nothing here starts a server or contacts a vendor.`;
+The database is read from DATABASE_URL (and DATABASE_SSL, DATABASE_CA_CERT or
+DATABASE_CA_CERT_FILE, DATABASE_POOL_MAX); auth-check and sign-in read SUPABASE_URL and
+SUPABASE_PUBLISHABLE_KEY instead and need no database. register-partner and view need
+neither: they talk to a RUNNING server over HTTP, reading the bearer from a file.
+
+Nothing here starts a server. auth-check and sign-in contact the identity provider — to
+ask it a question, and to ask it to email one person a code — and neither changes anything
+the vendor holds. No command here creates a Trusted Partner: register-partner asks a
+server to redeem an invitation, and the server's own rules decide.`;
 
 /* A message a person can act on, with nothing secret in it: a connection string
    that reached an error from the driver is removed rather than printed. */
 const safeMessage = (error) => String((error && error.message) || error)
   .replace(/postgres(ql)?:\/\/\S+/gi, "<connection string>")
   .replace(/\b(password|secret|token|key)\s*=\s*\S+/gi, "$1=<hidden>");
+
+/* Some failures are a person's next action rather than a fault, and two of them
+   are reliably misread.
+
+   A TLS trust failure against a hosted database almost always means one thing —
+   the provider signs with its own root, and this machine has not been given it —
+   and saying only "self-signed certificate in certificate chain" sends an
+   operator looking for a fault in their connection string, or worse, for a way
+   to turn verification off.
+
+   And an authentication failure that is INTERMITTENT is not a wrong password.
+   Supabase's shared pooler caches credentials, and documents that right after a
+   password change it keeps checking new connections against the cached ones.
+   The instinct on seeing 28P01 is to reset the database password — which is the
+   one action that starts that window rather than ending it. So this says so.
+
+   Codes, never message text: wording changes between releases. */
+const TLS_TRUST_CODES = new Set([
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "UNABLE_TO_GET_ISSUER_CERT",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "CERT_UNTRUSTED",
+]);
+const ALTNAME_CODE = "ERR_TLS_CERT_ALTNAME_INVALID";
+
+const AUTH_FAILED_CODE = "28P01";
+
+function connectionAdvice(error, say) {
+  const code = error && error.code;
+  if (code === AUTH_FAILED_CODE) {
+    say("");
+    say("Before changing anything: if this command has just worked, or works when you run");
+    say("it again, the password is not wrong. A hosted pooler caches credentials, and");
+    say("Supabase documents connections being checked against a stale cache — which looks");
+    say("exactly like this and clears itself.");
+    say("");
+    say("  Run a read-only command (`npm run db:status`) a few times. Some failing and");
+    say("  some succeeding means the pooler, not the password.");
+    say("");
+    say("If it fails every time: on the SHARED pooler the user is postgres.<project-ref>,");
+    say("not postgres, and a password with a reserved character (& # ? space) has to be");
+    say("percent-encoded inside a connection string. Resetting the password is the last");
+    say("thing to try, not the first — it opens the stale-cache window rather than closing");
+    say("it.");
+    return true;
+  }
+  if (TLS_TRUST_CODES.has(code)) {
+    say("");
+    say("That is certificate verification working, not a connection fault: the database");
+    say("presented a certificate signed by a root this machine does not trust. Hosted");
+    say("Postgres providers commonly sign with their own root and publish it to");
+    say("download — on Supabase it is in Database Settings, under SSL Configuration.");
+    say("");
+    say("  export DATABASE_CA_CERT_FILE=/path/to/the/certificate.crt");
+    say("");
+    say("Then run this again. Do not turn verification off to get past it: without the");
+    say("certificate checked, anything that can answer for the host reads and rewrites");
+    say("everything on the connection, password included.");
+    return true;
+  }
+  if (code === ALTNAME_CODE) {
+    say("");
+    say("The certificate verified, but it is not for this host — so either the host in");
+    say("DATABASE_URL is not the one the provider issued it for, or the wrong CA is");
+    say("configured. Check the host against the connection string in the dashboard.");
+    return true;
+  }
+  return false;
+}
 
 function parseFlags(argv) {
   const flags = {};
@@ -68,6 +157,11 @@ function parseFlags(argv) {
   }
   return { flags, unknown: null };
 }
+
+/* Commands that talk to the identity provider rather than the database, and so
+   must not demand DATABASE_URL to run: an operator configuring Supabase has not
+   necessarily configured Postgres yet, and should not have to. */
+const WITHOUT_DATABASE = new Set(["auth-check", "sign-in", "register-partner", "view"]);
 
 /* The operator operations. Named so it is never confused with the domain's
    command layer: nothing here authors canonical state. */
@@ -140,6 +234,35 @@ const OPERATIONS = {
     return 0;
   },
 
+  /* The other half of the environment. Reads no database and writes nothing. */
+  async "auth-check"(_context, flags, say) {
+    return checkAuth({ env: this.env, say, tokenFile: flags["token-file"] });
+  },
+
+  /* Accepting an invitation, and then reading what it made. Both talk to a
+     RUNNING SERVER over HTTP rather than to the database: the point is to prove
+     the real route, with a real verified token, exactly as a browser will —
+     so neither of them needs, or gets, a database connection of its own. */
+  async "register-partner"(_context, flags, say) {
+    return registerPartner({ say,
+      ...(flags.url === undefined ? {} : { url: flags.url }),
+      ...(flags["token-file"] === undefined ? {} : { tokenFile: flags["token-file"] }) });
+  },
+
+  async view(_context, flags, say) {
+    return view({ say,
+      ...(flags.url === undefined ? {} : { url: flags.url }),
+      ...(flags["token-file"] === undefined ? {} : { tokenFile: flags["token-file"] }) });
+  },
+
+  /* The other half of that check: getting a real token to give it. The address
+     is an argument because it is not a secret; the code is typed and the token
+     is written to a file, because both are. */
+  async "sign-in"(_context, flags, say) {
+    return signIn({ env: this.env, say, email: flags.email,
+      ...(flags.out === undefined ? {} : { out: flags.out }) });
+  },
+
   /* MetYet invites Trusted Partners. This is where that decision is recorded,
      and the credential below is printed ONCE — it is stored only as a hash, so
      a lost one is re-issued with a new invitation, never recovered. */
@@ -209,12 +332,14 @@ async function runCommand(argv = [], { env = process.env, say = console.log, dat
   const { flags, unknown } = parseFlags(rest);
   if (unknown) { say(`unexpected argument "${unknown}"`); say(USAGE); return 2; }
 
-  const run = (context) => command(context, flags, say);
+  const run = (context) => command.call({ env }, context, flags, say);
   try {
+    if (WITHOUT_DATABASE.has(name)) return await run({});
     return database ? await run(database) : await withDatabase(run, { env });
   } catch (error) {
     say(`failed:      ${safeMessage(error)}`);
     if (error && error.code) say(`code:        ${error.code}`);
+    connectionAdvice(error, say);
     return 1;
   }
 }
@@ -224,4 +349,4 @@ if (require.main === module) {
     (error) => { console.error(`failed: ${safeMessage(error)}`); process.exitCode = 1; });
 }
 
-module.exports = { runCommand, USAGE, safeMessage };
+module.exports = { runCommand, USAGE, safeMessage, connectionAdvice, TLS_TRUST_CODES, AUTH_FAILED_CODE };

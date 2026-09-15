@@ -13,9 +13,30 @@
 #                                  deploy that skipped the migration is obvious
 #   migrate  npm run db:migrate    run deliberately, never at startup
 #
+# WHICH BRANCH THIS DEPLOYS. The pilot branch, not `main`, and deliberately:
+# `main` is behind by the whole of Batch 6 — it has no auth-check, the older
+# DATABASE_SSL vocabulary (so the `verify-full` below would be REFUSED at
+# startup), and a blueprint missing SUPABASE_PUBLISHABLE_KEY. Deploying `main`
+# today would not start. Change this line to `main` when PR #43 merges; there is
+# a test and a runbook step that say so.
+#
 # `plan: starter` is a paid instance (about $7/month at the time of writing) and
 # is the smallest plan that does not sleep. Change it before applying if that is
-# not what you want. `region` should match the Supabase project's region.
+# not what you want.
+#
+# THE REGION IS THE NEAREST ONE, NOT A MATCHING ONE. The Supabase project is in
+# Canada Central (Montreal). Render has five regions — oregon, ohio, virginia,
+# frankfurt, singapore — and none of them is in Canada, so there is nothing to
+# match; `virginia` is simply the closest, a few hundred miles from Montreal and
+# on the densest peering path in North America. `ohio` is the near-equal
+# alternative. `oregon`, which this said before, would put the whole width of
+# the continent between every query and its database.
+#
+# One consequence worth deciding rather than inheriting: the DATA stays in
+# Canada — it is Supabase that holds it — but the compute that reads and writes
+# it is in the United States, so requests carrying partner and collector data
+# are processed there. If that is not acceptable for the pilot, the answer is a
+# different host for the API, not a different Render region.
 # =============================================================================
 
 services:
@@ -23,8 +44,8 @@ services:
     name: metyet-api
     runtime: node
     plan: starter
-    region: oregon
-    branch: main
+    region: virginia
+    branch: phase-3-real-hosted-environment
     autoDeploy: false
     buildCommand: npm ci --omit=dev
     startCommand: npm start
@@ -37,11 +58,35 @@ services:
       - key: DATABASE_URL
         sync: false
       # Supabase project URL, e.g. https://<project-ref>.supabase.co — the JWKS
-      # endpoint and the token issuer are derived from it. Set by hand.
+      # endpoint, the token issuer and the Auth user endpoint are derived from
+      # it. Set by hand.
       - key: SUPABASE_URL
         sync: false
+      # The project's PUBLISHABLE (anon) key. Registration asks the Auth server
+      # whether an address was confirmed, and its gateway wants an apikey header;
+      # this is that header, and it is not authority — the person's own verified
+      # token is. A SECRET or service-role key here is refused, not used.
+      # Set by hand, and never a value in this file.
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      # verify-full: encrypt, and verify the certificate AND the host name.
+      # Supabase signs with its own root, which is not in Node's trust store, so
+      # the CA below is what makes that possible. Without it the service fails
+      # closed rather than connecting unverified — which is the point.
       - key: DATABASE_SSL
-        value: require
+        value: verify-full
+      # Where the provider's CA is read from. Render mounts a Secret File at
+      # /etc/secrets/<filename>, which is the right shape for this: the CA is a
+      # multi-line PEM, and an environment-variable editor is where multi-line
+      # values get mangled. Not a secret — it is a public root you download from
+      # the provider — but it is environment, and a certificate that rotates
+      # should not need a commit.
+      #
+      # Add the Secret File in the dashboard under exactly this name. The
+      # alternative, DATABASE_CA_CERT with the PEM as text, still works; config
+      # refuses BOTH at once rather than guessing which one you meant.
+      - key: DATABASE_CA_CERT_FILE
+        value: /etc/secrets/supabase-ca.crt
       - key: DATABASE_POOL_MAX
         value: "10"
       - key: LOG_LEVEL

@@ -21,10 +21,21 @@ import path from "node:path";
 
 const SRC = "site-src/main.jsx";
 const OUT = "site";
-const DOMAIN = "app.metyet.io";
+/* THE DEMO'S OWN HOSTNAME.
+
+   This build is the in-memory prototype: a world that lives in the browser,
+   with scenario controls, and no server behind it. It used to publish itself at
+   app.metyet.io, which is the hostname production is supposed to answer on —
+   so the demo was sitting on the address the real thing needed, and pointing
+   app.metyet.io at the API would have been a collision rather than a cutover.
+
+   So the demo is demo.metyet.io and production is app.metyet.io, which is what
+   docs/DEPLOYMENT.md has said all along. They share no state and never did:
+   this bundle has no database, no sign-in and no server. */
+const DOMAIN = "demo.metyet.io";
 
 /* Same-directory paths, because the artifact IS the site root. A root-relative
-   "/main.js" would be correct at app.metyet.io and wrong anywhere else — under
+   "/main.js" would be correct at demo.metyet.io and wrong anywhere else — under
    a project-pages path, or served from a subfolder while checking the build. */
 const HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -72,8 +83,8 @@ try {
     /* React and ReactDOM are bundled, NOT externalised: a browser cannot
        resolve a bare "react" specifier, and an import map would be a second
        thing to keep in step with package.json. */
-    /* app.metyet.io is the pilot: vendors and collectors need to reach a deal
-       at Value Trade and put it back, without engineering tooling on screen.
+    /* demo.metyet.io is the pilot demo: vendors and collectors need to reach a
+       deal at Value Trade and put it back, without engineering tooling on screen.
        A future customer build defines both false and needs no source change. */
     define: {
       "process.env.NODE_ENV": '"production"',

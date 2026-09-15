@@ -3,7 +3,7 @@
 
    Two different audiences were sharing one switch.
 
-   A vendor or collector trying the pilot at app.metyet.io needs to reach a deal
+   A vendor or collector trying the pilot demo at demo.metyet.io needs to reach a deal
    that is already at Value Trade, and needs to put it back afterwards. That is
    not debugging — it is the only way to look at a six-stage flow without
    spending an afternoon getting there. Meanwhile an engineer needs tools that

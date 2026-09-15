@@ -18,3 +18,9 @@ artifacts/
 
 # superseded: preview output moved to dist/ and this was never regenerated
 previews/
+
+# Where `npm run auth:sign-in` puts an access token, 0600, for `auth:check` to
+# read and for you to delete. Never a place for anything that has to survive:
+# the directory is ignored precisely because everything in it is a credential.
+# sign-in refuses to write outside somewhere git ignores.
+.secrets/

@@ -12,6 +12,7 @@
      E  provisioning a sign-in for an existing actor
      F  secrets stay out of output
      G  deployment artifacts and the runbook
+     H  the two hostnames, and what a deploy has to prove
    ========================================================================== */
 const { describe, test, assert, eq, run } = require("./run.cjs");
 const fs = require("fs");
@@ -27,7 +28,8 @@ const { createApp } = require("../server/app.js");
 const { runCommand, safeMessage, USAGE } = require("../server/cli.js");
 const { emptyWorld, bootstrapWorld, COLLECTIONS } = require("../server/bootstrap.js");
 const { linkActorAccount, listActors } = require("../server/provisioning.js");
-const { loadServerConfig, loadDatabaseConfig, loadAuthConfig, describeConfig } = require("../server/config.js");
+const { loadServerConfig, loadDatabaseConfig, loadAuthConfig, describeConfig,
+  REQUIRED_SERVER_ENV } = require("../server/config.js");
 
 const ROOT = path.join(__dirname, "..");
 const SECRET = "sup3r-s3cret-password";
@@ -75,7 +77,8 @@ describe("A. configuration for a hosted environment", () => {
   test("an operator command needs a database and nothing else", () => {
     const db = loadDatabaseConfig({ DATABASE_URL: ENV.DATABASE_URL });
     eq(db.connectionString, ENV.DATABASE_URL, "the connection string");
-    eq(db.sslMode, "require", "TLS on by default");
+    eq(db.sslMode, "verify-full", "TLS on by default, and the certificate verified");
+    eq(db.ssl.rejectUnauthorized, true, "which is what verify-full means");
     eq(db.poolMax, 10);
     assert(db.statementTimeoutMs >= 1000 && db.idleTransactionTimeoutMs >= 1000, "a hung statement cannot hold the world lock for ever");
     let threw = null;
@@ -99,6 +102,12 @@ describe("A. configuration for a hosted environment", () => {
   test("hosted TLS is configurable, and refuses nonsense", () => {
     eq(JSON.stringify(loadDatabaseConfig(ENV).ssl), JSON.stringify({ rejectUnauthorized: true }), "verified by default");
     eq(loadDatabaseConfig({ ...ENV, DATABASE_SSL: "no-verify" }).ssl.rejectUnauthorized, false, "a provider chain can be trusted loosely");
+    /* libpq's `require` means "do not verify" and this once meant "verify":
+       refused rather than guessed. */
+    let ambiguous = null;
+    try { loadDatabaseConfig({ ...ENV, DATABASE_SSL: "require" }); } catch (e) { ambiguous = e; }
+    assert(ambiguous && /ambiguous/.test(ambiguous.message), "require is refused: " + (ambiguous && ambiguous.message));
+    assert(/verify-full/.test(ambiguous.message) && /no-verify/.test(ambiguous.message), "and both readings are offered");
     eq(loadDatabaseConfig({ ...ENV, DATABASE_SSL: "disable" }).ssl, false, "and disabled for a local database");
     eq(loadDatabaseConfig({ ...ENV, DATABASE_CA_CERT: "-----BEGIN CERTIFICATE-----" }).ssl.ca, "-----BEGIN CERTIFICATE-----", "a pinned CA");
     let threw = null;
@@ -519,12 +528,54 @@ describe("G. deployment artifacts and the runbook", () => {
     assert(/autoDeploy: false/.test(render), "deploys are deliberate");
   });
 
+  /* WHICH BRANCH IS DEPLOYED, AND WHY IT IS NOT `main`.
+
+     The blueprint said `branch: main` while `main` was the whole of Batch 6
+     behind it: no auth-check, the older DATABASE_SSL vocabulary — so the
+     `verify-full` the blueprint itself sets would have been REFUSED at
+     startup — and a blueprint missing SUPABASE_PUBLISHABLE_KEY. Applying it
+     would have produced a service that could not start, which is the same class
+     of drift this suite already catches for environment variables, and worth
+     catching for the branch too.
+
+     So the branch is named, and whichever branch it names, the runbook has to
+     explain it. When PR #43 merges this becomes `main` and the note goes. */
+  test("the blueprint names the branch it deploys, and the runbook names the same one", () => {
+    const branch = (render.match(/^\s+branch: (\S+)/m) || [])[1];
+    assert(branch, "a branch is named rather than left to the dashboard");
+    /* The runbook states it in its own row, and the two have to AGREE — it is
+       the disagreement that is dangerous, in either direction. An operator
+       following the runbook and an operator applying the blueprint must not
+       deploy different code. */
+    const stated = (runbook.match(/\|\s*\*\*Branch\*\*\s*\|\s*`([^`]+)`/) || [])[1];
+    assert(stated, "the runbook has a Branch row");
+    eq(stated, branch, "the runbook and the blueprint deploy the same branch");
+    if (branch !== "main") {
+      const prose = runbook.replace(/\s+/g, " ");
+      assert(/change .{0,40}branch.{0,80}main|switch .{0,40}to `?main|back to `?main/i.test(prose),
+        "a branch other than main needs the runbook to say when it becomes main");
+      assert(/why the branch is not `?main/i.test(prose), "and why it is not main yet");
+    }
+  });
+
   test("the blueprint carries no secret: every value-bearing variable is safe to read", () => {
     const withValues = [...render.matchAll(/- key: (\w+)\n\s+value: (.*)/g)].map((m) => [m[1], m[2].replace(/"/g, "")]);
     const secretish = [...render.matchAll(/- key: (\w+)\n\s+sync: false/g)].map((m) => m[1]);
-    eq(secretish.sort().join(), "DATABASE_URL,SUPABASE_URL", "the two an operator sets by hand");
+    /* Every variable the server refuses to start without is set by hand —
+       derived from the contract, not a snapshot of what the file said on the day
+       it was written. Other hand-set variables are allowed (the CA certificate
+       is one: optional in general, necessary for this provider), but every one
+       of them must be a variable the configuration actually reads, so a typo
+       cannot sit in the blueprint looking effective. */
+    REQUIRED_SERVER_ENV.forEach((name) => assert(secretish.includes(name), name + " must be set by hand"));
+    const read = new Set([...fs.readFileSync(path.join(ROOT, "server", "config.js"), "utf8")
+      .matchAll(/env\.([A-Z][A-Z0-9_]+)|need\("([A-Z][A-Z0-9_]+)"|whole\("([A-Z][A-Z0-9_]+)"/g)]
+      .map((m) => m[1] || m[2] || m[3]));
+    secretish.forEach((name) => assert(read.has(name), name + " is in the blueprint but nothing reads it"));
     withValues.forEach(([key, value]) => assert(!/URL|SECRET|KEY|TOKEN|PASSWORD/i.test(key) || value === "", `${key} has a value in the file`));
-    eq(withValues.find(([k]) => k === "DATABASE_SSL")[1], "require", "TLS is on in the blueprint");
+    /* And TLS is not merely on: the certificate is verified. */
+    eq(withValues.find(([k]) => k === "DATABASE_SSL")[1], "verify-full",
+      "the blueprint verifies the certificate, it does not merely encrypt");
   });
 
   test("every environment variable the code reads is in the runbook, and vice versa", () => {
@@ -570,6 +621,97 @@ describe("G. deployment artifacts and the runbook", () => {
     assert(/ES256/.test(runbook) && /ES256/.test(verifier), "asymmetric signing, in both");
     assert(/HS256/.test(runbook), "and the legacy algorithm is called out as unsupported");
     assert(/only asymmetric algorithms/.test(verifier), "which is what the verifier enforces");
+  });
+});
+
+/* ============================================================== H
+   PRODUCTION AND THE DEMO ARE TWO HOSTNAMES, AND THE DEPLOY PROVES ITSELF.
+
+   The in-memory prototype published itself at app.metyet.io — the hostname the
+   real service is meant to answer on — so the demo was sitting on production's
+   address and "point app.metyet.io at Render" would have been a collision
+   rather than a cutover. Nothing would have caught that: the site build and the
+   runbook each looked right on their own.
+
+   And a deploy is only proven by reads that show it reached the state that was
+   already there. The plan for that is written down rather than improvised at
+   the console, because the thing most likely to go wrong under time pressure is
+   somebody "just re-running the migration" against production.
+   ========================================================================== */
+describe("H. the two hostnames, and what a deploy has to prove", () => {
+  const siteBuild = fs.readFileSync(path.join(ROOT, "site.build.mjs"), "utf8");
+  const runbook = fs.readFileSync(path.join(ROOT, "docs", "DEPLOYMENT.md"), "utf8");
+  const render = fs.readFileSync(path.join(ROOT, "render.yaml"), "utf8");
+
+  test("the demo publishes itself at the demo hostname, never production's", () => {
+    const domain = (siteBuild.match(/const DOMAIN = "([^"]+)"/) || [])[1];
+    eq(domain, "demo.metyet.io", "the Pages CNAME this build writes");
+    assert(/app\.metyet\.io/.test(runbook), "the runbook still names production's hostname");
+    /* And the runbook says which is which, so the split is recorded in the one
+       place an operator reads before pointing DNS anywhere. */
+    const prose = runbook.replace(/\s+/g, " ");
+    assert(/`app\.metyet\.io` is production/.test(prose), "production is named: " + domain);
+    assert(/`demo\.metyet\.io` is the in-memory demo/.test(prose), "and the demo is");
+    assert(/share no state/.test(prose), "and that they share none");
+  });
+
+  /* Render has five regions and none is in Canada, where the Supabase project
+     is. So there is no matching region and the choice is a nearest one, which
+     makes it exactly the kind of decision that rots: someone changes it, it
+     still looks plausible, and every query quietly crosses a continent. The
+     valid set is the provider's, written down; the choice has to be one of them
+     and the runbook has to say why it is that one. */
+  test("the region is one Render actually has, and the runbook says why it is that one", () => {
+    const RENDER_REGIONS = ["oregon", "ohio", "virginia", "frankfurt", "singapore"];
+    const region = (render.match(/^\s+region: (\S+)/m) || [])[1];
+    assert(RENDER_REGIONS.includes(region), `"${region}" is not a Render region`);
+    /* The runbook states it in its OWN ROW, and the two have to agree. Asking
+       only that the runbook "mentions" it is no check at all here: the runbook
+       legitimately names `ohio` as the near-equal alternative and `oregon` as
+       what this used to be, so any of the five would have passed. */
+    const stated = (runbook.match(/\|\s*\*\*Region\*\*\s*\|\s*`([^`]+)`/) || [])[1];
+    assert(stated, "the runbook has a Region row");
+    eq(stated, region, "the runbook and the blueprint deploy to the same region");
+    const prose = runbook.replace(/\s+/g, " ");
+    /* The database's region is the reason, so it has to appear beside it. */
+    assert(/Canada Central/.test(prose), "and where the database actually is");
+    assert(/none of them is in \*?\*?Canada/i.test(prose),
+      "and the explanation that no Render region matches it");
+    assert(/no Canadian Render region/i.test(prose), "said in the Region row too");
+    /* The consequence of the nearest-not-matching choice, which is a decision
+       rather than a detail: the data stays put, the compute does not. */
+    assert(/the compute does not/i.test(prose) && /processed in the United States/i.test(prose),
+      "and what moving the compute across the border means");
+  });
+
+  test("the runbook tells an operator how to point both, in an order that does not break", () => {
+    const prose = runbook.replace(/\s+/g, " ");
+    assert(/Custom Domains/.test(prose), "the Render step");
+    assert(/CNAME/.test(prose), "the DNS record type");
+    assert(/do not copy one from here|exactly the target Render displays/i.test(prose),
+      "and it refuses to invent the target, which is the provider's to give");
+    /* Who terminates TLS decides whether the server needs to do anything about
+       it. Render does, and says so, which is why there is no redirect in the
+       app — that reasoning has to survive in writing or somebody adds one. */
+    assert(/Render terminates TLS/i.test(prose), "it says who terminates TLS");
+    assert(/nothing in the server has to/i.test(prose), "and therefore what the server does not need to do");
+  });
+
+  test("the proof plan is reads only, and says so", () => {
+    const prose = runbook.replace(/\s+/g, " ");
+    assert(/health\/live/.test(prose) && /health\/ready/.test(prose), "both health endpoints");
+    assert(/api:view -- --url=https:/.test(prose), "the deployed projection, over https");
+    assert(/No invitation credential is involved|no invitation credential/i.test(prose),
+      "and that a projection needs no invitation");
+    /* Each promise separately, so a half-edit cannot leave the claim standing
+       while the substance goes. */
+    assert(/mutates nothing/i.test(prose), "the plan says it mutates nothing");
+    assert(/no migration/i.test(prose) && /no bootstrap/i.test(prose), "and names those two");
+    assert(/no second partner/i.test(prose) && /no invitation spent/i.test(prose), "and those two");
+    assert(/Every step is a read/i.test(prose), "and says every step is a read");
+    assert(/Do not run `partner:register` against production/.test(prose),
+      "and it warns off the one command that would create real data to prove a point");
+    assert(/Bearer.{0,40}eyJ|search the\s*logs for/i.test(prose), "and it checks the logs for secrets");
   });
 });
 
