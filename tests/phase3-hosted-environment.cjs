@@ -16,12 +16,14 @@
      B  auth-check, without a token
      C  auth-check, with one
      D  nothing secret is printed, and nothing is changed
+     E  sign-in: getting one real token, without it ever being visible
    ========================================================================== */
 const { describe, test, assert, eq, run } = require("./run.cjs");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { checkAuth, describeKeys, verdict } = require("../server/auth-check.js");
+const { signIn } = require("../server/auth-signin.js");
 const { DEFAULT_ALGORITHMS } = require("../server/auth/token-verifier.js");
 const { runCommand, USAGE, connectionAdvice, TLS_TRUST_CODES, AUTH_FAILED_CODE } = require("../server/cli.js");
 const { REQUIRED_SERVER_ENV, loadServerConfig, loadDatabaseConfig } = require("../server/config.js");
@@ -516,6 +518,235 @@ describe("D. nothing secret is printed, and nothing is changed", () => {
     assert(!/method:\s*["'](POST|PUT|PATCH|DELETE)/i.test(source), "it never writes to the provider");
     assert(!/saveWorld|linkAccount|migrate\(|createInvitation/.test(source), "and changes nothing here either");
     assert(!/writeFile|unlink/.test(source), "it does not touch the token file it was given");
+  });
+});
+
+/* ============================================================== E
+
+   `auth:check --token-file` could verify a real token the whole way through and
+   had no way to GET one — so proving the hosted environment meant pasting a
+   session out of a browser console, which is how an access token ends up in a
+   clipboard and a screenshot. `sign-in` closes that, and everything below is
+   about it closing it without becoming a second way in.
+
+   The provider is never contacted here: every request is injected. */
+const SESSION = {
+  access_token: "eyJreal.looking.token", refresh_token: "refresh-that-outlives-everything",
+  expires_in: 3600, user: { id: SUBJECT, email: EMAIL, email_confirmed_at: "2026-09-10T09:00:00.000Z" },
+};
+const replies = (...statuses) => {
+  const queue = [...statuses];
+  return async (url, options) => {
+    const next = queue.shift();
+    const status = typeof next === "number" ? next : next.status;
+    const body = typeof next === "number" ? SESSION : next.body;
+    return { status, url, options, async json() {
+      if (body instanceof Error) throw body;
+      return body;
+    } };
+  };
+};
+
+/* A provider that answers the first call and then falls over on the nth, so a
+   failure on one leg cannot be reported as a failure on the other. */
+const failOnCall = (n) => {
+  let call = 0;
+  return async (url, opts) => {
+    if (++call === n) throw new Error("network");
+    return replies(200)(url, opts);
+  };
+};
+
+/* One sign-in with everything injected: no provider, no terminal, no disk. */
+async function signin(options = {}) {
+  const lines = [];
+  const asked = [];
+  const written = [];
+  const code = await signIn({
+    env: { ...ENV, ...(options.env || {}) },
+    say: (l) => lines.push(String(l)),
+    email: "email" in options ? options.email : EMAIL,
+    ...(options.out === undefined ? {} : { out: options.out }),
+    deps: {
+      fetchImpl: options.fetchImpl || (async (url, opts) => {
+        asked.push({ url, body: JSON.parse(opts.body), headers: opts.headers, method: opts.method });
+        return (options.replies || replies(200, 200))(url, opts);
+      }),
+      askForCode: options.askForCode || (async () => "123456"),
+      writeSecret: options.writeSecret || ((file, contents) => written.push({ file, contents })),
+      mustBeIgnored: options.mustBeIgnored || (() => {}),
+    },
+  });
+  return { code, out: lines.join("\n"), asked, written };
+}
+
+describe("E. one real sign-in, without the token ever being visible", () => {
+  test("it asks the configured project, and only the configured project", async () => {
+    const result = await signin();
+    eq(result.code, 0, result.out);
+    eq(result.asked.length, 2, "one request to send the email, one to verify the code");
+    eq(result.asked[0].url, "https://projectref.supabase.co/auth/v1/otp", "the project's own otp endpoint");
+    eq(result.asked[1].url, "https://projectref.supabase.co/auth/v1/verify", "and its own verify endpoint");
+    /* Both endpoints come from the issuer the rest of the server derives, so an
+       override cannot point the sign-in at one project and the check at another. */
+    const source = fs.readFileSync(path.join(ROOT, "server", "auth-signin.js"), "utf8");
+    assert(!/supabase\.co|https:\/\/[a-z]/.test(source.replace(/\/\*[\s\S]*?\*\//g, "")),
+      "no provider host is written into the code");
+    result.asked.forEach((call) => eq(call.headers.apikey, "sb_publishable_example", "the publishable key, as the gateway wants"));
+  });
+
+  test("the sign-in request carries the address and nothing else", async () => {
+    /* An invited first-time address has no auth user yet. Sending create_user
+       either way would be this file having an opinion about signup policy; it
+       must not. GoTrue's own default decides, exactly as the browser client's
+       signInWithOtp leaves it. */
+    const result = await signin();
+    eq(JSON.stringify(result.asked[0].body), JSON.stringify({ email: EMAIL }),
+      "no create_user, no shouldCreateUser, no data — just the address");
+  });
+
+  test("the code is verified with the semantics that make one email carry both doors", async () => {
+    const result = await signin();
+    eq(result.asked[1].body.type, "email",
+      "type \"email\" — the one that checks BOTH the confirmation and recovery token");
+    eq(result.asked[1].body.token, "123456", "the typed code");
+    eq(result.asked[1].body.email, EMAIL, "against the address it was sent to");
+    assert(!("token_hash" in result.asked[1].body), "a token and a token_hash together is refused by the provider");
+    assert(/two doors to the same credential/.test(result.out), "and the operator is told what that means: " + result.out);
+  });
+
+  test("the access token is written, and the refresh token is not kept at all", async () => {
+    const result = await signin();
+    eq(result.written.length, 1, "one file");
+    eq(result.written[0].contents, SESSION.access_token, "holding exactly the access token, nothing around it");
+    assert(!result.written[0].contents.includes(SESSION.refresh_token),
+      "the refresh token outlives the access token by a long way and is dropped on the floor");
+  });
+
+  test("nothing secret is printed, on any path", async () => {
+    const runs = [
+      await signin(),
+      await signin({ replies: replies(200, 403) }),
+      await signin({ replies: replies(429) }),
+      await signin({ askForCode: async () => "12345" }),
+      await signin({ email: "not-an-address" }),
+    ];
+    runs.forEach((result) => {
+      assert(!result.out.includes(SESSION.access_token), "no access token: " + result.out);
+      assert(!result.out.includes(SESSION.refresh_token), "no refresh token");
+      assert(!result.out.includes("123456"), "not even the one-time code");
+      assert(!result.out.includes("sb_publishable_example"), "and not the key");
+    });
+  });
+
+  test("a token is never accepted as an argument, and a code is never read from a pipe", () => {
+    const source = fs.readFileSync(path.join(ROOT, "server", "auth-signin.js"), "utf8");
+    const cli = fs.readFileSync(path.join(ROOT, "server", "cli.js"), "utf8");
+    const bare = source.replace(/\/\*[\s\S]*?\*\//g, "");
+    assert(!/flags\.(token|code)|--token=|--code=/.test(bare + cli.replace(/\/\*[\s\S]*?\*\//g, "")),
+      "no flag carries a token or a code — they would be in shell history and in ps output");
+    assert(/isTTY/.test(bare), "the code is typed at a terminal");
+    /* Piping it in means it came from a file or a command line, which is the
+       thing being avoided — so that fails rather than quietly working. */
+    assert(/output:\s*muted/.test(bare), "and it is not echoed");
+    const { askForCode } = require("../server/auth-signin.js");
+    return askForCode({ input: { isTTY: false }, output: { write() {} } }).then(
+      () => { throw new Error("a non-terminal input should have been refused"); },
+      (error) => assert(/terminal/.test(error.message), error.message));
+  });
+
+  test("it refuses to write anywhere git would commit", () => {
+    const { mustBeIgnored, DEFAULT_OUT } = require("../server/auth-signin.js");
+    const status = (code) => ({ run: () => ({ status: code }) });
+    assert(mustBeIgnored("x", status(0)) === undefined, "an ignored path is fine");
+    assert(mustBeIgnored("x", status(128)) === undefined, "and so is anywhere outside a repository");
+    assert(mustBeIgnored("x", { run: () => ({ error: new Error("no git") }) }) === undefined, "and a machine without git");
+    let threw = null;
+    try { mustBeIgnored("committable.txt", status(1)); } catch (error) { threw = error; }
+    assert(threw && /does not ignore/.test(threw.message), "but a tracked path is refused: " + (threw && threw.message));
+    /* And the default really is ignored — by this repository's own rules. */
+    assert(fs.readFileSync(path.join(ROOT, ".gitignore"), "utf8").split("\n").map((l) => l.trim())
+      .includes(".secrets/"), ".secrets/ is ignored, which is where the default lives");
+    assert(DEFAULT_OUT.startsWith(".secrets/"), "and the default is inside it");
+  });
+
+  test("the file it writes is readable only by the person who ran it", () => {
+    const { writeSecret } = require("../server/auth-signin.js");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "metyet-signin-"));
+    const file = path.join(dir, "nested", "access-token");
+    writeSecret(file, "first");
+    eq(fs.readFileSync(file, "utf8"), "first", "it writes");
+    /* The mode argument only applies when the file is NEW, so re-using a
+       world-readable file from yesterday is the case worth covering. */
+    fs.chmodSync(file, 0o644);
+    writeSecret(file, "second");
+    eq(fs.readFileSync(file, "utf8"), "second", "it overwrites");
+    if (process.platform !== "win32") {
+      eq(fs.statSync(file).mode & 0o777, 0o600, "and it is 0600 either way");
+    }
+    /* The mode is on the open, not only on the chmod after it. Creating the
+       file permissively and tightening it a moment later leaves a window in
+       which anyone on the machine can read a live access token. */
+    const source = fs.readFileSync(path.join(ROOT, "server", "auth-signin.js"), "utf8");
+    assert(/openSync\([^)]*0o600\)/.test(source), "the file is created 0600, not created open and narrowed afterwards");
+  });
+
+  test("every failure is explicit, and stops", async () => {
+    const cases = [
+      [await signin({ email: "" }), 2, /--email/],
+      [await signin({ email: "nonsense" }), 2, /look like an address/],
+      [await signin({ replies: replies(429) }), 1, /rate-limits/],
+      [await signin({ replies: replies(401) }), 1, /publishable key/],
+      [await signin({ replies: replies(422) }), 1, /disabled|signups/],
+      [await signin({ replies: replies(200, 403) }), 1, /single-use|wrong, already used, or expired/],
+      [await signin({ askForCode: async () => "abcdef" }), 1, /six-digit/],
+      [await signin({ replies: replies(200, { status: 200, body: new Error("not json") }) }), 1, /could not be read/],
+      [await signin({ replies: replies(200, { status: 200, body: {} }) }), 1, /no access token/],
+      /* Each leg is named separately, so a failure on the way out cannot be
+         swallowed and then reported as a failure on the way back. */
+      [await signin({ fetchImpl: async () => { throw new Error("network"); } }), 1, /reached to send the email/],
+      [await signin({ fetchImpl: failOnCall(2) }), 1, /reached to verify the code/],
+      [await signin({ mustBeIgnored: () => { throw new Error("git does not ignore that"); } }), 1, /does not ignore/],
+      [await signin({ writeSecret: () => { throw Object.assign(new Error("no"), { code: "EACCES" }); } }), 1, /EACCES/],
+    ];
+    cases.forEach(([result, code, pattern], index) => {
+      eq(result.code, code, `case ${index} exits non-zero: ${result.out}`);
+      assert(pattern.test(result.out), `case ${index} says why: ${result.out}`);
+      assert(!result.written.length, `case ${index} wrote nothing`);
+    });
+  });
+
+  test("a refused verification never writes a file, and never claims a sign-in", async () => {
+    const result = await signin({ replies: replies(200, 403) });
+    eq(result.code, 1, result.out);
+    assert(!/signed in/.test(result.out), "it does not report a session it did not get");
+    eq(result.written.length, 0, "and leaves nothing behind");
+  });
+
+  test("it says plainly when the provider has not confirmed the address", async () => {
+    const unconfirmed = { ...SESSION, user: { ...SESSION.user, email_confirmed_at: null } };
+    const result = await signin({ replies: replies(200, { status: 200, body: unconfirmed }) });
+    eq(result.code, 0, "a session is still a session");
+    assert(/NOT YET/.test(result.out), "but it is not dressed up as confirmation: " + result.out);
+    /* And the authority is still auth-check asking the provider — this line is
+       a courtesy, never the thing registration believes. */
+    assert(/auth:check -- --token-file/.test(result.out), "which is what it points at");
+  });
+
+  test("it creates no actor, touches no database, and has no route", async () => {
+    const source = fs.readFileSync(path.join(ROOT, "server", "auth-signin.js"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    assert(!/registerPartner|redeem|createInvitation|saveWorld|linkAccount|withDatabase|DATABASE_URL/.test(source),
+      "a Supabase auth user is not a MetYet actor, and nothing here pretends otherwise");
+    assert(!/fastify|route|app\.(get|post)/i.test(source), "and nothing serves it");
+    /* It needs no database, and asks for none. */
+    const lines = [];
+    const code = await runCommand(["sign-in"], { env: ENV, say: (l) => lines.push(String(l)) });
+    eq(code, 2, "it ran without DATABASE_URL and refused for its own reason");
+    assert(!lines.join("\n").includes("DATABASE_URL"), "never asking for one: " + lines.join("\n"));
+    /* And the usage says what it is, so nobody has to read the source to find out. */
+    assert(/sign-in --email/.test(USAGE), "the usage names it");
+    eq(pkg.scripts["auth:sign-in"], "node server/cli.js sign-in", "and npm runs it");
   });
 });
 

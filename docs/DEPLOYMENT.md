@@ -148,6 +148,39 @@ default) — an invited Trusted Partner has no account until their first sign-in
 That is not a way in: an auth user is not a MetYet actor, and only an invitation
 creates one.
 
+### 2.3b Proving one real sign-in, before anyone is invited
+
+`auth:check` on its own certifies the signing side. To certify the whole path —
+a real email, a real session, a real confirmed address — it needs a real token,
+and getting one used to mean pasting a session out of a browser console. That is
+how an access token ends up in a clipboard and a screenshot, so there is a
+command instead.
+
+| | |
+|---|---|
+| **Provider** | Supabase (this only asks it to email you) |
+| **Do** | `npm run auth:sign-in -- --email=<your address>` |
+| **Then** | The email arrives with a code and a link. Type the **code** at the prompt — it is not echoed. The access token is written to `.secrets/access-token`, mode 0600, and never printed. |
+| **Check** | `npm run auth:check -- --token-file=.secrets/access-token` — it verifies the signature against the project's JWKS, the issuer, the audience and the expiry, then asks the Auth server whether that address is confirmed. |
+| **Cost** | none |
+
+The request carries the address and nothing else: no `create_user`, so the
+project's own signup policy decides whether a first-time invited address may be
+created. Verification uses `type: "email"`, which is what makes a code from the
+Magic Link template work (2.3a).
+
+Only one of the two doors can be used. Taking the code here spends the
+credential and the link in the same email stops working; to exercise the link
+instead, run `auth:sign-in` again for a **fresh** email and follow the link
+rather than typing the code — the session lands in the browser, not in the file.
+
+This is not a way into MetYet. It produces the same ordinary user session the
+sign-in page will, with the publishable key, and a Supabase auth user is not a
+MetYet actor: only redeeming an invitation makes one. It reaches no database, it
+has no HTTP route, and it refuses to write the token anywhere git does not
+ignore. Delete the file when you are done — it expires on its own, but sooner is
+better.
+
 ### 2.4 Render web service
 
 | | |

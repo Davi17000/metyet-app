@@ -15,6 +15,7 @@
        invitation --id=<id>        one invitation, in full
        revoke-invitation --id=<id> withdraw one that is still pending
        auth-check [--token-file=<path>]   is the identity provider set up right?
+       sign-in --email=… [--out=<path>]   get one real access token, to check with
 
    Every one of these is a decision someone makes on purpose. None of them runs
    by itself: the server never migrates at startup (a rolling restart would
@@ -37,6 +38,7 @@ const { withDatabase } = require("./db-pool.js");
 const { bootstrapWorld, emptyWorld } = require("./bootstrap.js");
 const { linkActorAccount, listActors } = require("./provisioning.js");
 const { checkAuth } = require("./auth-check.js");
+const { signIn } = require("./auth-signin.js");
 
 const USAGE = `MetYet operator commands
 
@@ -52,11 +54,14 @@ const USAGE = `MetYet operator commands
   node server/cli.js invitation --id=<invitation id>
   node server/cli.js revoke-invitation --id=<invitation id>
   node server/cli.js auth-check [--token-file=<path holding one access token>]
+  node server/cli.js sign-in --email=<address> [--out=<path for the access token>]
 
 The database is read from DATABASE_URL (and DATABASE_SSL, DATABASE_CA_CERT or
-DATABASE_CA_CERT_FILE, DATABASE_POOL_MAX); auth-check reads SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY
-instead and needs no database. Nothing here starts a server, and only auth-check
-contacts a vendor — to ask it a question, never to change anything.`;
+DATABASE_CA_CERT_FILE, DATABASE_POOL_MAX); auth-check and sign-in read SUPABASE_URL and
+SUPABASE_PUBLISHABLE_KEY instead and need no database. Nothing here starts a server, and
+only those two contact a vendor — auth-check to ask it a question, sign-in to ask it to
+email one person a code. Neither changes anything the vendor holds, and no command here
+creates a Trusted Partner: only redeeming an invitation does that.`;
 
 /* A message a person can act on, with nothing secret in it: a connection string
    that reached an error from the driver is removed rather than printed. */
@@ -148,7 +153,7 @@ function parseFlags(argv) {
 /* Commands that talk to the identity provider rather than the database, and so
    must not demand DATABASE_URL to run: an operator configuring Supabase has not
    necessarily configured Postgres yet, and should not have to. */
-const WITHOUT_DATABASE = new Set(["auth-check"]);
+const WITHOUT_DATABASE = new Set(["auth-check", "sign-in"]);
 
 /* The operator operations. Named so it is never confused with the domain's
    command layer: nothing here authors canonical state. */
@@ -224,6 +229,14 @@ const OPERATIONS = {
   /* The other half of the environment. Reads no database and writes nothing. */
   async "auth-check"(_context, flags, say) {
     return checkAuth({ env: this.env, say, tokenFile: flags["token-file"] });
+  },
+
+  /* The other half of that check: getting a real token to give it. The address
+     is an argument because it is not a secret; the code is typed and the token
+     is written to a file, because both are. */
+  async "sign-in"(_context, flags, say) {
+    return signIn({ env: this.env, say, email: flags.email,
+      ...(flags.out === undefined ? {} : { out: flags.out }) });
   },
 
   /* MetYet invites Trusted Partners. This is where that decision is recorded,
