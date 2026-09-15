@@ -17,6 +17,7 @@
      C  auth-check, with one
      D  nothing secret is printed, and nothing is changed
      E  sign-in: getting one real token, without it ever being visible
+     F  register-partner and view: accepting an invitation, and seeing what it made
    ========================================================================== */
 const { describe, test, assert, eq, run } = require("./run.cjs");
 const fs = require("fs");
@@ -24,6 +25,8 @@ const os = require("os");
 const path = require("path");
 const { checkAuth, describeKeys, verdict } = require("../server/auth-check.js");
 const { signIn, CODE_DIGITS } = require("../server/auth-signin.js");
+const PR = require("../server/partner-register.js");
+const { askSecret } = require("../server/secret-prompt.js");
 const { DEFAULT_ALGORITHMS } = require("../server/auth/token-verifier.js");
 const { runCommand, USAGE, connectionAdvice, TLS_TRUST_CODES, AUTH_FAILED_CODE } = require("../server/cli.js");
 const { REQUIRED_SERVER_ENV, loadServerConfig, loadDatabaseConfig } = require("../server/config.js");
@@ -724,10 +727,15 @@ describe("E. one real sign-in, without the token ever being visible", () => {
     const bare = source.replace(/\/\*[\s\S]*?\*\//g, "");
     assert(!/flags\.(token|code)|--token=|--code=/.test(bare + cli.replace(/\/\*[\s\S]*?\*\//g, "")),
       "no flag carries a token or a code — they would be in shell history and in ps output");
-    assert(/isTTY/.test(bare), "the code is typed at a terminal");
+    /* The prompt itself lives in secret-prompt.js, shared with the invitation
+       credential — two commands reading a secret slightly differently is how
+       one of them ends up echoing. The guarantees are asserted where they are. */
+    assert(/askSecret/.test(bare), "the code comes from the shared hidden prompt");
+    const prompt = fs.readFileSync(path.join(ROOT, "server", "secret-prompt.js"), "utf8");
+    assert(/isTTY/.test(prompt), "which requires a terminal");
     /* Piping it in means it came from a file or a command line, which is the
        thing being avoided — so that fails rather than quietly working. */
-    assert(/output:\s*muted/.test(bare), "and it is not echoed");
+    assert(/output:\s*muted/.test(prompt), "and does not echo");
     const { askForCode } = require("../server/auth-signin.js");
     return askForCode({ input: { isTTY: false }, output: { write() {} } }).then(
       () => { throw new Error("a non-terminal input should have been refused"); },
@@ -830,6 +838,258 @@ describe("E. one real sign-in, without the token ever being visible", () => {
     /* And the usage says what it is, so nobody has to read the source to find out. */
     assert(/sign-in --email/.test(USAGE), "the usage names it");
     eq(pkg.scripts["auth:sign-in"], "node server/cli.js sign-in", "and npm runs it");
+  });
+});
+
+
+/* ============================================================== F
+
+   `POST /api/registration/partner` had only ever been called by tests, in
+   process. Proving it for real means one HTTP request carrying TWO credentials
+   — a bearer token and a single-use invitation credential — and the obvious
+   ways to make that request (curl, a browser console) put both into shell
+   history or a scrollback buffer, which are the two worst places for either.
+
+   So the command composes the request out of a file and a hidden prompt, and
+   decides nothing: every rule about who may redeem what is on the server. What
+   is tested here is the composing and the secrecy, plus that nothing in it can
+   reach around the server to make a partner some other way. */
+const CREDENTIAL = "abcdefghjkmnpqrstvwxyz0123456789";     // 32 symbols, the shape createInvitation makes
+const BEARER = "eyJbearer.that.must.never.be.printed";
+const REGISTERED = {
+  ok: true, version: 3,
+  state: { actor: { id: "tp_9k2m", name: "Northline Cards" }, cards: [], deals: [], preferences: {} },
+};
+const VIEWED = { version: 3, state: { actor: { id: "tp_9k2m", name: "Northline Cards" }, cards: [], deals: [] } };
+
+const bearerFile = (contents = BEARER) => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "metyet-register-")), "access-token");
+  fs.writeFileSync(file, `${contents}\n`);
+  return file;
+};
+
+const answers = (...replies) => {
+  const queue = [...replies];
+  return async () => {
+    const next = queue.shift();
+    if (next instanceof Error) throw next;
+    const { status = 200, body = REGISTERED } = typeof next === "number" ? { status: next } : next;
+    return { status, async json() {
+      if (body instanceof Error) throw body;
+      return body;
+    } };
+  };
+};
+
+/* One redemption with everything injected: no server, no terminal, no network. */
+async function register(options = {}) {
+  const lines = [];
+  const sent = [];
+  const code = await PR.registerPartner({
+    say: (l) => lines.push(String(l)),
+    url: "url" in options ? options.url : "http://127.0.0.1:8080",
+    tokenFile: options.tokenFile || bearerFile(),
+    deps: {
+      askSecret: options.askSecret || (async () => CREDENTIAL),
+      fetchImpl: async (url, init) => {
+        sent.push({ url, method: init.method || "GET", headers: init.headers,
+          body: init.body === undefined ? undefined : JSON.parse(init.body) });
+        return (options.replies || answers(200))(url, init);
+      },
+    },
+  });
+  return { code, out: lines.join("\n"), sent };
+}
+
+async function viewAs(options = {}) {
+  const lines = [];
+  const sent = [];
+  const code = await PR.view({
+    say: (l) => lines.push(String(l)),
+    url: "url" in options ? options.url : "http://127.0.0.1:8080",
+    tokenFile: options.tokenFile || bearerFile(),
+    deps: {
+      fetchImpl: async (url, init) => {
+        sent.push({ url, method: init.method || "GET", headers: init.headers, body: init.body });
+        return (options.replies || answers({ status: 200, body: VIEWED }))(url, init);
+      },
+    },
+  });
+  return { code, out: lines.join("\n"), sent };
+}
+
+describe("F. accepting an invitation, with neither credential ever visible", () => {
+  test("it sends exactly one request, to the registration route, with exactly one field", async () => {
+    const result = await register();
+    eq(result.code, 0, result.out);
+    eq(result.sent.length, 1, "one request");
+    eq(result.sent[0].url, "http://127.0.0.1:8080/api/registration/partner", "the canonical route");
+    eq(result.sent[0].method, "POST");
+    eq(JSON.stringify(result.sent[0].body), JSON.stringify({ token: CREDENTIAL }),
+      "exactly { token } — the route refuses any other field, and so does this");
+    eq(result.sent[0].headers.authorization, `Bearer ${BEARER}`, "the bearer, from the file");
+  });
+
+  test("neither credential is printed, on any path", async () => {
+    const runs = [
+      await register(),
+      await register({ replies: answers({ status: 409, body: { error: { code: "command_refused", refused: "invitation-unusable" } } }) }),
+      await register({ replies: answers({ status: 503, body: { error: { code: "service_unavailable" } } }) }),
+      await register({ askSecret: async () => "" }),
+      await register({ askSecret: async () => `${CREDENTIAL} ` === CREDENTIAL ? CREDENTIAL : "has space here" }),
+      await register({ replies: answers(new Error("refused")) }),
+      await viewAs(),
+      await viewAs({ replies: answers({ status: 403, body: { error: { code: "account_not_provisioned" } } }) }),
+    ];
+    runs.forEach((result, index) => {
+      assert(!result.out.includes(CREDENTIAL), `run ${index} leaked the credential: ${result.out}`);
+      assert(!result.out.includes(BEARER), `run ${index} leaked the bearer`);
+      assert(!/eyJ/.test(result.out), `run ${index} printed something token-shaped`);
+    });
+  });
+
+  test("the credential is never an argument, and the bearer is only ever a file", () => {
+    const source = fs.readFileSync(path.join(ROOT, "server", "partner-register.js"), "utf8");
+    const cli = fs.readFileSync(path.join(ROOT, "server", "cli.js"), "utf8");
+    const bare = (text) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    assert(!/flags\.(token|credential|bearer|invitation)\b|--credential|--bearer/.test(bare(source) + bare(cli)),
+      "no flag carries either credential — an argument is in shell history and in ps output");
+    /* The bearer has exactly one source, and it is a file read. */
+    eq((bare(source).match(/readFileSync/g) || []).length, 1, "one place reads the bearer");
+    assert(!/process\.env\.\w*(TOKEN|BEARER|CREDENTIAL)/i.test(bare(source)),
+      "and it is not taken from the environment either, where a child process would inherit it");
+  });
+
+  test("the credential is typed at a terminal, and refused if it is piped", () => {
+    const source = fs.readFileSync(path.join(ROOT, "server", "partner-register.js"), "utf8");
+    assert(/askSecret/.test(source), "it uses the shared hidden prompt");
+    const prompt = fs.readFileSync(path.join(ROOT, "server", "secret-prompt.js"), "utf8");
+    assert(/isTTY/.test(prompt) && /output: muted/.test(prompt), "which is TTY-only and not echoed");
+    return askSecret("x", { input: { isTTY: false }, output: { write() {} } }).then(
+      () => { throw new Error("a non-terminal input should have been refused"); },
+      (error) => assert(/terminal/.test(error.message), error.message));
+  });
+
+  test("an obvious paste of the wrong secret is caught before it is sent", async () => {
+    /* The check is deliberately not a shape regex — see the source. It catches
+       the mistake a person makes at a hidden prompt, and nothing else. */
+    eq(PR.credentialProblem("", BEARER), "nothing was typed");
+    assert(/space or a line break/.test(PR.credentialProblem("two words", BEARER)));
+    assert(/space or a line break/.test(PR.credentialProblem("wrapped\nline", BEARER)));
+    assert(/access token, not the invitation/.test(PR.credentialProblem(BEARER, BEARER)),
+      "the access token pasted in by mistake is refused rather than sent as a credential");
+    eq(PR.credentialProblem(CREDENTIAL, BEARER), null, "and a real credential is not second-guessed");
+    /* And a caught paste never reaches the network. */
+    const result = await register({ askSecret: async () => BEARER });
+    eq(result.code, 1, result.out);
+    eq(result.sent.length, 0, "nothing was sent");
+  });
+
+  test("both credentials may only cross a connection that is encrypted or local", async () => {
+    for (const bad of ["http://metyet.example", "http://192.168.1.10:8080", "http://localhost.evil.example", "ftp://x", "not a url", ""]) {
+      const result = await register({ url: bad });
+      eq(result.code, 1, `${bad} is refused: ${result.out}`);
+      eq(result.sent.length, 0, "and nothing is sent");
+      assert(/must be https/.test(result.out), result.out);
+    }
+    for (const fine of ["https://metyet.example", "http://127.0.0.1:8080", "http://localhost:3000", "http://[::1]:8080"]) {
+      eq(PR.checkUrl(fine), fine.replace(/\/+$/, ""), `${fine} is allowed`);
+    }
+  });
+
+  test("every refusal is explicit, stops, and says nothing was spent", async () => {
+    const refusal = (refused) => answers({ status: 409, body: { error: { code: "command_refused", refused } } });
+    const cases = [
+      [await register({ replies: refusal("invitation-unusable") }), /unknown, expired, revoked/],
+      [await register({ replies: refusal("wrong-recipient") }), /different address/],
+      [await register({ replies: refusal("email-unverified") }), /no confirmed address/],
+      [await register({ replies: refusal("already-linked") }), /already bound to somebody/],
+      [await register({ replies: answers({ status: 503, body: { error: { code: "service_unavailable" } } }) }), /Nothing was spent/],
+      [await register({ replies: answers(401) }), /did not accept the bearer/],
+      [await register({ replies: answers(404) }), /no registration route/],
+      [await register({ replies: answers({ status: 200, body: new Error("not json") }) }), /registered:/],
+      [await register({ replies: answers(new Error("ECONNREFUSED")) }), /could not be reached/],
+      [await register({ tokenFile: "/nonexistent/path/token" }), /token file could not be read/],
+      [await register({ tokenFile: bearerFile("") }), /is empty/],
+    ];
+    cases.forEach(([result, pattern], index) => {
+      assert(pattern.test(result.out), `case ${index}: ${result.out}`);
+    });
+    /* A refused redemption always exits non-zero and always says so. */
+    const refused = await register({ replies: refusal("invitation-unusable") });
+    eq(refused.code, 1);
+    assert(/Nothing was created and the invitation was not spent/.test(refused.out), refused.out);
+    assert(!/registered:/.test(refused.out), "it never claims a registration it did not get");
+  });
+
+  test("a server message is never echoed back, only our own vocabulary", async () => {
+    /* A 4xx from something that is not MetYet can put anything in its body,
+       including what was sent to it. Only `refused` is read. */
+    const hostile = answers({ status: 409, body: { error: { code: "command_refused",
+      refused: "invitation-unusable", message: `your credential ${CREDENTIAL} was rejected`,
+      detail: `bearer ${BEARER}` } } });
+    const result = await register({ replies: hostile });
+    assert(!result.out.includes(CREDENTIAL) && !result.out.includes(BEARER), result.out);
+    assert(!/was rejected/.test(result.out), "the server's own words are not repeated: " + result.out);
+  });
+
+  test("it decides nothing: no database, no domain, no invitation directory", () => {
+    const source = fs.readFileSync(path.join(ROOT, "server", "partner-register.js"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    assert(!/withDatabase|createInvitationDirectory|createAccountDirectory|createWorldRepository|redeemPartnerInvitation/.test(source),
+      "it cannot reach around the route to redeem, link or register anything itself");
+    assert(!/registerPartner\(world|saveWorld|linkAccount|claim\(/.test(source), "and it authors nothing");
+    assert(!/DATABASE_URL|loadDatabaseConfig|require\("pg"\)/.test(source), "and it opens no database");
+    /* Single use is the server's guarantee, and this cannot weaken it: there is
+       no retry, no loop, and exactly one request per run. */
+    assert(!/for \(|while \(|retry|attempt/i.test(source.replace(/\bawait\b/g, "")),
+      "no retry loop — a second attempt is the operator's decision, not the command's");
+  });
+
+  test("view proves the binding with the same bearer and no credential at all", async () => {
+    const result = await viewAs();
+    eq(result.code, 0, result.out);
+    eq(result.sent.length, 1);
+    eq(result.sent[0].url, "http://127.0.0.1:8080/api/view");
+    eq(result.sent[0].method, "GET");
+    eq(result.sent[0].body, undefined, "no body, and no credential of any kind");
+    eq(result.sent[0].headers.authorization, `Bearer ${BEARER}`);
+    assert(/tp_9k2m/.test(result.out) && /Northline Cards/.test(result.out), result.out);
+    assert(/cards: 0, deals: 0/.test(result.out), "and what the projection holds, as counts: " + result.out);
+  });
+
+  test("view says plainly when the sign-in is nobody yet", async () => {
+    const result = await viewAs({ replies: answers({ status: 403,
+      body: { error: { code: "account_not_provisioned" } } }) });
+    eq(result.code, 1, result.out);
+    assert(/not anybody in MetYet yet/.test(result.out), result.out);
+    assert(/partner:register/.test(result.out), "and what makes one: " + result.out);
+  });
+
+  test("both are operator commands the runbook and package name", () => {
+    eq(pkg.scripts["partner:register"], "node server/cli.js register-partner");
+    eq(pkg.scripts["api:view"], "node server/cli.js view");
+    assert(/register-partner/.test(USAGE) && /view \[--url/.test(USAGE), "the usage lists them");
+    assert(/partner:register/.test(runbook) && /api:view/.test(runbook), "and the runbook tells an operator to run them");
+    /* The runbook has to send the operator through the checks that make the
+       proof a proof — above all the second attempt, because single use is the
+       rule most worth seeing refused with your own eyes rather than trusting. */
+    const prose = runbook.replace(/\s+/g, " ");
+    assert(/partner:register\s+refused — single use/.test(runbook),
+      "including running it a second time and watching it be refused");
+    assert(/partner:invitations[^\n]*accepted/.test(runbook), "and checking the invitation reads accepted");
+    assert(/account:list[^\n]*(active|bound)/.test(runbook), "and that one account is bound to the subject");
+    /* And that none of this needs Render: the same server runs locally against
+       the hosted database and the hosted provider. */
+    assert(/Render is not required/.test(prose), "and that Render is not required for it");
+    /* Neither needs a database, and neither asks for one. */
+    return Promise.all([
+      runCommand(["register-partner", "--url=http://198.51.100.1"], { env: {}, say: () => {} }),
+      runCommand(["view", "--url=http://198.51.100.1"], { env: {}, say: () => {} }),
+    ]).then(([a, b]) => {
+      eq(a, 1, "register-partner ran without DATABASE_URL and refused for its own reason");
+      eq(b, 1, "and so did view");
+    });
   });
 });
 

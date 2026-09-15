@@ -16,6 +16,8 @@
        revoke-invitation --id=<id> withdraw one that is still pending
        auth-check [--token-file=<path>]   is the identity provider set up right?
        sign-in --email=… [--out=<path>]   get one real access token, to check with
+       register-partner [--url=…]         accept an invitation, against a running server
+       view [--url=…]                     what this sign-in can see, as itself
 
    Every one of these is a decision someone makes on purpose. None of them runs
    by itself: the server never migrates at startup (a rolling restart would
@@ -39,6 +41,7 @@ const { bootstrapWorld, emptyWorld } = require("./bootstrap.js");
 const { linkActorAccount, listActors } = require("./provisioning.js");
 const { checkAuth } = require("./auth-check.js");
 const { signIn } = require("./auth-signin.js");
+const { registerPartner, view } = require("./partner-register.js");
 
 const USAGE = `MetYet operator commands
 
@@ -55,13 +58,18 @@ const USAGE = `MetYet operator commands
   node server/cli.js revoke-invitation --id=<invitation id>
   node server/cli.js auth-check [--token-file=<path holding one access token>]
   node server/cli.js sign-in --email=<address> [--out=<path for the access token>]
+  node server/cli.js register-partner [--url=<server>] [--token-file=<path>]
+  node server/cli.js view [--url=<server>] [--token-file=<path>]
 
 The database is read from DATABASE_URL (and DATABASE_SSL, DATABASE_CA_CERT or
 DATABASE_CA_CERT_FILE, DATABASE_POOL_MAX); auth-check and sign-in read SUPABASE_URL and
-SUPABASE_PUBLISHABLE_KEY instead and need no database. Nothing here starts a server, and
-only those two contact a vendor — auth-check to ask it a question, sign-in to ask it to
-email one person a code. Neither changes anything the vendor holds, and no command here
-creates a Trusted Partner: only redeeming an invitation does that.`;
+SUPABASE_PUBLISHABLE_KEY instead and need no database. register-partner and view need
+neither: they talk to a RUNNING server over HTTP, reading the bearer from a file.
+
+Nothing here starts a server. auth-check and sign-in contact the identity provider — to
+ask it a question, and to ask it to email one person a code — and neither changes anything
+the vendor holds. No command here creates a Trusted Partner: register-partner asks a
+server to redeem an invitation, and the server's own rules decide.`;
 
 /* A message a person can act on, with nothing secret in it: a connection string
    that reached an error from the driver is removed rather than printed. */
@@ -153,7 +161,7 @@ function parseFlags(argv) {
 /* Commands that talk to the identity provider rather than the database, and so
    must not demand DATABASE_URL to run: an operator configuring Supabase has not
    necessarily configured Postgres yet, and should not have to. */
-const WITHOUT_DATABASE = new Set(["auth-check", "sign-in"]);
+const WITHOUT_DATABASE = new Set(["auth-check", "sign-in", "register-partner", "view"]);
 
 /* The operator operations. Named so it is never confused with the domain's
    command layer: nothing here authors canonical state. */
@@ -229,6 +237,22 @@ const OPERATIONS = {
   /* The other half of the environment. Reads no database and writes nothing. */
   async "auth-check"(_context, flags, say) {
     return checkAuth({ env: this.env, say, tokenFile: flags["token-file"] });
+  },
+
+  /* Accepting an invitation, and then reading what it made. Both talk to a
+     RUNNING SERVER over HTTP rather than to the database: the point is to prove
+     the real route, with a real verified token, exactly as a browser will —
+     so neither of them needs, or gets, a database connection of its own. */
+  async "register-partner"(_context, flags, say) {
+    return registerPartner({ say,
+      ...(flags.url === undefined ? {} : { url: flags.url }),
+      ...(flags["token-file"] === undefined ? {} : { tokenFile: flags["token-file"] }) });
+  },
+
+  async view(_context, flags, say) {
+    return view({ say,
+      ...(flags.url === undefined ? {} : { url: flags.url }),
+      ...(flags["token-file"] === undefined ? {} : { tokenFile: flags["token-file"] }) });
   },
 
   /* The other half of that check: getting a real token to give it. The address

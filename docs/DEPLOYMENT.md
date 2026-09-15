@@ -249,6 +249,52 @@ what they use.
 invited.** That is checked by asking the Auth server about them, not by reading
 their token — see "Why the publishable key is needed" below.
 
+### 2.5a Accepting the first invitation yourself, before anyone else gets one
+
+Registration is `POST /api/registration/partner`, and until you have watched it
+work against the real database there is no reason to believe the pilot does. You
+can prove it from your own machine: **Render is not required.** `npm start` is
+the same server Render runs, and it reads the same `DATABASE_URL` and
+`SUPABASE_URL` you already have exported — pointed at hosted Postgres and hosted
+Supabase, it *is* the real thing, just listening on localhost.
+
+**Do not build this request by hand.** It carries two credentials — the bearer
+token and the single-use invitation credential — and curl puts both in your
+shell history and in `ps` output for every process on the machine, while a
+browser console puts both in a scrollback buffer. There is a command instead.
+
+| | |
+|---|---|
+| **First** | In one terminal, with the production environment exported: `npm start`. Wait for it to listen, then check `curl -s localhost:8080/api/health/ready` says `ready`. |
+| **Then** | In another terminal, same environment: `npm run partner:register` |
+| **It asks** | for the invitation credential, at a hidden prompt. Type it; it is not echoed, and it is never an argument. The bearer comes from `.secrets/access-token` (2.3b). |
+| **Cost** | none |
+| **Check** | It prints the new partner's id and the version. Then `npm run api:view` — the same sign-in, now reading its own shop. |
+
+The command composes one request and decides nothing. Every rule lives on the
+server, in one transaction: the invitation is claimed, the partner registered,
+the sign-in bound to it, and the invitation marked with what it produced — or
+none of those happen and the invitation is still pending. That is why running it
+twice cannot make a second partner, and why a failure costs nothing.
+
+Against a remote server use `--url=https://…`; the command refuses plain `http`
+to anything but this machine, because of what the request carries.
+
+**What to check afterwards, in order:**
+
+```
+npm run partner:invitations    the invitation reads `accepted`, with the partner id
+npm run account:list           one active tp account, bound to your subject
+npm run db:status              world version 1, one partner, nothing else
+npm run api:view               your own actor-safe projection
+npm run partner:register       refused — single use, deliberately
+```
+
+The last one is worth running. A second attempt with the same credential is
+refused as `invitation-unusable`, and refused identically to an unknown one:
+telling those apart would let someone with a list of guesses learn which
+credentials exist.
+
 ### 2.6 Every release after the first
 
 1. Push to `main` (or trigger a deploy — the blueprint sets `autoDeploy: false`).

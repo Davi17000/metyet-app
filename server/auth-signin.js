@@ -58,10 +58,10 @@
 
 const fs = require("fs");
 const path = require("path");
-const readline = require("readline");
 const { spawnSync } = require("child_process");
 const { loadAuthConfig } = require("./config.js");
 const { isSafeProviderUrl } = require("./auth/identity.js");
+const { askSecret } = require("./secret-prompt.js");
 
 /* Beside the repository, not in it, and ignored either way — see mustBeIgnored. */
 const DEFAULT_OUT = ".secrets/access-token";
@@ -119,23 +119,12 @@ function writeSecret(file, contents) {
   }
 }
 
-/* The code is a credential. It is typed, so it is not in shell history, and it
-   is not echoed, so it is not in a scrollback buffer or over a shoulder. A
-   terminal is REQUIRED: no TTY means something is piping it in, which means it
-   came from a file or a command line, which is the thing being avoided. */
-function askForCode({ input = process.stdin, output = process.stdout } = {}) {
-  if (!input.isTTY) {
-    return Promise.reject(new Error("the code has to be typed at a terminal. "
-      + "Piping it in would put it in a file or a shell history, which is what this avoids."));
-  }
-  return new Promise((resolve, reject) => {
-    const muted = new (require("stream").Writable)({ write(chunk, encoding, done) { done(); } });
-    const rl = readline.createInterface({ input, output: muted, terminal: true });
-    output.write("code:        ");
-    rl.question("", (answer) => { rl.close(); output.write("\n"); resolve(String(answer).trim()); });
-    rl.on("error", reject);
-  });
-}
+/* The code is a credential: typed so it is not in shell history, not echoed so
+   it is not in a scrollback buffer or over a shoulder, and refused unless there
+   is a terminal to type it at. All three live in secret-prompt.js, because the
+   invitation credential needs exactly the same treatment and two commands doing
+   this slightly differently is how one of them ends up echoing. */
+const askForCode = (options) => askSecret("code:        ", options);
 
 async function postJson(url, body, { apiKey, timeoutMs, fetchImpl }) {
   const response = await (fetchImpl || fetch)(url, {

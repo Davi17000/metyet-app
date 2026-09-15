@@ -18,6 +18,8 @@
     "partner:revoke": "node server/cli.js revoke-invitation",
     "auth:check": "node server/cli.js auth-check",
     "auth:sign-in": "node server/cli.js sign-in",
+    "partner:register": "node server/cli.js register-partner",
+    "api:view": "node server/cli.js view",
     "test": "node tests/all.cjs",
     "prod": "node prod.build.mjs",
     "build:site": "node site.build.mjs",
