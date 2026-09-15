@@ -298,7 +298,15 @@ describe("A2. the database connection is verified, and says so accurately", () =
 
   test("the blueprint verifies, and carries the certificate as environment", () => {
     assert(/- key: DATABASE_SSL\n\s+value: verify-full/.test(render), "Render verifies the certificate");
-    assert(/- key: DATABASE_CA_CERT\n\s+sync: false/.test(render), "and the CA is set by hand, not committed");
+    /* The CA reaches the service one of two ways, and the blueprint has to name
+       one of them or verify-full fails closed with nothing to verify against:
+       a Secret File (a PATH is all that is committed) or the PEM as an
+       environment variable set by hand. Either is fine; what must never happen
+       is certificate material in this file, or neither mechanism declared. */
+    const byFile = /- key: DATABASE_CA_CERT_FILE\n\s+value: \/etc\/secrets\/\S+/.test(render);
+    const byText = /- key: DATABASE_CA_CERT\n\s+sync: false/.test(render);
+    assert(byFile || byText, "the blueprint says where the CA comes from");
+    assert(!(byFile && byText), "and only one way — config refuses both at once rather than guessing");
     assert(!/BEGIN CERTIFICATE/.test(render), "no certificate material in the file");
     const prose = runbook.replace(/\s+/g, " ");
     assert(/verify-full/.test(prose) && /SSL Configuration/.test(prose), "and the runbook says where it comes from");

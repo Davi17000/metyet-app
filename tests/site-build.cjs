@@ -60,10 +60,16 @@ describe("A. The build produces a complete site", () => {
     assert(!has("main.jsx"), "and is not published");
   });
 
-  test("the custom domain survives each deploy", () => {
+  test("the custom domain survives each deploy, and is the DEMO's", () => {
     build();
-    eq(read("CNAME").trim(), "app.metyet.io",
+    /* This bundle is the in-memory prototype. It published itself at
+       app.metyet.io, which is the hostname production answers on — so the demo
+       was occupying the address the real thing needed. They are separate
+       hostnames and separate things, and the split is asserted here because
+       nothing else would notice it drifting back. */
+    eq(read("CNAME").trim(), "demo.metyet.io",
       "Pages clears the domain setting on publish unless the artifact carries it");
+    assert(!read("CNAME").includes("app.metyet.io"), "production's hostname is not published by the demo build");
   });
 });
 

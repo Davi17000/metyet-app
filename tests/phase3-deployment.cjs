@@ -12,6 +12,7 @@
      E  provisioning a sign-in for an existing actor
      F  secrets stay out of output
      G  deployment artifacts and the runbook
+     H  the two hostnames, and what a deploy has to prove
    ========================================================================== */
 const { describe, test, assert, eq, run } = require("./run.cjs");
 const fs = require("fs");
@@ -527,6 +528,36 @@ describe("G. deployment artifacts and the runbook", () => {
     assert(/autoDeploy: false/.test(render), "deploys are deliberate");
   });
 
+  /* WHICH BRANCH IS DEPLOYED, AND WHY IT IS NOT `main`.
+
+     The blueprint said `branch: main` while `main` was the whole of Batch 6
+     behind it: no auth-check, the older DATABASE_SSL vocabulary — so the
+     `verify-full` the blueprint itself sets would have been REFUSED at
+     startup — and a blueprint missing SUPABASE_PUBLISHABLE_KEY. Applying it
+     would have produced a service that could not start, which is the same class
+     of drift this suite already catches for environment variables, and worth
+     catching for the branch too.
+
+     So the branch is named, and whichever branch it names, the runbook has to
+     explain it. When PR #43 merges this becomes `main` and the note goes. */
+  test("the blueprint names the branch it deploys, and the runbook names the same one", () => {
+    const branch = (render.match(/^\s+branch: (\S+)/m) || [])[1];
+    assert(branch, "a branch is named rather than left to the dashboard");
+    /* The runbook states it in its own row, and the two have to AGREE — it is
+       the disagreement that is dangerous, in either direction. An operator
+       following the runbook and an operator applying the blueprint must not
+       deploy different code. */
+    const stated = (runbook.match(/\|\s*\*\*Branch\*\*\s*\|\s*`([^`]+)`/) || [])[1];
+    assert(stated, "the runbook has a Branch row");
+    eq(stated, branch, "the runbook and the blueprint deploy the same branch");
+    if (branch !== "main") {
+      const prose = runbook.replace(/\s+/g, " ");
+      assert(/change .{0,40}branch.{0,80}main|switch .{0,40}to `?main|back to `?main/i.test(prose),
+        "a branch other than main needs the runbook to say when it becomes main");
+      assert(/why the branch is not `?main/i.test(prose), "and why it is not main yet");
+    }
+  });
+
   test("the blueprint carries no secret: every value-bearing variable is safe to read", () => {
     const withValues = [...render.matchAll(/- key: (\w+)\n\s+value: (.*)/g)].map((m) => [m[1], m[2].replace(/"/g, "")]);
     const secretish = [...render.matchAll(/- key: (\w+)\n\s+sync: false/g)].map((m) => m[1]);
@@ -590,6 +621,67 @@ describe("G. deployment artifacts and the runbook", () => {
     assert(/ES256/.test(runbook) && /ES256/.test(verifier), "asymmetric signing, in both");
     assert(/HS256/.test(runbook), "and the legacy algorithm is called out as unsupported");
     assert(/only asymmetric algorithms/.test(verifier), "which is what the verifier enforces");
+  });
+});
+
+/* ============================================================== H
+   PRODUCTION AND THE DEMO ARE TWO HOSTNAMES, AND THE DEPLOY PROVES ITSELF.
+
+   The in-memory prototype published itself at app.metyet.io — the hostname the
+   real service is meant to answer on — so the demo was sitting on production's
+   address and "point app.metyet.io at Render" would have been a collision
+   rather than a cutover. Nothing would have caught that: the site build and the
+   runbook each looked right on their own.
+
+   And a deploy is only proven by reads that show it reached the state that was
+   already there. The plan for that is written down rather than improvised at
+   the console, because the thing most likely to go wrong under time pressure is
+   somebody "just re-running the migration" against production.
+   ========================================================================== */
+describe("H. the two hostnames, and what a deploy has to prove", () => {
+  const siteBuild = fs.readFileSync(path.join(ROOT, "site.build.mjs"), "utf8");
+  const runbook = fs.readFileSync(path.join(ROOT, "docs", "DEPLOYMENT.md"), "utf8");
+
+  test("the demo publishes itself at the demo hostname, never production's", () => {
+    const domain = (siteBuild.match(/const DOMAIN = "([^"]+)"/) || [])[1];
+    eq(domain, "demo.metyet.io", "the Pages CNAME this build writes");
+    assert(/app\.metyet\.io/.test(runbook), "the runbook still names production's hostname");
+    /* And the runbook says which is which, so the split is recorded in the one
+       place an operator reads before pointing DNS anywhere. */
+    const prose = runbook.replace(/\s+/g, " ");
+    assert(/`app\.metyet\.io` is production/.test(prose), "production is named: " + domain);
+    assert(/`demo\.metyet\.io` is the in-memory demo/.test(prose), "and the demo is");
+    assert(/share no state/.test(prose), "and that they share none");
+  });
+
+  test("the runbook tells an operator how to point both, in an order that does not break", () => {
+    const prose = runbook.replace(/\s+/g, " ");
+    assert(/Custom Domains/.test(prose), "the Render step");
+    assert(/CNAME/.test(prose), "the DNS record type");
+    assert(/do not copy one from here|exactly the target Render displays/i.test(prose),
+      "and it refuses to invent the target, which is the provider's to give");
+    /* Who terminates TLS decides whether the server needs to do anything about
+       it. Render does, and says so, which is why there is no redirect in the
+       app — that reasoning has to survive in writing or somebody adds one. */
+    assert(/Render terminates TLS/i.test(prose), "it says who terminates TLS");
+    assert(/nothing in the server has to/i.test(prose), "and therefore what the server does not need to do");
+  });
+
+  test("the proof plan is reads only, and says so", () => {
+    const prose = runbook.replace(/\s+/g, " ");
+    assert(/health\/live/.test(prose) && /health\/ready/.test(prose), "both health endpoints");
+    assert(/api:view -- --url=https:/.test(prose), "the deployed projection, over https");
+    assert(/No invitation credential is involved|no invitation credential/i.test(prose),
+      "and that a projection needs no invitation");
+    /* Each promise separately, so a half-edit cannot leave the claim standing
+       while the substance goes. */
+    assert(/mutates nothing/i.test(prose), "the plan says it mutates nothing");
+    assert(/no migration/i.test(prose) && /no bootstrap/i.test(prose), "and names those two");
+    assert(/no second partner/i.test(prose) && /no invitation spent/i.test(prose), "and those two");
+    assert(/Every step is a read/i.test(prose), "and says every step is a read");
+    assert(/Do not run `partner:register` against production/.test(prose),
+      "and it warns off the one command that would create real data to prove a point");
+    assert(/Bearer.{0,40}eyJ|search the\s*logs for/i.test(prose), "and it checks the logs for secrets");
   });
 });
 

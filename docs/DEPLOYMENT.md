@@ -68,7 +68,7 @@ Each is something only you can do. None is done yet.
 | **Provider** | Supabase |
 | **Create** | One project. Choose a region close to the Render region you will pick. |
 | **Setting to copy** | The project URL (`https://<project-ref>.supabase.co`), the **session pooler** connection string (port 5432 — Render is IPv4-only, and session pooling keeps a transaction and its advisory lock on one connection), and the project's **publishable** key (`sb_publishable_…`). Not the secret key: the server refuses one. |
-| **Environment variables** | `SUPABASE_URL`, `DATABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `DATABASE_CA_CERT`/`DATABASE_CA_CERT_FILE` (2.1a) |
+| **Environment variables** | `SUPABASE_URL`, `DATABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `DATABASE_CA_CERT_FILE`/`DATABASE_CA_CERT` (2.1a) |
 | **Cost** | Free tier to start; Pro is $25/month and is what a pilot with real data should sit on (daily backups, no pausing). |
 | **Check** | `DATABASE_URL=… npm run db:status`. A TLS error here is expected until 2.1a; after it, `schema: not migrated` is a successful connection. |
 
@@ -84,7 +84,7 @@ that root — and until it has one, every command fails closed with
 | **Provider** | Supabase → Project Settings → Database → **SSL Configuration** |
 | **Do** | Download the server root certificate (a `.crt` file). It is a public root, not a secret — but it is not committed either, because it is environment and because it rotates. |
 | **Locally** | `export DATABASE_CA_CERT_FILE=/path/to/that/file.crt` |
-| **In Render** | paste the file's text into `DATABASE_CA_CERT` (the blueprint declares it, unset) |
+| **In Render** | add it as a **Secret File** named `supabase-ca.crt`; the blueprint already points `DATABASE_CA_CERT_FILE` at `/etc/secrets/supabase-ca.crt` (2.4) |
 | **Cost** | none |
 | **Check** | `npm run db:status` prints `schema: not migrated` instead of a TLS error. |
 
@@ -213,11 +213,38 @@ better.
 | | |
 |---|---|
 | **Provider** | Render |
-| **Create** | A web service from `render.yaml` (Render's Blueprints feature reads it), or a Node web service configured by hand with the same four settings. |
+| **Create** | A web service from `render.yaml` (Render's Blueprints feature reads it), or a Node web service configured by hand with the same settings. |
 | **Settings** | build `npm ci --omit=dev`, start `npm start`, health check path `/api/health/ready`, Node 22 (`.node-version` and `NODE_VERSION`). |
-| **Environment variables to set by hand** | `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `DATABASE_CA_CERT` (the certificate's PEM text — paste the whole file). `DATABASE_SSL=verify-full`, `DATABASE_POOL_MAX=10` and `LOG_LEVEL=info` come from the blueprint. `PORT` is provided by Render. |
+| **Branch** | `phase-3-real-hosted-environment` — **not `main`**, see below. |
+| **Environment variables to set by hand** | `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`. `DATABASE_SSL=verify-full`, `DATABASE_CA_CERT_FILE`, `DATABASE_POOL_MAX=10` and `LOG_LEVEL=info` come from the blueprint. `PORT` is provided by Render. |
+| **Secret File to add** | `supabase-ca.crt` — the certificate from 2.1a. Render mounts it at `/etc/secrets/supabase-ca.crt`, which is what `DATABASE_CA_CERT_FILE` already points at. |
+| **Region** | Put it in the region closest to the Supabase project. The blueprint says `oregon`; change it before applying if the project is elsewhere — every query crosses that gap. |
 | **Cost** | `plan: starter` in the blueprint is about **$7/month** and does not sleep. A free instance sleeps and would make the pilot look broken. Change the plan before applying if you disagree. |
-| **Check** | The service reaches "live" (its health check is the readiness endpoint), and `curl https://<service>/api/health/live` returns `{"status":"ok"}`. |
+| **Check** | The service reaches "live" (its health check is the readiness endpoint), and `curl https://<service>.onrender.com/api/health/live` returns `{"status":"ok"}`. |
+
+**Why the branch is not `main`.** `main` is the whole of Batch 6 behind this
+branch: no `auth:check`, no `auth:sign-in`, no `partner:register`, the older
+`DATABASE_SSL` vocabulary — so the `verify-full` this blueprint sets would be
+**refused at startup** — and a blueprint missing `SUPABASE_PUBLISHABLE_KEY`, so
+the service would not start at all. Deploy the pilot branch. **When PR #43
+merges, change `branch:` in `render.yaml` back to `main`** and redeploy; a test
+holds the blueprint and this runbook to whichever branch is named.
+
+**The certificate as a Secret File.** The CA is a multi-line PEM, and an
+environment-variable editor is exactly where multi-line values get mangled.
+Render's Secret Files are the mechanism for this: add one named
+`supabase-ca.crt` under the service's **Environment** tab, paste the whole
+`.crt`, and it appears at `/etc/secrets/supabase-ca.crt` at runtime. The
+blueprint already points `DATABASE_CA_CERT_FILE` there. `DATABASE_CA_CERT` with
+the PEM as text still works if you prefer it — but set **one or the other**:
+config refuses both at once rather than guessing which you meant. The
+certificate is public, so a Secret File here is about integrity and formatting,
+not concealment.
+
+**What this service serves.** `/api/*` and nothing else. There is no client on
+it yet — the React apps are still the in-memory prototype — so a browser at the
+root gets a JSON 404, correctly. That is the whole of what "production" means at
+this point: the API the first Trusted Partner's sign-in talks to.
 
 ### 2.5 The first Trusted Partner
 
@@ -306,12 +333,91 @@ credentials exist.
    `503 {"status":"unavailable","reason":"migrations-pending"}` instead of
    serving errors.
 
+### 2.6b Proving the deployed server, without changing anything
+
+The point of this proof is that the *deployed* server reaches the canonical
+state that already exists and resolves the Trusted Partner who already
+registered. It mutates nothing: no migration, no bootstrap, no second partner,
+no invitation spent. Every step is a read.
+
+Run these from your Mac, with the production environment exported, against the
+deployed host:
+
+```
+curl -s https://app.metyet.io/api/health/live          → {"status":"ok"}
+curl -s https://app.metyet.io/api/health/ready         → {"status":"ready"}
+
+npm run db:status                                      → 3 applied, 0 pending
+                                                          world: version 1, partners: 1
+npm run api:view -- --url=https://app.metyet.io        → you are: tp_…  version 1
+```
+
+What each one settles:
+
+- **live** — the process is up.
+- **ready** — it reached hosted Postgres *and* the schema it found is the one
+  this build expects. It answers 503 rather than 200 if the schema is behind,
+  which is also the proof that it did not migrate on the way up.
+- **db:status before and after** — the same numbers. The deploy added nothing,
+  bootstrapped nothing and seeded nothing; version 1 with one Trusted Partner is
+  what was there before it started.
+- **api:view through the deployed host** — the real Supabase bearer from
+  `.secrets/access-token` is verified against the project's JWKS *by the
+  deployed server*, resolved to the account bound during redemption, and
+  answered with that partner's own projection. **No invitation credential is
+  involved**: the invitation made the account, and the sign-in has been enough
+  ever since.
+
+If the token has expired — they last an hour — run `npm run auth:sign-in --
+--email=<your address>` again first. That is a new session for an account that
+already exists; it registers nothing.
+
+**Then read the logs.** In Render's log view, check that nothing there is a
+bearer token, an invitation credential, a connection string, a database
+password, an API key or an OTP. What should be present is the startup line
+(settings, never values), request lines with codes and durations, and refusal
+reasons as single words. `npm run api:view` produces one request; search the
+logs for `Bearer`, `eyJ`, `postgres://` and `sb_` and expect nothing.
+
+**Do not run `partner:register` against production to test it.** It is single
+use and the invitation is already spent; a second Trusted Partner would be real
+data in the canonical world, created to prove a route that the redemption
+already proved. If something later genuinely needs the deployed registration
+path exercised, issue one invitation deliberately, say so first, and expect
+exactly one additional partner.
+
+### 2.6a The two hostnames, and pointing them
+
+`app.metyet.io` is production — the Render service. `demo.metyet.io` is the
+in-memory prototype on GitHub Pages. They run different code, hold different
+state, and until now the demo was published at **`app.metyet.io`**, which is the
+hostname production needs; `site.build.mjs` now writes `demo.metyet.io` into the
+Pages CNAME, so the two no longer collide.
+
+Do these in this order, or `app.metyet.io` resolves to nothing in between:
+
+| Step | Where | What |
+|---|---|---|
+| 1 | Render → the service → **Settings → Custom Domains** | Add `app.metyet.io`. Render shows you the DNS record it wants and issues the certificate once it resolves. |
+| 2 | Your DNS provider | Add the record Render just showed you — for a subdomain that is a **CNAME** to `<service>.onrender.com`. Use exactly the target Render displays; do not copy one from here. |
+| 3 | Your DNS provider | Point `demo.metyet.io` at GitHub Pages (a CNAME to `<user>.github.io`), and in the repository's **Pages** settings set the custom domain to `demo.metyet.io`. |
+| 4 | Wait | Until Render reports the domain verified and the certificate issued. Render terminates TLS and redirects HTTP to HTTPS itself, so nothing in the server has to. |
+
+**The demo moves on the next push to `main`**, because that is when the Pages
+workflow runs and republishes the CNAME. Until then Pages still serves
+`app.metyet.io`. So either push the hostname change to `main` first, or accept a
+gap where `app.metyet.io` answers the old demo until DNS moves it to Render.
+
+**Check.** `curl https://app.metyet.io/api/health/live` returns
+`{"status":"ok"}` over a valid certificate, and `curl -I http://app.metyet.io/`
+redirects to `https://`.
+
 ### 2.7 Later, not now
 
 | Action | Why it is not yet | Cost |
 |---|---|---|
 | **Resend custom SMTP** in Supabase Auth | Required before anyone outside the project team can sign in: the built-in service refuses non-members and allows two messages an hour, and Supabase documents it as best-effort and not for production. Sending the *invitation* is still yours to write by hand. | Free tier covers a pilot (3,000 emails/month) |
-| **DNS for `app.metyet.io` / `demo.metyet.io`** | The React clients still run the in-memory prototype; there is nothing to point production at yet. | none beyond the domain |
+| **A client on `app.metyet.io`** | The React apps still run the in-memory prototype. The hostname is production's and the API answers on it, but there is no UI there yet — that is the client migration, and it is a batch of its own. | none |
 | **Sentry** | Optional. Render's logs are enough for a pilot. | free tier |
 
 **Roughly $32–45/month** once Supabase Pro and a Render Starter instance are
