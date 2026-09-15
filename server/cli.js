@@ -64,13 +64,22 @@ const safeMessage = (error) => String((error && error.message) || error)
   .replace(/postgres(ql)?:\/\/\S+/gi, "<connection string>")
   .replace(/\b(password|secret|token|key)\s*=\s*\S+/gi, "$1=<hidden>");
 
-/* Some failures are a person's next action rather than a fault. A TLS trust
-   failure against a hosted database almost always means one thing — the provider
-   signs with its own root, and this machine has not been given it — and saying
-   only "self-signed certificate in certificate chain" sends an operator looking
-   for a fault in their connection string, or worse, for a way to turn
-   verification off. So the code is read, the cause is named, and the fix is the
-   secure one. Codes, never message text: wording changes between Node releases. */
+/* Some failures are a person's next action rather than a fault, and two of them
+   are reliably misread.
+
+   A TLS trust failure against a hosted database almost always means one thing —
+   the provider signs with its own root, and this machine has not been given it —
+   and saying only "self-signed certificate in certificate chain" sends an
+   operator looking for a fault in their connection string, or worse, for a way
+   to turn verification off.
+
+   And an authentication failure that is INTERMITTENT is not a wrong password.
+   Supabase's shared pooler caches credentials, and documents that right after a
+   password change it keeps checking new connections against the cached ones.
+   The instinct on seeing 28P01 is to reset the database password — which is the
+   one action that starts that window rather than ending it. So this says so.
+
+   Codes, never message text: wording changes between releases. */
 const TLS_TRUST_CODES = new Set([
   "SELF_SIGNED_CERT_IN_CHAIN",
   "DEPTH_ZERO_SELF_SIGNED_CERT",
@@ -81,8 +90,27 @@ const TLS_TRUST_CODES = new Set([
 ]);
 const ALTNAME_CODE = "ERR_TLS_CERT_ALTNAME_INVALID";
 
-function tlsAdvice(error, say) {
+const AUTH_FAILED_CODE = "28P01";
+
+function connectionAdvice(error, say) {
   const code = error && error.code;
+  if (code === AUTH_FAILED_CODE) {
+    say("");
+    say("Before changing anything: if this command has just worked, or works when you run");
+    say("it again, the password is not wrong. A hosted pooler caches credentials, and");
+    say("Supabase documents connections being checked against a stale cache — which looks");
+    say("exactly like this and clears itself.");
+    say("");
+    say("  Run a read-only command (`npm run db:status`) a few times. Some failing and");
+    say("  some succeeding means the pooler, not the password.");
+    say("");
+    say("If it fails every time: on the SHARED pooler the user is postgres.<project-ref>,");
+    say("not postgres, and a password with a reserved character (& # ? space) has to be");
+    say("percent-encoded inside a connection string. Resetting the password is the last");
+    say("thing to try, not the first — it opens the stale-cache window rather than closing");
+    say("it.");
+    return true;
+  }
   if (TLS_TRUST_CODES.has(code)) {
     say("");
     say("That is certificate verification working, not a connection fault: the database");
@@ -274,7 +302,7 @@ async function runCommand(argv = [], { env = process.env, say = console.log, dat
   } catch (error) {
     say(`failed:      ${safeMessage(error)}`);
     if (error && error.code) say(`code:        ${error.code}`);
-    tlsAdvice(error, say);
+    connectionAdvice(error, say);
     return 1;
   }
 }
@@ -284,4 +312,4 @@ if (require.main === module) {
     (error) => { console.error(`failed: ${safeMessage(error)}`); process.exitCode = 1; });
 }
 
-module.exports = { runCommand, USAGE, safeMessage, tlsAdvice, TLS_TRUST_CODES };
+module.exports = { runCommand, USAGE, safeMessage, connectionAdvice, TLS_TRUST_CODES, AUTH_FAILED_CODE };

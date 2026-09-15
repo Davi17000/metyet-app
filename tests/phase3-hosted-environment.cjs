@@ -23,7 +23,7 @@ const os = require("os");
 const path = require("path");
 const { checkAuth, describeKeys, verdict } = require("../server/auth-check.js");
 const { DEFAULT_ALGORITHMS } = require("../server/auth/token-verifier.js");
-const { runCommand, USAGE, tlsAdvice, TLS_TRUST_CODES } = require("../server/cli.js");
+const { runCommand, USAGE, connectionAdvice, TLS_TRUST_CODES, AUTH_FAILED_CODE } = require("../server/cli.js");
 const { REQUIRED_SERVER_ENV, loadServerConfig, loadDatabaseConfig } = require("../server/config.js");
 
 const ROOT = path.join(__dirname, "..");
@@ -198,7 +198,7 @@ describe("A2. the database connection is verified, and says so accurately", () =
   test("a trust failure explains itself, and points at the secure fix", () => {
     for (const code of [...TLS_TRUST_CODES]) {
       const lines = [];
-      assert(tlsAdvice(Object.assign(new Error("self-signed certificate in certificate chain"), { code }),
+      assert(connectionAdvice(Object.assign(new Error("self-signed certificate in certificate chain"), { code }),
         (l) => lines.push(l)), code + " is recognised");
       const said = lines.join("\n");
       assert(/verification working/.test(said), "it says the check is doing its job: " + said);
@@ -208,11 +208,12 @@ describe("A2. the database connection is verified, and says so accurately", () =
     }
     /* A name mismatch is a different problem and gets a different sentence. */
     const altname = [];
-    assert(tlsAdvice({ code: "ERR_TLS_CERT_ALTNAME_INVALID" }, (l) => altname.push(l)));
+    assert(connectionAdvice({ code: "ERR_TLS_CERT_ALTNAME_INVALID" }, (l) => altname.push(l)));
     assert(/not for this host/.test(altname.join("\n")), altname.join("\n"));
     /* And an ordinary failure is left alone. */
-    eq(tlsAdvice({ code: "28P01" }, () => { throw new Error("should not speak"); }), false);
-    eq(tlsAdvice(new Error("something else"), () => { throw new Error("should not speak"); }), false);
+    eq(connectionAdvice(new Error("something else"), () => { throw new Error("should not speak"); }), false);
+    eq(connectionAdvice({ code: "42P01" }, () => { throw new Error("should not speak"); }), false,
+      "an ordinary database error is left alone");
   });
 
   test("the advice reaches an operator running the real command", async () => {
@@ -225,6 +226,69 @@ describe("A2. the database connection is verified, and says so accurately", () =
     const said = lines.join("\n");
     assert(/SELF_SIGNED_CERT_IN_CHAIN/.test(said), "the code is still reported");
     assert(/DATABASE_CA_CERT_FILE/.test(said), "and now so is what to do: " + said);
+  });
+
+  /* An intermittent authentication failure against a hosted pooler is not a
+     wrong password, and the instinct it provokes — reset the database password —
+     is the one action that opens the provider's documented stale-cache window
+     rather than closing it. */
+  test("an authentication failure says what to check before changing anything", () => {
+    const lines = [];
+    assert(connectionAdvice({ code: AUTH_FAILED_CODE }, (l) => lines.push(l)), "28P01 is recognised");
+    const said = lines.join("\n");
+    assert(/the password is not wrong/.test(said), "it says what intermittency means: " + said);
+    assert(/db:status/.test(said), "it names a read-only way to find out");
+    assert(/postgres\.<project-ref>/.test(said), "and the shared pooler's username format");
+    assert(/percent-encoded/.test(said), "and the reserved-character trap");
+    assert(/[Rr]esetting the password is the last thing to try/.test(said.replace(/\s+/g, " ")),
+      "and warns off the action that makes it worse");
+  });
+
+  /* WHY THIS EXISTS. `db:status` authenticated, `db:migrate` got 28P01, and
+     `db:status` authenticated again — same terminal, same environment, seconds
+     apart. The first question was whether the two commands could possibly be
+     using different credentials or different connection behaviour. They cannot,
+     and this keeps it that way: one loader, one pool, one connection each. */
+  test("status and migrate open the database in exactly the same way", async () => {
+    const pools = [];
+    const pg = require("pg");
+    const RealPool = pg.Pool;
+    class SpyPool extends RealPool {
+      constructor(options) { pools.push(JSON.parse(JSON.stringify(options))); super(options); }
+    }
+    /* db-pool.js destructures Pool when it loads, so the substitution has to be
+       in place before it does — hence the cache clear on both sides. */
+    const dbPoolPath = require.resolve("../server/db-pool.js");
+    const cliPath = require.resolve("../server/cli.js");
+    const reload = () => { delete require.cache[dbPoolPath]; delete require.cache[cliPath]; };
+    const env = { DATABASE_URL: "postgresql://someone:secret@db.example.supabase.com:5432/postgres",
+      DATABASE_SSL: "no-verify" };
+    reload();
+    pg.Pool = SpyPool;
+    try {
+      const isolated = require(cliPath).runCommand;
+      /* Neither can connect — nothing is listening — which is the point: what is
+         compared is what they ASK for, before any network exists. */
+      await isolated(["status"], { env, say: () => {} });
+      await isolated(["migrate"], { env, say: () => {} });
+    } finally {
+      pg.Pool = RealPool;
+      reload();
+      require(cliPath);
+    }
+    eq(pools.length, 2, "one pool each, neither command opening a second");
+    eq(JSON.stringify(pools[0]), JSON.stringify(pools[1]),
+      "and identical options: the same connection string, TLS, pool size and application name");
+    assert(!("user" in pools[0]) && !("password" in pools[0]),
+      "the credential is never taken apart and reassembled — it is the string as given");
+
+    /* And the source says so too: one loader, called in one place. */
+    const dbPool = fs.readFileSync(path.join(ROOT, "server", "db-pool.js"), "utf8");
+    eq((dbPool.match(/loadDatabaseConfig\(/g) || []).length, 1, "one place reads the environment");
+    eq((dbPool.match(/new Pool\(/g) || []).length, 1, "and one place opens a pool");
+    const cli = fs.readFileSync(path.join(ROOT, "server", "cli.js"), "utf8");
+    assert(!/new Pool|connectionString|DATABASE_URL\s*[,)]/.test(cli.replace(/\/\*[\s\S]*?\*\//g, "")),
+      "and no command builds a connection of its own");
   });
 
   test("the blueprint verifies, and carries the certificate as environment", () => {
