@@ -22,7 +22,21 @@
 #
 # `plan: starter` is a paid instance (about $7/month at the time of writing) and
 # is the smallest plan that does not sleep. Change it before applying if that is
-# not what you want. `region` should match the Supabase project's region.
+# not what you want.
+#
+# THE REGION IS THE NEAREST ONE, NOT A MATCHING ONE. The Supabase project is in
+# Canada Central (Montreal). Render has five regions — oregon, ohio, virginia,
+# frankfurt, singapore — and none of them is in Canada, so there is nothing to
+# match; `virginia` is simply the closest, a few hundred miles from Montreal and
+# on the densest peering path in North America. `ohio` is the near-equal
+# alternative. `oregon`, which this said before, would put the whole width of
+# the continent between every query and its database.
+#
+# One consequence worth deciding rather than inheriting: the DATA stays in
+# Canada — it is Supabase that holds it — but the compute that reads and writes
+# it is in the United States, so requests carrying partner and collector data
+# are processed there. If that is not acceptable for the pilot, the answer is a
+# different host for the API, not a different Render region.
 # =============================================================================
 
 services:
@@ -30,7 +44,7 @@ services:
     name: metyet-api
     runtime: node
     plan: starter
-    region: oregon
+    region: virginia
     branch: phase-3-real-hosted-environment
     autoDeploy: false
     buildCommand: npm ci --omit=dev

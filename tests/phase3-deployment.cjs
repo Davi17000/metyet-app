@@ -641,6 +641,7 @@ describe("G. deployment artifacts and the runbook", () => {
 describe("H. the two hostnames, and what a deploy has to prove", () => {
   const siteBuild = fs.readFileSync(path.join(ROOT, "site.build.mjs"), "utf8");
   const runbook = fs.readFileSync(path.join(ROOT, "docs", "DEPLOYMENT.md"), "utf8");
+  const render = fs.readFileSync(path.join(ROOT, "render.yaml"), "utf8");
 
   test("the demo publishes itself at the demo hostname, never production's", () => {
     const domain = (siteBuild.match(/const DOMAIN = "([^"]+)"/) || [])[1];
@@ -652,6 +653,35 @@ describe("H. the two hostnames, and what a deploy has to prove", () => {
     assert(/`app\.metyet\.io` is production/.test(prose), "production is named: " + domain);
     assert(/`demo\.metyet\.io` is the in-memory demo/.test(prose), "and the demo is");
     assert(/share no state/.test(prose), "and that they share none");
+  });
+
+  /* Render has five regions and none is in Canada, where the Supabase project
+     is. So there is no matching region and the choice is a nearest one, which
+     makes it exactly the kind of decision that rots: someone changes it, it
+     still looks plausible, and every query quietly crosses a continent. The
+     valid set is the provider's, written down; the choice has to be one of them
+     and the runbook has to say why it is that one. */
+  test("the region is one Render actually has, and the runbook says why it is that one", () => {
+    const RENDER_REGIONS = ["oregon", "ohio", "virginia", "frankfurt", "singapore"];
+    const region = (render.match(/^\s+region: (\S+)/m) || [])[1];
+    assert(RENDER_REGIONS.includes(region), `"${region}" is not a Render region`);
+    /* The runbook states it in its OWN ROW, and the two have to agree. Asking
+       only that the runbook "mentions" it is no check at all here: the runbook
+       legitimately names `ohio` as the near-equal alternative and `oregon` as
+       what this used to be, so any of the five would have passed. */
+    const stated = (runbook.match(/\|\s*\*\*Region\*\*\s*\|\s*`([^`]+)`/) || [])[1];
+    assert(stated, "the runbook has a Region row");
+    eq(stated, region, "the runbook and the blueprint deploy to the same region");
+    const prose = runbook.replace(/\s+/g, " ");
+    /* The database's region is the reason, so it has to appear beside it. */
+    assert(/Canada Central/.test(prose), "and where the database actually is");
+    assert(/none of them is in \*?\*?Canada/i.test(prose),
+      "and the explanation that no Render region matches it");
+    assert(/no Canadian Render region/i.test(prose), "said in the Region row too");
+    /* The consequence of the nearest-not-matching choice, which is a decision
+       rather than a detail: the data stays put, the compute does not. */
+    assert(/the compute does not/i.test(prose) && /processed in the United States/i.test(prose),
+      "and what moving the compute across the border means");
   });
 
   test("the runbook tells an operator how to point both, in an order that does not break", () => {

@@ -66,7 +66,7 @@ Each is something only you can do. None is done yet.
 | | |
 |---|---|
 | **Provider** | Supabase |
-| **Create** | One project. Choose a region close to the Render region you will pick. |
+| **Create** | One project. The pilot's is in **Canada Central**; the Render service sits in `virginia`, the nearest Render offers (2.4). |
 | **Setting to copy** | The project URL (`https://<project-ref>.supabase.co`), the **session pooler** connection string (port 5432 — Render is IPv4-only, and session pooling keeps a transaction and its advisory lock on one connection), and the project's **publishable** key (`sb_publishable_…`). Not the secret key: the server refuses one. |
 | **Environment variables** | `SUPABASE_URL`, `DATABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `DATABASE_CA_CERT_FILE`/`DATABASE_CA_CERT` (2.1a) |
 | **Cost** | Free tier to start; Pro is $25/month and is what a pilot with real data should sit on (daily backups, no pausing). |
@@ -218,7 +218,7 @@ better.
 | **Branch** | `phase-3-real-hosted-environment` — **not `main`**, see below. |
 | **Environment variables to set by hand** | `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`. `DATABASE_SSL=verify-full`, `DATABASE_CA_CERT_FILE`, `DATABASE_POOL_MAX=10` and `LOG_LEVEL=info` come from the blueprint. `PORT` is provided by Render. |
 | **Secret File to add** | `supabase-ca.crt` — the certificate from 2.1a. Render mounts it at `/etc/secrets/supabase-ca.crt`, which is what `DATABASE_CA_CERT_FILE` already points at. |
-| **Region** | Put it in the region closest to the Supabase project. The blueprint says `oregon`; change it before applying if the project is elsewhere — every query crosses that gap. |
+| **Region** | `virginia` — the nearest Render region to the Supabase project, which is in Canada Central. See below; there is no Canadian Render region. |
 | **Cost** | `plan: starter` in the blueprint is about **$7/month** and does not sleep. A free instance sleeps and would make the pilot look broken. Change the plan before applying if you disagree. |
 | **Check** | The service reaches "live" (its health check is the readiness endpoint), and `curl https://<service>.onrender.com/api/health/live` returns `{"status":"ok"}`. |
 
@@ -229,6 +229,22 @@ branch: no `auth:check`, no `auth:sign-in`, no `partner:register`, the older
 the service would not start at all. Deploy the pilot branch. **When PR #43
 merges, change `branch:` in `render.yaml` back to `main`** and redeploy; a test
 holds the blueprint and this runbook to whichever branch is named.
+
+**Why `virginia`, and what it costs.** Render has five regions — `oregon`,
+`ohio`, `virginia`, `frankfurt`, `singapore` — and **none of them is in
+Canada**, so there is no region to match the Supabase project in Canada Central.
+`virginia` (Ashburn) is the closest: a few hundred miles from Montreal, on the
+densest peering path in North America. `ohio` is the near-equal alternative.
+`oregon` — which the blueprint said before — would have put the width of the
+continent between every query and its database, on a path every command crosses
+several times while holding the world lock.
+
+The trade that comes with it: **the data stays in Canada**, because Supabase
+holds it and that has not moved, but **the compute does not**. Requests carrying
+partner and collector data are processed in the United States. That is a
+decision worth making deliberately rather than inheriting from a default; if it
+is not acceptable for the pilot, the answer is a different host for the API, not
+a different Render region.
 
 **The certificate as a Secret File.** The CA is a multi-line PEM, and an
 environment-variable editor is exactly where multi-line values get mangled.
