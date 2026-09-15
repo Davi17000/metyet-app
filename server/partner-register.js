@@ -126,9 +126,37 @@ async function send(url, { method = "GET", bearer, body, timeoutMs, fetchImpl })
   return { status: response.status, payload };
 }
 
+/* WHO THE PROJECTION SAYS YOU ARE.
+
+   The domain's actor is `{ seat, partnerId }` or `{ seat, collectorId }` — a
+   seat and the id for that seat, and nothing else. This printed `actor.id`,
+   which no projection has ever carried, so a correctly authenticated Trusted
+   Partner read `you are: (no id)`. Authentication, binding and projection were
+   all right; the line describing them was wrong, which is the worst kind of
+   display bug because it reads like a real failure.
+
+   So the seat decides which field is the id, the way the domain writes it. The
+   NAME is not on the actor either — it is on the actor's own record inside the
+   projection, which is the only record of its kind there (a partner sees one
+   partner: itself). Read, never assumed: a projection without it still prints. */
+
 /* What a projection contains, as counts. The shop's contents are the partner's
    business and there is no reason to print them; that there is exactly one
    actor and nothing else is the thing being proved. */
+const SEATS = {
+  tp: { id: "partnerId", records: "partners" },
+  collector: { id: "collectorId", records: "collectors" },
+};
+
+function describeActor(state) {
+  const actor = (state && state.actor) || null;
+  const seat = actor && SEATS[actor.seat];
+  if (!seat) return { id: null, name: null, seat: (actor && actor.seat) || null };
+  const id = actor[seat.id] || null;
+  const mine = (Array.isArray(state[seat.records]) ? state[seat.records] : []).find((r) => r && r.id === id);
+  return { id, name: (mine && mine.name) || null, seat: actor.seat };
+}
+
 function describeState(state) {
   if (!state || typeof state !== "object") return "(no state)";
   const counts = Object.entries(state)
@@ -189,8 +217,8 @@ async function registerPartner({ say = console.log, url = DEFAULT_URL, tokenFile
   }
 
   const payload = result.payload || {};
-  const actor = (payload.state && payload.state.actor) || {};
-  say(`registered:  ${actor.id || "(no id in the projection)"}`);
+  const actor = describeActor(payload.state);
+  say(`registered:  ${actor.id || "(the projection named no actor)"}`);
   if (actor.name) say(`store:       ${actor.name}`);
   say(`version:     ${payload.version}`);
   say(`your shop:   ${describeState(payload.state)}`);
@@ -239,12 +267,12 @@ async function view({ say = console.log, url = DEFAULT_URL, tokenFile = DEFAULT_
   }
 
   const payload = result.payload || {};
-  const actor = (payload.state && payload.state.actor) || {};
-  say(`you are:     ${actor.id || "(no id)"}${actor.name ? `  ${actor.name}` : ""}`);
+  const actor = describeActor(payload.state);
+  say(`you are:     ${actor.id || "(the projection named no actor)"}${actor.name ? `  ${actor.name}` : ""}`);
   say(`version:     ${payload.version}`);
   say(`your shop:   ${describeState(payload.state)}`);
   return 0;
 }
 
-module.exports = { registerPartner, view, credentialProblem, readBearer, checkUrl, describeState,
+module.exports = { registerPartner, view, credentialProblem, readBearer, checkUrl, describeState, describeActor,
   explain, DEFAULT_TOKEN_FILE, DEFAULT_URL };

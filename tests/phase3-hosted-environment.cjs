@@ -25,6 +25,8 @@ const os = require("os");
 const path = require("path");
 const { checkAuth, describeKeys, verdict } = require("../server/auth-check.js");
 const { signIn, CODE_DIGITS } = require("../server/auth-signin.js");
+const { projectForActor } = require("../domain/metyet-projection.js");
+const { emptyWorld } = require("../server/bootstrap.js");
 const PR = require("../server/partner-register.js");
 const { askSecret } = require("../server/secret-prompt.js");
 const { DEFAULT_ALGORITHMS } = require("../server/auth/token-verifier.js");
@@ -864,11 +866,22 @@ describe("E. one real sign-in, without the token ever being visible", () => {
    reach around the server to make a partner some other way. */
 const CREDENTIAL = "abcdefghjkmnpqrstvwxyz0123456789";     // 32 symbols, the shape createInvitation makes
 const BEARER = "eyJbearer.that.must.never.be.printed";
-const REGISTERED = {
-  ok: true, version: 3,
-  state: { actor: { id: "tp_9k2m", name: "Northline Cards" }, cards: [], deals: [], preferences: {} },
-};
-const VIEWED = { version: 3, state: { actor: { id: "tp_9k2m", name: "Northline Cards" }, cards: [], deals: [] } };
+/* THE PROJECTION IS THE REAL ONE, NOT A HAND-WRITTEN LOOKALIKE.
+
+   These fixtures used to be `{ actor: { id, name } }`, invented to look like
+   what a projection probably returns. No projection has ever returned that: the
+   domain writes `{ seat, partnerId }`, and the name lives on the actor's own
+   record. So the CLI printed `you are: (no id)` against a perfectly good
+   sign-in, and every test here passed, because the fixture agreed with the bug
+   rather than with the domain.
+
+   The fixture is now built by calling `projectForActor` on a real world, so the
+   display and the domain cannot drift apart again without this failing. */
+const PARTNER_ID = "tp_9k2m";
+const WORLD = { ...emptyWorld(), partners: [{ id: PARTNER_ID, name: "Northline Cards", tradeRate: 0.8 }] };
+const PROJECTION = projectForActor(WORLD, { partnerId: PARTNER_ID });
+const REGISTERED = { ok: true, version: 3, state: PROJECTION };
+const VIEWED = { version: 3, state: PROJECTION };
 
 const bearerFile = (contents = BEARER) => {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "metyet-register-")), "access-token");
@@ -1062,8 +1075,42 @@ describe("F. accepting an invitation, with neither credential ever visible", () 
     eq(result.sent[0].method, "GET");
     eq(result.sent[0].body, undefined, "no body, and no credential of any kind");
     eq(result.sent[0].headers.authorization, `Bearer ${BEARER}`);
-    assert(/tp_9k2m/.test(result.out) && /Northline Cards/.test(result.out), result.out);
-    assert(/cards: 0, deals: 0/.test(result.out), "and what the projection holds, as counts: " + result.out);
+    /* The id and the name as the DOMAIN writes them: the seat's own id field,
+       and the name from the actor's own record. This is the assertion that was
+       passing against an invented fixture while the real command printed
+       "(no id)". */
+    eq(PROJECTION.actor.seat, "tp", "the domain's actor carries a seat");
+    eq(PROJECTION.actor.partnerId, PARTNER_ID, "and the id under the seat's own field, never `id`");
+    assert(!("id" in PROJECTION.actor), "there is no actor.id to read, and never was");
+    assert(new RegExp(`you are: +${PARTNER_ID} +Northline Cards`).test(result.out), result.out);
+    assert(/partners: 1/.test(result.out), "and what the projection holds, as counts: " + result.out);
+    assert(/catalog: 0/.test(result.out), "including the empty ones");
+  });
+
+  /* THE BUG THIS EXISTS FOR. A correctly authenticated Trusted Partner, with a
+     correct binding and a correct projection, read `you are: (no id)` — because
+     the display asked for `actor.id` and the domain has never written one. The
+     test above now builds its fixture from the real projection so the two
+     cannot drift; this one covers the seats and the edges directly. */
+  test("who the projection says you are is read the way the domain writes it", () => {
+    const partner = projectForActor(WORLD, { partnerId: PARTNER_ID });
+    eq(JSON.stringify(PR.describeActor(partner)),
+      JSON.stringify({ id: PARTNER_ID, name: "Northline Cards", seat: "tp" }), "a Trusted Partner");
+
+    const cWorld = { ...emptyWorld(), collectors: [{ id: "c_44", name: "Casey" }] };
+    const collector = projectForActor(cWorld, { collectorId: "c_44" });
+    eq(collector.actor.seat, "collector", "the other seat writes its id under its own field too");
+    eq(JSON.stringify(PR.describeActor(collector)),
+      JSON.stringify({ id: "c_44", name: "Casey", seat: "collector" }), "a Collector");
+
+    /* And nothing is assumed: an empty projection, an unknown seat, and a seat
+       whose record is not in the projection each answer rather than throw. */
+    eq(JSON.stringify(PR.describeActor(projectForActor(emptyWorld(), { partnerId: "nobody" }))),
+      JSON.stringify({ id: null, name: null, seat: null }), "no actor at all");
+    eq(PR.describeActor({ actor: { seat: "wizard", id: "x" } }).id, null, "an unknown seat names nobody");
+    eq(PR.describeActor({ actor: { seat: "tp", partnerId: "p9" }, partners: [] }).name, null,
+      "and an id with no record still gives the id");
+    eq(PR.describeActor({}).seat, null, "and an empty projection does not throw");
   });
 
   test("view says plainly when the sign-in is nobody yet", async () => {
