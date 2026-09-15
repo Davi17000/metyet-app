@@ -23,7 +23,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { checkAuth, describeKeys, verdict } = require("../server/auth-check.js");
-const { signIn } = require("../server/auth-signin.js");
+const { signIn, CODE_DIGITS } = require("../server/auth-signin.js");
 const { DEFAULT_ALGORITHMS } = require("../server/auth/token-verifier.js");
 const { runCommand, USAGE, connectionAdvice, TLS_TRUST_CODES, AUTH_FAILED_CODE } = require("../server/cli.js");
 const { REQUIRED_SERVER_ENV, loadServerConfig, loadDatabaseConfig } = require("../server/config.js");
@@ -530,6 +530,10 @@ describe("D. nothing secret is printed, and nothing is changed", () => {
    about it closing it without becoming a second way in.
 
    The provider is never contacted here: every request is injected. */
+/* EIGHT digits, because this project's Email OTP length is set to 8 and the
+   first version of this harness hard-coded six — refusing a real, correct code
+   before it ever reached the provider. The fixture is the shape that broke it. */
+const CODE = "24681357";
 const SESSION = {
   access_token: "eyJreal.looking.token", refresh_token: "refresh-that-outlives-everything",
   expires_in: 3600, user: { id: SUBJECT, email: EMAIL, email_confirmed_at: "2026-09-10T09:00:00.000Z" },
@@ -572,7 +576,7 @@ async function signin(options = {}) {
         asked.push({ url, body: JSON.parse(opts.body), headers: opts.headers, method: opts.method });
         return (options.replies || replies(200, 200))(url, opts);
       }),
-      askForCode: options.askForCode || (async () => "123456"),
+      askForCode: options.askForCode || (async () => CODE),
       writeSecret: options.writeSecret || ((file, contents) => written.push({ file, contents })),
       mustBeIgnored: options.mustBeIgnored || (() => {}),
     },
@@ -609,10 +613,85 @@ describe("E. one real sign-in, without the token ever being visible", () => {
     const result = await signin();
     eq(result.asked[1].body.type, "email",
       "type \"email\" — the one that checks BOTH the confirmation and recovery token");
-    eq(result.asked[1].body.token, "123456", "the typed code");
+    eq(result.asked[1].body.token, CODE, "the typed code, exactly as typed");
     eq(result.asked[1].body.email, EMAIL, "against the address it was sent to");
     assert(!("token_hash" in result.asked[1].body), "a token and a token_hash together is refused by the provider");
     assert(/two doors to the same credential/.test(result.out), "and the operator is told what that means: " + result.out);
+  });
+
+  /* THE CODE'S LENGTH IS THE PROVIDER'S, NOT OURS.
+
+     The first version of this harness required exactly six digits, because
+     Supabase's passwordless guide says "six-digit code". The real project emits
+     EIGHT, and a real correct code was refused locally with "that is not a
+     six-digit code" — the request never reached the provider. The length is a
+     per-project setting (Email OTP length, 6 to 10, default 6), so the rule is
+     the provider's documented range rather than any one project's value. */
+  test("a code of any length the provider can issue is accepted, and sent unchanged", async () => {
+    eq(CODE.length, 8, "the fixture is the eight-digit shape that broke this");
+    for (const digits of [6, 7, 8, 9, 10]) {
+      const typed = "1234567890".slice(0, digits);
+      const result = await signin({ askForCode: async () => typed });
+      eq(result.code, 0, `${digits} digits is a code the provider could have issued: ${result.out}`);
+      eq(result.asked[1].body.token, typed, "and it goes out exactly as typed, unpadded and untrimmed");
+      eq(result.written.length, 1, "and the sign-in completes");
+    }
+    eq(CODE_DIGITS.min, 6, "the documented minimum");
+    eq(CODE_DIGITS.max, 10, "and the documented maximum");
+  });
+
+  test("anything that is not such a code is refused before the provider is asked", async () => {
+    const bad = ["12345", "12345678901", "abcdefgh", "1234 5678", "1234-5678", "", "  ", "12345678\n9",
+      "١٢٣٤٥٦٧٨", "1e7", "+1234567", "0x123456"];
+    for (const typed of bad) {
+      const result = await signin({ askForCode: async () => typed });
+      eq(result.code, 1, `"${typed.replace(/\s/g, "·")}" is refused: ${result.out}`);
+      eq(result.asked.length, 1, "and the verify request is never made — only the email was sent");
+      eq(result.written.length, 0, "and nothing is written");
+      assert(/digits only/.test(result.out), "and it says what a code looks like: " + result.out);
+    }
+  });
+
+  test("the refusal says what was wrong without repeating the code back", async () => {
+    const result = await signin({ askForCode: async () => "9876" });
+    assert(/digits only/.test(result.out) && /6 to 10/.test(result.out), "the shape: " + result.out);
+    assert(/you typed 4 characters/.test(result.out), "and what was typed, as a length: " + result.out);
+    assert(!result.out.includes("9876"), "never the characters themselves — a near-miss is still a credential");
+    assert(/Authentication → Email provider/.test(result.out), "and where the setting lives");
+  });
+
+  test("no six-digit claim survives anywhere an operator can read one", () => {
+    const stale = /six[- ]digit|6[- ]digit/i;
+    const signinSource = fs.readFileSync(path.join(ROOT, "server", "auth-signin.js"), "utf8");
+    const cliSource = fs.readFileSync(path.join(ROOT, "server", "cli.js"), "utf8");
+    /* The implementation may DISCUSS the old assumption — that is how the next
+       person learns why the range is the range — but it may not ASSERT it. */
+    const claims = signinSource.split("\n")
+      .filter((line) => stale.test(line) && !/^\s*(\*|\/\*|\s*$)/.test(line) && !/hard-coded six|not six digits|says "six-digit"/.test(line));
+    eq(claims.length, 0, "stale six-digit claims in auth-signin.js: " + claims.join(" | "));
+    assert(!stale.test(cliSource), "and none in the CLI");
+    /* The runbook may only mention six as the provider's DEFAULT, never as the
+       length of the code the operator is about to type. */
+    runbook.split("\n").filter((line) => stale.test(line)).forEach((line) => {
+      /* Mentioning six is fine where the line CORRECTS the assumption — says it
+         is the default, says it is not the length, or quotes somebody saying
+         so. What is not fine is a line that tells the operator their code is
+         six digits long. */
+      assert(/\bnot\b|\bdefault\b|\bsays\b|6 to 10|between 6 and 10/.test(line),
+        "stale runbook claim: " + line);
+    });
+    assert(/6 to 10|between 6 and 10/.test(runbook), "and the runbook states the real range");
+    /* The other stale assumption the real run exposed: `/otp` sends CONFIRM
+       SIGNUP, not Magic Link, to an address that is not yet a confirmed user —
+       which is every Trusted Partner's first sign-in, the one that matters. A
+       runbook naming only one template sends the first code out without a code
+       in it. Both must be named, and named as both. */
+    const prose = runbook.replace(/\s+/g, " ");
+    assert(/Two templates, not one/.test(prose), "the runbook insists on both templates");
+    assert(/Magic Link\*\* \*and\* in \*\*Confirm signup|Magic Link.{0,20}and.{0,10}Confirm signup/.test(prose),
+      "and says to put the placeholders in both");
+    assert(/not yet a confirmed user|does not[^.]*it signs them up|hasn't completed|If it does not/.test(prose),
+      "and says why: a first-time address is signed up rather than magic-linked");
   });
 
   test("the access token is written, and the refresh token is not kept at all", async () => {
@@ -634,7 +713,7 @@ describe("E. one real sign-in, without the token ever being visible", () => {
     runs.forEach((result) => {
       assert(!result.out.includes(SESSION.access_token), "no access token: " + result.out);
       assert(!result.out.includes(SESSION.refresh_token), "no refresh token");
-      assert(!result.out.includes("123456"), "not even the one-time code");
+      assert(!result.out.includes(CODE), "not even the one-time code");
       assert(!result.out.includes("sb_publishable_example"), "and not the key");
     });
   });
@@ -699,7 +778,11 @@ describe("E. one real sign-in, without the token ever being visible", () => {
       [await signin({ replies: replies(401) }), 1, /publishable key/],
       [await signin({ replies: replies(422) }), 1, /disabled|signups/],
       [await signin({ replies: replies(200, 403) }), 1, /single-use|wrong, already used, or expired/],
-      [await signin({ askForCode: async () => "abcdef" }), 1, /six-digit/],
+      [await signin({ askForCode: async () => "abcdefgh" }), 1, /digits only/],
+      [await signin({ askForCode: async () => "12345" }), 1, /digits only/],
+      [await signin({ askForCode: async () => "12345678901" }), 1, /digits only/],
+      [await signin({ askForCode: async () => "" }), 1, /digits only/],
+      [await signin({ askForCode: async () => "1234 5678" }), 1, /digits only/],
       [await signin({ replies: replies(200, { status: 200, body: new Error("not json") }) }), 1, /could not be read/],
       [await signin({ replies: replies(200, { status: 200, body: {} }) }), 1, /no access token/],
       /* Each leg is named separately, so a failure on the way out cannot be

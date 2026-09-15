@@ -11,10 +11,29 @@
    out of it — which is how an access token ends up in a clipboard, a scrollback
    buffer, and eventually a screenshot.
 
-   So: this asks the provider to email the person, takes the six-digit code they
-   type, and writes the resulting access token to a file that `auth:check` reads.
-   The token is never printed, never passed as an argument, and never returned to
-   the caller.
+   So: this asks the provider to email the person, takes the code they type, and
+   writes the resulting access token to a file that `auth:check` reads. The token
+   is never printed, never passed as an argument, and never returned to the
+   caller.
+
+   HOW LONG IS THE CODE. It is not six digits, whatever Supabase's passwordless
+   guide says. The length is a per-project setting — Authentication → Email
+   provider → Email OTP length — documented as a whole number from 6 to 10, and
+   this project emits 8. The first version of this file hard-coded six and
+   refused a real, correct code before it ever reached the provider, which is a
+   worse failure than a wrong one: the operator is told their code is malformed
+   when it is perfect.
+
+   So the rule is the provider's own contract — numeric, and a length the
+   provider could have issued — rather than one project's current setting. That
+   cannot go stale when somebody changes the setting, which is the whole point.
+   It stays strict about the part that matters: digits only, bounded, no
+   whitespace, nothing that could be a pasted token going out on the wire.
+
+   The check is a typo guard, not a security boundary: the provider decides, and
+   a wrong code is refused WITHOUT spending the credential (GoTrue returns
+   Forbidden and leaves the token column alone), so an honest mistake costs one
+   round trip rather than the sign-in.
 
    WHAT THIS IS NOT. It is not a way in. It does the same two public calls the
    sign-in page will do, with the project's PUBLISHABLE key, and what it produces
@@ -48,7 +67,10 @@ const { isSafeProviderUrl } = require("./auth/identity.js");
 const DEFAULT_OUT = ".secrets/access-token";
 const DEFAULT_TIMEOUT_MS = 10000;
 const LOOKS_LIKE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const LOOKS_LIKE_CODE = /^[0-9]{6}$/;
+/* The provider's documented range for the email OTP length setting, not one
+   project's current value — see the header. */
+const CODE_DIGITS = { min: 6, max: 10 };
+const LOOKS_LIKE_CODE = new RegExp(`^[0-9]{${CODE_DIGITS.min},${CODE_DIGITS.max}}$`);
 
 /* The Auth endpoints, derived from the issuer the rest of the server already
    derives — so a project override moves all of them together and none of this
@@ -103,7 +125,7 @@ function writeSecret(file, contents) {
    came from a file or a command line, which is the thing being avoided. */
 function askForCode({ input = process.stdin, output = process.stdout } = {}) {
   if (!input.isTTY) {
-    return Promise.reject(new Error("the six-digit code has to be typed at a terminal. "
+    return Promise.reject(new Error("the code has to be typed at a terminal. "
       + "Piping it in would put it in a file or a shell history, which is what this avoids."));
   }
   return new Promise((resolve, reject) => {
@@ -174,7 +196,7 @@ async function signIn({ env = process.env, say = console.log, email, out = DEFAU
   }
   if (sent.status !== 200) { say(`failed:      ${refusal(sent.status)}`); return 1; }
 
-  say("sent:        one email, carrying a six-digit code and a sign-in link.");
+  say("sent:        one email, carrying a numeric code and a sign-in link.");
   say("             They are two doors to the same credential — using either one");
   say("             spends it, so use the code here and leave the link alone.");
   say("");
@@ -187,7 +209,14 @@ async function signIn({ env = process.env, say = console.log, email, out = DEFAU
     say(`failed:      ${error.message}`);
     return 1;
   }
-  if (!LOOKS_LIKE_CODE.test(code)) { say("failed:      that is not a six-digit code"); return 1; }
+  if (!LOOKS_LIKE_CODE.test(code)) {
+    /* Say what was wrong with it without repeating it back: a length is not the
+       code, and "not a code" on its own leaves an operator guessing. */
+    say(`failed:      that is not a code: it has to be digits only, `
+      + `${CODE_DIGITS.min} to ${CODE_DIGITS.max} of them (you typed ${code.length} character${code.length === 1 ? "" : "s"})`);
+    say("             Your project's length is set in Authentication → Email provider.");
+    return 1;
+  }
 
   /* type "email" is the one that checks BOTH the confirmation and the recovery
      token, which is what makes a code from a magic-link template verify. */
@@ -240,4 +269,4 @@ async function signIn({ env = process.env, say = console.log, email, out = DEFAU
 }
 
 module.exports = { signIn, endpoints, mustBeIgnored, writeSecret, askForCode,
-  refusal, DEFAULT_OUT, LOOKS_LIKE_CODE };
+  refusal, DEFAULT_OUT, LOOKS_LIKE_CODE, CODE_DIGITS };

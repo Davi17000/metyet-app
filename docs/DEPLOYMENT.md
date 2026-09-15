@@ -130,18 +130,39 @@ publishable one belongs.
 
 ### 2.3a The sign-in email: one message, a code and a link
 
-The locked experience is one email carrying **both** a six-digit code and a
+The locked experience is one email carrying **both** a numeric code and a
 one-click sign-in link. Supabase supports this, and it is template
 configuration — no code change and no product compromise:
 
 | | |
 |---|---|
-| **Provider** | Supabase → Authentication → Email Templates → **Magic Link** |
-| **Do** | Put both `{{ .Token }}` (the six-digit code) and `{{ .ConfirmationURL }}` (the one-click link) in that one template. |
-| **Why it works** | Email OTPs and Magic Links share one implementation and one underlying token. The client verifies a typed code with `verifyOtp({ email, token, type: 'email' })`, and GoTrue's `email` verification deliberately checks **both** the confirmation and recovery token columns — so a code from a magic-link request verifies. Clicking the link and typing the code are two doors to the same token. |
+| **Provider** | Supabase → Authentication → Email Templates |
+| **Do** | Put both `{{ .Token }}` (the code) and `{{ .ConfirmationURL }}` (the one-click link) in **Magic Link** *and* in **Confirm signup** — see below for why both. |
+| **Why it works** | Email OTPs and Magic Links share one implementation and one underlying token. The client verifies a typed code with `verifyOtp({ email, token, type: 'email' })`, and GoTrue's `email` verification deliberately checks **both** the confirmation and recovery token columns — so a code from either template verifies. Clicking the link and typing the code are two doors to the same token. |
 | **Consequence** | Whichever is used first spends the token and the other stops working. That is correct: one sign-in, one credential. |
 | **Cost** | none |
 | **Check** | Send yourself one. The email contains a code and a link; either signs you in, and the second then fails. |
+
+**Two templates, not one.** `/auth/v1/otp` routes to GoTrue's magic-link
+handler, and that handler checks whether the address belongs to a **confirmed**
+user first. If it does not — a first-time invited address, which is every
+Trusted Partner's first sign-in — it signs them up instead, and the email that
+goes out is **Confirm signup**, not Magic Link. GoTrue's own comment on that
+branch reads "confirmation email already contains 'magic link'". So a Magic Link
+template with both placeholders and an untouched Confirm signup template means
+the very first sign-in — the one that matters — arrives without a code.
+
+**The code is not six digits unless you set it to six.** The length is a
+per-project setting (Authentication → Email provider → **Email OTP length**), a
+whole number from 6 to 10, default 6. *This project emits 8.* Supabase's
+passwordless guide still says "six-digit", which is how that assumption gets
+into code; `server/auth-signin.js` accepts the documented range rather than any
+one project's current value.
+
+**Keep the email copy length-agnostic.** Write "Use this code to sign in:" and
+let `{{ .Token }}` speak for itself. A template that says "your six-digit code"
+becomes a lie the moment the setting changes, and the reader trusts the sentence
+over the digits.
 
 `signInWithOtp` must keep creating users (`shouldCreateUser` left at its
 default) — an invited Trusted Partner has no account until their first sign-in.
@@ -166,8 +187,14 @@ command instead.
 
 The request carries the address and nothing else: no `create_user`, so the
 project's own signup policy decides whether a first-time invited address may be
-created. Verification uses `type: "email"`, which is what makes a code from the
-Magic Link template work (2.3a).
+created. Verification uses `type: "email"`, which is what makes a code from
+either template work (2.3a).
+
+The code is checked before it is sent: digits only, and between 6 and 10 of them
+— the range Supabase allows for the Email OTP length setting, not one project's
+current value. A rejected code is a typo, not a refusal: the provider is the
+authority, and a wrong code is refused there **without spending the
+credential**, so you can simply type it again.
 
 Only one of the two doors can be used. Taking the code here spends the
 credential and the link in the same email stops working; to exercise the link
@@ -320,7 +347,7 @@ route that creates an invitation, and registration is not a command, so no
 request body can name it.
 
 Still ahead: sending that invitation email from the product rather than from
-you, the sign-in email itself (one message carrying both a six-digit code and a
+you, the sign-in email itself (one message carrying both a numeric code and a
 one-click link), inviting Collectors from a Trusted Partner who has inventory,
 the React clients calling this API instead of their in-process store, and photo
 storage.
