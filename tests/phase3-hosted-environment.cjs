@@ -23,8 +23,8 @@ const os = require("os");
 const path = require("path");
 const { checkAuth, describeKeys, verdict } = require("../server/auth-check.js");
 const { DEFAULT_ALGORITHMS } = require("../server/auth/token-verifier.js");
-const { runCommand, USAGE } = require("../server/cli.js");
-const { REQUIRED_SERVER_ENV, loadServerConfig } = require("../server/config.js");
+const { runCommand, USAGE, tlsAdvice, TLS_TRUST_CODES } = require("../server/cli.js");
+const { REQUIRED_SERVER_ENV, loadServerConfig, loadDatabaseConfig } = require("../server/config.js");
 
 const ROOT = path.join(__dirname, "..");
 const render = fs.readFileSync(path.join(ROOT, "render.yaml"), "utf8");
@@ -112,6 +112,128 @@ describe("A. the deployment description carries the whole contract", () => {
     eq(pkg.scripts["auth:check"], "node server/cli.js auth-check");
     assert(runbook.includes("auth:check"), "the runbook tells an operator to run it");
     assert(USAGE.includes("auth-check"), "and the command lists itself");
+  });
+});
+
+/* ==============================================================  A2
+   HOW THE DATABASE CONNECTION IS PROTECTED.
+
+   The first real Supabase project met `SELF_SIGNED_CERT_IN_CHAIN` from
+   `db:status`. That was verification working — Supabase signs its database
+   certificate with its own root, which is not in Node's trust store — but two
+   things about it were MetYet's fault: the mode that performed full verification
+   was called `require`, which in libpq means the opposite, and the failure said
+   only what the TLS library said, which sends an operator hunting for a fault
+   in their connection string or for a way to switch verification off.
+   ========================================================================== */
+describe("A2. the database connection is verified, and says so accurately", () => {
+  const DB = { DATABASE_URL: "postgresql://metyet:pw@aws-0-ca-central-1.pooler.supabase.com:5432/postgres" };
+  const PEM = "-----BEGIN CERTIFICATE-----\nMIIfake\n-----END CERTIFICATE-----";
+
+  test("the default verifies the certificate and the host", () => {
+    const db = loadDatabaseConfig(DB);
+    eq(db.sslMode, "verify-full", "and it is called what it does");
+    eq(db.ssl.rejectUnauthorized, true);
+    /* node-postgres sets `servername` from the host, so rejectUnauthorized
+       checks the NAME as well as the chain — "verify-full" is accurate. */
+    const pg = fs.readFileSync(path.join(ROOT, "node_modules", "pg", "lib", "connection.js"), "utf8");
+    assert(/options\.servername = host/.test(pg), "the driver still names the host it expects");
+  });
+
+  test("`require` is refused rather than guessed at", () => {
+    /* In libpq it means "encrypt, do not verify". Here it used to mean
+       "verify". Either reading is somebody's reasonable expectation, and
+       choosing one silently is how a production connection stops being checked
+       without anyone deciding that. */
+    for (const mode of ["require", "prefer", "allow", "verify-ca"]) {
+      let threw = null;
+      try { loadDatabaseConfig({ ...DB, DATABASE_SSL: mode }); } catch (e) { threw = e; }
+      assert(threw && threw.code === "config.invalid", mode + " is refused");
+      assert(/ambiguous/.test(threw.message), mode + " says why: " + threw.message);
+      assert(/verify-full/.test(threw.message) && /no-verify/.test(threw.message),
+        "and offers both readings by name");
+    }
+  });
+
+  test("the three modes mean three different things", () => {
+    eq(JSON.stringify(loadDatabaseConfig({ ...DB, DATABASE_SSL: "verify-full" }).ssl),
+      JSON.stringify({ rejectUnauthorized: true }), "encrypt and verify");
+    eq(JSON.stringify(loadDatabaseConfig({ ...DB, DATABASE_SSL: "no-verify" }).ssl),
+      JSON.stringify({ rejectUnauthorized: false }), "encrypt only");
+    eq(loadDatabaseConfig({ ...DB, DATABASE_SSL: "disable" }).ssl, false, "neither");
+    let threw = null;
+    try { loadDatabaseConfig({ ...DB, DATABASE_SSL: "maybe" }); } catch (e) { threw = e; }
+    assert(threw && /must be one of verify-full, no-verify, disable/.test(threw.message), threw.message);
+  });
+
+  test("a provider's own root can be supplied as text or as a file", () => {
+    eq(loadDatabaseConfig({ ...DB, DATABASE_CA_CERT: PEM }).ssl.ca, PEM, "as text, for a host's environment editor");
+    eq(loadDatabaseConfig({ ...DB, DATABASE_CA_CERT: PEM }).caConfigured, true);
+
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "metyet-ca-")), "prod-ca.crt");
+    fs.writeFileSync(file, PEM + "\n");
+    eq(loadDatabaseConfig({ ...DB, DATABASE_CA_CERT_FILE: file }).ssl.ca, PEM, "as a path, for the file you downloaded");
+
+    /* And it is still verification that is doing the work: a CA without
+       verification would be decoration. */
+    eq(loadDatabaseConfig({ ...DB, DATABASE_CA_CERT_FILE: file }).ssl.rejectUnauthorized, true);
+    eq(loadDatabaseConfig(DB).caConfigured, false, "and none configured is reported as none");
+  });
+
+  test("a CA that cannot be read, or is not a certificate, stops the process", () => {
+    const bad = [
+      [{ DATABASE_CA_CERT_FILE: "/nonexistent/metyet/ca.crt" }, /could not be read \(ENOENT\)/],
+      [{ DATABASE_CA_CERT: "not a certificate" }, /must be PEM text/],
+      [{ DATABASE_CA_CERT: PEM, DATABASE_CA_CERT_FILE: "/tmp/x.crt" }, /not both/],
+    ];
+    for (const [env, expected] of bad) {
+      let threw = null;
+      try { loadDatabaseConfig({ ...DB, ...env }); } catch (e) { threw = e; }
+      assert(threw && threw.code === "config.invalid", JSON.stringify(env));
+      assert(expected.test(threw.message), threw.message);
+      assert(!threw.message.includes(PEM), "and no certificate content in the message");
+    }
+  });
+
+  test("a trust failure explains itself, and points at the secure fix", () => {
+    for (const code of [...TLS_TRUST_CODES]) {
+      const lines = [];
+      assert(tlsAdvice(Object.assign(new Error("self-signed certificate in certificate chain"), { code }),
+        (l) => lines.push(l)), code + " is recognised");
+      const said = lines.join("\n");
+      assert(/verification working/.test(said), "it says the check is doing its job: " + said);
+      assert(/DATABASE_CA_CERT_FILE/.test(said), "and names the setting that fixes it");
+      assert(/SSL Configuration/.test(said), "and where the certificate comes from");
+      assert(/Do not turn verification off/.test(said), "and warns against the tempting shortcut");
+    }
+    /* A name mismatch is a different problem and gets a different sentence. */
+    const altname = [];
+    assert(tlsAdvice({ code: "ERR_TLS_CERT_ALTNAME_INVALID" }, (l) => altname.push(l)));
+    assert(/not for this host/.test(altname.join("\n")), altname.join("\n"));
+    /* And an ordinary failure is left alone. */
+    eq(tlsAdvice({ code: "28P01" }, () => { throw new Error("should not speak"); }), false);
+    eq(tlsAdvice(new Error("something else"), () => { throw new Error("should not speak"); }), false);
+  });
+
+  test("the advice reaches an operator running the real command", async () => {
+    const lines = [];
+    const broken = { transaction: async () => { throw Object.assign(new Error("self-signed certificate in certificate chain"),
+      { code: "SELF_SIGNED_CERT_IN_CHAIN" }); } };
+    const code = await runCommand(["status"], { say: (l) => lines.push(String(l)), env: {},
+      database: { db: broken, repository: { loadWorld: async () => ({}), readVersion: async () => 0 } } });
+    eq(code, 1);
+    const said = lines.join("\n");
+    assert(/SELF_SIGNED_CERT_IN_CHAIN/.test(said), "the code is still reported");
+    assert(/DATABASE_CA_CERT_FILE/.test(said), "and now so is what to do: " + said);
+  });
+
+  test("the blueprint verifies, and carries the certificate as environment", () => {
+    assert(/- key: DATABASE_SSL\n\s+value: verify-full/.test(render), "Render verifies the certificate");
+    assert(/- key: DATABASE_CA_CERT\n\s+sync: false/.test(render), "and the CA is set by hand, not committed");
+    assert(!/BEGIN CERTIFICATE/.test(render), "no certificate material in the file");
+    const prose = runbook.replace(/\s+/g, " ");
+    assert(/verify-full/.test(prose) && /SSL Configuration/.test(prose), "and the runbook says where it comes from");
+    assert(/SELF_SIGNED_CERT_IN_CHAIN/.test(runbook), "and what that error means when it happens");
   });
 });
 

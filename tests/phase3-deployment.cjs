@@ -76,7 +76,8 @@ describe("A. configuration for a hosted environment", () => {
   test("an operator command needs a database and nothing else", () => {
     const db = loadDatabaseConfig({ DATABASE_URL: ENV.DATABASE_URL });
     eq(db.connectionString, ENV.DATABASE_URL, "the connection string");
-    eq(db.sslMode, "require", "TLS on by default");
+    eq(db.sslMode, "verify-full", "TLS on by default, and the certificate verified");
+    eq(db.ssl.rejectUnauthorized, true, "which is what verify-full means");
     eq(db.poolMax, 10);
     assert(db.statementTimeoutMs >= 1000 && db.idleTransactionTimeoutMs >= 1000, "a hung statement cannot hold the world lock for ever");
     let threw = null;
@@ -100,6 +101,12 @@ describe("A. configuration for a hosted environment", () => {
   test("hosted TLS is configurable, and refuses nonsense", () => {
     eq(JSON.stringify(loadDatabaseConfig(ENV).ssl), JSON.stringify({ rejectUnauthorized: true }), "verified by default");
     eq(loadDatabaseConfig({ ...ENV, DATABASE_SSL: "no-verify" }).ssl.rejectUnauthorized, false, "a provider chain can be trusted loosely");
+    /* libpq's `require` means "do not verify" and this once meant "verify":
+       refused rather than guessed. */
+    let ambiguous = null;
+    try { loadDatabaseConfig({ ...ENV, DATABASE_SSL: "require" }); } catch (e) { ambiguous = e; }
+    assert(ambiguous && /ambiguous/.test(ambiguous.message), "require is refused: " + (ambiguous && ambiguous.message));
+    assert(/verify-full/.test(ambiguous.message) && /no-verify/.test(ambiguous.message), "and both readings are offered");
     eq(loadDatabaseConfig({ ...ENV, DATABASE_SSL: "disable" }).ssl, false, "and disabled for a local database");
     eq(loadDatabaseConfig({ ...ENV, DATABASE_CA_CERT: "-----BEGIN CERTIFICATE-----" }).ssl.ca, "-----BEGIN CERTIFICATE-----", "a pinned CA");
     let threw = null;
@@ -523,14 +530,21 @@ describe("G. deployment artifacts and the runbook", () => {
   test("the blueprint carries no secret: every value-bearing variable is safe to read", () => {
     const withValues = [...render.matchAll(/- key: (\w+)\n\s+value: (.*)/g)].map((m) => [m[1], m[2].replace(/"/g, "")]);
     const secretish = [...render.matchAll(/- key: (\w+)\n\s+sync: false/g)].map((m) => m[1]);
-    /* The hand-set variables are exactly the ones the server refuses to start
-       without — derived from the contract, not a snapshot of what the file said
-       on the day it was written. Batch 5 added a third and this assertion, as a
-       fixed list, would have gone on insisting there were two. */
-    eq(secretish.sort().join(), [...REQUIRED_SERVER_ENV].sort().join(),
-      "the ones an operator sets by hand are exactly the ones that are required");
+    /* Every variable the server refuses to start without is set by hand —
+       derived from the contract, not a snapshot of what the file said on the day
+       it was written. Other hand-set variables are allowed (the CA certificate
+       is one: optional in general, necessary for this provider), but every one
+       of them must be a variable the configuration actually reads, so a typo
+       cannot sit in the blueprint looking effective. */
+    REQUIRED_SERVER_ENV.forEach((name) => assert(secretish.includes(name), name + " must be set by hand"));
+    const read = new Set([...fs.readFileSync(path.join(ROOT, "server", "config.js"), "utf8")
+      .matchAll(/env\.([A-Z][A-Z0-9_]+)|need\("([A-Z][A-Z0-9_]+)"|whole\("([A-Z][A-Z0-9_]+)"/g)]
+      .map((m) => m[1] || m[2] || m[3]));
+    secretish.forEach((name) => assert(read.has(name), name + " is in the blueprint but nothing reads it"));
     withValues.forEach(([key, value]) => assert(!/URL|SECRET|KEY|TOKEN|PASSWORD/i.test(key) || value === "", `${key} has a value in the file`));
-    eq(withValues.find(([k]) => k === "DATABASE_SSL")[1], "require", "TLS is on in the blueprint");
+    /* And TLS is not merely on: the certificate is verified. */
+    eq(withValues.find(([k]) => k === "DATABASE_SSL")[1], "verify-full",
+      "the blueprint verifies the certificate, it does not merely encrypt");
   });
 
   test("every environment variable the code reads is in the runbook, and vice versa", () => {

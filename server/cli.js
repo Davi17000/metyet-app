@@ -53,8 +53,8 @@ const USAGE = `MetYet operator commands
   node server/cli.js revoke-invitation --id=<invitation id>
   node server/cli.js auth-check [--token-file=<path holding one access token>]
 
-The database is read from DATABASE_URL (and DATABASE_SSL, DATABASE_CA_CERT,
-DATABASE_POOL_MAX); auth-check reads SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY
+The database is read from DATABASE_URL (and DATABASE_SSL, DATABASE_CA_CERT or
+DATABASE_CA_CERT_FILE, DATABASE_POOL_MAX); auth-check reads SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY
 instead and needs no database. Nothing here starts a server, and only auth-check
 contacts a vendor — to ask it a question, never to change anything.`;
 
@@ -63,6 +63,49 @@ contacts a vendor — to ask it a question, never to change anything.`;
 const safeMessage = (error) => String((error && error.message) || error)
   .replace(/postgres(ql)?:\/\/\S+/gi, "<connection string>")
   .replace(/\b(password|secret|token|key)\s*=\s*\S+/gi, "$1=<hidden>");
+
+/* Some failures are a person's next action rather than a fault. A TLS trust
+   failure against a hosted database almost always means one thing — the provider
+   signs with its own root, and this machine has not been given it — and saying
+   only "self-signed certificate in certificate chain" sends an operator looking
+   for a fault in their connection string, or worse, for a way to turn
+   verification off. So the code is read, the cause is named, and the fix is the
+   secure one. Codes, never message text: wording changes between Node releases. */
+const TLS_TRUST_CODES = new Set([
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "UNABLE_TO_GET_ISSUER_CERT",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "CERT_UNTRUSTED",
+]);
+const ALTNAME_CODE = "ERR_TLS_CERT_ALTNAME_INVALID";
+
+function tlsAdvice(error, say) {
+  const code = error && error.code;
+  if (TLS_TRUST_CODES.has(code)) {
+    say("");
+    say("That is certificate verification working, not a connection fault: the database");
+    say("presented a certificate signed by a root this machine does not trust. Hosted");
+    say("Postgres providers commonly sign with their own root and publish it to");
+    say("download — on Supabase it is in Database Settings, under SSL Configuration.");
+    say("");
+    say("  export DATABASE_CA_CERT_FILE=/path/to/the/certificate.crt");
+    say("");
+    say("Then run this again. Do not turn verification off to get past it: without the");
+    say("certificate checked, anything that can answer for the host reads and rewrites");
+    say("everything on the connection, password included.");
+    return true;
+  }
+  if (code === ALTNAME_CODE) {
+    say("");
+    say("The certificate verified, but it is not for this host — so either the host in");
+    say("DATABASE_URL is not the one the provider issued it for, or the wrong CA is");
+    say("configured. Check the host against the connection string in the dashboard.");
+    return true;
+  }
+  return false;
+}
 
 function parseFlags(argv) {
   const flags = {};
@@ -231,6 +274,7 @@ async function runCommand(argv = [], { env = process.env, say = console.log, dat
   } catch (error) {
     say(`failed:      ${safeMessage(error)}`);
     if (error && error.code) say(`code:        ${error.code}`);
+    tlsAdvice(error, say);
     return 1;
   }
 }
@@ -240,4 +284,4 @@ if (require.main === module) {
     (error) => { console.error(`failed: ${safeMessage(error)}`); process.exitCode = 1; });
 }
 
-module.exports = { runCommand, USAGE, safeMessage };
+module.exports = { runCommand, USAGE, safeMessage, tlsAdvice, TLS_TRUST_CODES };

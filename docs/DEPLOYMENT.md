@@ -23,7 +23,7 @@ local install):
 
 ```
 export DATABASE_URL='postgresql://localhost:5432/metyet'
-export DATABASE_SSL=disable
+export DATABASE_SSL=disable          # a local database, on this machine only
 
 npm run db:status           # what is applied, and what the world holds
 npm run db:migrate          # apply pending migrations (forward-only)
@@ -68,9 +68,30 @@ Each is something only you can do. None is done yet.
 | **Provider** | Supabase |
 | **Create** | One project. Choose a region close to the Render region you will pick. |
 | **Setting to copy** | The project URL (`https://<project-ref>.supabase.co`), the **session pooler** connection string (port 5432 — Render is IPv4-only, and session pooling keeps a transaction and its advisory lock on one connection), and the project's **publishable** key (`sb_publishable_…`). Not the secret key: the server refuses one. |
-| **Environment variables** | `SUPABASE_URL`, `DATABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` |
+| **Environment variables** | `SUPABASE_URL`, `DATABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `DATABASE_CA_CERT`/`DATABASE_CA_CERT_FILE` (2.1a) |
 | **Cost** | Free tier to start; Pro is $25/month and is what a pilot with real data should sit on (daily backups, no pausing). |
-| **Check** | `DATABASE_URL=… npm run db:status` prints `schema: not migrated` — that is a successful connection. |
+| **Check** | `DATABASE_URL=… npm run db:status`. A TLS error here is expected until 2.1a; after it, `schema: not migrated` is a successful connection. |
+
+### 2.1a The database's certificate
+
+Supabase signs its database certificate with **its own root**, which is not one
+of the authorities Node trusts out of the box. So a verified connection needs
+that root — and until it has one, every command fails closed with
+`SELF_SIGNED_CERT_IN_CHAIN`. That is the check working, not a fault.
+
+| | |
+|---|---|
+| **Provider** | Supabase → Project Settings → Database → **SSL Configuration** |
+| **Do** | Download the server root certificate (a `.crt` file). It is a public root, not a secret — but it is not committed either, because it is environment and because it rotates. |
+| **Locally** | `export DATABASE_CA_CERT_FILE=/path/to/that/file.crt` |
+| **In Render** | paste the file's text into `DATABASE_CA_CERT` (the blueprint declares it, unset) |
+| **Cost** | none |
+| **Check** | `npm run db:status` prints `schema: not migrated` instead of a TLS error. |
+
+Do **not** reach for `DATABASE_SSL=no-verify` to get past this. Unverified, the
+connection is still encrypted but to nobody in particular: anything that can
+answer for the host reads and rewrites everything on it, database password
+included. The certificate is a thirty-second download.
 
 ### 2.2 Apply the schema
 
@@ -134,7 +155,7 @@ creates one.
 | **Provider** | Render |
 | **Create** | A web service from `render.yaml` (Render's Blueprints feature reads it), or a Node web service configured by hand with the same four settings. |
 | **Settings** | build `npm ci --omit=dev`, start `npm start`, health check path `/api/health/ready`, Node 22 (`.node-version` and `NODE_VERSION`). |
-| **Environment variables to set by hand** | `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`. `DATABASE_SSL=require`, `DATABASE_POOL_MAX=10` and `LOG_LEVEL=info` come from the blueprint. `PORT` is provided by Render. |
+| **Environment variables to set by hand** | `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `DATABASE_CA_CERT` (the certificate's PEM text — paste the whole file). `DATABASE_SSL=verify-full`, `DATABASE_POOL_MAX=10` and `LOG_LEVEL=info` come from the blueprint. `PORT` is provided by Render. |
 | **Cost** | `plan: starter` in the blueprint is about **$7/month** and does not sleep. A free instance sleeps and would make the pilot look broken. Change the plan before applying if you disagree. |
 | **Check** | The service reaches "live" (its health check is the readiness endpoint), and `curl https://<service>/api/health/live` returns `{"status":"ok"}`. |
 
@@ -203,8 +224,9 @@ that do not.
 | `DATABASE_URL` | every command, and the server | none — required | The Supabase **session pooler** connection string (port 5432). |
 | `SUPABASE_URL` | the server only | none — required | `https://<project-ref>.supabase.co`. The issuer, the JWKS endpoint and the user endpoint are derived from it. |
 | `SUPABASE_PUBLISHABLE_KEY` | the server only | none — required | The project's **publishable** key (`sb_publishable_…`), or its older name `SUPABASE_ANON_KEY`. It is the `apikey` header the provider's gateway requires when registration asks whether an address was confirmed. It is safe to hold — it grants nothing by itself, and the authority in that call is the person's own token. **A secret or service-role key here is refused, not used.** |
-| `DATABASE_SSL` | both | `require` | `require` (TLS, chain verified), `no-verify` (TLS, chain not verified — only if a provider's CA is unavailable) or `disable` (local Postgres only). |
-| `DATABASE_CA_CERT` | both | none | A PEM certificate, only when a provider's CA must be pinned. Supabase's pooler does not need one. |
+| `DATABASE_SSL` | both | `verify-full` | `verify-full` (encrypt, verify the certificate chain **and** the host name), `no-verify` (encrypt, verify nothing — only where a provider's CA genuinely cannot be obtained) or `disable` (local Postgres only). Named as libpq names them. **`require` is refused**: libpq's `require` means "do not verify", and it used to mean "verify" here — so rather than guess which you meant, the server asks. |
+| `DATABASE_CA_CERT` | both | none | The provider's CA as PEM text. **Supabase needs this**: it signs with its own root, which is not in Node's trust store. |
+| `DATABASE_CA_CERT_FILE` | both | none | The same certificate as a path to the `.crt` you downloaded — the convenient form on a laptop. Set one or the other, not both. |
 | `DATABASE_POOL_MAX` | both | `10` | Connections in the pool. Keep it well under the pooler's limit. |
 | `DATABASE_STATEMENT_TIMEOUT_MS` | both | `15000` | A single statement is cancelled after this. |
 | `DATABASE_IDLE_TX_TIMEOUT_MS` | both | `20000` | An open transaction that stops doing work is cancelled, so the world lock is never held by a dead client. |
@@ -282,8 +304,19 @@ storage.
   migration; `npm run db:status` names the migrations that drifted.
 - **Readiness is 503 with no reason** — the database is unreachable, or refused
   the connection. This is deliberately *not* reported as a missing migration.
-  Check the connection string is the session pooler URI and that
-  `DATABASE_SSL=require`.
+  Check the connection string is the session pooler URI, and that the CA
+  certificate is configured (below).
+- **`self-signed certificate in certificate chain` / `SELF_SIGNED_CERT_IN_CHAIN`** —
+  that is certificate verification **working**. Supabase signs its database
+  certificate with its own root, which is not in Node's trust store, so it has to
+  be supplied. Download it from the dashboard (Database Settings → SSL
+  Configuration) and set `DATABASE_CA_CERT_FILE` to its path locally, or paste
+  its text into `DATABASE_CA_CERT` in Render. `db:status` says all of this when it
+  happens. Do **not** set `no-verify` to get past it: unverified, anything that
+  can answer for the host reads and rewrites the connection, password included.
+- **`ERR_TLS_CERT_ALTNAME_INVALID`** — the certificate is valid but not for this
+  host. The host in `DATABASE_URL` is not the one it was issued for, or the CA is
+  the wrong one.
 - **Every request is 401** — the project is still issuing legacy HS256 tokens,
   or `SUPABASE_URL` points at a different project. Check the JWKS endpoint.
 - **Every request is 403 `account_not_provisioned`** — the signed-in subject has

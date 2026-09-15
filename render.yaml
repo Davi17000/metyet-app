@@ -48,8 +48,18 @@ services:
       # Set by hand, and never a value in this file.
       - key: SUPABASE_PUBLISHABLE_KEY
         sync: false
+      # verify-full: encrypt, and verify the certificate AND the host name.
+      # Supabase signs with its own root, which is not in Node's trust store, so
+      # the CA below is what makes that possible. Without it the service fails
+      # closed rather than connecting unverified — which is the point.
       - key: DATABASE_SSL
-        value: require
+        value: verify-full
+      # The provider's CA, as PEM text. Not a secret — it is a public root you
+      # download from the provider — but it is not in this file either, because
+      # it is environment, and because a certificate that rotates should not
+      # need a commit. Set by hand.
+      - key: DATABASE_CA_CERT
+        sync: false
       - key: DATABASE_POOL_MAX
         value: "10"
       - key: LOG_LEVEL

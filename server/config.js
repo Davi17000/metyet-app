@@ -18,8 +18,17 @@
                            SESSION pooler URI (port 5432): the host is IPv4-only,
                            and session pooling keeps a transaction — and its
                            advisory lock — on one connection.
-     DATABASE_SSL          require (default) · no-verify · disable
-     DATABASE_CA_CERT      optional PEM, when a provider's CA must be pinned
+     DATABASE_SSL          verify-full (default) · no-verify · disable
+                           Named as libpq names them. "require" is refused: it
+                           means "do not verify" in libpq and meant "verify"
+                           here, and guessing which one somebody meant is how a
+                           production connection quietly stops being checked.
+     DATABASE_CA_CERT      the provider's CA, as PEM text
+     DATABASE_CA_CERT_FILE the same, as a path to the .crt you downloaded
+                           Needed whenever a provider signs with its own root
+                           rather than one in Node's trust store. Supabase does:
+                           without it, verify-full fails with
+                           SELF_SIGNED_CERT_IN_CHAIN, which is the check working.
      DATABASE_POOL_MAX     optional, default 10
      DATABASE_STATEMENT_TIMEOUT_MS       optional, default 15000
      DATABASE_IDLE_TX_TIMEOUT_MS         optional, default 20000
@@ -48,7 +57,35 @@
 
 const { isSecretKey, isSafeProviderUrl } = require("./auth/identity.js");
 
-const SSL_MODES = ["require", "no-verify", "disable"];
+/* HOW THE DATABASE CONNECTION IS PROTECTED, NAMED THE WAY POSTGRES NAMES IT.
+
+   These used to be `require` / `no-verify` / `disable`, and `require` performed
+   FULL certificate and hostname verification. That is a trap: to anyone who
+   knows libpq, `sslmode=require` means "encrypt, and do not check who you are
+   talking to" — the opposite of what it did here. The behaviour was the safe
+   one; the name promised the unsafe one, which is the wrong way round for a
+   setting somebody reads in a deployment file at two in the morning.
+
+   So the modes now say what they do, in libpq's vocabulary:
+
+     verify-full  (default) encrypt, verify the certificate chain against a CA,
+                  and verify that the certificate is for this host
+     no-verify    encrypt, and verify nothing — a wiretapper who can answer as
+                  the host reads and rewrites everything. Only when a provider's
+                  CA genuinely cannot be obtained.
+     disable      no TLS at all. A local database only.
+
+   `require` is REFUSED rather than reinterpreted, because either reading of it
+   would be somebody's reasonable expectation and silently choosing one of them
+   is how a deployment ends up unverified without anyone deciding that.
+
+   Verification is Node's, through node-postgres, which sets `servername` from
+   the host — so `rejectUnauthorized` genuinely checks the name as well as the
+   chain, and "verify-full" is an accurate description rather than an ambition. */
+const fs = require("fs");
+
+const SSL_MODES = ["verify-full", "no-verify", "disable"];
+const AMBIGUOUS_SSL_MODES = ["require", "prefer", "allow", "verify-ca"];
 
 class ConfigError extends Error {
   constructor(problems) {
@@ -76,20 +113,48 @@ const collect = (problems) => ({
 function databaseSettings(env, problems) {
   const { need, whole } = collect(problems);
   const connectionString = need("DATABASE_URL", env);
-  const sslMode = trimmed(env.DATABASE_SSL) || "require";
-  if (!SSL_MODES.includes(sslMode)) problems.push(`DATABASE_SSL must be one of ${SSL_MODES.join(", ")}`);
-  const ca = trimmed(env.DATABASE_CA_CERT);
+  const sslMode = trimmed(env.DATABASE_SSL) || "verify-full";
+  if (AMBIGUOUS_SSL_MODES.includes(sslMode)) {
+    problems.push(`DATABASE_SSL="${sslMode}" is ambiguous here: in libpq it means something different `
+      + `from what it used to mean in MetYet. Say which you want: "verify-full" (encrypt and verify `
+      + `the certificate and host) or "no-verify" (encrypt only)`);
+  } else if (!SSL_MODES.includes(sslMode)) {
+    problems.push(`DATABASE_SSL must be one of ${SSL_MODES.join(", ")}`);
+  }
+  /* The certificate authority to verify against, as PEM text or as a file — a
+     provider hands you a .crt to download, so pointing at it is the natural
+     thing to do on a laptop, and pasting the text is the natural thing to do in
+     a host's environment editor. Both, rather than making one of them awkward. */
+  const caFile = trimmed(env.DATABASE_CA_CERT_FILE);
+  let ca = trimmed(env.DATABASE_CA_CERT);
+  if (caFile && ca) problems.push("set DATABASE_CA_CERT or DATABASE_CA_CERT_FILE, not both");
+  if (caFile && !ca) {
+    try {
+      ca = fs.readFileSync(caFile, "utf8").trim();
+    } catch (error) {
+      /* The path, never the contents of anything, and never why the filesystem
+         said no beyond its own code. */
+      problems.push(`DATABASE_CA_CERT_FILE could not be read (${error && error.code})`);
+    }
+  }
+  if (ca && !/^-----BEGIN CERTIFICATE-----/.test(ca)) {
+    problems.push("the CA certificate must be PEM text beginning \"-----BEGIN CERTIFICATE-----\"");
+  }
   return {
     connectionString,
     poolMax: whole("DATABASE_POOL_MAX", env, 10),
     statementTimeoutMs: whole("DATABASE_STATEMENT_TIMEOUT_MS", env, 15000, 1000),
     idleTransactionTimeoutMs: whole("DATABASE_IDLE_TX_TIMEOUT_MS", env, 20000, 1000),
-    /* A hosted database is reached over TLS. "no-verify" exists for providers
-       whose chain a container does not carry; "disable" is for a local
-       database only. */
+    /* A hosted database is reached over TLS, and by default its certificate is
+       checked against a CA and against the host name. `ca` is what makes that
+       possible for a provider that signs with its own root — Supabase does, and
+       publishes the certificate to download. Without it, Node has only its
+       built-in roots and the connection fails closed, which is correct. */
     ssl: sslMode === "disable" ? false
-      : { rejectUnauthorized: sslMode === "require", ...(ca ? { ca } : {}) },
+      : { rejectUnauthorized: sslMode === "verify-full", ...(ca ? { ca } : {}) },
     sslMode,
+    /* Whether a CA was supplied — never which one, and never its contents. */
+    caConfigured: Boolean(ca),
   };
 }
 
@@ -161,6 +226,7 @@ const describeConfig = (config) => ({
   host: config.host,
   logLevel: config.logLevel,
   databaseSsl: config.database.sslMode,
+  databaseCaConfigured: config.database.caConfigured,
   databasePoolMax: config.database.poolMax,
   databaseStatementTimeoutMs: config.database.statementTimeoutMs,
   jwksHost: (() => { try { return new URL(config.auth.jwksUrl).host; } catch { return "invalid"; } })(),

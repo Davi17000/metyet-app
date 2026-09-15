@@ -716,6 +716,7 @@ describe("I. configuration", () => {
     eq(config.port, 8080);
     eq(JSON.stringify(config.database.ssl), JSON.stringify({ rejectUnauthorized: true }), "TLS on by default");
     eq(loadServerConfig({ ...ENV, DATABASE_SSL: "no-verify" }).database.ssl.rejectUnauthorized, false, "a provider chain can be trusted loosely");
+    eq(loadServerConfig(ENV).database.ssl.rejectUnauthorized, true, "and verified by default");
     eq(loadServerConfig({ ...ENV, DATABASE_SSL: "disable" }).database.ssl, false, "and disabled for a local database");
   });
 
