@@ -13,15 +13,21 @@
      codeSent     a code to type; the address is shown so a typo is visible
      verifying    the code is with the provider
      loading      signed in, asking the server who this is
-     ready        the server's projection, rendered
+     ready        the application, handed the server's projection
      failed       something went wrong, said in a way a person can act on
      (signing out returns to signedOut)
+
+   THE LAST STATE IS NOW A DOOR, NOT A DESTINATION. Batch 3 rendered the
+   projection's collection counts here to prove the round trip; Batch 4 hands
+   the projection to <ProductionApp/>, which reads the seat and renders the
+   application for it. This file's job stops at "signed in, and here is what
+   arrived" — it does not know what a Trusted Partner is.
 
    WHAT IT DOES NOT DO, AND WHY EACH MATTERS.
 
    It does not decide who you are. There is no `partnerId`, no seat, no subject
    anywhere in this file. After `verifyCode` it asks the API, and what comes
-   back is the answer — `state.actor` is read the way the domain writes it
+   back is the answer — read by client/actor.js the way the domain writes it
    (`{ seat, partnerId }`), never invented.
 
    It does not hold canonical state. `store.get()` is the server's projection
@@ -37,6 +43,13 @@
    ========================================================================== */
 
 import React, { useCallback, useEffect, useState } from "react";
+import ProductionApp from "../production-app.jsx";
+
+/* Identity is read in exactly one place — client/actor.js — and re-exported
+   here because this module's own tests have always asked it that question.
+   Two copies of "who did the server say you are" is two answers waiting to
+   disagree, which is the whole reason it moved. */
+export { describeActor, SEATS } from "../actor.js";
 
 export const STATES = Object.freeze({
   signedOut: "signedOut",
@@ -60,19 +73,6 @@ const MESSAGES = Object.freeze({
 });
 const say = (failure) => MESSAGES[failure] || MESSAGES.unexpected;
 
-/* The actor as the DOMAIN writes it: a seat, and the id under that seat's own
-   field. There is no `actor.id`, and reading one is the bug this batch's
-   predecessor had to fix in the operator command. */
-const SEATS = { tp: { id: "partnerId", records: "partners" }, collector: { id: "collectorId", records: "collectors" } };
-export function describeActor(state) {
-  const actor = (state && state.actor) || null;
-  const seat = actor && SEATS[actor.seat];
-  if (!seat) return { id: null, name: null, seat: null };
-  const id = actor[seat.id] || null;
-  const mine = (Array.isArray(state[seat.records]) ? state[seat.records] : []).find((r) => r && r.id === id);
-  return { id, name: (mine && mine.name) || null, seat: actor.seat };
-}
-
 const LOOKS_LIKE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const S = {
@@ -95,8 +95,6 @@ const S = {
   problem: { marginTop: 16, padding: "10px 12px", background: "#FBEDEC", border: "1px solid #EBD9B4",
     borderRadius: 6, color: "#98302C" },
   muted: { color: "#616B7A", fontSize: 13 },
-  row: { display: "flex", justifyContent: "space-between", alignItems: "baseline",
-    padding: "8px 0", borderBottom: "1px solid #EDF0F4" },
 };
 
 export default function SignIn({ session, store, onConfigProblem = null }) {
@@ -225,21 +223,13 @@ export default function SignIn({ session, store, onConfigProblem = null }) {
       React.createElement("button", { style: S.quiet, type: "button", onClick: signOut }, "Sign out")));
   }
 
-  /* ready — and everything below came back in a response. */
-  const actor = describeActor(projection);
-  const counts = projection ? Object.entries(projection)
-    .filter(([key, value]) => key !== "actor" && Array.isArray(value))
-    .map(([key, value]) => [key, value.length]) : [];
+  /* ready — and from here it is the product, not the entrance.
 
-  return shell(React.createElement(React.Fragment, null,
-    React.createElement("div", { style: S.lead },
-      actor.name ? React.createElement("strong", null, actor.name) : "Signed in",
-      actor.id ? React.createElement("span", { style: S.muted }, `  ${actor.id}`) : null),
-    React.createElement("div", null,
-      counts.map(([name, n]) => React.createElement("div", { key: name, style: S.row },
-        React.createElement("span", { style: S.muted }, name),
-        React.createElement("span", null, String(n))))),
-    React.createElement("div", { style: { ...S.muted, marginTop: 14 } },
-      `version ${store && store.version() !== null ? store.version() : "—"}`),
-    React.createElement("button", { style: S.quiet, type: "button", onClick: signOut }, "Sign out")));
+     Batch 3 rendered the projection's collection counts here, which proved the
+     round trip and was never meant to be looked at twice. The application is
+     handed the projection and nothing else: no session, no store, no api
+     client, no way to ask for more. It cannot sign anyone in, sign anyone out
+     on its own, or fetch. What it can do is render what arrived, and call the
+     sign-out this component already owns. */
+  return React.createElement(ProductionApp, { state: projection, onSignOut: signOut });
 }

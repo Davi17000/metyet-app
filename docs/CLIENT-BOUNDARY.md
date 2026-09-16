@@ -149,13 +149,14 @@ can refuse.
 | `codeSent` | a code to type; the address is shown so a typo is visible |
 | `verifying` | the code is with the provider |
 | `loading` | signed in, asking the server who this is |
-| `ready` | the server's projection, rendered |
+| `ready` | the application, handed the server's projection |
 | `failed` | a sentence a person can act on, never the provider's words |
 
 It authors nothing. There is no `partnerId`, no seat, no subject assigned
-anywhere in it; `describeActor` **reads** `{ seat, partnerId }` the way the
-domain writes it, and the name from the actor's own record inside the
-projection. It imports no domain, holds no seed, and runs no command.
+anywhere in it. It imports no domain, holds no seed, and runs no command.
+
+`ready` is a door, not a destination. It renders `client/production-app.jsx`,
+which reads the seat and nothing else, and hands the projection on.
 
 `app-src/main.jsx` wires config → auth → session → api → store → screen, and
 adds nothing of its own. `app.build.mjs` builds it to `app/`.
@@ -188,9 +189,94 @@ read from disk after boot. Anything under `/api/` stays an API error, so a typo
 in a client is a 404 rather than a parse failure. A deployment with no built
 client serves the API alone and says so once at startup.
 
+## The application behind the door
+
+### The server's projection is the only product-state input
+
+Everything on a production screen arrived in one `GET /api/view` response.
+There is no seed, no shared canonical world, no demo fixture, no sample-data
+fallback and no second store. `client/tp/TrustedPartnerShell.jsx` takes a
+projection as a prop and nothing else: no store, no session, no api client, no
+`fetch`, no `domain/` import. Hand it a projection and it renders; there is no
+other way for a value to reach the screen, and a test asserts each absence.
+
+A **rule** is the server's, and a **count** is not. The shell reads
+`row.status` for a copy — available, committed, sold — because that is a
+canonical answer the server computed; it does not look at opportunities and
+work it out, since a second implementation of a rule is a second answer to it.
+Counting the rows the server sent, or grouping them by the id they carry, is
+reading, and that is allowed.
+
+### Identity comes from `state.actor`, and from nowhere else
+
+`client/actor.js` is the one place the question is asked. A projected actor is a
+seat plus the id under that seat's **own** field — `{ seat: "tp", partnerId }`,
+`{ seat: "collector", collectorId }`. There is no `actor.id`.
+
+The shop's name is found by matching the actor's id against the projection's own
+`partners` records, not by taking the first one: "the first record" is an
+assumption about the server, while the actor's id is the server's own answer.
+
+Nothing else can carry an identity in. Not the email that was typed — an address
+is how a code was delivered, not who somebody is. Not the URL, not a build
+value, not storage, not a prop.
+
+**Everything unknown fails closed.** A missing actor, an unrecognised seat, or a
+seat with no id under its own field renders a refusal with a way to sign out,
+and no product surface at all. `client/production-app.jsx` ends in that refusal,
+so a seat added to the domain later and forgotten here cannot fall through into
+somebody else's application.
+
+### Sharing presentation with the prototype
+
+Pure presentation **may** be shared between the demo and production — but only
+if it imports no demo state, no store, no domain, and performs no mutation.
+Nothing qualifies yet. `src/MetYet.jsx` does not: it defaults `partnerId` to
+`"p-self"`, calls `projectForActor` on a canonical world in the browser, mutates
+through `store.execute`, and falls back to `buildCanonicalSeed()`. Any of those
+four alone would disqualify it. What production reuses from it is its
+**information architecture** — the three sections, their order, their titles and
+subtitles, and the canonical stage labels — reimplemented against the
+projection rather than imported.
+
+### What a Trusted Partner can really see, today
+
+Read-only, and the screen says so rather than offering a button that does
+nothing:
+
+| Section | From the projection | |
+|---|---|---|
+| Collector Network | `collectors`, `relationships`, `goals`, `binder`, `invitations` | who is in the network, since when, and how much of theirs you hold |
+| Inventory | `inventory` (not archived), joined to `catalog` | your copies, the server's status for each, and your ask |
+| Opportunities | `opportunities` (not completed), `collectors`, `catalog` | what is in progress, and the stage the server put it at |
+
+An empty account — a newly registered Trusted Partner with no collectors, no
+inventory and no opportunities — is an ordinary case with a sentence per
+section, never an error and never invented sample content.
+
+### What remains for a later batch
+
+Everything that **changes** something. None of it is wired, and none of it is
+present as a disabled control pretending otherwise:
+
+- inviting a collector, and accepting or ending a relationship
+- adding, editing or archiving an inventory copy
+- every Deal Flow action — agreeing a price, selecting and valuing a trade, the
+  deal itself, fulfilment
+- requesting photos, reviewing a Trade Binder, registering interest
+- conversations and outreach
+
+Each will migrate through authenticated `POST /api/commands`, one workflow at a
+time. Until a workflow has been migrated and proved, it is prototype-only and is
+not production-ready, whatever the shell renders alongside it.
+
+The **Collector** production application does not exist. A Collector who signs
+in is told so in a sentence and can sign out; they are never shown the demo and
+never shown an empty Trusted Partner shell.
+
 ## What is deferred, deliberately
 
-**Migrating screens.** No component receives the production store yet. The
-handlers that read state back in the same tick, mint ids with `Date.now()`, and
-assume a write cannot be in flight are still there and still correct for the
-demo. Each migrates when its screen does.
+**Migrating mutations.** The Trusted Partner shell reads; nothing writes. The
+prototype's handlers — the ones that read state back in the same tick, mint ids
+with `Date.now()`, and assume a write cannot be in flight — are still there and
+still correct for the demo. Each migrates when its workflow does.
