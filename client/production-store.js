@@ -37,9 +37,40 @@
 
    WHAT IT ADDS, BECAUSE A ROUND TRIP IS NOT A FUNCTION CALL.
 
-   `status()` — idle, loading, ready, saving, error. Every screen today assumes
-   a mutation is instant and cannot fail; none of that is true any more, and
-   pretending otherwise is how a button gets pressed twice.
+   `status()` — idle, loading, ready, saving, conflict, error. Every screen
+   today assumes a mutation is instant and cannot fail; none of that is true any
+   more, and pretending otherwise is how a button gets pressed twice.
+
+   SEVEN OUTCOMES A COMMAND CAN HAVE, AND NONE OF THEM IS GUESSED AT.
+
+     nothing asked for yet      idle
+     in flight                  saving      — the OLD projection is still on screen
+     the server said yes        ready       — and the projection it returned is adopted
+     the domain said no         ready       — nothing changed, and `lastRefusal()` names the rule
+     the session is over        error       — `lastError()` is "unauthenticated"
+     the world moved first      conflict    — nothing was written; a re-read follows
+     the network did not answer error       — and the last good projection is kept
+
+   NOTHING IS OPTIMISTIC. There is exactly one line in this file that assigns
+   `state`, and it assigns what arrived in a response. A command in flight does
+   not touch the projection; a refusal does not touch it; a failure does not
+   blank it. What is on screen was true a moment ago, which is worth more than
+   a guess about what might be true next.
+
+   A CONFLICT IS NOT REPLAYED. `state_changed` means the server's save found the
+   world had moved and rolled the transaction back — so the command did not run.
+   It would be easy to send it again, and wrong: the reason the world moved is
+   precisely the reason this command may no longer be the right one to send. So
+   the store RE-READS instead. `view()` is a GET with no side effects and is safe
+   to repeat; the command is not, and the person decides whether to ask again.
+
+   ONE COMMAND AT A TIME. A second `execute` while one is in flight throws
+   rather than being sent, because the server has no idempotency key and two
+   identical commands are two mutations. `pending()` is there so a control can
+   disable itself and never reach the error. This prevents CONCURRENT duplicates
+   and nothing more: a command whose response is lost may or may not have run,
+   and no amount of client code can tell — which is why nothing here retries a
+   mutation automatically.
 
    `version` — the server's, carried alongside so a screen can tell that
    something moved. It is never used to decide anything here: the server
@@ -58,13 +89,34 @@
    unreadable — throws.
    ========================================================================== */
 
+/* The one word for "the world moved first", taken from the module that owns
+   the vocabulary rather than spelled again here. Two spellings that drift is
+   how a conflict quietly stops being handled. */
+import { FAILURES } from "./api.js";
+
+const FAILURE_CONFLICT = FAILURES.conflict;
+
 export const STATUS = Object.freeze({
   idle: "idle",         // nothing asked for yet
   loading: "loading",   // the first read is in flight
   ready: "ready",       // a projection is in hand
   saving: "saving",     // a command is in flight
+  conflict: "conflict", // the world moved first; nothing was written
   error: "error",       // the last attempt failed; see lastError
 });
+
+/* Thrown when a command is asked for while one is already in flight. It is not
+   a server answer and never reaches the network, so it is not an ApiError and
+   not a refusal — it is this store declining to send a second mutation it
+   cannot make safe. `pending()` exists so a caller never has to catch it. */
+export class CommandInFlightError extends Error {
+  constructor(running) {
+    super(`a command is already in flight: ${running}`);
+    this.name = "CommandInFlightError";
+    this.code = "store.command-in-flight";
+    this.running = running;
+  }
+}
 
 export function createProductionStore({ api } = {}) {
   if (!api || typeof api.view !== "function" || typeof api.command !== "function") {
@@ -76,29 +128,57 @@ export function createProductionStore({ api } = {}) {
   let version = null;
   let status = STATUS.idle;
   let lastError = null;
+  let lastRefusal = null;
+  let stale = false;
   let inFlight = null;
+  let running = null;          // the name of the command in flight, or null
 
   const subscribers = new Set();
   const announce = () => {
     subscribers.forEach((fn) => { try { fn(state); } catch (error) { /* a listener's fault */ } });
   };
 
-  const adopt = (answer) => {
+  /* THE ONLY PLACE `state` IS ASSIGNED. Every value it ever holds arrived in a
+     response, and there is no other line in this file that writes it — which is
+     what makes "nothing here is optimistic" a property of the construction
+     rather than a promise. */
+  const takeState = (answer) => {
     state = answer.state;
     version = answer.version === undefined ? version : answer.version;
+  };
+
+  const adopt = (answer) => {
+    takeState(answer);
     status = STATUS.ready;
     lastError = null;
+    lastRefusal = null;
+    stale = false;
     announce();
   };
 
   const failed = (error) => {
     status = STATUS.error;
     lastError = (error && error.failure) || "unexpected";
+    lastRefusal = null;
     /* The last good projection is KEPT. A failed refresh does not blank the
        screen: what is on it was true a moment ago and saying so is better than
        showing nothing. `status()` is how a screen says the rest. */
     announce();
     return error;
+  };
+
+  /* A READ, after a conflict. `view()` has no side effects, so repeating it is
+     safe in a way that repeating the command is not. If a read is already in
+     flight this waits for it rather than asking twice. A failure here is not
+     fatal: the last good projection stays and `stale()` says it may be behind. */
+  const reRead = async () => {
+    try {
+      if (inFlight) { await inFlight; return true; }
+      takeState(await api.view());
+      return true;
+    } catch (error) {
+      return false;
+    }
   };
 
   return {
@@ -113,20 +193,50 @@ export function createProductionStore({ api } = {}) {
 
     /* No actor argument. There is nowhere to put one. */
     async execute(command, payload = {}) {
+      /* ONE AT A TIME. The server has no idempotency key, so two commands in
+         flight are two mutations — and a button that is pressed twice must not
+         become two deals. This is thrown rather than queued: queueing would
+         send the second one after the first had already changed the world it
+         was written against. */
+      if (running !== null) throw new CommandInFlightError(running);
+      running = command;
       status = STATUS.saving;
+      /* The projection is NOT touched here. What is on screen stays what the
+         server last said, for as long as the answer is unknown. */
       announce();
+
       let answer;
       try {
         answer = await api.command(command, payload);
       } catch (error) {
+        running = null;
+        /* THE WORLD MOVED FIRST. The server's transaction rolled back, so the
+           command did not run — and it is not sent again. The reason the world
+           moved is exactly the reason this command may no longer be the right
+           one, so the store re-reads and the person decides whether to ask
+           again. Nothing about this looks like success: `execute` still throws,
+           and the status says conflict. */
+        if (error && error.failure === FAILURE_CONFLICT) {
+          const reread = await reRead();
+          status = STATUS.conflict;
+          lastError = FAILURE_CONFLICT;
+          lastRefusal = null;
+          stale = !reread;
+          announce();
+          throw error;
+        }
         throw failed(error);
       }
+      running = null;
+
       if (!answer.ok) {
         /* Refused: nothing changed, so nothing is adopted. The version the
            server reported is still worth taking — it may have moved for other
            reasons while this request was in flight. */
         version = answer.version === undefined ? version : answer.version;
         status = state === null ? STATUS.idle : STATUS.ready;
+        lastError = null;
+        lastRefusal = answer.refused;
         announce();
         return { ok: false, refused: answer.refused };
       }
@@ -158,5 +268,16 @@ export function createProductionStore({ api } = {}) {
     status: () => status,
     version: () => version,
     lastError: () => lastError,
+    /* The domain's own word for why the last command was declined, or null.
+       A screen that wants to say WHY should ask this rather than parse a
+       sentence — and it is cleared by the next success, so a stale refusal
+       cannot be shown against a state that has since moved. */
+    lastRefusal: () => lastRefusal,
+    /* The name of the command in flight, or null. A control disables itself on
+       this and never has to catch CommandInFlightError. */
+    pending: () => running,
+    /* True only after a conflict whose recovery read ALSO failed: the
+       projection on screen was true once and is now known to be behind. */
+    stale: () => stale,
   };
 }

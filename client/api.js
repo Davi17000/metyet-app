@@ -22,10 +22,17 @@
    merge it, patch it, or reconcile it with anything: it returns it. Nothing
    here computes state, and nothing here knows what a card or a deal is.
 
-   FAILING CLOSED. Every failure — a refusal, a 401, an unreachable server,
-   a body that will not parse — resolves to a shape the caller must handle,
-   and never to something that could be mistaken for success. A thrown error
-   from this module means the request did not happen.
+   FAILING CLOSED. Every failure — a refusal, a 401, a conflict, an unreachable
+   server, a body that will not parse — resolves to a shape the caller must
+   handle, and never to something that could be mistaken for success.
+
+   THREE OUTCOMES, AND THEY ARE NOT THE SAME THING. A REFUSAL is the domain
+   considering the request and saying no; it comes back as a value, because the
+   caller wants the word. A CONFLICT is the world having moved before the save
+   landed — the server's transaction rolled back, so nothing was written; it
+   throws, with `failure === "conflict"`, because the caller must re-read rather
+   than carry on. EVERYTHING ELSE throws too, and a thrown `unavailable` means
+   the request did not reach the server at all.
    ========================================================================== */
 
 /* The same rule the server and the operator commands are held to: a bearer
@@ -48,6 +55,7 @@ export const FAILURES = Object.freeze({
   unauthenticated: "unauthenticated",   // no token, or the server would not take it
   notProvisioned: "not-provisioned",    // verified, but nobody in MetYet yet
   refused: "refused",                   // the domain said no, and said why
+  conflict: "conflict",                 // the world moved first; nothing was written
   unavailable: "unavailable",           // unreachable, timed out, or 5xx
   unexpected: "unexpected",             // a shape this client does not understand
 });
@@ -71,6 +79,15 @@ const failureFor = (status, code) => {
   if (status === 401) return FAILURES.unauthenticated;
   if (code === "account_not_provisioned" || code === "account_disabled") return FAILURES.notProvisioned;
   if (status === 403) return FAILURES.notProvisioned;
+  /* THE WORLD MOVED FIRST. `state_changed` is the server's word for a save
+     whose expected version no longer matched, and the transaction that carried
+     it ROLLED BACK — so nothing was written and the command did not run. It
+     arrives as a 409 with no `refused`, because it is not the domain declining
+     anything; without this line it would land in `unexpected` and be
+     indistinguishable from a reply this client cannot read. A caller must be
+     able to tell those apart: one means re-read and try again, the other means
+     something is wrong with the client or the server. */
+  if (status === 409 && code === "state_changed") return FAILURES.conflict;
   if (status >= 500 || status === 503) return FAILURES.unavailable;
   return FAILURES.unexpected;
 };
