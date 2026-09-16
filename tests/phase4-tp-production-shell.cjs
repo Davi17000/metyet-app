@@ -54,6 +54,15 @@ const SHELL_MOD = load("client/tp/TrustedPartnerShell.jsx");
 const ProductionApp = APP_MOD.default;
 const Shell = SHELL_MOD.default;
 
+/* Every file the Trusted Partner surface is made of. Batch 5 split the sections
+   out of the shell, and an assertion that named one file would have stopped
+   covering the code the moment it moved. */
+const TP_FILES = fs.readdirSync(path.join(ROOT, "client", "tp"), { withFileTypes: true })
+  .flatMap((e) => (e.isDirectory()
+    ? fs.readdirSync(path.join(ROOT, "client", "tp", e.name)).map((f) => `client/tp/${e.name}/${f}`)
+    : [`client/tp/${e.name}`]));
+
+
 const PROJECT = "https://projectref.supabase.co";
 const KEY = "sb_publishable_example";
 const APP = "https://app.metyet.io";
@@ -147,10 +156,19 @@ const render = (element) => {
   return r;
 };
 const flush = async (r) => { await TR.act(async () => { await new Promise((res) => setTimeout(res, 0)); }); return r; };
+/* The text a person would READ. A <style> element's child is a string too, and
+   Batch 5's stylesheet is long enough that any assertion about what is or is
+   not on screen would start matching CSS — `--sidebar` is not a word anybody
+   sees. Skipping style content is what makes every text assertion below mean
+   what it says. */
 const texts = (r) => {
   const out = [];
-  const walk = (n) => { for (const c of (n && n.children) || []) {
-    if (typeof c === "string" || typeof c === "number") out.push(String(c)); else walk(c); } };
+  const walk = (n) => {
+    if (n && n.type === "style") return;
+    for (const c of (n && n.children) || []) {
+      if (typeof c === "string" || typeof c === "number") out.push(String(c)); else walk(c);
+    }
+  };
   walk(r.toJSON());
   return out.join(" ");
 };
@@ -313,8 +331,14 @@ describe("B. the shell is the product, and all of it is the server's data", () =
     clickText(r, "Opportunities");
     const opp = flat(r);
     assert(opp.includes("Agree on Price"), "the stage, with the product's label: " + opp);
-    assert(!/Blastoise/.test(opp), "a completed opportunity is not in progress: " + opp);
-    assert(/1 completed/.test(opp), "though it is accounted for: " + opp);
+    /* Batch 5 lists completed work in its OWN panel rather than dropping it, so
+       "not in progress" is now a statement about WHERE it appears, not about
+       whether it appears at all. Asserting its total absence would have been
+       satisfied by a screen that lost it. */
+    const inProgress = opp.slice(opp.indexOf("In progress"), opp.indexOf("Completed"));
+    assert(inProgress.includes("Charizard"), "the active deal is in progress: " + inProgress);
+    assert(!inProgress.includes("Blastoise"), "a completed deal is in progress: " + inProgress);
+    assert(/Completed[\s\S]*Blastoise/.test(opp), "and completed work is still accounted for: " + opp);
   });
 
   test("a copy's status is the server's answer, not one worked out here", () => {
@@ -324,9 +348,12 @@ describe("B. the shell is the product, and all of it is the server's data", () =
     const r = render(React.createElement(Shell, { state: FULL_TP }));
     clickText(r, "Inventory");
     assert(/Sold/.test(flat(r)), "the server's status was overruled: " + flat(r));
-    const bare = code("client/tp/TrustedPartnerShell.jsx");
-    assert(/\.status\b/.test(bare), "the status is read from the row");
-    assert(!/agreedPrice|isCompleted|soldInventoryIds|inventoryCopyStatus/.test(bare),
+    /* Batch 5 moved the section bodies into client/tp/sections/, so the
+       assertion follows the code. Every file under client/tp/ is scanned, not
+       just the one that used to hold it. */
+    const everything = TP_FILES.map(code).join("\n");
+    assert(/\.status\b/.test(everything), "the status is read from the row");
+    assert(!/isCompleted|soldInventoryIds|inventoryCopyStatus|binderCopyStatus/.test(everything),
       "the shell re-derives a canonical rule");
   });
 
@@ -388,7 +415,7 @@ describe("C. nothing is invented — not identity, not rules, not content", () =
   });
 
   test("the shell has no store, no session, no api and no domain", () => {
-    for (const rel of ["client/tp/TrustedPartnerShell.jsx", "client/production-app.jsx", "client/actor.js"]) {
+    for (const rel of [...TP_FILES, "client/production-app.jsx", "client/actor.js"]) {
       const bare = code(rel);
       assert(!/from ["'][^"']*domain\/|require\(["'][^"']*domain\//.test(bare), `${rel} imports domain`);
       assert(!/projectForActor|buildCanonicalSeed|createStore|prototypeRuntime|systemRuntime/.test(bare),
@@ -401,7 +428,7 @@ describe("C. nothing is invented — not identity, not rules, not content", () =
   });
 
   test("the shell cannot change anything, and says so instead of pretending", () => {
-    const bare = code("client/tp/TrustedPartnerShell.jsx");
+    const bare = TP_FILES.map(code).join("\n");
     assert(!/execute\s*\(|\.command\s*\(|POST|onSubmit/.test(bare), "the shell has a way to write");
     const r = render(React.createElement(Shell, { state: FULL_TP }));
     /* The only actionable controls are the three sections and sign-out. */

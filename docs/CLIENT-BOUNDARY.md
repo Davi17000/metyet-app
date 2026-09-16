@@ -242,17 +242,55 @@ projection rather than imported.
 ### What a Trusted Partner can really see, today
 
 Read-only, and the screen says so rather than offering a button that does
-nothing:
+nothing. Each section is its own module under `client/tp/sections/`;
+`TrustedPartnerShell.jsx` is the frame around them.
 
-| Section | From the projection | |
-|---|---|---|
-| Collector Network | `collectors`, `relationships`, `goals`, `binder`, `invitations` | who is in the network, since when, and how much of theirs you hold |
-| Inventory | `inventory` (not archived), joined to `catalog` | your copies, the server's status for each, and your ask |
-| Opportunities | `opportunities` (not completed), `collectors`, `catalog` | what is in progress, and the stage the server put it at |
+**Collector Network** — for each related collector: their name and city
+(`COLLECTOR_FOR_PARTNER`), their preference tags (D-2, the matching profile this
+product runs on), the relationship's status and start, **your own** last
+contact, binder-review time and private note (`RELATIONSHIP_PARTNER_PRIVATE` —
+yours, about your relationship, and nobody else's), how many goals, binder
+copies and live opportunities they have with you, and each of their goals with
+the tier the server set. Outstanding invitations are a separate list.
+
+**Inventory** — each physical copy as its own row: the catalogue identity for
+**its own** `cardId`, whether it is graded or raw as the catalogue states it,
+its certificate, its status, your ask, **its own** acquisition cost, and when it
+was acquired and added. Archived copies are counted, not listed.
+
+**Opportunities** — in progress and completed as two lists: the collector from
+the id the row carries, the card, the stage as the server set it, the goal it
+serves, the listed and agreed prices, and — when the deal names an `invId` — the
+certificate and cost of **that exact copy**.
+
+Three rules run through all of it:
+
+- **Every join is by identifier.** A relationship, a goal, a card, a copy is
+  found by matching the id the row carries. Nothing is matched by position,
+  because row order is not a fact the server promised.
+- **Acquisition Cost belongs to the exact InventoryCopy.** It is read from the
+  row being rendered, never from a `cardId`-keyed lookup — three copies of one
+  card bought at three prices are three numbers. It is TP-private (the server
+  strips `cost` and `acquired` for everyone else), it is labelled as yours, and
+  it is never combined with the ask into a margin. This product does not compute
+  profit, and the catalogue's own `value` field is not rendered either: its
+  meaning is not established as a market price.
+- **An unfamiliar answer survives as itself.** A stage, status or tier this
+  build has never seen is shown verbatim and marked unfamiliar, never mapped to
+  the nearest known value. The Opportunities list is therefore ordered by
+  **date** rather than by lifecycle position — an unfamiliar stage has no place
+  in an order this build knows, and inventing one would be the same coercion by
+  another route.
 
 An empty account — a newly registered Trusted Partner with no collectors, no
 inventory and no opportunities — is an ordinary case with a sentence per
-section, never an error and never invented sample content.
+section. A projection missing whole collections, or carrying ragged rows,
+renders too. A fact the server did not send is rendered as the **absence of a
+line**, never as "—", "never", or a zero.
+
+The layout is blocks of wrapping facts rather than table rows, so nothing
+scrolls sideways on a phone and no column collapses to nothing; under 860px the
+navigation becomes a strip across the top. A pilot happens on a shop counter.
 
 ### What remains for a later batch
 
