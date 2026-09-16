@@ -139,11 +139,56 @@ source first so the refresh token does not outlive it — and clears **whether o
 not that call succeeded**, because sign-out must not be something the network
 can refuse.
 
-## What is deferred, deliberately
+## The entrance
 
-**A sign-in screen.** The boundary is provable headlessly and a screen means a
-new production build entry point. Wiring "a 401 clears the session and shows
-sign-in" belongs there too — `api.js` does not retry, by design.
+`client/sign-in/SignIn.jsx` is the production client, and it is seven states:
+
+| | |
+|---|---|
+| `signedOut` | an address to type |
+| `codeSent` | a code to type; the address is shown so a typo is visible |
+| `verifying` | the code is with the provider |
+| `loading` | signed in, asking the server who this is |
+| `ready` | the server's projection, rendered |
+| `failed` | a sentence a person can act on, never the provider's words |
+
+It authors nothing. There is no `partnerId`, no seat, no subject assigned
+anywhere in it; `describeActor` **reads** `{ seat, partnerId }` the way the
+domain writes it, and the name from the actor's own record inside the
+projection. It imports no domain, holds no seed, and runs no command.
+
+`app-src/main.jsx` wires config → auth → session → api → store → screen, and
+adds nothing of its own. `app.build.mjs` builds it to `app/`.
+
+### The three public values
+
+`client/production-config.js` reads `METYET_API_URL`, `SUPABASE_URL` and
+`SUPABASE_PUBLISHABLE_KEY` as build-time defines. **None is a secret** — the
+API's address is where the product lives, the project URL is in every sign-in
+email, and the publishable key is published. A browser bundle cannot keep a
+secret, so the rule is not "hide these" but *let nothing else in*: a
+`sb_secret_` or service-role key is refused, and so is a plaintext address for
+anywhere but this machine.
+
+**`METYET_API_URL` is normally unset**, and the client uses the origin it was
+served from. That is not a convenience: the production client is served *by* the
+API server, so same-origin is correct by construction, and cross-origin is
+removed rather than configured.
+
+The build makes the same check the browser makes, so a misconfigured bundle
+fails the build instead of the first sign-in.
+
+### Who serves it
+
+The API server. `server/index.js` reads `app/index.html` and `app/main.js` once
+at boot and hands them to `createApp`; the not-found handler serves the page for
+any non-`/api/` GET and the script for `/main.js`. **Two names, no directory, no
+path joined per request** — there is no traversal to attempt because nothing is
+read from disk after boot. Anything under `/api/` stays an API error, so a typo
+in a client is a 404 rather than a parse failure. A deployment with no built
+client serves the API alone and says so once at startup.
+
+## What is deferred, deliberately
 
 **Migrating screens.** No component receives the production store yet. The
 handlers that read state back in the same tick, mint ids with `Date.now()`, and

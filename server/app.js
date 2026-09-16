@@ -95,6 +95,10 @@ function createApp({
   identity,
   checkSchema,
   runtime = RT.systemRuntime(),
+  /* The built production client, as two strings, or null. Injected rather than
+     read here: this file knows about requests and the domain, and nothing
+     about a filesystem — the bootstrap is the only place that does. */
+  client = null,
   logger = false,
   bodyLimit = DEFAULT_BODY_LIMIT,
   trustProxy = false,
@@ -265,9 +269,29 @@ function createApp({
   }
 
   /* ------------------------------------------------------------ FAILURES */
+  /* ------------------------------------------------ THE CLIENT
+
+     The production client is served by the same process as the API, which is
+     why they are the same origin and why there is no cross-origin anything to
+     configure. It is two files and they are served by name — there is no
+     directory to walk, no path to join, and nothing a request can ask for that
+     is not one of these two. A path traversal has nowhere to go.
+
+     Anything else that is not a route becomes the page, so a person who
+     bookmarks a deep link still lands in the app rather than on a 404. Anything
+     under /api/ never does: an unknown API path is an API error, and answering
+     it with HTML would turn a typo in a client into a parse failure instead of
+     a 404. */
   app.setNotFoundHandler((request, reply) => {
+    const isApi = String(request.url || "").split("?")[0].startsWith("/api/");
+    if (!isApi && client && request.method === "GET") {
+      if (String(request.url || "").split("?")[0] === "/main.js") {
+        return reply.code(200).type("application/javascript; charset=utf-8").send(client.script);
+      }
+      return reply.code(200).type("text/html; charset=utf-8").send(client.page);
+    }
     const error = apiError("not_found");
-    reply.code(error.status).send(errorBody(error, request.id));
+    return reply.code(error.status).send(errorBody(error, request.id));
   });
 
   app.setErrorHandler((error, request, reply) => {

@@ -23,6 +23,7 @@
     "test": "node tests/all.cjs",
     "prod": "node prod.build.mjs",
     "build:site": "node site.build.mjs",
+    "build:app": "node app.build.mjs",
     "smoke": "node tests/prod-smoke.mjs",
     "previews": "node build-preview.mjs && node build-preview-unified.mjs",
     "verify": "npm run build && npm test && npm run prod && npm run smoke && npm run previews",

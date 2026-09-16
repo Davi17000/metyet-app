@@ -31,9 +31,25 @@ const { createTokenVerifier } = require("./auth/token-verifier.js");
 const { createIdentityDirectory } = require("./auth/identity.js");
 const { systemRuntime } = require("../domain/metyet-runtime.js");
 const { createApp } = require("./app.js");
+const fs = require("fs");
+const path = require("path");
+
+/* The built production client, if this deployment has one. `npm run build:app`
+   writes it; a deployment that skipped that step serves the API alone and says
+   so once at startup rather than 404-ing every page silently. Read at boot, so
+   a request never touches the filesystem. */
+function loadClient(dir = path.join(__dirname, "..", "app")) {
+  try {
+    return {
+      page: fs.readFileSync(path.join(dir, "index.html"), "utf8"),
+      script: fs.readFileSync(path.join(dir, "main.js"), "utf8"),
+    };
+  } catch (error) { return null; }
+}
 
 async function main() {
   const config = loadServerConfig(process.env);
+  const client = loadClient();
   const pool = createPool(config.database, { applicationName: "metyet-server" });
   const db = fromPgPool(pool);
   const app = createApp({
@@ -44,11 +60,13 @@ async function main() {
     identity: createIdentityDirectory(config.auth),
     checkSchema: () => migrationStatus(db),
     runtime: systemRuntime(),
+    client,
     logger: { level: config.logLevel },
     trustProxy: true,
   });
 
-  app.log.info(describeConfig(config), "starting MetYet server");
+  app.log.info({ ...describeConfig(config), clientBundle: Boolean(client) }, "starting MetYet server");
+  if (!client) app.log.warn("no built client in app/ — serving the API only (npm run build:app)");
 
   const stop = async (signal) => {
     app.log.info({ signal }, "shutting down");
