@@ -119,9 +119,21 @@ const submit = (r) => {
   assert(form, "no form to submit");
   TR.act(() => { form.props.onSubmit({ preventDefault() {} }); });
 };
+/* The text a rendered node actually shows. `props.children` was enough while
+   every button's child was a string; Batch 4's shell nests them in spans, and
+   JSON.stringify on a React element walks into the fiber and never returns. */
+const instText = (node) => {
+  const out = [];
+  const walk = (n) => {
+    if (typeof n === "string" || typeof n === "number") { out.push(String(n)); return; }
+    if (!n || !Array.isArray(n.children)) return;
+    n.children.forEach(walk);
+  };
+  walk(node);
+  return out.join(" ");
+};
 const clickText = (r, label) => {
-  const button = r.root.findAll((n) => n.type === "button"
-    && JSON.stringify(n.props.children || "").includes(label))[0];
+  const button = r.root.findAll((n) => n.type === "button").find((n) => instText(n).includes(label));
   assert(button, `no button "${label}"`);
   TR.act(() => { button.props.onClick(); });
 };
@@ -259,11 +271,19 @@ describe("B. the seven states, through the real modules", () => {
     eq(JSON.stringify(store.get()), JSON.stringify(PROJECTION), "the store holds the server's answer");
     eq(store.status(), "ready");
 
+    /* BATCH 4 CHANGED WHAT IS ON THIS SCREEN, and three assertions with it.
+       Batch 3 rendered the raw partner id, the world version and the
+       projection's collection counts — a diagnostic that proved the round trip
+       and was explicitly meant to be replaced. What stands in their place is
+       stronger, not weaker: the shop's name is resolved BY the actor's id (and
+       tests/phase4-tp-production-shell.cjs proves a decoy record cannot be used
+       instead), and the product's own navigation is what arrives. */
     const shown = texts(r);
     assert(shown.includes("Northline Cards"), "the name from the projection's own record: " + shown);
-    assert(shown.includes(PARTNER), "and the id under the seat's own field");
-    assert(/version 7/.test(shown), "and the server's version");
-    assert(/partners 1/.test(shown.replace(/\s+/g, " ")), "with what the projection holds, as counts");
+    assert(!shown.includes(PARTNER), "the internal id is not the person's identity: " + shown);
+    ["Collector Network", "Inventory", "Opportunities"].forEach((label) => {
+      assert(shown.includes(label), `the product's navigation is missing ${label}: ` + shown);
+    });
   });
 
   test("sign-out returns to signed out, and clears the session", async () => {
@@ -316,7 +336,10 @@ describe("B. the seven states, through the real modules", () => {
     typeInto(r, "metyet-code", OTP); submit(r); await flush(r);
     const shown = texts(r);
     assert(!shown.includes("Northline Cards"), "the previous shop reappeared: " + shown);
-    assert(!shown.includes(PARTNER), "and so did the previous id");
+    /* The id is no longer rendered anywhere, so asserting its absence would
+       pass whatever happened. The navigation is the thing that would still be
+       on screen if a stale projection survived. */
+    assert(!/Collector Network/.test(shown), "and so did the previous product surface: " + shown);
   });
 
   test("sign-out still returns to signed out when revocation fails", async () => {
@@ -350,8 +373,13 @@ describe("C. identity comes only from the server, and failure fails closed", () 
        decide who it is talking about. */
     assert(!/(partnerId|collectorId|seat)\s*:\s*["'`]/.test(bare),
       "the component assigns a literal seat or id");
-    assert(/actor\[seat\.id\]/.test(bare), "it reads the id under the seat's own field, as the domain writes it");
-    assert(!/state\.actor\s*=|actor\.seat\s*=/.test(bare), "and writes nothing back onto the projection");
+    /* Batch 4 moved that reading into client/actor.js, so there is ONE answer
+       to "who did the server say you are" rather than one per screen. The
+       assertion follows the code rather than being dropped. */
+    const identity = code("client/actor.js");
+    assert(/actor\[seat\.id\]/.test(identity), "it reads the id under the seat's own field, as the domain writes it");
+    assert(!/(partnerId|collectorId)\s*:\s*["'`]/.test(identity), "and mints no id of its own");
+    assert(!/state\.actor\s*=|actor\.seat\s*=/.test(bare + identity), "and writes nothing back onto the projection");
     assert(!/from ["'][^"']*domain\/|require\(["'][^"']*domain\//.test(bare), "and imports no domain");
     assert(!/projectForActor|buildCanonicalSeed|createStore|prototypeRuntime/.test(bare),
       "and neither projects nor seeds nor executes");
