@@ -189,6 +189,84 @@ read from disk after boot. Anything under `/api/` stays an API error, so a typo
 in a client is a 404 rather than a parse failure. A deployment with no built
 client serves the API alone and says so once at startup.
 
+## Asking for something to happen
+
+`POST /api/commands` is the server's only write. The client's side of it is
+`store.execute(command, payload)` — the same method the demo store has, with a
+different implementation behind it — and `client/api.js` is the only place a URL
+or a bearer appears.
+
+### The contract, as the server actually states it
+
+| | |
+|---|---|
+| Body | exactly `{ command, payload }`. Any other top-level key is a **400** |
+| Payload | may not contain `actor`, `seat`, `role`, `by`, `account`, `accountId`, `subject`, `sub`, `token` or `at` — a **400** if it does. Nor `__proto__`, `constructor` or `prototype` at any depth |
+| Success | `200 { ok, version, value, state }`, where `state` is the projection for whoever the token turned out to be |
+| Refusal | `409` with `error.refused` — the domain's own word for the rule |
+| Conflict | `409 { error: { code: "state_changed" } }`, **with no `refused`** |
+| Auth | `401 unauthenticated`, `403 account_not_provisioned` / `account_disabled` / `actor_unknown` |
+
+**The client never sends a version.** `executeCommand` takes the world lock as
+its first statement, reads the version inside that lock, and saves with
+`expectedVersion`. `state_changed` is a guard inside the transaction, and when it
+fires the transaction has rolled back — so the command did not run.
+
+### Three outcomes, and they are not the same thing
+
+A **refusal** is the domain considering the request and saying no. It comes back
+as a value — `{ ok: false, refused }` — because the caller wants the word, and
+`store.lastRefusal()` holds it until the next success.
+
+A **conflict** is the world having moved before the save landed. It throws, with
+`failure === "conflict"`. Before this batch it fell through to `unexpected` and
+was indistinguishable from a reply the client could not read.
+
+**Everything else** throws too, and a thrown `unavailable` means the request
+never reached the server.
+
+### What the store does with each
+
+| | `status()` | the projection |
+|---|---|---|
+| nothing asked for yet | `idle` | — |
+| a command in flight | `saving` | **unchanged** |
+| the server said yes | `ready` | replaced by the one it returned |
+| the domain said no | `ready` | **unchanged**; `lastRefusal()` names the rule |
+| the session is over | `error` | **kept**; `lastError()` is `unauthenticated` |
+| the world moved first | `conflict` | re-read; `stale()` if that read also failed |
+| the network did not answer | `error` | **kept** |
+
+**Nothing is optimistic.** There is exactly one line in `production-store.js`
+that assigns `state`, and it assigns what arrived in a response — a test counts
+them. A command in flight does not touch the projection, a refusal does not, and
+a failure does not blank it.
+
+**A conflict is never replayed.** Re-sending would be easy and wrong: the reason
+the world moved is precisely the reason this command may no longer be the right
+one. The store re-reads instead — `view()` is a GET and safe to repeat, the
+command is not — and the person decides whether to ask again. Nothing in
+`api.js` or `production-store.js` loops, sleeps or schedules, and a test asserts
+that too.
+
+**One command at a time.** A second `execute` while one is in flight throws
+`CommandInFlightError` rather than being sent, because the server has no
+idempotency key and two commands in flight are two mutations. `pending()` names
+the running command so a control can disable itself and never reach the error.
+Reads are not gated — only mutations.
+
+This prevents **concurrent** duplicates and nothing more. A command whose
+response is lost may or may not have run, and no amount of client code can tell.
+That is why nothing here retries a mutation automatically, and why an
+idempotency key on the server is the only thing that would close it.
+
+### Reaching it from a screen
+
+Nothing calls `execute` in production yet, deliberately: every mutation UI is a
+later batch. When the first control arrives it should receive a **narrow
+callback**, not the store — `client/tp/**` holds no store today and a test keeps
+it that way, which is worth more than the convenience of passing one down.
+
 ## The application behind the door
 
 ### The server's projection is the only product-state input
