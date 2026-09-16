@@ -86,17 +86,64 @@ none of the above. The isolation runs both ways and is tested from both sides:
 nothing in the demo path reaches `client/`, and nothing in `client/` reaches
 the demo.
 
+## Signing in
+
+`client/supabase-auth.js` makes three calls to Supabase's own REST endpoints —
+`/otp`, `/verify`, `/token?grant_type=refresh_token`, plus `/logout` — and holds
+nothing. Two of them are the exact requests `server/auth-signin.js` makes, and a
+test asserts the two agree rather than asserting a shape written by hand.
+
+`client/supabase-session.js` holds the session and keeps it alive, behind the
+*same* `token()/status()/subscribe()/clear()` contract as `client/session.js` —
+so `createApiClient` takes either, and a test uses the injected one while
+production uses this.
+
+**Not `@supabase/supabase-js`.** This is not a second authentication system:
+Supabase remains the only authority. The library's own defaults are the reason —
+it persists the session to `localStorage` and refreshes on a timer, so owning
+the storage decision means replacing its adapter anyway: the same surface, plus
+a dependency, in a client that has none beyond React.
+
+**No JWT is decoded, ever.** The expiry comes from `expires_at` in the
+provider's response body, beside the token. That is how a session renews before
+it lapses without the browser deciding for itself what a credential says.
+
+### Where the session lives, and the honest tradeoff
+
+**In memory, and nothing in a browser makes a bearer token immune to XSS.**
+Script running on the page can read a closure variable as easily as
+`localStorage`, or simply call the API as you. The choice is not safe versus
+unsafe; it is **persistence**.
+
+In memory buys two things: nothing is left at rest when the tab closes, and a
+session cannot be picked up by a later visit or another tab. It costs one, and
+this is the whole cost: **a page refresh signs you out.**
+
+Storage is an injectable adapter defaulting to `NO_STORAGE`, so reversing that
+is one argument and a test rather than a rewrite — and so the decision stays
+visible instead of being inherited.
+
+### Renewal and ending
+
+An access token lasts an hour, and a Trusted Partner should not be stopped
+mid-trade, so the refresh token is held in memory beside the access token — no
+worse than holding the access token there. `token()` renews when the provider's
+stated expiry is within a minute, and **concurrent callers share one renewal**,
+because a refresh token rotates and a second request would present one the
+provider has just retired.
+
+A renewal that fails **ends the session**: `token()` answers `null`, and
+`api.js` refuses to reach the network without one, so an expired session cannot
+become a request that looks anonymous to the server. Signing out revokes at the
+source first so the refresh token does not outlive it — and clears **whether or
+not that call succeeded**, because sign-out must not be something the network
+can refuse.
+
 ## What is deferred, deliberately
 
-**Signing in.** There is no sign-in UI and no auth code in the browser. The
-session takes an injected token, so the choice between the provider's client
-library and two fetch calls of our own — a real dependency decision — is made
-in the batch that has a screen to attach it to, not inherited from a line
-written here.
-
-**Where a token lives across a refresh.** In memory only, today. Keeping
-somebody signed in across a reload is worth having and has a cost, so it is
-decided alongside refresh rather than now.
+**A sign-in screen.** The boundary is provable headlessly and a screen means a
+new production build entry point. Wiring "a 401 clears the session and shows
+sign-in" belongs there too — `api.js` does not retry, by design.
 
 **Migrating screens.** No component receives the production store yet. The
 handlers that read state back in the same tick, mint ids with `Date.now()`, and
