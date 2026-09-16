@@ -229,10 +229,15 @@ describe("A. the seat decides, and only the seat", () => {
     const { r } = await signedIn({ view: { status: 200, body: { version: 1, state: COLLECTOR_VIEW } } });
     assert(!looksLikeTpShell(r), "a Collector was shown the TP shell: " + flat(r));
     const shown = flat(r);
-    assert(/Collector app isn't part of this release/.test(shown), "and is told so plainly: " + shown);
+    /* Batch 7 gave the Collector their own application. Until then this seat
+       reached a truthful "not in this release" notice; the assertion that
+       mattered was never the wording but that a Collector does NOT get the
+       Trusted Partner workspace, and that is unchanged and still first. */
+    ["Goals", "Trade Binder", "Trusted Partners"].forEach((label) => {
+      assert(hasButton(r, label), `the Collector app is missing ${label}: ` + shown);
+    });
+    assert(!/Collector Network|Inventory/.test(shown), "a TP section leaked into it: " + shown);
     assert(hasButton(r, "Sign out"), "with a way out");
-    /* Truthful, not destructive: nothing suggests data is missing or gone. */
-    assert(/nothing is missing/i.test(shown), "the message is not alarming: " + shown);
   });
 
   test("an actor with no seat at all fails closed", () => {
@@ -592,7 +597,13 @@ describe("E. the demo and the production bundle are still different things", () 
       "client/sign-in/SignIn.jsx", "app-src/main.jsx"].forEach((rel) => {
       const bare = code(rel);
       assert(!/MetYetPrototype|MetYetCollector|demo-flag|dev-flag|site-src/.test(bare), `${rel} reaches the demo`);
-      assert(!/src\/MetYet|shell\/|collector\//.test(bare), `${rel} imports the prototype`);
+      /* The PROTOTYPE's paths, named exactly. `collector/` alone was a proxy for
+         `collector/MetYetCollector.jsx`, and Batch 7 put a production file at
+         `client/collector/CollectorShell.jsx` — which the proxy flagged and the
+         rule never meant. Naming the three prototype entry points keeps the
+         assertion while removing the false positive. */
+      assert(!/src\/MetYet|shell\/MetYetPrototype|collector\/MetYetCollector/.test(bare),
+        `${rel} imports the prototype`);
       assert(!/__METYET_DEMO__|__METYET_DEV__/.test(bare), `${rel} reads a demo switch`);
     });
   });
