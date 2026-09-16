@@ -386,9 +386,57 @@ Each will migrate through authenticated `POST /api/commands`, one workflow at a
 time. Until a workflow has been migrated and proved, it is prototype-only and is
 not production-ready, whatever the shell renders alongside it.
 
-The **Collector** production application does not exist. A Collector who signs
-in is told so in a sentence and can sign out; they are never shown the demo and
-never shown an empty Trusted Partner shell.
+### The Collector application
+
+`client/collector/CollectorShell.jsx` is the Collector's side of the same door.
+`client/production-app.jsx` chooses between the two on the seat and nothing
+else; a Trusted Partner never reaches the Collector app and a Collector never
+reaches the Trusted Partner workspace, both asserted.
+
+**Three sections, which are the product**, in the prototype's own words and
+order — the model is settled, and this is a different implementation of it:
+
+| | | count |
+|---|---|---|
+| **Goals** | what you want, and the only transaction workflow | `goals.length` |
+| **Trade Binder** | what you could put into a trade — supply, not a workflow | `binder.length` |
+| **Trusted Partners** | the shops you deal with — a network, not a market | `partners.length` |
+
+Each count is a plain row count of a collection the **server** already scoped to
+this Collector. None reconstructs a rule.
+
+**There is no opportunities count and no opportunities section**, though the
+projection carries them. A deal is a goal being worked, not a fourth thing — and
+counting the "active" ones would mean deciding what active means, which is the
+server's judgement, not the browser's.
+
+**The shape is the Collector app's, not the Trusted Partner's**: a tab bar along
+the bottom of a phone that becomes a rail down the side of a wide screen. One of
+these people is at a desk all day and the other is holding a phone in a card
+shop.
+
+This is a **shell**. Each section says what it is and how much of it there is,
+and stops — reading a goal, opening a binder copy or looking at a Trusted
+Partner's profile is a later batch, and a placeholder that pretended otherwise
+would be worse than one that admits it.
+
+### Why a Collector cannot see a Trusted Partner's figures
+
+Because the projection never sends them, not because the screen declines to draw
+them. Checked against a real projection rather than against the comment that
+says so:
+
+- **no inventory row carries `cost` or `acquired`** — `INVENTORY_FOR_COLLECTOR`
+  strips both, so Acquisition Cost never leaves the server
+- **no relationship carries `note`, `last` or `binderReviewedAt`** —
+  `RELATIONSHIP_PARTNER_PRIVATE`
+- **`collectors` holds exactly one row**, their own, so another Collector's data
+  is not in the browser to leak
+- **`activity` is empty** — partner-private (D-4)
+
+The shell is the second line, not the only one: it never reads those field
+names, and a test hands it a projection that wrongly contains all of them and
+asserts none reaches the screen.
 
 ## What is deferred, deliberately
 

@@ -20,16 +20,17 @@
    is the refusal, so a seat added to the domain later cannot silently fall
    into somebody else's application by being forgotten here.
 
-   THE OTHER SEAT IS TOLD THE TRUTH. A Collector who signs in reaches a screen
-   that says their application is not in this release. It is not the demo, not
-   an empty Trusted Partner shell, and not a blank page. Nothing about it is
-   destructive: they are signed in, they can sign out, and their data is
-   untouched because nothing here can touch it.
+   TWO SEATS, TWO APPLICATIONS, AND NEITHER CAN REACH THE OTHER'S. A Trusted
+   Partner gets the Trusted Partner workspace; a Collector gets the Collector
+   app. They are different products for different people, they are chosen here
+   and nowhere else, and each is handed the projection and nothing else — no
+   session, no store, no way to ask for more.
    ========================================================================== */
 
 import React from "react";
 import { describeActor, isIdentified } from "./actor.js";
 import TrustedPartnerShell from "./tp/TrustedPartnerShell.jsx";
+import CollectorShell from "./collector/CollectorShell.jsx";
 
 const S = {
   page: { minHeight: "100vh", background: "#F1F3F6", color: "#131922", display: "flex",
@@ -73,15 +74,7 @@ export default function ProductionApp({ state, onSignOut }) {
 
   if (who.seat === "tp") return <TrustedPartnerShell state={state} onSignOut={onSignOut} />;
 
-  if (who.seat === "collector") {
-    return (
-      <Plain onSignOut={onSignOut}
-        lead={"You're signed in as a Collector"
-          + (who.name ? `, ${who.name}` : "")
-          + ". The Collector app isn't part of this release yet — nothing is missing "
-          + "from your account, there's just nothing here to show you yet."} />
-    );
-  }
+  if (who.seat === "collector") return <CollectorShell state={state} onSignOut={onSignOut} />;
 
   /* A seat the domain has and this build does not. The refusal is the default
      branch on purpose: forgetting to add a case here cannot route anybody into
