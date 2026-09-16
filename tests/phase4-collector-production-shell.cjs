@@ -284,7 +284,12 @@ describe("B. identity comes from the projection, and nowhere else", () => {
       assert(!/localStorage|sessionStorage|indexedDB|document\.cookie/.test(bare), `${rel} reads storage`);
       assert(!/location\.(search|hash|pathname|href)|URLSearchParams/.test(bare), `${rel} reads the URL`);
       assert(!/(collectorId|partnerId|seat)\s*[:=]\s*["'`]/.test(bare), `${rel} assigns a literal identity`);
-      assert(!/\bemail\b/i.test(bare), `${rel} looks at an email address`);
+      /* IDENTITY from an email is what this forbids. Batch 8 renders a Trusted
+         Partner's contact email, which is projected profile data
+         (PARTNER_FOR_COLLECTOR) and has nothing to do with who is signed in.
+         The rule is now about the use, not the word. */
+      assert(!/email\s*[=:]\s*[^,;)\n]*\b(actor|collector|me|self|who)\b|byEmail|emailToActor|findBy(Email|Address)/i.test(bare),
+        `${rel} resolves identity from an email address`);
     }
   });
 
@@ -352,9 +357,16 @@ describe("C. the shell: three sections, and counts that are row counts", () => {
        count. The source assertion below is where the real guard lives. */
     assert(!/\d+\s*(deals?|opportunit\w*|negotiations?|active|in progress|awaiting)/i.test(shown),
       "a lifecycle-derived count appeared: " + shown);
+    /* RECONSTRUCTING a lifecycle is what this forbids, not RENDERING one the
+       server decided. Batch 8 shows the server's own `stage` under the goal it
+       names — read verbatim, marked when unknown, never derived. What must not
+       appear is the domain's own reasoning: whose turn it is, whether a deal is
+       negotiating, what the next step would be. */
     const bare = COLLECTOR_FILES.map(code).join("\n");
-    assert(!/completed|\bstage\b|isNegotiating|agreedPrice|turnFor|opportunities/.test(bare),
+    assert(!/isNegotiating|turnFor|nextActor|isCompleted|STAGE_IX|stageAfter|seatOfActor/.test(bare),
       "the shell reasons about a lifecycle");
+    assert(!/\.filter\([^)]*stage\s*!==|\.filter\([^)]*stage\s*===/.test(bare),
+      "the shell counts or filters by lifecycle position");
   });
 
   test("an empty account gets the shell and a sentence, never a crash or a sample", () => {
@@ -419,12 +431,14 @@ describe("D. privacy — a Trusted Partner's figures and another Collector's dat
         note: "TP-PRIVATE-NOTE-ABOUT-CASEY", last: "2026-08-05", binderReviewedAt: "2026-07-30" }],
       activity: [{ id: "a1", partnerId: PARTNER, text: "TP-PRIVATE-ACTIVITY" }] };
     const r = show(leaky);
+    /* Navigate FIRST, then assert — the other way round checks the opening
+       section twice and the last one never. */
     for (const s of NAV) {
+      clickText(r, s);
       const shown = flat(r);
       ["3100", "$3,100", "2026-01-11", "TP-PRIVATE-NOTE-ABOUT-CASEY", "TP-PRIVATE-ACTIVITY",
         "2026-08-05", "2026-07-30"].forEach((secret) =>
         assert(!shown.includes(secret), `"${secret}" reached a Collector's screen in ${s}: ` + shown));
-      clickText(r, s);
     }
     /* And the field names are not read anywhere in the Collector surface. */
     const bare = COLLECTOR_FILES.map(code).join("\n");
@@ -432,25 +446,40 @@ describe("D. privacy — a Trusted Partner's figures and another Collector's dat
       assert(!new RegExp(`\\b${field}\\b`).test(bare), `the Collector shell reads "${field}"`));
   });
 
-  test("another Collector's data cannot be rendered, even when present", () => {
+  test("another Collector can never be the person on screen", () => {
+    /* WHERE PRIVACY LIVES. The server scopes `goals` and `binder` to one
+       Collector before sending them, and a browser that re-filtered by
+       `collectorId` would be re-implementing that rule — the thing this
+       architecture refuses, and something that would MASK a server bug rather
+       than surface it. So a foreign row planted in a collection is not what
+       this asserts against.
+
+       What it asserts is the part the browser genuinely owns: another
+       Collector's IDENTITY cannot become this one's, by any route. Batch 8's
+       own suite adds the join proofs — that a goal's card, a copy's interested
+       partners and a partner's relationship all come from the id that row
+       carries and never from position or name. */
     const crossed = { ...FULL,
-      collectors: [{ id: COLLECTOR, name: "Casey Lin" }, { id: "c-other", name: "OTHER COLLECTOR" }],
-      goals: [...FULL.goals, { id: "gX", collectorId: "c-other", cardId: "kX", tier: "primary",
-        note: "OTHER-COLLECTORS-GOAL" }],
-      binder: [...FULL.binder, { id: "bX", collectorId: "c-other", cardId: "kX" }] };
+      collectors: [{ id: "c-other", name: "OTHER COLLECTOR" }, { id: COLLECTOR, name: "Casey Lin" }] };
     const r = show(crossed);
     for (const s of NAV) {
-      const shown = flat(r);
-      ["OTHER COLLECTOR", "OTHER-COLLECTORS-GOAL", "c-other"].forEach((secret) =>
-        assert(!shown.includes(secret), `"${secret}" reached the screen in ${s}: ` + shown));
       clickText(r, s);
+      const shown = flat(r);
+      ["OTHER COLLECTOR", "c-other"].forEach((secret) =>
+        assert(!shown.includes(secret), `"${secret}" reached the screen in ${s}: ` + shown));
     }
+    eq(ACTOR.describeActor(crossed).name, "Casey Lin", "the decoy named the person");
+    eq(ACTOR.describeActor(crossed).id, COLLECTOR);
   });
 
   test("no internal id is ever a label", () => {
-    const shown = flat(show(REAL));
-    ["c12", "p-self", "cc16", "g20", "inv1", "i17"].forEach((id) =>
-      assert(!shown.includes(id), `the raw id "${id}" is on screen: ` + shown));
+    const r = show(REAL);
+    for (const s of NAV) {
+      clickText(r, s);
+      const shown = flat(r);
+      ["c12", "p-self", "cc16", "g20", "inv1", "i17"].forEach((id) =>
+        assert(!shown.includes(id), `the raw id "${id}" is on screen in ${s}: ` + shown));
+    }
   });
 
   test("privacy is the projection's job, and the shell does not filter", () => {

@@ -415,10 +415,43 @@ the bottom of a phone that becomes a rail down the side of a wide screen. One of
 these people is at a desk all day and the other is holding a phone in a card
 shop.
 
-This is a **shell**. Each section says what it is and how much of it there is,
-and stops — reading a goal, opening a binder copy or looking at a Trusted
-Partner's profile is a later batch, and a placeholder that pretended otherwise
-would be worse than one that admits it.
+**Goals** shows each goal with the card it names — identity from `catalog` by
+its own `cardId` — its tier, the Collector's own note, and when they started
+wanting it. It is also the **one place coordination appears**: an opportunity is
+attached to a goal when its `goalId` equals that goal's `id`, and by nothing
+else. What is read from it is the stage the server set (rendered in the
+product's words, marked when this build does not recognise it), the partner by
+explicit `partnerId`, and the prices the server stated. `priceThread`, `trade`,
+`deal` and `fulfillment` all arrive and none is opened — reading them would mean
+re-deriving a lifecycle the server already decided.
+
+**Trade Binder** shows each copy: card identity, raw or graded as the catalogue
+states it, its own certificate, its own reference value (`market`, which the
+projection strips for every Trusted Partner, so it is the Collector's alone),
+the **server's** `status`, and which Trusted Partners have registered interest —
+joined by `binderId`, named by `partnerId`. `photos` holds references, not URLs,
+so a copy says in words whether it has pictures and never pretends to show one.
+
+**Trusted Partners** shows the partner profile a related Collector may see
+(`PARTNER_FOR_COLLECTOR`) with the relationship's own status and start date,
+joined by explicit `partnerId`. **A partner's stock is deliberately not
+rendered** although it arrives in the projection: showing "what this shop has"
+is a discovery surface, which is a marketplace shape and a product decision
+nobody has made.
+
+There is **no Opportunities section and no opportunities count**. A deal is a
+goal being worked; giving it its own navigation would make it a second workflow,
+and the product has one.
+
+Every join is by an explicit id the row carries. A related row the projection
+does not contain yields **nothing** — never the first row, never the nearest
+one — and no name or email is ever used as a key.
+
+**Privacy stays the projection's job.** The server scopes `goals`, `binder` and
+`interests` to one Collector before sending them. The browser does not re-filter
+by `collectorId`: that would re-implement the server's rule and would mask a
+server bug rather than surface it. What the browser owns, and what the tests
+prove, is that every join is explicit and that no identity can be replaced.
 
 ### Why a Collector cannot see a Trusted Partner's figures
 

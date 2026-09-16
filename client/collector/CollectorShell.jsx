@@ -54,40 +54,25 @@
 
 import React, { useState } from "react";
 import { describeActor } from "../actor.js";
-
-/* Only arrays, only truthy rows. A projection missing a collection entirely —
-   an older server, a narrowed projection — is an ordinary case, not a crash. */
-const rows = (value) => (Array.isArray(value) ? value.filter(Boolean) : []);
+import { rows } from "./present.js";
+import Goals from "./sections/Goals.jsx";
+import TradeBinder from "./sections/TradeBinder.jsx";
+import TrustedPartners from "./sections/TrustedPartners.jsx";
 
 /* The Collector's three, in the product's own order and words. `count` names
    the collection whose ROWS are counted: each is a plain count of something
    the server already scoped to this Collector, and none of them is a rule. */
 export const SECTIONS = Object.freeze([
-  { id: "goals", label: "Goals", count: "goals",
+  { id: "goals", label: "Goals", count: "goals", view: Goals,
     title: "Goals",
-    sub: "What you're looking for, and what your Trusted Partners work from",
-    one: "goal", many: "goals",
-    what: "A goal is a card you want. Your Trusted Partners see your goals and bring you copies — "
-      + "it is the only way a deal starts in MetYet.",
-    empty: "You haven't set any goals yet. A goal is how you tell your Trusted Partners what to look for." },
-  { id: "binder", label: "Trade Binder", count: "binder",
+    sub: "What you're looking for, and what your Trusted Partners work from" },
+  { id: "binder", label: "Trade Binder", count: "binder", view: TradeBinder,
     title: "Trade Binder",
-    sub: "What you could put into a trade",
-    one: "card", many: "cards",
-    what: "Your Trade Binder is what you are willing to trade. Trusted Partners can register interest "
-      + "in a copy, and it can go into a deal on one of your goals.",
-    empty: "Your Trade Binder is empty. Cards you add here are what you can offer in a trade." },
-  { id: "partners", label: "Trusted Partners", count: "partners",
+    sub: "What you could put into a trade" },
+  { id: "partners", label: "Trusted Partners", count: "partners", view: TrustedPartners,
     title: "Trusted Partners",
-    sub: "The shops you deal with",
-    one: "Trusted Partner", many: "Trusted Partners",
-    what: "A Trusted Partner is a shop you have a relationship with. They see your goals and your "
-      + "Trade Binder; nobody else does.",
-    empty: "You have no Trusted Partners yet. A partner invites you, and the relationship starts when "
-      + "you accept." },
+    sub: "The shops you deal with" },
 ]);
-
-const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 const CSS = `
 .mcs { --bg:#F7F9FA; --panel:#FFF; --line:#DFE4EA; --line-soft:#EDF0F4; --text:#131922;
@@ -128,14 +113,48 @@ const CSS = `
 .mcs-h { font-family:'Archivo'; font-size:20px; font-weight:700; letter-spacing:-.02em; margin:0; }
 .mcs-sub { color:var(--muted); font-size:13.5px; margin-top:2px; }
 
-.mcs-card { background:var(--panel); border:1px solid var(--line); border-radius:12px;
-  padding:20px 18px; margin-top:16px; max-width:620px; }
-.mcs-n { font-family:'Archivo'; font-size:34px; font-weight:700; letter-spacing:-.03em;
-  line-height:1.05; color:var(--t1); }
-.mcs-n-l { color:var(--muted); font-size:13.5px; margin-top:2px; }
-.mcs-what { color:var(--muted); margin-top:14px; max-width:58ch; }
-.mcs-soon { margin-top:14px; padding-top:13px; border-top:1px solid var(--line-soft);
-  color:var(--faint); font-size:13px; max-width:58ch; }
+/* ---- panels and records ---- */
+.mcs-panel { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+  margin-top:16px; max-width:760px; overflow:hidden; }
+.mcs-ph { display:flex; align-items:baseline; gap:10px; padding:12px 16px;
+  border-bottom:1px solid var(--line-soft); }
+.mcs-ph h2 { font-family:'Archivo'; font-size:10.5px; font-weight:700; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--muted); margin:0; }
+.mcs-pnote { margin-left:auto; font-size:11.5px; color:var(--faint); }
+.mcs-empty { padding:22px 16px; color:var(--muted); max-width:58ch; }
+.mcs-list { display:flex; flex-direction:column; }
+
+.mcs-rec { padding:14px 16px; border-bottom:1px solid var(--line-soft); }
+.mcs-rec:last-child { border-bottom:0; }
+.mcs-rec-head { display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap; }
+.mcs-rec-id { min-width:0; flex:1 1 240px; }
+.mcs-rec-t { font-weight:600; font-size:15px; }
+.mcs-rec-s { color:var(--muted); font-size:13px; margin-top:1px; }
+.mcs-rec-tags { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+.mcs-rec-note { margin-top:9px; color:var(--muted); font-size:13.5px; display:flex; gap:7px;
+  flex-wrap:wrap; max-width:60ch; }
+
+.mcs-tag { display:inline-block; font-size:10.5px; letter-spacing:.03em; padding:2px 7px;
+  border-radius:4px; background:#F1F4F6; color:var(--muted); border:1px solid var(--line-soft);
+  white-space:nowrap; }
+.mcs-tag-strong { background:var(--t1-bg); color:var(--t1); border-color:#CBE0E2; }
+.mcs-tag-unknown { background:var(--amber-bg); color:var(--amber); border-color:var(--amber-line); }
+
+.mcs-marks { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+.mcs-mark { font-size:11px; color:var(--faint); border:1px solid var(--line-soft);
+  border-radius:4px; padding:1px 7px; }
+
+.mcs-facts { display:flex; flex-wrap:wrap; gap:6px 18px; margin-top:10px; }
+.mcs-fact { display:flex; gap:6px; align-items:baseline; min-width:0; }
+.mcs-fact-l { font-family:'Archivo',system-ui,sans-serif; font-size:9.5px; letter-spacing:.07em;
+  text-transform:uppercase; color:var(--faint); font-weight:700; white-space:nowrap; }
+.mcs-fact-v { font-size:13px; font-variant-numeric:tabular-nums; }
+
+.mcs-sub { list-style:none; margin:11px 0 0; padding:10px 0 0;
+  border-top:1px dashed var(--line-soft); display:flex; flex-direction:column; gap:8px; }
+.mcs-sub li { display:flex; gap:8px; flex-wrap:wrap; align-items:baseline; }
+.mcs-sub-t { font-size:13.5px; }
+.mcs-sub-f { display:flex; gap:6px 16px; flex-wrap:wrap; align-items:baseline; }
 
 /* ---- the tab bar, at the bottom, where a thumb is ---- */
 .mcs-nav { position:fixed; left:0; right:0; bottom:0; display:flex; z-index:10;
@@ -160,36 +179,6 @@ const CSS = `
 }
 `;
 
-/* One section body: the count, what the section IS, and what is not here yet.
-   Deliberately this and no more — reading a goal or a binder copy is the next
-   batch, and a placeholder that pretended otherwise would be worse than one
-   that says so. */
-function Section({ meta, count }) {
-  return (
-    <>
-      <h1 className="mcs-h disp">{meta.title}</h1>
-      <p className="mcs-sub">{meta.sub}</p>
-      <section className="mcs-card">
-        {count > 0 ? (
-          <>
-            <div className="mcs-n">{count}</div>
-            <div className="mcs-n-l">{plural(count, meta.one, meta.many)}</div>
-          </>
-        ) : (
-          <p>{meta.empty}</p>
-        )}
-        <p className="mcs-what">{meta.what}</p>
-        <p className="mcs-soon">
-          {count > 0
-            ? `Opening ${meta.many === "goals" ? "a goal" : "this"} arrives in the next release. `
-            : ""}
-          Nothing here can be changed yet — this release shows you what MetYet holds for you.
-        </p>
-      </section>
-    </>
-  );
-}
-
 export default function CollectorShell({ state, onSignOut }) {
   const [section, setSection] = useState(SECTIONS[0].id);
 
@@ -201,6 +190,7 @@ export default function CollectorShell({ state, onSignOut }) {
   for (const s of SECTIONS) counts[s.id] = rows(state && state[s.count]).length;
 
   const meta = SECTIONS.find((s) => s.id === section) || SECTIONS[0];
+  const View = meta.view;
 
   return (
     <div className="mcs">
@@ -238,7 +228,9 @@ export default function CollectorShell({ state, onSignOut }) {
           ))}
         </nav>
         <main className="mcs-main" key={section}>
-          <Section meta={meta} count={counts[meta.id]} />
+          <h1 className="mcs-h disp">{meta.title}</h1>
+          <p className="mcs-sub">{meta.sub}</p>
+          <View state={state} />
         </main>
       </div>
     </div>
