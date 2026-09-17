@@ -31,10 +31,13 @@
    the server sent, and joining them by the ids they carry, is reading. Deciding
    what a row MEANS is not, and is not done here.
 
-   It does not change anything. There is no command, no mutation, no optimistic
-   edit, no local write. Every control that would change something is absent,
-   and the screen says the release is read-only rather than offering a button
-   that quietly does nothing.
+   It does not name a command. Phase 5 Batch 1 gave the Shop Profile section the
+   first control in production that changes anything, and it reaches the
+   authenticated boundary through `onSaveProfile` — a function of one argument,
+   handed in from outside. Nothing under `client/tp/` holds a store, spells a
+   command, or reaches the network, and a test keeps it that way. The three read
+   sections still change nothing, and each of them says so rather than offering
+   a button that quietly does nothing.
 
    It does not assume data exists. A newly registered Trusted Partner has a name
    and nothing else. Every list handles nought rows as an ordinary case with a
@@ -52,9 +55,16 @@ import { rows } from "./present.js";
 import CollectorNetwork from "./sections/CollectorNetwork.jsx";
 import Inventory from "./sections/Inventory.jsx";
 import Opportunities from "./sections/Opportunities.jsx";
+import Profile from "./sections/Profile.jsx";
 
-/* The three sections, with the titles and subtitles the product already uses.
-   Order is the prototype's: inputs before their consequences. */
+/* The sections, with the titles and subtitles the product already uses. The
+   first three are the prototype's order — inputs before their consequences —
+   and Shop Profile comes after them: it is the shop itself rather than a day's
+   work, and the work is what a Trusted Partner opens MetYet to do.
+
+   `writes` is what the read-only notice is keyed on. A section that cannot
+   change anything says so; a section that can does not carry a notice
+   contradicting its own Save button. */
 export const SECTIONS = Object.freeze([
   { id: "collectors", label: "Collector Network", title: "Collector Network",
     sub: "Who you're serving, and what you know about them" },
@@ -62,9 +72,12 @@ export const SECTIONS = Object.freeze([
     sub: "What you have and how it connects to collector demand" },
   { id: "opportunities", label: "Opportunities", title: "Opportunities",
     sub: "What you're actively coordinating, and what's waiting at each stage" },
+  { id: "profile", label: "Shop Profile", title: "Shop Profile", writes: true,
+    sub: "What a collector in your network sees when they look you up" },
 ]);
 
-const VIEWS = { collectors: CollectorNetwork, inventory: Inventory, opportunities: Opportunities };
+const VIEWS = { collectors: CollectorNetwork, inventory: Inventory,
+  opportunities: Opportunities, profile: Profile };
 
 const CSS = `
 .tps { --sidebar:#0F131B; --sidebar-2:#1A2130; --sidebar-line:#232B3A; --bg:#F1F3F6;
@@ -167,6 +180,32 @@ const CSS = `
 .tps-sub-s { color:var(--faint); font-size:12px; }
 .tps-sub-n { color:var(--muted); font-size:12px; }
 
+/* ---- the one thing that writes ---- */
+.tps-edit { background:none; border:1px solid var(--line); border-radius:5px; padding:4px 11px;
+  color:var(--t1); font-size:12px; font-weight:600; }
+.tps-edit:hover { border-color:var(--t1); background:var(--t1-bg); }
+.tps-form { display:block; }
+.tps-fields { display:flex; flex-wrap:wrap; gap:14px 18px; padding:15px 16px; }
+.tps-field { display:flex; flex-direction:column; gap:4px; flex:1 1 220px; min-width:0; }
+.tps-field.wide { flex-basis:100%; }
+.tps-field-l { font-family:'Archivo',system-ui,sans-serif; font-size:9.5px; letter-spacing:.07em;
+  text-transform:uppercase; color:var(--faint); font-weight:600; }
+.tps-field-h { color:var(--faint); font-size:11.5px; }
+.tps-input { width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:5px;
+  font-family:inherit; font-size:13px; color:var(--text); background:#FFF; resize:vertical; }
+.tps-input:focus-visible { outline:2px solid var(--t1); outline-offset:1px; border-color:var(--t1); }
+.tps-input:disabled { background:#F7F8FA; color:var(--muted); }
+.tps-actions { display:flex; gap:9px; flex-wrap:wrap; padding:0 16px 15px; }
+.tps-save { background:var(--t1); border:1px solid var(--t1); color:#FFF; border-radius:5px;
+  padding:8px 15px; font-weight:600; font-size:13px; }
+.tps-save:disabled { opacity:.6; cursor:default; }
+.tps-cancel { background:#FFF; border:1px solid var(--line); color:var(--muted); border-radius:5px;
+  padding:8px 15px; font-size:13px; }
+.tps-cancel:disabled { opacity:.6; cursor:default; }
+.tps-problem { margin:0 16px 14px; padding:9px 11px; background:var(--amber-bg);
+  border:1px solid var(--amber-line); border-radius:5px; color:var(--amber); max-width:70ch; }
+.tps-aside { color:var(--faint); font-size:12px; max-width:70ch; }
+
 /* ---- a phone ---- */
 @media (max-width:860px) {
   .tps { display:block; }
@@ -184,10 +223,12 @@ const CSS = `
 }
 `;
 
-export default function TrustedPartnerShell({ state, onSignOut }) {
+export default function TrustedPartnerShell({ state, onSignOut, onSaveProfile = null }) {
   const [section, setSection] = useState(SECTIONS[0].id);
 
   const who = describeActor(state);
+  /* A count is the rows the server sent. Shop Profile counts nothing — there is
+     one shop — so it carries no number rather than a meaningless nought. */
   const counts = {
     collectors: rows(state && state.collectors).length,
     inventory: rows(state && state.inventory).filter((i) => !i.archived).length,
@@ -195,6 +236,10 @@ export default function TrustedPartnerShell({ state, onSignOut }) {
   };
   const meta = SECTIONS.find((s) => s.id === section) || SECTIONS[0];
   const View = VIEWS[meta.id];
+  /* Only the section that can write receives the callback. It is the Trusted
+     Partner's own profile and nothing else's, so nothing else is handed a way
+     to send it. */
+  const extra = meta.id === "profile" ? { onSave: onSaveProfile } : null;
 
   return (
     <div className="tps">
@@ -213,7 +258,7 @@ export default function TrustedPartnerShell({ state, onSignOut }) {
               aria-current={s.id === section ? "page" : undefined}
               onClick={() => setSection(s.id)}>
               <span className="lbl">{s.label}</span>
-              <span className="cnt mono">{counts[s.id]}</span>
+              {counts[s.id] === undefined ? null : <span className="cnt mono">{counts[s.id]}</span>}
             </button>
           ))}
         </div>
@@ -231,12 +276,14 @@ export default function TrustedPartnerShell({ state, onSignOut }) {
           <h1 className="disp">{meta.title}</h1>
           <div className="sub">{meta.sub}</div>
         </div>
-        <div className="tps-ro" role="note">
-          <span>Read-only for now — everything here is what the server holds for you.</span>
-          <span className="tps-dim">Actions arrive in a later release.</span>
-        </div>
+        {meta.writes ? null : (
+          <div className="tps-ro" role="note">
+            <span>Read-only for now — everything here is what the server holds for you.</span>
+            <span className="tps-dim">Actions arrive in a later release.</span>
+          </div>
+        )}
         <div className="tps-scroll" key={section}>
-          <View state={state} />
+          <View state={state} {...extra} />
         </div>
       </div>
     </div>

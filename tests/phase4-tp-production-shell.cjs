@@ -213,7 +213,10 @@ const signedIn = async (opts) => {
   return { ...w, r };
 };
 
-const TP_NAV = ["Collector Network", "Inventory", "Opportunities"];
+/* Phase 5 Batch 1 added Shop Profile, the first section that writes. It comes
+   after the three the work flows through, because the shop is not a day's
+   work. */
+const TP_NAV = ["Collector Network", "Inventory", "Opportunities", "Shop Profile"];
 const looksLikeTpShell = (r) => TP_NAV.every((label) => hasButton(r, label));
 
 /* ============================================================== A */
@@ -307,9 +310,11 @@ describe("B. the shell is the product, and all of it is the server's data", () =
   test("the established navigation, in the product's own order", () => {
     const r = render(React.createElement(Shell, { state: FULL_TP }));
     const labels = buttons(r).map(instText).filter((s) => TP_NAV.some((n) => s.includes(n)));
-    eq(labels.length, 3, "three sections, no more");
+    eq(labels.length, 4, "four sections, no more");
     TP_NAV.forEach((n, i) => assert(labels[i].includes(n), `section ${i} is not ${n}`));
-    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "collectors,inventory,opportunities");
+    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "collectors,inventory,opportunities,profile");
+    /* Exactly one of them writes, and it is the last one. */
+    eq(SHELL_MOD.SECTIONS.filter((s) => s.writes).map((s) => s.id).join(","), "profile");
   });
 
   test("the counts beside each section are the projection's own rows", () => {
@@ -432,14 +437,35 @@ describe("C. nothing is invented — not identity, not rules, not content", () =
     }
   });
 
-  test("the shell cannot change anything, and says so instead of pretending", () => {
+  /* PHASE 5 BATCH 1 CHANGED WHAT THIS ASSERTS, AND NOT WHY IT EXISTS. It used
+     to say the shell cannot change anything. One section can now, so the rule
+     that survives is the one that always mattered: the shell still cannot
+     REACH a mutation itself. It holds no store, spells no command and does not
+     go to the network — what it has is a callback handed in from outside. And
+     the three sections that still change nothing still say so. */
+  test("the shell reaches a mutation only through a callback, never by itself", () => {
     const bare = TP_FILES.map(code).join("\n");
-    assert(!/execute\s*\(|\.command\s*\(|POST|onSubmit/.test(bare), "the shell has a way to write");
+    assert(!/execute\s*\(|\.command\s*\(|POST|updatePartnerProfile/.test(bare),
+      "the shell reaches a command path by itself");
+    assert(/onSave/.test(bare), "and the callback it is handed instead is missing");
+
     const r = render(React.createElement(Shell, { state: FULL_TP }));
-    /* The only actionable controls are the three sections and sign-out. */
+    /* Four sections and sign-out, and nothing else on a read-only section. */
     const labels = buttons(r).map(instText);
-    eq(labels.length, 4, "an extra control appeared: " + labels.join(" | "));
-    assert(/Read-only for now/.test(flat(r)), "and the screen does not say it is read-only");
+    eq(labels.length, 5, "an extra control appeared: " + labels.join(" | "));
+    assert(/Read-only for now/.test(flat(r)), "and a read section does not say it is read-only");
+
+    /* The section that writes does not carry a notice contradicting itself. */
+    clickText(r, "Shop Profile");
+    assert(!/Read-only for now/.test(flat(r)), "the writable section still claims to be read-only");
+  });
+
+  test("without a callback the writable section offers no control at all", () => {
+    const r = render(React.createElement(Shell, { state: FULL_TP }));
+    clickText(r, "Shop Profile");
+    const labels = buttons(r).map(instText);
+    eq(labels.length, 5, "a control appeared with nothing behind it: " + labels.join(" | "));
+    assert(!labels.some((l) => /Edit profile/.test(l)), "Edit was offered with no way to save");
   });
 
   test("an empty account renders sentences, never sample content", () => {

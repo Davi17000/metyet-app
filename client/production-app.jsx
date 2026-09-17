@@ -23,8 +23,16 @@
    TWO SEATS, TWO APPLICATIONS, AND NEITHER CAN REACH THE OTHER'S. A Trusted
    Partner gets the Trusted Partner workspace; a Collector gets the Collector
    app. They are different products for different people, they are chosen here
-   and nowhere else, and each is handed the projection and nothing else — no
-   session, no store, no way to ask for more.
+   and nowhere else.
+
+   WHAT EACH IS HANDED. The projection, sign-out, and — for the Trusted Partner
+   only — `onSaveProfile`, the narrow callback Phase 5 Batch 1 introduced. It is
+   a function of one argument, built outside every product surface
+   (client/commands.js) and passed straight through: this file does not create
+   it, does not name the command behind it, and does not call it. A Collector is
+   not handed it, because editing a Trusted Partner's shop is not a thing a
+   Collector does. Neither seat receives a session, a store, or any way to ask
+   for more than it was given.
    ========================================================================== */
 
 import React from "react";
@@ -58,7 +66,7 @@ function Plain({ lead, onSignOut }) {
   );
 }
 
-export default function ProductionApp({ state, onSignOut }) {
+export default function ProductionApp({ state, onSignOut, onSaveProfile = null }) {
   const who = describeActor(state);
 
   /* Not identified: the server did not say who this is, or said something this
@@ -72,7 +80,9 @@ export default function ProductionApp({ state, onSignOut }) {
     );
   }
 
-  if (who.seat === "tp") return <TrustedPartnerShell state={state} onSignOut={onSignOut} />;
+  if (who.seat === "tp") {
+    return <TrustedPartnerShell state={state} onSignOut={onSignOut} onSaveProfile={onSaveProfile} />;
+  }
 
   if (who.seat === "collector") return <CollectorShell state={state} onSignOut={onSignOut} />;
 

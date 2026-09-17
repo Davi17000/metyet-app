@@ -6,19 +6,30 @@
 # the four secret-bearing variables below by hand, and runs the migration
 # command once before the first deploy (see docs/DEPLOYMENT.md).
 #
-#   build    npm ci --omit=dev     production dependencies only; there is no
-#                                  bundling step for the server
+#   build    npm ci --omit=dev     production dependencies only; the server
+#            && npm run build:app  itself needs no bundling, but the CLIENT does
 #   start    npm start             node server/index.js
 #   health   /api/health/ready     answers 503 while the schema is behind, so a
 #                                  deploy that skipped the migration is obvious
 #   migrate  npm run db:migrate    run deliberately, never at startup
 #
-# WHICH BRANCH THIS DEPLOYS. The pilot branch, not `main`, and deliberately:
-# `main` is behind by the whole of Batch 6 — it has no auth-check, the older
-# DATABASE_SSL vocabulary (so the `verify-full` below would be REFUSED at
-# startup), and a blueprint missing SUPABASE_PUBLISHABLE_KEY. Deploying `main`
-# today would not start. Change this line to `main` when PR #43 merges; there is
-# a test and a runbook step that say so.
+# WHY THE BUILD BUILDS THE CLIENT (Phase 5 Batch 1). This one service serves
+# both the API and the production client, and server/index.js reads `app/` once
+# at boot — so a build that does not produce `app/` leaves the service answering
+# /api/* and handing every browser a JSON 404. `app/` is deliberately not
+# committed: the bundle carries the deployment's own public configuration
+# (SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY, both already in this service's
+# environment for the server's sake), and one deployment's bundle must not be
+# mistaken for another's. So it is built here, from this environment, at deploy
+# time. `esbuild` is a runtime dependency, so `--omit=dev` still installs it.
+#
+# WHICH BRANCH THIS DEPLOYS. `main`. It said `phase-3-real-hosted-environment`
+# while `main` was the whole of Batch 6 behind it, which would not have started;
+# PR #43 merged long ago and `main` is now ahead of that branch by every batch
+# of Phases 3, 4 and the Phase 4 closeout. A blueprint naming a stale feature
+# branch is a loaded gun: it does nothing until somebody re-applies it, and then
+# it silently rolls production back. A test holds this and the runbook to the
+# same branch.
 #
 # `plan: starter` is a paid instance (about $7/month at the time of writing) and
 # is the smallest plan that does not sleep. Change it before applying if that is
@@ -45,9 +56,9 @@ services:
     runtime: node
     plan: starter
     region: virginia
-    branch: phase-3-real-hosted-environment
+    branch: main
     autoDeploy: false
-    buildCommand: npm ci --omit=dev
+    buildCommand: npm ci --omit=dev && npm run build:app
     startCommand: npm start
     healthCheckPath: /api/health/ready
     envVars:
