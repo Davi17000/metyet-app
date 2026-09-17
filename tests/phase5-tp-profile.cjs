@@ -110,6 +110,16 @@ const clickText = (r, label) => {
 };
 const clickable = (r, label) => buttons(r).some((n) => instText(n).includes(label));
 
+/* THE WAY TO THE SHOP, AND THERE IS ONLY ONE. A profile is context for the shop
+   rather than a workspace of its own, so it is reached from Inventory rather
+   than from a destination in the navigation. Every test below walks the path a
+   person walks; if the path changes, they all fail at once rather than quietly
+   testing a component nobody can reach. */
+const toShop = (r) => {
+  clickText(r, "Inventory");
+  clickText(r, "View shop");
+};
+
 /* One labelled field of the form, found the way a person finds it: by its
    label, not by its position. */
 const field = (r, label) => {
@@ -157,12 +167,12 @@ const connect = async (opts = {}) => {
     return { api, store, onSaveProfile: COMMANDS.savePartnerProfile(store) };
   };
 
-  /* The Trusted Partner, signed in, on the Shop Profile section. */
+  /* The Trusted Partner, signed in, looking at their shop. */
   const shop = async (fetchImpl = null) => {
     const seat = seatClient(H.TOKEN, fetchImpl);
     await seat.store.load();
     const r = render(React.createElement(Live, { store: seat.store, onSaveProfile: seat.onSaveProfile }));
-    clickText(r, "Shop Profile");
+    toShop(r);
     return { ...seat, r };
   };
 
@@ -260,7 +270,7 @@ describe("B. the write, end to end, all the way back to the screen", () => {
       await store.load();
       const r = render(React.createElement(Live,
         { store, onSaveProfile: COMMANDS.savePartnerProfile(store) }));
-      clickText(r, "Shop Profile");
+      toShop(r);
       clickText(r, "Edit profile");
       fillAll(r);
       await submit(r);
@@ -291,7 +301,7 @@ describe("B. the write, end to end, all the way back to the screen", () => {
       await store.load();
       const r = render(React.createElement(Live,
         { store, onSaveProfile: COMMANDS.savePartnerProfile(store) }));
-      clickText(r, "Shop Profile");
+      toShop(r);
       clickText(r, "Edit profile");
       typeInto(r, "Website", SAVED.website);
       await submit(r);
@@ -480,7 +490,7 @@ describe("D. refusal, conflict, ambiguity, and pressing twice", () => {
       await store.load();
       const refusing = async () => ({ ok: false, refused: "not-owner" });
       const r = render(React.createElement(Live, { store, onSaveProfile: refusing }));
-      clickText(r, "Shop Profile");
+      toShop(r);
       clickText(r, "Edit profile");
       typeInto(r, "About", "NEVER SAVED");
       await submit(r);
@@ -513,7 +523,7 @@ describe("D. refusal, conflict, ambiguity, and pressing twice", () => {
       await store.load();
       const r = render(React.createElement(Live,
         { store, onSaveProfile: COMMANDS.savePartnerProfile(store) }));
-      clickText(r, "Shop Profile");
+      toShop(r);
       clickText(r, "Edit profile");
       typeInto(r, "About", "WRITTEN AGAINST A STALE WORLD");
       bump = true;
@@ -550,7 +560,7 @@ describe("D. refusal, conflict, ambiguity, and pressing twice", () => {
       await store.load();
       const r = render(React.createElement(Live,
         { store, onSaveProfile: COMMANDS.savePartnerProfile(store) }));
-      clickText(r, "Shop Profile");
+      toShop(r);
       clickText(r, "Edit profile");
       typeInto(r, "About", "MAYBE SENT");
       await submit(r);
@@ -599,7 +609,7 @@ describe("D. refusal, conflict, ambiguity, and pressing twice", () => {
       await store.load();
       const r = render(React.createElement(Live,
         { store, onSaveProfile: COMMANDS.savePartnerProfile(store) }));
-      clickText(r, "Shop Profile");
+      toShop(r);
       clickText(r, "Edit profile");
       typeInto(r, "About", "COMMITTED BUT UNCONFIRMED");
       await submit(r);
@@ -662,7 +672,7 @@ describe("D. refusal, conflict, ambiguity, and pressing twice", () => {
       const version = store.version();
       const r = render(React.createElement(Live,
         { store, onSaveProfile: COMMANDS.savePartnerProfile(store) }));
-      clickText(r, "Shop Profile");
+      toShop(r);
       clickText(r, "Edit profile");
       typeInto(r, "About", "ONCE");
 
@@ -763,6 +773,101 @@ describe("E. privacy, measured at the socket", () => {
 
 /* ============================================================== F */
 describe("F. the boundary the control reaches through", () => {
+  test("the shop is reached from Inventory, and there is no other way in", async () => {
+    const { close, shop, seatClient } = await connect();
+    try {
+      /* The navigation is the three workspaces. A profile is not one. */
+      const seat = seatClient(H.TOKEN);
+      await seat.store.load();
+      const r = render(React.createElement(Live,
+        { store: seat.store, onSaveProfile: seat.onSaveProfile }));
+      const nav = buttons(r).map(instText);
+      assert(!nav.some((l) => /Shop Profile/.test(l)), "a profile destination survived: " + nav.join(" | "));
+      eq(nav.filter((l) => /Collector Network|Inventory|Opportunities/.test(l)).length, 3);
+      /* Nothing renders the shop until Inventory is opened and asked for it. */
+      assert(!/Your shop|Edit profile/.test(flat(r)), "the shop rendered without being asked for");
+      clickText(r, "Inventory");
+      assert(!/Your shop/.test(flat(r)), "Inventory opened on the shop rather than the copies");
+      assert(clickable(r, "View shop"), "Inventory offers no way to the shop");
+      clickText(r, "View shop");
+      assert(/Your shop/.test(flat(r)), "View shop did not open the shop");
+
+      /* And the relocated view is the live one: a real save still works from it. */
+      const { r: r2, store } = await shop();
+      clickText(r2, "Edit profile");
+      typeInto(r2, "Phone", SAVED.phone);
+      await submit(r2);
+      eq(store.get().partners.find((p) => p.id === H.PARTNER).phone, SAVED.phone,
+        "the relocated view is not wired to the command path");
+    } finally { await close(); }
+  });
+
+  test("there is one profile implementation, and Inventory reuses it", () => {
+    const inventory = code("client/tp/sections/Inventory.jsx");
+    const shell = code("client/tp/TrustedPartnerShell.jsx");
+    /* Reuse, not a copy. */
+    assert(/from ["']\.\/Profile\.jsx["']/.test(inventory), "Inventory does not render the profile");
+    for (const own of ["FIELDS", "patchFrom", "draftFrom", "whyRefused", "whyFailed",
+      "CERTAIN", "AMBIGUOUS", "onSubmit"]) {
+      assert(!new RegExp(`\\b${own}\\b`).test(inventory), `Inventory reimplemented ${own}`);
+    }
+    /* No hidden destination left behind that could become a second entrance. */
+    assert(!/["']profile["']/.test(shell), "a profile section id survived in the shell");
+    assert(!/Shop Profile/.test(shell), "the old destination survived in the shell");
+    /* The callback goes to exactly one section. */
+    const routed = shell.replace(/\s+/g, " ");
+    assert(/meta\.id === "inventory" \? \{ onSaveProfile \}/.test(routed),
+      "the callback is not routed to Inventory alone: " + routed.slice(0, 400));
+  });
+
+  /* THE HAZARD OF MOVING A COMPONENT BEHIND ANOTHER ONE. Inventory now stands
+     between the projection and the profile, which is a place a well-meaning
+     filter could be added: strip `tradeRate` here, strip `cost` there, and the
+     browser has quietly taken over a rule the server owns. It would look
+     careful and it would be a regression — a browser-side filter hides the data
+     rather than preventing it, so a server that started leaking would leak
+     silently.
+
+     So a section passes the projection DOWN UNCHANGED. `state={state}`, never
+     a reshaped object. An injected filter that removed two private fields
+     passed every other test in this suite; this is the one that stops it. */
+  test("a section hands the projection on unchanged, and never filters it", () => {
+    const surfaces = ["client/collector", "client/tp"].flatMap((dir) =>
+      fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })
+        .flatMap((e) => (e.isDirectory()
+          ? fs.readdirSync(path.join(ROOT, dir, e.name)).map((f) => `${dir}/${e.name}/${f}`)
+          : [`${dir}/${e.name}`])));
+    let handed = 0;
+    for (const rel of surfaces) {
+      const bare = code(rel);
+      for (const match of bare.match(/state=\{[^]*?\}/g) || []) {
+        assert(/^state=\{state\}/.test(match),
+          `${rel} reshapes the projection before passing it on: ${match.slice(0, 120)}`);
+        handed += 1;
+      }
+      /* And nothing removes a field on its way through. */
+      assert(!/\b(tradeRate|cost|acquired|market|note)\s*:\s*undefined/.test(bare),
+        `${rel} strips a field the server decides about`);
+    }
+    assert(handed >= 1, "no section passes the projection to a child any more");
+  });
+
+  test("the shop view did not make Inventory a mutation surface", () => {
+    const inventory = code("client/tp/sections/Inventory.jsx");
+    /* It can show the shop. It cannot change a copy, and it cannot reach a
+       command by itself. */
+    assert(!/execute\s*\(|\.command\s*\(|updatePartnerProfile|store\./.test(inventory),
+      "Inventory reaches a command path");
+    assert(!/\bfetch\s*\(|XMLHttpRequest/.test(inventory), "Inventory reaches the network");
+    assert(!/addInventoryCopy|updateInventoryCopy|removeInventoryCopy|addCopyPhotos/.test(inventory),
+      "Inventory grew a copy mutation");
+    assert(!/<input|<textarea|onSubmit/.test(inventory), "Inventory grew a form of its own");
+    /* And the one control it gained is navigation, not a write. */
+    const clicks = inventory.match(/onClick=\{[^}]*\}/g) || [];
+    eq(clicks.length, 2, "Inventory has controls beyond the two that move between its views: " + clicks.join(" | "));
+    clicks.forEach((c) => assert(/setViewing/.test(c), "a control does something other than change view: " + c));
+  });
+
   test("one file names the command, and it is not a product surface", () => {
     eq(COMMANDS.PARTNER_PROFILE, "updatePartnerProfile");
     const surfaces = ["client/collector", "client/tp"].flatMap((dir) =>

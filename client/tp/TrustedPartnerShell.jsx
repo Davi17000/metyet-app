@@ -31,13 +31,13 @@
    the server sent, and joining them by the ids they carry, is reading. Deciding
    what a row MEANS is not, and is not done here.
 
-   It does not name a command. Phase 5 Batch 1 gave the Shop Profile section the
-   first control in production that changes anything, and it reaches the
-   authenticated boundary through `onSaveProfile` — a function of one argument,
-   handed in from outside. Nothing under `client/tp/` holds a store, spells a
-   command, or reaches the network, and a test keeps it that way. The three read
-   sections still change nothing, and each of them says so rather than offering
-   a button that quietly does nothing.
+   It does not name a command. Phase 5 Batch 1 gave the product its first
+   control that changes anything — a Trusted Partner's own shop profile, reached
+   from Inventory's "View shop" — and it gets to the authenticated boundary
+   through `onSaveProfile`, a function of one argument handed in from outside.
+   Nothing under `client/tp/` holds a store, spells a command, or reaches the
+   network, and a test keeps it that way. Everything else still changes nothing,
+   and says so rather than offering a button that quietly does nothing.
 
    It does not assume data exists. A newly registered Trusted Partner has a name
    and nothing else. Every list handles nought rows as an ordinary case with a
@@ -55,29 +55,31 @@ import { rows } from "./present.js";
 import CollectorNetwork from "./sections/CollectorNetwork.jsx";
 import Inventory from "./sections/Inventory.jsx";
 import Opportunities from "./sections/Opportunities.jsx";
-import Profile from "./sections/Profile.jsx";
 
-/* The sections, with the titles and subtitles the product already uses. The
-   first three are the prototype's order — inputs before their consequences —
-   and Shop Profile comes after them: it is the shop itself rather than a day's
-   work, and the work is what a Trusted Partner opens MetYet to do.
+/* The three sections, in the product's own order: inputs before their
+   consequences. Each one is recurring work a Trusted Partner opens MetYet to
+   do, which is what earns a place here.
+
+   A PROFILE IS NOT ONE OF THEM. It had a destination of its own for one
+   release, and that gave it more weight than it carries: it is context for the
+   shop rather than a workspace. It now lives behind Inventory's "View shop",
+   which is also where it is most useful — the thing that makes a shelf of
+   copies mean something to a collector.
 
    `writes` is what the read-only notice is keyed on. A section that cannot
-   change anything says so; a section that can does not carry a notice
-   contradicting its own Save button. */
+   change anything says so; a section from which something CAN be changed does
+   not carry a notice contradicting itself, and says what is still read-only in
+   its own words instead. */
 export const SECTIONS = Object.freeze([
   { id: "collectors", label: "Collector Network", title: "Collector Network",
     sub: "Who you're serving, and what you know about them" },
-  { id: "inventory", label: "Inventory", title: "Inventory",
+  { id: "inventory", label: "Inventory", title: "Inventory", writes: true,
     sub: "What you have and how it connects to collector demand" },
   { id: "opportunities", label: "Opportunities", title: "Opportunities",
     sub: "What you're actively coordinating, and what's waiting at each stage" },
-  { id: "profile", label: "Shop Profile", title: "Shop Profile", writes: true,
-    sub: "What a collector in your network sees when they look you up" },
 ]);
 
-const VIEWS = { collectors: CollectorNetwork, inventory: Inventory,
-  opportunities: Opportunities, profile: Profile };
+const VIEWS = { collectors: CollectorNetwork, inventory: Inventory, opportunities: Opportunities };
 
 const CSS = `
 .tps { --sidebar:#0F131B; --sidebar-2:#1A2130; --sidebar-line:#232B3A; --bg:#F1F3F6;
@@ -184,6 +186,13 @@ const CSS = `
 .tps-edit { background:none; border:1px solid var(--line); border-radius:5px; padding:4px 11px;
   color:var(--t1); font-size:12px; font-weight:600; }
 .tps-edit:hover { border-color:var(--t1); background:var(--t1-bg); }
+.tps-act { margin-left:auto; display:flex; align-items:center; }
+.tps-act-lead { margin-left:auto; }
+.tps-ph .tps-note + .tps-act { margin-left:12px; }
+.tps-crumb { margin:0 0 12px; }
+.tps-back { background:none; border:0; padding:0; color:var(--t1); font-size:12.5px;
+  font-weight:600; }
+.tps-back:hover { text-decoration:underline; }
 .tps-form { display:block; }
 .tps-fields { display:flex; flex-wrap:wrap; gap:14px 18px; padding:15px 16px; }
 .tps-field { display:flex; flex-direction:column; gap:4px; flex:1 1 220px; min-width:0; }
@@ -227,8 +236,7 @@ export default function TrustedPartnerShell({ state, onSignOut, onSaveProfile = 
   const [section, setSection] = useState(SECTIONS[0].id);
 
   const who = describeActor(state);
-  /* A count is the rows the server sent. Shop Profile counts nothing — there is
-     one shop — so it carries no number rather than a meaningless nought. */
+  /* A count is the rows the server sent. */
   const counts = {
     collectors: rows(state && state.collectors).length,
     inventory: rows(state && state.inventory).filter((i) => !i.archived).length,
@@ -236,10 +244,10 @@ export default function TrustedPartnerShell({ state, onSignOut, onSaveProfile = 
   };
   const meta = SECTIONS.find((s) => s.id === section) || SECTIONS[0];
   const View = VIEWS[meta.id];
-  /* Only the section that can write receives the callback. It is the Trusted
-     Partner's own profile and nothing else's, so nothing else is handed a way
-     to send it. */
-  const extra = meta.id === "profile" ? { onSave: onSaveProfile } : null;
+  /* Only the section the profile is reached from receives the callback. It is
+     the Trusted Partner's own profile and nothing else's, so nothing else is
+     handed a way to send it. */
+  const extra = meta.id === "inventory" ? { onSaveProfile } : null;
 
   return (
     <div className="tps">
