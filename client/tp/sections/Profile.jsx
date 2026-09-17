@@ -25,6 +25,13 @@
    with the person deciding whether to press Save again. This sends one command
    per press and refuses to send a second while one is in flight.
 
+   AND NOTHING CLAIMS AN OUTCOME IT CANNOT KNOW. A refusal and a conflict are
+   answers, so they say nothing was saved. Losing contact is not an answer —
+   the command may have arrived and committed with its reply lost on the way
+   back — so that case says exactly that, and asks the person to look before
+   saving again. Telling somebody their change was not saved when it may have
+   been is the one failure message that can cause the damage it describes.
+
    SIX FIELDS AND NOT A SEVENTH. These are precisely what the domain command
    accepts. The shop's NAME is not among them — MetYet set it when it issued the
    invitation — and neither is the default Trade %, which is private
@@ -83,15 +90,38 @@ const REFUSALS = Object.freeze({
 const whyRefused = (refused) => REFUSALS[refused]
   || `MetYet declined that change (${refused || "no reason given"}).`;
 
-const TROUBLE = Object.freeze({
+/* TWO KINDS OF FAILURE, AND THE DIFFERENCE MATTERS MORE THAN THE WORDING.
+
+   A conflict, an ended session and an unprovisioned account are ANSWERS. The
+   server considered the request and declined it — a 409 whose transaction
+   rolled back, a 401, a 403 — so the command did not run, and saying nothing
+   was saved is a fact.
+
+   LOSING CONTACT IS NOT AN ANSWER. `unavailable` is unreachable, timed out OR a
+   5xx; `unexpected` includes a reply this client could not read, which covers a
+   200 whose body was unreadable — a command that DID commit. Any of those may
+   have arrived, committed, and had its reply lost on the way back.
+   docs/CLIENT-BOUNDARY.md puts it plainly: a command whose response is lost may
+   or may not have run, and no amount of client code can tell.
+
+   So these two say what is known and nothing more. They do not claim the change
+   was saved and they do not claim it was not; they say the command was not sent
+   again, and they leave the next move to the person — because the only safe
+   thing to do with an unknown write is look before repeating it. */
+export const CERTAIN = Object.freeze({
   conflict: "Someone else changed this shop while you were editing, so nothing was saved. "
     + "The current values are below — make your changes again if you still want them.",
-  unauthenticated: "Your session ended before that could be saved. Sign in again and retry.",
-  unavailable: "MetYet could not be reached, so nothing was saved. Try again.",
+  unauthenticated: "Your session ended before that could be saved, so nothing was saved. "
+    + "Sign in again and retry.",
   "not-provisioned": "This sign-in is not a MetYet account, so nothing was saved.",
 });
-const whyFailed = (failure) => TROUBLE[failure]
-  || "Something went wrong that we did not expect, so nothing was saved. Try again.";
+export const AMBIGUOUS = Object.freeze({
+  unavailable: "MetYet lost contact while saving, so it cannot tell whether the change went "
+    + "through. It has not been sent again — check your profile before saving a second time.",
+  unexpected: "MetYet got an answer it could not read, so it cannot tell whether the change "
+    + "went through. It has not been sent again — check your profile before saving a second time.",
+});
+const whyFailed = (failure) => CERTAIN[failure] || AMBIGUOUS[failure] || AMBIGUOUS.unexpected;
 
 export default function Profile({ state, onSave = null }) {
   const who = describeActor(state);

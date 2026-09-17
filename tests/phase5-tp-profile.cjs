@@ -531,7 +531,12 @@ describe("D. refusal, conflict, ambiguity, and pressing twice", () => {
     } finally { await close(); }
   });
 
-  test("an ambiguous network failure is never replayed, and says nothing was saved", async () => {
+  /* AN AMBIGUOUS FAILURE IS THE ONE OUTCOME THE BROWSER CANNOT KNOW. The POST
+     may have arrived, committed, and had its reply lost — so the screen must not
+     claim either way. Saying "nothing was saved" here would be a lie that causes
+     the damage it describes: it invites a second save of a write that already
+     landed. */
+  test("an ambiguous network failure is never replayed, and never claims an outcome", async () => {
     const { close, app } = await connect();
     try {
       let posts = 0;
@@ -552,11 +557,92 @@ describe("D. refusal, conflict, ambiguity, and pressing twice", () => {
 
       eq(posts, 1, `the command was sent ${posts} times after an ambiguous failure`);
       const shown = flat(r);
-      assert(/could not be reached/.test(shown), "the failure was not explained: " + shown);
+      /* It says it cannot tell. */
+      assert(/cannot tell whether the change went through/.test(shown),
+        "the uncertainty was not stated: " + shown);
+      assert(/has not been sent again/.test(shown), "the screen did not say it stopped: " + shown);
+      /* And it does not claim an outcome in either direction. */
+      assert(!/nothing was saved|was not saved|wasn't saved/i.test(shown),
+        "the screen claimed the change was not saved, which it cannot know: " + shown);
+      assert(!/saved\b(?!.*cannot)/i.test(shown.replace(/whether the change[^.]*\./g, "")
+        .replace(/before saving a second time/g, "")),
+        "the screen claimed the change WAS saved: " + shown);
+      /* The draft survives, so the person can decide what to do with it. */
       assert(r.root.findAll((n) => n.type === "form").length, "the form closed on a failure");
       eq(field(r, "About").props.value, "MAYBE SENT", "the typing was thrown away");
+      /* No optimistic state: the shop underneath is still the server's. */
+      eq(store.get().partners.find((p) => p.id === H.PARTNER).about, undefined,
+        "an unconfirmed change was adopted into the projection");
       eq(store.pending(), null, "the store is stuck thinking a command is in flight");
     } finally { await close(); }
+  });
+
+  test("a change that COMMITTED but whose reply was lost is not reported as unsaved", async () => {
+    const { close, app, partnerRow } = await connect();
+    try {
+      /* The sharpest case, and the reason the copy had to change: the command
+         reaches the server and commits, and only the REPLY is lost. `api.js`
+         calls a 200 with no state `unexpected`, which is exactly what an
+         unreadable success looks like from a browser. */
+      let posts = 0;
+      const impl = async (url, init) => {
+        const real = await H.fetchFor(app)(url, init);
+        if (init && init.method === "POST") {
+          posts += 1;
+          return { status: 200, async json() { return { ok: true, version: 99 }; } };
+        }
+        return real;
+      };
+      const api = API.createApiClient({ baseUrl: "http://localhost", getToken: async () => H.TOKEN,
+        fetchImpl: impl });
+      const store = STORE.createProductionStore({ api });
+      await store.load();
+      const r = render(React.createElement(Live,
+        { store, onSaveProfile: COMMANDS.savePartnerProfile(store) }));
+      clickText(r, "Shop Profile");
+      clickText(r, "Edit profile");
+      typeInto(r, "About", "COMMITTED BUT UNCONFIRMED");
+      await submit(r);
+
+      eq(posts, 1, `the command was sent ${posts} times`);
+      /* It really did commit. */
+      eq((await partnerRow(H.PARTNER)).about, "COMMITTED BUT UNCONFIRMED",
+        "the fixture did not actually commit, so this proves nothing");
+      const shown = flat(r);
+      assert(!/nothing was saved|was not saved|wasn't saved/i.test(shown),
+        "a committed change was reported as unsaved: " + shown);
+      assert(/cannot tell whether the change went through/.test(shown),
+        "the uncertainty was not stated: " + shown);
+      eq(field(r, "About").props.value, "COMMITTED BUT UNCONFIRMED", "the draft was thrown away");
+    } finally { await close(); }
+  });
+
+  test("only an answer may claim an outcome; an unknown may not", () => {
+    /* The rule, kept where it cannot drift: a message for a failure the server
+       ANSWERED may say nothing was saved, because that is a fact. A message for
+       a failure nobody answered may not say it in either direction. */
+    for (const [failure, message] of Object.entries(PROFILE.AMBIGUOUS)) {
+      assert(!/nothing was saved|was not saved|wasn't saved|did not save/i.test(message),
+        `the "${failure}" message claims the change was not saved: ${message}`);
+      assert(!/\bwas saved\b|\bhas been saved\b/i.test(message),
+        `the "${failure}" message claims the change was saved: ${message}`);
+      assert(/cannot tell|could not confirm|cannot confirm/i.test(message),
+        `the "${failure}" message does not say the outcome is unknown: ${message}`);
+      assert(/not been sent again|not sent again|has not been retried/i.test(message),
+        `the "${failure}" message does not say the command was not replayed: ${message}`);
+    }
+    /* The two the client genuinely cannot resolve, and no others. */
+    eq(Object.keys(PROFILE.AMBIGUOUS).sort().join(","), "unavailable,unexpected");
+    /* And they are exactly the api client's two unanswered outcomes. `conflict`,
+       `unauthenticated` and `not-provisioned` are answers and stay certain. */
+    for (const failure of ["conflict", "unauthenticated", "not-provisioned"]) {
+      assert(PROFILE.CERTAIN[failure], `${failure} lost its message`);
+      assert(/nothing was saved/i.test(PROFILE.CERTAIN[failure]),
+        `${failure} is an answer and should say so: ${PROFILE.CERTAIN[failure]}`);
+    }
+    /* An unknown failure word falls to the cautious message, never the certain one. */
+    assert(!Object.keys(PROFILE.CERTAIN).includes("unexpected"),
+      "the default failure was made to sound certain");
   });
 
   test("pressing Save twice is one mutation, and the second press cannot be made", async () => {
