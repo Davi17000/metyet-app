@@ -471,9 +471,66 @@ The shell is the second line, not the only one: it never reads those field
 names, and a test hands it a projection that wrongly contains all of them and
 asserts none reaches the screen.
 
-## What is deferred, deliberately
+## Where Phase 4 finished
 
-**Migrating mutations.** The Trusted Partner shell reads; nothing writes. The
-prototype's handlers — the ones that read state back in the same tick, mint ids
-with `Date.now()`, and assume a write cannot be in flight — are still there and
-still correct for the demo. Each migrates when its workflow does.
+The architecture below is complete and joined up end to end. One suite,
+`tests/phase4-integration-closeout.cjs`, runs the whole path against a real
+migrated Postgres, the real routes, the real domain and the real React
+components:
+
+```
+Postgres → domain → projectForActor → HTTP → api client → store
+  → <SignIn/> → <ProductionApp/> → the seat's own shell
+```
+
+Both seats are proved on that path: a token resolves to one actor, that actor
+receives one projection, and the projection routes to that seat's product and
+no other. The privacy tests there are different in kind from the ones in the
+batch suites — those hand a component a projection containing a secret and check
+the screen; these put the secret **in the database** and check it never comes
+out of the socket, which is where the guarantee actually lives.
+
+**Phase 4 is architecturally complete. It is not the same claim as the product
+being usable by every seat**, and the two should not be run together. The
+difference is entirely the paragraph below.
+
+### The Collector lifecycle — a Phase 5 dependency, not a Phase 4 defect
+
+A Collector who exists can sign in, be routed, and read their goals, their Trade
+Binder and their Trusted Partners. **There is no supported way for a Collector
+to come to exist.** Traced through the repository rather than assumed:
+
+| Link | Exists? |
+|---|---|
+| A credentialed Collector invitation (the analogue of `metyet_auth.partner_invitations`) | **No** — that table and its CLI are partner-scoped |
+| A route to redeem one (the analogue of `POST /api/registration/partner`) | **No** — the only registration route creates a *partner* |
+| A domain command that accepts an invitation (sets `acceptedAt`) | **No** |
+| A domain command that creates a TP↔Collector `relationship` | **No** — none of the forty commands writes one |
+| A Collector record created legitimately | **Yes** — `inviteCollector`, TP-only, creating `{ pending: true }` |
+| A way to *send* that command in production | **No** — no operator command sends domain commands, and no UI does |
+| Binding a verified subject to a Collector actor | **Yes** — `account:link --role=collector` |
+
+Two of those links are missing, so the chain does not close. Nothing in the test
+suite closes it either: seeding a Collector into a test world and telling the
+account directory about them is **test provisioning**, exactly as
+`tests/phase3-server.cjs` has always done, and it is not hosted proof of
+anything.
+
+### What is deferred, deliberately
+
+**Migrating mutations.** Both shells read; nothing writes. The command boundary
+exists, is fully tested, and has no caller — which is the correct state:
+Batch 9's inventory found that every Collector-authored domain command belongs
+to a Goals workflow, a Binder workflow, a discovery surface, a negotiation step
+or a conversation, and there is no Collector profile or preferences command at
+all. The first caller should arrive with the first of those workflows rather
+than ahead of it.
+
+**Discovery.** A Collector's projection carries their partners' supply and
+nothing renders it. "Who has the card I want" is a real surface and a real
+product decision — marketplace framing is what the model warns against — so it
+needs deciding rather than drifting into.
+
+**The prototype's handlers** — the ones that read state back in the same tick,
+mint ids with `Date.now()`, and assume a write cannot be in flight — are still
+there and still correct for the demo. Each migrates when its workflow does.
