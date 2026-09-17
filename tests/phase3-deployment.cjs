@@ -520,7 +520,14 @@ describe("G. deployment artifacts and the runbook", () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
 
   test("the blueprint says how to build, start and check the service", () => {
-    eq((render.match(/buildCommand: (.*)/) || [])[1], "npm ci --omit=dev", "production dependencies only");
+    /* PHASE 5 BATCH 1: the build also builds the CLIENT. One service serves
+       both, server/index.js reads `app/` once at boot, and `app/` is never
+       committed — so a build that stops at `npm ci` deploys an API that hands
+       every browser a JSON 404. The exact string is asserted because the
+       failure it prevents is silent. */
+    eq((render.match(/buildCommand: (.*)/) || [])[1], "npm ci --omit=dev && npm run build:app",
+      "production dependencies, then the client the running service serves");
+    assert(/"build:app"/.test(JSON.stringify(pkg.scripts)), "and build:app is a script that exists");
     eq((render.match(/startCommand: (.*)/) || [])[1], "npm start");
     eq((render.match(/healthCheckPath: (.*)/) || [])[1], "/api/health/ready");
     assert(/NODE_VERSION/.test(render) && fs.readFileSync(path.join(ROOT, ".node-version"), "utf8").trim() === "22",

@@ -377,9 +377,12 @@ describe("D. the mutation seam, end to end", () => {
     } finally { await close(); }
   });
 
-  test("the mutation path exists for a future control without a control existing", () => {
-    /* Reads and mutations meet at the store, and no product surface holds one
-       yet — which is the correct state after Batch 9's discovery. */
+  test("a control reaches the mutation path through a callback, never by holding one", () => {
+    /* Reads and mutations meet at the store, and no product surface holds one.
+       Phase 4 had no control at all; Phase 5 Batch 1 added the first, and it
+       changed nothing here — Shop Profile is handed `onSave(patch)` and cannot
+       name a command, reach a store, or go to the network. That is what makes a
+       section a section rather than a second client. */
     ["get", "sub", "execute", "load", "status", "version", "lastError", "lastRefusal", "pending", "stale"]
       .forEach((m) => {
         const store = STORE.createProductionStore({ api: { view() {}, command() {} } });

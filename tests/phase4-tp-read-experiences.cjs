@@ -503,8 +503,22 @@ describe("F. no mutation, no demo, no prototype, no diagnostics", () => {
       assert(!/localStorage|sessionStorage|indexedDB|document\.cookie/.test(bare), `${rel} persists something`);
       assert(!/MetYetPrototype|MetYetCollector|demo-flag|dev-flag|src\/MetYet|shell\//.test(bare),
         `${rel} reaches the demo or the prototype`);
-      assert(!/execute\s*\(|\.command\s*\(|onSubmit|onChange/.test(bare), `${rel} has a way to write`);
+      /* PHASE 5 BATCH 1: Shop Profile has a form, so `onSubmit` and `onChange`
+         are no longer evidence of anything. What stays forbidden is reaching a
+         mutation WITHOUT a callback — spelling a command, calling execute, or
+         going to the network — which the assertions above and below cover. A
+         form handler that ends in a prop is the intended shape. */
+      assert(!/execute\s*\(|\.command\s*\(|updatePartnerProfile/.test(bare),
+        `${rel} reaches a command path by itself`);
     }
+  });
+
+  test("the three read sections still have no form, and only the fourth does", () => {
+    for (const rel of TP_FILES) {
+      if (/sections\/Profile\.jsx$/.test(rel)) continue;
+      assert(!/onSubmit|onChange|<input|<textarea/.test(code(rel)), `${rel} grew a way to type`);
+    }
+    assert(/onSubmit/.test(code("client/tp/sections/Profile.jsx")), "the one form went missing");
   });
 
   test("the projection handed in is never edited, by any section, ever", () => {
@@ -517,9 +531,9 @@ describe("F. no mutation, no demo, no prototype, no diagnostics", () => {
     eq(JSON.stringify(REAL), REAL_PRISTINE, "a section mutated the projection it was given");
   });
 
-  test("the only controls are the three sections and sign out", () => {
+  test("the only controls on a read section are the four sections and sign out", () => {
     const labels = buttons(show(REAL)).map(instText);
-    eq(labels.length, 4, "an extra control appeared: " + labels.join(" | "));
+    eq(labels.length, 5, "an extra control appeared: " + labels.join(" | "));
     assert(labels.some((l) => l.includes("Sign out")), labels.join(" | "));
   });
 

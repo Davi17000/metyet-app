@@ -42,8 +42,9 @@
    nothing — at which point api.js refuses to leave the browser at all.
    ========================================================================== */
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import ProductionApp from "../production-app.jsx";
+import { savePartnerProfile } from "../commands.js";
 
 /* Identity is read in exactly one place — client/actor.js — and re-exported
    here because this module's own tests have always asked it that question.
@@ -107,6 +108,13 @@ export default function SignIn({ session, store, onConfigProblem = null }) {
   const [projection, setProjection] = useState(null);
 
   useEffect(() => (store ? store.sub((next) => setProjection(next)) : undefined), [store]);
+
+  /* The one command callback this release has (Phase 5 Batch 1). It is bound
+     here because this is where the store is, and it is bound through
+     client/commands.js so that no product surface ever names a command. What
+     crosses into the application is a function of one argument — not the store,
+     and not a way to send anything else. */
+  const onSaveProfile = useMemo(() => (store ? savePartnerProfile(store) : null), [store]);
 
   const fail = useCallback((error) => {
     setProblem(say(error && (error.failure || error.code)));
@@ -229,7 +237,9 @@ export default function SignIn({ session, store, onConfigProblem = null }) {
      round trip and was never meant to be looked at twice. The application is
      handed the projection and nothing else: no session, no store, no api
      client, no way to ask for more. It cannot sign anyone in, sign anyone out
-     on its own, or fetch. What it can do is render what arrived, and call the
-     sign-out this component already owns. */
-  return React.createElement(ProductionApp, { state: projection, onSignOut: signOut });
+     on its own, or fetch. What it can do is render what arrived, call the
+     sign-out this component already owns, and — since Phase 5 Batch 1 — call
+     one bound callback that saves a Trusted Partner's own profile. */
+  return React.createElement(ProductionApp,
+    { state: projection, onSignOut: signOut, onSaveProfile });
 }

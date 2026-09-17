@@ -214,21 +214,33 @@ better.
 |---|---|
 | **Provider** | Render |
 | **Create** | A web service from `render.yaml` (Render's Blueprints feature reads it), or a Node web service configured by hand with the same settings. |
-| **Settings** | build `npm ci --omit=dev`, start `npm start`, health check path `/api/health/ready`, Node 22 (`.node-version` and `NODE_VERSION`). |
-| **Branch** | `phase-3-real-hosted-environment` — **not `main`**, see below. |
+| **Settings** | build `npm ci --omit=dev && npm run build:app`, start `npm start`, health check path `/api/health/ready`, Node 22 (`.node-version` and `NODE_VERSION`). |
+| **Branch** | `main`. |
 | **Environment variables to set by hand** | `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`. `DATABASE_SSL=verify-full`, `DATABASE_CA_CERT_FILE`, `DATABASE_POOL_MAX=10` and `LOG_LEVEL=info` come from the blueprint. `PORT` is provided by Render. |
 | **Secret File to add** | `supabase-ca.crt` — the certificate from 2.1a. Render mounts it at `/etc/secrets/supabase-ca.crt`, which is what `DATABASE_CA_CERT_FILE` already points at. |
 | **Region** | `virginia` — the nearest Render region to the Supabase project, which is in Canada Central. See below; there is no Canadian Render region. |
 | **Cost** | `plan: starter` in the blueprint is about **$7/month** and does not sleep. A free instance sleeps and would make the pilot look broken. Change the plan before applying if you disagree. |
 | **Check** | The service reaches "live" (its health check is the readiness endpoint), and `curl https://<service>.onrender.com/api/health/live` returns `{"status":"ok"}`. |
 
-**Why the branch is not `main`.** `main` is the whole of Batch 6 behind this
-branch: no `auth:check`, no `auth:sign-in`, no `partner:register`, the older
-`DATABASE_SSL` vocabulary — so the `verify-full` this blueprint sets would be
-**refused at startup** — and a blueprint missing `SUPABASE_PUBLISHABLE_KEY`, so
-the service would not start at all. Deploy the pilot branch. **When PR #43
-merges, change `branch:` in `render.yaml` back to `main`** and redeploy; a test
-holds the blueprint and this runbook to whichever branch is named.
+**Why the build builds the client.** This one service serves both the API and
+the production client, and `server/index.js` reads `app/` once at boot. `app/`
+is deliberately never committed — the bundle carries the deployment's own public
+configuration, and one deployment's bundle must not be mistaken for another's —
+so it is built here, from this service's environment, at deploy time. A build
+that stops at `npm ci` leaves the service answering `/api/*` and handing every
+browser a JSON 404. `esbuild` is a runtime dependency, so `--omit=dev` still
+installs what the build needs, and `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`
+are already in the environment for the server's own sake. `METYET_API_URL` stays
+unset: the client then talks to the origin it was served from, which is right by
+construction rather than by configuration.
+
+**A note on the branch.** This blueprint named
+`phase-3-real-hosted-environment` while `main` was the whole of Batch 6 behind
+it and would not have started. PR #43 merged long ago, and `main` is now ahead
+of that branch by every batch of Phases 3 and 4. A blueprint naming a stale
+feature branch does nothing until somebody re-applies it, and then it silently
+rolls production back — so it names `main`, and a test holds the blueprint and
+this runbook to the same branch.
 
 **Why `virginia`, and what it costs.** Render has five regions — `oregon`,
 `ohio`, `virginia`, `frankfurt`, `singapore` — and **none of them is in
@@ -257,10 +269,15 @@ config refuses both at once rather than guessing which you meant. The
 certificate is public, so a Secret File here is about integrity and formatting,
 not concealment.
 
-**What this service serves.** `/api/*` and nothing else. There is no client on
-it yet — the React apps are still the in-memory prototype — so a browser at the
-root gets a JSON 404, correctly. That is the whole of what "production" means at
-this point: the API the first Trusted Partner's sign-in talks to.
+**What this service serves.** `/api/*`, and the production client. The build
+writes `app/index.html` and `app/main.js`, and the server reads both once at
+boot and serves them by name: `/main.js` is the script, and any other non-`/api/`
+GET is the page, so a deep link lands in the app rather than on a 404. Anything
+under `/api/` never becomes HTML — an unknown API path stays an API error.
+The client and the API are therefore the same origin, which is why there is no
+cross-origin anything to configure. If `app/` is missing the server logs that it
+is serving the API alone and a browser at the root gets a JSON 404, which is the
+symptom of a build that skipped `npm run build:app`.
 
 ### 2.5 The first Trusted Partner
 
@@ -433,7 +450,7 @@ redirects to `https://`.
 | Action | Why it is not yet | Cost |
 |---|---|---|
 | **Resend custom SMTP** in Supabase Auth | Required before anyone outside the project team can sign in: the built-in service refuses non-members and allows two messages an hour, and Supabase documents it as best-effort and not for production. Sending the *invitation* is still yours to write by hand. | Free tier covers a pilot (3,000 emails/month) |
-| **A client on `app.metyet.io`** | The React apps still run the in-memory prototype. The hostname is production's and the API answers on it, but there is no UI there yet — that is the client migration, and it is a batch of its own. | none |
+| **The rest of the product on `app.metyet.io`** | Phase 4 shipped the client: sign-in, both seats' shells, and read experiences for each. Phase 5 Batch 1 added the first control that writes — a Trusted Partner editing their own shop profile. Everything else that changes something is still a later batch. | none |
 | **Sentry** | Optional. Render's logs are enough for a pilot. | free tier |
 
 **Roughly $32–45/month** once Supabase Pro and a Render Starter instance are
