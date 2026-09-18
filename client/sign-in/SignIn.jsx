@@ -156,7 +156,7 @@ const S = {
     fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" },
 };
 
-export default function SignIn({ session, store, onConfigProblem = null }) {
+export default function SignIn({ session, store, onConfigProblem = null, arrivedWith = null }) {
   const [phase, setPhase] = useState(STATES.signedOut);
   const [email, setEmail] = useState("");
   const [codeValue, setCodeValue] = useState("");
@@ -194,8 +194,19 @@ export default function SignIn({ session, store, onConfigProblem = null }) {
      IT SURVIVES THE SIGN-IN because sign-in happens in this tab: the code is
      typed, then the email, then the code from the email, and this component
      never unmounts. That is a real constraint on the product, not an accident —
-     a magic link that opened a NEW tab would lose it. */
-  const [invitation, setInvitation] = useState(null);
+     a magic link that opened a NEW tab would lose it.
+
+     ARRIVING WITH ONE (Phase 5 Batch 3B-1). A Collector who followed an
+     invitation link is handed the code by the entry point, which read it out of
+     the URL fragment and took it back out of the address bar before anything
+     rendered. From here it is the same value a person could have typed, and
+     this file still knows nothing about URLs.
+
+     IT IS AN INITIAL VALUE, NOT A BINDING. `useState` reads the prop once. So
+     signing out clears the code and NOTHING puts it back — no effect watching
+     the prop, no second read. An invitation is something you arrived with, not
+     something the page keeps handing you. */
+  const [invitation, setInvitation] = useState(arrivedWith || null);
   const [entering, setEntering] = useState(false);
   const [codeDraft, setCodeDraft] = useState("");
   const [accepting, setAccepting] = useState(false);
@@ -314,6 +325,29 @@ export default function SignIn({ session, store, onConfigProblem = null }) {
     setPhase(STATES.signedOut);
   }, [session]);
 
+  /* TWO THINGS THAT WERE ONE BUTTON (Phase 5 Batch 3B-1).
+
+     "Use a different address" and "Sign out" both called `signOut`, and until
+     this batch that was harmless: whoever mistyped their email retyped their
+     invitation code too.
+
+     IT STOPPED BEING HARMLESS THE MOMENT A LINK COULD CARRY THE CODE. The
+     fragment is taken out of the address bar before anything renders — which is
+     the point — so a person who arrived by link CANNOT GET IT BACK. Clearing
+     their invitation because they mistyped an email address would end their
+     journey, with nothing on screen to recover it from.
+
+     So the two acts are separated by what they mean. Signing out ends a session
+     and takes everything with it, the invitation included. Correcting an
+     address begins nothing and ends nothing: it drops the address and the code
+     that was sent to it, and keeps what the person arrived holding. */
+  const useDifferentAddress = useCallback(async () => {
+    try { await session.signOut(); } catch (error) { /* nothing had begun */ }
+    setCodeValue("");
+    setProblem(null);
+    setPhase(STATES.signedOut);
+  }, [session]);
+
   const retry = useCallback(async () => {
     setProblem(null);
     if (session.status() !== "present") { setPhase(STATES.signedOut); return; }
@@ -401,7 +435,7 @@ export default function SignIn({ session, store, onConfigProblem = null }) {
           inputMode: "numeric", autoComplete: "one-time-code", value: codeValue,
           onChange: (e) => setCodeValue(e.target.value) }),
         React.createElement("button", { style: S.button, type: "submit" }, "Sign in")),
-      React.createElement("button", { style: S.quiet, type: "button", onClick: signOut },
+      React.createElement("button", { style: S.quiet, type: "button", onClick: useDifferentAddress },
         "Use a different address"),
       problemBlock));
   }
