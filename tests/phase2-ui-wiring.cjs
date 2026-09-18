@@ -94,10 +94,12 @@ function markedWorld() {
   x({ partnerId: "p2" }, "recordNote", { collectorId: "c12", activity: { type: "manual", text: MARK.p2Activity } });
   x({ partnerId: "p2" }, "sendMessage", { collectorId: "c12", cardId: "i17", text: MARK.p2Thread });
   x({ partnerId: "p-self" }, "recordNote", { collectorId: "c12", activity: { type: "manual", text: MARK.selfActivity, date: AT } });
-  const zInvitee = x({ partnerId: "pZ" }, "inviteCollector", { email: MARK.zenithInviteEmail, note: MARK.zenithInviteNote,
-    collector: { name: MARK.zenithInvitee, city: "Zenith Invite City", prefs: ["zenith-invite-pref"] } });
-  const wendy = x({ partnerId: "p-self" }, "inviteCollector", { email: MARK.wendyEmail, note: MARK.wendyNote,
-    collector: { name: MARK.wendy, city: MARK.wendyCity, prefs: [MARK.wendyPref] } });
+  /* PHASE 5 BATCH 2: an invitation names nobody. The recipient is a label the
+     partner typed, and the note is theirs alone. */
+  const zInvitee = x({ partnerId: "pZ" }, "inviteCollector",
+    { recipient: MARK.zenithInvitee, note: MARK.zenithInviteNote });
+  const wendy = x({ partnerId: "p-self" }, "inviteCollector",
+    { recipient: MARK.wendy, note: MARK.wendyNote });
   return { store, ids: { oZ, zInvitee, wendy } };
 }
 
@@ -385,9 +387,12 @@ describe("D · Relationship metadata and activity ownership", () => {
   test("12 activity recorded by a TP is stamped with that TP's partnerId", () => {
     const w = markedWorld();
     const r = renderTP(w.store);
-    act(() => ctxOf(r).inviteCollector({ name: "Stamp Test", email: "stamp@example.test", city: "", prefs: [], note: "" }));
+    /* PHASE 5 BATCH 2: inviting somebody no longer writes an activity row —
+       there is no collector for one to be about until they accept. The rule
+       under test is unchanged, so it is proved by the act that does write one. */
+    act(() => ctxOf(r).logActivity("c12", "manual", "stamp@example.test"));
     const row = w.store.get().activity.find((a) => /stamp@example\.test/.test(a.text));
-    assert(row, "the invitation was logged");
+    assert(row, "the note was logged");
     eq(row.partnerId, "p-self");
     const zRow = w.store.get().activity.find((a) => a.text === MARK.zenithActivity);
     eq(zRow.partnerId, "pZ", "a command-recorded row carries its partner");
@@ -407,37 +412,38 @@ describe("E · Pending invitees", () => {
     const rows = pendingRow(r);
     eq(rows.length, 1, "one pending invitation");
     const t = txt(rows[0]);
-    for (const s of [MARK.wendy, MARK.wendyEmail, "Invite pending", "sent"]) assert(t.includes(s), `row shows "${s}"`);
+    for (const s of [MARK.wendy, "Invite pending", "sent"]) assert(t.includes(s), `row shows "${s}"`);
     eq(rows[0].findAllByType("td").length, 2, "identity cell and one note cell — no network columns");
     eq(rows[0].findAllByType("button").length, 0, "no profile link or other network action");
     assert(network().text.includes("1 invite pending"), "counted as an invitation, not a collector");
   });
 
-  test("17 a pending invitee exposes no Goals, Binder, preferences, profile, notes or history", () => {
-    for (const s of [MARK.wendyCity, MARK.wendyPref, MARK.wendyNote]) eq(leakIn(TP_SCREENS, s).join(), "", `TP rendered "${s}"`);
+  test("17 an outstanding invitation is a note to yourself, and reaches nobody else", () => {
+    /* PHASE 5 BATCH 2: there is no invitee to expose anything about, because
+       inviting creates no Collector. What a partner typed is theirs. */
+    for (const s of [MARK.wendyCity, MARK.wendyPref]) eq(leakIn(TP_SCREENS, s).join(), "", `TP rendered "${s}"`);
     const ctx = ctxOf(TPR);
-    const wid = W.ids.wendy;
-    for (const k of ["goals", "collectorCards"]) assert(!ctx[k].some((x) => x.collectorId === wid), `invitee ${k}`);
-    const cp = ctx.counterparties.find((c) => c.id === wid);
-    assert(Object.keys(cp).every((k) => ["id", "name", "short"].includes(k)) && cp.name === MARK.wendy, "bare identity only");
-    const r = renderTP(W.store);
-    act(() => ctxOf(r).setNav({ section: "collectors", collectorId: wid }));
-    const t = txt(r.root);
-    assert(t.includes("not in your Collector Network"), "a profile route reaches no profile");
-    assert(!t.includes("Trade Binder") && !t.includes(MARK.wendyCity), "no binder or profile fields");
-    eq(ctxOf(r).invitations.find((i) => i.collectorId === wid).note, MARK.wendyNote, "the partner's own invite note is kept on its Invitation");
+    const invId = W.ids.wendy;
+    const inv = ctx.invitations.find((i) => i.id === invId);
+    assert(inv, "the partner lost its own invitation");
+    eq(inv.collectorId, null, "the invitation named somebody");
+    eq(inv.recipient, MARK.wendy, "the recipient label the partner typed");
+    eq(inv.note, MARK.wendyNote, "the partner's own invite note is kept on its Invitation");
+    /* Nobody was created, so nothing can be joined to one. */
+    assert(!ctx.collectors.some((c) => c.name === MARK.wendy), "inviting created a Collector");
+    assert(!ctx.counterparties.some((c) => c.name === MARK.wendy), "inviting created a counterparty");
   });
 
-  test("18 a pending invitee stays outside Relationship / network domain logic", () => {
-    const s = W.store.get(); const wid = W.ids.wendy;
-    assert(!isRelated(s, "p-self", wid), "isRelated is false");
-    assert(!ctxOf(TPR).inNetwork(wid), "the workspace's network check agrees");
+  test("18 an invitation stays outside Relationship / network domain logic", () => {
+    const s = W.store.get();
+    eq(s.invitations.filter((i) => i.partnerId === "p-self" && !i.acceptedAt).length, 1, "one outstanding");
     eq(ctxOf(TPR).collectors.length, 13, "network size unchanged by the invitation");
-    const refused = W.store.execute({ partnerId: "p-self" }, "markBinderReviewed", { collectorId: wid, at: AT });
-    assert(!refused.ok, "no review of a non-member's binder");
-    const inv = s.collectors.find((c) => c.id === wid);
-    for (const f of ["note", "since", "last", "binderReviewedAt"]) assert(!(f in inv), `invite wrote ${f} onto the shared record`);
-    eq(projectForActor(s, { partnerId: "p-self" }).preferences.filter((p) => p.collectorId === wid).length, 0, "no preferences");
+    /* Nothing an invitation does makes anybody related. */
+    for (const i of s.invitations) {
+      if (!i.collectorId) continue;
+      assert(!isRelated(s, i.partnerId, i.collectorId), "an invitation created a Relationship");
+    }
+    eq(s.relationships.filter((r) => r.collectorId === null).length, 0, "a relationship with nobody");
   });
 });
 

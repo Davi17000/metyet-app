@@ -513,12 +513,24 @@ describe("F. no mutation, no demo, no prototype, no diagnostics", () => {
     }
   });
 
-  test("one file holds the only form, and every other section has none", () => {
+  test("a form exists only where this build can change something", () => {
+    /* ONE FORM PER THING THAT CAN BE CHANGED, and the list is named here so
+       that growing it is a decision rather than a drift. Batch 1 could change
+       one thing — the shop profile — so one file had a form. Batch 2 can also
+       open and withdraw a Collector invitation, which is the Collector
+       Network's own work, so that file has one too. Nothing else does, and a
+       fourth appearing fails here first. */
+    const WITH_FORMS = ["client/tp/sections/Profile.jsx",
+      "client/tp/sections/CollectorNetwork.jsx"];
     for (const rel of TP_FILES) {
-      if (/sections\/Profile\.jsx$/.test(rel)) continue;
+      if (WITH_FORMS.includes(rel)) continue;
       assert(!/onSubmit|onChange|<input|<textarea/.test(code(rel)), `${rel} grew a way to type`);
     }
-    assert(/onSubmit/.test(code("client/tp/sections/Profile.jsx")), "the one form went missing");
+    for (const rel of WITH_FORMS) assert(/onSubmit/.test(code(rel)), `${rel} lost its form`);
+    /* And each of those sections is one the shell declares can write: a form
+       with no declared write is a surface claiming more than the build does. */
+    const writable = SHELL_MOD.SECTIONS.filter((s) => s.writes).map((s) => s.id).sort().join(",");
+    eq(writable, "collectors,inventory", "the writable sections moved without the forms");
     /* Inventory renders that component rather than repeating it: there is one
        profile implementation in this product, and moving where it is reached
        from did not make a second. */

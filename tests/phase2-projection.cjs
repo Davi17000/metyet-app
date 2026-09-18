@@ -33,9 +33,11 @@ const { unrelatedWorld } = require("./fixture-unrelated.cjs");
 const W = unrelatedWorld();
 const S = W.store.get();
 const { V, MARK, ids } = W;
-const INV = ids.invitee;                                   // each partner's pending invitee Collector id
-const ACTORS = { ...W.actors,
-  iA: { collectorId: INV.A }, iB: { collectorId: INV.B }, iC: { collectorId: INV.C } };
+/* PHASE 5 BATCH 2: an invitation names nobody, so there are no invitee
+   Collectors to act as. What used to be three pending people is now three
+   invitations belonging to three partners, and the only actors in this world
+   are the ones who actually exist. */
+const ACTORS = { ...W.actors };
 const P = {};
 for (const [name, actor] of Object.entries(ACTORS)) P[name] = projectForActor(S, actor);
 
@@ -67,10 +69,10 @@ const whoSees = (pred) => Object.keys(P).filter((name) => pred(P[name])).sort();
 /* ===================================================== A  COLLECTOR PROJECTION */
 describe("A · Collector projection", () => {
   test("1  excludes unrelated Collectors — a collector receives only their own Collector row", () => {
-    for (const name of ["cA", "cAB", "cB", "cX", "iA"]) {
+    for (const name of ["cA", "cAB", "cB", "cX"]) {
       sameSet(idsOf(P[name].collectors), [ACTORS[name].collectorId], `${name} collectors`);
     }
-    for (const other of ["cAB", "cB", "cX", INV.A, INV.B, INV.C]) {
+    for (const other of ["cAB", "cB", "cX"]) {
       assert(!tokens(P.cA).has(other), `cA's projection names ${other}`);
     }
     assert(!hasText(P.cAB, "Casey Alpha-Only") && !hasText(P.cAB, "Blake Beta-Only"),
@@ -135,7 +137,7 @@ describe("A · Collector projection", () => {
 
   test("5  strips TP inventory cost and private fields", () => {
     const allowed = new Set([...FIELD_RULES.INVENTORY_FOR_COLLECTOR, "status"]);
-    for (const name of ["cA", "cAB", "cB", "iA"]) {
+    for (const name of ["cA", "cAB", "cB"]) {
       for (const row of P[name].inventory) {
         for (const k of Object.keys(row)) assert(allowed.has(k), `${name} receives inventory field ${k}`);
       }
@@ -158,7 +160,7 @@ describe("A · Collector projection", () => {
   });
 
   test("6  strips the TP default Trade %", () => {
-    for (const name of ["cA", "cAB", "cB", "cX", "iA", "iB", "iC"]) {
+    for (const name of ["cA", "cAB", "cB", "cX"]) {
       assert(!keysDeep(P[name]).has("tradeRate"), `${name} has a tradeRate key`);
       for (const r of [V.rateA, V.rateB, V.rateC]) assert(!hasNumber(P[name], r), `${name} sees default rate ${r}`);
     }
@@ -169,13 +171,16 @@ describe("A · Collector projection", () => {
 
 /* ================================================ B  TRUSTED PARTNER PROJECTION */
 describe("B · Trusted Partner projection", () => {
-  test("7  includes only related Collectors — invitees are counterparties, not network", () => {
+  test("7  includes only related Collectors — an invitation adds nobody at all", () => {
     sameSet(idsOf(P.pA.collectors), ["cA", "cAB"], "pA collectors");
     sameSet(idsOf(P.pB.collectors), ["cAB", "cB"], "pB collectors");
     sameSet(idsOf(P.pC.collectors), [], "pC collectors");
-    sameSet(idsOf(P.pA.counterparties), [INV.A], "pA counterparties");
-    sameSet(idsOf(P.pB.counterparties), [INV.B], "pB counterparties");
-    sameSet(idsOf(P.pC.counterparties), [INV.C, "cX"], "pC counterparties");
+    /* An outstanding invitation names nobody, so it produces no counterparty
+       either — there is no person yet to be one. pC's only counterparty is the
+       collector it shares a record with. */
+    sameSet(idsOf(P.pA.counterparties), [], "pA counterparties");
+    sameSet(idsOf(P.pB.counterparties), [], "pB counterparties");
+    sameSet(idsOf(P.pC.counterparties), ["cX"], "pC counterparties");
     assert(!tokens(P.pA).has("cB") && !tokens(P.pA).has("cX"), "pA names an unrelated collector");
     const allowed = new Set(FIELD_RULES.COLLECTOR_FOR_PARTNER);
     for (const name of ["pA", "pB", "pC"]) {
@@ -201,6 +206,8 @@ describe("B · Trusted Partner projection", () => {
       sameSet(Object.keys(row), FIELD_RULES.PREFERENCE_FOR_PARTNER, "preference row fields");
     }
     assert(hasText(P.pA, MARK.prefAB) && hasText(P.pB, MARK.prefAB), "shared collector's tags reach both partners");
+    /* There is nowhere for a tag typed at invitation to live any more: the
+       command takes two labels and creates no Collector to hang a profile on. */
     assert(!hasText(P.pA, MARK.inviteePrefA), "tags typed at invitation reach the partner before a Relationship");
     assert(!hasText(P.pA, MARK.prefB) && !hasText(P.pB, MARK.prefA), "tags crossed networks");
     for (const name of ["pA", "pB", "pC"]) assert(!hasText(P[name], MARK.prefX), `${name} sees cX's tags`);
@@ -254,15 +261,29 @@ describe("B · Trusted Partner projection", () => {
     sameSet(idsOf(P.pA.invitations), [ids.invA], "pA invitations");
     sameSet(idsOf(P.pB.invitations), [ids.invB], "pB invitations");
     sameSet(idsOf(P.pC.invitations), [ids.invC, ids.invX], "pC invitations");
-    eq(P.pA.invitations[0].email, V.invEmailA, "pA keeps its own invitee's email");
-    assert(!hasText(P.pA, V.invEmailB) && !hasText(P.pA, V.invEmailC), "pA sees another partner's invitee email");
-    assert(!hasText(P.pB, V.invEmailA) && !hasText(P.pC, V.invEmailA), "Alpha's invitee email leaked");
+    /* PHASE 5 BATCH 2: the invitation carries the two labels the partner typed
+       — who it is for, and their own note — and both are theirs alone. */
+    eq(P.pA.invitations[0].recipient, MARK.inviteeA, "pA keeps its own recipient label");
+    eq(P.pA.invitations[0].note, V.invEmailA, "pA keeps its own note");
+    eq(P.pA.invitations[0].collectorId, null, "an outstanding invitation names somebody");
+    assert(!hasText(P.pA, V.invEmailB) && !hasText(P.pA, V.invEmailC), "pA sees another partner's invitee note");
+    assert(!hasText(P.pB, V.invEmailA) && !hasText(P.pC, V.invEmailA), "Alpha's invitation note leaked");
     assert(!hasText(P.pA, MARK.inviteeB) && !hasText(P.pA, MARK.inviteeC), "pA sees another partner's invitee");
     /* The invitee sees who invited them, not the address the partner typed. */
-    sameSet(idsOf(P.iA.invitations), [ids.invA], "invitee's own invitation");
-    sameSet(idsOf(P.iA.partners), [], "a pending invitation is not a Trusted Partner");
-    eq(json(P.iA.counterparties), json([{ id: "pA", name: "Alpha Cards" }]), "invitee sees the inviter's bare identity");
-    assert(!hasText(P.iA, V.invEmailA), "invitation email copied to the invitee projection");
+    /* PHASE 5 BATCH 2: nobody is the invitee until a redemption resolves one,
+       so an outstanding invitation reaches no Collector's projection at all.
+       That is stronger than the rule it replaces — there is no seat that could
+       receive it — and Batch 3 is what gives an invitation a person. */
+    for (const name of ["cA", "cAB", "cB", "cX"]) {
+      for (const i of P[name].invitations) {
+        assert(![ids.invA, ids.invB, ids.invC].includes(i.id),
+          `${name} received an invitation that names nobody`);
+      }
+    }
+    /* cX is the exception that proves the rule: its invitation was seeded
+       already naming them, which is the shape Batch 3 will produce at
+       redemption — and it reaches exactly the person it names. */
+    sameSet(idsOf(P.cX.invitations), [ids.invX], "a resolved invitation reaches its collector");
   });
 
   test("15 excludes another TP's notes and activity (D-1, D-4)", () => {
@@ -416,11 +437,11 @@ describe("E · Adversarial scans — who can see each marker, id and private val
   const RA = S.photoRequests[0].id;
   const RV = (cid) => S.copyReviews.find((r) => r.collectorId === cid).id;
   const ID_AUDIENCE = {
-    pA: ["pA", "cA", "cAB", "iA"], pB: ["pB", "cAB", "cB", "iB"], pC: ["pC", "iC", "cX"],
+    pA: ["pA", "cA", "cAB"], pB: ["pB", "cAB", "cB"], pC: ["pC", "cX"],
     cA: ["cA", "pA"], cAB: ["cAB", "pA", "pB"], cB: ["cB", "pB"], cX: ["cX", "pC"],
-    [INV.A]: ["iA", "pA"], [INV.B]: ["iB", "pB"], [INV.C]: ["iC", "pC"],
+
     [ids.oA]: ["cA", "pA"], [ids.oABA]: ["cAB", "pA"], [ids.oAB]: ["cAB", "pB"], [ids.oB]: ["cB", "pB"],
-    [ids.invA]: ["pA", "iA"], [ids.invB]: ["pB", "iB"], [ids.invC]: ["pC", "iC"], [ids.invX]: ["pC", "cX"],
+    [ids.invA]: ["pA"], [ids.invB]: ["pB"], [ids.invC]: ["pC"], [ids.invX]: ["pC", "cX"],
     iA1: ["pA", "cA"], iA2: ["pA", "cA", "cAB"], iA3: ["pA"], iA5: ["pA", "cAB"],
     /* iB1 reaches cAB only as the id inside cAB's own Review Card record. */
     iB1: ["pB", "cAB", "cB"], iB3: ["pB", "cAB"], iC1: ["pC"],
@@ -445,9 +466,11 @@ describe("E · Adversarial scans — who can see each marker, id and private val
     [MARK.msgA]: ["cA", "pA"], [MARK.msgAB_A]: ["cAB", "pA"], [MARK.msgAB_B]: ["cAB", "pB"], [MARK.msgB]: ["cB", "pB"],
     [MARK.prefA]: ["cA", "pA"], [MARK.prefAB]: ["cAB", "pA", "pB"], [MARK.prefB]: ["cB", "pB"], [MARK.prefX]: ["cX"],
     [MARK.goalNoteB]: ["cB", "pB"], [MARK.partnerPrivateB]: ["pB"],
-    [MARK.inviteeA]: ["pA", "iA"], [MARK.inviteeB]: ["pB", "iB"], [MARK.inviteeC]: ["pC", "iC"],
+    /* The recipient a partner typed is theirs alone: nobody else has an
+       invitation naming it, and there is no invitee to receive it. */
+    [MARK.inviteeA]: ["pA"], [MARK.inviteeB]: ["pB"], [MARK.inviteeC]: ["pC"],
     [V.invEmailA]: ["pA"], [V.invEmailB]: ["pB"], [V.invEmailC]: ["pC"], [V.invEmailX]: ["pC"],
-    [MARK.inviteePrefA]: ["iA"], [MARK.inviteeCityA]: ["iA"],          // typed at invitation: not yet network
+    [MARK.inviteePrefA]: [], [MARK.inviteeCityA]: [],   // nothing at invitation makes a person
     "Nowhere": ["cX"], "Xander No-Network": ["cX", "pC"],               // pending invitee: name only
     "Alpha public tagline": ["pA"], "Beta public tagline": ["pB"],       // ambiguous partner note: closed
     "Alpha about": ["pA", "cA", "cAB"], "Elsewhere": ["pC"],
@@ -473,7 +496,7 @@ describe("E · Adversarial scans — who can see each marker, id and private val
   });
 
   test("forbidden field names never appear in the wrong seat", () => {
-    for (const name of ["cA", "cAB", "cB", "cX", "iA", "iB", "iC"]) {
+    for (const name of ["cA", "cAB", "cB", "cX"]) {
       const keys = keysDeep(P[name]);
       for (const k of ["cost", "acquired", "tradeRate", "internal"]) {
         assert(!keys.has(k), `${name} projection has field ${k}`);
@@ -578,10 +601,9 @@ describe("G1 · A pending invitation is not a Relationship", () => {
     for (const t of [MARK.prefX, "Nowhere"]) assert(!hasText(pC, t), `pC sees invitee's "${t}"`);
     for (const id of ["gX", "bX"]) assert(!tokens(pC).has(id), `pC names ${id}`);
     assert(!hasNumber(pC, V.marketX), "invitee binder value");
-    /* The same holds for a command-created invitee whose tags the partner typed. */
-    const row = P.pA.counterparties.find((c) => c.id === INV.A);
-    for (const k of Object.keys(row)) assert(FIELD_RULES.COLLECTOR_IDENTITY.includes(k), `pA invitee field ${k}`);
-    eq(row.name, MARK.inviteeA, "the invitee's name, for the invitation workflow");
+    /* A command-created invitation names nobody, so it produces no counterparty
+       at all — and nothing a partner typed at invitation can become a person. */
+    eq(P.pA.counterparties.length, 0, "an invitation naming nobody produced a counterparty");
     assert(!hasText(P.pA, MARK.inviteePrefA) && !hasText(P.pA, MARK.inviteeCityA), "typed invitee profile reached pA");
     for (const name of ["pA", "pB", "pC"]) {
       for (const c of P[name].counterparties) {
@@ -616,7 +638,7 @@ describe("G2 · A shared record names a counterparty; it never adds network or s
     assert(!tokens(cX).has("iC1") && !hasText(cX, "Elsewhere"), "inviter stock or profile leaked");
     sameSet(idsOf(cX.invitations), [ids.invX]);
     sameSet(Object.keys(cX.invitations[0]), FIELD_RULES.INVITATION_FOR_INVITEE, "invitee's invitation fields");
-    for (const who of ["iA", "iB", "iC"]) {
+    for (const who of []) {
       eq(P[who].partners.length, 0, `${who} partners`); eq(P[who].inventory.length, 0, `${who} supply`);
       sameSet(Object.keys(P[who].counterparties[0]), FIELD_RULES.PARTNER_IDENTITY, `${who} counterparty fields`);
     }

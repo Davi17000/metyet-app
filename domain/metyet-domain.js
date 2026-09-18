@@ -27,6 +27,31 @@ const identityKey = (c) => !c ? "" : [
 const isRaw = (c) => c && c.grade === "Raw";
 const sameIdentity = (a, b) => identityKey(a) === identityKey(b);
 
+/* HOW LONG AN INVITATION STAYS OPEN (Phase 5 Batch 2).
+
+   Fourteen days, from the moment the command ran. It is not a parameter: a
+   Trusted Partner inviting somebody at a counter is not making a decision about
+   expiry, and offering them one would be a field to fill in rather than a
+   choice worth having. Fourteen is what MetYet's own partner invitations
+   default to, so the product has one answer to "how long does an invitation
+   last" rather than two.
+
+   Derived from the command's own timestamp, so it is the runtime's clock and
+   not a caller's — and so every record one command writes agrees about when
+   "now" was. An unreadable timestamp yields null rather than a guess. */
+const INVITATION_DAYS = 14;
+const invitationExpiry = (at, days = INVITATION_DAYS) => {
+  const from = at ? new Date(at) : null;
+  if (!from || Number.isNaN(from.getTime())) return null;
+  return new Date(from.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
+};
+/* WHAT IS DELIBERATELY NOT HERE. "Is this invitation still open?" — not
+   accepted, not withdrawn, not past its day — is the question a REDEMPTION
+   asks, and redemption is Batch 3. A predicate written now would have no
+   caller and no test, and the first thing a rule like that does when it is
+   reached for later is get used INSTEAD of checking the credential rather than
+   alongside it. The expiry is recorded; reading it is the batch that needs it. */
+
 /* ------------------------------------------------------------- LIFECYCLE */
 
 const STAGES = [
@@ -746,6 +771,7 @@ const REFUSE = {
 module.exports = {
   FULFILLMENT, TRADE, cashDirection, cashReceipt, settlement, compareCashSettlement, newSince, unreadFor,
   identityKey, isRaw, sameIdentity,
+  INVITATION_DAYS, invitationExpiry,
   STAGES, STAGE_IX, STAGE_LABEL,
   isEnded, isCompleted, isTerminal, isActive, isNegotiating,
   activeOppForGoal, goalState,

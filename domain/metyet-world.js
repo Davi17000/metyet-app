@@ -143,9 +143,21 @@ function validateWorld(state) {
       pairs.add(key);
     }
   }
+  /* AN INVITATION MAY NAME NOBODY (Phase 5 Batch 2). It is created before
+     anyone has joined, so `collectorId` is null until a redemption resolves
+     one — and a world where it is null is correct, not incomplete. What must
+     still hold: an invitation that DOES name a collector names one that exists,
+     and an invitation that was accepted names the collector the acceptance
+     produced. The second is what stops an accepted invitation from pointing at
+     nobody, which is the state Batch 3 must never be able to leave behind. */
   for (const [r, path] of C.invitations) {
     ref(partners, r.partnerId, `${path}.partnerId`, "partner", `Invitation "${r.id}"`);
-    ref(collectors, r.collectorId, `${path}.collectorId`, "collector", `Invitation "${r.id}"`);
+    if (isId(r.collectorId)) {
+      ref(collectors, r.collectorId, `${path}.collectorId`, "collector", `Invitation "${r.id}"`);
+    } else if (r.acceptedAt) {
+      report("ref.missing", `${path}.collectorId`,
+        `Invitation "${r.id}" was accepted but names no collector.`);
+    }
   }
   for (const [r, path] of C.preferences) {
     ref(collectors, r.collectorId, `${path}.collectorId`, "collector", `Preference row ${path}`);

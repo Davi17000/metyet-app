@@ -71,8 +71,12 @@ const TABLES = [
   { collection: "partners", table: "partners", key: ["id"], fields: [["id", "id"]] },
   { collection: "relationships", table: "relationships", key: ["ord"],
     fields: [["partnerId", "partner_id"], ["collectorId", "collector_id"]] },
+  /* `collectorId` is a MIRROR rather than a field: an invitation exists before
+     anyone has joined, so it is null until a redemption resolves one, and a
+     mirror is exactly the shape for "an id or NULL". */
   { collection: "invitations", table: "invitations", key: ["id"],
-    fields: [["id", "id"], ["partnerId", "partner_id"], ["collectorId", "collector_id"]] },
+    fields: [["id", "id"], ["partnerId", "partner_id"]],
+    mirrors: [["collectorId", "collector_id"]] },
   { collection: "goals", table: "goals", key: ["id"],
     fields: [["id", "id"], ["collectorId", "collector_id"], ["cardId", "card_id"]] },
   { collection: "preferences", table: "preferences", key: ["ord"], fields: [["collectorId", "collector_id"]] },

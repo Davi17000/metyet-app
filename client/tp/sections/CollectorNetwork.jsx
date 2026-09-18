@@ -34,14 +34,65 @@
    shows no last-contact line, rather than "never" or a date derived from
    something else. A collector with no goals shows no goals. Absence is
    rendered as absence.
+
+   AND NOW IT IS ALSO WHERE A NETWORK STARTS (Phase 5 Batch 2). Inviting
+   somebody belongs here because an invitation is what a Collector Network grows
+   from — not in a settings page, and not as a destination of its own.
+
+   THE SECRET IS SHOWN ONCE, AND THIS FILE KNOWS WHY. A credential comes back
+   from the one reply that will ever carry it; it is held in a local variable
+   for as long as the partner is looking at it and is never written into
+   anything that is read again. There is no way to ask for it a second time,
+   deliberately: a credential that can be re-read is not a credential handed
+   over once. If it is lost, the invitation is revoked and a new one is sent.
+
+   THIS FILE STILL CANNOT REACH ANYTHING. `onInvite`, `onRevokeInvite` and
+   `onRefresh` are functions handed in from outside. No store, no command name,
+   no network, and the projection is passed on exactly as it arrived.
    ========================================================================== */
 
-import React from "react";
+import React, { useCallback, useState } from "react";
 import { Panel, Record, Fact, Tag } from "../parts.jsx";
 import { rows, indexById, groupBy, text, day, plural, cardTitle, cardSetLine,
   gradeLine, tierLabel, byRecency } from "../present.js";
 
-export default function CollectorNetwork({ state }) {
+/* The domain's word for why, in ours. A rule this build has not met is shown as
+   itself rather than as the nearest one we know. */
+const REFUSALS = Object.freeze({
+  "not-owner": "That invitation belongs to a different Trusted Partner.",
+  "not-found": "MetYet could not find that invitation.",
+  terminal: "That invitation has already been accepted, so it cannot be withdrawn.",
+});
+const whyRefused = (refused) => REFUSALS[refused]
+  || `MetYet declined that (${refused || "no reason given"}).`;
+
+/* ANSWERS, AND NON-ANSWERS. A conflict, an ended session and an unprovisioned
+   account are answers: the server considered it and declined, so nothing
+   happened and saying so is a fact. Losing contact is not an answer — the
+   request may have arrived and committed with only its reply lost — and here
+   that matters more than anywhere else in the product, because the reply is the
+   only copy of the credential. So it says what it knows: an invitation may now
+   exist, its secret is already unrecoverable, and the honest next move is to
+   look at the list and withdraw anything unexpected. */
+const CERTAIN = Object.freeze({
+  conflict: "Something else changed while that was saving, so nothing was created. Try again.",
+  unauthenticated: "Your session ended before that could be saved, so nothing was created. "
+    + "Sign in again and retry.",
+  "not-provisioned": "This sign-in is not a MetYet account, so nothing was created.",
+});
+const AMBIGUOUS = Object.freeze({
+  unavailable: "MetYet lost contact while creating that, so it cannot tell whether the invitation "
+    + "was created. It has not been sent again. Check the list below — if one appeared, its code "
+    + "cannot be shown, so withdraw it and invite again.",
+  unexpected: "MetYet got an answer it could not read, so it cannot tell whether the invitation was "
+    + "created. It has not been sent again. Check the list below — if one appeared, its code cannot "
+    + "be shown, so withdraw it and invite again.",
+});
+const whyFailed = (failure) => CERTAIN[failure] || AMBIGUOUS[failure] || AMBIGUOUS.unexpected;
+export { CERTAIN, AMBIGUOUS };
+
+export default function CollectorNetwork({ state, onInvite = null, onRevokeInvite = null,
+  onRefresh = null }) {
   const collectors = rows(state && state.collectors);
   const relationships = rows(state && state.relationships);
   const invitations = rows(state && state.invitations);
@@ -61,16 +112,151 @@ export default function CollectorNetwork({ state }) {
     "__at",
   );
 
-  const pending = invitations.filter((i) => !i.acceptedAt);
+  /* Outstanding means: nobody has accepted it and it has not been withdrawn.
+     An expired one is still outstanding to a person — it is a thing they sent
+     that came to nothing — so it stays listed and says so. */
+  const pending = invitations.filter((i) => !i.acceptedAt && !i.revokedAt);
+  const withdrawn = invitations.filter((i) => !i.acceptedAt && i.revokedAt);
+
+  /* ---------------------------------------------------------- inviting */
+  const [inviting, setInviting] = useState(false);
+  const [draft, setDraft] = useState({ recipient: "", note: "" });
+  const [busy, setBusy] = useState(null);       // what is in flight, or null
+  const [problem, setProblem] = useState(null);
+  /* The credential, for exactly as long as it is on screen. It is never put
+     anywhere that is read again, and there is no way to ask for it twice. */
+  const [issued, setIssued] = useState(null);
+
+  const writable = typeof onInvite === "function";
+
+  const begin = useCallback(() => {
+    setDraft({ recipient: "", note: "" });
+    setProblem(null);
+    setIssued(null);
+    setInviting(true);
+  }, []);
+
+  const cancel = useCallback(() => {
+    /* No command, no request, nothing written. */
+    setInviting(false);
+    setProblem(null);
+  }, []);
+
+  const create = useCallback(async (event) => {
+    if (event && event.preventDefault) event.preventDefault();
+    if (busy || !writable) return;
+    setBusy("invite");
+    setProblem(null);
+    let result;
+    try {
+      result = await onInvite({ recipient: draft.recipient, note: draft.note });
+    } catch (error) {
+      setBusy(null);
+      const failure = (error && (error.failure || error.code)) || "unexpected";
+      setProblem(whyFailed(failure));
+      /* A READ IS NOT A REPLAY. The command is never sent again — but asking
+         what exists now is a GET with no side effects, and it is the only way a
+         person can find out whether the thing they could not see the answer to
+         actually happened. */
+      if (AMBIGUOUS[failure] && typeof onRefresh === "function") {
+        try { await onRefresh(); } catch (again) { /* the list stays as it was */ }
+      }
+      return;
+    }
+    setBusy(null);
+    if (!result || result.ok !== true) {
+      setProblem(whyRefused(result && result.refused));
+      return;
+    }
+    /* Saved. The form closes, and the one copy of the credential goes on screen
+       until the partner has done something else. */
+    setInviting(false);
+    setIssued({ credential: result.credential, recipient: draft.recipient.trim() || null });
+  }, [busy, draft, onInvite, onRefresh, writable]);
+
+  const revoke = useCallback(async (invitationId) => {
+    if (busy || typeof onRevokeInvite !== "function") return;
+    setBusy(invitationId);
+    setProblem(null);
+    let result;
+    try {
+      result = await onRevokeInvite(invitationId);
+    } catch (error) {
+      setBusy(null);
+      const failure = (error && (error.failure || error.code)) || "unexpected";
+      setProblem(CERTAIN[failure]
+        || "MetYet lost contact while withdrawing that, so it cannot tell whether it was "
+          + "withdrawn. It has not been sent again — check the list.");
+      if (!CERTAIN[failure] && typeof onRefresh === "function") {
+        try { await onRefresh(); } catch (again) { /* the list stays as it was */ }
+      }
+      return;
+    }
+    setBusy(null);
+    if (!result || result.ok !== true) setProblem(whyRefused(result && result.refused));
+  }, [busy, onRevokeInvite, onRefresh]);
 
   return (
     <>
+      {issued ? (
+        <Panel title="Hand this to them"
+          action={<button className="tps-edit" type="button" onClick={() => setIssued(null)}>Done</button>}>
+          <div className="tps-secret">
+            <code className="tps-code mono">{issued.credential}</code>
+            <p className="tps-aside">
+              {issued.recipient ? `This is ${issued.recipient}'s code. ` : ""}
+              It works once, it lasts two weeks, and MetYet will not show it again — give it to them
+              now. If it goes astray, withdraw the invitation below and send a new one.
+            </p>
+          </div>
+        </Panel>
+      ) : null}
+
+      {inviting ? (
+        <form className="tps-form" onSubmit={create} noValidate>
+          <Panel title="Invite a collector" note={busy === "invite" ? "Creating…" : "Not created yet"}>
+            <div className="tps-fields">
+              <label className="tps-field wide">
+                <span className="tps-field-l">Who is this for</span>
+                <input className="tps-input" type="text" value={draft.recipient}
+                  disabled={busy === "invite"}
+                  onChange={(e) => setDraft((d) => ({ ...d, recipient: e.target.value }))} />
+                <span className="tps-field-h">
+                  So you can tell your invitations apart. It does not decide who can use the code.
+                </span>
+              </label>
+              <label className="tps-field wide">
+                <span className="tps-field-l">Note</span>
+                <input className="tps-input" type="text" value={draft.note}
+                  disabled={busy === "invite"}
+                  onChange={(e) => setDraft((d) => ({ ...d, note: e.target.value }))} />
+                <span className="tps-field-h">Yours only. A collector never sees it.</span>
+              </label>
+            </div>
+            {problem ? <p className="tps-problem" role="alert">{problem}</p> : null}
+            <div className="tps-actions">
+              <button className="tps-save" type="submit" disabled={busy === "invite"}>
+                {busy === "invite" ? "Creating…" : "Create invitation"}
+              </button>
+              <button className="tps-cancel" type="button" onClick={cancel} disabled={busy === "invite"}>
+                Cancel
+              </button>
+            </div>
+          </Panel>
+        </form>
+      ) : null}
+
+      {problem && !inviting ? <p className="tps-problem" role="alert">{problem}</p> : null}
+
       <Panel
         title="Collectors"
         note={collectors.length ? plural(collectors.length, "collector", "collectors") : null}
+        action={writable && !inviting
+          ? <button className="tps-edit" type="button" onClick={begin}>Invite a collector</button>
+          : null}
         empty={collectors.length ? null
-          : "No collectors in your network yet. A collector joins by accepting an invitation from "
-            + "you — sending one isn't part of this release."}
+          : "No collectors in your network yet. Invite someone, hand them the code, and they join "
+            + "when they accept it."}
       >
         {ordered.map((c) => {
           const rel = relationshipOf.get(c.id) || null;
@@ -130,9 +316,43 @@ export default function CollectorNetwork({ state }) {
         <Panel title="Invitations outstanding" note={plural(pending.length, "invitation", "invitations")}>
           {pending.map((i) => (
             <Record
-              key={i.id || `${i.collectorId}:${i.at}`}
-              title={text(i.name) || text(i.email) || "Invited collector"}
-              facts={<Fact label="Sent" value={day(i.at || i.createdAt)} mono />}
+              key={i.id}
+              title={text(i.recipient) || "Someone you invited"}
+              /* The code is not here, and there is nowhere it could be: the
+                 projection never carried one. */
+              facts={
+                <>
+                  <Fact label="Sent" value={day(i.at)} mono />
+                  <Fact label="Expires" value={day(i.expiresAt)} mono />
+                </>
+              }
+              note={text(i.note)}
+              noteLabel="Your note"
+              tags={typeof onRevokeInvite === "function" ? (
+                <button className="tps-edit" type="button" disabled={busy === i.id}
+                  onClick={() => revoke(i.id)}>
+                  {busy === i.id ? "Withdrawing…" : "Withdraw"}
+                </button>
+              ) : null}
+            />
+          ))}
+        </Panel>
+      ) : null}
+
+      {withdrawn.length ? (
+        <Panel title="Withdrawn" note={plural(withdrawn.length, "invitation", "invitations")}>
+          {withdrawn.map((i) => (
+            <Record
+              key={i.id}
+              title={text(i.recipient) || "Someone you invited"}
+              facts={
+                <>
+                  <Fact label="Sent" value={day(i.at)} mono />
+                  <Fact label="Withdrawn" value={day(i.revokedAt)} mono />
+                </>
+              }
+              note={text(i.note)}
+              noteLabel="Your note"
             />
           ))}
         </Panel>

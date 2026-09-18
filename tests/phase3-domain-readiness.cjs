@@ -136,9 +136,14 @@ function everyCommand(store, rec) {
   step("setInterest", { interest: s().interests.find((i) => i.binderId === b) });
   x(C1, "removeBinderCopy", { binderId: b });
 
-  const invitee = x(TP1, "inviteCollector", { email: "new@example.test", note: "met at a show",
-    collector: { name: "New Person", id: FORGED, since: FORGED_AT, binderReviewedAt: FORGED_AT } });
-  step("inviteCollector", { id: invitee, invitation: s().invitations.find((i) => i.collectorId === invitee) });
+  /* PHASE 5 BATCH 2: an invitation names nobody. It creates no Collector, so
+     there is no id for a caller to forge and no profile to smuggle a
+     relationship date through — the payload is two labels. */
+  const invited = x(TP1, "inviteCollector", { recipient: "New Person", note: "met at a show" });
+  step("inviteCollector", { id: invited, invitation: s().invitations.find((i) => i.id === invited) });
+  const withdrawn = x(TP1, "inviteCollector", { recipient: "Somebody else" });
+  x(TP1, "revokeCollectorInvitation", { invitationId: withdrawn });
+  step("revokeCollectorInvitation", { invitation: s().invitations.find((i) => i.id === withdrawn) });
   x(TP1, "updatePartnerProfile", { patch: { about: "Vintage specialists" } });
   x(TP1, "markBinderReviewed", { collectorId: "c1" });
   step("markBinderReviewed", { relationship: s().relationships.find((r) => r.partnerId === "p1" && r.collectorId === "c1") });
@@ -206,7 +211,7 @@ function everyCommand(store, rec) {
   x(C2, "cancelOpportunity", { oppId: k });
   step("cancelOpportunity", { opp: opp(k) });
 
-  out.ids = { goal: g, inv, pr, rv, binder: b, invitee, o, w, k };
+  out.ids = { goal: g, inv, pr, rv, binder: b, invited, o, w, k };
   return out;
 }
 
@@ -290,14 +295,14 @@ describe("B. every minted id comes from the injected runtime", () => {
     const { ran } = every();
     const missing = C.COMMAND_NAMES.filter((n) => !ran.has(n));
     eq(missing.join(","), "", "commands not exercised");
-    eq(C.COMMAND_NAMES.length, 41, "the command set");
+    eq(C.COMMAND_NAMES.length, 42, "the command set");
   });
 
   test("each new record's id is exactly what the runtime handed out, with the record's prefix", () => {
     const { steps, rec, ids } = every();
     const handed = new Set(rec.log.ids);
     const expect = [["addGoal", "g"], ["addInventoryCopy", "invk1-"], ["requestPhotos", "pr"],
-      ["reviewCopy", "rv"], ["addBinderCopy", "b"], ["inviteCollector", "c"], ["startOpportunity", "o"]];
+      ["reviewCopy", "rv"], ["addBinderCopy", "b"], ["inviteCollector", "inv-"], ["startOpportunity", "o"]];
     for (const [name, prefix] of expect) {
       const id = steps[name].id;
       assert(countedId(prefix).test(id), `${name} id "${id}" has the runtime's shape for "${prefix}"`);
@@ -305,6 +310,7 @@ describe("B. every minted id comes from the injected runtime", () => {
       assert(id !== FORGED, `${name} ignored the caller's id`);
     }
     assert(countedId("inv-").test(steps.inviteCollector.invitation.id), "invitation id");
+    eq(steps.inviteCollector.invitation.id, steps.inviteCollector.id, "the command returns the invitation's own id");
     assert(countedId("e").test(steps.sendMessage.entry.id), "message entry id");
     assert(countedId("e").test(steps.recordNote.entry.id), "milestone entry id");
     assert(countedId("a").test(steps.recordNote.activity.id), "activity id");
@@ -348,6 +354,7 @@ describe("C. every authoritative timestamp is the injected runtime's time", () =
     updateBinderCopy: (x) => [x.copy.updatedAt],
     setInterest: (x) => [x.interest.at],
     inviteCollector: (x) => [x.invitation.at],
+    revokeCollectorInvitation: (x) => [x.invitation.revokedAt],
     markBinderReviewed: (x) => [x.relationship.binderReviewedAt],
     sendMessage: (x) => [x.entry.at],
     reachOut: (x) => [x.entry.at],
@@ -413,10 +420,27 @@ describe("D. caller proposals never survive an authoritative runtime", () => {
     eq(steps.updateBinderCopy.copy.addedAt, steps.addBinderCopy.T, "a patch cannot move addedAt");
   });
 
-  test("an invitation cannot pre-date its collector's relationship metadata", () => {
-    const { store, ids } = every();
-    const pending = store.get().collectors.find((c) => c.id === ids.invitee);
-    for (const f of ["since", "binderReviewedAt"]) assert(!(f in pending), f + " dropped from the invitee");
+  /* PHASE 5 BATCH 2 REPLACED THE RULE THIS TESTED. There is no pending invitee
+     to keep relationship metadata off, because inviting somebody no longer
+     creates a Collector at all — which is a stronger guarantee than the one it
+     replaces, and is asserted as a count rather than a field check. */
+  test("an invitation creates nobody: no Collector, no Relationship, no metadata to leak", () => {
+    const { steps } = every();
+    const rec = recording();
+    const store = createStore(seed(), { runtime: rec.runtime });
+    const before = store.get();
+    const r = store.execute(TP1, "inviteCollector", { recipient: "Nobody Yet", note: "n" });
+    assert(r.ok, "the invitation was refused");
+    const after = store.get();
+    eq(after.collectors.length, before.collectors.length, "inviting created a Collector");
+    eq(after.relationships.length, before.relationships.length, "inviting created a Relationship");
+    const made = after.invitations.find((i) => i.id === r.value);
+    eq(made.collectorId, null, "the invitation named somebody");
+    eq(made.acceptedAt, null, "the invitation was born accepted");
+    eq(made.revokedAt, null);
+    assert(made.expiresAt > made.at, "an invitation with no closing date");
+    /* And the fixture's own invitation agrees. */
+    eq(steps.inviteCollector.invitation.collectorId, null);
   });
 
   test("the actor stays the only authority: runtime and payload cannot change the seat", () => {

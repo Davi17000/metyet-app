@@ -44,7 +44,8 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import ProductionApp from "../production-app.jsx";
-import { savePartnerProfile } from "../commands.js";
+import { savePartnerProfile, openCollectorInvitation, revokeCollectorInvitation,
+  refreshView } from "../commands.js";
 
 /* Identity is read in exactly one place — client/actor.js — and re-exported
    here because this module's own tests have always asked it that question.
@@ -115,6 +116,11 @@ export default function SignIn({ session, store, onConfigProblem = null }) {
      crosses into the application is a function of one argument — not the store,
      and not a way to send anything else. */
   const onSaveProfile = useMemo(() => (store ? savePartnerProfile(store) : null), [store]);
+  /* Phase 5 Batch 2. Bound the same way and for the same reason: a product
+     surface is handed a function, never the store. */
+  const onInvite = useMemo(() => (store ? openCollectorInvitation(store) : null), [store]);
+  const onRevokeInvite = useMemo(() => (store ? revokeCollectorInvitation(store) : null), [store]);
+  const onRefresh = useMemo(() => (store ? refreshView(store) : null), [store]);
 
   const fail = useCallback((error) => {
     setProblem(say(error && (error.failure || error.code)));
@@ -241,5 +247,5 @@ export default function SignIn({ session, store, onConfigProblem = null }) {
      sign-out this component already owns, and — since Phase 5 Batch 1 — call
      one bound callback that saves a Trusted Partner's own profile. */
   return React.createElement(ProductionApp,
-    { state: projection, onSignOut: signOut, onSaveProfile });
+    { state: projection, onSignOut: signOut, onSaveProfile, onInvite, onRevokeInvite, onRefresh });
 }

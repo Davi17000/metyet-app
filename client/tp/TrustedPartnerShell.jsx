@@ -71,7 +71,7 @@ import Opportunities from "./sections/Opportunities.jsx";
    not carry a notice contradicting itself, and says what is still read-only in
    its own words instead. */
 export const SECTIONS = Object.freeze([
-  { id: "collectors", label: "Collector Network", title: "Collector Network",
+  { id: "collectors", label: "Collector Network", title: "Collector Network", writes: true,
     sub: "Who you're serving, and what you know about them" },
   { id: "inventory", label: "Inventory", title: "Inventory", writes: true,
     sub: "What you have and how it connects to collector demand" },
@@ -189,6 +189,10 @@ const CSS = `
 .tps-act { margin-left:auto; display:flex; align-items:center; }
 .tps-act-lead { margin-left:auto; }
 .tps-ph .tps-note + .tps-act { margin-left:12px; }
+.tps-secret { padding:15px 16px; }
+.tps-code { display:block; font-size:16px; letter-spacing:.06em; word-break:break-all;
+  background:#F7F8FA; border:1px solid var(--line); border-radius:5px; padding:11px 13px;
+  margin-bottom:9px; }
 .tps-crumb { margin:0 0 12px; }
 .tps-back { background:none; border:0; padding:0; color:var(--t1); font-size:12.5px;
   font-weight:600; }
@@ -232,7 +236,8 @@ const CSS = `
 }
 `;
 
-export default function TrustedPartnerShell({ state, onSignOut, onSaveProfile = null }) {
+export default function TrustedPartnerShell({ state, onSignOut, onSaveProfile = null,
+  onInvite = null, onRevokeInvite = null, onRefresh = null }) {
   const [section, setSection] = useState(SECTIONS[0].id);
 
   const who = describeActor(state);
@@ -244,10 +249,13 @@ export default function TrustedPartnerShell({ state, onSignOut, onSaveProfile = 
   };
   const meta = SECTIONS.find((s) => s.id === section) || SECTIONS[0];
   const View = VIEWS[meta.id];
-  /* Only the section the profile is reached from receives the callback. It is
-     the Trusted Partner's own profile and nothing else's, so nothing else is
-     handed a way to send it. */
-  const extra = meta.id === "inventory" ? { onSaveProfile } : null;
+  /* Each section is handed the callbacks it is the home of, and no others. The
+     profile is reached from Inventory; invitations belong to the Collector
+     Network, because that is the thing an invitation grows into. Nothing else
+     is handed a way to send either. */
+  const extra = meta.id === "inventory" ? { onSaveProfile }
+    : meta.id === "collectors" ? { onInvite, onRevokeInvite, onRefresh }
+      : null;
 
   return (
     <div className="tps">

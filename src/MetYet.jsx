@@ -3339,14 +3339,20 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
   };
 
   const inviteCollector = (draft) => {
-    /* The note is this partner's, so it travels on the partner's own Invitation;
-       relationship dates do not exist until the invitation is accepted (D-1). */
-    const r = run(tpActor, "inviteCollector", { email: draft.email, note: draft.note, collector: {
-      name: draft.name, short: draft.name.split(" ")[0] + " " + (draft.name.split(" ")[1]?.[0] || "") + ".",
-      city: draft.city, prefs: draft.prefs } });
+    /* AN INVITATION NAMES NOBODY (Phase 5 Batch 2). It used to mint a pending
+       Collector here; it no longer does, because two partners inviting one
+       person would have produced two Collector identities and that person could
+       only ever be one of them. The recipient is a LABEL so this partner can
+       tell their invitations apart, and the note is theirs alone (D-1).
+
+       The demo mints no credential: a secret shown once has no meaning in a
+       world that lives in a tab and resets. Production does, over an
+       authenticated route. */
+    const r = run(tpActor, "inviteCollector", {
+      recipient: [draft.name, draft.email].filter(Boolean).join(" · "), note: draft.note });
     if (!r.ok) { say("That invitation could not be created."); return; }
-    logActivity(r.value, "manual", `Invitation sent to ${draft.email}`);
-    say(`Invitation sent to ${draft.name}. They'll appear as pending until they set their goals.`);
+    say(`Invitation created for ${draft.name || draft.email}. `
+      + "Hand them the code, and they join your network when they accept it.");
     setModal(null);
   };
 
@@ -6955,9 +6961,9 @@ function CollectorList({ ctx }) {
   const pending = useMemo(() => {
     const t = q.trim().toLowerCase();
     return invitations
-      .filter((i) => !i.acceptedAt && !collectors.some((c) => c.id === i.collectorId))
-      .map((i) => ({ inv: i, name: (counterparties.find((c) => c.id === i.collectorId) || {}).name || i.email || "Invited collector" }))
-      .filter(({ inv, name }) => !t || (name + " " + (inv.email || "")).toLowerCase().includes(t));
+      .filter((i) => !i.acceptedAt && !i.revokedAt)
+      .map((i) => ({ inv: i, name: i.recipient || "Someone you invited" }))
+      .filter(({ name }) => !t || name.toLowerCase().includes(t));
   }, [invitations, counterparties, collectors, q]);
 
 
@@ -7044,7 +7050,7 @@ function CollectorList({ ctx }) {
                       <span style={{ fontWeight: 600 }}>{name}</span>
                       <span className="tag" style={{ marginLeft: 6 }}>Invite pending</span>
                       <div className="faint" style={{ fontSize: 11.5 }}>
-                        {[inv.email, inv.at ? "sent " + fmtDate(String(inv.at).slice(0, 10)) : null].filter(Boolean).join(" · ")}
+                        {[inv.note, inv.at ? "sent " + fmtDate(String(inv.at).slice(0, 10)) : null].filter(Boolean).join(" · ")}
                       </div>
                     </div>
                   </div>
