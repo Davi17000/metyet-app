@@ -27,6 +27,7 @@ const { createWorldRepository } = require("../persistence/world-repository.js");
 const { migrationStatus } = require("../persistence/migrate.js");
 const { createAccountDirectory } = require("./auth/accounts.js");
 const { createInvitationDirectory } = require("./auth/invitations.js");
+const { createCollectorCredentials } = require("./auth/collector-invitations.js");
 const { createTokenVerifier } = require("./auth/token-verifier.js");
 const { createIdentityDirectory } = require("./auth/identity.js");
 const { systemRuntime } = require("../domain/metyet-runtime.js");
@@ -56,6 +57,7 @@ async function main() {
     repository: createWorldRepository(db),
     accounts: createAccountDirectory(db),
     invitations: createInvitationDirectory(db),
+    collectorCredentials: createCollectorCredentials(db),
     verifier: createTokenVerifier(config.auth),
     identity: createIdentityDirectory(config.auth),
     checkSchema: () => migrationStatus(db),

@@ -55,3 +55,43 @@ export function savePartnerProfile(target) {
   }
   return (patch) => target.execute(PARTNER_PROFILE, { patch });
 }
+
+/* ------------------------------------------- COLLECTOR INVITATIONS (B2)
+
+   OPENING ONE RETURNS A SECRET, ONCE. The reply carries a credential beside the
+   projection, so this goes through the store's own invitation call rather than
+   `execute` — same state machine, same one-at-a-time gate, same conflict and
+   refusal handling, and one thing more to hand back. Nothing here keeps it: the
+   credential is returned to the caller and this module forgets it.
+
+   THE SCREEN SENDS TWO LABELS. A recipient and a note, both optional, both for
+   the partner's own recognition. Who may redeem an invitation is not decided by
+   either of them — the invitation names nobody, and possession plus an
+   authenticated identity is what Batch 3 will turn into a Relationship. */
+export const REVOKE_INVITATION = "revokeCollectorInvitation";
+
+export function openCollectorInvitation(target) {
+  if (!target || typeof target.createInvitation !== "function") {
+    throw new TypeError("openCollectorInvitation: the production store is required");
+  }
+  return ({ recipient, note } = {}) => target.createInvitation({ recipient, note });
+}
+
+/* Withdrawing one is an ordinary command: there is no secret in the answer, so
+   there is no reason for it to travel any way but the usual one. */
+export function revokeCollectorInvitation(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("revokeCollectorInvitation: the production store is required");
+  }
+  return (invitationId) => target.execute(REVOKE_INVITATION, { invitationId });
+}
+
+/* Re-reading is not a mutation and is safe to repeat, which is why an ambiguous
+   write may end in one: a screen that cannot know whether something was created
+   can at least ask what exists now. It is a GET; nothing is replayed. */
+export function refreshView(target) {
+  if (!target || typeof target.load !== "function") {
+    throw new TypeError("refreshView: the production store is required");
+  }
+  return () => target.load();
+}

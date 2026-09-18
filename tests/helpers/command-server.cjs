@@ -26,6 +26,7 @@ const { fromPGlite } = require("../../persistence/database.js");
 const { migrate } = require("../../persistence/migrate.js");
 const { createWorldRepository } = require("../../persistence/world-repository.js");
 const { createAccountDirectory } = require("../../server/auth/accounts.js");
+const { createCollectorCredentials } = require("../../server/auth/collector-invitations.js");
 
 const SUBJECT = "sub-northline";
 const TOKEN = `token-for:${SUBJECT}`;
@@ -113,7 +114,12 @@ function fakeVerifier() {
    for a fraction of the cost. tests/phase3-server.cjs has always done this. */
 let shared = null;
 
-async function serve(createApp, { repositoryWrapper } = {}) {
+/* OPT IN, SO THAT "NOT MOUNTED" IS ALSO TESTABLE. The Collector invitation
+   route exists only when the server was given somewhere to keep the secret, so
+   the default here is a server WITHOUT one — which is what every suite written
+   before Phase 5 Batch 2 expects, and what lets that batch's own suite prove
+   the route is absent rather than merely assert it in prose. */
+async function serve(createApp, { repositoryWrapper, collectorCredentials = false } = {}) {
   const pg = shared || (shared = new PGlite());
   await pg.exec("drop schema if exists metyet cascade; drop schema if exists metyet_auth cascade");
   const db = fromPGlite(pg);
@@ -124,11 +130,13 @@ async function serve(createApp, { repositoryWrapper } = {}) {
   const accounts = createAccountDirectory(db);
   await accounts.linkAccount({ subject: SUBJECT, role: "tp", partnerId: PARTNER });
   await accounts.linkAccount({ subject: COLLECTOR_SUBJECT, role: "collector", collectorId: COLLECTOR });
+  const credentials = collectorCredentials ? createCollectorCredentials(db) : null;
   const app = createApp({ repository, accounts, verifier: fakeVerifier(),
+    ...(credentials ? { collectorCredentials: credentials } : {}),
     runtime: RT.deterministicRuntime({ start: "2030-01-01T00:00:00.000Z", stepMs: 60000 }) });
   /* The instance is shared, so closing it would take the next server with it.
      Callers still call close(); it stays in the contract and does nothing. */
-  return { app, repository: base, accounts, close: async () => {} };
+  return { app, repository: base, accounts, db, credentials, close: async () => {} };
 }
 
 /* Fastify's inject, wearing what fetch returns. */

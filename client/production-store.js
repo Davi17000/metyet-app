@@ -181,6 +181,69 @@ export function createProductionStore({ api } = {}) {
     }
   };
 
+  /* ONE MUTATION LIFECYCLE, AND EVERY MUTATION GOES THROUGH IT.
+
+     `send` is the only thing that varies: which request this mutation is. The
+     gate, the status, the conflict recovery, the refusal handling and the
+     adoption of whatever came back are the same for all of them, because they
+     are properties of "a mutation" rather than of any one command.
+
+     It resolves with the server's own answer — the caller shapes its own return
+     from it — and throws on everything that is not an answer. */
+  const mutate = async (name, send) => {
+    /* ONE AT A TIME. The server has no idempotency key, so two commands in
+       flight are two mutations — and a button that is pressed twice must not
+       become two deals. This is thrown rather than queued: queueing would send
+       the second one after the first had already changed the world it was
+       written against. */
+    if (running !== null) throw new CommandInFlightError(running);
+    running = name;
+    status = STATUS.saving;
+    /* The projection is NOT touched here. What is on screen stays what the
+       server last said, for as long as the answer is unknown. */
+    announce();
+
+    let answer;
+    try {
+      answer = await send();
+    } catch (error) {
+      running = null;
+      /* THE WORLD MOVED FIRST. The server's transaction rolled back, so the
+         command did not run — and it is not sent again. The reason the world
+         moved is exactly the reason this command may no longer be the right
+         one, so the store re-reads and the person decides whether to ask again.
+         Nothing about this looks like success: it still throws, and the status
+         says conflict. */
+      if (error && error.failure === FAILURE_CONFLICT) {
+        const reread = await reRead();
+        status = STATUS.conflict;
+        lastError = FAILURE_CONFLICT;
+        lastRefusal = null;
+        stale = !reread;
+        announce();
+        throw error;
+      }
+      throw failed(error);
+    }
+    running = null;
+
+    if (!answer.ok) {
+      /* Refused: nothing changed, so nothing is adopted. The version the server
+         reported is still worth taking — it may have moved for other reasons
+         while this request was in flight. */
+      version = answer.version === undefined ? version : answer.version;
+      status = state === null ? STATUS.idle : STATUS.ready;
+      lastError = null;
+      lastRefusal = answer.refused;
+      announce();
+      return { ok: false, refused: answer.refused };
+    }
+    /* `adopt` reads `state` and `version` and nothing else, so anything else the
+       reply carried — a credential — is handed to the caller and never stored. */
+    adopt(answer);
+    return answer;
+  };
+
   return {
     /* ------------------------------------------------ THE STORE CONTRACT */
     get: () => state,
@@ -193,55 +256,29 @@ export function createProductionStore({ api } = {}) {
 
     /* No actor argument. There is nowhere to put one. */
     async execute(command, payload = {}) {
-      /* ONE AT A TIME. The server has no idempotency key, so two commands in
-         flight are two mutations — and a button that is pressed twice must not
-         become two deals. This is thrown rather than queued: queueing would
-         send the second one after the first had already changed the world it
-         was written against. */
-      if (running !== null) throw new CommandInFlightError(running);
-      running = command;
-      status = STATUS.saving;
-      /* The projection is NOT touched here. What is on screen stays what the
-         server last said, for as long as the answer is unknown. */
-      announce();
-
-      let answer;
-      try {
-        answer = await api.command(command, payload);
-      } catch (error) {
-        running = null;
-        /* THE WORLD MOVED FIRST. The server's transaction rolled back, so the
-           command did not run — and it is not sent again. The reason the world
-           moved is exactly the reason this command may no longer be the right
-           one, so the store re-reads and the person decides whether to ask
-           again. Nothing about this looks like success: `execute` still throws,
-           and the status says conflict. */
-        if (error && error.failure === FAILURE_CONFLICT) {
-          const reread = await reRead();
-          status = STATUS.conflict;
-          lastError = FAILURE_CONFLICT;
-          lastRefusal = null;
-          stale = !reread;
-          announce();
-          throw error;
-        }
-        throw failed(error);
-      }
-      running = null;
-
-      if (!answer.ok) {
-        /* Refused: nothing changed, so nothing is adopted. The version the
-           server reported is still worth taking — it may have moved for other
-           reasons while this request was in flight. */
-        version = answer.version === undefined ? version : answer.version;
-        status = state === null ? STATUS.idle : STATUS.ready;
-        lastError = null;
-        lastRefusal = answer.refused;
-        announce();
-        return { ok: false, refused: answer.refused };
-      }
-      adopt(answer);
+      const answer = await mutate(command, () => api.command(command, payload));
+      if (!answer.ok) return answer;
       return { ok: true, value: answer.value, state: answer.state, version: answer.version };
+    },
+
+    /* THE SECOND CALLER OF THE SAME STATE MACHINE (Phase 5 Batch 2).
+
+       Opening a Collector invitation is a mutation like any other and obeys
+       every rule above — one at a time, nothing optimistic, a conflict
+       re-reads and is never replayed. It differs in exactly one way: the reply
+       carries a credential beside the projection, because a secret shown once
+       cannot live in something that is read again on every refresh.
+
+       So it goes through `mutate`, which is the whole of the lifecycle, and
+       differs only in which request it sends and what it hands back. Two
+       callers, one state machine — a second machine is how two screens start
+       disagreeing about whether something is in flight. */
+    async createInvitation({ recipient = null, note = null } = {}) {
+      const answer = await mutate("createCollectorInvitation",
+        () => api.createCollectorInvitation({ recipient, note }));
+      if (!answer.ok) return answer;
+      return { ok: true, invitationId: answer.invitationId, credential: answer.credential,
+        state: answer.state, version: answer.version };
     },
 
     /* ------------------------------------------------ WHAT A ROUND TRIP NEEDS */

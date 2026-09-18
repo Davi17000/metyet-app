@@ -43,6 +43,7 @@ const { projectForActor } = require("../domain/metyet-projection.js");
 const RT = require("../domain/metyet-runtime.js");
 const { executeCommand } = require("../persistence/command-transaction.js");
 const { redeemPartnerInvitation, REFUSALS } = require("./registration.js");
+const { openCollectorInvitation } = require("./collector-invitation.js");
 const { apiError, toApiError, errorBody } = require("./errors.js");
 
 /* Fields a request may not carry: they name authority, and authority comes from
@@ -52,6 +53,11 @@ const { apiError, toApiError, errorBody } = require("./errors.js");
 const FORBIDDEN_PAYLOAD_KEYS = ["actor", "seat", "role", "by", "account", "accountId", "subject", "sub", "token", "at"];
 const POLLUTING_KEYS = ["__proto__", "constructor", "prototype"];
 const BODY_KEYS = ["command", "payload"];
+/* Opening an invitation takes two labels and nothing else. Every authority and
+   runtime value on the record it creates — the inviting partner, the id, both
+   timestamps, the credential — is the server's, so there is no field here for
+   one and nothing to reject beyond an unknown name. */
+const INVITATION_BODY_KEYS = ["recipient", "note"];
 const DEFAULT_BODY_LIMIT = 256 * 1024;
 
 const isPlainObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
@@ -93,6 +99,11 @@ function createApp({
   verifier,
   invitations,
   identity,
+  /* The Collector invitation credential directory (Phase 5 Batch 2). Injected
+     like everything else, and when it is absent the route that needs it is not
+     mounted — a Trusted Partner cannot open an invitation the server has
+     nowhere to keep the secret for. */
+  collectorCredentials,
   checkSchema,
   runtime = RT.systemRuntime(),
   /* The built production client, as two strings, or null. Injected rather than
@@ -222,6 +233,54 @@ function createApp({
     if (!state.actor) throw apiError("actor_unknown");
     return { ok: true, version: result.version, value: result.value === undefined ? null : result.value, state };
   });
+
+  /* ------------------------------------------- OPENING A COLLECTOR INVITATION
+     "Come and join my Collector Network." A Trusted Partner's own offer, and
+     the one secret that will redeem it, created together.
+
+     This is an authenticated TP route rather than a command, for one reason:
+     the reply carries a credential, and `POST /api/commands` answers with the
+     actor's projection — which is read again on every refresh, so a secret
+     placed in one would not be shown once. The canonical mutation still goes
+     through the ordinary command transaction; see server/collector-invitation.js.
+
+     THE INVITATION NAMES NOBODY. No Collector is created, no Relationship is
+     created, and redeeming is Batch 3's work and does not exist yet. The body
+     carries at most a recipient hint and a note — labels, for the partner's own
+     recognition, deciding nothing about who may accept. */
+  if (collectorCredentials) {
+    app.post("/api/invitations/collector", { preHandler: authenticate }, async (request, reply) => {
+      const { actor } = request.metyet;
+      const body = request.body === undefined ? {} : request.body;
+      if (!isPlainObject(body)) throw apiError("invalid_request", { detail: "a JSON object is required" });
+      const unknown = Object.keys(body).filter((k) => !INVITATION_BODY_KEYS.includes(k));
+      if (unknown.length) throw apiError("invalid_request", { detail: `unknown field(s): ${unknown.join(", ")}` });
+      for (const key of ["recipient", "note"]) {
+        if (body[key] !== undefined && body[key] !== null && typeof body[key] !== "string") {
+          throw apiError("invalid_request", { detail: `${key} must be text` });
+        }
+      }
+
+      const result = await openCollectorInvitation({ repository, credentials: collectorCredentials, runtime },
+        { actor, recipient: body.recipient ?? null, note: body.note ?? null });
+
+      if (!result.ok) {
+        request.log.info({ refused: result.refused }, "invitation refused");
+        reply.code(409);
+        return { ...errorBody(apiError("command_refused", { refused: result.refused }), request.id),
+          version: result.version };
+      }
+
+      /* The credential is a sibling of the projection, never inside it — and
+         this is the only reply in the product that will ever carry it. It is
+         not logged here or anywhere: the id is what support quotes. */
+      request.log.info({ invitationId: result.invitationId }, "collector invitation opened");
+      const state = projectForActor(result.world, actor);
+      if (!state.actor) throw apiError("actor_unknown");
+      return { ok: true, version: result.version, invitationId: result.invitationId,
+        credential: result.token, state };
+    });
+  }
 
   /* ------------------------------------------------------------ REGISTRATION
      "You've been invited to become a MetYet Trusted Partner." This is the

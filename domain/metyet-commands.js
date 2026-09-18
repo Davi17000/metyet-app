@@ -78,6 +78,16 @@ const withOpp = (state, oppId, fn) => ({ ...state,
 const stamp = (o, at) => (at ? { ...o, updated: at } : o);
 const validMoney = (n) => typeof n === "number" && isFinite(n);
 
+/* A label a person typed, or nothing. Trimmed to one line and capped, because a
+   hint is for recognising an invitation in a list — not a place to put a
+   paragraph. Empty becomes null: a missing hint is missing, not "". */
+const HINT_MAX = 120;
+const hint = (value) => {
+  if (typeof value !== "string") return null;
+  const clean = value.replace(/\s+/g, " ").trim();
+  return clean ? clean.slice(0, HINT_MAX) : null;
+};
+
 /* Standard gate for a command on an existing opportunity: it must exist, the
    actor must be a participant, and it must still be active. */
 function oppGate(state, a, oppId) {
@@ -265,25 +275,73 @@ const COMMANDS = {
   },
 
   /* ------------------------------------------------------------ relationships & profile */
-  /* Minimal in-memory support: a pending collector created by a partner's
-     invitation. Acceptance (and therefore the Relationship) is out of scope for
-     Phase 1, so an invited collector is not yet related.
+  /* AN INVITATION NAMES NOBODY (Phase 5 Batch 2).
 
-     PHASE 2 (D-1): partner-authored metadata never lands on the shared Collector
-     record. A note typed at invitation belongs to the inviting partner, so it is
-     kept on that partner's own Invitation; relationship dates (since, last,
-     binderReviewedAt) do not exist until a Relationship does. */
-  inviteCollector(state, a, { collector, email, note }, ctx) {
+     It used to mint a Collector record and bind itself to it. That could not
+     survive a decision the product had already made — a Collector may belong to
+     any number of Collector Networks (contract §2) — because two partners
+     inviting one person produced two Collector identities, and the account
+     directory permits one active account per subject and one per collector. The
+     person could only ever be one of them, so the second partner's invitation
+     was unredeemable by the person it was for.
+
+     So this creates one thing: the offer. Who made it, when, until when, and
+     who it was meant for as a HINT. The Collector actor is resolved — or
+     created for the first time — when the invited human authenticates and
+     redeems, which is Batch 3's work and is deliberately not here. Nothing in
+     this command writes a Collector or a Relationship, and a test asserts both
+     counts are unchanged.
+
+     THE RECIPIENT IS A LABEL, NOT AUTHORITY. It is how the partner recognises
+     which invitation is which; it decides nothing about who may redeem one.
+     Possession of the credential, plus an authenticated identity, is what will
+     establish that — so a typo here costs a re-issue rather than locking the
+     right person out.
+
+     PHASE 2 (D-1): a note typed at invitation belongs to the inviting partner,
+     so it travels on that partner's own Invitation and never on a shared
+     record. Relationship dates do not exist until a Relationship does. */
+  inviteCollector(state, a, { recipient, note }, ctx) {
     if (a.seat !== "tp") return refuse(R.notOwner);
-    if (!collector || !collector.name) return refuse(R.notFound);
-    const id = ctx.id("c", collector.id);
-    if (list(state.collectors).some((c) => c.id === id)) return refuse(R.copyInUse);
-    const { note: typedNote, since, last, binderReviewedAt, ...profile } = collector;
+    const at = ctx.at;
+    if (!at) return refuse(R.notFound);
+    const id = ctx.id("inv-");
     return done({ ...state,
-      collectors: [...list(state.collectors), { ...profile, id, pending: true }],
-      invitations: [...list(state.invitations), { id: ctx.id("inv-"), partnerId: a.partnerId,
-        collectorId: id, email: email || null, at: ctx.at || null, acceptedAt: null,
-        note: note || typedNote || null }] }, id);
+      invitations: [...list(state.invitations), {
+        id,
+        partnerId: a.partnerId,
+        /* Unresolved. Batch 3 fills it in at redemption, and until then this
+           invitation belongs to nobody. */
+        collectorId: null,
+        at,
+        expiresAt: D.invitationExpiry(at),
+        acceptedAt: null,
+        revokedAt: null,
+        recipient: hint(recipient),
+        note: hint(note),
+      }] }, id);
+  },
+
+  /* WITHDRAWING ONE, AND IT IS ONE-WAY. Nothing is deleted: a revoked
+     invitation is still what happened, and reading it back is how a partner
+     answers "what did I send that person?". To let somebody in after this,
+     invite them again — a new invitation with a new credential — so what became
+     of the old one stays readable.
+
+     Re-revoking changes nothing and succeeds. That is deliberate: a partner
+     whose first attempt ended in an unknown outcome can press it again without
+     the second press failing for a reason that is not about the invitation. */
+  revokeCollectorInvitation(state, a, { invitationId }, ctx) {
+    if (a.seat !== "tp") return refuse(R.notOwner);
+    const inv = list(state.invitations).find((i) => i.id === invitationId);
+    if (!inv) return refuse(R.notFound);
+    if (inv.partnerId !== a.partnerId) return refuse(R.notOwner);
+    /* An accepted invitation produced a Relationship; ending that is a
+       different act, and not this one. */
+    if (inv.acceptedAt) return refuse(R.terminal);
+    if (inv.revokedAt) return done(state, invitationId);
+    return done({ ...state, invitations: list(state.invitations).map((i) => (i.id === invitationId
+      ? { ...i, revokedAt: ctx.at } : i)) }, invitationId);
   },
 
   updatePartnerProfile(state, a, { patch }, ctx) {

@@ -66,7 +66,8 @@ function Plain({ lead, onSignOut }) {
   );
 }
 
-export default function ProductionApp({ state, onSignOut, onSaveProfile = null }) {
+export default function ProductionApp({ state, onSignOut, onSaveProfile = null,
+  onInvite = null, onRevokeInvite = null, onRefresh = null }) {
   const who = describeActor(state);
 
   /* Not identified: the server did not say who this is, or said something this
@@ -81,7 +82,8 @@ export default function ProductionApp({ state, onSignOut, onSaveProfile = null }
   }
 
   if (who.seat === "tp") {
-    return <TrustedPartnerShell state={state} onSignOut={onSignOut} onSaveProfile={onSaveProfile} />;
+    return <TrustedPartnerShell state={state} onSignOut={onSignOut} onSaveProfile={onSaveProfile}
+      onInvite={onInvite} onRevokeInvite={onRevokeInvite} onRefresh={onRefresh} />;
   }
 
   if (who.seat === "collector") return <CollectorShell state={state} onSignOut={onSignOut} />;

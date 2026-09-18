@@ -319,8 +319,17 @@ describe("B. the shell is the product, and all of it is the server's data", () =
     assert(!/Shop Profile/.test(flat(r)), "Shop Profile is still a destination: " + flat(r));
     assert(!SHELL_MOD.SECTIONS.some((s) => s.id === "profile"),
       "a profile section survived as a reachable id");
-    /* Exactly one section is one something can be changed from. */
-    eq(SHELL_MOD.SECTIONS.filter((s) => s.writes).map((s) => s.id).join(","), "inventory");
+    /* WHICH SECTIONS CAN CHANGE ANYTHING IS A FACT ABOUT THE BUILD, and it
+       moves as the product grows: Batch 1 had only the shop profile, behind
+       Inventory; Batch 2 added inviting a collector, which belongs on the
+       Collector Network because that is what a network grows from. Naming the
+       exact list is what keeps that growth deliberate — a section that quietly
+       acquires a write has to come through here. Opportunities is still read
+       only, and that is the assertion with teeth. */
+    eq(SHELL_MOD.SECTIONS.filter((s) => s.writes).map((s) => s.id).join(","),
+      "collectors,inventory");
+    assert(!SHELL_MOD.SECTIONS.find((s) => s.id === "opportunities").writes,
+      "Opportunities acquired a write without a decision");
   });
 
   test("the counts beside each section are the projection's own rows", () => {
@@ -451,15 +460,27 @@ describe("C. nothing is invented — not identity, not rules, not content", () =
      the three sections that still change nothing still say so. */
   test("the shell reaches a mutation only through a callback, never by itself", () => {
     const bare = TP_FILES.map(code).join("\n");
-    assert(!/execute\s*\(|\.command\s*\(|POST|updatePartnerProfile/.test(bare),
-      "the shell reaches a command path by itself");
-    assert(/onSave/.test(bare), "and the callback it is handed instead is missing");
+    assert(!/execute\s*\(|\.command\s*\(|POST|updatePartnerProfile|inviteCollector|revokeCollectorInvitation/
+      .test(bare), "the shell reaches a command path by itself");
+    /* The callbacks it is handed instead — one per thing this build can change. */
+    assert(/onSave/.test(bare), "the profile callback it is handed instead is missing");
+    assert(/onInvite/.test(bare) && /onRevokeInvite/.test(bare),
+      "the invitation callbacks it is handed instead are missing");
 
+    /* HANDED NOTHING, IT OFFERS NOTHING. This render passes no callback at all,
+       and that — not a notice — is what makes a surface unable to change
+       anything: three sections and sign-out, on the section that in production
+       carries the most controls. */
     const r = render(React.createElement(Shell, { state: FULL_TP }));
-    /* Three sections and sign-out, and nothing else on a read-only section. */
     const labels = buttons(r).map(instText);
     eq(labels.length, 4, "an extra control appeared: " + labels.join(" | "));
-    assert(/Read-only for now/.test(flat(r)), "and a read section does not say it is read-only");
+    assert(!/Invite a collector|Withdraw/.test(flat(r)),
+      "an invitation control was offered with no way to send it: " + flat(r));
+
+    /* A section nothing can be changed from still says so. Opportunities is the
+       one left, and the notice belongs to it rather than to the shell. */
+    clickText(r, "Opportunities");
+    assert(/Read-only for now/.test(flat(r)), "a read section does not say it is read-only");
 
     /* Inventory is where the shop is reached from, so it does not carry a
        notice contradicting what can be done there — and says in its own words

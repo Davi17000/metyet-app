@@ -167,5 +167,36 @@ export function createApiClient({ baseUrl, getToken, timeoutMs = DEFAULT_TIMEOUT
       if (status === 409 && refused) return { ok: false, refused, version: body && body.version };
       throw new ApiError(failureFor(status, error && error.code), { status, refused, detail: (error && error.code) || null });
     },
+
+    /* OPEN A COLLECTOR INVITATION (Phase 5 Batch 2). A third call, because the
+       reply carries one thing `command` cannot: the credential that will redeem
+       the invitation, returned exactly once and never obtainable again.
+
+       It is the same shape of answer otherwise — a refusal is a value, a
+       conflict throws, and the projection comes back to be adopted. The
+       credential is a sibling of `state`, never inside it: a projection is read
+       again on every refresh, and a secret that can be re-read is not a secret
+       shown once. Nothing here stores it. */
+    async createCollectorInvitation({ recipient = null, note = null } = {}) {
+      const { status, payload: body } = await send("/api/invitations/collector",
+        { method: "POST", body: { recipient, note } });
+      if (status === 200) {
+        if (!body || typeof body !== "object" || !body.state) {
+          throw new ApiError(FAILURES.unexpected, { detail: "no state in a 200" });
+        }
+        if (typeof body.credential !== "string" || !body.credential) {
+          /* A created invitation whose credential did not arrive is exactly the
+             ambiguous case: it may well exist, and its secret is already
+             unrecoverable. Say so rather than pretending either way. */
+          throw new ApiError(FAILURES.unexpected, { detail: "no credential in a 200" });
+        }
+        return { ok: true, version: body.version, invitationId: body.invitationId || null,
+          credential: body.credential, state: body.state };
+      }
+      const error = body && body.error;
+      const refused = error && typeof error.refused === "string" ? error.refused : null;
+      if (status === 409 && refused) return { ok: false, refused, version: body && body.version };
+      throw new ApiError(failureFor(status, error && error.code), { status, refused, detail: (error && error.code) || null });
+    },
   };
 }

@@ -225,18 +225,16 @@ function unrelatedWorld() {
   x(cA, "requestPhotos", { invId: "iA2" });
   x(cAB, "reviewCopy", { invId: "iB1" });
 
-  /* Invitations — each partner's own invitee and email. The command returns the
-     invitee's pending Collector id; the Invitation record has its own id. */
-  const invitee = {
-    A: x(pA, "inviteCollector", { collector: { name: MARK.inviteeA, city: MARK.inviteeCityA,
-      prefs: [MARK.inviteePrefA] }, email: V.invEmailA }),
-    B: x(pB, "inviteCollector", { collector: { name: MARK.inviteeB }, email: V.invEmailB }),
-    C: x(pC, "inviteCollector", { collector: { name: MARK.inviteeC }, email: V.invEmailC }),
-  };
-  const invitationOf = (cid) => store.get().invitations.find((i) => i.collectorId === cid).id;
+  /* Invitations — each partner's own. PHASE 5 BATCH 2: an invitation names
+     nobody, so there is no invitee Collector to mint and the command returns
+     the invitation's own id. The recipient is a label the partner typed, and
+     it is partner-private: another partner must never read it. */
+  const invA = x(pA, "inviteCollector", { recipient: MARK.inviteeA, note: V.invEmailA });
+  const invB = x(pB, "inviteCollector", { recipient: MARK.inviteeB, note: V.invEmailB });
+  const invC = x(pC, "inviteCollector", { recipient: MARK.inviteeC, note: V.invEmailC });
 
   return { store, AT, V, MARK, ids: { oA, oABA, oB, oAB,
-    invA: invitationOf(invitee.A), invB: invitationOf(invitee.B), invC: invitationOf(invitee.C), invitee, invX: "invX" },
+    invA, invB, invC, invX: "invX" },
     snapshots: { oABA: snap },
     actors: { pA, pB, pC, cA, cAB, cB, cX: { collectorId: "cX" } } };
 }
