@@ -108,11 +108,19 @@ const omit = (record, keys) => {
    is already the recipient's own or is shared by both participants. */
 
 /* A Collector as a RELATED partner sees them: identity and the network-facing
-   matching profile (D-2). */
-const COLLECTOR_FOR_PARTNER = ["id", "name", "short", "city", "prefs", "pending"];
-/* A Collector named only by a record the partner takes part in — a deal or
-   thread outside the network, or the partner's own pending invitee: enough to
-   label that record, nothing of the network profile. */
+   matching profile (D-2).
+
+   `pending` WAS HERE AND IS GONE (Phase 5 Batch 3A). It marked a Collector
+   record that `inviteCollector` fabricated before anybody had accepted
+   anything — the shape Batch 2 removed, because two partners inviting one
+   person made two identities. Nothing has set it since, and an allow-list that
+   names a field nothing writes is an invitation to start writing it again.
+   A Collector now exists only once a real person has accepted, so there is no
+   pending one to mark. */
+const COLLECTOR_FOR_PARTNER = ["id", "name", "short", "city", "prefs"];
+/* A Collector named only by a record the partner takes part in — a deal or a
+   thread outside the network: enough to label that record, nothing of the
+   network profile. */
 const COLLECTOR_IDENTITY = ["id", "name", "short"];
 /* Partner-authored relationship metadata the prototype keeps on the canonical
    Collector row (D-1). Never projected — not to a partner, not to the collector. */

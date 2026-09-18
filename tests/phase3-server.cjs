@@ -762,14 +762,24 @@ describe("J. boundaries and composition", () => {
   });
 
   test("the server owns no product rule and no second way to write", () => {
-    /* Three files are allowed what the rest are not, and only these three:
+    /* Four files are allowed what the rest are not, and only these four:
        server/bootstrap.js writes the world directly — but only the empty one,
        only when there is none, and only from an operator command (Batch 4's
        suite holds it to that); server/registration.js writes it when a Trusted
        Partner redeems an invitation, through the domain's own registration
        module and never around it (Batch 5's suite holds it to that);
-       server/db-pool.js is where the driver lives. */
-    const MAY_WRITE_WORLD = ["server/bootstrap.js", "server/registration.js"];
+       server/collector-acceptance.js writes it when a COLLECTOR redeems one,
+       through that same module and under the same rule (Phase 5 Batch 3A's
+       suite holds it to that); server/db-pool.js is where the driver lives.
+
+       BOTH EXEMPTIONS ARE THE SAME EXEMPTION. A command begins by resolving an
+       actor who already exists, so neither the first Trusted Partner nor the
+       first Collector could be created by one. Each is a redeemed invitation
+       authoring through the domain, and the rule below — author through the
+       domain, validate what it produced, save only the version you loaded,
+       assemble nothing yourself — applies to both. */
+    const MAY_WRITE_WORLD = ["server/bootstrap.js", "server/registration.js",
+      "server/collector-acceptance.js"];
     const UNREACHABLE_FROM_ROUTES = ["server/bootstrap.js"];
     const MAY_KNOW_DRIVER = ["server/db-pool.js"];
     for (const [file, text] of serverFiles()) {
@@ -790,6 +800,13 @@ describe("J. boundaries and composition", () => {
     assert(/validateWorld\(/.test(registration), "and validates what the domain produced");
     assert(/expectedVersion: version/.test(registration), "and saves only the version it loaded");
     assert(!/partners:\s*\[|\.partners\s*=/.test(registration), "it never assembles a partner itself");
+    /* The Collector side of the same exemption, held to the same four rules. */
+    const acceptance = code(fs.readFileSync(path.join(ROOT, "server", "collector-acceptance.js"), "utf8"));
+    assert(/accept\(world, \{/.test(acceptance), "acceptance authors through the domain");
+    assert(/validateWorld\(/.test(acceptance), "and validates what the domain produced");
+    assert(/expectedVersion: version/.test(acceptance), "and saves only the version it loaded");
+    assert(!/collectors:\s*\[|\.collectors\s*=|relationships:\s*\[/.test(acceptance),
+      "it assembles a Collector or a Relationship itself");
     const reachable = new Set();
     const follow = (relative) => {
       if (reachable.has(relative)) return;

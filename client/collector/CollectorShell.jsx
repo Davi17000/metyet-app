@@ -107,6 +107,11 @@ const CSS = `
 .mcs-ro { display:flex; gap:8px; flex-wrap:wrap; align-items:baseline; background:var(--amber-bg);
   border-bottom:1px solid var(--amber-line); color:var(--amber); padding:8px 16px; font-size:12.5px; }
 .mcs-ro .dim { color:#A9863F; }
+.mcs-joined { display:flex; gap:10px; flex-wrap:wrap; align-items:baseline; background:var(--t1-bg);
+  border-bottom:1px solid var(--line); color:var(--t1); padding:10px 22px; font-size:12.5px; }
+.mcs-joined strong { font-weight:600; }
+.mcs-joined-x { margin-left:auto; background:none; border:0; padding:0; color:var(--t1);
+  font-weight:600; font-size:12.5px; }
 
 .mcs-body { flex:1; display:flex; min-width:0; }
 .mcs-main { flex:1; min-width:0; padding:18px 16px 92px; }
@@ -179,8 +184,12 @@ const CSS = `
 }
 `;
 
-export default function CollectorShell({ state, onSignOut }) {
-  const [section, setSection] = useState(SECTIONS[0].id);
+export default function CollectorShell({ state, onSignOut, joined = null, onDismissJoined = null }) {
+  /* JUST ACCEPTED? OPEN ON THE THING THAT CHANGED (Phase 5 Batch 3A). A person
+     who has this second finished joining a shop's network; the section that now
+     holds that shop is what they came for. Everyone else opens where they
+     always did. */
+  const [section, setSection] = useState(joined ? "partners" : SECTIONS[0].id);
 
   const who = describeActor(state);
   /* Row counts of collections the SERVER scoped to this Collector. Nothing
@@ -210,6 +219,24 @@ export default function CollectorShell({ state, onSignOut }) {
         <button className="mcs-out" type="button" onClick={onSignOut}>Sign out</button>
       </header>
 
+      {/* ONE GREETING, FOR THE ONE THING THAT JUST HAPPENED. It is handed in
+          from the entrance, which read it out of the server's own reply; this
+          file decides nothing about it and it grants nothing. Dismissing it is
+          the end of it — there is no second copy anywhere. */}
+      {joined ? (
+        <div className="mcs-joined" role="status">
+          <span>You've joined <strong>{joined}</strong>'s Collector Network. They can see the
+            goals you set and the cards in your Trade Binder.</span>
+          {onDismissJoined ? (
+            <button className="mcs-joined-x" type="button" onClick={onDismissJoined}>Got it</button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* STILL READ-ONLY, AND THAT IS STILL TRUE. Accepting an invitation is an
+          entrance, not a section control: it happened before this shell
+          rendered and cannot be done again from here. Nothing below can change
+          anything, so the notice stays exactly as honest as it was. */}
       <div className="mcs-ro" role="note">
         <span>Read-only for now — everything here is what MetYet holds for you.</span>
         <span className="dim">Goals, trades and messages arrive in a later release.</span>

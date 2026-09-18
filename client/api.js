@@ -198,5 +198,32 @@ export function createApiClient({ baseUrl, getToken, timeoutMs = DEFAULT_TIMEOUT
       if (status === 409 && refused) return { ok: false, refused, version: body && body.version };
       throw new ApiError(failureFor(status, error && error.code), { status, refused, detail: (error && error.code) || null });
     },
+
+    /* ACCEPT ONE (Phase 5 Batch 3A). The only call in this client a person can
+       make before they are anybody in MetYet — so it is the only one whose 403
+       does NOT mean "you are not provisioned". Being unprovisioned is the normal
+       state of somebody accepting their first invitation; that is what they are
+       here to change.
+
+       One field leaves the browser: the credential. There is no collectorId to
+       send and no place to put one. The answer is the projection for whoever the
+       server decided this person is. */
+    async acceptCollectorInvitation({ token } = {}) {
+      if (typeof token !== "string" || !token) {
+        throw new TypeError("acceptCollectorInvitation: the invitation code is required");
+      }
+      const { status, payload: body } = await send("/api/invitations/collector/accept",
+        { method: "POST", body: { token } });
+      if (status === 200) {
+        if (!body || typeof body !== "object" || !body.state) {
+          throw new ApiError(FAILURES.unexpected, { detail: "no state in a 200" });
+        }
+        return { ok: true, version: body.version, state: body.state };
+      }
+      const error = body && body.error;
+      const refused = error && typeof error.refused === "string" ? error.refused : null;
+      if (status === 409 && refused) return { ok: false, refused, version: body && body.version };
+      throw new ApiError(failureFor(status, error && error.code), { status, refused, detail: (error && error.code) || null });
+    },
   };
 }

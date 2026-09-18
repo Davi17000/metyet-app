@@ -86,6 +86,24 @@ export function revokeCollectorInvitation(target) {
   return (invitationId) => target.execute(REVOKE_INVITATION, { invitationId });
 }
 
+/* ------------------------------------------- ACCEPTING ONE (Batch 3A)
+
+   ACCEPTANCE IS NOT A COMMAND, AND THIS FILE IS WHERE THAT IS VISIBLE. Every
+   other binding here names a command the domain executes for an actor. This one
+   names none, because the person accepting is not an actor yet — they have no
+   seat until the server decides who they are. There is no command name to
+   spell, which is precisely why `POST /api/commands` cannot reach it.
+
+   It is bound the same way regardless: a screen receives a function of one
+   argument and no store, so the surface that collects an invitation code can
+   accept an invitation and do nothing else. */
+export function acceptCollectorInvitation(target) {
+  if (!target || typeof target.acceptInvitation !== "function") {
+    throw new TypeError("acceptCollectorInvitation: the production store is required");
+  }
+  return (token) => target.acceptInvitation({ token });
+}
+
 /* Re-reading is not a mutation and is safe to repeat, which is why an ambiguous
    write may end in one: a screen that cannot know whether something was created
    can at least ask what exists now. It is a GET; nothing is replayed. */

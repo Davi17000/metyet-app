@@ -44,6 +44,7 @@ const RT = require("../domain/metyet-runtime.js");
 const { executeCommand } = require("../persistence/command-transaction.js");
 const { redeemPartnerInvitation, REFUSALS } = require("./registration.js");
 const { openCollectorInvitation } = require("./collector-invitation.js");
+const { acceptCollectorInvitation } = require("./collector-acceptance.js");
 const { apiError, toApiError, errorBody } = require("./errors.js");
 
 /* Fields a request may not carry: they name authority, and authority comes from
@@ -279,6 +280,58 @@ function createApp({
       if (!state.actor) throw apiError("actor_unknown");
       return { ok: true, version: result.version, invitationId: result.invitationId,
         credential: result.token, state };
+    });
+  }
+
+  /* --------------------------------------------------- ACCEPTING AN INVITATION
+     The other side of the invitation Batch 2 opened, and the moment a Collector
+     comes into being (Phase 5 Batch 3A).
+
+     IT USES `verifyOnly`, NOT `authenticate`, AND THAT IS THE POINT. The person
+     redeeming has proved who they are to the identity provider and is nobody in
+     MetYet yet — which is exactly what `authenticate` refuses, with
+     `account_not_provisioned`. Registration has the same shape for the same
+     reason, and this is the second and last route that needs it.
+
+     ONE FIELD. The credential, and nothing else. There is no collectorId to
+     send, no partnerId, no subject, no timestamp: the Collector is resolved or
+     minted by the server from the verified subject, the partner comes from the
+     invitation, and every time comes from the runtime. A body that carries
+     anything else is rejected rather than quietly ignored.
+
+     THE CREDENTIAL IS NEVER LOGGED. Not on success, not on refusal, not in
+     part. What support quotes is the invitation id, which the server knows only
+     after a genuine claim. */
+  if (collectorCredentials) {
+    app.post("/api/invitations/collector/accept", { preHandler: verifyOnly }, async (request, reply) => {
+      const body = request.body;
+      if (!isPlainObject(body)) throw apiError("invalid_request", { detail: "a JSON object is required" });
+      const unknown = Object.keys(body).filter((k) => k !== "token");
+      if (unknown.length) throw apiError("invalid_request", { detail: `unknown field(s): ${unknown.join(", ")}` });
+      if (typeof body.token !== "string" || !body.token) {
+        throw apiError("invalid_request", { detail: "token must be a non-empty string" });
+      }
+
+      const { subject } = request.metyet;
+      const result = await acceptCollectorInvitation(
+        { repository, accounts, credentials: collectorCredentials, runtime },
+        { token: body.token, subject });
+
+      if (!result.ok) {
+        request.log.info({ refused: result.refused }, "acceptance refused");
+        reply.code(409);
+        return errorBody(apiError("command_refused", { refused: result.refused }), request.id);
+      }
+
+      request.log.info({ invitationId: result.invitationId, collectorId: result.collectorId,
+        converged: result.converged }, "collector invitation accepted");
+      /* What they would receive from /api/view: their own account, now with one
+         Trusted Partner in it. A convergent replay answers identically, because
+         it IS identical — that is what makes a lost reply survivable. */
+      const actor = { collectorId: result.collectorId };
+      const state = projectForActor(await repository.loadWorld(), actor);
+      if (!state.actor) throw apiError("actor_unknown");
+      return { ok: true, version: result.version, state };
     });
   }
 

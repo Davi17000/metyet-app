@@ -45,7 +45,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import ProductionApp from "../production-app.jsx";
 import { savePartnerProfile, openCollectorInvitation, revokeCollectorInvitation,
-  refreshView } from "../commands.js";
+  acceptCollectorInvitation, refreshView } from "../commands.js";
 
 /* Identity is read in exactly one place — client/actor.js — and re-exported
    here because this module's own tests have always asked it that question.
@@ -60,6 +60,11 @@ export const STATES = Object.freeze({
   loading: "loading",
   ready: "ready",
   failed: "failed",
+  /* Phase 5 Batch 3A. Signed in, holding an invitation code, and not yet in
+     anybody's network — the one screen in the product where a person agrees to
+     be seen. It exists because accepting is a decision, not a side effect of
+     arriving. */
+  invited: "invited",
 });
 
 /* A person can act on each of these. None of them is the provider's words. */
@@ -75,7 +80,55 @@ const MESSAGES = Object.freeze({
 });
 const say = (failure) => MESSAGES[failure] || MESSAGES.unexpected;
 
+/* WHY AN INVITATION WOULD NOT WORK, IN AS FEW WORDS AS ARE TRUE (Batch 3A).
+
+   The first of these covers six causes — no such code, mistyped, expired,
+   withdrawn, already used by somebody else, already accepted. They are one
+   sentence because the server gives one answer, and the server gives one answer
+   because telling them apart would let somebody with a list of guesses learn
+   which codes are real. So the sentence has to carry a person all the way to
+   the remedy without knowing which of the six happened, and the remedy is the
+   same for all six: ask for another one. */
+const REFUSALS = Object.freeze({
+  "invitation-unusable": "That code will not work. It may have been mistyped, expired, been "
+    + "withdrawn, or already been used. Ask the shop for a new one.",
+  "already-a-partner": "You are signed in as a Trusted Partner. A MetYet sign-in is one or the "
+    + "other, so to join a shop as a collector, sign in with a different address.",
+  "already-linked": "This sign-in is already connected to a different MetYet account.",
+});
+const whyRefused = (refused) => REFUSALS[refused]
+  || "MetYet could not accept that invitation.";
+
+/* CERTAIN, AND NOT. A refusal and a conflict are answers: the server considered
+   it and nothing happened. Losing contact is not — the invitation may have been
+   accepted with only the reply lost.
+
+   AND HERE, UNIQUELY IN THIS PRODUCT, THE HONEST ADVICE IS TO TRY AGAIN. Every
+   other ambiguous write in MetYet must not be replayed, because a mutation sent
+   twice is two mutations. This one is not: the server records who spent a code,
+   so the same person submitting it again converges on the same answer instead
+   of creating a second anything. That is what `claimed_by` is for. */
+export const ACCEPT_AMBIGUOUS = Object.freeze({
+  unavailable: "MetYet lost contact, so it cannot tell whether that invitation was accepted. "
+    + "Try again — using the same code twice is safe.",
+  unexpected: "MetYet got an answer it could not read, so it cannot tell whether that invitation "
+    + "was accepted. Try again — using the same code twice is safe.",
+});
+
 const LOOKS_LIKE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/* WHO THEY JUST JOINED, READ FROM THE SERVER'S OWN ANSWER (Batch 3A).
+
+   Not from the code, not from anything typed, and not from anything this
+   browser decided — the projection's `partners` collection is exactly the shops
+   this person now has an accepted Relationship with, so for somebody who just
+   accepted their first invitation it holds one. If the server sent no name
+   there is no name, and the screen says something true without one. */
+const nameOfFirstPartner = (state) => {
+  const partners = state && Array.isArray(state.partners) ? state.partners : [];
+  const named = partners.find((p) => p && typeof p.name === "string" && p.name.trim());
+  return named ? named.name.trim() : null;
+};
 
 const S = {
   page: { minHeight: "100vh", background: "#F1F3F6", color: "#131922", display: "flex",
@@ -97,6 +150,10 @@ const S = {
   problem: { marginTop: 16, padding: "10px 12px", background: "#FBEDEC", border: "1px solid #EBD9B4",
     borderRadius: 6, color: "#98302C" },
   muted: { color: "#616B7A", fontSize: 13 },
+  note: { marginTop: 16, padding: "12px 13px", background: "#F7F8FA", border: "1px solid #DFE4EA",
+    borderRadius: 6, color: "#3C4655", fontSize: 13, lineHeight: 1.5 },
+  link: { marginTop: 14, background: "none", border: 0, padding: 0, color: "#0B5D66",
+    fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" },
 };
 
 export default function SignIn({ session, store, onConfigProblem = null }) {
@@ -121,6 +178,28 @@ export default function SignIn({ session, store, onConfigProblem = null }) {
   const onInvite = useMemo(() => (store ? openCollectorInvitation(store) : null), [store]);
   const onRevokeInvite = useMemo(() => (store ? revokeCollectorInvitation(store) : null), [store]);
   const onRefresh = useMemo(() => (store ? refreshView(store) : null), [store]);
+  /* Phase 5 Batch 3A. Not a command — there is no command to name, because the
+     person calling it has no seat yet. Bound here anyway, for the same reason
+     as the rest: the screen gets a function, never the store. */
+  const onAccept = useMemo(() => (store ? acceptCollectorInvitation(store) : null), [store]);
+
+  /* THE INVITATION CODE LIVES HERE AND NOWHERE ELSE.
+
+     In a React state variable, for as long as this page is open. Not in
+     localStorage, not in sessionStorage, not in a cookie, not in the URL — a
+     credential that can be read again after the tab closes is a credential
+     somebody else can read. A reload loses it and the person types it again,
+     which is the right trade.
+
+     IT SURVIVES THE SIGN-IN because sign-in happens in this tab: the code is
+     typed, then the email, then the code from the email, and this component
+     never unmounts. That is a real constraint on the product, not an accident —
+     a magic link that opened a NEW tab would lose it. */
+  const [invitation, setInvitation] = useState(null);
+  const [entering, setEntering] = useState(false);
+  const [codeDraft, setCodeDraft] = useState("");
+  const [accepting, setAccepting] = useState(false);
+  const [joined, setJoined] = useState(null);
 
   const fail = useCallback((error) => {
     setProblem(say(error && (error.failure || error.code)));
@@ -157,14 +236,67 @@ export default function SignIn({ session, store, onConfigProblem = null }) {
       setProblem(say(error && error.failure));
       return;
     }
-    /* Signed in. Now ask the server who that is — the only source of identity. */
     setCodeValue("");
+    /* SIGNED IN — AND NOW ONE OF TWO THINGS.
+
+       Holding an invitation means this person may well be nobody in MetYet yet,
+       and asking "who am I" would answer `not-provisioned`, which is true and
+       useless. So the invitation comes first: accepting is what makes them
+       somebody, and the reply to it is the projection a load would have
+       fetched. */
+    if (invitation) { setPhase(STATES.invited); return; }
+    /* Otherwise ask the server who this is — the only source of identity. */
     setPhase(STATES.loading);
     try {
       await store.load();
       setPhase(STATES.ready);
     } catch (error) { fail(error); }
-  }, [codeValue, email, session, store, fail]);
+  }, [codeValue, email, session, store, fail, invitation]);
+
+  /* ACCEPTING — THE ONE IRREVERSIBLE THING A NEW COLLECTOR DOES.
+
+     Explicit, because it is a disclosure: from here the shop can see the goals
+     this person sets and the cards in their binder. Nothing about arriving,
+     holding a code, or signing in does this; pressing the button does. */
+  const acceptInvitation = useCallback(async () => {
+    if (accepting || !invitation || !onAccept) return;
+    setAccepting(true);
+    setProblem(null);
+    let answer;
+    try {
+      answer = await onAccept(invitation);
+    } catch (error) {
+      setAccepting(false);
+      const failure = (error && (error.failure || error.code)) || "unexpected";
+      if (failure === "conflict") {
+        setProblem("Something else changed while that was saving, so nothing happened. Try again.");
+        return;
+      }
+      if (failure === "unauthenticated") { setProblem(say(failure)); return; }
+      setProblem(ACCEPT_AMBIGUOUS[failure] || ACCEPT_AMBIGUOUS.unexpected);
+      return;
+    }
+    setAccepting(false);
+    if (!answer || answer.ok !== true) { setProblem(whyRefused(answer && answer.refused)); return; }
+    /* In. The code has done its one job and is dropped — there is nothing left
+       it could be used for, and nothing that should still be holding it. */
+    setInvitation(null);
+    setJoined(nameOfFirstPartner(answer.state));
+    setPhase(STATES.ready);
+  }, [accepting, invitation, onAccept]);
+
+  /* Declining is not a refusal of anything — nothing was sent, so there is
+     nothing to undo. The code is dropped and they are signed in as themselves,
+     which for somebody with no account means the entrance says so. */
+  const declineInvitation = useCallback(async () => {
+    setInvitation(null);
+    setProblem(null);
+    setPhase(STATES.loading);
+    try {
+      await store.load();
+      setPhase(STATES.ready);
+    } catch (error) { fail(error); }
+  }, [store, fail]);
 
   const signOut = useCallback(async () => {
     /* The session clears whether or not revocation succeeds, so this cannot
@@ -173,6 +305,12 @@ export default function SignIn({ session, store, onConfigProblem = null }) {
     setProjection(null);
     setCodeValue("");
     setProblem(null);
+    /* Nothing about the last person survives, the invitation code least of
+       all. */
+    setInvitation(null);
+    setCodeDraft("");
+    setEntering(false);
+    setJoined(null);
     setPhase(STATES.signedOut);
   }, [session]);
 
@@ -195,15 +333,61 @@ export default function SignIn({ session, store, onConfigProblem = null }) {
 
   const problemBlock = problem ? React.createElement("div", { style: S.problem, role: "alert" }, problem) : null;
 
+  /* ENTERING THE CODE — BEFORE SIGNING IN, AND DELIBERATELY SO.
+
+     A person invited to MetYet has a code and no account. Asking them to sign
+     in first would send them to an entrance that tells them they are nobody
+     here, which is true and unhelpful. So the code is taken first, held in
+     memory, and spent after they have proved who they are. */
+  if (phase === STATES.signedOut && entering) {
+    const takeCode = (event) => {
+      if (event && event.preventDefault) event.preventDefault();
+      const typed = String(codeDraft).trim();
+      if (!typed) { setProblem("Enter the code the shop gave you."); return; }
+      setProblem(null);
+      setInvitation(typed);
+      setCodeDraft("");
+      setEntering(false);
+    };
+    return shell(React.createElement(React.Fragment, null,
+      React.createElement("div", { style: S.lead },
+        "Enter the invitation code a shop gave you. You will sign in next, and confirm "
+        + "before you join."),
+      React.createElement("form", { onSubmit: takeCode },
+        React.createElement("label", { style: S.label, htmlFor: "metyet-invitation" },
+          "Invitation code"),
+        React.createElement("input", { id: "metyet-invitation", style: S.input, type: "text",
+          autoComplete: "off", spellCheck: false, value: codeDraft,
+          onChange: (e) => setCodeDraft(e.target.value) }),
+        React.createElement("button", { style: S.button, type: "submit" }, "Continue")),
+      React.createElement("button", { style: S.quiet, type: "button",
+        onClick: () => { setEntering(false); setProblem(null); } }, "Back to sign in"),
+      problemBlock));
+  }
+
   if (phase === STATES.signedOut) {
     return shell(React.createElement(React.Fragment, null,
-      React.createElement("div", { style: S.lead }, "Sign in with the address you were invited at."),
+      React.createElement("div", { style: S.lead },
+        invitation
+          ? "Now sign in, and MetYet will ask you to confirm before you join anything."
+          : "Sign in with the address you were invited at."),
       React.createElement("form", { onSubmit: submitEmail },
         React.createElement("label", { style: S.label, htmlFor: "metyet-email" }, "Email address"),
         React.createElement("input", { id: "metyet-email", style: S.input, type: "email",
           autoComplete: "email", value: email, placeholder: "you@yourshop.com",
           onChange: (e) => setEmail(e.target.value) }),
         React.createElement("button", { style: S.button, type: "submit" }, "Email me a code")),
+      /* THE ADDRESS IS NOT THE INVITATION, and this is where the product says
+         so out loud. A collector may have been invited at one address and sign
+         in at another; the code is what the shop gave them and the sign-in is
+         how they prove who they are. Nothing compares the two. */
+      invitation
+        ? React.createElement("div", { style: S.note },
+          "You have an invitation code ready. Any address you can receive mail at will do — ",
+          "it does not have to be the one the shop wrote down.")
+        : React.createElement("button", { style: S.link, type: "button",
+          onClick: () => { setCodeDraft(""); setProblem(null); setEntering(true); } },
+          "I have an invitation code"),
       problemBlock));
   }
 
@@ -230,6 +414,34 @@ export default function SignIn({ session, store, onConfigProblem = null }) {
     return shell(React.createElement("div", { style: S.muted }, "Signed in. Loading your shop…"));
   }
 
+  /* THE CONFIRM SCREEN — SIGNED IN, HOLDING A CODE, NOT YET IN ANY NETWORK.
+
+     WHAT IT CAN AND CANNOT SAY, AND WHY. It does not name the shop, and that is
+     a consequence of a rule worth more than the nicety: the only way the server
+     could name it is to look the code up, and a route that describes an
+     invitation to anyone who submits a string is a route that tells a guesser
+     which strings are real. So MetYet says what accepting MEANS — which is the
+     part that actually needs consent — and names the shop the moment it can
+     honestly do so, which is in the answer.
+
+     The person is not in the dark: somebody handed them this code. When Batch
+     3B delivers invitations by email, the email names the shop, and the
+     question disappears rather than being answered by a new endpoint. */
+  if (phase === STATES.invited) {
+    return shell(React.createElement(React.Fragment, null,
+      React.createElement("div", { style: S.lead }, "You're signed in. One thing to confirm."),
+      React.createElement("div", { style: S.note },
+        "Accepting adds you to a shop's Collector Network. From then on they can see the ",
+        "goals you set and the cards in your Trade Binder, so they know what to look out ",
+        "for. Nothing else about you is shared, and nothing is shared with any other shop."),
+      React.createElement("button", { style: S.button, type: "button",
+        disabled: accepting, onClick: acceptInvitation },
+        accepting ? "Joining…" : "Accept invitation"),
+      React.createElement("button", { style: S.quiet, type: "button",
+        disabled: accepting, onClick: declineInvitation }, "Not now"),
+      problemBlock));
+  }
+
   if (phase === STATES.failed) {
     return shell(React.createElement(React.Fragment, null,
       problemBlock,
@@ -247,5 +459,9 @@ export default function SignIn({ session, store, onConfigProblem = null }) {
      sign-out this component already owns, and — since Phase 5 Batch 1 — call
      one bound callback that saves a Trusted Partner's own profile. */
   return React.createElement(ProductionApp,
-    { state: projection, onSignOut: signOut, onSaveProfile, onInvite, onRevokeInvite, onRefresh });
+    { state: projection, onSignOut: signOut, onSaveProfile, onInvite, onRevokeInvite, onRefresh,
+      /* Phase 5 Batch 3A. Who they just joined, so the shell can greet them by
+         it once. It is read from the server's own reply, it is cleared the
+         moment they do anything else, and it grants nothing. */
+      joined, onDismissJoined: () => setJoined(null) });
 }

@@ -8,10 +8,11 @@
 #
 #   build    npm ci --omit=dev     production dependencies only; the server
 #            && npm run build:app  itself needs no bundling, but the CLIENT does
+#   migrate  npm run db:migrate    PRE-DEPLOY: after the build, before the new
+#                                  version serves traffic, never at startup
 #   start    npm start             node server/index.js
 #   health   /api/health/ready     answers 503 while the schema is behind, so a
 #                                  deploy that skipped the migration is obvious
-#   migrate  npm run db:migrate    run deliberately, never at startup
 #
 # WHY THE BUILD BUILDS THE CLIENT (Phase 5 Batch 1). This one service serves
 # both the API and the production client, and server/index.js reads `app/` once
@@ -59,6 +60,23 @@ services:
     branch: main
     autoDeploy: false
     buildCommand: npm ci --omit=dev && npm run build:app
+    # MIGRATIONS RUN HERE, AND NOWHERE ELSE (reconciled in Phase 5 Batch 3A).
+    #
+    # Render runs `preDeployCommand` after the build and BEFORE the new version
+    # takes traffic, which is exactly the window a forward-only migration needs:
+    # the schema is ahead of the old code for a moment, which it tolerates, and
+    # never behind the new code, which it does not. A failure here fails the
+    # deploy and the current version keeps serving.
+    #
+    # IT IS STILL NOT AT STARTUP. server/index.js reads the migration status and
+    # refuses to serve rather than migrating itself (see its header): a process
+    # that migrated as it booted would let a rollback or a second instance
+    # rewrite the schema underneath the one that is running.
+    #
+    # `db:migrate` applies only what is pending and refuses a file whose
+    # checksum has changed, so running it on every deploy is a no-op when there
+    # is nothing to apply.
+    preDeployCommand: npm run db:migrate
     startCommand: npm start
     healthCheckPath: /api/health/ready
     envVars:

@@ -45,12 +45,31 @@ const invitationExpiry = (at, days = INVITATION_DAYS) => {
   if (!from || Number.isNaN(from.getTime())) return null;
   return new Date(from.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
 };
-/* WHAT IS DELIBERATELY NOT HERE. "Is this invitation still open?" — not
-   accepted, not withdrawn, not past its day — is the question a REDEMPTION
-   asks, and redemption is Batch 3. A predicate written now would have no
-   caller and no test, and the first thing a rule like that does when it is
-   reached for later is get used INSTEAD of checking the credential rather than
-   alongside it. The expiry is recorded; reading it is the batch that needs it. */
+/* AND NOW THE QUESTION A REDEMPTION ASKS (Phase 5 Batch 3A).
+
+   Batch 2 recorded the expiry and deliberately wrote no predicate to read it,
+   because a rule with no caller is a rule that rots. This is the caller.
+
+   Open means all four: it exists, nobody has accepted it, nobody has withdrawn
+   it, and it is not past its day. `now` IS REQUIRED and there is no fallback to
+   a clock — nothing in the domain reads the time, a caller passes the one its
+   runtime gave it, and a test holds every module here to that. Without a time
+   there is no answer, so it says so by refusing.
+
+   THIS IS NECESSARY AND NOT SUFFICIENT, and the order matters more than the
+   rule. A redemption must ALSO have spent a genuine, unspent credential, and
+   that check lives in metyet_auth where the secret is. Possession is what
+   proves who may accept; this only says whether there is still anything to
+   accept. A caller that asked only this question would let anybody accept any
+   invitation whose id they could guess. */
+const invitationOpen = (invitation, now) => {
+  if (!invitation || typeof invitation !== "object") return false;
+  if (invitation.acceptedAt || invitation.revokedAt) return false;
+  if (!invitation.expiresAt || !now) return false;
+  const ends = new Date(invitation.expiresAt).getTime();
+  const at = new Date(now).getTime();
+  return Number.isFinite(ends) && Number.isFinite(at) && ends > at;
+};
 
 /* ------------------------------------------------------------- LIFECYCLE */
 
@@ -766,12 +785,18 @@ const REFUSE = {
   nameRequired: "name-required",
   invitationRequired: "invitation-required",
   alreadyRegistered: "already-registered",
+  /* Redemption (Phase 5 Batch 3A). ONE WORD FOR SIX CAUSES, on purpose: an
+     invitation that never existed, one that expired, one withdrawn, one already
+     accepted, and a credential spent by somebody else all answer the same. A
+     refusal that distinguished them would let anybody with a list of guesses
+     learn which invitations are real. */
+  invitationUnusable: "invitation-unusable",
 };
 
 module.exports = {
   FULFILLMENT, TRADE, cashDirection, cashReceipt, settlement, compareCashSettlement, newSince, unreadFor,
   identityKey, isRaw, sameIdentity,
-  INVITATION_DAYS, invitationExpiry,
+  INVITATION_DAYS, invitationExpiry, invitationOpen,
   STAGES, STAGE_IX, STAGE_LABEL,
   isEnded, isCompleted, isTerminal, isActive, isNegotiating,
   activeOppForGoal, goalState,
