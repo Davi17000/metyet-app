@@ -213,10 +213,12 @@ const signedIn = async (opts) => {
   return { ...w, r };
 };
 
-/* Phase 5 Batch 1 added Shop Profile, the first section that writes. It comes
-   after the three the work flows through, because the shop is not a day's
-   work. */
-const TP_NAV = ["Collector Network", "Inventory", "Opportunities", "Shop Profile"];
+/* THREE, AND THREE ONLY. Phase 5 Batch 1 briefly gave the shop profile a
+   destination of its own; the hosted review judged that too much navigation
+   weight for context that is not recurring work, and it moved behind
+   Inventory's "View shop". Top-level navigation is for what a Trusted Partner
+   opens MetYet to do. */
+const TP_NAV = ["Collector Network", "Inventory", "Opportunities"];
 const looksLikeTpShell = (r) => TP_NAV.every((label) => hasButton(r, label));
 
 /* ============================================================== A */
@@ -310,11 +312,15 @@ describe("B. the shell is the product, and all of it is the server's data", () =
   test("the established navigation, in the product's own order", () => {
     const r = render(React.createElement(Shell, { state: FULL_TP }));
     const labels = buttons(r).map(instText).filter((s) => TP_NAV.some((n) => s.includes(n)));
-    eq(labels.length, 4, "four sections, no more");
+    eq(labels.length, 3, "three sections, no more");
     TP_NAV.forEach((n, i) => assert(labels[i].includes(n), `section ${i} is not ${n}`));
-    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "collectors,inventory,opportunities,profile");
-    /* Exactly one of them writes, and it is the last one. */
-    eq(SHELL_MOD.SECTIONS.filter((s) => s.writes).map((s) => s.id).join(","), "profile");
+    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "collectors,inventory,opportunities");
+    /* And the profile is not one of them, by name or by id. */
+    assert(!/Shop Profile/.test(flat(r)), "Shop Profile is still a destination: " + flat(r));
+    assert(!SHELL_MOD.SECTIONS.some((s) => s.id === "profile"),
+      "a profile section survived as a reachable id");
+    /* Exactly one section is one something can be changed from. */
+    eq(SHELL_MOD.SECTIONS.filter((s) => s.writes).map((s) => s.id).join(","), "inventory");
   });
 
   test("the counts beside each section are the projection's own rows", () => {
@@ -450,22 +456,47 @@ describe("C. nothing is invented — not identity, not rules, not content", () =
     assert(/onSave/.test(bare), "and the callback it is handed instead is missing");
 
     const r = render(React.createElement(Shell, { state: FULL_TP }));
-    /* Four sections and sign-out, and nothing else on a read-only section. */
+    /* Three sections and sign-out, and nothing else on a read-only section. */
     const labels = buttons(r).map(instText);
-    eq(labels.length, 5, "an extra control appeared: " + labels.join(" | "));
+    eq(labels.length, 4, "an extra control appeared: " + labels.join(" | "));
     assert(/Read-only for now/.test(flat(r)), "and a read section does not say it is read-only");
 
-    /* The section that writes does not carry a notice contradicting itself. */
-    clickText(r, "Shop Profile");
-    assert(!/Read-only for now/.test(flat(r)), "the writable section still claims to be read-only");
+    /* Inventory is where the shop is reached from, so it does not carry a
+       notice contradicting what can be done there — and says in its own words
+       what is still read-only. */
+    clickText(r, "Inventory");
+    assert(!/Read-only for now/.test(flat(r)), "Inventory still claims the whole section is read-only");
+    assert(/Adding and editing copies arrive in a later release/.test(flat(r)),
+      "and the copies stopped saying they cannot be changed: " + flat(r));
+    assert(buttons(r).some((b) => instText(b).includes("View shop")), "Inventory has no way to the shop");
   });
 
-  test("without a callback the writable section offers no control at all", () => {
+  test("without a callback the shop view offers no control at all", () => {
     const r = render(React.createElement(Shell, { state: FULL_TP }));
-    clickText(r, "Shop Profile");
+    clickText(r, "Inventory");
+    clickText(r, "View shop");
     const labels = buttons(r).map(instText);
-    eq(labels.length, 5, "a control appeared with nothing behind it: " + labels.join(" | "));
-    assert(!labels.some((l) => /Edit profile/.test(l)), "Edit was offered with no way to save");
+    assert(!labels.some((l) => /Edit profile/.test(l)),
+      "Edit was offered with no way to save: " + labels.join(" | "));
+    /* And the way back is always there. */
+    assert(labels.some((l) => /Back to inventory/.test(l)), labels.join(" | "));
+  });
+
+  test("the shop view is reached from Inventory, and returns to it", () => {
+    const r = render(React.createElement(Shell, { state: FULL_TP, onSaveProfile: () => {} }));
+    clickText(r, "Inventory");
+    assert(/Your copies/.test(flat(r)), "Inventory did not open on the copies");
+    clickText(r, "View shop");
+    const shop = flat(r);
+    assert(/Your shop/.test(shop), "the shop view did not open: " + shop);
+    assert(!/Your copies/.test(shop), "the copies are still on screen behind it");
+    assert(buttons(r).some((b) => instText(b).includes("Edit profile")), "no way to edit from the shop");
+    clickText(r, "Back to inventory");
+    assert(/Your copies/.test(flat(r)), "there is no way back to the copies");
+    /* And leaving the section resets it: Inventory opens on the copies. */
+    clickText(r, "Opportunities");
+    clickText(r, "Inventory");
+    assert(/Your copies/.test(flat(r)), "Inventory reopened on the shop rather than the shelf");
   });
 
   test("an empty account renders sentences, never sample content", () => {

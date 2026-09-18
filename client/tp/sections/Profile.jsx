@@ -1,7 +1,13 @@
 /* ============================================================================
-   SHOP PROFILE — THE FIRST THING IN PRODUCTION THAT CHANGES ANYTHING
+   YOUR SHOP — THE FIRST THING IN PRODUCTION THAT CHANGES ANYTHING
 
      <Profile state={projection} onSave={fn} />
+
+   Reached from Inventory's "View shop", because a profile is context for the
+   shop rather than a workspace of its own: Collector Network, Inventory and
+   Opportunities are recurring work, and this is what makes them mean something
+   to a collector. It is the same component wherever it is rendered, and there
+   is exactly one of it.
 
    Six fields a Trusted Partner can edit about their own shop, saved through the
    authenticated mutation boundary Phase 4 built and left uncalled. It is the
@@ -222,8 +228,8 @@ export default function Profile({ state, onSave = null }) {
 
   return (
     <>
-      <Panel title="Shop profile"
-        note={writable
+      <Panel title="Your shop"
+        action={writable
           ? <button className="tps-edit" type="button" onClick={begin}>Edit profile</button>
           : null}
         empty={anything ? null

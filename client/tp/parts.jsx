@@ -37,12 +37,16 @@ export function Fact({ label, value, mono = false }) {
   );
 }
 
-export function Panel({ title, note = null, empty = null, children }) {
+/* `note` is a fact about the group — how many rows, whether anything is saving.
+   `action` is a control. They are separate props because they are separate
+   things, and a panel that needs both should not have to choose. */
+export function Panel({ title, note = null, action = null, empty = null, children }) {
   return (
     <section className="tps-panel">
       <header className="tps-ph">
         <h2>{title}</h2>
         {note ? <span className="tps-note">{note}</span> : null}
+        {action ? <span className={"tps-act" + (note ? "" : " tps-act-lead")}>{action}</span> : null}
       </header>
       {empty ? <p className="tps-empty">{empty}</p> : <div className="tps-list">{children}</div>}
     </section>

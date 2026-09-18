@@ -513,12 +513,19 @@ describe("F. no mutation, no demo, no prototype, no diagnostics", () => {
     }
   });
 
-  test("the three read sections still have no form, and only the fourth does", () => {
+  test("one file holds the only form, and every other section has none", () => {
     for (const rel of TP_FILES) {
       if (/sections\/Profile\.jsx$/.test(rel)) continue;
       assert(!/onSubmit|onChange|<input|<textarea/.test(code(rel)), `${rel} grew a way to type`);
     }
     assert(/onSubmit/.test(code("client/tp/sections/Profile.jsx")), "the one form went missing");
+    /* Inventory renders that component rather than repeating it: there is one
+       profile implementation in this product, and moving where it is reached
+       from did not make a second. */
+    const inventory = code("client/tp/sections/Inventory.jsx");
+    assert(/from ["']\.\/Profile\.jsx["']/.test(inventory), "Inventory does not reuse the profile");
+    assert(!/FIELDS\s*=|patchFrom|draftFrom|AMBIGUOUS|CERTAIN/.test(inventory),
+      "Inventory reimplemented part of the profile");
   });
 
   test("the projection handed in is never edited, by any section, ever", () => {
@@ -531,10 +538,15 @@ describe("F. no mutation, no demo, no prototype, no diagnostics", () => {
     eq(JSON.stringify(REAL), REAL_PRISTINE, "a section mutated the projection it was given");
   });
 
-  test("the only controls on a read section are the four sections and sign out", () => {
+  test("the only controls on a read section are the three sections and sign out", () => {
     const labels = buttons(show(REAL)).map(instText);
-    eq(labels.length, 5, "an extra control appeared: " + labels.join(" | "));
+    eq(labels.length, 4, "an extra control appeared: " + labels.join(" | "));
     assert(labels.some((l) => l.includes("Sign out")), labels.join(" | "));
+    /* Inventory adds exactly one: the way to the shop, and nothing that
+       changes a copy. */
+    const onInventory = buttons(show(REAL, "Inventory")).map(instText);
+    eq(onInventory.length, 5, "Inventory grew a control: " + onInventory.join(" | "));
+    assert(onInventory.some((l) => l.includes("View shop")), onInventory.join(" | "));
   });
 
   test("Batch 3's diagnostics have not come back", () => {

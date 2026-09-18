@@ -31,24 +31,57 @@
    one. Both are shown when present and neither is inferred from the other — a
    copy whose catalogue entry did not arrive still renders, because it is still
    a copy you own.
+
+   TWO VIEWS, ONE WORKSPACE. What you hold, and the shop a collector sees you
+   as. They belong together: the profile is what makes a shelf of copies mean
+   something to somebody in your network, which is why it is reached from here
+   rather than from a settings destination of its own. `View shop` moves between
+   them and changes nothing.
+
+   THE SHOP VIEW IS THE SAME COMPONENT AS EVER. This file renders `<Profile/>`
+   and hands it the callback it was given; it does not reimplement a profile, a
+   form, or a way to save one. There is one profile implementation in this
+   product and this is not a second. Nothing here reaches a store, names a
+   command or goes to the network — the callback arrived as a prop.
    ========================================================================== */
 
-import React from "react";
+import React, { useState } from "react";
 import { Panel, Record, Fact, Tag } from "../parts.jsx";
 import { rows, indexById, text, day, money, plural, cardTitle, cardSetLine,
   gradeLine, isGraded, cardMarks, statusLabel, byRecency } from "../present.js";
+import Profile from "./Profile.jsx";
 
-export default function Inventory({ state }) {
+export default function Inventory({ state, onSaveProfile = null }) {
+  /* Local to this screen, and nothing else's business. It is not a route, not a
+     section id, and nothing outside this file can be pointed at it. */
+  const [viewing, setViewing] = useState("copies");
+
   const inventory = rows(state && state.inventory);
   const catalog = indexById(state && state.catalog);
 
   const live = byRecency(inventory.filter((i) => !i.archived), "addedAt", "acquired");
   const archived = inventory.length - live.length;
 
+  if (viewing === "shop") {
+    return (
+      <>
+        <p className="tps-crumb">
+          <button className="tps-back" type="button" onClick={() => setViewing("copies")}>
+            ← Back to inventory
+          </button>
+        </p>
+        <Profile state={state} onSave={onSaveProfile} />
+      </>
+    );
+  }
+
   return (
     <Panel
       title="Your copies"
       note={live.length ? plural(live.length, "copy", "copies") : null}
+      action={<button className="tps-edit" type="button" onClick={() => setViewing("shop")}>
+        View shop
+      </button>}
       empty={live.length ? null
         : (archived
           ? "Nothing on your shelf right now — every copy you've recorded is archived."
@@ -87,6 +120,14 @@ export default function Inventory({ state }) {
       {archived ? (
         <p className="tps-foot-note">
           {plural(archived, "archived copy is", "archived copies are")} not shown.
+        </p>
+      ) : null}
+      {/* The shell's read-only notice no longer covers this section, because
+          one thing reached from it can now be changed. The copies still cannot,
+          and saying so here keeps that true where it is read. */}
+      {live.length ? (
+        <p className="tps-foot-note">
+          Adding and editing copies arrive in a later release.
         </p>
       ) : null}
     </Panel>
