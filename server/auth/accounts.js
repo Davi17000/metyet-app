@@ -66,10 +66,20 @@ function createAccountDirectory(db) {
     : db.transaction(async (t) => (await t.query(sql, params)).rows, { readOnly }));
 
   return {
-    /* The only lookup the request path uses. */
-    async findActiveBySubject(subject) {
+    /* The only lookup the request path uses.
+
+       `tx` MATTERS MORE HERE THAN ANYWHERE ELSE (Batch 3A). Accepting a
+       Collector invitation asks this question INSIDE the transaction that holds
+       the world lock, because the answer decides whether a Collector is created
+       or reused — and two people redeeming at once must not both decide
+       "nobody". Asked in its own transaction, the answer would be taken before
+       the lock was granted and the second redemption would mint a duplicate
+       identity that the database then refuses. Asked in the caller's
+       transaction, under READ COMMITTED, it is a fresh statement that sees
+       whatever the previous holder of the lock committed. */
+    async findActiveBySubject(subject, { tx } = {}) {
       if (!isId(subject)) return null;
-      const rows = await one(SELECT_ACTIVE_BY_SUBJECT, [subject], { readOnly: true });
+      const rows = await one(SELECT_ACTIVE_BY_SUBJECT, [subject], { readOnly: !tx, tx });
       return rows.length ? toAccount(rows[0]) : null;
     },
 

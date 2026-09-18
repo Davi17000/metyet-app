@@ -118,6 +118,25 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
   const pending = invitations.filter((i) => !i.acceptedAt && !i.revokedAt);
   const withdrawn = invitations.filter((i) => !i.acceptedAt && i.revokedAt);
 
+  /* WHAT TO CALL SOMEBODY WHO HAS NOT NAMED THEMSELVES (Phase 5 Batch 3A).
+
+     A Collector created by accepting an invitation is an id and nothing else
+     until they fill in a profile — deliberately, because the only other name
+     available would be the hint THIS partner typed, and a hint that became
+     somebody's name would be a hint that decided something.
+
+     But this partner may still call them by their own note. The accepted
+     invitation is in this projection, it carries the hint they wrote, and it
+     now names the Collector it produced — so the join needs nothing new. The
+     label never leaves this screen: `INVITATION_FOR_INVITEE` does not include
+     `recipient`, so no collector ever receives the words their shop wrote about
+     them. It is a fallback only: a real name always wins. */
+  const hintFor = new Map();
+  for (const i of invitations) {
+    if (i.acceptedAt && i.collectorId && text(i.recipient)) hintFor.set(i.collectorId, text(i.recipient));
+  }
+  const nameOf = (c) => text(c.name) || text(c.short) || hintFor.get(c.id) || "Collector";
+
   /* ---------------------------------------------------------- inviting */
   const [inviting, setInviting] = useState(false);
   const [draft, setDraft] = useState({ recipient: "", note: "" });
@@ -126,6 +145,8 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
   /* The credential, for exactly as long as it is on screen. It is never put
      anywhere that is read again, and there is no way to ask for it twice. */
   const [issued, setIssued] = useState(null);
+  /* Folded away by default; the rows are kept, not dropped. */
+  const [showWithdrawn, setShowWithdrawn] = useState(false);
 
   const writable = typeof onInvite === "function";
 
@@ -268,7 +289,7 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
           return (
             <Record
               key={c.id}
-              title={text(c.name) || text(c.short) || "Collector"}
+              title={nameOf(c)}
               subtitle={text(c.city)}
               tags={rel && text(rel.status) ? <Tag>{text(rel.status)}</Tag> : null}
               note={text(rel && rel.note)}
@@ -339,9 +360,18 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
         </Panel>
       ) : null}
 
+      {/* WITHDRAWN INVITATIONS ARE HISTORY, NOT WORK (Phase 5 Batch 3A). Hosted
+          Batch 2 showed a permanent panel of equal weight to the network
+          itself, accumulating for ever. The rows are real and are kept — they
+          are simply folded away until somebody asks, because what a partner
+          opens this screen to do is never in them. */}
       {withdrawn.length ? (
-        <Panel title="Withdrawn" note={plural(withdrawn.length, "invitation", "invitations")}>
-          {withdrawn.map((i) => (
+        <Panel title="Withdrawn" note={plural(withdrawn.length, "invitation", "invitations")}
+          action={<button className="tps-edit" type="button"
+            onClick={() => setShowWithdrawn((on) => !on)}>
+            {showWithdrawn ? "Hide" : "Show"}
+          </button>}>
+          {showWithdrawn ? withdrawn.map((i) => (
             <Record
               key={i.id}
               title={text(i.recipient) || "Someone you invited"}
@@ -354,7 +384,7 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
               note={text(i.note)}
               noteLabel="Your note"
             />
-          ))}
+          )) : null}
         </Panel>
       ) : null}
     </>

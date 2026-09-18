@@ -31,11 +31,19 @@
    CLAIMING IS NECESSARY AND NOT SUFFICIENT. Expiry, revocation and acceptance
    are PRODUCT facts and live on the canonical invitation, where a partner can
    see and change them. This table knows only whether the secret is genuine and
-   unspent. A redemption must check both, in one transaction, and Batch 3 owns
-   that — which is why `claim` has no caller in this batch.
+   unspent. A redemption must check both, in one transaction — and since Batch
+   3A it does: server/collector-acceptance.js is the only caller of `claim`, and
+   it checks the canonical invitation in the same transaction.
 
-   This module knows nothing of the canonical world, and there is no route that
-   reaches `claim`.
+   WHO SPENT IT, AND WHY THAT IS WORTH STORING (Batch 3A). `claimed_by` carries
+   the verified subject. It is not authority — possession of the secret is — and
+   nothing compares it to decide whether a redemption may proceed. It exists so
+   that a person whose reply was lost can try again and be told what actually
+   happened, instead of being told their invitation is dead. `findSpentBy` is
+   the whole of that, and it answers for one subject about their own act.
+
+   This module still knows nothing of the canonical world: no world id, no
+   partner, no collector, no relationship.
    ========================================================================== */
 
 const crypto = require("crypto");
@@ -52,6 +60,11 @@ const COLUMNS = "invitation_id, created_at, claimed_at, claimed_by";
 
 const INSERT = `insert into ${TABLE} (invitation_id, token_digest) values ($1, $2) returning ${COLUMNS}`;
 const BY_INVITATION = `select ${COLUMNS} from ${TABLE} where invitation_id = $1`;
+/* The same digest lookup `claim` does, without spending anything. It exists for
+   exactly one question — "did THIS person already redeem this?" — and it is why
+   a lost reply is recoverable (Batch 3A). Same columns, so it still cannot hand
+   back a verifier. */
+const BY_DIGEST = `select ${COLUMNS} from ${TABLE} where token_digest = $1`;
 /* Both rules, in the WHERE clause. */
 const CLAIM = `update ${TABLE} set claimed_at = $2, claimed_by = $3
   where token_digest = $1 and claimed_at is null returning ${COLUMNS}`;
@@ -104,15 +117,42 @@ function createCollectorCredentials(db) {
       return rows.length ? toRecord(rows[0]) : null;
     },
 
-    /* ATOMIC, AND WITHOUT A CALLER IN THIS BATCH. Null means "no credential
-       that this secret can still spend", without saying which rule stopped it.
-       Batch 3 calls this inside the transaction that also creates the
-       Relationship, and checks the canonical invitation alongside it. */
+    /* ATOMIC. Null means "no credential that this secret can still spend",
+       without saying which rule stopped it. Batch 3A calls this inside the
+       transaction that also creates the Relationship, and checks the canonical
+       invitation alongside it.
+
+       `by` IS THE VERIFIED SUBJECT, and recording it is what makes a lost reply
+       survivable. A credential is spent once; without knowing WHO spent it, a
+       retry after a reply that never arrived would be told the invitation is
+       dead when the person is in fact already connected — and unlike a Trusted
+       Partner, they cannot look at a list and withdraw anything. See
+       `findSpentBy`. */
     async claim(token, { at = new Date(), by = null, tx } = {}) {
       if (typeof token !== "string" || !token) return null;
       const when = at instanceof Date ? at.toISOString() : String(at);
       const rows = await run(CLAIM, [digestOf(token), when, by], { tx });
       return rows.length ? toRecord(rows[0]) : null;
+    },
+
+    /* THE ONLY QUESTION A SPENT CREDENTIAL MAY ANSWER: was it spent by you?
+
+       Returns the record when this secret's digest exists AND it was claimed by
+       this same subject — and null for absolutely everything else: no such
+       digest, unclaimed, or claimed by somebody else. So it distinguishes
+       exactly one case, for exactly the person who already proved they caused
+       it, and reveals nothing to anyone else. A guesser gets null whether their
+       guess was a real credential or noise, which is the same answer `claim`
+       gives them.
+
+       It spends nothing, and it returns no digest — `COLUMNS` sees to that. */
+    async findSpentBy(token, subject, { tx } = {}) {
+      if (typeof token !== "string" || !token) return null;
+      if (typeof subject !== "string" || !subject) return null;
+      const rows = await run(BY_DIGEST, [digestOf(token)], { tx });
+      if (!rows.length) return null;
+      const record = toRecord(rows[0]);
+      return record.claimed && record.claimedBy === subject ? record : null;
     },
   };
 }

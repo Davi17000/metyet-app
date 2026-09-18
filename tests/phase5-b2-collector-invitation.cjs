@@ -616,9 +616,14 @@ describe("D. withdrawing, and what withdrawing is not", () => {
       const shown = flat(r);
       assert(/Withdrawn/.test(shown), "the screen does not say it was withdrawn: " + shown);
       assert(!/Invitations outstanding/.test(shown), "a withdrawn invitation is still outstanding");
-      /* And it is still legible as the thing it was: both labels survive. */
-      assert(shown.includes(RECIPIENT), "the withdrawn invitation lost who it was for: " + shown);
-      assert(shown.includes(NOTE), "the withdrawn invitation lost its note: " + shown);
+      /* AND IT IS KEPT, THOUGH NO LONGER IN THE WAY. Batch 3A folded withdrawn
+         history behind a disclosure — it is history, not work — so what this
+         test asks is that the rows SURVIVE and are reachable, which is the part
+         that was ever worth asserting. */
+      clickText(r, "Show");
+      const opened = flat(r);
+      assert(opened.includes(RECIPIENT), "the withdrawn invitation lost who it was for: " + opened);
+      assert(opened.includes(NOTE), "the withdrawn invitation lost its note: " + opened);
     } finally { await close(); }
   });
 
@@ -1080,7 +1085,7 @@ describe("G. the boundary the control reaches through", () => {
 
 /* ============================================================== H */
 describe("H. nothing in this build can redeem anything", () => {
-  test("no route reaches claim, and claim has no caller", () => {
+  test("claim has exactly one caller, and it is the acceptance transaction", () => {
     const server = [];
     const walk = (dir) => {
       for (const e of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
@@ -1091,17 +1096,23 @@ describe("H. nothing in this build can redeem anything", () => {
     };
     walk("server");
     /* Partner invitations have their own directory and their own `claim`, which
-       registration has always called — that is a different table and a
-       different lifecycle. What must have no caller is the COLLECTOR credential
-       directory, so the question is asked as "who imports it, and what do they
-       do with it". */
+       registration has always called — a different table, a different
+       lifecycle. The question here is about the COLLECTOR credential directory:
+       who imports it, and what do they do with it.
+
+       BATCH 2 SAID "NOBODY MAY SPEND ONE"; BATCH 3A SAYS "EXACTLY ONE THING
+       MAY". That is the change the batch exists to make, and the assertion that
+       survives it is the narrower one: spending a credential happens in one
+       place, inside the transaction that also creates the Relationship — never
+       from a route, a command, or anywhere a second rule could be forgotten. */
     const MODULE = "server/auth/collector-invitations.js";
     const importers = server.filter((rel) => rel !== MODULE)
       .filter((rel) => /collector-invitations/.test(code(rel)));
     eq(importers.sort().join(","), "server/index.js",
       "the credential directory is reached from somewhere unexpected");
-    /* index.js hands it to createApp and does nothing else with it; app.js
-       receives it by name. Neither spends it. */
+    /* index.js hands it to createApp; app.js receives it by name and passes it
+       on. Neither spends it — a route that could would be a route that had to
+       remember the canonical rules for itself. */
     for (const rel of ["server/index.js", "server/app.js", "server/collector-invitation.js"]) {
       const bare = code(rel);
       assert(!/collectorCredentials\.claim|credentials\.claim\s*\(/.test(bare),
@@ -1109,11 +1120,25 @@ describe("H. nothing in this build can redeem anything", () => {
     }
     const spenders = server.filter((rel) => rel !== MODULE)
       .filter((rel) => /credentials\.claim\s*\(/.test(code(rel)));
-    eq(spenders.join(","), "", "something in this build can spend a collector credential");
-    /* And no route path mentions redemption. */
+    eq(spenders.join(","), "server/collector-acceptance.js",
+      "a credential is spendable from somewhere other than the acceptance transaction");
+    /* And where it is spent, the canonical invitation is checked in the same
+       breath — which is the rule the credential directory's own header states
+       and cannot enforce. */
+    const spender = code("server/collector-acceptance.js");
+    assert(/lockWorld\(tx\)/.test(spender) && /loadWorld\(tx\)/.test(spender),
+      "the spender does not read the canonical world in its own transaction");
+    assert(/acceptCollectorInvitation|accept\(world/.test(spender),
+      "the spender does not put the canonical invitation through the domain");
+    /* THE ONE ROUTE THAT REDEEMS, AND ONLY IT. Batch 2 asserted there was none;
+       what survives is that there is exactly one, and that it is the
+       authenticated acceptance — not a preview, not a lookup, not anything that
+       would describe an invitation to somebody who submitted a guess. */
     const routes = server.map(code).join("\n").match(/["'`]\/api\/[^"'`]*["'`]/g) || [];
-    const redeeming = routes.filter((r) => /redeem|accept|claim|join/i.test(r));
-    eq(redeeming.join(","), "", "a redemption route exists before the batch that designs it");
+    const redeeming = [...new Set(routes.filter((r) => /redeem|accept|claim|join|invitation/i.test(r)))];
+    eq(redeeming.sort().join(","),
+      ['"/api/invitations/collector"', '"/api/invitations/collector/accept"'].join(","),
+      "a route touching invitations appeared that this batch did not design");
   });
 
   test("accepting an invitation is not a command this build has", () => {

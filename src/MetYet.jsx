@@ -3351,8 +3351,12 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
     const r = run(tpActor, "inviteCollector", {
       recipient: [draft.name, draft.email].filter(Boolean).join(" · "), note: draft.note });
     if (!r.ok) { say("That invitation could not be created."); return; }
+    /* WHAT THE DEMO CAN HONESTLY SAY. Accepting is authenticated redemption
+       against a real server (Phase 5 Batch 3A), and this world lives in a
+       browser tab with nobody to authenticate. So the demo shows the invitation
+       it created and does not promise a step it cannot take. */
     say(`Invitation created for ${draft.name || draft.email}. `
-      + "Hand them the code, and they join your network when they accept it.");
+      + "In MetYet you would hand them a code; this demo stops here.");
     setModal(null);
   };
 
@@ -7008,7 +7012,11 @@ function CollectorList({ ctx }) {
                       <span className="av">{initials(c.name)}</span>
                       <div>
                         <button className="link" style={{ fontWeight: 600 }} onClick={() => setNav({ section: "collectors", collectorId: c.id })}>{c.name}</button>
-                        {c.pending && <span className="tag" style={{ marginLeft: 6 }}>Invite pending</span>}
+                        {/* The "Invite pending" tag is gone with the record it
+                            marked: an invitation creates no Collector, so no
+                            row in this list is ever pending (Phase 5 B2/B3A).
+                            Outstanding invitations are listed separately, by
+                            the label this partner typed. */}
                         <div className="faint" style={{ fontSize: 11.5 }}>{c.city}</div>
                       </div>
                     </div>

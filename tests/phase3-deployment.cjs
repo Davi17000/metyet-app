@@ -535,6 +535,35 @@ describe("G. deployment artifacts and the runbook", () => {
     assert(/autoDeploy: false/.test(render), "deploys are deliberate");
   });
 
+  /* WHERE MIGRATIONS RUN, STATED IN BOTH PLACES AND AGREEING (Phase 5 B3A).
+
+     The live service was given a Pre-Deploy Command and the blueprint was not,
+     so re-applying the blueprint would have silently removed it — a deploy that
+     starts serving code whose schema never arrived. That is the same class of
+     drift this suite already catches for the branch and for environment
+     variables, and it is worth catching here for the same reason: an operator
+     following the runbook and an operator applying the blueprint must end up
+     with the same service.
+
+     IT IS A PRE-DEPLOY STEP AND NOT A START STEP, and the difference is the
+     whole point. The start command must never migrate: a process that migrated
+     as it booted would let a rollback, or a second instance, rewrite the schema
+     underneath the one already running. */
+  test("the blueprint migrates before the new version serves, and the runbook says so", () => {
+    const preDeploy = (render.match(/^\s+preDeployCommand: (.*)$/m) || [])[1];
+    eq(preDeploy, "npm run db:migrate", "the blueprint does not apply pending migrations on deploy");
+    assert(/"db:migrate"/.test(JSON.stringify(pkg.scripts)), "and db:migrate is a script that exists");
+    eq((render.match(/startCommand: (.*)/) || [])[1], "npm start",
+      "the start command grew a migration");
+    assert(!/db:migrate/.test((render.match(/startCommand: (.*)/) || [])[1] || ""),
+      "the service migrates as it starts");
+    /* The runbook has to describe the same service. */
+    assert(/preDeployCommand|Pre-Deploy Command|Pre-deploy/.test(runbook),
+      "the runbook does not mention the pre-deploy step the blueprint configures");
+    assert(!/If the release adds a migration, run `npm run db:migrate` against the\s*\n\s*production database/
+      .test(runbook), "the runbook still tells operators to migrate releases by hand");
+  });
+
   /* WHICH BRANCH IS DEPLOYED, AND WHY IT IS NOT `main`.
 
      The blueprint said `branch: main` while `main` was the whole of Batch 6

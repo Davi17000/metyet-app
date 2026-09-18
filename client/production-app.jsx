@@ -67,7 +67,8 @@ function Plain({ lead, onSignOut }) {
 }
 
 export default function ProductionApp({ state, onSignOut, onSaveProfile = null,
-  onInvite = null, onRevokeInvite = null, onRefresh = null }) {
+  onInvite = null, onRevokeInvite = null, onRefresh = null,
+  joined = null, onDismissJoined = null }) {
   const who = describeActor(state);
 
   /* Not identified: the server did not say who this is, or said something this
@@ -86,7 +87,10 @@ export default function ProductionApp({ state, onSignOut, onSaveProfile = null,
       onInvite={onInvite} onRevokeInvite={onRevokeInvite} onRefresh={onRefresh} />;
   }
 
-  if (who.seat === "collector") return <CollectorShell state={state} onSignOut={onSignOut} />;
+  if (who.seat === "collector") {
+    return <CollectorShell state={state} onSignOut={onSignOut}
+      joined={joined} onDismissJoined={onDismissJoined} />;
+  }
 
   /* A seat the domain has and this build does not. The refusal is the default
      branch on purpose: forgetting to add a case here cannot route anybody into

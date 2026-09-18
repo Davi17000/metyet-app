@@ -281,6 +281,21 @@ export function createProductionStore({ api } = {}) {
         state: answer.state, version: answer.version };
     },
 
+    /* THE THIRD CALLER, AND THE ONLY ONE THAT RUNS BEFORE THERE IS A WORLD
+       (Batch 3A). Accepting is the first thing a Collector ever does, so it
+       starts from `state === null` — which the lifecycle already copes with.
+
+       ONE DIFFERENCE, AND IT IS THE OPPOSITE OF THE OTHERS: retrying this IS
+       safe. The server records who spent a credential, so a second attempt by
+       the same person converges instead of being told the invitation is dead.
+       Nothing here retries on its own; for this one call, a screen may. */
+    async acceptInvitation({ token } = {}) {
+      const answer = await mutate("acceptCollectorInvitation",
+        () => api.acceptCollectorInvitation({ token }));
+      if (!answer.ok) return answer;
+      return { ok: true, state: answer.state, version: answer.version };
+    },
+
     /* ------------------------------------------------ WHAT A ROUND TRIP NEEDS */
 
     /* The first read, and every later refresh. Concurrent calls share one

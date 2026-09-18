@@ -17,14 +17,21 @@
    (actor_unknown), so it is refused here instead.
 
    WHAT THIS CANNOT DO, ON PURPOSE. It cannot create the Collector or the
-   Trusted Partner. The domain has no command that brings a Trusted Partner into
-   existence — `inviteCollector` creates a pending Collector, and only a partner
-   can send it — so on a freshly bootstrapped, empty world there is nobody to
-   link to yet. That gap is real and is left visible rather than papered over
-   with SQL that writes canonical rows behind execute()'s back: the world would
-   then hold records no command authored, which is exactly what the command
-   layer exists to prevent. Closing it needs a domain decision (an admin command
-   that registers a Trusted Partner), not a script.
+   Trusted Partner. NO COMMAND CREATES EITHER — `inviteCollector` records an
+   invitation that names nobody (Phase 5 Batch 2), and a Trusted Partner has
+   never been a command's doing. So on a freshly bootstrapped, empty world there
+   is nobody to link to yet, and this refuses rather than papering over it with
+   SQL that writes canonical rows behind execute()'s back: the world would then
+   hold records no authoring path produced, which is exactly what the command
+   layer exists to prevent.
+
+   BOTH GAPS ARE NOW CLOSED, AND NEITHER BY THIS FILE. A Trusted Partner comes
+   into being by redeeming an invitation (server/registration.js, Phase 3 Batch
+   5); a Collector comes into being by accepting one
+   (server/collector-acceptance.js, Phase 5 Batch 3A). Both bind their own
+   account in the same transaction that creates them, so neither ever needs this
+   script. It remains for operator repair — a new phone, a re-provisioned
+   sign-in — which is what it was always for.
    ========================================================================== */
 
 const ROLES = { collector: "collectors", tp: "partners" };

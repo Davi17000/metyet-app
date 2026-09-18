@@ -357,14 +357,31 @@ credentials exist.
 
 ### 2.6 Every release after the first
 
+**Migrations run themselves now.** The service's Pre-Deploy Command is
+`npm run db:migrate` (`preDeployCommand` in `render.yaml`), so Render applies
+pending migrations after the build and before the new version takes traffic.
+That is the window a forward-only migration wants: the schema is briefly ahead
+of the old code, which it tolerates, and never behind the new code, which it
+does not. A migration that fails fails the deploy, and the version currently
+serving keeps serving.
+
+It is still not run at startup. `server/index.js` reads the migration status and
+refuses to serve rather than migrating itself — a process that migrated as it
+booted would let a rollback, or a second instance, rewrite the schema underneath
+the one already running.
+
 1. Push to `main` (or trigger a deploy — the blueprint sets `autoDeploy: false`).
-2. If the release adds a migration, run `npm run db:migrate` against the
-   production database **before** the new version serves traffic — from your Mac
-   with the production `DATABASE_URL`, or as a Render one-off job with the same
-   environment.
+2. Watch the deploy's **Pre-deploy** step. It runs `npm run db:migrate`, which
+   applies only what is pending and refuses a migration file whose checksum has
+   changed, so it is a no-op when there is nothing to apply.
 3. Watch `/api/health/ready`. While the schema is behind the code it answers
    `503 {"status":"unavailable","reason":"migrations-pending"}` instead of
-   serving errors.
+   serving errors — which after a successful pre-deploy should never happen, and
+   is worth investigating rather than waiting out if it does.
+
+Running `npm run db:migrate` by hand from your Mac against the production
+`DATABASE_URL` still works and is still how the FIRST schema is applied (2.2),
+before any service exists to deploy.
 
 ### 2.6b Proving the deployed server, without changing anything
 
