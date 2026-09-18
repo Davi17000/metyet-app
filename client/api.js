@@ -177,9 +177,14 @@ export function createApiClient({ baseUrl, getToken, timeoutMs = DEFAULT_TIMEOUT
        credential is a sibling of `state`, never inside it: a projection is read
        again on every refresh, and a secret that can be re-read is not a secret
        shown once. Nothing here stores it. */
-    async createCollectorInvitation({ recipient = null, note = null } = {}) {
+    async createCollectorInvitation({ recipient = null, note = null, email = null } = {}) {
+      /* The delivery address is sent only when there is one. A server with no
+         mail configured refuses fields it does not offer, so an absent address
+         must be an absent field rather than an explicit null — that is what
+         keeps one client working against both shapes of deployment. */
+      const address = typeof email === "string" ? email.trim() : "";
       const { status, payload: body } = await send("/api/invitations/collector",
-        { method: "POST", body: { recipient, note } });
+        { method: "POST", body: { recipient, note, ...(address ? { email: address } : {}) } });
       if (status === 200) {
         if (!body || typeof body !== "object" || !body.state) {
           throw new ApiError(FAILURES.unexpected, { detail: "no state in a 200" });
@@ -190,8 +195,18 @@ export function createApiClient({ baseUrl, getToken, timeoutMs = DEFAULT_TIMEOUT
              unrecoverable. Say so rather than pretending either way. */
           throw new ApiError(FAILURES.unexpected, { detail: "no credential in a 200" });
         }
+        /* What the server says happened to the send, believed exactly as far as
+           it goes: absent means nothing was asked for. The screen never infers
+           delivery from the fact that an address was typed. */
+        const delivery = body.delivery && typeof body.delivery === "object"
+          ? body.delivery : { requested: false };
+        /* The link the server built from its own configured origin, when it has
+           one. Absent is a fact, not a fault: the code alone is what Batch 2
+           handed over and it still works. */
         return { ok: true, version: body.version, invitationId: body.invitationId || null,
-          credential: body.credential, state: body.state };
+          credential: body.credential,
+          joinUrl: typeof body.joinUrl === "string" && body.joinUrl ? body.joinUrl : null,
+          delivery, state: body.state };
       }
       const error = body && body.error;
       const refused = error && typeof error.refused === "string" ? error.refused : null;

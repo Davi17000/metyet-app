@@ -30,6 +30,7 @@ const { createInvitationDirectory } = require("./auth/invitations.js");
 const { createCollectorCredentials } = require("./auth/collector-invitations.js");
 const { createTokenVerifier } = require("./auth/token-verifier.js");
 const { createIdentityDirectory } = require("./auth/identity.js");
+const { createResendMailer } = require("./mail/resend.js");
 const { systemRuntime } = require("../domain/metyet-runtime.js");
 const { createApp } = require("./app.js");
 const fs = require("fs");
@@ -53,6 +54,17 @@ async function main() {
   const client = loadClient();
   const pool = createPool(config.database, { applicationName: "metyet-server" });
   const db = fromPgPool(pool);
+  /* Sending is a capability, not a requirement: with no mail settings this is
+     null, the invitation route never offers a delivery address, and a Trusted
+     Partner hands the credential over themselves exactly as in Batch 2. The
+     origin travels beside the mailer because it belongs to the same decision —
+     a link can only be written by a server that was told where it points. */
+  const mailer = config.mail
+    ? createResendMailer({ apiKey: config.mail.apiKey, from: config.mail.from })
+    : null;
+  /* Where this MetYet lives, when an operator said. It is what any link the
+     server writes is built from — in an email, or in the reply a Trusted
+     Partner reads off their own screen — and it never comes from a request. */
   const app = createApp({
     repository: createWorldRepository(db),
     accounts: createAccountDirectory(db),
@@ -62,6 +74,8 @@ async function main() {
     identity: createIdentityDirectory(config.auth),
     checkSchema: () => migrationStatus(db),
     runtime: systemRuntime(),
+    mailer,
+    appUrl: config.appUrl,
     client,
     logger: { level: config.logLevel },
     trustProxy: true,

@@ -91,6 +91,48 @@ const AMBIGUOUS = Object.freeze({
 const whyFailed = (failure) => CERTAIN[failure] || AMBIGUOUS[failure] || AMBIGUOUS.unexpected;
 export { CERTAIN, AMBIGUOUS };
 
+/* ------------------------------------------------- SENDING IT (Phase 5 B3B-2)
+
+   AN ADDRESS IS A DESTINATION AND THE COPY HAS TO SAY SO. A person looking at a
+   form with a name field and an email field will assume the email is the person,
+   because everywhere else it is. Here it is not: whoever opens the link and
+   signs in is who accepts, with any address they can receive mail at, and MetYet
+   never compares the two. The help text under the field is the only place that
+   misunderstanding gets corrected, so it is not shortened.
+
+   SHAPE ONLY, AND CHECKED HERE SO THE ANSWER IS IMMEDIATE. The server checks the
+   same shape and is the one that decides; this spares a round trip for a typo.
+   Neither check is an identity check, and there is nothing for either of them to
+   compare an address against. */
+const LOOKS_LIKE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/* WHAT MetYet KNOWS ABOUT ONE SEND, in the words a shop owner would use. Only
+   what the server said about a send it performed; nothing is inferred from the
+   fact that an address was typed, and an invitation this screen was not told
+   about says nothing at all rather than "not emailed". */
+const DELIVERY_SAID = Object.freeze({
+  sent: (to) => `Emailed to ${to}.`,
+  /* Two different problems, and telling them apart is what makes the line
+     useful: an address the provider would not accept is something a person can
+     correct, and a provider that would not take anything just now is not. */
+  failed: (to, failure) => (failure === "rejected"
+    ? `The email to ${to} was refused. Check the address, then replace this invitation.`
+    : `MetYet could not send the email to ${to} just now. Replace this invitation to try again.`),
+  unconfirmed: () => "MetYet could not confirm the email was sent. Replace this invitation, "
+    + "or share the code yourself.",
+  none: () => "Not emailed — share the code or the link yourself.",
+});
+const deliverySaid = (said) => (DELIVERY_SAID[said.state] || DELIVERY_SAID.unconfirmed)(
+  said.to, said.failure);
+/* Two of the four are a problem a partner can do something about. */
+const NEEDS_REPLACING = Object.freeze(["failed", "unconfirmed"]);
+
+/* THE LINK IS THE SERVER'S, AND THIS SCREEN DOES NOT BUILD ONE. It arrives in
+   the same reply as the credential, built from configured APP_URL — not from
+   the address bar, which exactly one file in this product reads and which this
+   is not. A server with no origin configured sends no link, and then the code
+   is what gets handed over, as it was in Batch 2. */
+
 export default function CollectorNetwork({ state, onInvite = null, onRevokeInvite = null,
   onRefresh = null }) {
   const collectors = rows(state && state.collectors);
@@ -139,42 +181,130 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
 
   /* ---------------------------------------------------------- inviting */
   const [inviting, setInviting] = useState(false);
-  const [draft, setDraft] = useState({ recipient: "", note: "" });
+  const [draft, setDraft] = useState({ recipient: "", note: "", email: "" });
   const [busy, setBusy] = useState(null);       // what is in flight, or null
   const [problem, setProblem] = useState(null);
   /* The credential, for exactly as long as it is on screen. It is never put
      anywhere that is read again, and there is no way to ask for it twice. */
   const [issued, setIssued] = useState(null);
+  /* WHAT THE SERVER SAID ABOUT SENDS IT PERFORMED WHILE THIS SCREEN WAS OPEN,
+     by invitation id. It is memory and nothing more: a reload empties it, and an
+     invitation it has no entry for shows no delivery line — which is honest,
+     because delivery is not product state and the projection has never carried
+     it. Nothing here is written anywhere that survives the tab. */
+  const [delivered, setDelivered] = useState({});
+  /* The invitation this form will withdraw before it creates the new one, or
+     null for an ordinary invitation. */
+  const [replacing, setReplacing] = useState(null);
+  const remember = useCallback((invitationId, delivery) => {
+    if (!invitationId || !delivery) return;
+    const said = delivery.requested ? (delivery.state || "unconfirmed") : "none";
+    setDelivered((seen) => ({ ...seen,
+      [invitationId]: { state: said, to: delivery.to || null, failure: delivery.failure || null } }));
+  }, []);
   /* Folded away by default; the rows are kept, not dropped. */
   const [showWithdrawn, setShowWithdrawn] = useState(false);
 
   const writable = typeof onInvite === "function";
+  /* An address in the draft is the whole of the difference between creating an
+     invitation and sending one, so the screen reads it from there rather than
+     keeping a second flag that could disagree with the field. */
+  const sending = Boolean(draft.email.trim());
 
   const begin = useCallback(() => {
-    setDraft({ recipient: "", note: "" });
+    setDraft({ recipient: "", note: "", email: "" });
     setProblem(null);
     setIssued(null);
+    setReplacing(null);
     setInviting(true);
   }, []);
+
+  /* AGAIN, FOR SOMEBODY THIS PARTNER ALREADY DESCRIBED. The labels they wrote
+     are theirs and are worth keeping; the address is only offered back when
+     this screen was the one that sent it, because it is not in the projection
+     and never will be. `targeting` is what makes this a replacement rather than
+     a second invitation: given an id, the form withdraws that one first. */
+  const again = useCallback((invitation, targeting = null) => {
+    const known = (invitation && delivered[invitation.id]) || null;
+    setDraft({
+      recipient: text(invitation && invitation.recipient) || "",
+      note: text(invitation && invitation.note) || "",
+      email: (known && known.to) || "",
+    });
+    setProblem(null);
+    setIssued(null);
+    setReplacing(targeting);
+    setInviting(true);
+  }, [delivered]);
 
   const cancel = useCallback(() => {
     /* No command, no request, nothing written. */
     setInviting(false);
+    setReplacing(null);
     setProblem(null);
   }, []);
 
   const create = useCallback(async (event) => {
     if (event && event.preventDefault) event.preventDefault();
     if (busy || !writable) return;
+    const email = draft.email.trim();
+    if (email && !LOOKS_LIKE_EMAIL.test(email)) {
+      /* Nothing is sent, so nothing has to be undone. */
+      setProblem("That does not look like an email address. Correct it, or clear it and share "
+        + "the code yourself.");
+      return;
+    }
     setBusy("invite");
     setProblem(null);
+
+    /* REPLACING IS WITHDRAW-THEN-CREATE, IN THAT ORDER, AND THE ORDER IS THE
+       GUARANTEE. There is no resend: MetYet keeps a digest and never the code,
+       so the only way to reach somebody again is a NEW invitation with a NEW
+       secret. Withdrawing first means the worst interruption leaves no valid
+       invitation rather than two — and the code that went to the wrong address
+       stops working immediately, which is the point rather than a consolation.
+
+       If the withdrawal is refused, nothing is created: the old invitation is
+       still the live one and a second live one would be the one thing this must
+       not produce. */
+    if (replacing) {
+      let withdrawn;
+      try {
+        withdrawn = await onRevokeInvite(replacing);
+      } catch (error) {
+        setBusy(null);
+        const failure = (error && (error.failure || error.code)) || "unexpected";
+        setProblem(CERTAIN[failure]
+          || "MetYet lost contact while withdrawing the old invitation, so nothing was replaced. "
+            + "Check the list.");
+        if (!CERTAIN[failure] && typeof onRefresh === "function") {
+          try { await onRefresh(); } catch (again) { /* the list stays as it was */ }
+        }
+        return;
+      }
+      if (!withdrawn || withdrawn.ok !== true) {
+        setBusy(null);
+        setProblem(`${whyRefused(withdrawn && withdrawn.refused)} The old invitation is still the `
+          + "live one, so nothing new was created.");
+        return;
+      }
+    }
+
     let result;
     try {
-      result = await onInvite({ recipient: draft.recipient, note: draft.note });
+      result = await onInvite({ recipient: draft.recipient, note: draft.note, email });
     } catch (error) {
       setBusy(null);
       const failure = (error && (error.failure || error.code)) || "unexpected";
-      setProblem(whyFailed(failure));
+      /* A REQUEST THIS SERVER WOULD NOT TAKE IS NOT AN AMBIGUOUS ONE. It was
+         refused before anything happened, and with an address in hand the
+         reason is almost always that this deployment cannot send email at all —
+         which is a supported configuration, not a fault. Creating without one
+         still works, and saying so is more use than "MetYet cannot tell". */
+      setProblem(email && failure === "unexpected" && error && error.detail === "invalid_request"
+        ? "This MetYet cannot send email, so nothing was created. Clear the email address to "
+          + "create an invitation you hand over yourself."
+        : whyFailed(failure));
       /* A READ IS NOT A REPLAY. The command is never sent again — but asking
          what exists now is a GET with no side effects, and it is the only way a
          person can find out whether the thing they could not see the answer to
@@ -192,8 +322,20 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
     /* Saved. The form closes, and the one copy of the credential goes on screen
        until the partner has done something else. */
     setInviting(false);
-    setIssued({ credential: result.credential, recipient: draft.recipient.trim() || null });
-  }, [busy, draft, onInvite, onRefresh, writable]);
+    setReplacing(null);
+    remember(result.invitationId, result.delivery);
+    setIssued({
+      credential: result.credential,
+      recipient: draft.recipient.trim() || null,
+      /* So that a partner whose email did not arrive — or who never asked for
+         one — has the same thing to hand over that the email would carry. */
+      link: result.joinUrl || null,
+      delivery: result.delivery && result.delivery.requested
+        ? { state: result.delivery.state || "unconfirmed", to: result.delivery.to || email,
+          failure: result.delivery.failure || null }
+        : null,
+    });
+  }, [busy, draft, onInvite, onRefresh, onRevokeInvite, remember, replacing, writable]);
 
   const revoke = useCallback(async (invitationId) => {
     if (busy || typeof onRevokeInvite !== "function") return;
@@ -223,7 +365,16 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
         <Panel title="Hand this to them"
           action={<button className="tps-edit" type="button" onClick={() => setIssued(null)}>Done</button>}>
           <div className="tps-secret">
+            {/* The credential stays the first thing here, and the link is built
+                from it below: one secret, written twice, exactly as the email
+                writes it. */}
             <code className="tps-code mono">{issued.credential}</code>
+            {issued.link ? (
+              <p className="tps-aside">
+                Or send them this link: <code className="mono">{issued.link}</code>
+              </p>
+            ) : null}
+            {issued.delivery ? <p className="tps-aside">{deliverySaid(issued.delivery)}</p> : null}
             <p className="tps-aside">
               {issued.recipient ? `This is ${issued.recipient}'s code. ` : ""}
               It works once, it lasts two weeks, and MetYet will not show it again — give it to them
@@ -235,7 +386,8 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
 
       {inviting ? (
         <form className="tps-form" onSubmit={create} noValidate>
-          <Panel title="Invite a collector" note={busy === "invite" ? "Creating…" : "Not created yet"}>
+          <Panel title={replacing ? "Replace invitation" : "Invite a collector"}
+            note={busy === "invite" ? (sending ? "Sending…" : "Creating…") : "Not created yet"}>
             <div className="tps-fields">
               <label className="tps-field wide">
                 <span className="tps-field-l">Who is this for</span>
@@ -244,6 +396,17 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
                   onChange={(e) => setDraft((d) => ({ ...d, recipient: e.target.value }))} />
                 <span className="tps-field-h">
                   So you can tell your invitations apart. It does not decide who can use the code.
+                </span>
+              </label>
+              <label className="tps-field wide">
+                <span className="tps-field-l">Email</span>
+                <input className="tps-input" type="email" value={draft.email}
+                  disabled={busy === "invite"}
+                  onChange={(e) => setDraft((d) => ({ ...d, email: e.target.value }))} />
+                <span className="tps-field-h">
+                  Where MetYet sends the invitation. It does not decide who can accept it — whoever
+                  opens the link and signs in does, with any address they can receive mail at.
+                  Leave it blank to hand the code over yourself.
                 </span>
               </label>
               <label className="tps-field wide">
@@ -256,8 +419,17 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
             </div>
             {problem ? <p className="tps-problem" role="alert">{problem}</p> : null}
             <div className="tps-actions">
+              {/* WHAT THE BUTTON PROMISES IS WHAT WILL HAPPEN. With an address
+                  MetYet sends the invitation, so it says so; without one it
+                  creates an invitation the partner hands over, so it says that
+                  instead. And a replacement says "replace", never "send again"
+                  or "retry" — the old code dies and a new one is issued, and a
+                  word that hid that would be hiding the only thing that matters
+                  about it. */}
               <button className="tps-save" type="submit" disabled={busy === "invite"}>
-                {busy === "invite" ? "Creating…" : "Create invitation"}
+                {busy === "invite" ? (sending ? "Sending…" : "Creating…")
+                  : replacing ? "Replace invitation"
+                  : sending ? "Send invitation" : "Create invitation"}
               </button>
               <button className="tps-cancel" type="button" onClick={cancel} disabled={busy === "invite"}>
                 Cancel
@@ -335,28 +507,45 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
 
       {pending.length ? (
         <Panel title="Invitations outstanding" note={plural(pending.length, "invitation", "invitations")}>
-          {pending.map((i) => (
-            <Record
-              key={i.id}
-              title={text(i.recipient) || "Someone you invited"}
-              /* The code is not here, and there is nowhere it could be: the
-                 projection never carried one. */
-              facts={
-                <>
-                  <Fact label="Sent" value={day(i.at)} mono />
-                  <Fact label="Expires" value={day(i.expiresAt)} mono />
-                </>
-              }
-              note={text(i.note)}
-              noteLabel="Your note"
-              tags={typeof onRevokeInvite === "function" ? (
-                <button className="tps-edit" type="button" disabled={busy === i.id}
-                  onClick={() => revoke(i.id)}>
-                  {busy === i.id ? "Withdrawing…" : "Withdraw"}
-                </button>
-              ) : null}
-            />
-          ))}
+          {pending.map((i) => {
+            /* Only what MetYet was told about a send it performed. An
+               invitation this screen has no answer for shows no line at all —
+               silence is the truth there, and "not emailed" would not be. */
+            const said = delivered[i.id] || null;
+            const troubled = said && NEEDS_REPLACING.includes(said.state);
+            return (
+              <Record
+                key={i.id}
+                title={text(i.recipient) || "Someone you invited"}
+                /* The code is not here, and there is nowhere it could be: the
+                   projection never carried one. */
+                facts={
+                  <>
+                    <Fact label="Sent" value={day(i.at)} mono />
+                    <Fact label="Expires" value={day(i.expiresAt)} mono />
+                  </>
+                }
+                note={text(i.note)}
+                noteLabel="Your note"
+                tags={typeof onRevokeInvite === "function" ? (
+                  <>
+                    {troubled && writable ? (
+                      <button className="tps-edit" type="button" disabled={busy === i.id}
+                        onClick={() => again(i, i.id)}>
+                        Replace invitation
+                      </button>
+                    ) : null}
+                    <button className="tps-edit" type="button" disabled={busy === i.id}
+                      onClick={() => revoke(i.id)}>
+                      {busy === i.id ? "Withdrawing…" : "Withdraw"}
+                    </button>
+                  </>
+                ) : null}
+              >
+                {said ? <p className="tps-aside">{deliverySaid(said)}</p> : null}
+              </Record>
+            );
+          })}
         </Panel>
       ) : null}
 
@@ -383,6 +572,14 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
               }
               note={text(i.note)}
               noteLabel="Your note"
+              /* NOT "replace": there is nothing live to withdraw here, so this
+                 creates an invitation and nothing else. The words are kept
+                 apart because the actions are. */
+              tags={writable ? (
+                <button className="tps-edit" type="button" onClick={() => again(i, null)}>
+                  Invite again
+                </button>
+              ) : null}
             />
           )) : null}
         </Panel>

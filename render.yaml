@@ -3,8 +3,9 @@
 #
 # This file describes the service; it creates nothing by itself and carries no
 # secret, no service id and no account. An operator applies it in Render, sets
-# the four secret-bearing variables below by hand, and runs the migration
-# command once before the first deploy (see docs/DEPLOYMENT.md).
+# the hand-set variables below by hand — three of which are required, and three
+# of which are the optional mail settings — and runs the migration command once
+# before the first deploy (see docs/DEPLOYMENT.md).
 #
 #   build    npm ci --omit=dev     production dependencies only; the server
 #            && npm run build:app  itself needs no bundling, but the CLIENT does
@@ -120,3 +121,24 @@ services:
         value: "10"
       - key: LOG_LEVEL
         value: info
+      # ----------------------------------------------------------------------
+      # SENDING A COLLECTOR INVITATION (Phase 5 Batch 3B-2). All three are
+      # OPTIONAL: without them the service starts and behaves exactly as it did,
+      # and a Trusted Partner hands the code or the link over themselves.
+      #
+      # APP_URL is where this MetYet lives — the origin an invitation link is
+      # built from. It is CONFIGURATION and nothing else: `trustProxy` is on, so
+      # a request's Host header is a value the caller chooses, and a link is the
+      # last thing to let anybody else choose. Set by hand, because this file is
+      # applied to more than one environment and a hostname written here would
+      # be the wrong one somewhere.
+      - key: APP_URL
+        sync: false
+      # The mail provider's API key. Set by hand, and never a value in this file.
+      - key: RESEND_API_KEY
+        sync: false
+      # Who the invitation comes from, e.g. "MetYet <invitations@…>". Chosen
+      # during the sending-domain setup, so it is set by hand alongside the key;
+      # a half-configured mailer is refused at startup rather than half-used.
+      - key: MAIL_FROM
+        sync: false

@@ -42,7 +42,7 @@ const { PersistenceError, CODES } = require("../persistence/errors.js");
 const COMMAND = "inviteCollector";
 
 async function openCollectorInvitation({ repository, credentials, runtime } = {},
-  { actor, recipient = null, note = null } = {}) {
+  { actor, recipient = null, note = null, deliverTo = null } = {}) {
   if (!repository || !credentials) {
     throw new TypeError("openCollectorInvitation: a repository and a credential directory are required");
   }
@@ -68,6 +68,20 @@ async function openCollectorInvitation({ repository, credentials, runtime } = {}
     alongside: async (tx, { value }) => {
       const issued = await credentials.issue({ invitationId: value, tx });
       token = issued.token;
+      /* WHERE IT WILL BE SENT IS COMMITTED WITH IT (Phase 5 Batch 3B-2), in
+         this same transaction and therefore under the same rollback. The
+         address was typed before anything was sent, so it belongs here. The
+         provider's answer does not and cannot: the provider is not in this
+         transaction and must never be asked from inside one, because an
+         external round trip would hold the global world lock for as long as a
+         third party took to answer.
+
+         A SECOND STATEMENT RATHER THAN A WIDER `issue`. Minting a credential is
+         one thing and recording where MetYet will send it is another; keeping
+         them apart leaves `issue` exactly the operation Batch 2 proved, and
+         leaves an invitation with no address taking exactly the path it took
+         before this batch existed. */
+      if (deliverTo) await credentials.requestDelivery(value, { to: deliverTo, tx });
       return issued.credential;
     },
   });

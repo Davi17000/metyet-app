@@ -49,6 +49,15 @@
      SUPABASE_USER_URL     optional override
      SUPABASE_JWT_AUDIENCE optional, default "authenticated"
 
+     APP_URL               optional — where this MetYet lives, e.g.
+                           https://app.metyet.io. It is what an invitation link
+                           is built from, and it is CONFIGURATION: never the
+                           request's `Host`, which a caller chooses.
+     RESEND_API_KEY        optional — with MAIL_FROM and APP_URL, MetYet can
+     MAIL_FROM             send a Collector invitation itself. Without them it
+                           still opens invitations; the partner hands the code
+                           or the link over.
+
      PORT, HOST, LOG_LEVEL  optional (Render sets PORT)
 
    No vendor is contacted here and nothing is provisioned: this only reads what
@@ -188,6 +197,58 @@ function authSettings(env, problems) {
   return { jwksUrl, issuer, audience: trimmed(env.SUPABASE_JWT_AUDIENCE) || "authenticated", userUrl, apiKey };
 }
 
+/* ---------------------------------------------------- SENDING AN INVITATION
+
+   OPTIONAL, AND OFF WHEN IT IS INCOMPLETE (Phase 5 Batch 3B-2).
+
+   A MetYet that cannot send email is not a broken MetYet. Invitations still
+   work: the credential and its link appear once on the Trusted Partner's
+   screen, and they hand it over themselves. So these three names are NOT in
+   REQUIRED_SERVER_ENV, the server starts without them, and what turns off is
+   one capability rather than the product — the same shape as the routes that
+   mount only when their directory is wired in.
+
+   ALL THREE OR NONE. Two out of three is a configuration somebody meant to
+   finish, and a server that half-sends is worse than one that does not send:
+   it would build links from a default nobody chose. Partial configuration is
+   reported as a problem rather than silently ignored.
+
+   APP_URL IS CONFIGURATION AND COULD NOT BE ANYTHING ELSE. It is the origin
+   written into a link inside an email, and the alternative — deriving it from
+   the request that asked for the send — means a forged `Host` header puts
+   somebody else's domain in MetYet's invitation. `trustProxy` is on in
+   production, so that header is exactly the thing not to trust here.
+
+   AND IT IS NOT ONLY MAIL'S. `APP_URL` is where this MetYet lives, which is
+   also what a Trusted Partner needs when they are going to hand the link over
+   themselves. So it stands alone: set it, and the server can write its own
+   links; add a key and a sender, and it can also send them. */
+function siteSettings(env, problems) {
+  const appUrl = trimmed(env.APP_URL).replace(/\/+$/, "");
+  if (!appUrl) return null;
+  if (!isSafeProviderUrl(appUrl)) {
+    problems.push("APP_URL must be https (http is accepted only for localhost): it is the origin "
+      + "written into an invitation link");
+  }
+  return appUrl;
+}
+
+/* BOTH OR NEITHER, AND NOWHERE TO SEND FROM WITHOUT AN ORIGIN. A key without a
+   sender is a configuration somebody meant to finish, and a server that
+   half-sends is worse than one that does not send at all. */
+function mailSettings(env, problems, appUrl) {
+  const apiKey = trimmed(env.RESEND_API_KEY);
+  const from = trimmed(env.MAIL_FROM);
+  if (!apiKey && !from) return null;                 /* delivery is simply off */
+  if (!apiKey) problems.push("RESEND_API_KEY is not set, and MAIL_FROM is");
+  if (!from) problems.push("MAIL_FROM is not set, and RESEND_API_KEY is");
+  if (!appUrl) {
+    problems.push("APP_URL is not set, and mail is configured: an invitation email carries a link, "
+      + "and the origin for it is configuration rather than anything a request may say");
+  }
+  return apiKey && from && appUrl ? { apiKey, from } : null;
+}
+
 const finish = (problems, value) => {
   if (problems.length) throw new ConfigError(problems);
   return value;
@@ -211,12 +272,17 @@ function loadServerConfig(env = process.env) {
   const auth = authSettings(env, problems);
   const port = whole("PORT", env, 8080);
   if (port > 65535) problems.push("PORT must be a port number");
+  const appUrl = siteSettings(env, problems);
   return finish(problems, {
     port,
     host: trimmed(env.HOST) || "0.0.0.0",
     logLevel: trimmed(env.LOG_LEVEL) || "info",
     database,
     auth,
+    /* Both null when nothing was configured: writing a link and sending one are
+       capabilities, not requirements. */
+    appUrl,
+    mail: mailSettings(env, problems, appUrl),
   });
 }
 
@@ -233,6 +299,10 @@ const describeConfig = (config) => ({
   audience: config.auth.audience,
   /* That a key is configured, never which one, and never any part of it. */
   identityKeyConfigured: Boolean(config.auth.apiKey),
+  /* Whether MetYet can send an invitation, and where its links point. The
+     sender and the key are never described beyond existing. */
+  mailConfigured: Boolean(config.mail),
+  appUrl: config.appUrl || null,
 });
 
 /* What the server refuses to start without, and therefore what any deployment
