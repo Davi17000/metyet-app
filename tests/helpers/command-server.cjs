@@ -119,7 +119,15 @@ let shared = null;
    the default here is a server WITHOUT one — which is what every suite written
    before Phase 5 Batch 2 expects, and what lets that batch's own suite prove
    the route is absent rather than merely assert it in prose. */
-async function serve(createApp, { repositoryWrapper, collectorCredentials = false } = {}) {
+/* AND MAIL IS OPT IN FOR THE SAME REASON (Phase 5 Batch 3B-2). Sending is a
+   capability a deployment may not have, so the default here is a server that
+   has none — which is what every suite written before this batch expects, and
+   what lets this batch prove that a MetYet with no mail configured still opens
+   invitations exactly as it did. A `mailer` is whatever the caller hands in; no
+   test has ever reached a real provider and none may. `appUrl` is the
+   configured origin, and the route takes it from nowhere else. */
+async function serve(createApp, { repositoryWrapper, collectorCredentials = false,
+  mailer = null, appUrl = null } = {}) {
   const pg = shared || (shared = new PGlite());
   await pg.exec("drop schema if exists metyet cascade; drop schema if exists metyet_auth cascade");
   const db = fromPGlite(pg);
@@ -133,6 +141,8 @@ async function serve(createApp, { repositoryWrapper, collectorCredentials = fals
   const credentials = collectorCredentials ? createCollectorCredentials(db) : null;
   const app = createApp({ repository, accounts, verifier: fakeVerifier(),
     ...(credentials ? { collectorCredentials: credentials } : {}),
+    ...(mailer ? { mailer } : {}),
+    ...(appUrl ? { appUrl } : {}),
     runtime: RT.deterministicRuntime({ start: "2030-01-01T00:00:00.000Z", stepMs: 60000 }) });
   /* The instance is shared, so closing it would take the next server with it.
      Callers still call close(); it stays in the contract and does nothing. */

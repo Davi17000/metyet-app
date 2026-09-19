@@ -45,6 +45,11 @@ const { executeCommand } = require("../persistence/command-transaction.js");
 const { redeemPartnerInvitation, REFUSALS } = require("./registration.js");
 const { openCollectorInvitation } = require("./collector-invitation.js");
 const { acceptCollectorInvitation } = require("./collector-acceptance.js");
+const { buildInvitationEmail } = require("./collector-invitation-email.js");
+const { normalizeEmail } = require("./auth/invitations.js");
+/* Which provider outcomes are answers, and which are silence. Named in the
+   adapter, because only the adapter knows what the provider said. */
+const { ANSWERED: MAIL_ANSWERED } = require("./mail/resend.js");
 const { apiError, toApiError, errorBody } = require("./errors.js");
 
 /* Fields a request may not carry: they name authority, and authority comes from
@@ -58,7 +63,12 @@ const BODY_KEYS = ["command", "payload"];
    runtime value on the record it creates — the inviting partner, the id, both
    timestamps, the credential — is the server's, so there is no field here for
    one and nothing to reject beyond an unknown name. */
+/* `email` is accepted only when MetYet can actually send (Phase 5 Batch 3B-2).
+   A field that is taken and then quietly ignored is worse than one that is
+   refused: a partner would believe an invitation had been emailed. */
+const LOOKS_LIKE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const INVITATION_BODY_KEYS = ["recipient", "note"];
+const INVITATION_BODY_KEYS_WITH_DELIVERY = [...INVITATION_BODY_KEYS, "email"];
 const DEFAULT_BODY_LIMIT = 256 * 1024;
 
 const isPlainObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
@@ -105,6 +115,12 @@ function createApp({
      mounted — a Trusted Partner cannot open an invitation the server has
      nowhere to keep the secret for. */
   collectorCredentials,
+  /* How MetYet sends an invitation, and where its links point (Phase 5 Batch
+     3B-2). Injected like everything else, and when it is absent the delivery
+     field is refused and nothing is sent — invitations still work, handed over
+     by the partner themselves. */
+  mailer = null,
+  appUrl = null,
   checkSchema,
   runtime = RT.systemRuntime(),
   /* The built production client, as two strings, or null. Injected rather than
@@ -229,6 +245,28 @@ function createApp({
       reply.code(409);
       return { ...errorBody(apiError("command_refused", { refused: result.refused }), request.id), version: result.version };
     }
+    /* AN INVITATION THAT IS OVER KEEPS NO ADDRESS (Phase 5 Batch 3B-2).
+
+       Acceptance clears its own delivery record inside the claim, in one
+       statement (server/auth/collector-invitations.js). Withdrawal cannot: it
+       is an ordinary command, the canonical world knows nothing of metyet_auth,
+       and the command transaction offers this route no hook — deliberately, so
+       that no ordinary command can acquire a second write.
+
+       So the cleanup lives here, at the only place that sees both the command
+       that closed the invitation and the directory that holds its address. It
+       adds nothing a command can reach: it sends nothing, redeems nothing, and
+       runs only after a withdrawal the domain already allowed. A failure to
+       clear is logged and does not fail the withdrawal — the invitation is
+       genuinely withdrawn either way. */
+    if (collectorCredentials && command === "revokeCollectorInvitation" && result.value) {
+      try {
+        await collectorCredentials.closeDelivery(result.value);
+      } catch (error) {
+        request.log.info({ invitationId: result.value }, "delivery record not cleared on withdrawal");
+      }
+    }
+
     /* The committed world stays here; the actor receives their projection. */
     const state = projectForActor(result.world, actor);
     if (!state.actor) throw apiError("actor_unknown");
@@ -254,16 +292,25 @@ function createApp({
       const { actor } = request.metyet;
       const body = request.body === undefined ? {} : request.body;
       if (!isPlainObject(body)) throw apiError("invalid_request", { detail: "a JSON object is required" });
-      const unknown = Object.keys(body).filter((k) => !INVITATION_BODY_KEYS.includes(k));
+      const canDeliver = Boolean(mailer && appUrl);
+      const allowed = canDeliver ? INVITATION_BODY_KEYS_WITH_DELIVERY : INVITATION_BODY_KEYS;
+      const unknown = Object.keys(body).filter((k) => !allowed.includes(k));
       if (unknown.length) throw apiError("invalid_request", { detail: `unknown field(s): ${unknown.join(", ")}` });
-      for (const key of ["recipient", "note"]) {
+      for (const key of allowed) {
         if (body[key] !== undefined && body[key] !== null && typeof body[key] !== "string") {
           throw apiError("invalid_request", { detail: `${key} must be text` });
         }
       }
+      /* A destination, checked for shape only. Nothing downstream compares it
+         to anything, and nothing about who may accept depends on it. */
+      const deliverTo = canDeliver ? normalizeEmail(body.email) : "";
+      if (deliverTo && !LOOKS_LIKE_EMAIL.test(deliverTo)) {
+        throw apiError("invalid_request", { detail: "email must be an email address" });
+      }
 
       const result = await openCollectorInvitation({ repository, credentials: collectorCredentials, runtime },
-        { actor, recipient: body.recipient ?? null, note: body.note ?? null });
+        { actor, recipient: body.recipient ?? null, note: body.note ?? null,
+          deliverTo: deliverTo || null });
 
       if (!result.ok) {
         request.log.info({ refused: result.refused }, "invitation refused");
@@ -272,14 +319,87 @@ function createApp({
           version: result.version };
       }
 
+      /* ------------------------------------------------- AND NOW THE SENDING
+
+         COMMITTED FIRST, ALWAYS. Everything above happened in one transaction
+         holding the global world lock; asking a mail provider from inside it
+         would hold that lock for as long as a third party took to answer, which
+         is the reason server/registration.js keeps its own provider call
+         outside a transaction too.
+
+         So the invitation exists before anything is sent, and a provider that
+         refuses cannot undo it. A partner with an undelivered invitation still
+         has one, and can hand over the code on screen or replace it.
+
+         AND NOTHING IS CLAIMED WITHOUT EVIDENCE. `sent` is written only when
+         the provider accepted it. A timeout, an unreadable answer, or a process
+         that stops before the outcome is recorded all leave the row saying
+         MetYet does not know — which is true, and which the partner can act on. */
+      let delivery = { requested: false };
+      if (deliverTo) {
+        const partner = (result.world.partners || []).find((p) => p.id === actor.partnerId) || null;
+        const { subject, text } = buildInvitationEmail({
+          /* The shop's name from the committed world, never from the request. */
+          partnerName: partner && partner.name,
+          appUrl,
+          credential: result.token,
+        });
+        const sent = await mailer.send({ to: deliverTo, subject, text,
+          /* One issuance, one key. A replacement is a different invitation with
+             a different id, so its send is never the cached answer to this one. */
+          idempotencyKey: `collector-invite/${result.invitationId}` });
+        /* WHAT IS ANSWERED IS WHAT WAS RECORDED, and that is the whole reason
+           this is a variable rather than an expression. If the outcome write
+           fails, the durable row says "requested, outcome unknown" — so the
+           partner is told the same thing. A screen that said `sent` over a row
+           that says `unconfirmed` would be two answers to one question, and the
+           weaker one is the true one.
+
+           AND ONLY AN ANSWER IS AN OUTCOME. A refusal and a 429 are the
+           provider saying no; a timeout is nobody saying anything, and the
+           message may already be on its way. The second is recorded as nothing
+           at all, which leaves the row reading "requested, outcome unknown" —
+           the truth, and the state the partner resolves by replacing. */
+        const answered = sent.ok || MAIL_ANSWERED.includes(sent.failure);
+        let outcome = sent.ok ? "sent" : answered ? "failed" : "unconfirmed";
+        if (answered) {
+          try {
+            await collectorCredentials.recordDelivery(result.invitationId,
+              sent.ok ? { at: new Date() } : { error: sent.failure });
+          } catch (error) {
+            /* The message may have gone; the record of it did not. */
+            outcome = "unconfirmed";
+            request.log.info({ invitationId: result.invitationId }, "delivery outcome not recorded");
+          }
+        }
+        /* The failure word is ours (server/mail/resend.js). The provider's own
+           answer is never logged, returned or stored: it can quote back the
+           request that caused it, and that request carried a credential. */
+        delivery = { requested: true, state: outcome, to: deliverTo,
+          ...(outcome === "failed" ? { failure: sent.failure } : {}) };
+        request.log.info({ invitationId: result.invitationId, delivery: delivery.state },
+          "collector invitation delivery");
+      }
+
       /* The credential is a sibling of the projection, never inside it — and
          this is the only reply in the product that will ever carry it. It is
          not logged here or anywhere: the id is what support quotes. */
       request.log.info({ invitationId: result.invitationId }, "collector invitation opened");
       const state = projectForActor(result.world, actor);
       if (!state.actor) throw apiError("actor_unknown");
+      /* THE SAME LINK THE EMAIL WOULD HAVE CARRIED, for the partner who is
+         going to hand it over themselves — which is every partner when nothing
+         was sent, and the one whose send failed. It is built from CONFIGURED
+         APP_URL, never from this request: `trustProxy` is on, so `Host` is a
+         value a caller chooses, and a link is exactly the thing not to let them
+         choose. Without that configuration there is no link and the reply says
+         so by omission; the code is still there, as it was in Batch 2.
+
+         The credential is in it because the credential IS the link. This is the
+         one reply that carries the secret, and this adds no place it lives. */
       return { ok: true, version: result.version, invitationId: result.invitationId,
-        credential: result.token, state };
+        credential: result.token, delivery, state,
+        ...(appUrl ? { joinUrl: `${appUrl}/join#${result.token}` } : {}) };
     });
   }
 

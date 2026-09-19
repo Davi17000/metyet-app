@@ -466,7 +466,8 @@ redirects to `https://`.
 
 | Action | Why it is not yet | Cost |
 |---|---|---|
-| **Resend custom SMTP** in Supabase Auth | Required before anyone outside the project team can sign in: the built-in service refuses non-members and allows two messages an hour, and Supabase documents it as best-effort and not for production. Sending the *invitation* is still yours to write by hand. | Free tier covers a pilot (3,000 emails/month) |
+| **Resend custom SMTP** in Supabase Auth | Required before anyone outside the project team can sign in: the built-in service refuses non-members and allows two messages an hour, and Supabase documents it as best-effort and not for production. | Free tier covers a pilot (3,000 emails/month) |
+| **MetYet's own sending, for Collector invitations** | The code is in (Phase 5 Batch 3B-2) and off until it is configured. It needs a Resend account, a sending subdomain with its DNS records verified, a sender address on that subdomain, and an API key — then `APP_URL`, `RESEND_API_KEY` and `MAIL_FROM` in Render. Two separate senders, deliberately: Supabase sends the **sign-in** code, MetYet sends the **invitation**. Until it is set, every invitation still works — the partner is shown the code and the link and hands them over. | same free tier |
 | **The rest of the product on `app.metyet.io`** | Phase 4 shipped the client: sign-in, both seats' shells, and read experiences for each. Phase 5 Batch 1 added the first control that writes — a Trusted Partner editing their own shop profile. Everything else that changes something is still a later batch. | none |
 | **Sentry** | Optional. Render's logs are enough for a pilot. | free tier |
 
@@ -496,6 +497,9 @@ that do not.
 | `SUPABASE_JWKS_URL` | the server | derived | Override only to point verification at a different key set. |
 | `SUPABASE_USER_URL` | the server | derived | Override only to point the confirmed-address check at a different Auth server. |
 | `SUPABASE_JWT_AUDIENCE` | the server | `authenticated` | The audience a user token must carry. |
+| `APP_URL` | the server | none — optional | Where this MetYet lives, e.g. `https://app.metyet.io`. It is the origin an invitation link is built from — in the email MetYet sends, and in the link a Trusted Partner is shown so they can share it themselves. It is **configuration and never a request**: `trustProxy` is on, so a forged `Host` header would otherwise put somebody else's domain in a MetYet invitation. Required as soon as `RESEND_API_KEY` and `MAIL_FROM` are set. |
+| `RESEND_API_KEY` | the server | none — optional | The mail provider's API key. Set it, with the two below, and MetYet can send a Collector invitation itself; leave all three unset and it still opens invitations, and the partner hands the code or the link over. A key with no `MAIL_FROM` is refused at startup rather than half-used. |
+| `MAIL_FROM` | the server | none — optional | Who an invitation comes from, e.g. `MetYet <invitations@mail.metyet.io>`. It must be an address on the verified sending domain (Part 2). |
 | `PORT` | the server | `8080` | Render sets this itself; do not set it there. |
 | `HOST` | the server | `0.0.0.0` | |
 | `LOG_LEVEL` | the server | `info` | |

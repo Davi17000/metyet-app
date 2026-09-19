@@ -273,11 +273,14 @@ export function createProductionStore({ api } = {}) {
        differs only in which request it sends and what it hands back. Two
        callers, one state machine — a second machine is how two screens start
        disagreeing about whether something is in flight. */
-    async createInvitation({ recipient = null, note = null } = {}) {
+    async createInvitation({ recipient = null, note = null, email = null } = {}) {
       const answer = await mutate("createCollectorInvitation",
-        () => api.createCollectorInvitation({ recipient, note }));
+        () => api.createCollectorInvitation({ recipient, note, email }));
       if (!answer.ok) return answer;
+      /* The link and the delivery outcome travel with the credential and are
+         forgotten as fast: they describe one send, not the invitation. */
       return { ok: true, invitationId: answer.invitationId, credential: answer.credential,
+        joinUrl: answer.joinUrl || null, delivery: answer.delivery || { requested: false },
         state: answer.state, version: answer.version };
     },
 

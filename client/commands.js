@@ -67,14 +67,20 @@ export function savePartnerProfile(target) {
    THE SCREEN SENDS TWO LABELS. A recipient and a note, both optional, both for
    the partner's own recognition. Who may redeem an invitation is not decided by
    either of them — the invitation names nobody, and possession plus an
-   authenticated identity is what Batch 3 will turn into a Relationship. */
+   authenticated identity is what Batch 3 will turn into a Relationship.
+
+   AND, SINCE B3B-2, ONE DESTINATION. An optional email address: where MetYet
+   sends the invitation, which is a third thing that decides nothing about who
+   may accept it. It is passed through untouched — this module holds no address
+   and compares none — and an absent one means the partner will hand the code
+   over themselves, which is the path Batch 2 shipped and which still works. */
 export const REVOKE_INVITATION = "revokeCollectorInvitation";
 
 export function openCollectorInvitation(target) {
   if (!target || typeof target.createInvitation !== "function") {
     throw new TypeError("openCollectorInvitation: the production store is required");
   }
-  return ({ recipient, note } = {}) => target.createInvitation({ recipient, note });
+  return ({ recipient, note, email } = {}) => target.createInvitation({ recipient, note, email });
 }
 
 /* Withdrawing one is an ordinary command: there is no secret in the answer, so
