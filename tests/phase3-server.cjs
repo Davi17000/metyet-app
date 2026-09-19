@@ -862,6 +862,29 @@ describe("J. boundaries and composition", () => {
     const vendors = ["@supabase/supabase-js", "@supabase/auth-js", "resend", "nodemailer", "@sentry/node", "aws-sdk"];
     vendors.forEach((name) => assert(!pkg.dependencies[name], name + " was added: no vendor SDK belongs in this batch"));
     eq(pkg.scripts.start, "node server/index.js", "one way to start the server");
+
+    /* AND NOW THE OTHER LIST, PINNED FOR THE SAME REASON (Phase 5 Batch 3C).
+       This test existed to make dependency growth a decision rather than a
+       drift, and it watched only `dependencies` — so anything could arrive in
+       `devDependencies` unnoticed. Batch 3C added one (`jsqr`), which made the
+       gap visible, so the guard-rail is widened rather than worked around.
+
+       WHY EACH OF THE THREE IS HERE. `@electric-sql/pglite` is the in-process
+       Postgres every server suite runs against. `playwright` drives the
+       browser proofs. `jsqr` decodes a QR symbol back to its text, and is a
+       DIFFERENT implementation from the encoder in client/qr — which is the
+       whole point of it: a round trip through the same author's code proves
+       only that it agrees with itself.
+
+       NONE OF THEM SHIPS. `npm ci --omit=dev` is what the Render build runs,
+       so nothing here reaches production, and the QR a Trusted Partner holds up
+       is computed by code in this repository. */
+    eq(Object.keys(pkg.devDependencies).sort().join(), "@electric-sql/pglite,jsqr,playwright",
+      "a development dependency appeared: it must be a deliberate, explained addition");
+    assert(!pkg.dependencies.jsqr, "the decoder is a test tool and must never ship");
+    const qrVendors = ["qrcode", "qrcode-generator", "qr-image", "qrcode-svg", "node-qrcode"];
+    qrVendors.forEach((name) => assert(!pkg.dependencies[name] && !pkg.devDependencies[name],
+      name + " was added: the QR a partner holds up is encoded by client/qr, in this repository"));
   });
 
   test("the in-memory prototype is untouched by any of this", () => {

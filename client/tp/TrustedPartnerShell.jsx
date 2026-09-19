@@ -193,6 +193,17 @@ const CSS = `
 .tps-code { display:block; font-size:16px; letter-spacing:.06em; word-break:break-all;
   background:#F7F8FA; border:1px solid var(--line); border-radius:5px; padding:11px 13px;
   margin-bottom:9px; }
+/* THE HANDOFF (Phase 5 Batch 3C). One invitation, three ways to pass it over:
+   the QR leads, because holding a screen up is the fast one. It wraps to a
+   single column on a narrow screen rather than shrinking the symbol — a QR too
+   small for a phone camera is not a QR. */
+.tps-handoff { display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start; }
+.tps-handoff-scan { flex:0 0 auto; text-align:center; }
+.tps-handoff-scan .tps-aside { margin-top:7px; }
+.tps-handoff-rest { flex:1 1 280px; min-width:0; }
+.tps-qr { display:block; border:1px solid var(--line); border-radius:5px; }
+.tps-linktext { font-size:12.5px; word-break:break-all; color:var(--text); }
+.tps-invite-lead { padding:13px 16px 0; }
 .tps-crumb { margin:0 0 12px; }
 .tps-back { background:none; border:0; padding:0; color:var(--t1); font-size:12.5px;
   font-weight:600; }

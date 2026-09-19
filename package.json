@@ -2,7 +2,7 @@
   "name": "metyet",
   "version": "1.0.0",
   "private": true,
-  "description": "MetYet \u2014 one shared domain, two persona experiences (Trusted Partner and Collector)",
+  "description": "MetYet — one shared domain, two persona experiences (Trusted Partner and Collector)",
   "license": "UNLICENSED",
   "scripts": {
     "build": "node build-all.mjs && node tests/fixture-build.mjs",
@@ -41,6 +41,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
+    "jsqr": "^1.4.0",
     "playwright": "^1.56.0"
   }
 }
