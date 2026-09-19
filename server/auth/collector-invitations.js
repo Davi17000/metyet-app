@@ -83,6 +83,15 @@ const BY_INVITATION = `select ${COLUMNS} from ${TABLE} where invitation_id = $1`
    a lost reply is recoverable (Batch 3A). Same columns, so it still cannot hand
    back a verifier. */
 const BY_DIGEST = `select ${COLUMNS} from ${TABLE} where token_digest = $1`;
+/* THE NARROWEST QUESTION THIS TABLE CAN BE ASKED (Phase 5 Batch 3D): which
+   invitation does this unspent secret belong to?
+
+   One column, and the unspent rule in the WHERE clause rather than in a caller,
+   so a spent credential is indistinguishable from one that never existed — both
+   are no row. It cannot return a digest, a delivery address, a claimant or a
+   timestamp, because it does not select them. */
+const UNSPENT_BY_DIGEST = `select invitation_id from ${TABLE}
+  where token_digest = $1 and claimed_at is null`;
 /* Both rules, in the WHERE clause. */
 /* Claiming is also the moment an invitation is over, so the address it was sent
    to goes in the same statement. One write, no second call site to forget, and
@@ -241,6 +250,26 @@ function createCollectorCredentials(db) {
        gives them.
 
        It spends nothing, and it returns no digest — `COLUMNS` sees to that. */
+    /* WHICH INVITATION AN UNSPENT SECRET BELONGS TO, AND NOTHING ELSE (Batch
+       3D). It exists so that somebody holding a live invitation can be told who
+       invited them before they are asked to sign in — the front door naming the
+       shop instead of a stranger's login form.
+
+       IT SPENDS NOTHING AND RESERVES NOTHING. A read, in a read-only
+       transaction, returning one id. The credential is still worth exactly one
+       redemption afterwards, through the one path that performs one.
+
+       IT ANSWERS null FOR EVERYTHING ELSE — no such digest, already claimed,
+       whatever — because the caller must not be able to tell those apart. The
+       canonical rules (expired, withdrawn, accepted) are not this table's to
+       know; the caller checks them against the world and collapses every answer
+       into the same refusal. */
+    async findUnspent(token) {
+      if (typeof token !== "string" || !token) return null;
+      const rows = await run(UNSPENT_BY_DIGEST, [digestOf(token)], { readOnly: true });
+      return rows.length ? { invitationId: rows[0].invitation_id } : null;
+    },
+
     async findSpentBy(token, subject, { tx } = {}) {
       if (typeof token !== "string" || !token) return null;
       if (typeof subject !== "string" || !subject) return null;

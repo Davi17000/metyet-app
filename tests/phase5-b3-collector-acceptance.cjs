@@ -779,10 +779,12 @@ describe("G. the Collector's journey", () => {
 
       /* Signed in, holding the code, in nobody's network yet. */
       const confirm = flat(r);
-      assert(/One thing to confirm/.test(confirm), "the confirm screen did not appear: " + confirm);
+      /* The screen is identified by what it offers, not by one sentence of its
+         copy — Batch 3D gave it a headline that names the inviting shop, and
+         this test was never about the wording. */
+      assert(clickable(r, "Accept invitation"), "the confirm screen did not appear: " + confirm);
       assert(/goals you set and the cards in your Trade Binder/.test(confirm),
         "the screen does not say what accepting discloses: " + confirm);
-      assert(clickable(r, "Accept invitation"), "there is no way to accept");
       assert(clickable(r, "Not now"), "there is no way to decline");
       eq(newCollectors(await ctx.world()).length, 0, "arriving created somebody");
 

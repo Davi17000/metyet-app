@@ -110,6 +110,23 @@ export function acceptCollectorInvitation(target) {
   return (token) => target.acceptInvitation({ token });
 }
 
+/* ------------------------------------------- WHO INVITED YOU (Batch 3D)
+
+   NOT A COMMAND EITHER, AND FOR A SECOND REASON. Accepting names no command
+   because the person has no seat yet; this names none because it changes
+   nothing at all — it asks the server one question and is told one thing, the
+   name of the shop whose invitation is in hand.
+
+   It is bound the same way regardless, so the entrance receives a function of
+   one argument and no store: a surface that can ask who invited somebody can do
+   that and nothing else. */
+export function describeCollectorInvitation(target) {
+  if (!target || typeof target.describeInvitation !== "function") {
+    throw new TypeError("describeCollectorInvitation: the production store is required");
+  }
+  return (token) => target.describeInvitation({ token });
+}
+
 /* Re-reading is not a mutation and is safe to repeat, which is why an ambiguous
    write may end in one: a screen that cannot know whether something was created
    can at least ask what exists now. It is a GET; nothing is replayed. */

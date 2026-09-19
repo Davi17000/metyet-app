@@ -794,13 +794,22 @@ describe("F. configuration", () => {
 /* ============================================================== G
    WHAT THIS BATCH DID NOT ADD                                        */
 describe("G. the shape of the change", () => {
-  test("no route was added, and the two that touch invitations are the two that did", () => {
+  test("the three routes that touch an invitation are the three that were designed", () => {
+    /* THE THIRD ONE ARRIVED IN BATCH 3D, deliberately: an unauthenticated,
+       read-only lookup that names the inviting shop to a holder of a live
+       credential, so that scanning a QR no longer lands on a stranger's login
+       form. It spends nothing and discloses one name.
+
+       Delivery is still not a route: nothing here sends, resends or reports on
+       a send, which is what this batch's own pin was written to protect. A
+       fourth route still fails this test. */
     const server = fs.readdirSync(path.join(ROOT, "server"), { withFileTypes: true })
       .filter((e) => e.isFile() && e.name.endsWith(".js")).map((e) => `server/${e.name}`);
     const routes = server.map(code).join("\n").match(/["'`]\/api\/[^"'`]*["'`]/g) || [];
-    const touching = [...new Set(routes.filter((r) => /invitation|redeem|accept|join|deliver|mail|send/i.test(r)))];
+    const touching = [...new Set(routes.filter((r) => /invitation|redeem|accept|join|deliver|mail|send|context/i.test(r)))];
     eq(touching.sort().join(","),
-      ['"/api/invitations/collector"', '"/api/invitations/collector/accept"'].join(","),
+      ['"/api/invitations/collector"', '"/api/invitations/collector/accept"',
+        '"/api/invitations/collector/context"'].join(","),
       "a route appeared that this batch did not design: " + touching.join(","));
   });
 
