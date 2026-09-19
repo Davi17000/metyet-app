@@ -1130,14 +1130,33 @@ describe("H. nothing in this build can redeem anything", () => {
       "the spender does not read the canonical world in its own transaction");
     assert(/acceptCollectorInvitation|accept\(world/.test(spender),
       "the spender does not put the canonical invitation through the domain");
-    /* THE ONE ROUTE THAT REDEEMS, AND ONLY IT. Batch 2 asserted there was none;
-       what survives is that there is exactly one, and that it is the
-       authenticated acceptance — not a preview, not a lookup, not anything that
-       would describe an invitation to somebody who submitted a guess. */
+    /* THE THREE-ROUTE CONTRACT (widened deliberately in Phase 5 Batch 3D).
+
+       Batch 2 asserted there was no route that redeems; Batch 3A made it one,
+       and said that one was the authenticated acceptance — "not a preview, not
+       a lookup, not anything that would describe an invitation to somebody who
+       submitted a guess".
+
+       Batch 3D added exactly such a lookup, on purpose, and the reasoning is in
+       server/app.js beside it: the credential is 160 bits, the invitation email
+       has named the shop since 3B-2, the QR is handed over in person since 3C,
+       and acceptance was already an oracle. What the lookup adds is asking
+       without spending — and what it may disclose is one name.
+
+       So the pin is not loosened, it is restated. THREE routes touch an
+       invitation, each with one power, and a fourth still fails here:
+
+         create   authenticated, and the only one that mints a credential
+         context  unauthenticated, read-only, and discloses one name
+         accept   authenticated, and the only one that redeems
+
+       The narrower claim — that only ONE of them can spend a credential — is
+       the `claim has exactly one caller` test above, which is where it belongs. */
     const routes = server.map(code).join("\n").match(/["'`]\/api\/[^"'`]*["'`]/g) || [];
-    const redeeming = [...new Set(routes.filter((r) => /redeem|accept|claim|join|invitation/i.test(r)))];
-    eq(redeeming.sort().join(","),
-      ['"/api/invitations/collector"', '"/api/invitations/collector/accept"'].join(","),
+    const touching = [...new Set(routes.filter((r) => /redeem|accept|claim|join|invitation|context/i.test(r)))];
+    eq(touching.sort().join(","),
+      ['"/api/invitations/collector"', '"/api/invitations/collector/accept"',
+        '"/api/invitations/collector/context"'].join(","),
       "a route touching invitations appeared that this batch did not design");
   });
 

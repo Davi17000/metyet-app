@@ -97,6 +97,11 @@ const instText = (node) => {
 const buttons = (r) => r.root.findAll((n) => n.type === "button");
 const labels = (r) => buttons(r).map(instText);
 const clickable = (r, label) => labels(r).some((l) => l.includes(label));
+/* THE CONFIRM SCREEN, BY WHAT IT OFFERS RATHER THAN WHAT IT SAYS (rewritten in
+   Batch 3D). This was detected by one exact sentence, which made five tests
+   depend on copy they were not written to protect. What identifies the screen
+   is that it offers to accept the invitation — a control, not a phrase. */
+const onConfirmScreen = (r) => clickable(r, "Accept invitation");
 const clickText = (r, label) => {
   const b = buttons(r).find((n) => instText(n).includes(label));
   assert(b, `no button "${label}" among: ${labels(r).join(" | ")}`);
@@ -255,7 +260,7 @@ describe("A. arriving by link", () => {
       await signIn(r);
       /* THE INTENT SURVIVED THE ROUND TRIP, and nothing was stored to make it:
          this component never unmounted, and the code sat in its state. */
-      assert(/One thing to confirm/.test(flat(r)), "the confirm screen did not appear: " + flat(r));
+      assert(onConfirmScreen(r), "the confirm screen did not appear: " + flat(r));
       eq((await newCollectors()).length, 0, "signing in accepted something");
 
       await press(r, "Accept invitation");
@@ -278,7 +283,7 @@ describe("A. arriving by link", () => {
       typeInto(r, "Invitation code", credential);
       await submit(r);
       await signIn(r);
-      assert(/One thing to confirm/.test(flat(r)), "the confirm screen did not appear: " + flat(r));
+      assert(onConfirmScreen(r), "the confirm screen did not appear: " + flat(r));
       await press(r, "Accept invitation");
       eq((await newCollectors()).length, 1, "the typed path stopped working");
     } finally { await close(); }
@@ -345,16 +350,30 @@ describe("B. what a URL cannot say", () => {
       "the entrance takes a shop name from what it arrived with");
   });
 
-  test("the confirm screen still names no shop, however the person arrived", async () => {
+  test("the shop IS named before acceptance now — and only ever by the server", async () => {
+    /* REWRITTEN IN BATCH 3D, DELIBERATELY. This asserted that no shop was named
+       before acceptance, because the only way to name one was to look the code
+       up and Batch 3A would not add that route. Batch 3D added it — read-only,
+       one name, spending nothing — and the reasoning sits beside it in
+       server/app.js.
+
+       WHAT THE ORIGINAL TEST WAS REALLY PROTECTING SURVIVES INTACT: that a
+       shop's name can never be something a LINK claimed. A link that could name
+       a shop could name the wrong one, and MetYet would be repeating an
+       attacker's claim to somebody about to accept it. So the assertion is no
+       longer "no name" — it is "the name came from the server". */
     const { close, invite, arrive } = await connect();
     try {
       const credential = await invite();
+      /* The thing the browser was handed carries no name and could not. */
+      assert(!/northline/i.test(credential), "the credential itself carries a name");
       const r = arrive(credential);
       await signIn(r);
       const shown = flat(r);
-      assert(/One thing to confirm/.test(shown), "not the confirm screen: " + shown);
-      assert(!/Northline/.test(shown), "a shop was named before acceptance: " + shown);
-      /* It names what accepting DOES, which is the part that needs consent. */
+      assert(onConfirmScreen(r), "not the confirm screen: " + shown);
+      assert(/Northline/.test(shown), "the shop was not named: " + shown);
+      /* And it still names what accepting DOES, which is the part that needs
+         consent and is the reason this screen exists at all. */
       assert(/goals you set and the cards in your Trade Binder/.test(shown),
         "the screen stopped saying what accepting shares: " + shown);
     } finally { await close(); }
@@ -512,7 +531,7 @@ describe("E. arriving is not a state the page keeps handing back", () => {
       await submit(r);
       typeInto(r, "Code from the email", "24681357");
       await submit(r);
-      assert(/One thing to confirm/.test(flat(r)), "not the confirm screen");
+      assert(onConfirmScreen(r), "not the confirm screen: " + flat(r));
       /* Holding an invitation, signed in, and leaving. */
       await press(r, "Not now");
       await press(r, "Sign out");
@@ -575,7 +594,7 @@ describe("E. arriving is not a state the page keeps handing back", () => {
     try {
       const r = arrive(await invite());
       await signIn(r);
-      assert(/One thing to confirm/.test(flat(r)), "not the confirm screen");
+      assert(onConfirmScreen(r), "not the confirm screen: " + flat(r));
 
       await press(r, "Not now");
       await press(r, "Sign out");

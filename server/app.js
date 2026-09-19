@@ -40,6 +40,11 @@
 
 const Fastify = require("fastify");
 const { projectForActor } = require("../domain/metyet-projection.js");
+/* Whether an invitation is still open is a PRODUCT rule, so it is asked of the
+   domain rather than restated here (Phase 5 Batch 3D). Calling the same
+   predicate the acceptance transaction calls is what keeps the front door and
+   the redemption from ever disagreeing about what "live" means. */
+const D = require("../domain/metyet-domain.js");
 const RT = require("../domain/metyet-runtime.js");
 const { executeCommand } = require("../persistence/command-transaction.js");
 const { redeemPartnerInvitation, REFUSALS } = require("./registration.js");
@@ -400,6 +405,84 @@ function createApp({
       return { ok: true, version: result.version, invitationId: result.invitationId,
         credential: result.token, delivery, state,
         ...(appUrl ? { joinUrl: `${appUrl}/join#${result.token}` } : {}) };
+    });
+  }
+
+  /* ------------------------------------------- WHO INVITED YOU (Batch 3D)
+
+     A person who has just scanned a shop's QR code is standing at that shop's
+     counter holding a phone. Until this route existed, what MetYet showed them
+     first was a box asking for their email address — a stranger's login form,
+     for a relationship that began in the real world thirty seconds earlier.
+     This route is the whole of the fix: it names the shop, before anything is
+     asked of anybody.
+
+     IT IS UNAUTHENTICATED, AND THAT IS THE POINT. Authentication is what makes
+     somebody the durable owner of a Collector identity, and it happens exactly
+     where it always did — before acceptance. What comes first is context, and
+     context is what a person needs in order to decide whether to sign in at all.
+
+     WHAT IT DISCLOSES, EXACTLY: the inviting partner's canonical display name.
+     Not the recipient label the partner typed, not the address MetYet was asked
+     to send to, not the note, not the invitation's id, not its expiry, not its
+     delivery state, and nothing about any Collector. The reply has one field.
+
+     WHY THAT IS SAFE NOW, WHEN BATCH 3A SAID OTHERWISE. Batch 3A refused to
+     name the shop because "a route that describes an invitation to anyone who
+     submits a string is a route that tells a guesser which strings are real".
+     Three things have changed. The credential is 160 bits from a 32-symbol
+     alphabet, so guessing is arithmetic rather than a threat. Since Batch 3B-2
+     the invitation email already names the shop, and since Batch 3C the QR is
+     handed over by the shop in person — so the shop's identity is not a secret
+     from anybody legitimately holding the credential. And acceptance is already
+     an oracle: submitting a credential there tells you whether it is live. What
+     this adds is the ability to ask without spending, for somebody who already
+     holds one.
+
+     ONE REFUSAL FOR EVERY FAILURE. Unknown, malformed, spent, expired,
+     withdrawn, accepted, replaced, or an invitation whose partner has vanished:
+     all of them are `invitation-unusable`, which is the same word and the same
+     status the acceptance route gives. Telling them apart would hand a holder a
+     classifier they have no use for and an attacker one they do.
+
+     IT CHANGES NOTHING. No claim, no reservation, no write of any kind: one
+     read-only lookup by digest, one read-only load of the world. */
+  if (collectorCredentials) {
+    app.post("/api/invitations/collector/context", async (request, reply) => {
+      const body = request.body;
+      if (!isPlainObject(body)) throw apiError("invalid_request", { detail: "a JSON object is required" });
+      const unknown = Object.keys(body).filter((k) => k !== "token");
+      if (unknown.length) throw apiError("invalid_request", { detail: `unknown field(s): ${unknown.join(", ")}` });
+      if (typeof body.token !== "string" || !body.token) {
+        throw apiError("invalid_request", { detail: "token must be a non-empty string" });
+      }
+
+      /* The one answer this route can give when it cannot answer. Built once so
+         that no branch below can accidentally say something more specific. */
+      const unusable = () => {
+        reply.code(409);
+        return errorBody(apiError("command_refused", { refused: "invitation-unusable" }), request.id);
+      };
+
+      const found = await collectorCredentials.findUnspent(body.token);
+      if (!found) return unusable();
+
+      /* The canonical rules live on the canonical invitation, so they are read
+         from the world — the same predicate acceptance uses, against the same
+         runtime clock. */
+      const world = await repository.withTransaction(
+        async (tx) => repository.loadWorld(tx), { readOnly: true });
+      const invitation = (world.invitations || []).find((i) => i.id === found.invitationId) || null;
+      if (!D.invitationOpen(invitation, runtime.now())) return unusable();
+
+      const partner = (world.partners || []).find((p) => p.id === invitation.partnerId) || null;
+      const partnerName = partner && typeof partner.name === "string" ? partner.name.trim() : "";
+      if (!partnerName) return unusable();
+
+      /* The id is what a support question quotes; the credential is never
+         logged, here or anywhere. */
+      request.log.info({ invitationId: found.invitationId }, "invitation context read");
+      return { ok: true, partnerName };
     });
   }
 

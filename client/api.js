@@ -103,18 +103,17 @@ export function createApiClient({ baseUrl, getToken, timeoutMs = DEFAULT_TIMEOUT
       + "request rather than captured, so a session that changes is not held open by this client.");
   }
 
-  async function send(path, { method = "GET", body } = {}) {
-    /* Asked for each time. A client that captured the token at construction
-       would keep using a session after it was replaced or ended. */
-    const token = await getToken();
-    if (typeof token !== "string" || !token) throw new ApiError(FAILURES.unauthenticated, { detail: "no token" });
-
+  /* ONE TRANSPORT, SO THERE IS ONE PLACE A REQUEST CAN GO WRONG. A timeout, a
+     DNS failure, an offline browser: the request did not happen, so nothing
+     about the world is known either way. An answer that is not a response, or
+     not JSON, is a shape this client does not understand. */
+  async function roundTrip(path, { method, body, token }) {
     let response;
     try {
       response = await (fetchImpl || fetch)(`${base}${path}`, {
         method,
         headers: {
-          authorization: `Bearer ${token}`,
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
           accept: "application/json",
           ...(body === undefined ? {} : { "content-type": "application/json" }),
         },
@@ -122,17 +121,30 @@ export function createApiClient({ baseUrl, getToken, timeoutMs = DEFAULT_TIMEOUT
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
-      /* A timeout, a DNS failure, an offline browser. The request did not
-         happen, so nothing about the world is known either way. */
       throw new ApiError(FAILURES.unavailable, { detail: "unreachable" });
     }
     if (!response || typeof response.status !== "number") {
       throw new ApiError(FAILURES.unexpected, { detail: "unreadable response" });
     }
-
     let payload = null;
     try { payload = await response.json(); } catch (error) { payload = null; }
     return { status: response.status, payload };
+  }
+
+  /* THE ONE REQUEST THAT CARRIES NO TOKEN (Phase 5 Batch 3D). `send` demands
+     one, which is what stops a failed sign-in from quietly becoming an
+     anonymous request. Asking who invited you happens BEFORE there is a session
+     to carry — so rather than teach `send` an exception, which would make every
+     call a candidate for one, anonymity is its own named door with exactly one
+     caller, and a test holds it to one. */
+  const ask = (path, body) => roundTrip(path, { method: "POST", body });
+
+  async function send(path, { method = "GET", body } = {}) {
+    /* Asked for each time. A client that captured the token at construction
+       would keep using a session after it was replaced or ended. */
+    const token = await getToken();
+    if (typeof token !== "string" || !token) throw new ApiError(FAILURES.unauthenticated, { detail: "no token" });
+    return roundTrip(path, { method, body, token });
   }
 
   return {
@@ -212,6 +224,27 @@ export function createApiClient({ baseUrl, getToken, timeoutMs = DEFAULT_TIMEOUT
       const refused = error && typeof error.refused === "string" ? error.refused : null;
       if (status === 409 && refused) return { ok: false, refused, version: body && body.version };
       throw new ApiError(failureFor(status, error && error.code), { status, refused, detail: (error && error.code) || null });
+    },
+
+    /* WHO INVITED YOU (Phase 5 Batch 3D). Asked before signing in, so it is the
+       one call that carries no token, and the only caller of `ask`.
+
+       A REFUSAL IS AN ANSWER, NOT AN ERROR. An invitation that is not live is
+       the ordinary case for a link somebody kept for a month, so it comes back
+       as `{ ok: false }` and the entrance shows what it showed before this
+       existed. Only losing contact throws. */
+    async invitationContext({ token } = {}) {
+      if (typeof token !== "string" || !token) {
+        throw new TypeError("invitationContext: the invitation code is required");
+      }
+      const { status, payload: body } = await ask("/api/invitations/collector/context", { token });
+      if (status === 200 && body && typeof body.partnerName === "string" && body.partnerName) {
+        return { ok: true, partnerName: body.partnerName };
+      }
+      /* Anything else — refused, not found, a shape this cannot read — is one
+         answer, because the server deliberately gives one. */
+      if (status >= 500) throw new ApiError(FAILURES.unavailable, { status });
+      return { ok: false };
     },
 
     /* ACCEPT ONE (Phase 5 Batch 3A). The only call in this client a person can

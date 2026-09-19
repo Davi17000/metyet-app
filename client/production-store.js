@@ -7,15 +7,14 @@
      await store.execute(command, payload)
 
    The demo store (domain/metyet-store.js) holds the whole canonical world in a
-   closure and runs domain commands against it in the browser. That is exactly
-   right for a world that lives in one tab, and exactly wrong for a world that
-   lives in Postgres. This is the other implementation of the same shape.
+   closure and runs domain commands in the browser: exactly right for a world
+   that lives in one tab, exactly wrong for one that lives in Postgres. This is
+   the other implementation of the same shape.
 
    WHY THE SHAPE IS THE SAME. The clients consume precisely three things from a
-   store — `get`, `sub`, `execute` — and receive it as a prop. So a screen moves
-   to production by being handed a different store, one at a time, rather than
-   by being rewritten. That is the whole point of this batch: a boundary later
-   work migrates onto, not a migration.
+   store — `get`, `sub`, `execute` — and receive it as a prop, so a screen moves
+   to production by being handed a different store rather than by being
+   rewritten: a boundary later work migrates onto, not a migration.
 
    FOUR THINGS IT CANNOT DO, BY CONSTRUCTION RATHER THAN BY CARE.
 
@@ -28,7 +27,7 @@
 
    It cannot decide who you are. `execute` takes no actor — the signature has
    nowhere to put one. The server derives the seat from the bearer, and the
-   projection it returns is the answer to "who am I" as well as "what can I see".
+   projection it returns answers "who am I" as well as "what can I see".
 
    It cannot be written to. There is no `fixture`, no `set`, no `reset`. The
    demo store has those and needs them — scenario controls rewrite the world
@@ -37,19 +36,19 @@
 
    WHAT IT ADDS, BECAUSE A ROUND TRIP IS NOT A FUNCTION CALL.
 
-   `status()` — idle, loading, ready, saving, conflict, error. Every screen
-   today assumes a mutation is instant and cannot fail; none of that is true any
-   more, and pretending otherwise is how a button gets pressed twice.
+   `status()` — idle, loading, ready, saving, conflict, error. Screens assumed a
+   mutation was instant and could not fail; neither is true against a server,
+   and pretending otherwise is how a button gets pressed twice.
 
    SEVEN OUTCOMES A COMMAND CAN HAVE, AND NONE OF THEM IS GUESSED AT.
 
      nothing asked for yet      idle
      in flight                  saving      — the OLD projection is still on screen
-     the server said yes        ready       — and the projection it returned is adopted
-     the domain said no         ready       — nothing changed, and `lastRefusal()` names the rule
+     the server said yes        ready       — the projection it returned is adopted
+     the domain said no         ready       — `lastRefusal()` names the rule
      the session is over        error       — `lastError()` is "unauthenticated"
-     the world moved first      conflict    — nothing was written; a re-read follows
-     the network did not answer error       — and the last good projection is kept
+     the world moved first      conflict    — nothing written; a re-read follows
+     the network did not answer error       — the last good projection is kept
 
    NOTHING IS OPTIMISTIC. There is exactly one line in this file that assigns
    `state`, and it assigns what arrived in a response. A command in flight does
@@ -58,35 +57,30 @@
    a guess about what might be true next.
 
    A CONFLICT IS NOT REPLAYED. `state_changed` means the server's save found the
-   world had moved and rolled the transaction back — so the command did not run.
-   It would be easy to send it again, and wrong: the reason the world moved is
-   precisely the reason this command may no longer be the right one to send. So
-   the store RE-READS instead. `view()` is a GET with no side effects and is safe
-   to repeat; the command is not, and the person decides whether to ask again.
+   world had moved and rolled back, so the command did not run. Sending it again
+   would be easy and wrong: the reason the world moved is the reason this command
+   may no longer be right. The store RE-READS instead — `view()` is a GET and is
+   safe to repeat; the command is not, and the person decides whether to ask.
 
    ONE COMMAND AT A TIME. A second `execute` while one is in flight throws
-   rather than being sent, because the server has no idempotency key and two
-   identical commands are two mutations. `pending()` is there so a control can
-   disable itself and never reach the error. This prevents CONCURRENT duplicates
-   and nothing more: a command whose response is lost may or may not have run,
-   and no amount of client code can tell — which is why nothing here retries a
-   mutation automatically.
+   rather than being sent: the server has no idempotency key, and two identical
+   commands are two mutations. `pending()` lets a control disable itself and
+   never reach the error. This prevents CONCURRENT duplicates and nothing more —
+   a command whose response is lost may or may not have run, and no client code
+   can tell, which is why nothing here retries a mutation.
 
    `version` — the server's, carried alongside so a screen can tell that
    something moved. It is never used to decide anything here: the server
    serializes every write under the world lock and returns the state that
    resulted, so the client's job is to believe it, not to reconcile with it.
 
-   `execute` RETURNS THE NEW PROJECTION. Several handlers today read the store
-   back immediately after a command to compose a message from the result. That
-   pattern breaks against a round trip — but it does not have to be rewritten
-   into something exotic, because the answer comes back in the reply. A handler
-   reads `result.state` instead of calling `store.get()` again.
+   `execute` RETURNS THE NEW PROJECTION. Handlers that read the store back after
+   a command to compose a message would break against a round trip — but the
+   answer is in the reply, so a handler reads `result.state` instead.
 
    A REFUSAL IS NOT AN ERROR. `{ ok: false, refused }` is the domain having
    considered the request and declined it, and it is returned, exactly as the
-   demo store returns it. Only a failure to ASK — no session, unreachable,
-   unreadable — throws.
+   demo store returns it. Only a failure to ASK throws.
    ========================================================================== */
 
 /* The one word for "the world moved first", taken from the module that owns
@@ -297,6 +291,12 @@ export function createProductionStore({ api } = {}) {
         () => api.acceptCollectorInvitation({ token }));
       if (!answer.ok) return answer;
       return { ok: true, state: answer.state, version: answer.version };
+    },
+
+    /* WHO INVITED THEM (Batch 3D). A read that touches nothing — no projection,
+       no version, no status — so it skips `mutate`, which mutates. */
+    async describeInvitation({ token } = {}) {
+      return api.invitationContext({ token });
     },
 
     /* ------------------------------------------------ WHAT A ROUND TRIP NEEDS */

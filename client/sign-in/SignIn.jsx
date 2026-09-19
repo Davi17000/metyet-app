@@ -45,7 +45,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import ProductionApp from "../production-app.jsx";
 import { savePartnerProfile, openCollectorInvitation, revokeCollectorInvitation,
-  acceptCollectorInvitation, refreshView } from "../commands.js";
+  acceptCollectorInvitation, describeCollectorInvitation, refreshView } from "../commands.js";
 
 /* Identity is read in exactly one place — client/actor.js — and re-exported
    here because this module's own tests have always asked it that question.
@@ -152,6 +152,11 @@ const S = {
   muted: { color: "#616B7A", fontSize: 13 },
   note: { marginTop: 16, padding: "12px 13px", background: "#F7F8FA", border: "1px solid #DFE4EA",
     borderRadius: 6, color: "#3C4655", fontSize: 13, lineHeight: 1.5 },
+  /* The shop, above everything, when MetYet can name it (Batch 3D). */
+  invited: { marginBottom: 18 },
+  invitedBy: { fontFamily: "'Archivo', system-ui, sans-serif", fontSize: 19, fontWeight: 600,
+    letterSpacing: "-0.01em", lineHeight: 1.25, color: "#131922" },
+  invitedWhy: { marginTop: 6, color: "#3C4655", fontSize: 13.5, lineHeight: 1.5 },
   link: { marginTop: 14, background: "none", border: 0, padding: 0, color: "#0B5D66",
     fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" },
 };
@@ -182,6 +187,8 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
      person calling it has no seat yet. Bound here anyway, for the same reason
      as the rest: the screen gets a function, never the store. */
   const onAccept = useMemo(() => (store ? acceptCollectorInvitation(store) : null), [store]);
+  /* Phase 5 Batch 3D. Also not a command, and bound the same way. */
+  const onDescribe = useMemo(() => (store ? describeCollectorInvitation(store) : null), [store]);
 
   /* THE INVITATION CODE LIVES HERE AND NOWHERE ELSE.
 
@@ -207,6 +214,16 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
      the prop, no second read. An invitation is something you arrived with, not
      something the page keeps handing you. */
   const [invitation, setInvitation] = useState(arrivedWith || null);
+  /* THE NAME OF THE SHOP THAT INVITED THEM (Phase 5 Batch 3D).
+
+     The server's answer, or null. Null means one of two things and the screen
+     does not care which: MetYet has not asked yet, or the invitation is not
+     live. Either way the entrance says what it said before this existed, and
+     the invitation is still spent — or refused — by the one path that does
+     that. Nothing here decides whether a code is good.
+
+     It is state, not a prop, and it is dropped whenever the invitation is. */
+  const [invitedBy, setInvitedBy] = useState(null);
   const [entering, setEntering] = useState(false);
   const [codeDraft, setCodeDraft] = useState("");
   const [accepting, setAccepting] = useState(false);
@@ -216,6 +233,29 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
     setProblem(say(error && (error.failure || error.code)));
     setPhase(STATES.failed);
   }, []);
+
+  /* ASK WHO INVITED THEM, AS SOON AS THERE IS SOMETHING TO ASK ABOUT.
+
+     Whether they arrived by link, by QR or by typing the code, the moment the
+     entrance is holding one it asks the server whose invitation it is. The
+     answer changes what is on screen and nothing else: no authority, no
+     session, no claim on the invitation.
+
+     IT FAILS SILENTLY, ON PURPOSE. A refusal, an unreachable server, an answer
+     this cannot read — all leave `invitedBy` null and the entrance exactly as
+     Batch 3A left it. Somebody holding a genuine invitation must not be stopped
+     at the door because a nicety could not be fetched. */
+  useEffect(() => {
+    if (!invitation || !onDescribe) return undefined;
+    let current = true;
+    (async () => {
+      try {
+        const answer = await onDescribe(invitation);
+        if (current && answer && answer.ok) setInvitedBy(answer.partnerName);
+      } catch (error) { /* the entrance carries on unnamed */ }
+    })();
+    return () => { current = false; };
+  }, [invitation, onDescribe]);
 
   const submitEmail = useCallback(async (event) => {
     if (event && event.preventDefault) event.preventDefault();
@@ -292,6 +332,7 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
     /* In. The code has done its one job and is dropped — there is nothing left
        it could be used for, and nothing that should still be holding it. */
     setInvitation(null);
+    setInvitedBy(null);
     setJoined(nameOfFirstPartner(answer.state));
     setPhase(STATES.ready);
   }, [accepting, invitation, onAccept]);
@@ -301,6 +342,7 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
      which for somebody with no account means the entrance says so. */
   const declineInvitation = useCallback(async () => {
     setInvitation(null);
+    setInvitedBy(null);
     setProblem(null);
     setPhase(STATES.loading);
     try {
@@ -319,6 +361,7 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
     /* Nothing about the last person survives, the invitation code least of
        all. */
     setInvitation(null);
+    setInvitedBy(null);
     setCodeDraft("");
     setEntering(false);
     setJoined(null);
@@ -401,16 +444,31 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
 
   if (phase === STATES.signedOut) {
     return shell(React.createElement(React.Fragment, null,
-      /* ARRIVING WITH AN INVITATION IS NOT ARRIVING AT A FORM (Batch 3C).
-         Somebody who just scanned a code in a shop is holding a phone, standing
-         at a counter, and has already decided. So the screen asks for the one
-         thing MetYet genuinely does not know — an address they can receive mail
-         at — and says what happens next in one line. The address field already
-         carries `autoComplete="email"`, so on that phone it is one tap. */
+      /* WHO INVITED ME → WHY AM I HERE → WHAT NOW (Batch 3D).
+
+         That is the order a person actually needs, and until this batch the
+         entrance answered only the third question. A shop's name at the top
+         turns a stranger's login form into the continuation of a conversation
+         that started across a counter a minute ago.
+
+         When MetYet cannot name the shop — no invitation, or one that is not
+         live — the screen is the one Batch 3C left, which asks for the address
+         and says what happens next in a line. The address field already carries
+         `autoComplete="email"`, so on the phone that just scanned it is one
+         tap. */
+      invitedBy
+        ? React.createElement("div", { style: S.invited },
+          React.createElement("div", { style: S.invitedBy },
+            `${invitedBy} invited you to MetYet.`),
+          React.createElement("div", { style: S.invitedWhy },
+            "Join their Collector Network so they can start keeping an eye out for you."))
+        : null,
       React.createElement("div", { style: S.lead },
-        invitation
-          ? "Sign in, then confirm — that's it."
-          : "Sign in with the address you were invited at."),
+        invitedBy
+          ? "Enter your email to continue."
+          : invitation
+            ? "Sign in, then confirm — that's it."
+            : "Sign in with the address you were invited at."),
       React.createElement("form", { onSubmit: submitEmail },
         React.createElement("label", { style: S.label, htmlFor: "metyet-email" }, "Email address"),
         React.createElement("input", { id: "metyet-email", style: S.input, type: "email",
@@ -434,7 +492,10 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
   if (phase === STATES.codeSent) {
     return shell(React.createElement(React.Fragment, null,
       React.createElement("div", { style: S.lead },
-        "We sent a code to ", React.createElement("strong", null, String(email).trim()), "."),
+        "We sent a code to ", React.createElement("strong", null, String(email).trim()), ".",
+        /* The shop stays named while they fetch the code, so the reason they
+           are doing this does not vanish behind a six-word instruction. */
+        invitedBy ? ` You'll join ${invitedBy}'s Collector Network next.` : ""),
       React.createElement("form", { onSubmit: submitCode },
         React.createElement("label", { style: S.label, htmlFor: "metyet-code" }, "Code from the email"),
         React.createElement("input", { id: "metyet-code", style: S.input, type: "text",
@@ -469,9 +530,18 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
      question disappears rather than being answered by a new endpoint. */
   if (phase === STATES.invited) {
     return shell(React.createElement(React.Fragment, null,
-      React.createElement("div", { style: S.lead }, "You're signed in. One thing to confirm."),
+      /* AND NOW IT CAN NAME THE SHOP (Batch 3D). The paragraph above described
+         the endpoint this screen did without; it exists, it is read-only, and
+         it named the shop before this person typed an address. So the question
+         is asked properly — the name is the server's, from canonical state, and
+         when there is none the wording is exactly what Batch 3A wrote. */
+      React.createElement("div", { style: S.lead },
+        invitedBy ? `Join ${invitedBy}'s Collector Network?`
+          : "You're signed in. One thing to confirm."),
       React.createElement("div", { style: S.note },
-        "Accepting adds you to a shop's Collector Network. From then on they can see the ",
+        invitedBy
+          ? `Accepting adds you to ${invitedBy}'s Collector Network. From then on they can see the `
+          : "Accepting adds you to a shop's Collector Network. From then on they can see the ",
         "goals you set and the cards in your Trade Binder, so they know what to look out ",
         "for. Nothing else about you is shared, and nothing is shared with any other shop."),
       React.createElement("button", { style: S.button, type: "button",
