@@ -401,9 +401,15 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
 
   if (phase === STATES.signedOut) {
     return shell(React.createElement(React.Fragment, null,
+      /* ARRIVING WITH AN INVITATION IS NOT ARRIVING AT A FORM (Batch 3C).
+         Somebody who just scanned a code in a shop is holding a phone, standing
+         at a counter, and has already decided. So the screen asks for the one
+         thing MetYet genuinely does not know — an address they can receive mail
+         at — and says what happens next in one line. The address field already
+         carries `autoComplete="email"`, so on that phone it is one tap. */
       React.createElement("div", { style: S.lead },
         invitation
-          ? "Now sign in, and MetYet will ask you to confirm before you join anything."
+          ? "Sign in, then confirm — that's it."
           : "Sign in with the address you were invited at."),
       React.createElement("form", { onSubmit: submitEmail },
         React.createElement("label", { style: S.label, htmlFor: "metyet-email" }, "Email address"),
@@ -417,8 +423,8 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
          how they prove who they are. Nothing compares the two. */
       invitation
         ? React.createElement("div", { style: S.note },
-          "You have an invitation code ready. Any address you can receive mail at will do — ",
-          "it does not have to be the one the shop wrote down.")
+          "Your invitation is ready. Use any address you can receive mail at — it does not ",
+          "have to be the one the shop wrote down.")
         : React.createElement("button", { style: S.link, type: "button",
           onClick: () => { setCodeDraft(""); setProblem(null); setEntering(true); } },
           "I have an invitation code"),

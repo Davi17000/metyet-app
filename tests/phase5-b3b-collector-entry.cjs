@@ -231,11 +231,16 @@ describe("A. arriving by link", () => {
       const credential = await invite();
       const r = arrive(credential);
       const shown = flat(r);
-      assert(/You have an invitation code ready/.test(shown),
-        "the entrance does not know an invitation arrived: " + shown);
-      /* And it does not ask for one it already has. */
+      /* THE PROPERTY, NOT THE SENTENCE (rewritten in Batch 3C). This asserted
+         one exact line of copy, which made it a test of the wording rather than
+         of the behaviour it was written to protect. The behaviour is that the
+         entrance KNOWS it is holding an invitation: it says so, and it stops
+         offering to take one. The second of those is structural and cannot
+         drift with the copy, so it carries the weight now. */
       assert(!clickable(r, "I have an invitation code"),
         "it offered to take a code it was already holding");
+      assert(/invitation/i.test(shown),
+        "the entrance does not know an invitation arrived: " + shown);
       assert(!shown.includes(credential), "the code is on screen");
     } finally { await close(); }
   });
@@ -532,11 +537,14 @@ describe("E. arriving is not a state the page keeps handing back", () => {
 
       await press(r, "Use a different address");
       const shown = flat(r);
-      assert(/You have an invitation code ready/.test(shown),
+      /* Structural first, for the reason given above: whether the entrance is
+         still holding the invitation is decided by whether it is asking for
+         one, not by which sentence it uses to say so. */
+      assert(!clickable(r, "I have an invitation code"),
         "THE INVITATION WAS LOST BY CORRECTING AN EMAIL ADDRESS, and a link cannot be "
         + "re-read to get it back: " + shown);
-      assert(!clickable(r, "I have an invitation code"),
-        "it is asking for a code it should still be holding");
+      assert(/invitation/i.test(shown),
+        "it is no longer saying it holds an invitation: " + shown);
 
       /* And it still works: the journey completes on the second address. */
       typeInto(r, "Email address", "dana@somewhere-else.example");

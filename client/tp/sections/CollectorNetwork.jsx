@@ -52,6 +52,7 @@
    ========================================================================== */
 
 import React, { useCallback, useState } from "react";
+import Qr from "../../qr/Qr.jsx";
 import { Panel, Record, Fact, Tag } from "../parts.jsx";
 import { rows, indexById, groupBy, text, day, plural, cardTitle, cardSetLine,
   gradeLine, tierLabel, byRecency } from "../present.js";
@@ -361,25 +362,51 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
 
   return (
     <>
+      {/* ------------------------------------------- THE HANDOFF (Batch 3C)
+
+          ONE INVITATION, AND THE PANEL HAS TO SAY SO. A QR, a link and a code
+          are not three invitations — they are three ways to pass the same
+          secret across a counter, and a partner who believed otherwise would
+          withdraw one thinking the others survived.
+
+          THE QR LEADS BECAUSE THE FAST PATH IS IN PERSON. Somebody standing at
+          the counter holds up a screen and it is done: no address to type, no
+          code to read aloud, no name to invent. The link is for a message, and
+          the code is what still works when a camera will not focus.
+
+          AND THIS IS STILL THE ONLY PLACE ANY OF IT EXISTS. The credential
+          arrived in one reply and is held in a local variable; the QR is
+          computed from it here, in this browser, and is gone with the panel.
+          There is no second token, nothing is stored, and nothing is fetched —
+          a QR built by somebody else's service would be this secret handed to
+          whoever answered. */}
       {issued ? (
-        <Panel title="Hand this to them"
+        <Panel title="Hand this over" note="One invitation · three ways"
           action={<button className="tps-edit" type="button" onClick={() => setIssued(null)}>Done</button>}>
-          <div className="tps-secret">
-            {/* The credential stays the first thing here, and the link is built
-                from it below: one secret, written twice, exactly as the email
-                writes it. */}
-            <code className="tps-code mono">{issued.credential}</code>
+          <div className="tps-secret tps-handoff">
             {issued.link ? (
-              <p className="tps-aside">
-                Or send them this link: <code className="mono">{issued.link}</code>
-              </p>
+              <div className="tps-handoff-scan">
+                <Qr value={issued.link} size={228}
+                  label="Scan to open this invitation" />
+                <p className="tps-aside">Have them scan this.</p>
+              </div>
             ) : null}
-            {issued.delivery ? <p className="tps-aside">{deliverySaid(issued.delivery)}</p> : null}
-            <p className="tps-aside">
-              {issued.recipient ? `This is ${issued.recipient}'s code. ` : ""}
-              It works once, it lasts two weeks, and MetYet will not show it again — give it to them
-              now. If it goes astray, withdraw the invitation below and send a new one.
-            </p>
+            <div className="tps-handoff-rest">
+              {issued.link ? (
+                <p className="tps-aside">
+                  Or send the link: <span className="mono tps-linktext">{issued.link}</span>
+                </p>
+              ) : null}
+              <p className="tps-aside">Or read out the code:</p>
+              {/* The credential stays the one <code> on this screen. */}
+              <code className="tps-code mono">{issued.credential}</code>
+              {issued.delivery ? <p className="tps-aside">{deliverySaid(issued.delivery)}</p> : null}
+              <p className="tps-aside">
+                {issued.recipient ? `This is ${issued.recipient}'s invitation. ` : ""}
+                However it travels it is the same invitation: it works once, it lasts two weeks,
+                and MetYet will not show it again. If it goes astray, replace it below.
+              </p>
+            </div>
           </div>
         </Panel>
       ) : null}
@@ -388,29 +415,41 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
         <form className="tps-form" onSubmit={create} noValidate>
           <Panel title={replacing ? "Replace invitation" : "Invite a collector"}
             note={busy === "invite" ? (sending ? "Sending…" : "Creating…") : "Not created yet"}>
+            {/* EVERY FIELD HERE IS OPTIONAL, AND THE FORM HAS TO LOOK IT.
+                Somebody at the counter should be able to press one button and
+                hold up a QR. A form that reads as a form invites a shop to
+                invent a name for a person standing in front of them — and a
+                name invented here would be the one thing this batch must not
+                let near a Collector's identity. */}
+            <p className="tps-aside tps-invite-lead">
+              Nothing below is required. Create it now and show them the QR, or add an address and
+              MetYet will send it.
+            </p>
             <div className="tps-fields">
               <label className="tps-field wide">
-                <span className="tps-field-l">Who is this for</span>
+                <span className="tps-field-l">Who is this for (optional)</span>
                 <input className="tps-input" type="text" value={draft.recipient}
                   disabled={busy === "invite"}
                   onChange={(e) => setDraft((d) => ({ ...d, recipient: e.target.value }))} />
                 <span className="tps-field-h">
-                  So you can tell your invitations apart. It does not decide who can use the code.
+                  A private memory aid, so you can tell your own invitations apart. A collector
+                  never sees it, and it does not become their name in MetYet — they say who they
+                  are themselves.
                 </span>
               </label>
               <label className="tps-field wide">
-                <span className="tps-field-l">Email</span>
+                <span className="tps-field-l">Email (optional)</span>
                 <input className="tps-input" type="email" value={draft.email}
                   disabled={busy === "invite"}
                   onChange={(e) => setDraft((d) => ({ ...d, email: e.target.value }))} />
                 <span className="tps-field-h">
                   Where MetYet sends the invitation. It does not decide who can accept it — whoever
                   opens the link and signs in does, with any address they can receive mail at.
-                  Leave it blank to hand the code over yourself.
+                  Leave it blank to hand it over in person.
                 </span>
               </label>
               <label className="tps-field wide">
-                <span className="tps-field-l">Note</span>
+                <span className="tps-field-l">Note (optional)</span>
                 <input className="tps-input" type="text" value={draft.note}
                   disabled={busy === "invite"}
                   onChange={(e) => setDraft((d) => ({ ...d, note: e.target.value }))} />
@@ -516,7 +555,15 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
             return (
               <Record
                 key={i.id}
-                title={text(i.recipient) || "Someone you invited"}
+                /* RECOGNISING ONE THE PARTNER DID NOT LABEL (Batch 3C). Now
+                   that a name is plainly optional, more rows will have none —
+                   so the row falls back to what this partner already knows:
+                   the address MetYet was asked to send it to, from this
+                   session's own answer, or the fact that it was handed over
+                   rather than sent. Nothing here comes from a projection that
+                   did not already carry it, and nothing is invented. */
+                title={text(i.recipient) || (said && said.to)
+                  || (said && said.state === "none" ? "Handed over in person" : "Someone you invited")}
                 /* The code is not here, and there is nowhere it could be: the
                    projection never carried one. */
                 facts={
