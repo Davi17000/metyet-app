@@ -40,11 +40,28 @@ const D = require("./metyet-domain.js");
 
 /* Collections the in-process store always materialises, so a persisted world
    must too. `preferences` and `activity` may be absent (the product seed has no
-   preference rows; a world may have no activity yet) but are lists when present. */
-const REQUIRED_COLLECTIONS = ["catalog", "collectors", "partners", "relationships", "invitations",
+   preference rows; a world may have no activity yet) but are lists when present.
+
+   `catalog` BECAME OPTIONAL IN PHASE 5 BATCH 5, and the reason is the whole of
+   that batch. A card catalog is a reference work, not a record of what happened:
+   it is true whether or not anybody has ever wanted a card, it changes when a
+   set is released rather than when a person acts, and no command writes it.
+   Holding it here meant loading eighteen thousand printings under the world
+   lock on every command and shipping all of them to every client on every view.
+   It now lives in its own schema, read without the lock and without this
+   function — see the catalog migration and its repository.
+
+   The in-process demo still carries one, because the demo IS its own catalog:
+   it has no server to ask, and its picker searches the collection directly. So
+   a world may have a catalog and is checked against it when it does. A
+   production world has none, and the references that would have been checked
+   here are held by a database foreign key to a canonical card instead — which
+   is a stronger guarantee than this one, not a weaker one, because it cannot be
+   bypassed by a caller that forgets to validate. */
+const REQUIRED_COLLECTIONS = ["collectors", "partners", "relationships", "invitations",
   "goals", "inventory", "binder", "interests", "opportunities", "conversations",
   "photoRequests", "copyReviews"];
-const OPTIONAL_COLLECTIONS = ["preferences", "activity"];
+const OPTIONAL_COLLECTIONS = ["catalog", "preferences", "activity"];
 
 /* The stages an Opportunity occupies: D.STAGES without the two intent stages,
    which describe Goals. */
@@ -125,6 +142,21 @@ function validateWorld(state) {
   };
   const ownerMismatch = (path, message) => report("ref.owner-mismatch", path, message);
 
+  /* A CARD REFERENCE, CHECKED AGAINST THE WORLD'S OWN CATALOG WHEN IT HAS ONE.
+
+     A world that carries a catalog is answerable for its card references, and
+     nothing about that changed. A world that carries none is not describing a
+     missing card — it is a production world, whose card references name rows in
+     a catalog this function cannot see and a foreign key already enforces.
+     Reporting them here would make every production world invalid for naming
+     cards that exist.
+
+     Returns null when there is nothing to check against, which every caller
+     already handles: a null card simply skips the identity and thread-key rules
+     that would have used it. */
+  const hasCatalog = Array.isArray(state.catalog);
+  const cardRef = (id, path, owner) => (hasCatalog ? ref(catalog, id, path, "card", owner) : null);
+
   /* ---------------------------------------------------------- PARTIES */
   for (const [r, path] of C.catalog) {
     if (typeof r.name !== "string" || !r.name) report("field.invalid", `${path}.name`, `Card "${r.id}" has no name.`);
@@ -167,7 +199,7 @@ function validateWorld(state) {
   for (const [g, path] of C.goals) {
     const who = `Goal "${g.id}"`;
     ref(collectors, g.collectorId, `${path}.collectorId`, "collector", who);
-    ref(catalog, g.cardId, `${path}.cardId`, "card", who);
+    cardRef(g.cardId, `${path}.cardId`, who);
     if (!GOAL_TIERS.includes(g.tier)) {
       report("field.invalid", `${path}.tier`, `${who} has tier ${JSON.stringify(g.tier)}; expected "primary" or "secondary".`);
     }
@@ -175,7 +207,7 @@ function validateWorld(state) {
   for (const [i, path] of C.inventory) {
     const who = `InventoryCopy "${i.invId}"`;
     ref(partners, i.partnerId, `${path}.partnerId`, "partner", who);
-    ref(catalog, i.cardId, `${path}.cardId`, "card", who);
+    cardRef(i.cardId, `${path}.cardId`, who);
     for (const k of ["ask", "cost"]) {
       if (!validMoney(i[k])) report("field.invalid", `${path}.${k}`, `${who} has an invalid ${k}.`);
     }
@@ -186,7 +218,7 @@ function validateWorld(state) {
   for (const [b, path] of C.binder) {
     const who = `BinderCopy "${b.id}"`;
     ref(collectors, b.collectorId, `${path}.collectorId`, "collector", who);
-    ref(catalog, b.cardId, `${path}.cardId`, "card", who);
+    cardRef(b.cardId, `${path}.cardId`, who);
     if (!blank(b.market) && !(Number(b.market) >= 0)) {
       report("field.invalid", `${path}.market`, `${who} has an invalid reference value.`);
     }
@@ -223,7 +255,7 @@ function validateWorld(state) {
     const who = `Opportunity "${o.id}"`;
     ref(collectors, o.collectorId, `${path}.collectorId`, "collector", who);
     ref(partners, o.partnerId, `${path}.partnerId`, "partner", who);
-    const card = ref(catalog, o.cardId, `${path}.cardId`, "card", who);
+    const card = cardRef(o.cardId, `${path}.cardId`, who);
     if (!OPPORTUNITY_STAGES.includes(o.stage)) {
       report("field.invalid", `${path}.stage`, `${who} has stage ${JSON.stringify(o.stage)}; expected one of ${OPPORTUNITY_STAGES.join(", ")}.`);
     }
@@ -266,7 +298,7 @@ function validateWorld(state) {
       if (!isId(row.id)) report("id.missing", `${rp}.id`, `A trade row of ${who} has no id.`);
       else if (rowIds.has(row.id)) report("id.duplicate", `${rp}.id`, `${rowWho} appears twice.`);
       else rowIds.add(row.id);
-      ref(catalog, row.cardId, `${rp}.cardId`, "card", rowWho);
+      cardRef(row.cardId, `${rp}.cardId`, rowWho);
       if (blank(row.binderId)) return;
       const b = ref(binder, row.binderId, `${rp}.binderId`, "binder copy", rowWho);
       if (b && b.collectorId !== o.collectorId) {
@@ -307,7 +339,7 @@ function validateWorld(state) {
     ref(collectors, t.collectorId, `${path}.collectorId`, "collector", who);
     /* D.threadKey throws on a partnerless thread, so this one breaks execute. */
     ref(partners, t.partnerId, `${path}.partnerId`, "partner", who);
-    const card = ref(catalog, t.cardId, `${path}.cardId`, "card", who);
+    const card = cardRef(t.cardId, `${path}.cardId`, who);
     if (card && isId(t.collectorId) && isId(t.partnerId)) {
       const expected = D.threadKey(t.collectorId, t.partnerId, card);
       if (t.key !== expected) {

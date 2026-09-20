@@ -802,7 +802,11 @@ describe("K. validateWorld rejects malformed worlds, naming what to fix", () => 
     expectError(w3, "collection.not-array", "activity");
     const w4 = base(); w4.goals.push("g9");
     expectError(w4, "record.not-object", "goals[");
-    eq(REQUIRED_COLLECTIONS.length, 13, "thirteen required collections");
+    /* Twelve, since Phase 5 Batch 5 moved `catalog` to the optional list: a
+       production world holds no cards, because card identity is a reference
+       work with its own schema rather than a record of what happened. */
+    eq(REQUIRED_COLLECTIONS.length, 12, "twelve required collections");
+    assert(!REQUIRED_COLLECTIONS.includes("catalog"), "and a world need not carry a catalog");
   });
 
   test("identity: missing and duplicate ids", () => {

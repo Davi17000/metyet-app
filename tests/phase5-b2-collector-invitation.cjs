@@ -1153,7 +1153,14 @@ describe("H. nothing in this build can redeem anything", () => {
        The narrower claim — that only ONE of them can spend a credential — is
        the `claim has exactly one caller` test above, which is where it belongs. */
     const routes = server.map(code).join("\n").match(/["'`]\/api\/[^"'`]*["'`]/g) || [];
-    const touching = [...new Set(routes.filter((r) => /redeem|accept|claim|join|invitation|context/i.test(r)))];
+    /* `context` WAS DROPPED FROM THIS FILTER IN BATCH 5, and the set it
+       produces is unchanged. It was there to catch
+       `/api/invitations/collector/context`, which the `/api/invitations` prefix
+       already catches; all it did besides was match any route with the word
+       "context" in it, and Batch 5's card browsing is `/api/card-contexts`. A
+       filter that names invitation routes by their prefix is tighter than one
+       that guesses from a word, and a fourth INVITATION route still fails. */
+    const touching = [...new Set(routes.filter((r) => /redeem|accept|claim|join|\/api\/invitations/i.test(r)))];
     eq(touching.sort().join(","),
       ['"/api/invitations/collector"', '"/api/invitations/collector/accept"',
         '"/api/invitations/collector/context"'].join(","),

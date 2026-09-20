@@ -120,6 +120,11 @@ function createApp({
      mounted — a Trusted Partner cannot open an invitation the server has
      nowhere to keep the secret for. */
   collectorCredentials,
+  /* The card catalog (Phase 5 Batch 5). A reference work rather than a record
+     of what happened, so it is NOT the world repository and has no lock: it is
+     read on its own, written only by an import, and absent here simply means
+     this deployment serves no card routes. */
+  catalog,
   /* How MetYet sends an invitation, and where its links point (Phase 5 Batch
      3B-2). Injected like everything else, and when it is absent the delivery
      field is refused and nothing is sent — invitations still work, handed over
@@ -237,6 +242,64 @@ function createApp({
     if (!state.actor) throw apiError("actor_unknown");
     return { version, state };
   });
+
+  /* ------------------------------------------------- BROWSING THE CATALOG
+     (Phase 5 Batch 5)
+
+     TWO ROUTES, BOTH READ-ONLY, NEITHER TOUCHING THE WORLD. No lock is taken,
+     no world is loaded, no command runs. That is the point of moving the
+     catalog out of `metyet`: looking at cards is not something that happens to
+     anybody's state, and until this batch it could not be done without dragging
+     the whole canonical world through a lock to get at it.
+
+     THE BROWSE UNIT IS A CARD CONTEXT, NOT A CARD, which is why these are not
+     `/api/cards`. A context is one line on one release's checklist — one piece
+     of artwork, one tile in a grid. A canonical card is one collectible
+     printing of that line, and there may be three of them behind a single tile:
+     the 1st Edition, the Shadowless and the Unlimited. A grid that listed cards
+     would repeat one picture three times and ask a person to tell them apart by
+     reading. So the list returns contexts, and the detail returns one context
+     WITH the printings a person may choose between.
+
+     WHAT A CALLER GETS BACK IS MetYet'S. Stable MetYet ids, MetYet's
+     vocabulary, and no provider anywhere in the contract — not an id, not a set
+     code, not a variant name. Which source a card came from is lineage, it is
+     recorded, and it is nobody's business out here.
+
+     THE DURABLE REFERENCE IS `canonicalCardId`, and only that. Everything else
+     in a reply — name, expansion, number, artist, rarity, images — is there so
+     a screen can draw a row without a second round trip, and none of it is
+     something to store or match on.
+
+     AUTHENTICATED, like every other read. A public catalog might be defensible
+     later — an invited Collector browsing before they sign in is a real idea —
+     but it is a new unauthenticated surface and this batch is not where that is
+     decided.
+
+     Mounted only when a catalog repository is injected, like every other
+     optional capability here. */
+  if (catalog) {
+    app.get("/api/card-contexts", { preHandler: authenticate }, async (request) => {
+      const q = request.query || {};
+      const { contexts, page, pageSize, total } = await catalog.findCardContexts({
+        query: q.query,
+        expansionId: q.expansionId,
+        artist: q.artist,
+        page: q.page,
+        pageSize: q.pageSize,
+      });
+      return { contexts, page, pageSize, total };
+    });
+
+    app.get("/api/card-contexts/:cardContextId", { preHandler: authenticate }, async (request, reply) => {
+      const found = await catalog.readCardContext(request.params.cardContextId);
+      if (!found) {
+        reply.code(404);
+        return errorBody(apiError("not_found", { detail: "no such card" }), request.id);
+      }
+      return found;
+    });
+  }
 
   /* ------------------------------------------------------------ WRITE */
   app.post("/api/commands", { preHandler: authenticate }, async (request, reply) => {

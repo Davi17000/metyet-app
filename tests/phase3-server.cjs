@@ -110,7 +110,7 @@ const database = () => (pglite || (pglite = new PGlite()));
 /* A migrated database, a seeded world, provisioned accounts and the app. */
 async function serve({ seed = world(), runtimeFor = runtime, repositoryWrapper } = {}) {
   const pg = database();
-  await pg.exec("drop schema if exists metyet cascade; drop schema if exists metyet_auth cascade");
+  await pg.exec("drop schema if exists metyet cascade; drop schema if exists metyet_auth cascade; drop schema if exists metyet_catalog cascade");
   const db = fromPGlite(pg);
   await migrate(db);
   const base = createWorldRepository(db);

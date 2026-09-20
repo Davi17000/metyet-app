@@ -47,7 +47,7 @@ const database = () => (pglite || (pglite = new PGlite()));
    test starts from nothing (Batch 3 added metyet_auth for accounts). */
 async function fresh() {
   const pg = database();
-  await pg.exec("drop schema if exists metyet cascade; drop schema if exists metyet_auth cascade");
+  await pg.exec("drop schema if exists metyet cascade; drop schema if exists metyet_auth cascade; drop schema if exists metyet_catalog cascade");
   const db = fromPGlite(pg);
   await migrate(db);
   return { pg, db, repo: createWorldRepository(db) };
@@ -203,7 +203,7 @@ async function drive(repo, steps, { from = seed() } = {}) {
 describe("A. migrations and schema", () => {
   test("the migration applies to an empty database and yields an empty, valid world at version 0", async () => {
     const pg = database();
-    await pg.exec("drop schema if exists metyet cascade; drop schema if exists metyet_auth cascade");
+    await pg.exec("drop schema if exists metyet cascade; drop schema if exists metyet_auth cascade; drop schema if exists metyet_catalog cascade");
     const result = await migrate(fromPGlite(pg));
     eq(result.applied.join(), readMigrations().map((m) => m.version).join(), "every migration applied, in order");
     assert(result.applied[0] === "0001_canonical_world", "starting with the canonical world");
