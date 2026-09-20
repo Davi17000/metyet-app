@@ -550,7 +550,14 @@ describe("E. the boundary", () => {
     const server = fs.readdirSync(path.join(ROOT, "server"), { withFileTypes: true })
       .filter((e) => e.isFile() && e.name.endsWith(".js")).map((e) => `server/${e.name}`);
     const routes = server.map(code).join("\n").match(/["'`]\/api\/[^"'`]*["'`]/g) || [];
-    const touching = [...new Set(routes.filter((r) => /invitation|redeem|accept|join|context/i.test(r)))];
+    /* `context` WAS DROPPED FROM THIS FILTER IN BATCH 5, and the set it
+       produces is unchanged. It was there to catch `/api/invitations/collector/context`,
+       which the `/api/invitations` prefix already catches; all it did besides
+       was match any route with the word "context" in it, and Batch 5's card
+       browsing is `/api/card-contexts`. A filter that names invitation routes
+       by their prefix is tighter than one that guesses from a word, and a
+       fourth INVITATION route still fails this test. */
+    const touching = [...new Set(routes.filter((r) => /\/api\/invitations|redeem|accept|join/i.test(r)))];
     eq(touching.sort().join(","),
       ['"/api/invitations/collector"', '"/api/invitations/collector/accept"',
         '"/api/invitations/collector/context"'].join(","),

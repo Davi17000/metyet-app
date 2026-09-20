@@ -129,7 +129,7 @@ let shared = null;
 async function serve(createApp, { repositoryWrapper, collectorCredentials = false,
   mailer = null, appUrl = null } = {}) {
   const pg = shared || (shared = new PGlite());
-  await pg.exec("drop schema if exists metyet cascade; drop schema if exists metyet_auth cascade");
+  await pg.exec("drop schema if exists metyet cascade; drop schema if exists metyet_auth cascade; drop schema if exists metyet_catalog cascade");
   const db = fromPGlite(pg);
   await migrate(db);
   const base = createWorldRepository(db);

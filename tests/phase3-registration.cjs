@@ -47,7 +47,7 @@ const database = () => (pglite || (pglite = new PGlite()));
    first day, with nobody in it. */
 async function world({ seeded = null } = {}) {
   const pg = database();
-  await pg.exec("drop schema if exists metyet cascade; drop schema if exists metyet_auth cascade");
+  await pg.exec("drop schema if exists metyet cascade; drop schema if exists metyet_auth cascade; drop schema if exists metyet_catalog cascade");
   const db = fromPGlite(pg);
   await migrate(db);
   const repository = createWorldRepository(db);

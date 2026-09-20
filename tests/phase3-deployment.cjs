@@ -45,7 +45,7 @@ const database = () => (pglite || (pglite = new PGlite()));
 /* An empty database: no schema at all, as a new Supabase project is. */
 async function blank() {
   const pg = database();
-  await pg.exec("drop schema if exists metyet cascade; drop schema if exists metyet_auth cascade");
+  await pg.exec("drop schema if exists metyet cascade; drop schema if exists metyet_auth cascade; drop schema if exists metyet_catalog cascade");
   const db = fromPGlite(pg);
   return { pg, db, repository: createWorldRepository(db), accounts: createAccountDirectory(db) };
 }

@@ -56,7 +56,7 @@ const NORTHLINE = "p-northline";
 const SOUTHLINE = "p-southline";
 
 async function fresh(pool) {
-  await pool.query("drop schema if exists metyet cascade; drop schema if exists metyet_auth cascade");
+  await pool.query("drop schema if exists metyet cascade; drop schema if exists metyet_auth cascade; drop schema if exists metyet_catalog cascade");
   const db = fromPgPool(pool);
   await migrate(db);
   const repository = createWorldRepository(db);

@@ -32,6 +32,7 @@ const { createTokenVerifier } = require("./auth/token-verifier.js");
 const { createIdentityDirectory } = require("./auth/identity.js");
 const { createResendMailer } = require("./mail/resend.js");
 const { systemRuntime } = require("../domain/metyet-runtime.js");
+const { createCatalogRepository } = require("../persistence/catalog-repository.js");
 const { createApp } = require("./app.js");
 const fs = require("fs");
 const path = require("path");
@@ -65,15 +66,20 @@ async function main() {
   /* Where this MetYet lives, when an operator said. It is what any link the
      server writes is built from — in an email, or in the reply a Trusted
      Partner reads off their own screen — and it never comes from a request. */
+  /* One runtime for the process, so the catalog mints its ids with the same
+     authority the commands do — and so a deployment has exactly one clock and
+     one source of randomness. */
+  const runtime = systemRuntime();
   const app = createApp({
     repository: createWorldRepository(db),
+    catalog: createCatalogRepository(db, { newId: runtime.newId }),
     accounts: createAccountDirectory(db),
     invitations: createInvitationDirectory(db),
     collectorCredentials: createCollectorCredentials(db),
     verifier: createTokenVerifier(config.auth),
     identity: createIdentityDirectory(config.auth),
     checkSchema: () => migrationStatus(db),
-    runtime: systemRuntime(),
+    runtime,
     mailer,
     appUrl: config.appUrl,
     client,

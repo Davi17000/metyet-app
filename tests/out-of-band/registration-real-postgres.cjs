@@ -46,7 +46,7 @@ const ok = (cond, what) => { if (cond) { passed += 1; console.log("  ok   " + wh
 const eq = (a, b, what) => ok(JSON.stringify(a) === JSON.stringify(b), `${what} (${JSON.stringify(a)} vs ${JSON.stringify(b)})`);
 
 async function fresh(pool) {
-  await pool.query("drop schema if exists metyet cascade; drop schema if exists metyet_auth cascade");
+  await pool.query("drop schema if exists metyet cascade; drop schema if exists metyet_auth cascade; drop schema if exists metyet_catalog cascade");
   const db = fromPgPool(pool);
   await migrate(db);
   const repository = createWorldRepository(db);
