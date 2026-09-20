@@ -167,14 +167,39 @@ const COMMANDS = {
   },
 
   /* ------------------------------------------------------------ inventory */
+  /* A PHYSICAL COPY, AND WHICH CARD IT IS A COPY OF (Phase 5 Batch 6).
+
+     TWO WAYS TO NAME THE CARD, and a copy uses one. `canonicalCardId` is the
+     production way: an opaque id from the catalog, which this command cannot
+     check because the domain has no database — the server resolves it and
+     refuses an unknown or withdrawn one BEFORE executing, and a foreign key is
+     the backstop. `cardId` is the demo's way, resolved against the world's own
+     catalogue here as it always was.
+
+     WHAT THE CALLER MAY NOT NAME. Not the partner — ownership comes from the
+     authenticated actor and a payload that carried one would be ignored anyway.
+     Not the card's name, set, number, finish or language: a copy REFERS to a
+     card, it does not describe one, and a browser that could describe one could
+     invent one.
+
+     GRADE AND CONDITION ARE COPY FACTS, since Batch 5 took them out of card
+     identity. Two copies of one printing at PSA 9 and PSA 10 are one canonical
+     card and two rows here. */
   addInventoryCopy(state, a, { copy }, ctx) {
     if (a.seat !== "tp") return refuse(R.notOwner);
-    if (!copy || !cardById(state, copy.cardId)) return refuse(R.notFound);
+    if (!copy) return refuse(R.notFound);
+    const canonical = typeof copy.canonicalCardId === "string" && copy.canonicalCardId;
+    /* Exactly one: a copy of two cards is a copy of neither. */
+    if (canonical && copy.cardId) return refuse(R.notFound);
+    if (!canonical && !cardById(state, copy.cardId)) return refuse(R.notFound);
+    /* Stated or not stated — an empty string is not stated, and always was. */
+    if (copy.grade && !D.GRADED_VALUES.includes(copy.grade)) return refuse(R.notFound);
+    if (copy.condition && !D.CONDITION_VALUES.includes(copy.condition)) return refuse(R.notFound);
     for (const k of ["ask", "cost"]) {
       if (copy[k] != null && !(validMoney(Number(copy[k])) && Number(copy[k]) >= 0)) return refuse(R.invalidAmount);
     }
     const { invId: askedId, addedAt: askedAt, updatedAt, ...facts } = copy;
-    const invId = ctx.id("inv" + copy.cardId + "-", askedId);
+    const invId = ctx.id("inv" + (canonical || copy.cardId) + "-", askedId);
     if (list(state.inventory).some((i) => i.invId === invId)) return refuse(R.copyInUse);
     const row = { photos: { front: null, back: null }, archived: false, ...facts, invId,
       partnerId: a.partnerId, ...(ctx.time(askedAt) ? { addedAt: ctx.time(askedAt) } : {}) };
@@ -189,15 +214,26 @@ const COMMANDS = {
     if (!copy) return refuse(R.notFound);
     if (a.seat !== "tp" || copy.partnerId !== a.partnerId) return refuse(R.notOwner);
     const p = patch || {};
-    if ("cardId" in p || "invId" in p || "partnerId" in p) return refuse(R.identityImmutable);
+    /* WHICH CARD THIS IS, AND WHOSE IT IS, ARE NOT EDITS. `canonicalCardId`
+       joined the list in Batch 6 for the same reason `cardId` was always on it:
+       a copy that could be re-pointed at another card is a way to make a
+       Collector's match mean something it did not mean when it was made. */
+    if ("cardId" in p || "canonicalCardId" in p || "invId" in p || "partnerId" in p) {
+      return refuse(R.identityImmutable);
+    }
     const status = D.inventoryCopyStatus(invId, state.opportunities);
     if ("cert" in p && p.cert !== copy.cert && status !== "available") return refuse(R.copyCommitted);
-    const allowed = ["ask", "cost", "acquired", "cert", "note", "photos"];
+    /* Grade and condition are here because a raw copy that comes back from a
+       grader is the same physical card with a new fact about it — not a new
+       copy, and certainly not a new CARD (Phase 5 Batch 6). */
+    const allowed = ["ask", "cost", "acquired", "cert", "note", "photos", "grade", "condition"];
     const clean = {};
     for (const k of allowed) if (k in p) clean[k] = p[k];
     for (const k of ["ask", "cost"]) {
       if (clean[k] != null && !(validMoney(Number(clean[k])) && Number(clean[k]) >= 0)) return refuse(R.invalidAmount);
     }
+    if (clean.grade && !D.GRADED_VALUES.includes(clean.grade)) return refuse(R.notFound);
+    if (clean.condition && !D.CONDITION_VALUES.includes(clean.condition)) return refuse(R.notFound);
     return done({ ...state, inventory: list(state.inventory).map((i) => (i.invId === invId
       ? { ...i, ...clean, ...(at ? { updatedAt: at } : {}) } : i)) }, invId);
   },

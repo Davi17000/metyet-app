@@ -309,6 +309,66 @@ function createCatalogRepository(db, { newId } = {}) {
       };
     },
 
+    /* WHAT A SET OF CARDS LOOKS LIKE, IN ONE QUERY (Phase 5 Batch 6).
+
+       An inventory screen holds a handful of copies, each naming a canonical
+       card, and needs to say which card each one is: the name, the release, the
+       number, the finish, the print run, the language, a picture. Asking for
+       them one at a time is the N+1 that makes a shelf of thirty copies thirty
+       round trips; asking for the catalog is shipping eighteen thousand cards
+       to draw five rows. So it is one query for the ids the caller already
+       holds, capped, and it joins the context and the expansion itself.
+
+       IT IS DISPLAY, AND IT SAYS SO. Nothing here is identity: the id the
+       caller passed in is the identity, and everything that comes back is what
+       a person needs to recognise it. Withdrawn cards are described like any
+       other, because a copy somebody already owns does not stop existing when
+       a source stops listing its card. */
+    async describeCanonicalCards(canonicalCardIds) {
+      const ids = [...new Set(list(canonicalCardIds).map(text).filter(Boolean))].slice(0, MAX_PAGE_SIZE);
+      if (!ids.length) return [];
+      const rows = await read(`select k.canonical_card_id, k.print_run, k.finish, k.language,
+          k.stamp, k.print_variation, k.image_small, k.image_large, k.status,
+          c.card_context_id, c.collector_number, c.card_name, c.artist, c.rarity,
+          e.name as expansion_name, e.code as expansion_code, e.series as expansion_series
+        from metyet_catalog.canonical_cards k
+        join metyet_catalog.card_contexts c on c.card_context_id = k.card_context_id
+        join metyet_catalog.expansions e on e.expansion_id = c.expansion_id
+        where k.canonical_card_id = any($1::text[])`, [ids]);
+      return rows.map((r) => ({
+        canonicalCardId: r.canonical_card_id,
+        cardContextId: r.card_context_id,
+        cardName: r.card_name,
+        expansionName: r.expansion_name,
+        expansionCode: r.expansion_code,
+        expansionSeries: r.expansion_series,
+        collectorNumber: r.collector_number,
+        artist: r.artist,
+        rarity: r.rarity,
+        printRun: r.print_run,
+        finish: r.finish,
+        language: r.language,
+        stamp: r.stamp,
+        printVariation: r.print_variation,
+        imageSmall: r.image_small,
+        imageLarge: r.image_large,
+        status: r.status,
+      }));
+    },
+
+    /* THE QUESTION A WRITE ASKS: may somebody start owning this card today?
+
+       Existence is not enough. A withdrawn card is one a source stopped
+       listing, and while everybody already pointing at one keeps their row,
+       nobody may newly choose it — otherwise a Trusted Partner adds a copy of
+       something the catalog is in the middle of retracting. Returns the card,
+       or null, and the caller turns null into one refusal. */
+    async findSelectableCanonicalCard(canonicalCardId) {
+      const rows = await read(`select ${CARD_COLUMNS} from metyet_catalog.canonical_cards
+        where canonical_card_id = $1 and status = 'active'`, [text(canonicalCardId)]);
+      return rows.length ? cardRow(rows[0]) : null;
+    },
+
     async readCanonicalCard(canonicalCardId) {
       const rows = await read(`select ${CARD_COLUMNS} from metyet_catalog.canonical_cards
         where canonical_card_id = $1`, [text(canonicalCardId)]);

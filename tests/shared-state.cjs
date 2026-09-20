@@ -547,7 +547,12 @@ describe("Inventory ownership is scoped, not assumed", () => {
     /* PHASE 1: a runtime copy's owner is set at the command boundary from the
        acting partner — the component cannot name another owner. */
     const cmd = require("fs").readFileSync(require("path").join(__dirname, "..", "domain", "metyet-commands.js"), "utf8");
-    const add = cmd.slice(cmd.indexOf("addInventoryCopy(state"), cmd.indexOf("addInventoryCopy(state") + 700);
+    /* The window widened in Batch 6: the command gained the canonical-card
+       reference and the grade/condition checks, which pushed the ownership line
+       past the old 700 characters. What is being asserted is unchanged — a
+       runtime copy's owner comes from the acting partner and from nowhere a
+       caller can reach. */
+    const add = cmd.slice(cmd.indexOf("addInventoryCopy(state"), cmd.indexOf("addInventoryCopy(state") + 1600);
     assert(/partnerId: a\.partnerId/.test(add), "runtime copies are owned too");
   });
 });

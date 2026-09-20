@@ -566,18 +566,26 @@ describe("D. nothing that already worked works differently", () => {
     const entities = read("domain/metyet-entities.js");
     assert(!/card-identity|canonicalCard/.test(entities),
       "matching still asks the domain it always asked");
+    /* RESTATED IN BATCH 6, WHICH IS WHEN A COMMAND FIRST NAMED A CANONICAL
+       CARD. `addInventoryCopy` now takes a `canonicalCardId` — that is the
+       batch. What must stay true is narrower and more important: a command
+       REFERENCES a card, it never reaches the catalog to make one. So no
+       command may import the catalog's repository or its identity rules. */
     const commands = read("domain/metyet-commands.js");
-    assert(!/card-identity|canonicalCard|catalog-repository/.test(commands),
-      "no command learned about the canonical catalog in this batch");
+    assert(!/card-identity|catalog-repository|metyet_catalog/.test(commands),
+      "a command reached the catalog rather than merely naming a card");
   });
 
   test("a browser cannot mint a canonical card", () => {
     /* Not one command in the table touches the catalog schema, so there is no
        body a client could post that creates one. The only writer is an import,
        which is server-side and does not exist yet. */
+    /* The word to look for is a WRITE, not a mention. Batch 6 has a command
+       that names a canonical card id, which is the point of it; what no
+       command may do is create an expansion, a context or a card. */
     for (const name of Object.keys(C.COMMANDS || {})) {
       const fn = String((C.COMMANDS || {})[name]);
-      assert(!/metyet_catalog|canonicalCard|putCanonicalCard/.test(fn),
+      assert(!/metyet_catalog|putCanonicalCard|putCardContext|putExpansion/.test(fn),
         `command "${name}" writes canonical card identity`);
     }
     const app = read("server/app.js");

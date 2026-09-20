@@ -18,21 +18,13 @@
 
    FOUR THINGS IT CANNOT DO, BY CONSTRUCTION RATHER THAN BY CARE.
 
-   It cannot hold the canonical world. `get()` returns what the server sent,
-   which is already a projection for one seat. There is no code path here that
-   produces state: every value it ever returns arrived in a response.
-
-   It cannot run a command. This file imports nothing from `domain/`. There is
-   no command table, no runtime, no reducer. `execute` is an HTTP request.
-
-   It cannot decide who you are. `execute` takes no actor — the signature has
-   nowhere to put one. The server derives the seat from the bearer, and the
-   projection it returns answers "who am I" as well as "what can I see".
-
-   It cannot be written to. There is no `fixture`, no `set`, no `reset`. The
-   demo store has those and needs them — scenario controls rewrite the world
-   directly. Here there is no way to put state in that did not come from the
-   server, which is why the absence is a security property and is tested.
+   It cannot hold the canonical world: `get()` returns what the server sent, and
+   no code path here produces state. It cannot run a command: this file imports
+   nothing from `domain/`, and `execute` is an HTTP request. It cannot decide
+   who you are: `execute` takes no actor, and the server derives the seat from
+   the bearer. It cannot be written to: there is no `fixture`, no `set`, no
+   `reset`, so nothing can put state in that did not come from the server —
+   which is why the absence is a security property and is tested.
 
    WHAT IT ADDS, BECAUSE A ROUND TRIP IS NOT A FUNCTION CALL.
 
@@ -175,21 +167,16 @@ export function createProductionStore({ api } = {}) {
     }
   };
 
-  /* ONE MUTATION LIFECYCLE, AND EVERY MUTATION GOES THROUGH IT.
-
-     `send` is the only thing that varies: which request this mutation is. The
-     gate, the status, the conflict recovery, the refusal handling and the
-     adoption of whatever came back are the same for all of them, because they
-     are properties of "a mutation" rather than of any one command.
-
-     It resolves with the server's own answer — the caller shapes its own return
-     from it — and throws on everything that is not an answer. */
+  /* ONE MUTATION LIFECYCLE, AND EVERY MUTATION GOES THROUGH IT. `send` is the
+     only thing that varies. The gate, the status, the conflict recovery, the
+     refusal handling and the adoption of the answer are properties of "a
+     mutation" rather than of any one command. It resolves with the server's own
+     answer and throws on everything that is not one. */
   const mutate = async (name, send) => {
     /* ONE AT A TIME. The server has no idempotency key, so two commands in
-       flight are two mutations — and a button that is pressed twice must not
-       become two deals. This is thrown rather than queued: queueing would send
-       the second one after the first had already changed the world it was
-       written against. */
+       flight are two mutations, and a button pressed twice must not become two
+       deals. Thrown rather than queued: the second would be sent against a
+       world the first had already changed. */
     if (running !== null) throw new CommandInFlightError(running);
     running = name;
     status = STATUS.saving;
@@ -202,12 +189,10 @@ export function createProductionStore({ api } = {}) {
       answer = await send();
     } catch (error) {
       running = null;
-      /* THE WORLD MOVED FIRST. The server's transaction rolled back, so the
-         command did not run — and it is not sent again. The reason the world
-         moved is exactly the reason this command may no longer be the right
-         one, so the store re-reads and the person decides whether to ask again.
-         Nothing about this looks like success: it still throws, and the status
-         says conflict. */
+      /* THE WORLD MOVED FIRST, so the command did not run and is not sent
+         again: the reason the world moved is the reason this command may no
+         longer be right. The store re-reads and the person decides. It still
+         throws, and the status says conflict. */
       if (error && error.failure === FAILURE_CONFLICT) {
         const reread = await reRead();
         status = STATUS.conflict;
@@ -297,6 +282,21 @@ export function createProductionStore({ api } = {}) {
        no version, no status — so it skips `mutate`, which mutates. */
     async describeInvitation({ token } = {}) {
       return api.invitationContext({ token });
+    },
+
+    /* BROWSING CARDS (Batch 6). Reads that touch nothing — no projection, no
+       version, no status — so they skip `mutate`, like `describeInvitation`.
+       Looking at a card changes nothing, and a failed look must not put a
+       workspace into an error state. */
+    async findCards(query = "") {
+      return api.catalog(`card-contexts${query ? `?${query}` : ""}`);
+    },
+    async readCard(cardContextId) {
+      return api.catalog(`card-contexts/${encodeURIComponent(cardContextId)}`);
+    },
+    async describeCards(ids = []) {
+      const list = ids.filter(Boolean).map(encodeURIComponent).join(",");
+      return list ? api.catalog(`canonical-cards?ids=${list}`) : { cards: [] };
     },
 
     /* ------------------------------------------------ WHAT A ROUND TRIP NEEDS */

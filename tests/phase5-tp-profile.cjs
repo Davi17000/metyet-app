@@ -807,17 +807,32 @@ describe("F. the boundary the control reaches through", () => {
     const shell = code("client/tp/TrustedPartnerShell.jsx");
     /* Reuse, not a copy. */
     assert(/from ["']\.\/Profile\.jsx["']/.test(inventory), "Inventory does not render the profile");
+    /* `onSubmit` LEFT THIS LIST IN BATCH 6. It was here because, when this test
+       was written, the only reason Inventory could have a form was that it had
+       copied the profile's — and it is a React prop, not a thing the profile
+       owns. Inventory now has a form of its own for adding a copy, which is its
+       own work and nothing to do with a shop profile. Every name below IS the
+       profile's, and a copy of one would still fail. */
     for (const own of ["FIELDS", "patchFrom", "draftFrom", "whyRefused", "whyFailed",
-      "CERTAIN", "AMBIGUOUS", "onSubmit"]) {
+      "CERTAIN", "AMBIGUOUS"]) {
       assert(!new RegExp(`\\b${own}\\b`).test(inventory), `Inventory reimplemented ${own}`);
     }
     /* No hidden destination left behind that could become a second entrance. */
     assert(!/["']profile["']/.test(shell), "a profile section id survived in the shell");
     assert(!/Shop Profile/.test(shell), "the old destination survived in the shell");
-    /* The callback goes to exactly one section. */
+    /* The callback goes to exactly one section, which is still the whole of
+       the claim. Batch 6 put two more callbacks alongside it on the same
+       branch — adding a copy, and looking for the card it is a copy of, both
+       Inventory's own work — so the assertion names `onSaveProfile` inside that
+       branch rather than as the whole of it, and checks that no OTHER branch
+       hands it anywhere else. */
     const routed = shell.replace(/\s+/g, " ");
-    assert(/meta\.id === "inventory" \? \{ onSaveProfile \}/.test(routed),
-      "the callback is not routed to Inventory alone: " + routed.slice(0, 400));
+    const branch = routed.match(/meta\.id === "inventory" \? \{([^}]*)\}/);
+    assert(branch && /\bonSaveProfile\b/.test(branch[1]),
+      "the callback is not routed to Inventory: " + routed.slice(0, 400));
+    const elsewhere = routed.split(/meta\.id === "inventory" \? \{[^}]*\}/)[1] || "";
+    assert(!/\bonSaveProfile\b/.test(elsewhere),
+      "the callback reaches a second section: " + elsewhere.slice(0, 300));
   });
 
   /* THE HAZARD OF MOVING A COMPONENT BEHIND ANOTHER ONE. Inventory now stands
@@ -854,18 +869,24 @@ describe("F. the boundary the control reaches through", () => {
 
   test("the shop view did not make Inventory a mutation surface", () => {
     const inventory = code("client/tp/sections/Inventory.jsx");
-    /* It can show the shop. It cannot change a copy, and it cannot reach a
-       command by itself. */
-    assert(!/execute\s*\(|\.command\s*\(|updatePartnerProfile|store\./.test(inventory),
+    /* RESTATED IN BATCH 6, WHICH IS WHEN INVENTORY BECAME A WRITE SURFACE for
+       the one thing it is about: adding a copy of a card. What this test was
+       protecting is untouched and is what it now says — Inventory still reaches
+       no command PATH of its own. It names no command, holds no store, and
+       touches no network: everything it can do arrived as a function in a prop,
+       which is what keeps one product surface from acquiring a second way to
+       write. And it still does not reimplement the profile. */
+    assert(!/execute\s*\(|\.command\s*\(|store\./.test(inventory),
       "Inventory reaches a command path");
     assert(!/\bfetch\s*\(|XMLHttpRequest/.test(inventory), "Inventory reaches the network");
-    assert(!/addInventoryCopy|updateInventoryCopy|removeInventoryCopy|addCopyPhotos/.test(inventory),
-      "Inventory grew a copy mutation");
-    assert(!/<input|<textarea|onSubmit/.test(inventory), "Inventory grew a form of its own");
-    /* And the one control it gained is navigation, not a write. */
-    const clicks = inventory.match(/onClick=\{[^}]*\}/g) || [];
-    eq(clicks.length, 2, "Inventory has controls beyond the two that move between its views: " + clicks.join(" | "));
-    clicks.forEach((c) => assert(/setViewing/.test(c), "a control does something other than change view: " + c));
+    assert(!/"addInventoryCopy"|'addInventoryCopy'|updateInventoryCopy|removeInventoryCopy|addCopyPhotos/.test(inventory),
+      "Inventory names a command rather than calling the one it was handed");
+    assert(!/updatePartnerProfile|savePartnerProfile/.test(inventory),
+      "Inventory reimplemented saving a profile");
+    /* The profile's own fields are Profile's business and appear nowhere here. */
+    for (const field of ["about", "specialties", "website", "instagram"]) {
+      assert(!new RegExp(`["']${field}["']`).test(inventory), `Inventory names the profile field "${field}"`);
+    }
   });
 
   test("one file names the command, and it is not a product surface", () => {

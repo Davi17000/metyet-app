@@ -291,6 +291,18 @@ function createApp({
       return { contexts, page, pageSize, total };
     });
 
+    /* WHICH CARDS THESE ARE (Phase 5 Batch 6). A screen holding a handful of
+       copies has their canonical card ids already — they are in its own
+       projection — and needs to say which card each one is. One request for the
+       set, rather than one per row, and never the catalog. Ids are the caller's
+       own; the catalog is browsable by any authenticated actor anyway, so
+       nothing is exposed here that `/api/card-contexts` does not expose. */
+    app.get("/api/canonical-cards", { preHandler: authenticate }, async (request) => {
+      const raw = (request.query && request.query.ids) || "";
+      const ids = String(raw).split(",").map((s) => s.trim()).filter(Boolean);
+      return { cards: await catalog.describeCanonicalCards(ids) };
+    });
+
     app.get("/api/card-contexts/:cardContextId", { preHandler: authenticate }, async (request, reply) => {
       const found = await catalog.readCardContext(request.params.cardContextId);
       if (!found) {
@@ -305,6 +317,33 @@ function createApp({
   app.post("/api/commands", { preHandler: authenticate }, async (request, reply) => {
     const { actor } = request.metyet;
     const { command, payload } = checkBody(request.body);
+
+    /* THE ONE THING A COMMAND CANNOT CHECK FOR ITSELF (Phase 5 Batch 6).
+
+       A copy names a canonical card. Whether that card exists, and whether it
+       is still one somebody may newly choose, is a question for the catalog —
+       and the domain has no database, by a rule this batch is not going to be
+       the one to break. So the server asks before it executes, and a card that
+       is missing or withdrawn is refused in the command vocabulary the caller
+       already understands rather than surfacing as a foreign-key error.
+
+       This is a GUARD, not a second authorization system: it decides nothing
+       about who may act. The seat, the ownership and every copy fact are still
+       the command's, and the foreign key is still the backstop underneath. */
+    if (command === "addInventoryCopy") {
+      const named = payload && payload.copy && payload.copy.canonicalCardId;
+      if (typeof named === "string" && named) {
+        /* No catalog injected means this deployment has no cards to choose
+           from, which is the same answer as a card that is not there: one
+           refusal rather than a foreign key failing underneath. */
+        const card = catalog ? await catalog.findSelectableCanonicalCard(named) : null;
+        if (!card) {
+          request.log.info({ command }, "command refused: card-unavailable");
+          reply.code(409);
+          return errorBody(apiError("command_refused", { refused: "card-unavailable" }), request.id);
+        }
+      }
+    }
 
     const result = await executeCommand(repository, { actor, command, payload, runtime });
 

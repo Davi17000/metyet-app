@@ -127,6 +127,43 @@ export function describeCollectorInvitation(target) {
   return (token) => target.describeInvitation({ token });
 }
 
+/* ------------------------------------------------- INVENTORY (Batch 6)
+
+   ADDING A COPY IS NAMING A CARD AND DESCRIBING AN OBJECT. The card is named
+   by an id the server minted and the browser merely received; everything else
+   describes the physical thing on the shelf — what grade it carries, what
+   condition it is in, what it cost, what it is being asked for.
+
+   There is no field here for a partner, because ownership is not a thing a
+   caller states: the server takes it from the authenticated actor and would
+   ignore anything sent. And there is no field for a card's name, set, number,
+   finish or language, because a copy REFERS to a card rather than describing
+   one — a surface that could describe one could invent one. */
+export function addInventoryCopy(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("addInventoryCopy: the production store is required");
+  }
+  return ({ canonicalCardId, grade = null, condition = null, ask = null,
+    cost = null, acquired = null, cert = null, note = null } = {}) =>
+    target.execute("addInventoryCopy", { copy: { canonicalCardId, grade, condition,
+      ask, cost, acquired, cert, note } });
+}
+
+/* Looking for a card to add. Three reads, no writes: the browse query, one
+   context with the printings a person may choose between, and the description
+   of cards a screen already holds ids for. A surface that can find a card can
+   do that and nothing else. */
+export function browseCards(target) {
+  if (!target || typeof target.findCards !== "function") {
+    throw new TypeError("browseCards: the production store is required");
+  }
+  return {
+    find: (query) => target.findCards(query),
+    read: (cardContextId) => target.readCard(cardContextId),
+    describe: (ids) => target.describeCards(ids),
+  };
+}
+
 /* Re-reading is not a mutation and is safe to repeat, which is why an ambiguous
    write may end in one: a screen that cannot know whether something was created
    can at least ask what exists now. It is a GET; nothing is replayed. */
