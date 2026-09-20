@@ -207,7 +207,25 @@ function validateWorld(state) {
   for (const [i, path] of C.inventory) {
     const who = `InventoryCopy "${i.invId}"`;
     ref(partners, i.partnerId, `${path}.partnerId`, "partner", who);
-    cardRef(i.cardId, `${path}.cardId`, who);
+    /* A COPY NAMES ITS CARD ONE WAY OR THE OTHER (Phase 5 Batch 6).
+
+       `canonicalCardId` is the way from now on: an opaque id in the catalog
+       schema, held by a database foreign key that this function cannot see and
+       does not need to. `cardId` is the demo's way, and is still checked
+       against the world's own catalog exactly as it always was.
+
+       EXACTLY ONE, because two would be two answers to "which card is this?"
+       and nothing decides between them. Neither is a copy of nothing. */
+    const canonical = isId(i.canonicalCardId);
+    const legacy = isId(i.cardId);
+    if (canonical && legacy) {
+      report("ref.ambiguous", `${path}.canonicalCardId`,
+        `${who} names both a canonical card and a catalogue card; a copy is of one card.`);
+    } else if (!canonical && !legacy) {
+      report("ref.missing", `${path}.cardId`, `${who} names no card.`);
+    } else if (legacy) {
+      cardRef(i.cardId, `${path}.cardId`, who);
+    }
     for (const k of ["ask", "cost"]) {
       if (!validMoney(i[k])) report("field.invalid", `${path}.${k}`, `${who} has an invalid ${k}.`);
     }

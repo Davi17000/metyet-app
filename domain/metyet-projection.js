@@ -148,9 +148,17 @@ const GOAL_FOR_PARTNER = ["id", "collectorId", "cardId", "tier", "note", "since"
 const PREFERENCE_FOR_PARTNER = ["collectorId", "tags"];
 
 /* An InventoryCopy as a Collector sees it: identity, ask, photos.
-   `cost`, `acquired` and any unlisted field are partner-private. */
-const INVENTORY_FOR_COLLECTOR = ["invId", "partnerId", "cardId", "ask", "cert",
-  "photos", "addedAt", "archived"];
+   `cost`, `acquired`, `note` and any unlisted field are partner-private.
+
+   `canonicalCardId` joined the list in Batch 6 because it IS the identity now —
+   a copy that named a card the viewer could not see would be a copy of nothing.
+   `grade` and `condition` joined it because Batch 5 moved them out of card
+   identity and onto the copy: they describe the very thing being offered, and
+   a Collector who cannot see whether a copy is PSA 9 or heavily played cannot
+   tell whether they want it. What stayed off the list is what it always was —
+   what the partner paid, when they got it, and what they wrote to themselves. */
+const INVENTORY_FOR_COLLECTOR = ["invId", "partnerId", "cardId", "canonicalCardId",
+  "grade", "condition", "ask", "cert", "photos", "addedAt", "archived"];
 
 /* A BinderCopy as a partner sees it: identity, photos, cert. The reference
    value (`market`) and any unlisted field are collector-private. */

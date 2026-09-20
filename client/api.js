@@ -139,6 +139,20 @@ export function createApiClient({ baseUrl, getToken, timeoutMs = DEFAULT_TIMEOUT
      caller, and a test holds it to one. */
   const ask = (path, body) => roundTrip(path, { method: "POST", body });
 
+  /* A 200 THAT CARRIES NO PROJECTION IS NOT AN ANSWER (Phase 5 Batch 6 —
+     three callers said this separately and now say it once). The server always
+     sends the actor's state back with a success; a reply without one is a shape
+     this client does not understand, and adopting it would leave a screen
+     rendering whatever it happened to hold before. */
+  const failed = (status, b, refused = null) => {
+    const code = b && b.error && b.error.code;
+    return new ApiError(failureFor(status, code), { status, refused, detail: code || null });
+  };
+  const withState = (b) => {
+    if (!b || !b.state) throw new ApiError(FAILURES.unexpected, { detail: "no state in a 200" });
+    return b;
+  };
+
   async function send(path, { method = "GET", body } = {}) {
     /* Asked for each time. A client that captured the token at construction
        would keep using a session after it was replaced or ended. */
@@ -152,13 +166,21 @@ export function createApiClient({ baseUrl, getToken, timeoutMs = DEFAULT_TIMEOUT
     async view() {
       const { status, payload } = await send("/api/view");
       if (status === 200) {
-        if (!payload || typeof payload !== "object" || !payload.state) {
-          throw new ApiError(FAILURES.unexpected, { detail: "no state in a 200" });
-        }
-        return { version: payload.version, state: payload.state };
+        const body = withState(payload);
+        return { version: body.version, state: body.state };
       }
-      const code = payload && payload.error && payload.error.code;
-      throw new ApiError(failureFor(status, code), { status, detail: code || null });
+      throw failed(status, payload);
+    },
+
+    /* READING THE CATALOG (Phase 5 Batch 6). One door for every card read, so
+       the client gains a way to LOOK at cards without gaining a way to make
+       one: there is no card write here and no request body. What comes back is
+       the server's own vocabulary — MetYet ids, MetYet words — and the caller
+       composes the path, because a browse query is the caller's question. */
+    async catalog(path) {
+      const { status, payload } = await send(`/api/${path}`);
+      if (status === 200 && payload) return payload;
+      throw failed(status, payload);
     },
 
     /* Ask for something to happen. A refusal is an ANSWER, not an error: the
@@ -169,15 +191,12 @@ export function createApiClient({ baseUrl, getToken, timeoutMs = DEFAULT_TIMEOUT
       }
       const { status, payload: body } = await send("/api/commands", { method: "POST", body: { command, payload } });
       if (status === 200) {
-        if (!body || typeof body !== "object" || !body.state) {
-          throw new ApiError(FAILURES.unexpected, { detail: "no state in a 200" });
-        }
+        withState(body);
         return { ok: true, version: body.version, value: body.value === undefined ? null : body.value, state: body.state };
       }
-      const error = body && body.error;
-      const refused = error && typeof error.refused === "string" ? error.refused : null;
+      const refused = typeof (body && body.error && body.error.refused) === "string" ? body.error.refused : null;
       if (status === 409 && refused) return { ok: false, refused, version: body && body.version };
-      throw new ApiError(failureFor(status, error && error.code), { status, refused, detail: (error && error.code) || null });
+      throw failed(status, body, refused);
     },
 
     /* OPEN A COLLECTOR INVITATION (Phase 5 Batch 2). A third call, because the
@@ -198,9 +217,7 @@ export function createApiClient({ baseUrl, getToken, timeoutMs = DEFAULT_TIMEOUT
       const { status, payload: body } = await send("/api/invitations/collector",
         { method: "POST", body: { recipient, note, ...(address ? { email: address } : {}) } });
       if (status === 200) {
-        if (!body || typeof body !== "object" || !body.state) {
-          throw new ApiError(FAILURES.unexpected, { detail: "no state in a 200" });
-        }
+        withState(body);
         if (typeof body.credential !== "string" || !body.credential) {
           /* A created invitation whose credential did not arrive is exactly the
              ambiguous case: it may well exist, and its secret is already
@@ -220,10 +237,9 @@ export function createApiClient({ baseUrl, getToken, timeoutMs = DEFAULT_TIMEOUT
           joinUrl: typeof body.joinUrl === "string" && body.joinUrl ? body.joinUrl : null,
           delivery, state: body.state };
       }
-      const error = body && body.error;
-      const refused = error && typeof error.refused === "string" ? error.refused : null;
+      const refused = typeof (body && body.error && body.error.refused) === "string" ? body.error.refused : null;
       if (status === 409 && refused) return { ok: false, refused, version: body && body.version };
-      throw new ApiError(failureFor(status, error && error.code), { status, refused, detail: (error && error.code) || null });
+      throw failed(status, body, refused);
     },
 
     /* WHO INVITED YOU (Phase 5 Batch 3D). Asked before signing in, so it is the
@@ -268,10 +284,9 @@ export function createApiClient({ baseUrl, getToken, timeoutMs = DEFAULT_TIMEOUT
         }
         return { ok: true, version: body.version, state: body.state };
       }
-      const error = body && body.error;
-      const refused = error && typeof error.refused === "string" ? error.refused : null;
+      const refused = typeof (body && body.error && body.error.refused) === "string" ? body.error.refused : null;
       if (status === 409 && refused) return { ok: false, refused, version: body && body.version };
-      throw new ApiError(failureFor(status, error && error.code), { status, refused, detail: (error && error.code) || null });
+      throw failed(status, body, refused);
     },
   };
 }

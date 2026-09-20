@@ -67,6 +67,7 @@ function Plain({ lead, onSignOut }) {
 }
 
 export default function ProductionApp({ state, onSignOut, onSaveProfile = null,
+  onAddCopy = null, onBrowseCards = null,
   onInvite = null, onRevokeInvite = null, onRefresh = null,
   joined = null, onDismissJoined = null }) {
   const who = describeActor(state);
@@ -84,6 +85,7 @@ export default function ProductionApp({ state, onSignOut, onSaveProfile = null,
 
   if (who.seat === "tp") {
     return <TrustedPartnerShell state={state} onSignOut={onSignOut} onSaveProfile={onSaveProfile}
+      onAddCopy={onAddCopy} onBrowseCards={onBrowseCards}
       onInvite={onInvite} onRevokeInvite={onRevokeInvite} onRefresh={onRefresh} />;
   }
 

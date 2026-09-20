@@ -483,12 +483,20 @@ describe("C. nothing is invented — not identity, not rules, not content", () =
     assert(/Read-only for now/.test(flat(r)), "a read section does not say it is read-only");
 
     /* Inventory is where the shop is reached from, so it does not carry a
-       notice contradicting what can be done there — and says in its own words
-       what is still read-only. */
+       notice contradicting what can be done there.
+
+       THE SENTENCE IT USED TO CARRY WAS "Adding and editing copies arrive in a
+       later release", and Batch 6 is that release — a Trusted Partner can add a
+       copy now, so a promise that they cannot would be false. What is still
+       true, and is what this test was really protecting, is that the section
+       offers nothing it cannot deliver: this render is given no `onAddCopy`,
+       and with no callback there is no way to add. */
     clickText(r, "Inventory");
     assert(!/Read-only for now/.test(flat(r)), "Inventory still claims the whole section is read-only");
-    assert(/Adding and editing copies arrive in a later release/.test(flat(r)),
-      "and the copies stopped saying they cannot be changed: " + flat(r));
+    assert(!/Adding and editing copies arrive in a later release/.test(flat(r)),
+      "Inventory still promises that copies cannot be added: " + flat(r));
+    assert(!/Add a copy/.test(flat(r)),
+      "a way to add a copy was offered with no callback to add one: " + flat(r));
     assert(buttons(r).some((b) => instText(b).includes("View shop")), "Inventory has no way to the shop");
   });
 

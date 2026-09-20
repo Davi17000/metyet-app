@@ -80,8 +80,13 @@ const TABLES = [
   { collection: "goals", table: "goals", key: ["id"],
     fields: [["id", "id"], ["collectorId", "collector_id"], ["cardId", "card_id"]] },
   { collection: "preferences", table: "preferences", key: ["ord"], fields: [["collectorId", "collector_id"]] },
+  /* `cardId` became a MIRROR in Batch 6, and `canonicalCardId` arrived beside
+     it. A copy names its card one way or the other — the demo's catalogue row
+     or a canonical card — so neither column is always present, which is exactly
+     what a mirror is for. validateWorld requires one and refuses both. */
   { collection: "inventory", table: "inventory_copies", key: ["inv_id"],
-    fields: [["invId", "inv_id"], ["partnerId", "partner_id"], ["cardId", "card_id"]] },
+    fields: [["invId", "inv_id"], ["partnerId", "partner_id"]],
+    mirrors: [["cardId", "card_id"], ["canonicalCardId", "canonical_card_id"]] },
   { collection: "binder", table: "binder_copies", key: ["id"],
     fields: [["id", "id"], ["collectorId", "collector_id"], ["cardId", "card_id"]] },
   { collection: "interests", table: "interests", key: ["ord"],

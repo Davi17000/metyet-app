@@ -41,7 +41,7 @@ const ME = "casey";
 const CARD = { id: "kt", name: "Charizard", set: "Base Set", number: "4", variant: "Holo",
   edition: "Unlimited", language: "English", grade: "PSA 9", condition: null };
 const RAW = { id: "kr", name: "Machamp", set: "Base Set", number: "8", variant: "",
-  edition: "Unlimited", language: "English", grade: null, condition: "LP" };
+  edition: "Unlimited", language: "English", grade: null, condition: "Lightly Played" };
 
 /* `rows` is [invId, addedAt|null, archived?] so each test states its own world. */
 const world = (rows = []) => {
@@ -75,7 +75,7 @@ describe("A. One canonical timestamp, stamped on arrival", () => {
     w.st.actions.addInventoryCopy({ invId: "g", partnerId: "nl", cardId: "kt",
       archived: false, cert: "PSA 123" }, "2026-08-20");
     w.st.actions.addInventoryCopy({ invId: "r", partnerId: "nl", cardId: "kr",
-      archived: false, condition: "LP" }, "2026-08-20");
+      archived: false, condition: "Lightly Played" }, "2026-08-20");
     eq(w.get("g").addedAt, w.get("r").addedAt, "one rule for both");
   });
 

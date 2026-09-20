@@ -520,8 +520,11 @@ describe("F. no mutation, no demo, no prototype, no diagnostics", () => {
        open and withdraw a Collector invitation, which is the Collector
        Network's own work, so that file has one too. Nothing else does, and a
        fourth appearing fails here first. */
+    /* Batch 6 added the third: a Trusted Partner can now add a copy of a card
+       they own, which is Inventory's own work. The shell declares `inventory`
+       writable and always did. A FOURTH still fails here. */
     const WITH_FORMS = ["client/tp/sections/Profile.jsx",
-      "client/tp/sections/CollectorNetwork.jsx"];
+      "client/tp/sections/CollectorNetwork.jsx", "client/tp/sections/Inventory.jsx"];
     for (const rel of TP_FILES) {
       if (WITH_FORMS.includes(rel)) continue;
       assert(!/onSubmit|onChange|<input|<textarea/.test(code(rel)), `${rel} grew a way to type`);

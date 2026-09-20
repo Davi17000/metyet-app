@@ -209,6 +209,24 @@ const CSS = `
   font-weight:600; }
 .tps-back:hover { text-decoration:underline; }
 .tps-form { display:block; }
+/* ADDING A COPY (Batch 6). One column, thumb-sized controls: a Trusted Partner
+   adding a card is standing behind a counter with a phone, not sitting at a
+   desk. Nothing here is a modal — a sheet that covers the shelf would hide the
+   thing being added to. */
+.tps-add { border:1px solid var(--line); border-radius:6px; margin:0 16px 14px;
+  padding:12px; display:flex; flex-direction:column; gap:10px; }
+.tps-add-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.tps-field { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--faint); }
+.tps-field input, .tps-field select { padding:9px 10px; border:1px solid var(--line);
+  border-radius:5px; font:inherit; font-size:15px; color:var(--ink); background:#FFF; }
+.tps-add-row { display:flex; flex-direction:column; align-items:flex-start; gap:2px;
+  width:100%; text-align:left; padding:9px 10px; border:1px solid var(--line);
+  border-radius:5px; background:#FFF; font:inherit; cursor:pointer; }
+.tps-add-row:hover, .tps-add-row.on { border-color:var(--t1); background:var(--t1-bg); }
+.tps-add-card { display:flex; flex-direction:column; align-items:flex-start; gap:4px; margin:0; }
+.tps-add-versions { display:flex; flex-direction:column; gap:6px; font-size:12px; color:var(--faint); }
+.tps-add-problem { margin:0; padding:9px 10px; border-radius:5px; background:#FBEDEC;
+  border:1px solid #EBD9B4; color:#98302C; font-size:13px; }
 .tps-fields { display:flex; flex-wrap:wrap; gap:14px 18px; padding:15px 16px; }
 .tps-field { display:flex; flex-direction:column; gap:4px; flex:1 1 220px; min-width:0; }
 .tps-field.wide { flex-basis:100%; }
@@ -248,7 +266,8 @@ const CSS = `
 `;
 
 export default function TrustedPartnerShell({ state, onSignOut, onSaveProfile = null,
-  onInvite = null, onRevokeInvite = null, onRefresh = null }) {
+  onInvite = null, onRevokeInvite = null, onRefresh = null,
+  onAddCopy = null, onBrowseCards = null }) {
   const [section, setSection] = useState(SECTIONS[0].id);
 
   const who = describeActor(state);
@@ -264,7 +283,7 @@ export default function TrustedPartnerShell({ state, onSignOut, onSaveProfile = 
      profile is reached from Inventory; invitations belong to the Collector
      Network, because that is the thing an invitation grows into. Nothing else
      is handed a way to send either. */
-  const extra = meta.id === "inventory" ? { onSaveProfile }
+  const extra = meta.id === "inventory" ? { onSaveProfile, onAddCopy, onBrowseCards }
     : meta.id === "collectors" ? { onInvite, onRevokeInvite, onRefresh }
       : null;
 
