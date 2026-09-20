@@ -849,14 +849,21 @@ describe("G. the Collector's journey", () => {
       "the entrance reads a credential out of the address bar");
   });
 
-  test("the Collector shell still says it is read-only, because it still is", async () => {
+  test("accepting granted no powers, and the shell says exactly what it can do", async () => {
     const ctx = await connect();
     try {
       const { credential } = await ctx.invite();
       const r = await signInAgainst(ctx, DANA);
       await walkIn(r, credential);
       await press(r, "Accept invitation");
-      assert(/Read-only for now/.test(flat(r)), "accepting made the shell claim it can write");
+      /* RESTATED IN BATCH 7. Goals became a Collector's to change, so a blanket
+         "read-only" would now be false and the shell no longer says it. What
+         accepting must NOT have granted is anything beyond that — and the
+         notice still names the rest as read-only. */
+      assert(/read-only for now/i.test(flat(r)),
+        "the shell stopped saying what is still read-only: " + flat(r));
+      assert(!/trades and messages/i.test(flat(r)) || !/Goals,/.test(flat(r)),
+        "the shell still promises goals arrive later, after they arrived: " + flat(r));
       /* Accepting is an entrance, not a section control, so nothing in the
          shell can do it again. */
       assert(!clickable(r, "Accept invitation"), "the shell offers to accept something");
@@ -865,8 +872,12 @@ describe("G. the Collector's journey", () => {
           ? fs.readdirSync(path.join(ROOT, "client", "collector", e.name))
             .map((f) => `client/collector/${e.name}/${f}`)
           : [`client/collector/${e.name}`]));
+      /* RESTATED IN BATCH 7. Goals became something a Collector can change,
+         so this render — which is handed no callbacks — is the case that
+         matters: with nothing to change anything WITH, the shell says so and
+         offers nothing. Accepting is still not among what it offers, which is
+         what this test is really about. */
       for (const rel of collectorFiles) {
-        assert(!/onSubmit|<input|<form|<textarea/.test(code(rel)), `${rel} grew a way to type`);
         assert(!/acceptInvitation|\/api\/|execute\s*\(/.test(code(rel)), `${rel} reaches a mutation`);
       }
     } finally { await ctx.close(); }

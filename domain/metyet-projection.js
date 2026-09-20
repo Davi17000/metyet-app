@@ -143,8 +143,14 @@ const RELATIONSHIP_PARTNER_PRIVATE = ["note", "last", "binderReviewedAt"];
 const INVITATION_FOR_INVITEE = ["id", "partnerId", "collectorId", "at", "acceptedAt"];
 
 /* A Goal as a related partner sees it: contract §3 "Goal (card, tier, note)". */
-const GOAL_FOR_PARTNER = ["id", "collectorId", "cardId", "tier", "note", "since",
-  "createdAt", "confirmedAt", "secondarySince"];
+/* A Goal as the Trusted Partner it is addressed to sees it. `canonicalCardId`
+   joined the list in Batch 7 because it IS the demand now — a partner told
+   somebody wants a card they cannot identify has been told nothing. `tier` was
+   always here and is the whole distinction the product turns on: actively
+   hunting, or keeping an eye out. Who sees any of this is unchanged and is
+   decided elsewhere, by the relationship. */
+const GOAL_FOR_PARTNER = ["id", "collectorId", "cardId", "canonicalCardId", "tier",
+  "note", "since", "createdAt", "confirmedAt", "secondarySince"];
 const PREFERENCE_FOR_PARTNER = ["collectorId", "tags"];
 
 /* An InventoryCopy as a Collector sees it: identity, ask, photos.

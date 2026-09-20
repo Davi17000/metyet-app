@@ -320,8 +320,9 @@ function createApp({
 
     /* THE ONE THING A COMMAND CANNOT CHECK FOR ITSELF (Phase 5 Batch 6).
 
-       A copy names a canonical card. Whether that card exists, and whether it
-       is still one somebody may newly choose, is a question for the catalog —
+       A copy names a canonical card, and since Batch 7 so does a Goal. Whether
+       that card exists, and whether it is still one somebody may newly choose,
+       is a question for the catalog —
        and the domain has no database, by a rule this batch is not going to be
        the one to break. So the server asks before it executes, and a card that
        is missing or withdrawn is refused in the command vocabulary the caller
@@ -330,8 +331,14 @@ function createApp({
        This is a GUARD, not a second authorization system: it decides nothing
        about who may act. The seat, the ownership and every copy fact are still
        the command's, and the foreign key is still the backstop underneath. */
-    if (command === "addInventoryCopy") {
-      const named = payload && payload.copy && payload.copy.canonicalCardId;
+    if (command === "addInventoryCopy" || command === "addGoal") {
+      /* Supply names a card inside a `copy`; demand names one directly. Both
+         are a person choosing an existing card, so both are checked the same
+         way — and an existing Goal is never revisited by this, so a card
+         withdrawn later leaves somebody's stated demand exactly where it is. */
+      const named = command === "addGoal"
+        ? payload && payload.canonicalCardId
+        : payload && payload.copy && payload.copy.canonicalCardId;
       if (typeof named === "string" && named) {
         /* No catalog injected means this deployment has no cards to choose
            from, which is the same answer as a card that is not there: one

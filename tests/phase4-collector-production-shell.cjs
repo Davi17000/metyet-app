@@ -575,7 +575,15 @@ describe("F. no demo, no prototype, no store, no domain", () => {
         `${rel} holds a store, a session or an api client`);
       assert(!/MetYetPrototype|MetYetCollector|demo-flag|dev-flag|src\/MetYet|shell\//.test(bare),
         `${rel} reaches the demo or the prototype`);
-      assert(!/execute\s*\(|\.command\s*\(|onSubmit/.test(bare), `${rel} has a way to write`);
+      /* RESTATED IN BATCH 7, when Goals became the one Collector surface a
+         person can change something from. `onSubmit` is a React prop and was
+         standing in for "a form, therefore a write"; what must stay true is
+         that no file here reaches a WRITE PATH of its own. Everything Goals can
+         do arrived as a function in a prop, which every other assertion above
+         still holds it to. */
+      assert(!/execute\s*\(|\.command\s*\(/.test(bare), `${rel} has a way to write`);
+      assert(!/"addGoal"|'addGoal'|"removeGoal"|'removeGoal'|"updateGoalTier"|'updateGoalTier'/.test(bare),
+        `${rel} names a command rather than calling the one it was handed`);
     }
   });
 

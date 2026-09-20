@@ -209,7 +209,13 @@ describe("A. Goals — and the one place coordination appears", () => {
     const blast = recordWith(r, "Blastoise");
     assert(ray.includes("RAYQUAZA-NOTE") && !ray.includes("BLASTOISE-NOTE"), "notes crossed: " + ray);
     assert(blast.includes("BLASTOISE-NOTE") && !blast.includes("RAYQUAZA-NOTE"), blast);
-    assert(ray.includes("Primary") && blast.includes("Secondary"), "tiers crossed");
+    /* The row says what the tier MEANS since Batch 7 — "Primary" is the
+       domain's name for it, not a sentence a person reads. The distinction is
+       what is asserted, and it is asserted in both directions. */
+    assert(/Actively hunting/.test(ray) && !/Keeping an eye out/.test(ray),
+      "the primary goal does not read as active hunting: " + ray);
+    assert(/Keeping an eye out/.test(blast) && !/Actively hunting/.test(blast),
+      "the secondary goal does not read as passive: " + blast);
     assert(ray.includes("EX Deoxys") && ray.includes("107/107") && ray.includes("PSA 9"),
       "the card identity for its own cardId: " + ray);
     assert(ray.includes("2026-03-02"), "wanted since: " + ray);
@@ -523,16 +529,22 @@ describe("F. nothing acts, nothing mutates, nothing forbidden is imported", () =
     eq(JSON.stringify(REAL), REAL_PRISTINE, "a section mutated the projection it was given");
   });
 
-  test("the only controls remain the three sections and sign out", () => {
+  test("the only controls are the sections, sign out, and what Goals was given", () => {
+    /* RESTATED IN BATCH 7. This render is handed NO callbacks, and with none
+       there is nothing to press but navigation — which is the property that
+       matters and is what is asserted. A surface that offered a control it
+       could not deliver would fail here first. */
     const r = show(FULL);
     for (const s of NAV) {
       eq(buttons(r).map(instText).length, 4, "an extra control appeared in " + s);
       clickText(r, s);
     }
     const bare = COLLECTOR_FILES.map(code).join("\n");
-    assert(!/onSubmit|onChange|<input|<form|<select|<textarea/.test(bare), "an input appeared");
-    assert(!/execute\s*\(|\.command\s*\(|addGoal|addBinderCopy|setInterest|inviteCollector/.test(bare),
-      "a mutation path appeared");
+    /* Binder entries, interests and invitations are still nobody's to write
+       from here; each moves with its own batch. */
+    assert(!/execute\s*\(|\.command\s*\(/.test(bare), "a mutation path appeared");
+    assert(!/addBinderCopy|setInterest|inviteCollector/.test(bare),
+      "a surface grew a write that belongs to a later batch");
   });
 
   test("nothing under client/collector reaches a store, a domain, a network or the demo", () => {

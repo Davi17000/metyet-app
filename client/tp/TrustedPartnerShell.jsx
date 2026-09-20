@@ -284,7 +284,7 @@ export default function TrustedPartnerShell({ state, onSignOut, onSaveProfile = 
      Network, because that is the thing an invitation grows into. Nothing else
      is handed a way to send either. */
   const extra = meta.id === "inventory" ? { onSaveProfile, onAddCopy, onBrowseCards }
-    : meta.id === "collectors" ? { onInvite, onRevokeInvite, onRefresh }
+    : meta.id === "collectors" ? { onInvite, onRevokeInvite, onRefresh, onBrowseCards }
       : null;
 
   return (

@@ -51,11 +51,11 @@
    no network, and the projection is passed on exactly as it arrived.
    ========================================================================== */
 
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import Qr from "../../qr/Qr.jsx";
 import { Panel, Record, Fact, Tag } from "../parts.jsx";
 import { rows, indexById, groupBy, text, day, plural, cardTitle, cardSetLine,
-  gradeLine, tierLabel, byRecency } from "../present.js";
+  gradeLine, tierLabel, byRecency , demandLine } from "../present.js";
 
 /* The domain's word for why, in ours. A rule this build has not met is shown as
    itself rather than as the nearest one we know. */
@@ -135,7 +135,7 @@ const NEEDS_REPLACING = Object.freeze(["failed", "unconfirmed"]);
    is what gets handed over, as it was in Batch 2. */
 
 export default function CollectorNetwork({ state, onInvite = null, onRevokeInvite = null,
-  onRefresh = null }) {
+  onRefresh = null, onBrowseCards = null }) {
   const collectors = rows(state && state.collectors);
   const relationships = rows(state && state.relationships);
   const invitations = rows(state && state.invitations);
@@ -145,6 +145,28 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
   const relationshipOf = new Map();
   for (const r of relationships) if (r.collectorId != null) relationshipOf.set(r.collectorId, r);
   const goalsOf = groupBy(state && state.goals, "collectorId");
+  /* WHICH CARDS THEY WANT (Batch 7). The ids are in this projection already,
+     because the server decided this partner may see them; the names are asked
+     for once, for the set. Never one request per goal, and never the catalogue.
+     This is demand made legible, not a match: nothing here looks at inventory,
+     and no opportunity is created by reading it. */
+  const wantedIds = [...new Set(rows(state && state.goals)
+    .map((g) => g.canonicalCardId).filter(Boolean))];
+  const [wanted, setWanted] = useState({});
+  useEffect(() => {
+    if (!onBrowseCards || !wantedIds.length) return undefined;
+    let current = true;
+    (async () => {
+      try {
+        const answer = await onBrowseCards.describe(wantedIds);
+        if (!current) return;
+        const next = {};
+        for (const card of rows(answer && answer.cards)) next[card.canonicalCardId] = card;
+        setWanted((held) => ({ ...held, ...next }));
+      } catch (error) { /* a name that did not arrive is not a reason to hide demand */ }
+    })();
+    return () => { current = false; };
+  }, [wantedIds.join(","), onBrowseCards]);
   const binderOf = groupBy(state && state.binder, "collectorId");
   const oppsOf = groupBy(state && state.opportunities, "collectorId");
 
@@ -525,14 +547,24 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
               {goals.length ? (
                 <ul className="tps-sub">
                   {goals.map((g) => {
-                    const card = catalog.get(g.cardId) || null;
-                    const grade = gradeLine(card);
-                    const where = [cardSetLine(card), grade].filter(Boolean).join(" · ");
+                    /* A goal names its card one way or the other. */
+                    const known = g.canonicalCardId ? wanted[g.canonicalCardId] : null;
+                    const card = g.canonicalCardId ? null : (catalog.get(g.cardId) || null);
+                    const where = known
+                      ? [known.expansionName, known.collectorNumber ? `#${known.collectorNumber}` : null,
+                        known.finish, known.printRun].filter(Boolean).join(" · ")
+                      : [cardSetLine(card), gradeLine(card)].filter(Boolean).join(" · ");
                     return (
-                      <li key={g.id || `${g.collectorId}:${g.cardId}`}>
-                        <span className="tps-sub-t">{cardTitle(card) || "A card you don't have listed"}</span>
+                      <li key={g.id || `${g.collectorId}:${g.cardId || g.canonicalCardId}`}>
+                        <span className="tps-sub-t">
+                          {(known && known.cardName) || cardTitle(card)
+                            || (g.canonicalCardId ? "A card MetYet is still describing" : "A card you don't have listed")}
+                        </span>
                         {where ? <span className="tps-sub-s">{where}</span> : null}
                         <Tag tone={g.tier === "primary" ? "strong" : null}>{tierLabel(g.tier)}</Tag>
+                        {/* The distinction said in words, because "Primary" is
+                            the domain's name for it and not a sentence. */}
+                        <span className="tps-sub-n">{demandLine(nameOf(c), g.tier)}</span>
                         {text(g.note) ? <span className="tps-sub-n">{text(g.note)}</span> : null}
                       </li>
                     );

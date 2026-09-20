@@ -117,17 +117,44 @@ const COMMANDS = {
   },
 
   /* ------------------------------------------------------------ goals */
-  addGoal(state, a, { cardId, tier, note }, ctx) {
+  /* EXPLICIT DEMAND FOR ONE EXACT CARD (Phase 5 Batch 7).
+
+     A Goal is a Collector saying they want this card and want their Trusted
+     Partner to know it. It is never inferred: nothing searched, filtered,
+     viewed or clicked produces one, and there is no path into this command but
+     a person choosing.
+
+     TWO WAYS TO NAME THE CARD, as with an inventory copy since Batch 6.
+     `canonicalCardId` is the production way — an opaque catalog id the server
+     resolves and refuses when unknown or withdrawn, before this runs.
+     `cardId` is the demo's, resolved against the world's own catalogue here.
+
+     ONE GOAL PER COLLECTOR PER EXACT CARD, which is the rule this command has
+     always had; Batch 7 makes the test exact canonical identity rather than a
+     description. Different printings are different canonical cards and are not
+     duplicates: wanting the 1st Edition and wanting the Unlimited are two
+     different things to want.
+
+     WHAT THE CALLER MAY NOT NAME. Not the collector — ownership comes from the
+     authenticated actor. Not a partner, not a relationship: a Goal is addressed
+     to a Collector's whole network by being theirs, and there is no field here
+     for anybody else. Not a grade or a condition: those describe a physical
+     copy, and demand is for a printing. */
+  addGoal(state, a, { cardId, canonicalCardId, tier, note }, ctx) {
     if (a.seat !== "collector") return refuse(R.notOwner);
-    const card = cardById(state, cardId);
-    if (!card) return refuse(R.notFound);
-    const key = D.identityKey(card);
-    if (list(state.goals).some((g) => g.collectorId === a.collectorId
-      && (g.cardId === cardId || D.identityKey(cardById(state, g.cardId)) === key))) {
-      return refuse(R.duplicateGoal);
-    }
+    const canonical = typeof canonicalCardId === "string" && canonicalCardId;
+    if (canonical && cardId) return refuse(R.notFound);
+    const card = canonical ? null : cardById(state, cardId);
+    if (!canonical && !card) return refuse(R.notFound);
+    const mine = list(state.goals).filter((g) => g.collectorId === a.collectorId);
+    const duplicate = canonical
+      ? mine.some((g) => g.canonicalCardId === canonical)
+      : mine.some((g) => g.cardId === cardId
+        || (g.cardId && D.identityKey(cardById(state, g.cardId)) === D.identityKey(card)));
+    if (duplicate) return refuse(R.duplicateGoal);
     const id = ctx.id("g");
-    const goal = { id, collectorId: a.collectorId, cardId,
+    const goal = { id, collectorId: a.collectorId,
+      ...(canonical ? { canonicalCardId: canonical } : { cardId }),
       tier: tier === "primary" ? "primary" : "secondary", since: ctx.at, note: note || "" };
     return done({ ...state, goals: [...list(state.goals), goal] }, id);
   },

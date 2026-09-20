@@ -127,6 +127,33 @@ const CSS = `
   text-transform:uppercase; color:var(--muted); margin:0; }
 .mcs-pnote { margin-left:auto; font-size:11.5px; color:var(--faint); }
 .mcs-empty { padding:22px 16px; color:var(--muted); max-width:58ch; }
+
+/* SAYING WHAT YOU WANT (Batch 7). One column, thumb-sized controls, no modal:
+   somebody adding a card they are hunting is usually standing in a shop with a
+   phone, and a sheet that covered the list would hide what they already said. */
+.mcs-addbar { margin:0 0 12px; }
+.mcs-add { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+  padding:14px; margin-bottom:14px; display:flex; flex-direction:column; gap:10px; }
+.mcs-add-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.mcs-field { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--muted); }
+.mcs-field input { padding:10px 12px; border:1px solid var(--line); border-radius:6px;
+  font:inherit; font-size:16px; color:var(--ink); background:#FFF; }
+.mcs-go { padding:10px 14px; border:1px solid var(--line); border-radius:6px; background:#FFF;
+  font:inherit; font-size:14px; font-weight:600; color:var(--ink); cursor:pointer; }
+.mcs-go:hover { border-color:var(--accent); }
+.mcs-go.quiet { font-weight:400; color:var(--muted); }
+.mcs-go[disabled] { opacity:.55; cursor:default; }
+.mcs-add-row { display:flex; flex-direction:column; align-items:flex-start; gap:2px; width:100%;
+  text-align:left; padding:10px 12px; border:1px solid var(--line); border-radius:6px;
+  background:#FFF; font:inherit; cursor:pointer; }
+.mcs-add-row:hover, .mcs-add-row.on { border-color:var(--accent); }
+.mcs-add-card { display:flex; flex-direction:column; align-items:flex-start; gap:5px; margin:0; }
+.mcs-add-versions, .mcs-add-intent { display:flex; flex-direction:column; gap:7px;
+  font-size:12px; color:var(--muted); }
+.mcs-add-problem { margin:0; padding:10px 12px; border-radius:6px; background:#FBEDEC;
+  border:1px solid #EBD9B4; color:#98302C; font-size:13px; }
+.mcs-dim { color:var(--muted); font-size:12.5px; }
+.mcs-goal-do { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0 0; }
 .mcs-list { display:flex; flex-direction:column; }
 
 .mcs-rec { padding:14px 16px; border-bottom:1px solid var(--line-soft); }
@@ -184,7 +211,8 @@ const CSS = `
 }
 `;
 
-export default function CollectorShell({ state, onSignOut, joined = null, onDismissJoined = null }) {
+export default function CollectorShell({ state, onSignOut, joined = null, onDismissJoined = null,
+  onAddGoal = null, onSetPriority = null, onRemoveGoal = null, onBrowseCards = null }) {
   /* JUST ACCEPTED? OPEN ON THE THING THAT CHANGED (Phase 5 Batch 3A). A person
      who has this second finished joining a shop's network; the section that now
      holds that shop is what they came for. Everyone else opens where they
@@ -233,13 +261,26 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
         </div>
       ) : null}
 
-      {/* STILL READ-ONLY, AND THAT IS STILL TRUE. Accepting an invitation is an
-          entrance, not a section control: it happened before this shell
-          rendered and cannot be done again from here. Nothing below can change
-          anything, so the notice stays exactly as honest as it was. */}
+      {/* THE NOTICE HAS TO BE TRUE, AND BATCH 7 CHANGED WHAT IS TRUE. Goals can
+          now be set, changed and removed from here, so a blanket "read-only"
+          would be a lie — and "Goals … arrive in a later release" doubly so.
+          What is still read-only is everything else, and the notice says which.
+
+          IT ONLY SAYS SO WHEN IT CAN. Handed no callback, this shell can change
+          nothing, and claiming otherwise would be the same lie in the other
+          direction. */}
       <div className="mcs-ro" role="note">
-        <span>Read-only for now — everything here is what MetYet holds for you.</span>
-        <span className="dim">Goals, trades and messages arrive in a later release.</span>
+        {onAddGoal ? (
+          <>
+            <span>Your goals are yours to change — say what you&apos;re looking for and how hard.</span>
+            <span className="dim">Everything else here is read-only for now: trades and messages arrive later.</span>
+          </>
+        ) : (
+          <>
+            <span>Read-only for now — everything here is what MetYet holds for you.</span>
+            <span className="dim">Goals, trades and messages arrive in a later release.</span>
+          </>
+        )}
       </div>
 
       <div className="mcs-body">
@@ -257,7 +298,11 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
         <main className="mcs-main" key={section}>
           <h1 className="mcs-h disp">{meta.title}</h1>
           <p className="mcs-sub">{meta.sub}</p>
-          <View state={state} />
+          {/* Goals is the one section a person can change something from
+              (Batch 7), so it is the one that receives callbacks. Every other
+              section is handed the projection and nothing else. */}
+          <View state={state} {...(meta.id === "goals"
+            ? { onAddGoal, onSetPriority, onRemoveGoal, onBrowseCards } : {})} />
         </main>
       </div>
     </div>
