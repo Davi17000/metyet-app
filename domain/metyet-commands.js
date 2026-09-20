@@ -153,9 +153,24 @@ const COMMANDS = {
         || (g.cardId && D.identityKey(cardById(state, g.cardId)) === D.identityKey(card)));
     if (duplicate) return refuse(R.duplicateGoal);
     const id = ctx.id("g");
+    /* TWO DATES, AND THEY ANSWER DIFFERENT QUESTIONS (Phase 5 Batch 8.1).
+
+       `since` has always meant "in this tier since", and `updateGoalTier`
+       overwrites it every time somebody changes their mind — correctly, because
+       what a partner wants to know is how long this has been the hunt, not how
+       long the card has been on a list somewhere.
+
+       But that made the moment the Goal was CREATED unrecoverable the first
+       time anybody promoted or demoted one, and the moment a Goal was created
+       is the first step of the only funnel this product has. `createdAt` is
+       that moment, it is written once, and nothing else in the lifecycle
+       touches it. It was already in the partner-facing allow-list and already
+       read by the Collector's own list — the projection and the screen have
+       been waiting for a writer since Batch 7. */
     const goal = { id, collectorId: a.collectorId,
       ...(canonical ? { canonicalCardId: canonical } : { cardId }),
-      tier: tier === "primary" ? "primary" : "secondary", since: ctx.at, note: note || "" };
+      tier: tier === "primary" ? "primary" : "secondary",
+      createdAt: ctx.at, since: ctx.at, note: note || "" };
     return done({ ...state, goals: [...list(state.goals), goal] }, id);
   },
 

@@ -64,12 +64,29 @@ const MARK = Object.freeze({
   stranger: "UNRELATED-DANA",
 });
 
-/* A TP command that needs no new domain work and demonstrates the whole point:
-   it is TP-only, it is authority-checked against a real Relationship, and its
-   timestamp comes from the SERVER's runtime — `at` is on the server's forbidden
-   payload list, so the client could not supply one if it tried. */
-const COMMAND = "markBinderReviewed";
-const PAYLOAD = { collectorId: COLLECTOR };
+/* THE COMMAND THESE INTEGRATION SUITES SEND (restated in Phase 5 Batch 8.1).
+
+   It used to be `markBinderReviewed`: TP-only, authority-checked, server-
+   stamped — everything an integration test wants. What it is not is a command
+   the product offers, and since Batch 8.1 `POST /api/commands` offers only the
+   six a production surface actually sends. A suite that proves "a real command
+   goes all the way through" should send one of those, or it is proving the
+   route for a door nobody walks through.
+
+   `updatePartnerProfile` is the replacement: TP-only, ownership-checked against
+   the authenticated actor, and it moves both the world and the projection.
+
+   THE SERVER-STAMPED-TIME PROPERTY MOVED, IT DID NOT GO. A profile patch
+   carries no timestamp, so the pair below carries it instead: a Collector's own
+   `addGoal`, whose `createdAt` and `since` are both the server's runtime and
+   neither of which a caller can supply — `at` is on the forbidden payload
+   list. */
+const COMMAND = "updatePartnerProfile";
+const PROFILE_ABOUT = "Independent dealer, vintage and raw.";
+const PAYLOAD = { patch: { about: PROFILE_ABOUT } };
+/* The Collector's, for the assertions about a time only the server can set. */
+const COLLECTOR_COMMAND = "addGoal";
+const COLLECTOR_PAYLOAD = { cardId: "k2", tier: "secondary" };
 
 const card = (id, name, num) => ({ id, name, set: "Base Set", num, print: "Holo",
   edition: "Unlimited", language: "English", grade: "PSA 9", condition: null, tags: [] });
@@ -165,4 +182,4 @@ const fetchFor = (app) => async (url, init = {}) => {
 };
 
 module.exports = { serve, fetchFor, TOKEN, SUBJECT, PARTNER, COLLECTOR, COMMAND, PAYLOAD, world,
-  COLLECTOR_SUBJECT, COLLECTOR_TOKEN, MARK };
+  COLLECTOR_SUBJECT, COLLECTOR_TOKEN, MARK, PROFILE_ABOUT, COLLECTOR_COMMAND, COLLECTOR_PAYLOAD };

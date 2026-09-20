@@ -26,6 +26,7 @@ const { migrate } = require("../persistence/migrate.js");
 const { createWorldRepository } = require("../persistence/world-repository.js");
 const { createCatalogRepository } = require("../persistence/catalog-repository.js");
 const { createApp } = require("../server/app.js");
+const { executeCommand } = require("../persistence/command-transaction.js");
 const { createAccountDirectory } = require("../server/auth/accounts.js");
 const { projectForActor } = require("../domain/metyet-projection.js");
 const { validateWorld } = require("../domain/metyet-world.js");
@@ -94,6 +95,22 @@ const get = (app, token, url) => app.inject({ method: "GET", url,
   headers: { authorization: `Bearer ${token}` } });
 const addCopy = (app, token, copy) => post(app, token, "addInventoryCopy", { copy });
 
+/* PAST THE DOOR (Phase 5 Batch 8.1). Adding a copy is a command the product
+   offers; correcting one, archiving one and photographing one are Batch 6
+   domain work that no screen sends yet, and `POST /api/commands` no longer
+   offers commands no screen sends. The rules below are Batch 6's and are
+   unchanged — they are simply asked where the route asks them, through the
+   same transaction, the same lock and the same validateWorld. Each is also
+   proved shut at the boundary, which Batch 6 could not assert at all. */
+const ACTOR = { north: { partnerId: "p1" }, second: { partnerId: "p2" } };
+const direct = (ctx, actor, command, payload) =>
+  executeCommand(ctx.repository, { actor, command, payload, runtime: ctx.runtime });
+const closedOverHttp = async (ctx, token, command, payload = {}) => {
+  const res = await post(ctx.app, token, command, payload);
+  eq(res.statusCode, 409, `${command} over HTTP`);
+  eq(res.json().error.refused, "command-unavailable", `${command} over HTTP`);
+};
+
 /* ============================================================== A */
 describe("A. whose copy this is, and who decided", () => {
 
@@ -132,11 +149,12 @@ describe("A. whose copy this is, and who decided", () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const invId = (await addCopy(ctx.app, "north", { canonicalCardId: cards.unlimited })).json().value;
-    const res = await post(ctx.app, "second", "updateInventoryCopy", { invId, patch: { ask: 1 } });
-    eq(res.statusCode, 409, res.body);
-    eq(res.json().error.refused, "not-owner", "somebody else's shelf is not theirs to edit");
-    const gone = await post(ctx.app, "second", "removeInventoryCopy", { invId });
-    eq(gone.json().error.refused, "not-owner", "nor theirs to archive");
+    await closedOverHttp(ctx, "second", "updateInventoryCopy", { invId, patch: { ask: 1 } });
+    const res = await direct(ctx, ACTOR.second, "updateInventoryCopy", { invId, patch: { ask: 1 } });
+    eq(res.ok, false);
+    eq(res.refused, "not-owner", "somebody else's shelf is not theirs to edit");
+    const gone = await direct(ctx, ACTOR.second, "removeInventoryCopy", { invId });
+    eq(gone.refused, "not-owner", "nor theirs to archive");
   });
 });
 
@@ -273,9 +291,10 @@ describe("C. what is true about this physical card", () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const invId = (await addCopy(ctx.app, "north", { canonicalCardId: cards.unlimited })).json().value;
+    await closedOverHttp(ctx, "north", "updateInventoryCopy", { invId, patch: {} });
     for (const patch of [{ canonicalCardId: cards.firstEdition }, { cardId: "legacy" }, { partnerId: "p2" }]) {
-      const res = await post(ctx.app, "north", "updateInventoryCopy", { invId, patch });
-      eq(res.json().error.refused, "identity-immutable", JSON.stringify(patch));
+      const res = await direct(ctx, ACTOR.north, "updateInventoryCopy", { invId, patch });
+      eq(res.refused, "identity-immutable", JSON.stringify(patch));
     }
     eq((await ctx.repository.loadWorld()).inventory[0].canonicalCardId, cards.unlimited, "unmoved");
   });
@@ -286,9 +305,9 @@ describe("C. what is true about this physical card", () => {
     const invId = (await addCopy(ctx.app, "north",
       { canonicalCardId: cards.unlimited, grade: "Raw", condition: "Near Mint" })).json().value;
     /* It came back from a grader: the same physical card, a new fact about it. */
-    const res = await post(ctx.app, "north", "updateInventoryCopy",
+    const res = await direct(ctx, ACTOR.north, "updateInventoryCopy",
       { invId, patch: { grade: "PSA 9", condition: null, cert: "88881111", ask: 4200 } });
-    eq(res.statusCode, 200, res.body);
+    eq(res.ok, true, JSON.stringify(res.refused));
     const stored = (await ctx.repository.loadWorld()).inventory[0];
     eq(stored.grade, "PSA 9", "the grade moved");
     eq(stored.cert, "88881111", "and the certificate is the copy's");
@@ -304,7 +323,8 @@ describe("C. what is true about this physical card", () => {
       "a new copy has no photographs of itself");
     assert(!("imageSmall" in stored) && !("imageLarge" in stored),
       "and the card's stock picture is not copied onto it");
-    await post(ctx.app, "north", "addCopyPhotos", { invId, front: "inv:1:front", back: null });
+    eq((await direct(ctx, ACTOR.north, "addCopyPhotos",
+      { invId, front: "inv:1:front", back: null })).ok, true);
     const shot = (await ctx.repository.loadWorld()).inventory[0];
     eq(shot.photos.front, "inv:1:front", "a photograph of THIS card is the copy's");
     const described = await ctx.catalog.describeCanonicalCards([cards.unlimited]);

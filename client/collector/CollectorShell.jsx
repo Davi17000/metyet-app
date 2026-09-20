@@ -59,19 +59,39 @@ import Goals from "./sections/Goals.jsx";
 import TradeBinder from "./sections/TradeBinder.jsx";
 import TrustedPartners from "./sections/TrustedPartners.jsx";
 
-/* The Collector's three, in the product's own order and words. `count` names
-   the collection whose ROWS are counted: each is a plain count of something
-   the server already scoped to this Collector, and none of them is a rule. */
+/* What the Collector can actually open, in the product's own order and words.
+   `count` names the collection whose ROWS are counted: each is a plain count of
+   something the server already scoped to this Collector, and none of them is a
+   rule. */
 export const SECTIONS = Object.freeze([
   { id: "goals", label: "Goals", count: "goals", view: Goals,
     title: "Goals",
     sub: "What you're looking for, and what your Trusted Partners work from" },
-  { id: "binder", label: "Trade Binder", count: "binder", view: TradeBinder,
-    title: "Trade Binder",
-    sub: "What you could put into a trade" },
   { id: "partners", label: "Trusted Partners", count: "partners", view: TrustedPartners,
     title: "Trusted Partners",
     sub: "The shops you deal with" },
+]);
+
+/* BUILT, AND NOT YET TRUE (Phase 5 Batch 8.1).
+
+   The Trade Binder shipped as a destination before it shipped as a feature. Its
+   section renders, its nav counts rows, and the collection it reads can never
+   have any: the only command that writes a binder copy needs a row in the
+   legacy catalogue, and production's legacy catalogue is empty and is meant to
+   stay that way. So every Collector had a tab that promised something, opened,
+   and was permanently empty — which is a worse answer than not offering it.
+
+   It is kept here rather than deleted because none of it is wrong: the section
+   component, the domain commands, the table and the projection are all ready
+   for the batch that makes a Binder real. That batch moves this entry back up
+   into SECTIONS, and does nothing else here.
+
+   A person cannot reach it: it is not in the navigation, and `section` is only
+   ever set from a SECTIONS id. */
+export const DEFERRED_SECTIONS = Object.freeze([
+  { id: "binder", label: "Trade Binder", count: "binder", view: TradeBinder,
+    title: "Trade Binder",
+    sub: "What you could put into a trade" },
 ]);
 
 const CSS = `

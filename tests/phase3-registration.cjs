@@ -840,22 +840,35 @@ describe("F. the canonical partner, and nothing else", () => {
     eq(partner.since, "2026-01-01T00:00:00.000Z", "and the time is the runtime's clock");
   });
 
+  /* RESTATED IN BATCH 8.1. The property is the one it always was: a partner who
+     has just registered is immediately a working actor, and the ordinary
+     commands they then run are theirs. What changed is the first step. This
+     test used to open by MINTING a card — `resolveCardIdentity`, which takes a
+     card description from its caller and writes it into the catalogue with no
+     seat check — and that command is no longer something a browser may send.
+     So the card is in the world to begin with, as a real deployment's would
+     be, and the test additionally proves the minting door is shut to a freshly
+     registered partner exactly as it is to everyone else. */
   test("a registered partner can then use the ordinary commands, as themselves", async () => {
-    const context = await world();
+    const card = { id: "k1", name: "Charizard", set: "Base Set", num: "4/102",
+      print: "Holo", edition: "Unlimited", language: "English", grade: "Raw", condition: "NM" };
+    const context = await world({ seeded: { ...emptyWorld(), catalog: [card] } });
     const { token } = await invite(context);
     const app = appFor(context, { casey: { subject: "sub-casey", email: EMAIL } });
     const partnerId = (await redeem(app, "casey", { token })).json().state.actor.partnerId;
 
-    /* "Let's put your inventory to work." — their first productive action. */
-    const identity = await app.inject({ method: "POST", url: "/api/commands",
+    /* Registering does not hand anybody the catalogue pen. */
+    const minted = await app.inject({ method: "POST", url: "/api/commands",
       headers: { authorization: "Bearer casey" },
-      payload: { command: "resolveCardIdentity", payload: { identity: { name: "Charizard", set: "Base Set", num: "4/102" } } } });
-    eq(identity.statusCode, 200, identity.body);
-    const cardId = identity.json().value.id;
+      payload: { command: "resolveCardIdentity", payload: { identity: { name: "Invented", set: "Nowhere", num: "1" } } } });
+    eq(minted.statusCode, 409, minted.body);
+    eq(minted.json().error.refused, "command-unavailable");
+    eq((await context.repository.loadWorld()).catalog.length, 1, "and the catalogue is as it was");
 
+    /* "Let's put your inventory to work." — their first productive action. */
     const added = await app.inject({ method: "POST", url: "/api/commands",
       headers: { authorization: "Bearer casey" },
-      payload: { command: "addInventoryCopy", payload: { copy: { cardId, ask: 400 } } } });
+      payload: { command: "addInventoryCopy", payload: { copy: { cardId: card.id, ask: 400 } } } });
     eq(added.statusCode, 200, added.body);
     eq(added.json().state.inventory.length, 1, "their own first copy");
     eq(added.json().state.inventory[0].partnerId, partnerId, "and it is theirs");

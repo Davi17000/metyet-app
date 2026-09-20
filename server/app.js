@@ -47,6 +47,7 @@ const { projectForActor } = require("../domain/metyet-projection.js");
 const D = require("../domain/metyet-domain.js");
 const RT = require("../domain/metyet-runtime.js");
 const { executeCommand } = require("../persistence/command-transaction.js");
+const { isExposed } = require("./exposed-commands.js");
 const { redeemPartnerInvitation, REFUSALS } = require("./registration.js");
 const { openCollectorInvitation } = require("./collector-invitation.js");
 const { acceptCollectorInvitation } = require("./collector-acceptance.js");
@@ -77,6 +78,40 @@ const INVITATION_BODY_KEYS_WITH_DELIVERY = [...INVITATION_BODY_KEYS, "email"];
 const DEFAULT_BODY_LIMIT = 256 * 1024;
 
 const isPlainObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+
+/* ------------------------------------------------------------ WHAT HAPPENED
+   (Phase 5 Batch 8.1)
+
+   The server logged what it REFUSED and nothing about what it did. So the one
+   question a pilot exists to answer — did anybody manage to do the thing —
+   could not be asked of the logs at all, and the access line records only that
+   a POST to /api/commands returned 200.
+
+   Two lines fix that, and they are deliberately the smallest thing that could:
+   no table, no event model, no analytics dependency, no new concept. The logger
+   is the one Fastify already configured, and it already carries the request id.
+
+   WHAT TRAVELS: the command's name, which seat ran it, that seat's own internal
+   id, and — only when the command returned a plain id — that id. Enough to say
+   "this Collector added a goal, and here is which one", and to line that up
+   later with the copy a partner added and the discovery that followed.
+
+   WHAT DOES NOT, and this is the important half. No payload, ever: a goal's
+   note, a partner's private cost, a copy's photographs and an invitation's
+   recipient are all in payloads, and none of them is an operational fact. No
+   bearer token, no invitation credential, no email address, no card photo. A
+   returned value is logged only when it is a string, so a command that answers
+   with a record cannot spill one into a log line by being added to the list
+   later. */
+/* The seat is DERIVED FROM WHICH ID THE ACTOR CARRIES, which is the Phase 1
+   rule: an actor is `{ collectorId }` or `{ partnerId }` and has no seat field
+   of its own — `resolveActor` is what turns one into the other, and it needs a
+   world. Reading a `seat` here would have quietly filed every Trusted Partner's
+   work under "collector". */
+const actorLog = (actor) => (actor && actor.partnerId
+  ? { seat: "tp", partnerId: actor.partnerId }
+  : { seat: "collector", collectorId: (actor && actor.collectorId) || null });
+const loggableValue = (value) => (typeof value === "string" ? value : null);
 
 function checkPayload(payload) {
   if (payload === undefined) return {};
@@ -148,7 +183,16 @@ function createApp({
     throw new TypeError("createApp: the server runs commands on an authoritative runtime");
   }
 
-  const app = Fastify({ logger, bodyLimit, trustProxy });
+  /* A LOGGER, OR SOMETHING THAT ALREADY IS ONE (Phase 5 Batch 8.1). `logger`
+     has always been configuration — `{ level }` from the environment, or
+     `false` so tests run silent. Batch 8.1 gave the server things worth saying,
+     and a thing worth saying is a thing worth holding it to, so an object that
+     already has pino's shape is passed as the instance instead. It changes
+     nothing about what is logged or when. */
+  const instance = logger && typeof logger === "object" && typeof logger.info === "function";
+  const app = Fastify(instance
+    ? { loggerInstance: logger, bodyLimit, trustProxy }
+    : { logger, bodyLimit, trustProxy });
 
   /* ------------------------------------------------------------ AUTHENTICATION */
   async function authenticate(request) {
@@ -240,6 +284,19 @@ function createApp({
       state: projectForActor(await repository.loadWorld(tx), actor),
     }), { readOnly: true });
     if (!state.actor) throw apiError("actor_unknown");
+    /* HOW OFTEN THE PRODUCT ACTUALLY HAD SOMETHING TO SAY (Phase 5 Batch 8.1).
+
+       A Discovery is computed on every read and stored nowhere, which is the
+       right design and leaves one question unanswerable: did a Goal ever
+       produce one? Counting them as they are served answers it without storing
+       a single row, and without making Discovery an event — a count is not a
+       record of an overlap, it cannot be read back, and nothing in the product
+       consumes it.
+
+       It is the count from the FINISHED projection, so it is exactly what this
+       actor was authorised to see, and it names no card, no copy and no
+       counterparty. */
+    request.log.info({ ...actorLog(actor), discoveries: state.discoveries.length }, "view");
     return { version, state };
   });
 
@@ -318,6 +375,25 @@ function createApp({
     const { actor } = request.metyet;
     const { command, payload } = checkBody(request.body);
 
+    /* THE DOOR (Phase 5 Batch 8.1), and it comes first.
+
+       The domain has forty-two commands; the product ships a way to send six.
+       Everything else — the whole negotiation lifecycle, the binder, messaging,
+       and `resolveCardIdentity`, which takes a card description from its caller
+       and writes it into the catalogue with no seat check at all — is written
+       and not offered. Until this guard, "not offered" meant "no screen sends
+       it", which is a fact about the client and therefore not a boundary.
+
+       It runs before the catalog guard and before the transaction, so a command
+       nobody may send never reaches the world lock. See exposed-commands.js for
+       why this is a list rather than a rule, and what has to happen for a
+       command to join it. */
+    if (!isExposed(command)) {
+      request.log.info({ command }, "command refused: command-unavailable");
+      reply.code(409);
+      return errorBody(apiError("command_refused", { refused: "command-unavailable" }), request.id);
+    }
+
     /* THE ONE THING A COMMAND CANNOT CHECK FOR ITSELF (Phase 5 Batch 6).
 
        A copy names a canonical card, and since Batch 7 so does a Goal. Whether
@@ -380,6 +456,10 @@ function createApp({
         request.log.info({ invitationId: result.value }, "delivery record not cleared on withdrawal");
       }
     }
+
+    /* It worked. Said once, after the write committed and after the invitation
+       cleanup above, so nothing that failed is ever written down as success. */
+    request.log.info({ ...actorLog(actor), command, value: loggableValue(result.value) }, "command");
 
     /* The committed world stays here; the actor receives their projection. */
     const state = projectForActor(result.world, actor);

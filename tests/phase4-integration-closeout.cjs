@@ -64,7 +64,9 @@ const { createApp } = require("../server/app.js");
 const H = require("./helpers/command-server.cjs");
 
 const TP_NAV = ["Collector Network", "Inventory", "Opportunities"];
-const CO_NAV = ["Goals", "Trade Binder", "Trusted Partners"];
+/* Restated in Batch 8.1: the Trade Binder left the Collector's navigation
+   until the batch that lets anybody put a card in one. */
+const CO_NAV = ["Goals", "Trusted Partners"];
 
 /* ------------------------------------------------------------- rendering */
 
@@ -227,8 +229,12 @@ describe("B. projection -> seat routing -> the seat's own shell", () => {
       assert(!hasNav(r, TP_NAV), "the TP workspace rendered for a Collector");
       assert(flat(r).includes("Casey"), "their own name, from the server: " + flat(r));
       assert(flat(r).includes("CASEY-WANTS-CHARIZARD"), "their own goal: " + flat(r));
-      clickText(r, "Trade Binder");
-      assert(flat(r).includes("CASEY-CERT-9001"), "their own binder copy: " + flat(r));
+      /* Restated in Batch 8.1. Their own binder copy still reaches them from
+         the real server — that is a projection property and it is unchanged.
+         What is gone is the tab that showed it, because nothing in production
+         can put a card in a binder yet. */
+      eq(store.get().binder.map((b) => b.cert).join(), "CASEY-CERT-9001",
+        "their own binder copy did not reach them");
       clickText(r, "Trusted Partners");
       assert(flat(r).includes("Northline"), "their own partner: " + flat(r));
     } finally { await close(); }
@@ -341,10 +347,21 @@ describe("D. the mutation seam, end to end", () => {
       assert(JSON.stringify(store.get()) !== before, "the projection did not move");
       assert(store.version() > beforeVersion, "the world version did not advance");
       const world = await repository.loadWorld();
-      const rel = world.relationships.find((r) => r.collectorId === H.COLLECTOR);
-      assert(rel.binderReviewedAt !== H.MARK.relReviewed, "the canonical world did not change");
-      /* The timestamp is the SERVER's — `at` is on its forbidden payload list. */
-      assert(String(rel.binderReviewedAt).startsWith("2030-"), "the server did not stamp it: " + rel.binderReviewedAt);
+      eq(world.partners[0].about, H.PROFILE_ABOUT, "the canonical world did not change");
+
+      /* AND THE TIME IS THE SERVER'S — `at` is on its forbidden payload list.
+         A profile patch carries no timestamp, so the proof moved to a command
+         that does: a Collector's own goal, whose `createdAt` (Batch 8.1) and
+         `since` are both stamped by the server's runtime and by nothing a
+         caller sent. */
+      const { store: collector } = seatClient(H.COLLECTOR_TOKEN);
+      await collector.load();
+      const goal = await collector.execute(H.COLLECTOR_COMMAND, H.COLLECTOR_PAYLOAD);
+      assert(goal.ok, "the real server refused the goal: " + JSON.stringify(goal));
+      const made = (await repository.loadWorld()).goals.find((g) => g.id === goal.value);
+      assert(made, "the goal is not in the canonical world");
+      assert(String(made.createdAt).startsWith("2030-"), "the server did not stamp it: " + made.createdAt);
+      eq(made.createdAt, made.since, "one command, one reading of the clock");
     } finally { await close(); }
   });
 

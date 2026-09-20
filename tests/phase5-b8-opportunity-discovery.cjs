@@ -43,6 +43,7 @@ const { migrate } = require("../persistence/migrate.js");
 const { createWorldRepository } = require("../persistence/world-repository.js");
 const { createCatalogRepository } = require("../persistence/catalog-repository.js");
 const { createApp } = require("../server/app.js");
+const { executeCommand } = require("../persistence/command-transaction.js");
 const { createAccountDirectory } = require("../server/auth/accounts.js");
 const { discoveriesIn } = require("../domain/metyet-discovery.js");
 const { projectForActor, PROJECTION_SECTIONS } = require("../domain/metyet-projection.js");
@@ -136,6 +137,28 @@ const view = async (ctx, token) => {
 };
 const found = async (ctx, token) => (await view(ctx, token)).state.discoveries;
 const idOf = (res) => res.json().value;
+
+/* PAST THE DOOR (Phase 5 Batch 8.1). Goals and copies are commands the product
+   offers and are still sent over HTTP below. The deal lifecycle —
+   `startOpportunity`, `acceptPrice`, `cancelOpportunity` — and archiving a copy
+   are built, tested and sent by no screen, and `POST /api/commands` no longer
+   offers what no screen sends. Every assertion in this file is Batch 8's and is
+   unchanged; the commands that set up a progressed deal now run through the
+   same transaction the route runs them through, so what discovery does about a
+   committed copy, an archived one and a cancelled deal is proved exactly as
+   before. Section H additionally proves the door itself. */
+const ACTOR = { casey: { collectorId: "c1" }, dana: { collectorId: "c2" },
+  north: { partnerId: "p1" }, second: { partnerId: "p2" } };
+const act = async (ctx, actor, command, payload) => {
+  const res = await executeCommand(ctx.repository,
+    { actor, command, payload, runtime: ctx.runtime });
+  return res;
+};
+const acted = async (ctx, actor, command, payload) => {
+  const res = await act(ctx, actor, command, payload);
+  eq(res.ok, true, `${command}: ${JSON.stringify(res.refused)}`);
+  return res.value;
+};
 
 /* One goal, one copy, one accepted relationship — the shortest true sentence
    this batch can say. Returned so a test can then take it apart. */
@@ -402,7 +425,7 @@ describe("C. asking twice asks the same question twice", () => {
   test("a copy removed and re-listed is one overlap, then one overlap", async () => {
     const ctx = await world();
     const { made, invId } = await overlap(ctx);
-    eq((await post(ctx.app, "north", "removeInventoryCopy", { invId })).statusCode, 200);
+    await acted(ctx, ACTOR.north, "removeInventoryCopy", { invId });
     eq((await found(ctx, "casey")).length, 0, "an archived copy is not on the shelf");
     const back = idOf(await hold(ctx.app, "north", made.unlimited));
     const mine = await found(ctx, "casey");
@@ -439,7 +462,7 @@ describe("D. what stops an overlap, and what must never be erased", () => {
     const ctx = await world();
     const { invId } = await overlap(ctx);
     eq((await found(ctx, "north")).length, 1, "on the shelf");
-    eq((await post(ctx.app, "north", "removeInventoryCopy", { invId })).statusCode, 200);
+    await acted(ctx, ACTOR.north, "removeInventoryCopy", { invId });
     eq((await found(ctx, "north")).length, 0, "off the shelf");
     eq((await found(ctx, "casey")).length, 0, "and the collector is not still being told about it");
   });
@@ -452,8 +475,8 @@ describe("D. what stops an overlap, and what must never be erased", () => {
     await want(ctx.app, "dana", made.unlimited, "primary");
     eq((await found(ctx, "dana")).length, 1, "Dana can see it while it is free");
 
-    const oppId = idOf(await post(ctx.app, "casey", "startOpportunity", { goalId, invId, amount: 800 }));
-    eq((await post(ctx.app, "north", "acceptPrice", { oppId })).statusCode, 200);
+    const oppId = await acted(ctx, ACTOR.casey, "startOpportunity", { goalId, invId, amount: 800 });
+    await acted(ctx, ACTOR.north, "acceptPrice", { oppId });
     eq((await found(ctx, "dana")).length, 0,
       "a copy with a settled price is spoken for, and is not offered to somebody else");
   });
@@ -466,9 +489,9 @@ describe("D. what stops an overlap, and what must never be erased", () => {
     const goalId = idOf(await want(ctx.app, "casey", made.unlimited, "primary"));
     await want(ctx.app, "dana", made.unlimited, "primary");
 
-    const oppId = idOf(await post(ctx.app, "casey", "startOpportunity",
-      { goalId, invId: first, amount: 800 }));
-    eq((await post(ctx.app, "north", "acceptPrice", { oppId })).statusCode, 200);
+    const oppId = await acted(ctx, ACTOR.casey, "startOpportunity",
+      { goalId, invId: first, amount: 800 });
+    await acted(ctx, ACTOR.north, "acceptPrice", { oppId });
 
     const theirs = await found(ctx, "dana");
     eq(theirs.length, 1, "Northline still has one, so Dana still has an overlap");
@@ -480,13 +503,13 @@ describe("D. what stops an overlap, and what must never be erased", () => {
     const made = await cards(ctx);
     const invId = idOf(await hold(ctx.app, "north", made.unlimited));
     const goalId = idOf(await want(ctx.app, "casey", made.unlimited, "primary"));
-    const oppId = idOf(await post(ctx.app, "casey", "startOpportunity", { goalId, invId, amount: 800 }));
+    const oppId = await acted(ctx, ACTOR.casey, "startOpportunity", { goalId, invId, amount: 800 });
 
     const locked = await post(ctx.app, "casey", "removeGoal", { goalId });
     eq(locked.statusCode, 409, "a goal being negotiated is not removable");
     eq(locked.json().error.refused, "goal-locked");
 
-    eq((await post(ctx.app, "casey", "cancelOpportunity", { oppId, reason: "changed my mind" })).statusCode, 200);
+    await acted(ctx, ACTOR.casey, "cancelOpportunity", { oppId, reason: "changed my mind" });
     eq((await post(ctx.app, "casey", "removeGoal", { goalId })).statusCode, 200);
     eq((await found(ctx, "casey")).length, 0, "the overlap is gone with the goal");
     const state = await view(ctx, "casey");
@@ -524,7 +547,7 @@ describe("D. what stops an overlap, and what must never be erased", () => {
     const made = await cards(ctx);
     const invId = idOf(await hold(ctx.app, "north", made.unlimited));
     const goalId = idOf(await want(ctx.app, "casey", made.unlimited, "primary"));
-    await post(ctx.app, "casey", "startOpportunity", { goalId, invId, amount: 800 });
+    await acted(ctx, ACTOR.casey, "startOpportunity", { goalId, invId, amount: 800 });
     /* The copy is not committed yet — a price has only been offered — so the
        overlap is still true, and both screens drop it against the live deal on
        the same goal and partner rather than the server pretending it is gone. */
@@ -621,8 +644,7 @@ describe("F. the deal record's own migration, and the hole it closed", () => {
     const made = await cards(ctx);
     const invId = idOf(await hold(ctx.app, "north", made.unlimited));
     const goalId = idOf(await want(ctx.app, "casey", made.unlimited, "primary"));
-    const res = await post(ctx.app, "casey", "startOpportunity", { goalId, invId, amount: 800 });
-    eq(res.statusCode, 200, res.body);
+    await acted(ctx, ACTOR.casey, "startOpportunity", { goalId, invId, amount: 800 });
 
     const stored = (await ctx.repository.loadWorld()).opportunities[0];
     eq(stored.canonicalCardId, made.unlimited, "the deal names the exact card");
@@ -636,9 +658,9 @@ describe("F. the deal record's own migration, and the hole it closed", () => {
     const made = await cards(ctx);
     const invId = idOf(await hold(ctx.app, "north", made.firstEdition));
     const goalId = idOf(await want(ctx.app, "casey", made.unlimited, "primary"));
-    const res = await post(ctx.app, "casey", "startOpportunity", { goalId, invId, amount: 800 });
-    eq(res.statusCode, 409, res.body);
-    eq(res.json().error.refused, "identity-mismatch",
+    const res = await act(ctx, ACTOR.casey, "startOpportunity", { goalId, invId, amount: 800 });
+    eq(res.ok, false);
+    eq(res.refused, "identity-mismatch",
       "a 1st Edition copy does not satisfy a goal for the Unlimited");
     eq((await ctx.repository.loadWorld()).opportunities.length, 0, "and nothing was written");
   });
@@ -653,10 +675,10 @@ describe("F. the deal record's own migration, and the hole it closed", () => {
         photos: { front: null, back: null }, archived: false }] });
     const made = await cards(ctx);
     const goalId = idOf(await want(ctx.app, "casey", made.unlimited, "primary"));
-    const res = await post(ctx.app, "casey", "startOpportunity",
+    const res = await act(ctx, ACTOR.casey, "startOpportunity",
       { goalId, invId: "i1", amount: 800 });
-    eq(res.statusCode, 409, res.body);
-    eq(res.json().error.refused, "identity-mismatch", "the two vocabularies never meet");
+    eq(res.ok, false);
+    eq(res.refused, "identity-mismatch", "the two vocabularies never meet");
   });
 
   test("the card comes from the records, never from the caller", async () => {
@@ -664,10 +686,9 @@ describe("F. the deal record's own migration, and the hole it closed", () => {
     const made = await cards(ctx);
     const invId = idOf(await hold(ctx.app, "north", made.unlimited));
     const goalId = idOf(await want(ctx.app, "casey", made.unlimited, "primary"));
-    const res = await post(ctx.app, "casey", "startOpportunity",
+    await acted(ctx, ACTOR.casey, "startOpportunity",
       { goalId, invId, amount: 800, canonicalCardId: made.firstEdition, cardId: "cardX",
         partnerId: "p2", collectorId: "c2" });
-    eq(res.statusCode, 200, res.body);
     const stored = (await ctx.repository.loadWorld()).opportunities[0];
     eq(stored.canonicalCardId, made.unlimited, "the goal's card, not the payload's");
     eq(stored.partnerId, "p1", "the copy's owner, not the payload's");
@@ -690,9 +711,8 @@ describe("F. the deal record's own migration, and the hole it closed", () => {
       binder: [], interests: [], opportunities: [], conversations: [],
       photoRequests: [], copyReviews: [],
     });
-    const res = await post(ctx.app, "casey", "startOpportunity",
+    await acted(ctx, ACTOR.casey, "startOpportunity",
       { goalId: "g1", invId: "i1", amount: 800 });
-    eq(res.statusCode, 200, res.body);
     const stored = (await ctx.repository.loadWorld()).opportunities[0];
     eq(stored.cardId, "cardX", "the demo's own reference, kept");
     assert(!("canonicalCardId" in stored) || stored.canonicalCardId == null, "and nothing invented");

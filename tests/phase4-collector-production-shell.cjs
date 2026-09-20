@@ -74,7 +74,7 @@ const ACCESS = "eyJaccess.token.production";
 const COLLECTOR = "c-8x21";
 const PARTNER = "p-9k2m";
 
-const NAV = ["Goals", "Trade Binder", "Trusted Partners"];
+const NAV = ["Goals", "Trusted Partners"];
 const TP_NAV = ["Collector Network", "Inventory", "Opportunities"];
 
 /* ---------------------------------------------------- the real projection */
@@ -163,7 +163,17 @@ const clickText = (r, label) => {
   assert(button, `no button "${label}" among: ${buttons(r).map(instText).join(" | ")}`);
   TR.act(() => { button.props.onClick(); });
 };
+/* RESTATED IN BATCH 8.1. The Trade Binder left the Collector's navigation:
+   its only writer needs a legacy catalogue row, production has none, so every
+   Collector had a tab that opened onto something that could never fill. The
+   section itself is untouched and still ships, so the assertions about what it
+   renders are untouched too — they render it the way the shell would, with the
+   same single `state` prop, instead of pressing a button that is no longer
+   there. Section C separately proves it cannot be reached. */
+const DEFERRED = SHELL_MOD.DEFERRED_SECTIONS || [];
 const show = (state, section = null) => {
+  const deferred = DEFERRED.find((s) => s.label === section);
+  if (deferred) return render(React.createElement(deferred.view, { state }));
   const r = render(React.createElement(CollectorShell, { state }));
   if (section) clickText(r, section);
   return r;
@@ -313,13 +323,22 @@ describe("B. identity comes from the projection, and nowhere else", () => {
 });
 
 /* ============================================================== C */
-describe("C. the shell: three sections, and counts that are row counts", () => {
-  test("the three sections are the product's own, in its own words", () => {
+describe("C. the shell: its sections, and counts that are row counts", () => {
+  /* RESTATED IN BATCH 8.1 — the count went from three to two. What this test
+     protects is unchanged: the navigation is exactly the product's sections, in
+     the product's order and the product's words, with nothing extra. The Trade
+     Binder is now declared deferred rather than shown, and is asserted to be
+     unreachable rather than merely counted. */
+  test("the sections are the product's own, in its own words", () => {
     const r = show(FULL);
     const labels = buttons(r).map(instText).filter((s) => NAV.some((n) => s.includes(n)));
-    eq(labels.length, 3, "three sections, no more: " + labels.join(" | "));
+    eq(labels.length, NAV.length, "no section more, none fewer: " + labels.join(" | "));
     NAV.forEach((n, i) => assert(labels[i].includes(n), `section ${i} is not ${n}`));
-    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "goals,binder,partners");
+    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "goals,partners");
+    /* Built, kept, and deliberately not offered. */
+    eq(SHELL_MOD.DEFERRED_SECTIONS.map((s) => s.id).join(","), "binder");
+    assert(!buttons(r).some((b) => instText(b).includes("Trade Binder")),
+      "a Collector can reach a section that can never have anything in it");
     /* And the prototype agrees, which is where the labels came from. */
     const proto = src("collector/MetYetCollector.jsx");
     NAV.forEach((n) => assert(proto.includes(`label: "${n}"`), `the prototype does not call it ${n}`));
@@ -327,11 +346,13 @@ describe("C. the shell: three sections, and counts that are row counts", () => {
 
   test("each count is the number of rows in one projected collection", () => {
     const shown = flat(show(FULL));
-    /* 2 goals, 1 binder copy, 3 partners — counted, not derived. */
+    /* 2 goals, 3 partners — counted, not derived. The binder copy in FULL is
+       still there and is still not counted anywhere, because the section that
+       counted it is no longer offered. */
     assert(/2 Goals/.test(shown), "goals: " + shown);
-    assert(/1 Trade Binder/.test(shown), "binder: " + shown);
     assert(/3 Trusted Partners/.test(shown), "partners: " + shown);
-    eq(SHELL_MOD.SECTIONS.map((s) => s.count).join(","), "goals,binder,partners",
+    assert(!/Trade Binder/.test(shown), "the deferred section is counted: " + shown);
+    eq(SHELL_MOD.SECTIONS.map((s) => s.count).join(","), "goals,partners",
       "a count is sourced from something other than its own collection");
   });
 
@@ -373,8 +394,7 @@ describe("C. the shell: three sections, and counts that are row counts", () => {
     const r = show(EMPTY);
     assert(looksLikeCollectorShell(r), "an empty account lost its navigation");
     assert(/haven't set any goals yet/.test(flat(r)), flat(r));
-    clickText(r, "Trade Binder");
-    assert(/Trade Binder is empty/.test(flat(r)), flat(r));
+    assert(/Trade Binder is empty/.test(flat(show(EMPTY, "Trade Binder"))), "the deferred section");
     clickText(r, "Trusted Partners");
     assert(/no Trusted Partners yet/.test(flat(r)), flat(r));
     const all = flat(r);
@@ -501,7 +521,6 @@ describe("E. navigation, session and loading", () => {
     const apiCalls = () => calls.filter((c) => c.url.startsWith(APP)).length;
     eq(apiCalls(), 1, "one read, on arrival");
 
-    clickText(r, "Trade Binder"); await flush(r);
     clickText(r, "Trusted Partners"); await flush(r);
     clickText(r, "Goals"); await flush(r);
 
@@ -589,7 +608,7 @@ describe("F. no demo, no prototype, no store, no domain", () => {
 
   test("the only controls are the three sections and sign out", () => {
     const labels = buttons(show(REAL)).map(instText);
-    eq(labels.length, 4, "an extra control appeared: " + labels.join(" | "));
+    eq(labels.length, NAV.length + 1, "an extra control appeared: " + labels.join(" | "));
     assert(labels.some((l) => l.includes("Sign out")));
   });
 

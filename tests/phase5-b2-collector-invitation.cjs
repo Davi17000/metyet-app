@@ -729,14 +729,21 @@ describe("E. the raw API: the old semantics are gone, not merely unreachable", (
         body: JSON.stringify({ command: "inviteCollector",
           payload: { recipient: "Dana", note: "raw" } }),
       });
-      eq(res.status, 200, "the raw route refused a command that is still the domain's");
+      /* RESTATED IN BATCH 8.1, and the answer got stronger. This used to prove
+         that the raw route ran the command and produced nothing usable — no
+         Collector, no Relationship, an invitation naming nobody. The raw route
+         now does not offer `inviteCollector` at all, so nothing runs: an
+         invitation is opened through `POST /api/invitations/collector`, which
+         is the one reply that will ever carry a credential, and that route is
+         exercised throughout this suite. */
+      eq(res.status, 409, "the raw route ran a command the product does not offer");
+      eq((await res.json()).error.refused, "command-unavailable");
 
       const after = await world();
       eq(after.collectors.length, before.collectors.length,
         "the raw route created a Collector: " + after.collectors.map((c) => c.id).join(","));
       eq(after.relationships.length, before.relationships.length, "the raw route created a Relationship");
-      eq(after.invitations.length, 1, "not exactly one invitation");
-      eq(after.invitations[0].collectorId, null, "the raw route created an invitation naming somebody");
+      eq(after.invitations.length, before.invitations.length, "the raw route created an invitation");
     } finally { await close(); }
   });
 
@@ -776,14 +783,14 @@ describe("E. the raw API: the old semantics are gone, not merely unreachable", (
         headers: { authorization: `Bearer ${H.TOKEN}`, "content-type": "application/json" },
         body: JSON.stringify({ command: "inviteCollector", payload: { recipient: "Dana" } }),
       });
-      const inv = (await world()).invitations[0];
-      assert(inv, "no invitation was created");
-      eq(await credentials.findByInvitation(inv.id), null,
-        "the ordinary command route minted a credential");
-      /* Which is the honest outcome: the command route answers with a
-         projection, and a credential must never be in one. An invitation with
-         no credential can never be redeemed — it is a row a partner can see and
-         withdraw, and nothing else. */
+      /* RESTATED IN BATCH 8.1. The reasoning below is unchanged and is still
+         why `inviteCollector` has no business on this route: the command route
+         answers with a projection, and a credential must never be in one. What
+         changed is that the route no longer runs the command, so there is not
+         even an inert invitation left behind — nothing to mint a credential
+         for, because nothing was created. */
+      eq((await world()).invitations.length, 0, "the raw route created an invitation");
+      eq(typeof credentials.findByInvitation, "function", "the credential store is still the only source");
     } finally { await close(); }
   });
 
