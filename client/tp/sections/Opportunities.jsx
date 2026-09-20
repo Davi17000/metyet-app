@@ -32,16 +32,40 @@
    NOTHING HERE ACTS. No stage button, no negotiation control, no disabled
    affordance pretending to be one. Every action migrates later through
    authenticated POST /api/commands, and until it does, this screen reads.
+
+   ---------------------------------------------------------------------------
+   AND NOW THE PART THAT COMES BEFORE ANY OF THAT (Phase 5 Batch 8).
+
+   Until this batch a Trusted Partner with nothing in progress saw an empty
+   screen — true, and useless, because the thing that would have made it not
+   empty was sitting in two records nobody had put side by side. READY TO
+   COORDINATE is those two records: a collector in your network has said they
+   want one exact card, and one exact card on your shelf is that card.
+
+   IT IS NOT A MATCH SCORE AND IT IS NOT A LEAD. The server computed it from an
+   equality on a canonical card id inside an accepted relationship, and there is
+   nothing to tune: every row is the same strength of true. Nothing is ranked,
+   nothing is recommended, and no stranger appears — a collector who is not in
+   your network is not in this projection at all.
+
+   IT RESERVES NOTHING. Two collectors wanting the same card produce two rows
+   over the same copies, and neither takes anything from the other. A copy is
+   only ever spoken for by a deal, which is what the lists below are.
+
+   AND IT IS NOT AN OPPORTUNITY YET. An Opportunity begins when a collector
+   makes an offer; this is the moment before, which is why it is a separate
+   panel with its own word rather than a row in "In progress" wearing a stage
+   it has not reached.
    ========================================================================== */
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Panel, Record, Fact, Tag } from "../parts.jsx";
 import { rows, indexById, text, day, money, plural, cardTitle, cardSetLine,
-  gradeLine, stageLabel, isKnownStage, tierLabel, byRecency } from "../present.js";
+  gradeLine, stageLabel, isKnownStage, tierLabel, supplyLine, byRecency } from "../present.js";
 
 const COMPLETED = "completed";
 
-export default function Opportunities({ state }) {
+export default function Opportunities({ state, onBrowseCards = null }) {
   const all = rows(state && state.opportunities);
   const catalog = indexById(state && state.catalog);
   const goals = indexById(state && state.goals);
@@ -61,6 +85,58 @@ export default function Opportunities({ state }) {
 
   const live = byRecency(all.filter((o) => o.stage !== COMPLETED), "updated");
   const done = byRecency(all.filter((o) => o.stage === COMPLETED), "completedAt", "updated");
+
+  /* READY TO COORDINATE — the server's overlaps, minus the ones already being
+     worked. A discovery names the Goal it came from; a live deal names the Goal
+     it is for. Where those are the same Goal and the same collector, the deal
+     is the truer statement and the discovery would only repeat it. */
+  const working = new Set(live.map((o) => `${o.goalId}::${o.partnerId}`));
+  const ready = rows(state && state.discoveries).filter((d) => !working.has(d.key));
+
+  /* WHAT EACH ONE IS, ASKED FOR ONCE. The ids are in this projection already;
+     the names are not, and a row that cannot say which card it is about is a
+     row a person cannot act on. One request for the set — never one per row,
+     and never the catalogue. */
+  const readyIds = [...new Set(ready.map((d) => d.canonicalCardId).filter(Boolean))];
+  const [named, setNamed] = useState({});
+  useEffect(() => {
+    if (!onBrowseCards || !readyIds.length) return undefined;
+    let current = true;
+    (async () => {
+      try {
+        const answer = await onBrowseCards.describe(readyIds);
+        if (!current) return;
+        const next = {};
+        for (const card of rows(answer && answer.cards)) next[card.canonicalCardId] = card;
+        setNamed((held) => ({ ...held, ...next }));
+      } catch (error) { /* an unnamed card is still a card you have */ }
+    })();
+    return () => { current = false; };
+  }, [readyIds.join(","), onBrowseCards]);
+
+  const overlap = (d) => {
+    const card = named[d.canonicalCardId] || null;
+    const sub = card
+      ? [card.expansionName, card.collectorNumber ? `#${card.collectorNumber}` : null]
+        .filter(Boolean).join(" · ") || null
+      : null;
+    return (
+      <Record
+        key={d.key}
+        title={(card && card.cardName) || "A card MetYet is still describing"}
+        subtitle={sub}
+        tags={
+          <>
+            <Tag tone="strong">On your shelf</Tag>
+            {d.tier ? <Tag>{tierLabel(d.tier)}</Tag> : null}
+          </>
+        }
+        note={supplyLine(who.get(d.collectorId), d.tier, d.copies)}
+        noteLabel="Why you're seeing this"
+        facts={<Fact label="Your copies" value={d.copies ? String(d.copies) : null} mono />}
+      />
+    );
+  };
 
   const line = (o) => {
     const card = catalog.get(o.cardId) || null;
@@ -103,6 +179,13 @@ export default function Opportunities({ state }) {
 
   return (
     <>
+      {ready.length ? (
+        <Panel title="Ready to coordinate"
+          note={plural(ready.length, "card", "cards")}>
+          {ready.map(overlap)}
+        </Panel>
+      ) : null}
+
       <Panel
         title="In progress"
         note={live.length ? plural(live.length, "opportunity", "opportunities") : null}

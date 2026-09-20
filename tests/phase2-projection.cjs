@@ -419,7 +419,17 @@ describe("D · Structural guarantees", () => {
   test("the module is a pure domain module: no React, no UI, no demo fixtures", () => {
     const src = fs.readFileSync(path.join(__dirname, "../domain/metyet-projection.js"), "utf8");
     const requires = [...src.matchAll(/require\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1]).sort();
-    sameSet(requires, ["./metyet-commands.js", "./metyet-domain.js"], "projection dependencies");
+    /* RESTATED IN PHASE 5 BATCH 8, which added `./metyet-discovery.js` — the
+       overlap between a Goal and an available Copy, derived for each seat. What
+       this assertion has always been protecting is that the projection reaches
+       nothing outside the domain: every dependency is a sibling in this folder,
+       and none of them is React, a fixture, a store or a network. Naming the
+       three explicitly keeps that exact, and keeps a fourth from arriving
+       unremarked — the list is the point, not its length. */
+    sameSet(requires,
+      ["./metyet-commands.js", "./metyet-discovery.js", "./metyet-domain.js"],
+      "projection dependencies");
+    for (const r of requires) assert(/^\.\/metyet-[a-z-]+\.js$/.test(r), `${r} is not a domain sibling`);
     assert(!/import\s|React|fixture|demo|localStorage|fetch\(/.test(src.replace(/\/\*[\s\S]*?\*\//g, "")),
       "projection code references UI, demo, persistence or network");
   });

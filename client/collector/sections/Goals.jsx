@@ -23,12 +23,23 @@
    THERE IS NO OPPORTUNITIES SECTION, and this is why: a deal is a goal being
    worked. Giving it its own navigation would make it a second workflow, and the
    product has one.
+
+   AND FOR THE SAME REASON, NEITHER IS THERE A "MATCHES" SECTION (Phase 5
+   Batch 8). When a Trusted Partner you already know has the exact card a goal
+   names, that is a fact about the goal, so it is shown on the goal — above the
+   deals, because it is what comes before one. It arrives as `discoveries`, the
+   server's own join of your goals against your partners' available copies; the
+   row carries the `goalId` it belongs to and this screen joins on that and
+   nothing else. No card is compared here, nothing is scored, nothing is
+   recommended, and a partner having it reserves nothing: they still have it if
+   somebody else wants it too.
    ========================================================================== */
 
 import React, { useEffect, useMemo, useState } from "react";
 import { Panel, Record, Fact, Tag } from "../parts.jsx";
 import { rows, indexById, groupBy, text, day, money, plural, cardTitle, cardSetLine,
-  gradeLine, cardMarks, stageLabel, isKnownStage, tierLabel, tierIntent, byRecency } from "../present.js";
+  gradeLine, cardMarks, stageLabel, isKnownStage, tierLabel, tierIntent, holdingLine,
+  byRecency } from "../present.js";
 
 export default function Goals({ state, onAddGoal = null, onSetPriority = null,
   onRemoveGoal = null, onBrowseCards = null }) {
@@ -36,6 +47,13 @@ export default function Goals({ state, onAddGoal = null, onSetPriority = null,
   const catalog = indexById(state && state.catalog);
   /* Every join below is by an id the row carries. */
   const oppsByGoal = groupBy(state && state.opportunities, "goalId");
+  /* WHO ALREADY HAS IT (Batch 8), on exactly the same terms. A discovery row
+     carries the `goalId` it is about, so it lands under that goal and under no
+     other one. Nothing here compares cards, and nothing here decides whether
+     the overlap is real: the server did that, from your goals, your Trusted
+     Partners' available copies and the relationships you have with them. This
+     screen reads the answer and names the partner. */
+  const foundByGoal = groupBy(state && state.discoveries, "goalId");
   const partnerName = new Map();
   for (const p of rows(state && state.partners)) {
     if (p.id != null) partnerName.set(p.id, text(p.name));
@@ -119,6 +137,13 @@ export default function Goals({ state, onAddGoal = null, onSetPriority = null,
           : [cardSetLine(card), gradeLine(card)].filter(Boolean).join(" · ") || null;
         /* Only the opportunities that name THIS goal. */
         const working = byRecency(oppsByGoal.get(goal.id) || [], "updated", "completedAt");
+        /* Likewise, only the overlaps that name THIS goal — and only the ones
+           for a partner no deal on this goal is already under way with, so the
+           same person is not both "has this card" and "you're mid-negotiation
+           with them about it". Other partners still show: a negotiation with
+           one of them does not make the others stop having the card. */
+        const busyWith = new Set(working.map((o) => o.partnerId));
+        const found = (foundByGoal.get(goal.id) || []).filter((d) => !busyWith.has(d.partnerId));
 
         return (
           <Record
@@ -142,6 +167,18 @@ export default function Goals({ state, onAddGoal = null, onSetPriority = null,
               </>
             }
           >
+            {found.length ? (
+              <ul className="mcs-sub">
+                {found.map((d) => (
+                  <li key={d.key}>
+                    <Tag tone="strong">Available now</Tag>
+                    <span className="mcs-sub-t">
+                      {holdingLine(partnerName.get(d.partnerId), d.copies)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             {working.length ? (
               <ul className="mcs-sub">
                 {working.map((o) => {

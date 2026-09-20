@@ -157,6 +157,25 @@ export const TIER_INTENT = Object.freeze({
   secondary: "Keeping an eye out",
 });
 export const tierIntent = (tier) => TIER_INTENT[text(tier)] || null;
+
+/* WHO ALREADY HAS IT (Phase 5 Batch 8). The other half of `demandLine`, from
+   this side of the relationship: somebody you already know and already chose
+   has the exact card you said you were looking for.
+
+   "Has" is the whole claim and the sentence stops there. Not "matched", not
+   "recommended", not "found for you" — nothing searched and nothing scored, two
+   records simply name one card. The count is said only when it is more than one,
+   because "1 of this card" is a number where a fact belongs, and it is a count
+   of copies to talk about, never a quantity reserved for anybody. A partner
+   whose name has not arrived is still a real partner, so the sentence survives
+   without it rather than disappearing. */
+export const holdingLine = (who, copies) => {
+  const name = text(who) || "A Trusted Partner";
+  const n = Number(copies);
+  return Number.isFinite(n) && n > 1
+    ? `${name} has ${n} of this card.`
+    : `${name} has this card.`;
+};
 export const tierLabel = (tier) => {
   const raw = text(tier);
   if (!raw) return null;

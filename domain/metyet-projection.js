@@ -35,7 +35,10 @@
 
    The output keeps canonical collection names, so a later batch can hand a
    projection to the existing persona selectors in place of the whole world,
-   plus one projection-only section, `counterparties`.
+   plus two projection-only sections: `counterparties`, bare identity for people
+   a projected record names, and `discoveries` (Phase 5 Batch 8), the overlaps
+   between Goals and available Copies that this seat already holds both halves
+   of. Neither is canonical state and neither is stored.
 
    PRODUCT DECISIONS ENCODED (Phase 2 D-1 … D-4, and the Batch 1 closeout):
      D-1  Partner-authored relationship metadata (notes, last contact, review
@@ -75,6 +78,7 @@
    ========================================================================== */
 
 const D = require("./metyet-domain.js");
+const { discoveriesIn } = require("./metyet-discovery.js");
 const { resolveActor, isRelated } = require("./metyet-commands.js");
 
 const list = (xs) => (Array.isArray(xs) ? xs : []);
@@ -239,13 +243,27 @@ const counterpartiesFrom = (rows, key, isNetwork, records, fields) => {
 const COLLECTIONS = ["catalog", "collectors", "partners", "relationships", "invitations",
   "goals", "preferences", "inventory", "binder", "interests", "opportunities",
   "conversations", "activity", "photoRequests", "copyReviews"];
-const SECTIONS = ["actor", ...COLLECTIONS, "counterparties"];
+const SECTIONS = ["actor", ...COLLECTIONS, "counterparties", "discoveries"];
 const empty = () => {
   const out = { actor: null };
   for (const k of COLLECTIONS) out[k] = [];
   out.counterparties = [];
+  out.discoveries = [];
   return out;
 };
+
+/* ------------------------------------------------------- OPPORTUNITY DISCOVERY
+   The second projection-only section, and the first derived one.
+
+   `counterparties` names people a record already named; this names an OVERLAP
+   between two records the seat already holds — one Collector Goal and one
+   Trusted Partner Copy, naming the same exact canonical card, between two
+   people with an accepted relationship. It is computed from the finished
+   projection rather than from canonical state, which is why there is no second
+   visibility rule to state: a derivation over what a seat may see cannot reach
+   what it may not. Nothing about it is stored; see metyet-discovery.js for why
+   that is the point rather than an economy. */
+const withDiscoveries = (view) => ({ ...view, discoveries: discoveriesIn(view) });
 
 /* ============================================================== COLLECTOR */
 function projectForCollector(state, me) {
@@ -361,7 +379,7 @@ function projectForActor(state, actor) {
   if (!state || typeof state !== "object") return empty();
   const me = resolveActor(state, actor);
   if (!me) return empty();
-  return me.seat === "tp" ? projectForPartner(state, me) : projectForCollector(state, me);
+  return withDiscoveries(me.seat === "tp" ? projectForPartner(state, me) : projectForCollector(state, me));
 }
 
 const FIELD_RULES = Object.freeze({

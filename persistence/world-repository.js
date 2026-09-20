@@ -95,9 +95,14 @@ const TABLES = [
     fields: [["id", "id"], ["collectorId", "collector_id"], ["cardId", "card_id"]] },
   { collection: "interests", table: "interests", key: ["ord"],
     fields: [["partnerId", "partner_id"], ["binderId", "binder_id"]] },
+  /* `cardId` became a MIRROR in Batch 8, and `canonicalCardId` arrived beside
+     it, for the reason a Copy's did in Batch 6 and a Goal's in Batch 7: a deal
+     names its card one way or the other, so neither column is always present.
+     validateWorld requires one and refuses both. */
   { collection: "opportunities", table: "opportunities", key: ["id"],
-    fields: [["id", "id"], ["collectorId", "collector_id"], ["partnerId", "partner_id"], ["cardId", "card_id"]],
-    mirrors: [["goalId", "goal_id"], ["invId", "inv_id"]] },
+    fields: [["id", "id"], ["collectorId", "collector_id"], ["partnerId", "partner_id"]],
+    mirrors: [["cardId", "card_id"], ["canonicalCardId", "canonical_card_id"],
+      ["goalId", "goal_id"], ["invId", "inv_id"]] },
   { collection: "conversations", table: "conversations", key: ["id"],
     fields: [["id", "id"], ["key", "key"], ["collectorId", "collector_id"], ["partnerId", "partner_id"], ["cardId", "card_id"]],
     mirrors: [["oppId", "opportunity_id"]], children: "entries" },
