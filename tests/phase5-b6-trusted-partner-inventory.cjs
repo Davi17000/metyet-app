@@ -479,14 +479,23 @@ describe("F. everything that already worked", () => {
     eq(view.inventory[0].cardId, "k1", "and it projects as it always did");
   });
 
-  test("Goals were not touched", () => {
+  test("this batch moved inventory and nothing else", () => {
+    /* RESTATED IN BATCH 7, which is when Goals moved — by their own migration,
+       which is the whole point of the boundary. What Batch 6 has to keep true
+       is that ITS migration touched one table, and it still does. */
+    const migration = read("persistence/migrations/0007_inventory_canonical_card.sql")
+      .replace(/^--.*$/gm, "");
+    assert(!/metyet\.goals|binder_copies|opportunities|conversations/.test(migration),
+      "the Batch 6 migration touched a table that is not inventory");
+    assert(/inventory_copies/.test(migration), "and it is the one it says it is");
+    /* Binder, opportunities, trade rows and conversations are still waiting for
+       the batch that rewrites the command that writes each of them. */
     const commands = code("domain/metyet-commands.js");
-    const addGoal = commands.slice(commands.indexOf("addGoal(state"),
-      commands.indexOf("updateGoalTier(state"));
-    assert(!/canonicalCardId/.test(addGoal), "addGoal learned about canonical cards ahead of its batch");
-    const migration = read("persistence/migrations/0007_inventory_canonical_card.sql");
-    assert(!/metyet\.goals|binder_copies|opportunities|conversations/.test(
-      migration.replace(/^--.*$/gm, "")), "the migration touched a table that is not inventory");
+    for (const [name, next] of [["addBinderCopy", "canonicalCardId"]]) {
+      const body = commands.slice(commands.indexOf(`${name}(state`),
+        commands.indexOf(`${name}(state`) + 900);
+      if (body) assert(!new RegExp(next).test(body), `${name} moved ahead of its batch`);
+    }
   });
 
   test("no provider was integrated and no catalogue was imported", () => {

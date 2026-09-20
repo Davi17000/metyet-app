@@ -148,6 +148,20 @@ export const statusLabel = (status) => {
 };
 
 export const TIER_LABEL = Object.freeze({ primary: "Primary goal", secondary: "Secondary goal" });
+/* WHAT A COLLECTOR IS TELLING YOU (Phase 5 Batch 7). Two sentences, kept
+   apart on purpose. "Actively looking for" and "on their secondary list" are
+   different messages: one is somebody hunting, the other is somebody who would
+   take it if it turned up. Collapsing them into "match" or "interest" would
+   throw away the only thing that tells a Trusted Partner which shelf to check
+   first — and neither of them is a match, because nothing here has looked at
+   what anybody holds. */
+export const demandLine = (who, tier) => {
+  const name = text(who) || "This collector";
+  if (text(tier) === "primary") return `${name} is actively looking for this card.`;
+  if (text(tier) === "secondary") return `This card is on ${name}'s secondary list.`;
+  return null;
+};
+
 export const tierLabel = (tier) => {
   const raw = text(tier);
   if (!raw) return null;

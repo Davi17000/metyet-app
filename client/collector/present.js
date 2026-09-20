@@ -145,6 +145,18 @@ export const statusLabel = (status) => {
 };
 
 export const TIER_LABEL = Object.freeze({ primary: "Primary", secondary: "Secondary" });
+
+/* WHAT THE TWO WORDS MEAN, IN THE PRODUCT'S OWN VOICE (Phase 5 Batch 7).
+   "Primary" and "Secondary" are the domain's names for them and stay exactly
+   what they were; these are what a person is asked and what they are told
+   back. Both are explicit demand — the difference is how hard somebody is
+   looking, not whether they are. Neither is a preference, a filter or a guess,
+   and there is deliberately no third thing between them. */
+export const TIER_INTENT = Object.freeze({
+  primary: "Actively hunting",
+  secondary: "Keeping an eye out",
+});
+export const tierIntent = (tier) => TIER_INTENT[text(tier)] || null;
 export const tierLabel = (tier) => {
   const raw = text(tier);
   if (!raw) return null;

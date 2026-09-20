@@ -127,6 +127,41 @@ export function describeCollectorInvitation(target) {
   return (token) => target.describeInvitation({ token });
 }
 
+/* ----------------------------------------------------- GOALS (Batch 7)
+
+   A GOAL IS SOMETHING A PERSON SAYS, AND THESE ARE THE ONLY WAYS TO SAY IT.
+   Nothing infers demand: there is no binding here that a search, a filter or a
+   card being looked at could reach. A Collector names one exact card and says
+   how hard they are looking, and that is the whole of it.
+
+   The card is named by an id the server minted. There is no field for a
+   collector, because ownership comes from the authenticated actor, and none for
+   a partner or a relationship: a Goal is addressed to a Collector's whole
+   network by being theirs. */
+export function addCollectorGoal(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("addCollectorGoal: the production store is required");
+  }
+  return ({ canonicalCardId, tier, note = null } = {}) =>
+    target.execute("addGoal", { canonicalCardId, tier, note });
+}
+
+/* CHANGING YOUR MIND ABOUT HOW HARD YOU ARE LOOKING. It changes what you mean,
+   never which card you mean — there is no card in this payload at all. */
+export function setGoalPriority(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("setGoalPriority: the production store is required");
+  }
+  return (goalId, tier) => target.execute("updateGoalTier", { goalId, tier });
+}
+
+export function removeCollectorGoal(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("removeCollectorGoal: the production store is required");
+  }
+  return (goalId) => target.execute("removeGoal", { goalId });
+}
+
 /* ------------------------------------------------- INVENTORY (Batch 6)
 
    ADDING A COPY IS NAMING A CARD AND DESCRIBING AN OBJECT. The card is named

@@ -199,7 +199,22 @@ function validateWorld(state) {
   for (const [g, path] of C.goals) {
     const who = `Goal "${g.id}"`;
     ref(collectors, g.collectorId, `${path}.collectorId`, "collector", who);
-    cardRef(g.cardId, `${path}.cardId`, who);
+    /* A GOAL NAMES ITS CARD ONE WAY OR THE OTHER (Phase 5 Batch 7), on the same
+       rule an InventoryCopy has followed since Batch 6: `canonicalCardId` is an
+       opaque id in the catalog schema held by a foreign key this function
+       cannot see, `cardId` is the demo's own catalogue row, and exactly one of
+       them is a Goal. Wanting nothing is not demand, and wanting two things at
+       once is not one Goal. */
+    const canonical = isId(g.canonicalCardId);
+    const legacy = isId(g.cardId);
+    if (canonical && legacy) {
+      report("ref.ambiguous", `${path}.canonicalCardId`,
+        `${who} names both a canonical card and a catalogue card; a Goal is for one card.`);
+    } else if (!canonical && !legacy) {
+      report("ref.missing", `${path}.cardId`, `${who} names no card.`);
+    } else if (legacy) {
+      cardRef(g.cardId, `${path}.cardId`, who);
+    }
     if (!GOAL_TIERS.includes(g.tier)) {
       report("field.invalid", `${path}.tier`, `${who} has tier ${JSON.stringify(g.tier)}; expected "primary" or "secondary".`);
     }

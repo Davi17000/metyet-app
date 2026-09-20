@@ -77,8 +77,12 @@ const TABLES = [
   { collection: "invitations", table: "invitations", key: ["id"],
     fields: [["id", "id"], ["partnerId", "partner_id"]],
     mirrors: [["collectorId", "collector_id"]] },
+  /* `cardId` became a MIRROR in Batch 7 and `canonicalCardId` arrived beside
+     it, for the reason inventory's did in Batch 6: a Goal names its card one
+     way or the other, so neither column is always present. */
   { collection: "goals", table: "goals", key: ["id"],
-    fields: [["id", "id"], ["collectorId", "collector_id"], ["cardId", "card_id"]] },
+    fields: [["id", "id"], ["collectorId", "collector_id"]],
+    mirrors: [["cardId", "card_id"], ["canonicalCardId", "canonical_card_id"]] },
   { collection: "preferences", table: "preferences", key: ["ord"], fields: [["collectorId", "collector_id"]] },
   /* `cardId` became a MIRROR in Batch 6, and `canonicalCardId` arrived beside
      it. A copy names its card one way or the other — the demo's catalogue row

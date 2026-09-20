@@ -46,7 +46,8 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import ProductionApp from "../production-app.jsx";
 import { savePartnerProfile, openCollectorInvitation, revokeCollectorInvitation,
   acceptCollectorInvitation, describeCollectorInvitation, addInventoryCopy,
-  browseCards, refreshView } from "../commands.js";
+  browseCards, addCollectorGoal, setGoalPriority, removeCollectorGoal,
+  refreshView } from "../commands.js";
 
 /* Identity is read in exactly one place — client/actor.js — and re-exported
    here because this module's own tests have always asked it that question.
@@ -184,6 +185,11 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
      store, so a screen that can add a copy can do that and nothing more. */
   const onAddCopy = useMemo(() => (store ? addInventoryCopy(store) : null), [store]);
   const onBrowseCards = useMemo(() => (store ? browseCards(store) : null), [store]);
+  /* Saying what you are looking for, and how hard (Batch 7). Bound the same way
+     as everything else: the shell receives functions, never a store. */
+  const onAddGoal = useMemo(() => (store ? addCollectorGoal(store) : null), [store]);
+  const onSetPriority = useMemo(() => (store ? setGoalPriority(store) : null), [store]);
+  const onRemoveGoal = useMemo(() => (store ? removeCollectorGoal(store) : null), [store]);
   /* Phase 5 Batch 2. Bound the same way and for the same reason: a product
      surface is handed a function, never the store. */
   const onInvite = useMemo(() => (store ? openCollectorInvitation(store) : null), [store]);
@@ -576,7 +582,7 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
      one bound callback that saves a Trusted Partner's own profile. */
   return React.createElement(ProductionApp,
     { state: projection, onSignOut: signOut, onSaveProfile, onInvite, onRevokeInvite, onRefresh,
-      onAddCopy, onBrowseCards,
+      onAddCopy, onBrowseCards, onAddGoal, onSetPriority, onRemoveGoal,
       /* Phase 5 Batch 3A. Who they just joined, so the shell can greet them by
          it once. It is read from the server's own reply, it is cleared the
          moment they do anything else, and it grants nothing. */
