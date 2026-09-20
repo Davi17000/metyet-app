@@ -288,7 +288,20 @@ function validateWorld(state) {
     const who = `Opportunity "${o.id}"`;
     ref(collectors, o.collectorId, `${path}.collectorId`, "collector", who);
     ref(partners, o.partnerId, `${path}.partnerId`, "partner", who);
-    const card = cardRef(o.cardId, `${path}.cardId`, who);
+    /* AN OPPORTUNITY NAMES ITS CARD ONE WAY OR THE OTHER (Phase 5 Batch 8), on
+       the rule a Copy has followed since Batch 6 and a Goal since Batch 7. A
+       deal over no card is not a deal, and a deal over two cards is two deals.
+       History is included: an Opportunity that has completed still names the
+       card it was about, and always did. */
+    const canonicalCard = isId(o.canonicalCardId);
+    const legacyCard = isId(o.cardId);
+    if (canonicalCard && legacyCard) {
+      report("ref.ambiguous", `${path}.canonicalCardId`,
+        `${who} names both a canonical card and a catalogue card; a deal is over one card.`);
+    } else if (!canonicalCard && !legacyCard) {
+      report("ref.missing", `${path}.cardId`, `${who} names no card.`);
+    }
+    const card = legacyCard ? cardRef(o.cardId, `${path}.cardId`, who) : null;
     if (!OPPORTUNITY_STAGES.includes(o.stage)) {
       report("field.invalid", `${path}.stage`, `${who} has stage ${JSON.stringify(o.stage)}; expected one of ${OPPORTUNITY_STAGES.join(", ")}.`);
     }
@@ -314,6 +327,20 @@ function validateWorld(state) {
       const copyCard = copy ? catalog.get(copy.cardId) : null;
       if (copyCard && card && !D.sameIdentity(copyCard, card)) {
         report("ref.identity-mismatch", `${path}.invId`, `${who} is for card "${o.cardId}", but copy "${o.invId}" is a different card identity.`);
+      }
+      /* THE SAME QUESTION ON CANONICAL IDENTITY (Phase 5 Batch 8), which is an
+         equality on an opaque id rather than a comparison of dimensions. A deal
+         that names a canonical card is over a copy that names the SAME one, and
+         a copy that names its card the other way has not been compared — the
+         two vocabularies never meet, here or in startOpportunity. */
+      if (canonicalCard && copy && isId(copy.canonicalCardId)
+        && copy.canonicalCardId !== o.canonicalCardId) {
+        report("ref.identity-mismatch", `${path}.invId`,
+          `${who} is for canonical card "${o.canonicalCardId}", but copy "${o.invId}" is a different canonical card.`);
+      }
+      if (canonicalCard && copy && !isId(copy.canonicalCardId)) {
+        report("ref.identity-mismatch", `${path}.invId`,
+          `${who} names a canonical card, but copy "${o.invId}" names a catalogue card; the two are not comparable.`);
       }
       if (active && o.agreedPrice != null) hold(holders.committed, o.invId, o.id);
       if (D.isCompleted(o)) hold(holders.sold, o.invId, o.id);

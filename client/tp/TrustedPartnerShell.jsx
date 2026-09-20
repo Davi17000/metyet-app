@@ -283,9 +283,15 @@ export default function TrustedPartnerShell({ state, onSignOut, onSaveProfile = 
      profile is reached from Inventory; invitations belong to the Collector
      Network, because that is the thing an invitation grows into. Nothing else
      is handed a way to send either. */
+  /* Opportunities gets `onBrowseCards` and nothing else (Phase 5 Batch 8): the
+     overlaps the server sent name cards by id, and a card nobody can read the
+     name of is not something a Trusted Partner can go and look on the shelf
+     for. It is a way to ASK WHAT A CARD IS CALLED — not a way to write, and
+     the section is handed no command, exactly as before. */
   const extra = meta.id === "inventory" ? { onSaveProfile, onAddCopy, onBrowseCards }
     : meta.id === "collectors" ? { onInvite, onRevokeInvite, onRefresh, onBrowseCards }
-      : null;
+      : meta.id === "opportunities" ? { onBrowseCards }
+        : null;
 
   return (
     <div className="tps">

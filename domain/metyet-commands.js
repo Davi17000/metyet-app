@@ -555,7 +555,20 @@ const COMMANDS = {
   /* ------------------------------------------------------------ agree on price */
   /* Only the collector opens a negotiation, only from a Primary Goal, only with
      a related partner, and only on the exact copy the goal names. The partner,
-     card and listed price come from the canonical records — never the caller. */
+     card and listed price come from the canonical records — never the caller.
+
+     THE EXACT COPY THE GOAL NAMES (Phase 5 Batch 8). Two records name a card
+     and this proves they name the SAME card. From Batch 7 either of them may
+     name it canonically, so there are two ways to ask and the answer must never
+     be assembled from one of each: a canonical Goal and a legacy Copy have said
+     nothing comparable to each other, and treating that as a match would let a
+     deal begin over two different cards. Canonical identity is an equality on an
+     opaque id; legacy identity is the demo's eight-dimension key. Mixed refuses.
+
+     This closes a real hole rather than tidying one. Until now the legacy key
+     was the only comparison, and it reads an absent card as the empty string —
+     so two canonical records, holding no legacy card between them, compared
+     equal, and any canonical copy would have satisfied any canonical Goal. */
   startOpportunity(state, a, { goalId, invId, amount }, ctx) {
     const at = ctx.at;
     if (a.seat !== "collector") return refuse(R.notOwner);
@@ -569,13 +582,20 @@ const COMMANDS = {
     const status = D.inventoryCopyStatus(invId, state.opportunities);
     if (status === "sold") return refuse(R.copyUnavailable);
     if (status === "committed") return refuse(R.copyCommitted);
-    if (!D.sameIdentity(cardById(state, copy.cardId), cardById(state, g.cardId))) return refuse(R.identityMismatch);
+    const wanted = typeof g.canonicalCardId === "string" && g.canonicalCardId;
+    const held = typeof copy.canonicalCardId === "string" && copy.canonicalCardId;
+    if (wanted || held) {
+      if (!(wanted && held && wanted === held)) return refuse(R.identityMismatch);
+    } else if (!D.sameIdentity(cardById(state, copy.cardId), cardById(state, g.cardId))) {
+      return refuse(R.identityMismatch);
+    }
     if (!isRelated(state, copy.partnerId, a.collectorId)) return refuse(R.noRelationship);
     if (!(validMoney(amount) && amount > 0)) return refuse(R.invalidAmount);
     const partner = list(state.partners).find((p) => p.id === copy.partnerId) || {};
     const id = ctx.id("o");
     const opp = { id, goalId, collectorId: a.collectorId, partnerId: copy.partnerId,
-      cardId: g.cardId, invId, stage: "agree-price", listedPrice: copy.ask,
+      ...(wanted ? { canonicalCardId: wanted } : { cardId: g.cardId }),
+      invId, stage: "agree-price", listedPrice: copy.ask,
       agreedPrice: null, priceThread: [{ by: "collector", type: "offer", amount, at }],
       trade: { submitted: false, cards: [] },
       tradeRate: partner.tradeRate != null ? partner.tradeRate : null,

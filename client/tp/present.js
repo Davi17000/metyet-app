@@ -162,6 +162,25 @@ export const demandLine = (who, tier) => {
   return null;
 };
 
+/* AND NOW THE SAME SENTENCE WHEN YOU ACTUALLY HAVE ONE (Phase 5 Batch 8).
+   `demandLine` says what a collector is looking for. This says it about a card
+   that is on your shelf right now — which is a different thing to be told, and
+   the only thing Batch 8 adds to what a Trusted Partner is told.
+
+   The tier still carries the whole difference and is never flattened: somebody
+   hunting and somebody keeping an eye out are two different calls to make. The
+   count of your own copies is said only when it is more than one, and it is a
+   count of what you hold, not an allocation — nothing is reserved for anybody,
+   and another collector wanting the same card takes none of it away. */
+export const supplyLine = (who, tier, copies) => {
+  const name = text(who) || "A collector in your network";
+  const n = Number(copies);
+  const held = Number.isFinite(n) && n > 1 ? ` You have ${n} of them.` : "";
+  if (text(tier) === "primary") return `${name} is actively looking for this card.${held}`;
+  if (text(tier) === "secondary") return `This card is on ${name}'s secondary list.${held}`;
+  return null;
+};
+
 export const tierLabel = (tier) => {
   const raw = text(tier);
   if (!raw) return null;
