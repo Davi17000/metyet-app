@@ -223,6 +223,32 @@ function validateWorld(state) {
     if (!GOAL_TIERS.includes(g.tier)) {
       report("field.invalid", `${path}.tier`, `${who} has tier ${JSON.stringify(g.tier)}; expected "primary" or "secondary".`);
     }
+    /* WHICH COPY THEY ARE TRYING TO GET (Phase 5 C3.2), when they have said.
+
+       OPTIONAL, AND ABSENT IS A REAL ANSWER. Every Goal written before C3.2 has
+       no `desired`, and so does every Goal added from today's Browse, which has
+       no grade control until C3.3. "Unspecified" is not a defect to be
+       backfilled — it means the Collector has not said, which is different from
+       every value it could be given. Requiring it here would make live data
+       unloadable, which is the one thing a compatibility rule must not do.
+
+       PRESENT MEANS SAYABLE, THOUGH. When a Goal does carry criteria they
+       answer the same single grading rule a physical copy answers
+       (`gradingProblem`): Raw says what state is wanted, a graded target
+       carries no second contradicting assessment. A Goal is desire rather than
+       fact, but an impossible desire is still not a sentence. */
+    if (!blank(g.desired)) {
+      if (!isObject(g.desired)) {
+        report("field.invalid", `${path}.desired`,
+          `${who} has desired-copy criteria that are not an object.`);
+      } else if (Object.keys(g.desired).some((k) => k !== "grade" && k !== "condition")) {
+        report("field.invalid", `${path}.desired`,
+          `${who} has desired-copy criteria naming something other than grade and condition.`);
+      } else if (D.gradingProblem(g.desired)) {
+        report("field.invalid", `${path}.desired`,
+          `${who} wants a copy that cannot exist (${D.gradingProblem(g.desired)}).`);
+      }
+    }
   }
   for (const [i, path] of C.inventory) {
     const who = `InventoryCopy "${i.invId}"`;

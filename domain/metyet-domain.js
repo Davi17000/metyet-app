@@ -784,6 +784,10 @@ const REFUSE = {
      metyet-registration.js. Terse for the same reason as the rest: a refusal
      names the rule and nothing about who else is registered. */
   nameRequired: "name-required",
+  /* ONE REFUSAL FOR AN UNSAYABLE GRADING PAIR (Phase 5 C3.2). Distinct from
+     `not-found`, which is what the four separate half-checks used to answer and
+     which told a caller nothing about what was wrong. See gradingProblem. */
+  gradingIncoherent: "grading-incoherent",
   invitationRequired: "invitation-required",
   alreadyRegistered: "already-registered",
   /* Redemption (Phase 5 Batch 3A). ONE WORD FOR SIX CAUSES, on purpose: an
@@ -873,6 +877,71 @@ const gradingOf = (copy) => {
     label: condition || null };
 };
 
+/* ------------------------------- WHETHER A GRADING PAIR IS SAYABLE (C3.2)
+
+   `gradingOf` says what a record MEANS. This says whether it means anything at
+   all — and it is the ONE rule every write path asks. Before C3.2 each command
+   asked half of it separately (is this grade in the list, is this condition in
+   the list) and nobody asked the half that matters:
+
+       grade: "PSA 9", condition: "Damaged"
+
+   That passed every check, persisted, and then `gradingOf` read it as graded
+   with `condition: null`. The card was recorded as two contradictory things and
+   the product quietly showed one of them. A grading company does not assess a
+   card and leave it damaged-but-also-a-nine; one of those sentences is false,
+   and the database could not say which.
+
+   THE GRAMMAR, ENTIRE:
+
+       Raw          requires a condition — "raw" alone says the card is
+                    ungraded and nothing about what state it is in, which is
+                    half a sentence.
+       PSA 1..10    carries NO raw condition — the grade is the assessment, and
+                    a second, contradicting one is not a refinement of it.
+       neither      is fine. "Unstated" is a real answer and always has been:
+                    a copy nobody has described yet is not a raw copy.
+
+   Returns null when the pair is sayable, or a reason. Callers refuse on a
+   reason; nothing interprets one. */
+const GRADING_PROBLEM = Object.freeze({
+  grade: "grade-unknown",
+  condition: "condition-unknown",
+  rawNeedsCondition: "raw-needs-condition",
+  gradedHasCondition: "graded-has-condition",
+});
+const stated = (v) => (typeof v === "string" ? v.trim() : "");
+const gradingProblem = (facts) => {
+  const grade = stated(facts && facts.grade);
+  const condition = stated(facts && facts.condition);
+  if (grade && !GRADED_VALUES.includes(grade)) return GRADING_PROBLEM.grade;
+  if (condition && !CONDITION_VALUES.includes(condition)) return GRADING_PROBLEM.condition;
+  if (/^raw$/i.test(grade) && !condition) return GRADING_PROBLEM.rawNeedsCondition;
+  if (grade && !/^raw$/i.test(grade) && condition) return GRADING_PROBLEM.gradedHasCondition;
+  return null;
+};
+
+/* AND WHAT TO DO ABOUT A RECORD THAT ALREADY SAYS SOMETHING IMPOSSIBLE.
+
+   Rows written before C3.2 may carry a contradictory pair, because the door was
+   open. They cannot be repaired — "PSA 9 / Damaged" does not say which half the
+   person meant, and guessing would be MetYet inventing a fact about somebody
+   else's card. They also must not make a world unloadable, or one bad row from
+   last month would lock a Collector out of everything.
+
+   So they load, and `gradingOf` REPORTS the contradiction instead of hiding it:
+   `problem` carries the reason and `condition` survives rather than being
+   silently dropped. A presenter can then say "PSA 9 — this record also says
+   Damaged" rather than picking a side on the product's behalf. That is the
+   invariant C3.2 is really about: durable data is validated by one rule, and
+   presentation may not silently reinterpret a contradictory fact. */
+const gradingRead = (copy) => {
+  const base = gradingOf(copy);
+  const problem = gradingProblem(copy);
+  if (!problem) return { ...base, problem: null };
+  return { ...base, problem, condition: stated(copy && copy.condition) || base.condition };
+};
+
 /* Free-text search over the canonical catalog. Every term must appear somewhere
    in the record; name matches rank above set matches. */
 function searchCards(cards, query) {
@@ -940,6 +1009,9 @@ const identityFrom = (printed, copy, edition) => {
 module.exports.GRADED_VALUES = GRADED_VALUES;
 module.exports.CONDITION_VALUES = CONDITION_VALUES;
 module.exports.gradingOf = gradingOf;
+module.exports.gradingProblem = gradingProblem;
+module.exports.gradingRead = gradingRead;
+module.exports.GRADING_PROBLEM = GRADING_PROBLEM;
 module.exports.searchCards = searchCards;
 module.exports.printKey = printKey;
 module.exports.printedCards = printedCards;

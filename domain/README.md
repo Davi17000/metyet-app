@@ -164,6 +164,64 @@ The legacy names predate C2's rename of `binder_copies` to `collector_copies`
 and were left alone because renaming a column inside the trade package is the
 trade batch's work. **Never join them to a Binder.** C3.1 did not rename them.
 
+## Grade and condition: two sentences, one rule (Phase 5 C3.2)
+
+A Collector says two different things with the same vocabulary:
+
+| | Where | Means |
+|---|---|---|
+| **Desired criteria** | `goal.desired = { grade, condition }` | *what I'm trying to get* — a preference about a copy that does not exist yet |
+| **Copy facts** | `grade` / `condition` on a CollectorCopy or InventoryCopy | *what this object in a drawer actually is* |
+
+They are named apart on purpose. `goal.grade` and `copy.grade` would read alike
+and mean "hoped for" and "is" — the collision that produces a bug nobody sees
+in review. A Goal's criteria live under `desired`.
+
+**`D.gradingProblem(facts)` is the one rule, and every write path asks it.**
+
+```
+Raw          requires a condition        (raw alone is half a sentence)
+PSA 1..10    carries no raw condition    (the grade IS the assessment)
+neither      is fine — "unstated" is a real answer, and is not "Raw"
+```
+
+It governs Goal criteria, CollectorCopies and TP Inventory alike; no command
+checks the vocabularies itself any more. A violation is refused as
+`grading-incoherent`. On an UPDATE the rule is asked of the **merged** record,
+not the patch — a Raw/NM copy patched to `PSA 9` still has its old condition.
+
+**One Goal per Collector per canonical card, unchanged.** Criteria do not
+create a second Goal: wanting a PSA 10 of a card you already want Raw is a
+change of mind about one demand, and two Goals would make the tier ambiguous.
+
+**Criteria are preference, never a filter.** Discovery still matches on the
+exact canonical card and reads no grading at all — a partner holding a PSA 8
+of a card somebody wants Raw still surfaces, and the criteria tell them how
+close it is. Criteria travel exactly as far as the Goal already does
+(`GOAL_FOR_PARTNER`) and open no new seat.
+
+**Binders are untouched by any of it** — where a card belongs is independent of
+what copy of it you want (see above).
+
+### What the product may not invent
+
+Criteria are **optional**, and that is a compatibility rule rather than a gap:
+
+- Every Goal written before C3.2 has no `desired`, and so does every Goal added
+  from Browse, which has no grade control until C3.3's Card Specification
+  surface. **Unspecified means the Collector has not said** — it is not
+  `{ grade: null }`, and it is certainly not Raw / Near Mint. Requiring criteria
+  before the control exists would break the shipped app's primary action;
+  C3.3 ships the control and turns the requirement on.
+- Copies written before C3.2 may carry a contradictory pair, because the door
+  was open. They **load**, they are **not auto-repaired** (the record does not
+  say which half was meant), and `D.gradingRead` reports the contradiction via
+  `problem` instead of silently dropping the condition the way `gradingOf`
+  alone does. A contradictory copy cannot be edited until the patch makes it
+  coherent — which is one patch away.
+
+`desired` lives in the Goal's `attrs`, so C3.2 needed **no migration**.
+
 ## Five things to know before changing anything
 
 **Discovery is computed; Opportunity is persisted.** They share a word and are
@@ -209,7 +267,8 @@ exactly one reference. The rest move with the batches that own them.
 | Concept | Start at |
 |---|---|
 | Relationship | `metyet-registration.js` `acceptCollectorInvitation` → `isRelated` in `metyet-commands.js` |
-| Goals | `metyet-commands.js` `addGoal` → `GOAL_FOR_PARTNER` in `metyet-projection.js` → `client/collector/sections/Goals.jsx` |
+| Goals | `metyet-commands.js` `addGoal` (+ `desired`, C3.2) → `GOAL_FOR_PARTNER` in `metyet-projection.js` → `client/collector/sections/Goals.jsx` |
+| Grading | `metyet-domain.js` `gradingProblem` (the one rule) / `gradingRead` (the honest reader) → every copy and Goal write path |
 | Inventory | `metyet-commands.js` `addInventoryCopy` → `INVENTORY_FOR_COLLECTOR` → `client/tp/sections/Inventory.jsx` |
 | Binders | `metyet-commands.js` `createBinder` / `addBinderEntry` → `projectForActor` (owner only) → no surface yet (C3.1 ships none) |
 | A Collector's own cards | `metyet-commands.js` `addCollectorCopy` / `setCollectorCopyOffered` → `COLLECTOR_COPY_FOR_PARTNER` → `client/collector/sections/MyCards.jsx` (built, not yet in the navigation) |

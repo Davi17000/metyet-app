@@ -138,10 +138,59 @@ const COMMANDS = {
      WHAT THE CALLER MAY NOT NAME. Not the collector — ownership comes from the
      authenticated actor. Not a partner, not a relationship: a Goal is addressed
      to a Collector's whole network by being theirs, and there is no field here
-     for anybody else. Not a grade or a condition: those describe a physical
-     copy, and demand is for a printing. */
-  addGoal(state, a, { cardId, canonicalCardId, tier, note }, ctx) {
+     for anybody else.
+
+     WHAT A GOAL MAY NOW SAY, AND WHY IT IS CALLED `desired` (Phase 5 C3.2).
+
+     Until C3.2 the comment above ended "Not a grade or a condition: those
+     describe a physical copy, and demand is for a printing." Half of that is
+     still true and half of it was never the whole story. Which CARD somebody
+     wants is a printing — that has not changed. But WHICH COPY OF IT they are
+     trying to get is a real part of what they are asking their partners for,
+     and a Collector hunting a Raw Near Mint is not asking for the same thing as
+     one hunting a PSA 10.
+
+     So a Goal may carry `desired: { grade, condition }`, and the name is doing
+     work. `goal.grade` and `copy.grade` would read alike and mean "hoped for"
+     and "is" — the kind of collision that produces a bug nobody sees in review.
+     `desired` cannot be mistaken for a fact about an object.
+
+     IT IS PREFERENCE, NOT A FILTER. Discovery matches on the exact canonical
+     card and reads none of this (metyet-discovery.js). A partner holding a
+     PSA 8 of the card somebody wants Raw still surfaces, and the criteria tell
+     them how close it is. Narrowing demand to an exact grade would hide
+     conversations both people wanted to have.
+
+     AND IT IS OPTIONAL, FOR NOW. A Collector's live way to say "I'm looking for
+     this" is Browse, which has no grade control — that control is C3.3's Card
+     Specification surface. Requiring a grade here before that exists would make
+     the shipped app's primary action fail for everybody, so the requirement
+     lands in the batch that ships the means to satisfy it. What IS enforced
+     from today is that criteria, WHEN GIVEN, must be sayable: `gradingProblem`
+     is the same one rule a physical copy answers.
+
+     A BARE `grade` OR `condition` IS REFUSED RATHER THAN DROPPED. It used to be
+     silently discarded — the caller got a 200 and lost the data, which is worse
+     than a refusal because nothing said so. */
+  addGoal(state, a, { cardId, canonicalCardId, tier, note, desired, grade, condition }, ctx) {
     if (a.seat !== "collector") return refuse(R.notOwner);
+    if (grade !== undefined || condition !== undefined) return refuse(R.gradingIncoherent);
+    if (desired !== undefined && (desired === null || typeof desired !== "object" || Array.isArray(desired))) {
+      return refuse(R.gradingIncoherent);
+    }
+    if (desired && Object.keys(desired).some((k) => k !== "grade" && k !== "condition")) {
+      return refuse(R.gradingIncoherent);
+    }
+    /* A NON-STRING IS REFUSED, NOT IGNORED. `gradingProblem` reads anything
+       that is not a string as "not stated", which is right for a record but
+       wrong for a request: `{ grade: 9 }` would then fall through and be
+       written as no criteria at all — the same silent drop this batch exists
+       to remove, wearing a different hat. */
+    if (desired && ["grade", "condition"].some((k) => k in desired
+      && desired[k] !== null && typeof desired[k] !== "string")) {
+      return refuse(R.gradingIncoherent);
+    }
+    if (desired && D.gradingProblem(desired)) return refuse(R.gradingIncoherent);
     const canonical = typeof canonicalCardId === "string" && canonicalCardId;
     if (canonical && cardId) return refuse(R.notFound);
     const card = canonical ? null : cardById(state, cardId);
@@ -167,10 +216,22 @@ const COMMANDS = {
        touches it. It was already in the partner-facing allow-list and already
        read by the Collector's own list — the projection and the screen have
        been waiting for a writer since Batch 7. */
+    /* Criteria are written only when the Collector actually stated something.
+       An absent `desired` means UNSPECIFIED and stays absent — it must not
+       become `{ grade: null, condition: null }`, which would look like an
+       answer, nor "Raw / Near Mint", which would be MetYet inventing a
+       preference. Unspecified is what every Goal written before C3.2 is, and
+       what every Goal from today's Browse still is. */
+    const stated = desired
+      ? Object.fromEntries(["grade", "condition"]
+        .filter((k) => typeof desired[k] === "string" && desired[k].trim())
+        .map((k) => [k, desired[k].trim()]))
+      : null;
     const goal = { id, collectorId: a.collectorId,
       ...(canonical ? { canonicalCardId: canonical } : { cardId }),
       tier: tier === "primary" ? "primary" : "secondary",
-      createdAt: ctx.at, since: ctx.at, note: note || "" };
+      createdAt: ctx.at, since: ctx.at, note: note || "",
+      ...(stated && Object.keys(stated).length ? { desired: stated } : {}) };
     return done({ ...state, goals: [...list(state.goals), goal] }, id);
   },
 
@@ -235,8 +296,12 @@ const COMMANDS = {
     if (canonical && copy.cardId) return refuse(R.notFound);
     if (!canonical && !cardById(state, copy.cardId)) return refuse(R.notFound);
     /* Stated or not stated — an empty string is not stated, and always was. */
-    if (copy.grade && !D.GRADED_VALUES.includes(copy.grade)) return refuse(R.notFound);
-    if (copy.condition && !D.CONDITION_VALUES.includes(copy.condition)) return refuse(R.notFound);
+    /* ONE GRADING RULE, ASKED ONCE (Phase 5 C3.2). This used to be two
+       half-checks — is the grade in the list, is the condition in the list —
+       and neither asked whether the two could both be true. `gradingProblem`
+       is that question, and a partner's shelf answers it exactly as a
+       Collector's does. */
+    if (D.gradingProblem(copy)) return refuse(R.gradingIncoherent);
     for (const k of ["ask", "cost"]) {
       if (copy[k] != null && !(validMoney(Number(copy[k])) && Number(copy[k]) >= 0)) return refuse(R.invalidAmount);
     }
@@ -274,8 +339,12 @@ const COMMANDS = {
     for (const k of ["ask", "cost"]) {
       if (clean[k] != null && !(validMoney(Number(clean[k])) && Number(clean[k]) >= 0)) return refuse(R.invalidAmount);
     }
-    if (clean.grade && !D.GRADED_VALUES.includes(clean.grade)) return refuse(R.notFound);
-    if (clean.condition && !D.CONDITION_VALUES.includes(clean.condition)) return refuse(R.notFound);
+    /* CHECKED AGAINST THE MERGED RECORD, not the patch. A Raw / Near Mint copy
+       patched to `grade: "PSA 9"` sends no condition — but the copy still has
+       one, and the result would be the contradiction this batch exists to
+       remove. What has to be sayable is the card as it will be afterwards. */
+    const merged = { ...copy, ...clean };
+    if (D.gradingProblem(merged)) return refuse(R.gradingIncoherent);
     return done({ ...state, inventory: list(state.inventory).map((i) => (i.invId === invId
       ? { ...i, ...clean, ...(at ? { updatedAt: at } : {}) } : i)) }, invId);
   },
@@ -333,8 +402,10 @@ const COMMANDS = {
     /* Stated or not stated — an empty string is not stated. The vocabulary is
        the domain's, shared with a Trusted Partner's shelf, because a PSA 9 is
        a PSA 9 whoever is holding it. */
-    if (copy.grade && !D.GRADED_VALUES.includes(copy.grade)) return refuse(R.notFound);
-    if (copy.condition && !D.CONDITION_VALUES.includes(copy.condition)) return refuse(R.notFound);
+    /* The same one rule the other seat's shelf answers (Phase 5 C3.2): a Raw
+       card says what state it is in, a graded card does not carry a second
+       contradicting assessment, and an unstated card is a real answer. */
+    if (D.gradingProblem(copy)) return refuse(R.gradingIncoherent);
     if (copy.market != null && !(Number(copy.market) >= 0)) return refuse(R.invalidAmount);
     const { id: askedId, addedAt: askedAt, updatedAt, offered, ...facts } = copy;
     const id = ctx.id("b", askedId);
@@ -365,11 +436,17 @@ const COMMANDS = {
     if ("cert" in p && p.cert !== copy.cert && (status === "committed" || status === "traded")) {
       return refuse(R.copyCommitted);
     }
-    if (p.grade && !D.GRADED_VALUES.includes(p.grade)) return refuse(R.notFound);
-    if (p.condition && !D.CONDITION_VALUES.includes(p.condition)) return refuse(R.notFound);
     const next = { ...copy, ...p, id: copy.id, cardId: copy.cardId,
       canonicalCardId: copy.canonicalCardId, collectorId: copy.collectorId,
       offered: copy.offered === true };
+    /* CHECKED AGAINST THE MERGED RECORD (C3.2) — see updateInventoryCopy. A
+       patch that names only a grade still has to leave a sayable card behind.
+
+       A copy that was ALREADY contradictory (written before C3.2, when the
+       door was open) cannot be edited into anything else while it stays
+       contradictory — which is right: the correction is to state a coherent
+       pair, and that is one patch away. */
+    if (D.gradingProblem(next)) return refuse(R.gradingIncoherent);
     if (next.market != null && !(Number(next.market) >= 0)) return refuse(R.invalidAmount);
     return done({ ...state, collectorCopies: list(state.collectorCopies).map((b) => (b.id === copyId
       ? { ...next, updatedAt: at || b.updatedAt } : b)) }, copyId);
