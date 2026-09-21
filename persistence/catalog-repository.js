@@ -254,32 +254,145 @@ function createCatalogRepository(db, { newId } = {}) {
        Every one of these is read-only and takes no world lock. Browsing cards
        is not a thing that happens to the world. */
 
-    /* The browse query. Contexts, not canonical cards: a grid wants one tile per
-       piece of artwork, not the same picture once per finish. Filters are the
-       three doorways the search design asks for — a card name, a release, an
-       artist — and all three are indexed. */
-    async findCardContexts({ query, expansionId, artist, page = 1, pageSize = DEFAULT_PAGE_SIZE } = {}) {
+    /* THE BROWSE QUERY. Contexts, not canonical cards: a grid wants one tile per
+       piece of artwork, not the same picture once per finish.
+
+       THE THREE DOORWAYS (Phase 5 C1). A person looking for a card does not
+       arrive knowing its id, and usually does not arrive knowing its exact
+       name either. They arrive knowing a Pokémon, a set, or an artist, and
+       these are those three questions:
+
+         pokedex     the Pokémon, by its number. A context may list more than
+                     one — a card showing two of them is found by either.
+         expansion   the set, by the name a person types or the code printed on
+                     the card. `expansionId` is still accepted for a caller that
+                     already holds one, and is the only one of the two that is
+                     exact.
+         artist      who drew it. Whole-string, because an artist's name is a
+                     name and a half-match is a different person.
+
+       AND THE NAME BECAME A SUBSTRING, which it was not. "zard" did not find
+       Charizard, which is not what a search box means anywhere else, and is
+       exactly what somebody does when they half-remember a card. A leading
+       wildcard cannot use the btree index; at this catalog's size — tens of
+       thousands of contexts, and a page of at most a hundred — that is a scan
+       of a few milliseconds, and migration 0010 says what to do if it ever
+       stops being. Correctness first, and the index is still there for the
+       ordering and for anything that asks a prefix question later.
+
+       A PICTURE COMES BACK WITH EACH ROW, which is what makes a grid a grid.
+       The image lives on the canonical card, not the context — one piece of
+       artwork, several printings of it — so a representative one is chosen:
+       the first active printing that has an image, ordered by id so the same
+       context always shows the same picture. A context with no images yields
+       null and the caller draws the card's name instead. */
+    async findCardContexts({ query, expansionId, expansion, artist, pokedex,
+      page = 1, pageSize = DEFAULT_PAGE_SIZE } = {}) {
       const size = Math.min(Math.max(Number(pageSize) || DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
       const at = Math.max(Number(page) || 1, 1);
       const where = [];
       const params = [];
-      const add = (clause, value) => { params.push(value); where.push(clause.replace("$?", `$${params.length}`)); };
-      if (text(query)) add("lower(c.card_name) like $? || '%'", text(query).toLowerCase());
+      /* Each `$?` in a clause takes the next value, in order. A clause that
+         asks two questions of one word — a set by its name or by its code —
+         passes that word twice rather than reaching back into the array it
+         just appended to. */
+      const add = (clause, ...values) => {
+        where.push(clause.replace(/\$\?/g, () => { params.push(values.shift()); return `$${params.length}`; }));
+      };
+      if (text(query)) add("lower(c.card_name) like '%' || $? || '%'", text(query).toLowerCase());
       if (text(expansionId)) add("c.expansion_id = $?", text(expansionId));
+      if (text(expansion)) {
+        add("(lower(e.name) like '%' || $? || '%' or lower(e.code) = $?)",
+          text(expansion).toLowerCase(), text(expansion).toLowerCase());
+      }
       if (text(artist)) add("lower(c.artist) = $?", text(artist).toLowerCase());
+      /* A number, or nothing. A pokedex number that is not a number would
+         otherwise reach the database as `[null]` and quietly match nothing. */
+      if (Number.isFinite(Number(pokedex)) && text(pokedex)) {
+        add("c.pokedex_numbers @> $?::jsonb", JSON.stringify([Number(pokedex)]));
+      }
       const clause = where.length ? `where ${where.join(" and ")}` : "";
-      const totalRows = await read(
-        `select count(*)::int as n from metyet_catalog.card_contexts c ${clause}`, params);
+      const from = `from metyet_catalog.card_contexts c
+         join metyet_catalog.expansions e on e.expansion_id = c.expansion_id`;
+      const totalRows = await read(`select count(*)::int as n ${from} ${clause}`, params);
       const rows = await read(
-        `select ${contextColumns("c")}, e.name as expansion_name, e.code as expansion_code
-         from metyet_catalog.card_contexts c
-         join metyet_catalog.expansions e on e.expansion_id = c.expansion_id
+        `select ${contextColumns("c")}, e.name as expansion_name, e.code as expansion_code,
+                art.image_small, art.image_large
+         ${from}
+         left join lateral (
+           select k.image_small, k.image_large
+           from metyet_catalog.canonical_cards k
+           where k.card_context_id = c.card_context_id and k.status = 'active'
+             and k.image_small is not null
+           order by k.canonical_card_id limit 1) art on true
          ${clause}
          order by e.code, c.collector_number, c.card_name
          limit ${size} offset ${(at - 1) * size}`, params);
       return {
         contexts: rows.map((r) => ({ ...contextRow(r),
-          expansionName: r.expansion_name, expansionCode: r.expansion_code })),
+          expansionName: r.expansion_name, expansionCode: r.expansion_code,
+          imageSmall: r.image_small || null, imageLarge: r.image_large || null })),
+        page: at, pageSize: size, total: totalRows.length ? totalRows[0].n : 0,
+      };
+    },
+
+    /* THE SET DOORWAY'S OWN LIST (Phase 5 C1). Browsing by set means seeing
+       which sets there are, which is a question about expansions rather than
+       about cards. The count is how many pieces of artwork are on that
+       release's checklist — not how many printings, which is a different and
+       larger number nobody browsing is asking about. */
+    async findExpansions({ query, page = 1, pageSize = DEFAULT_PAGE_SIZE } = {}) {
+      const size = Math.min(Math.max(Number(pageSize) || DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
+      const at = Math.max(Number(page) || 1, 1);
+      const params = [];
+      let clause = "";
+      if (text(query)) {
+        params.push(text(query).toLowerCase(), text(query).toLowerCase());
+        clause = "where lower(e.name) like '%' || $1 || '%' or lower(e.code) like '%' || $2 || '%'";
+      }
+      const totalRows = await read(
+        `select count(*)::int as n from metyet_catalog.expansions e ${clause}`, params);
+      const rows = await read(
+        `select e.expansion_id, e.game, e.code, e.name, e.series, e.release_date,
+                e.printed_total,
+                (select count(*)::int from metyet_catalog.card_contexts c
+                  where c.expansion_id = e.expansion_id) as context_count
+         from metyet_catalog.expansions e
+         ${clause}
+         order by e.release_date desc nulls last, e.code
+         limit ${size} offset ${(at - 1) * size}`, params);
+      return {
+        expansions: rows.map((r) => ({
+          expansionId: r.expansion_id, game: r.game, code: r.code, name: r.name,
+          series: r.series, releaseDate: r.release_date,
+          printedTotal: r.printed_total, cardCount: r.context_count,
+        })),
+        page: at, pageSize: size, total: totalRows.length ? totalRows[0].n : 0,
+      };
+    },
+
+    /* THE ARTIST DOORWAY'S OWN LIST (Phase 5 C1). An artist is not a record in
+       this catalog — it is a column on a context — so the list is the distinct
+       values, with how many pieces each of them drew. Contexts with no artist
+       are left out rather than gathered under a blank name. */
+    async findArtists({ query, page = 1, pageSize = DEFAULT_PAGE_SIZE } = {}) {
+      const size = Math.min(Math.max(Number(pageSize) || DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
+      const at = Math.max(Number(page) || 1, 1);
+      const params = [];
+      let extra = "";
+      if (text(query)) { params.push(text(query).toLowerCase()); extra = "and lower(c.artist) like '%' || $1 || '%'"; }
+      const clause = `where c.artist is not null and c.artist <> '' ${extra}`;
+      const totalRows = await read(
+        `select count(distinct c.artist)::int as n from metyet_catalog.card_contexts c ${clause}`, params);
+      const rows = await read(
+        `select c.artist, count(*)::int as context_count
+         from metyet_catalog.card_contexts c
+         ${clause}
+         group by c.artist
+         order by c.artist
+         limit ${size} offset ${(at - 1) * size}`, params);
+      return {
+        artists: rows.map((r) => ({ artist: r.artist, cardCount: r.context_count })),
         page: at, pageSize: size, total: totalRows.length ? totalRows[0].n : 0,
       };
     },

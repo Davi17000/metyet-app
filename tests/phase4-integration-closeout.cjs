@@ -66,7 +66,7 @@ const H = require("./helpers/command-server.cjs");
 const TP_NAV = ["Collector Network", "Inventory", "Opportunities"];
 /* Restated in Batch 8.1: the Trade Binder left the Collector's navigation
    until the batch that lets anybody put a card in one. */
-const CO_NAV = ["Goals", "Trusted Partners"];
+const CO_NAV = ["Browse", "Goals", "Trusted Partners"];
 
 /* ------------------------------------------------------------- rendering */
 
@@ -228,6 +228,10 @@ describe("B. projection -> seat routing -> the seat's own shell", () => {
       assert(hasNav(r, CO_NAV), "the Collector app did not render: " + flat(r));
       assert(!hasNav(r, TP_NAV), "the TP workspace rendered for a Collector");
       assert(flat(r).includes("Casey"), "their own name, from the server: " + flat(r));
+      /* C1 made Browse the Collector's first section; their goal is one press
+         away, and the point of this test is that the real server's projection
+         reaches the real Collector app. */
+      clickText(r, "Goals");
       assert(flat(r).includes("CASEY-WANTS-CHARIZARD"), "their own goal: " + flat(r));
       /* Restated in Batch 8.1. Their own binder copy still reaches them from
          the real server — that is a projection property and it is unchanged.

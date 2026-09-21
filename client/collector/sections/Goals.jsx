@@ -88,7 +88,6 @@ export default function Goals({ state, onAddGoal = null, onSetPriority = null,
     return () => { current = false; };
   }, [canonicalIds.join(","), onBrowseCards]);
 
-  const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(null);
 
   /* Changing your mind, and changing it back. Neither touches which card the
@@ -110,15 +109,12 @@ export default function Goals({ state, onAddGoal = null, onSetPriority = null,
 
   return (
     <>
-    {onAddGoal && onBrowseCards ? (
-      adding
-        ? <AddGoal browse={onBrowseCards} onAdd={onAddGoal} onDone={() => setAdding(false)} />
-        : <p className="mcs-addbar">
-            <button className="mcs-go" type="button" onClick={() => setAdding(true)}>
-              Add a card you're looking for
-            </button>
-          </p>
-    ) : null}
+    {/* ADDING A CARD MOVED TO BROWSE (Phase 5 C1). It used to happen here,
+        through a search box and a flat list that was a hundred and ten lines
+        identical to the Trusted Partner's. Both are now the one card browser,
+        and the place a person finds a card is the place they say they want it
+        — which leaves this screen to be what it is: the list, and what has
+        happened to it. */}
     <Panel
       title="What you're looking for"
       note={goals.length ? plural(goals.length, "goal", "goals") : null}
@@ -225,155 +221,3 @@ export default function Goals({ state, onAddGoal = null, onSetPriority = null,
   );
 }
 
-/* ============================================================================
-   ADDING A CARD YOU ARE LOOKING FOR
-
-   FIND, CHOOSE, SAY HOW HARD YOU ARE LOOKING. The middle step disappears when
-   the card has only one collectible printing, because a chooser with one option
-   is a question nobody asked. It never disappears when there are several: the
-   1st Edition and the Unlimited are different cards to want, and flattening
-   them would make somebody's stated demand mean something they did not say.
-
-   NOTHING HERE INFERS ANYTHING. Searching creates no goal; opening a card
-   creates no goal. The only thing that creates one is a person pressing one of
-   the two buttons at the end, and those two are the whole vocabulary — there is
-   no third level, no score, and no "maybe". */
-function AddGoal({ browse, onAdd, onDone }) {
-  const [query, setQuery] = useState("");
-  const [looking, setLooking] = useState(false);
-  const [results, setResults] = useState(null);
-  const [context, setContext] = useState(null);
-  const [chosen, setChosen] = useState(null);
-  const [problem, setProblem] = useState(null);
-  const [saving, setSaving] = useState(false);
-
-  const find = async (event) => {
-    if (event && event.preventDefault) event.preventDefault();
-    const term = String(query).trim();
-    if (!term) return;
-    setProblem(null); setLooking(true); setResults(null);
-    try {
-      const answer = await browse.find(`query=${encodeURIComponent(term)}&pageSize=20`);
-      setResults(rows(answer && answer.contexts));
-    } catch (error) {
-      setProblem("MetYet's card list could not be reached. Try again in a moment.");
-    } finally { setLooking(false); }
-  };
-
-  const open = async (row) => {
-    setProblem(null); setLooking(true);
-    try {
-      const answer = await browse.read(row.cardContextId);
-      const cards = rows(answer && answer.canonicalCards);
-      setContext({ ...row, cards });
-      setChosen(cards.length === 1 ? cards[0] : null);
-      if (!cards.length) setProblem("MetYet has no version of this card to look for yet.");
-    } catch (error) {
-      setProblem("That card could not be read. Try again in a moment.");
-    } finally { setLooking(false); }
-  };
-
-  const save = async (tier) => {
-    if (!chosen || saving) return;
-    setSaving(true); setProblem(null);
-    try {
-      const answer = await onAdd({ canonicalCardId: chosen.canonicalCardId, tier });
-      if (answer && answer.ok === false) {
-        setProblem(answer.refused === "duplicate-goal"
-          ? "That exact card is already on your list."
-          : answer.refused === "card-unavailable"
-            ? "That version is no longer one MetYet can look for. Choose another."
-            : "MetYet would not accept that. Try again.");
-        setSaving(false);
-        return;
-      }
-      onDone();
-    } catch (error) {
-      setProblem("MetYet lost contact, so it cannot tell whether that was added. Re-open your goals before trying again.");
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="mcs-add">
-      <div className="mcs-add-head">
-        <strong>Add a card you're looking for</strong>
-        <button className="mcs-go quiet" type="button" onClick={onDone}>Cancel</button>
-      </div>
-
-      {!context ? (
-        <>
-          <form onSubmit={find}>
-            <label className="mcs-field">
-              <span>Which card?</span>
-              <input value={query} autoFocus type="search" placeholder="Charizard"
-                onChange={(e) => setQuery(e.target.value)} />
-            </label>
-            <button className="mcs-go" type="submit" disabled={looking}>
-              {looking ? "Looking…" : "Search"}
-            </button>
-          </form>
-          {results && !results.length ? (
-            <p className="mcs-empty">
-              No card by that name. MetYet&apos;s card list is still being filled, so one that
-              exists may not be here yet.
-            </p>
-          ) : null}
-          {rows(results).map((row) => (
-            <button key={row.cardContextId} className="mcs-add-row" type="button"
-              onClick={() => open(row)}>
-              <span>{row.cardName}</span>
-              <span className="mcs-dim">
-                {[row.expansionName, row.collectorNumber ? `#${row.collectorNumber}` : null]
-                  .filter(Boolean).join(" · ")}
-              </span>
-            </button>
-          ))}
-        </>
-      ) : (
-        <>
-          <p className="mcs-add-card">
-            <strong>{context.cardName}</strong>
-            <span className="mcs-dim">
-              {[context.expansionName, context.collectorNumber ? `#${context.collectorNumber}` : null]
-                .filter(Boolean).join(" · ")}
-            </span>
-            <button className="mcs-go quiet" type="button"
-              onClick={() => { setContext(null); setChosen(null); setProblem(null); }}>
-              Choose a different card
-            </button>
-          </p>
-
-          {context.cards.length > 1 ? (
-            <div className="mcs-add-versions">
-              <span>Which version are you after?</span>
-              {context.cards.map((card) => (
-                <button key={card.canonicalCardId} type="button"
-                  className={"mcs-add-row" + (chosen && chosen.canonicalCardId === card.canonicalCardId ? " on" : "")}
-                  onClick={() => setChosen(card)}>
-                  {[card.finish, card.printRun, card.language].filter(Boolean).join(" · ")}
-                </button>
-              ))}
-            </div>
-          ) : null}
-
-          {chosen ? (
-            <div className="mcs-add-intent">
-              <span>How hard are you looking?</span>
-              <button className="mcs-go" type="button" disabled={saving}
-                onClick={() => save("primary")}>
-                I&apos;m actively hunting this
-              </button>
-              <button className="mcs-go quiet" type="button" disabled={saving}
-                onClick={() => save("secondary")}>
-                Just keep an eye out
-              </button>
-            </div>
-          ) : null}
-        </>
-      )}
-
-      {problem ? <p className="mcs-add-problem" role="alert">{problem}</p> : null}
-    </div>
-  );
-}

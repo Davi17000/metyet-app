@@ -271,10 +271,17 @@ describe("B. a goal's birthday, and a lifecycle that leaves it alone", () => {
       "a Goal grew or lost a field");
   });
 
+  /* RESTATED IN C1, which added 0010 — three indexes so the catalog can be
+     browsed. The property this test is named for is about `createdAt`, and it
+     is unchanged and now stated directly: no migration anywhere gave a Goal a
+     creation-time column, because a Goal's fields live in attrs. */
   test("no migration was needed, and none was written", () => {
     const names = fs.readdirSync(path.join(ROOT, "persistence", "migrations")).sort();
-    eq(names[names.length - 1], "0009_opportunity_canonical_card.sql",
-      "a migration arrived in a batch that needed none: " + names.join(", "));
+    for (const name of names) {
+      const sql = read(path.join("persistence", "migrations", name));
+      assert(!/alter table metyet\.goals[\s\S]{0,120}created_at/i.test(sql),
+        `${name} gave a Goal a creation-time column`);
+    }
     /* Which is the point: a Goal's fields live in `attrs`, so a new one costs
        no schema — the repository stores what the record has. */
     const spec = read("persistence/world-repository.js");
@@ -448,7 +455,9 @@ describe("E. the Trade Binder is not a place a Collector can go", () => {
     }).outputFiles[0].text;
     const mod = { exports: {} };
     new Function("module", "exports", "require", shell)(mod, mod.exports, require);
-    eq(mod.exports.SECTIONS.map((s) => s.id).join(","), "goals,partners");
+    /* C1 put Browse in front of Goals. The Trade Binder is still not in
+       this list, which is what this test is about. */
+    eq(mod.exports.SECTIONS.map((s) => s.id).join(","), "browse,goals,partners");
     eq(mod.exports.DEFERRED_SECTIONS.map((s) => s.id).join(","), "binder");
     assert(typeof mod.exports.DEFERRED_SECTIONS[0].view === "function",
       "the section component was deleted rather than deferred");

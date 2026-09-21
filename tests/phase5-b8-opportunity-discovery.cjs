@@ -936,6 +936,10 @@ describe("H. what each person actually reads", () => {
       r = TR.create(React.createElement(CollectorShellUI,
         { state, onSignOut() {}, onBrowseCards: describer() }));
     });
+    /* C1 made Browse the Collector's first section, so the goal list — which
+       is what these assertions are about — is one press away. */
+    TR.act(() => { clickText(r, "Goals"); });
+    await TR.act(async () => {});
     const said = texts(r);
     assert(said.includes("Northline has this card."),
       `expected the plain sentence, got: ${said.slice(0, 400)}`);
@@ -952,6 +956,10 @@ describe("H. what each person actually reads", () => {
       r = TR.create(React.createElement(CollectorShellUI,
         { state, onSignOut() {}, onBrowseCards: describer() }));
     });
+    /* C1 made Browse the Collector's first section, so the goal list — which
+       is what these assertions are about — is one press away. */
+    TR.act(() => { clickText(r, "Goals"); });
+    await TR.act(async () => {});
     const said = texts(r);
     assert(said.includes("Northline has 2 of this card."), said.slice(0, 400));
     assert(!/reserved|held for you|yours/i.test(said), "nothing is set aside for anybody");
@@ -1032,6 +1040,10 @@ describe("H. what each person actually reads", () => {
       r = TR.create(React.createElement(CollectorShellUI,
         { state, onSignOut() {}, onBrowseCards: describer() }));
     });
+    /* C1 made Browse the Collector's first section, so the goal list — which
+       is what these assertions are about — is one press away. */
+    TR.act(() => { clickText(r, "Goals"); });
+    await TR.act(async () => {});
     const said = texts(r);
     assert(!said.includes("Northline has this card."),
       "the deal is the truer sentence, so the screen does not say both");

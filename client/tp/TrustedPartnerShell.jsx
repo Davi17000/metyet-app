@@ -213,6 +213,43 @@ const CSS = `
    adding a card is standing behind a counter with a phone, not sitting at a
    desk. Nothing here is a modal — a sheet that covers the shelf would hide the
    thing being added to. */
+/* ---- browse: the shared card browser, in this workspace's clothes (C1) ---- */
+.tps-br { display:flex; flex-direction:column; gap:10px; }
+.tps-br-doors { display:flex; gap:6px; }
+.tps-br-door { border:1px solid var(--line); background:var(--panel); color:var(--muted);
+  border-radius:999px; padding:5px 12px; font-size:13px; }
+.tps-br-door.on { border-color:var(--t1); background:var(--t1-bg); color:var(--t1); font-weight:600; }
+.tps-br-find { display:grid; grid-template-columns:1fr auto; gap:4px 10px; align-items:center; }
+.tps-br-lab { font-size:12px; color:var(--faint); }
+.tps-br-in { border:1px solid var(--line); border-radius:6px; padding:7px 9px; font:inherit;
+  background:var(--panel); color:var(--text); min-width:0; }
+.tps-br-in.n { width:88px; }
+.tps-br-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:4px;
+  max-height:240px; overflow:auto; }
+.tps-br-note { font-size:12px; color:var(--faint); }
+.tps-br-open { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:0; }
+.tps-br-back { border:0; background:none; color:var(--t1); font-size:13px; padding:0;
+  text-decoration:underline; }
+.tps-br-empty { margin:0; color:var(--muted); font-size:13px; }
+.tps-br-count { margin:0; color:var(--faint); font-size:12px; }
+.tps-br-grid { list-style:none; margin:0; padding:0; display:grid; gap:10px;
+  grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); }
+.tps-br-cell { position:relative; }
+.tps-br-cell.on .tps-br-card { border-color:var(--t1); background:var(--t1-bg); }
+.tps-br-card { display:flex; flex-direction:column; gap:4px; width:100%; text-align:left;
+  border:1px solid var(--line); border-radius:8px; background:var(--panel); padding:8px; }
+.tps-br-art { display:flex; align-items:center; justify-content:center; aspect-ratio:5/7;
+  background:var(--line-soft); border-radius:5px; overflow:hidden; }
+.tps-br-art img { width:100%; height:100%; object-fit:contain; }
+.tps-br-plate { font-size:12px; color:var(--muted); text-align:center; padding:6px; }
+.tps-br-name { font-size:13px; font-weight:600; }
+.tps-br-sub { font-size:11px; color:var(--faint); }
+.tps-br-pager { display:flex; align-items:center; justify-content:center; gap:12px; margin:0; }
+.tps-br-page { border:1px solid var(--line); background:var(--panel); color:var(--text);
+  border-radius:6px; padding:5px 10px; font-size:13px; }
+.tps-br-page:disabled { color:var(--faint); }
+.tps-br-pos { font-size:12px; color:var(--faint); }
+
 .tps-add { border:1px solid var(--line); border-radius:6px; margin:0 16px 14px;
   padding:12px; display:flex; flex-direction:column; gap:10px; }
 .tps-add-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }

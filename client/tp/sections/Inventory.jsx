@@ -47,6 +47,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { Panel, Record, Fact, Tag } from "../parts.jsx";
+import CardBrowser, { EMPTY_SESSION } from "../../browse/CardBrowser.jsx";
 import { rows, indexById, text, day, money, plural, cardTitle, cardSetLine,
   gradeLine, isGraded, cardMarks, statusLabel, byRecency } from "../present.js";
 import Profile from "./Profile.jsx";
@@ -113,7 +114,7 @@ export default function Inventory({ state, onSaveProfile = null,
       action={
         <>
           {onAddCopy && onBrowseCards && !adding ? (
-            <button className="tps-edit" type="button" onClick={() => setAdding({})}>Add a copy</button>
+            <button className="tps-edit" type="button" onClick={() => setAdding({})}>Add cards</button>
           ) : null}
           <button className="tps-edit" type="button" onClick={() => setViewing("shop")}>View shop</button>
         </>}
@@ -201,29 +202,30 @@ export default function Inventory({ state, onSaveProfile = null,
    between choosing it and saving, and a refusal from the domain are five
    different sentences, because they are five different situations and only
    some of them are the person's to fix. */
+/* ADD CARDS — THE SAME BROWSER THE COLLECTOR USES (Phase 5 C1).
+
+   The picker that used to live here was a text box and a flat list, and it was
+   a hundred and ten lines identical to the one on the Collector's side. Both
+   are now `client/browse/CardBrowser.jsx`: the same three doorways, the same
+   grid, the same paging.
+
+   WHAT STAYS DIFFERENT IS EVERYTHING AFTER THE CARD. A Collector is saying
+   what they are looking for; a Trusted Partner is saying what is on the shelf,
+   which means a grade, a condition, a certificate and two amounts. Shared
+   plumbing, different meaning — and no `+` here, because there is no fast path
+   to a copy whose facts nobody has entered yet.
+
+   CANCEL STILL CREATES NOTHING, and neither does browsing: this panel asks the
+   catalogue questions and writes nothing until "Add this copy". */
 function AddCopy({ browse, onAdd, onDone }) {
-  const [query, setQuery] = useState("");
+  const [session, setSession] = useState(EMPTY_SESSION);
   const [looking, setLooking] = useState(false);
-  const [results, setResults] = useState(null);
   const [context, setContext] = useState(null);
   const [chosen, setChosen] = useState(null);
   const [facts, setFacts] = useState({ grade: "", condition: "", ask: "", cost: "", cert: "" });
   const [problem, setProblem] = useState(null);
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setFacts((f) => ({ ...f, [k]: v }));
-
-  const find = async (event) => {
-    if (event && event.preventDefault) event.preventDefault();
-    const term = String(query).trim();
-    if (!term) return;
-    setProblem(null); setLooking(true); setResults(null);
-    try {
-      const answer = await browse.find(`query=${encodeURIComponent(term)}&pageSize=20`);
-      setResults(rows(answer && answer.contexts));
-    } catch (error) {
-      setProblem("The card catalogue could not be reached. Try again in a moment.");
-    } finally { setLooking(false); }
-  };
 
   const open = async (row) => {
     setProblem(null); setLooking(true);
@@ -277,39 +279,13 @@ function AddCopy({ browse, onAdd, onDone }) {
   return (
     <div className="tps-add">
       <div className="tps-add-head">
-        <strong>Add a copy</strong>
+        <strong>Add cards</strong>
         <button className="tps-edit" type="button" onClick={onDone}>Cancel</button>
       </div>
 
       {!context ? (
-        <>
-          <form onSubmit={find}>
-            <label className="tps-field">
-              <span>Find a card</span>
-              <input value={query} autoFocus type="search" placeholder="Charizard"
-                onChange={(e) => setQuery(e.target.value)} />
-            </label>
-            <button className="tps-edit" type="submit" disabled={looking}>
-              {looking ? "Looking…" : "Search"}
-            </button>
-          </form>
-          {results && !results.length ? (
-            <p className="tps-foot-note">
-              No card by that name. MetYet&apos;s catalogue is still being filled, so a
-              card that exists may not be here yet.
-            </p>
-          ) : null}
-          {rows(results).map((row) => (
-            <button key={row.cardContextId} className="tps-add-row" type="button"
-              onClick={() => open(row)}>
-              <span>{row.cardName}</span>
-              <span className="tps-dim">
-                {[row.expansionName, row.collectorNumber ? `#${row.collectorNumber}` : null]
-                  .filter(Boolean).join(" · ")}
-              </span>
-            </button>
-          ))}
-        </>
+        <CardBrowser browse={browse} prefix="tps" session={session} onSession={setSession}
+          onChoose={open} busy={looking} fastAdd={false} />
       ) : (
         <>
           <p className="tps-add-card">

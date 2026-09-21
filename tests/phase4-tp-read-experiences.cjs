@@ -529,7 +529,18 @@ describe("F. no mutation, no demo, no prototype, no diagnostics", () => {
       if (WITH_FORMS.includes(rel)) continue;
       assert(!/onSubmit|onChange|<input|<textarea/.test(code(rel)), `${rel} grew a way to type`);
     }
-    for (const rel of WITH_FORMS) assert(/onSubmit/.test(code(rel)), `${rel} lost its form`);
+    /* RESTATED IN C1. Inventory still owns a way to type — a copy's grade,
+       certificate and prices — but the SEARCH half of it moved into the card
+       browser both seats now share, and a `<form>` went with it. So the rule is
+       stated as what it protects: a file that may write has a way to type,
+       whether it renders the inputs itself or composes something that does. */
+    const SHARED_FORM = { "client/tp/sections/Inventory.jsx": "client/browse/CardBrowser.jsx" };
+    for (const rel of WITH_FORMS) {
+      const own = /onSubmit|<input|<select/.test(code(rel));
+      const shared = SHARED_FORM[rel] && /onSubmit/.test(code(SHARED_FORM[rel]))
+        && new RegExp(`from ["'][^"']*${path.basename(SHARED_FORM[rel], ".jsx")}\\.jsx["']`).test(code(rel));
+      assert(own || shared, `${rel} lost its form`);
+    }
     /* And each of those sections is one the shell declares can write: a form
        with no declared write is a surface claiming more than the build does. */
     const writable = SHELL_MOD.SECTIONS.filter((s) => s.writes).map((s) => s.id).sort().join(",");

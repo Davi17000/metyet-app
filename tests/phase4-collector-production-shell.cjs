@@ -74,7 +74,9 @@ const ACCESS = "eyJaccess.token.production";
 const COLLECTOR = "c-8x21";
 const PARTNER = "p-9k2m";
 
-const NAV = ["Goals", "Trusted Partners"];
+/* C1 put Browse at the front: it is where a Collector finds a card, and
+   saying "I am looking for this" now happens while browsing. */
+const NAV = ["Browse", "Goals", "Trusted Partners"];
 const TP_NAV = ["Collector Network", "Inventory", "Opportunities"];
 
 /* ---------------------------------------------------- the real projection */
@@ -334,14 +336,19 @@ describe("C. the shell: its sections, and counts that are row counts", () => {
     const labels = buttons(r).map(instText).filter((s) => NAV.some((n) => s.includes(n)));
     eq(labels.length, NAV.length, "no section more, none fewer: " + labels.join(" | "));
     NAV.forEach((n, i) => assert(labels[i].includes(n), `section ${i} is not ${n}`));
-    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "goals,partners");
+    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "browse,goals,partners");
     /* Built, kept, and deliberately not offered. */
     eq(SHELL_MOD.DEFERRED_SECTIONS.map((s) => s.id).join(","), "binder");
     assert(!buttons(r).some((b) => instText(b).includes("Trade Binder")),
       "a Collector can reach a section that can never have anything in it");
-    /* And the prototype agrees, which is where the labels came from. */
+    /* And the prototype agrees about the labels that CAME from it. Browse is
+       C1's own and the prototype has no equivalent — it never had a gallery —
+       so the provenance check is made of the sections it did give us, and
+       Browse is held to being named here instead. */
     const proto = src("collector/MetYetCollector.jsx");
-    NAV.forEach((n) => assert(proto.includes(`label: "${n}"`), `the prototype does not call it ${n}`));
+    NAV.filter((n) => n !== "Browse")
+      .forEach((n) => assert(proto.includes(`label: "${n}"`), `the prototype does not call it ${n}`));
+    assert(!proto.includes('label: "Browse"'), "the prototype grew a Browse of its own");
   });
 
   test("each count is the number of rows in one projected collection", () => {
@@ -352,8 +359,20 @@ describe("C. the shell: its sections, and counts that are row counts", () => {
     assert(/2 Goals/.test(shown), "goals: " + shown);
     assert(/3 Trusted Partners/.test(shown), "partners: " + shown);
     assert(!/Trade Binder/.test(shown), "the deferred section is counted: " + shown);
-    eq(SHELL_MOD.SECTIONS.map((s) => s.count).join(","), "goals,partners",
+    /* RESTATED IN C1. Browse counts NOTHING, and that is the point: the
+       catalogue is not a collection of this Collector's, so a number beside it
+       would be a fact about MetYet wearing the clothes of a fact about them.
+       Every section that DOES carry a count still sources it from its own
+       collection, which is what this test has always been for. */
+    const counted = SHELL_MOD.SECTIONS.filter((s) => s.count);
+    eq(counted.map((s) => s.count).join(","), "goals,partners",
       "a count is sourced from something other than its own collection");
+    eq(counted.map((s) => s.id).join(","), "goals,partners", "a section grew a count");
+    /* Read from the section list rather than the rendered text, where "Browse"
+       and the next section's count sit side by side and any regex would be
+       reading one as the other. */
+    assert(!SHELL_MOD.SECTIONS.find((s) => s.id === "browse").count,
+      "Browse acquired a count");
   });
 
   test("a count follows the collection, not the order or the first row", () => {
@@ -393,6 +412,7 @@ describe("C. the shell: its sections, and counts that are row counts", () => {
   test("an empty account gets the shell and a sentence, never a crash or a sample", () => {
     const r = show(EMPTY);
     assert(looksLikeCollectorShell(r), "an empty account lost its navigation");
+    clickText(r, "Goals");
     assert(/haven't set any goals yet/.test(flat(r)), flat(r));
     assert(/Trade Binder is empty/.test(flat(show(EMPTY, "Trade Binder"))), "the deferred section");
     clickText(r, "Trusted Partners");
@@ -607,9 +627,18 @@ describe("F. no demo, no prototype, no store, no domain", () => {
   });
 
   test("the only controls are the three sections and sign out", () => {
-    const labels = buttons(show(REAL)).map(instText);
+    /* RESTATED IN C1. The shell's own chrome is still the sections and sign
+       out and nothing else — which is what this test protects. Browse is a
+       section with controls INSIDE it (three doorways and a search), so the
+       count is taken where the shell's chrome is the whole of what is on
+       screen: a section that offers nothing of its own. */
+    const labels = buttons(show(REAL, "Trusted Partners")).map(instText);
     eq(labels.length, NAV.length + 1, "an extra control appeared: " + labels.join(" | "));
     assert(labels.some((l) => l.includes("Sign out")));
+    /* And Browse's own controls are Browse's, named so a reader can see them. */
+    const browsing = buttons(show(REAL)).map(instText);
+    eq(browsing.filter((l) => ["Pokémon", "Set", "Artist"].includes(l.trim())).length, 3,
+      "the doorways changed: " + browsing.join(" | "));
   });
 
   test("the production bundle still carries no seed, persona or domain", () => {
