@@ -559,11 +559,37 @@ describe("G. everything that already worked", () => {
     eq(copy.grade, "PSA 9", "and grade is still the copy's");
   });
 
-  test("grade and condition are not demand, and no band was invented", () => {
+  /* RESTATED IN C3.2, WHICH GAVE A GOAL DESIRED-COPY CRITERIA.
+
+     WHAT IT PROTECTED, in two halves. First, that a Goal was demand for a
+     PRINTING and knew nothing about a physical copy. Second, that nobody had
+     invented a grade BAND — "PSA 9 or better", "NM+" — which would have turned
+     stated demand into a matching rule.
+
+     WHY THE FIRST HALF IS NO LONGER CORRECT: which COPY a Collector is trying
+     to get is a real part of what they are asking their partners for, and a
+     Goal could not say it. A Collector hunting a Raw Near Mint is not asking
+     for the same thing as one hunting a PSA 10. C3.2 adds
+     `goal.desired = { grade, condition }`.
+
+     WHAT REPLACES IT, AND WHY IT IS STRICTER. The band half is untouched and is
+     the half that was always load-bearing — no ranges, no comparisons, no "or
+     better" anywhere. Three assertions are added: criteria live under
+     `desired` and never as bare `grade`/`condition` on the Goal record (the
+     collision with a copy's facts that the naming exists to prevent); the
+     discovery module still reads no grading at all, so criteria are preference
+     and not a filter; and the vocabulary did not widen. */
+  test("desired criteria are preference, not a band and not a filter", () => {
     const commands = code("domain/metyet-commands.js");
     const body = commands.slice(commands.indexOf("addGoal(state"),
       commands.indexOf("updateGoalTier(state"));
-    assert(!/grade|condition|psa|\bnm\b/i.test(body), "a Goal learned about a physical copy");
+
+    /* A Goal's criteria are NAMED APART from a copy's facts. The record must
+       never carry a bare `grade:` or `condition:` key of its own. */
+    assert(/desired/.test(body), "addGoal lost its desired-copy criteria");
+    assert(!/\bgrade:\s|\bcondition:\s/.test(body),
+      "a Goal grew a bare grade or condition, which is a copy's word");
+
     /* A band is a grade with a comparison attached. Looked for in CODE, since
        prose legitimately says "at least" about other things entirely. */
     const BAND = /PSA\s*\d+\s*\+|NM\s*\+|(grade|condition)\s*(>=|>|or better|and above)/i;
@@ -571,6 +597,17 @@ describe("G. everything that already worked", () => {
       "domain/metyet-commands.js"]) {
       assert(!BAND.test(code(rel)), `${rel} invented a grade band`);
     }
+
+    /* And criteria never reach the matching. Discovery is exact canonical card
+       and nothing else, which is what keeps a PSA 8 on a partner's shelf
+       surfacing for somebody who wants the card Raw. */
+    assert(!/grade|condition|desired/i.test(code("domain/metyet-discovery.js")),
+      "the discovery module started reading grading");
+
+    /* No new grader and no new range came with it. */
+    const D2 = require("../domain/metyet-domain.js");
+    assert(D2.GRADED_VALUES.every((v) => v === "Raw" || /^PSA /.test(v)),
+      "the offered grade vocabulary widened");
   });
 
   test("the legacy path still works, for the world that still uses it", async () => {

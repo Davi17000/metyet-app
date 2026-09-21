@@ -153,8 +153,15 @@ const INVITATION_FOR_INVITEE = ["id", "partnerId", "collectorId", "at", "accepte
    always here and is the whole distinction the product turns on: actively
    hunting, or keeping an eye out. Who sees any of this is unchanged and is
    decided elsewhere, by the relationship. */
+/* `desired` joined the list in C3.2. A Goal is already the one way a partner
+   learns that a Collector wants a card; which COPY of it they are after is part
+   of the same sentence, and a partner who cannot see it cannot tell whether the
+   PSA 8 on their shelf is worth mentioning. It travels exactly as far as the
+   Goal does and no further — no new seat, no new record, no new rule.
+
+   It is CONTEXT, not a filter: Discovery reads none of it. */
 const GOAL_FOR_PARTNER = ["id", "collectorId", "cardId", "canonicalCardId", "tier",
-  "note", "since", "createdAt", "confirmedAt", "secondarySince"];
+  "note", "since", "createdAt", "confirmedAt", "secondarySince", "desired"];
 const PREFERENCE_FOR_PARTNER = ["collectorId", "tags"];
 
 /* An InventoryCopy as a Collector sees it: identity, ask, photos.
