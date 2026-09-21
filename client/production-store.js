@@ -288,12 +288,11 @@ export function createProductionStore({ api } = {}) {
        version, no status — so they skip `mutate`, like `describeInvitation`.
        Looking at a card changes nothing, and a failed look must not put a
        workspace into an error state. */
-    async findCards(query = "") {
-      return api.catalog(`card-contexts${query ? `?${query}` : ""}`);
+    /* `where`: cards, sets or artists (C1) — one door, three lists. */
+    async findCards(query = "", where = "card-contexts") {
+      return api.catalog(`${where}${query ? `?${query}` : ""}`);
     },
-    async readCard(cardContextId) {
-      return api.catalog(`card-contexts/${encodeURIComponent(cardContextId)}`);
-    },
+    async readCard(id) { return api.catalog(`card-contexts/${encodeURIComponent(id)}`); },
     async describeCards(ids = []) {
       const list = ids.filter(Boolean).map(encodeURIComponent).join(",");
       return list ? api.catalog(`canonical-cards?ids=${list}`) : { cards: [] };

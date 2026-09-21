@@ -196,6 +196,11 @@ export function browseCards(target) {
     find: (query) => target.findCards(query),
     read: (cardContextId) => target.readCard(cardContextId),
     describe: (ids) => target.describeCards(ids),
+    /* The two doorways that are lists rather than cards (C1). Same door, same
+       read, and nothing here can write — `browseCards` never had a command in
+       it and still does not. */
+    expansions: (query) => target.findCards(query, "expansions"),
+    artists: (query) => target.findCards(query, "artists"),
   };
 }
 

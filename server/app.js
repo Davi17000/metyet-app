@@ -303,7 +303,7 @@ function createApp({
   /* ------------------------------------------------- BROWSING THE CATALOG
      (Phase 5 Batch 5)
 
-     TWO ROUTES, BOTH READ-ONLY, NEITHER TOUCHING THE WORLD. No lock is taken,
+     EVERY ROUTE HERE IS READ-ONLY AND NONE TOUCHES THE WORLD. No lock is taken,
      no world is loaded, no command runs. That is the point of moving the
      catalog out of `metyet`: looking at cards is not something that happens to
      anybody's state, and until this batch it could not be done without dragging
@@ -341,11 +341,36 @@ function createApp({
       const { contexts, page, pageSize, total } = await catalog.findCardContexts({
         query: q.query,
         expansionId: q.expansionId,
+        expansion: q.expansion,
         artist: q.artist,
+        pokedex: q.pokedex,
         page: q.page,
         pageSize: q.pageSize,
       });
+      /* WHICH DOOR THEY CAME IN BY (Phase 5 C1), and nothing else about it.
+         Whether people use the Pokémon, the set or the artist to find a card is
+         the one thing this batch needs to learn and cannot learn any other way
+         — a browse is a read, and a read leaves no record anywhere. The door
+         and how many rows came back; never the words they typed. */
+      const doorway = q.pokedex ? "pokemon" : q.expansion || q.expansionId ? "set"
+        : q.artist ? "artist" : q.query ? "name" : "all";
+      request.log.info({ ...actorLog(request.metyet.actor), doorway, results: total }, "browse");
       return { contexts, page, pageSize, total };
+    });
+
+    /* THE TWO DOORWAYS THAT ARE LISTS (Phase 5 C1). Browsing by set means
+       seeing which sets there are; browsing by artist means seeing which
+       artists there are. Neither is a card, so neither belongs on the card
+       route — and both are the same kind of thing it is: read-only, no lock,
+       no world, MetYet's own vocabulary and no provider in the contract. */
+    app.get("/api/expansions", { preHandler: authenticate }, async (request) => {
+      const q = request.query || {};
+      return catalog.findExpansions({ query: q.query, page: q.page, pageSize: q.pageSize });
+    });
+
+    app.get("/api/artists", { preHandler: authenticate }, async (request) => {
+      const q = request.query || {};
+      return catalog.findArtists({ query: q.query, page: q.page, pageSize: q.pageSize });
     });
 
     /* WHICH CARDS THESE ARE (Phase 5 Batch 6). A screen holding a handful of

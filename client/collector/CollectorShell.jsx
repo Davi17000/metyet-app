@@ -55,6 +55,8 @@
 import React, { useState } from "react";
 import { describeActor } from "../actor.js";
 import { rows } from "./present.js";
+import { EMPTY_SESSION } from "../browse/CardBrowser.jsx";
+import Browse from "./sections/Browse.jsx";
 import Goals from "./sections/Goals.jsx";
 import TradeBinder from "./sections/TradeBinder.jsx";
 import TrustedPartners from "./sections/TrustedPartners.jsx";
@@ -64,6 +66,13 @@ import TrustedPartners from "./sections/TrustedPartners.jsx";
    something the server already scoped to this Collector, and none of them is a
    rule. */
 export const SECTIONS = Object.freeze([
+  /* BROWSE IS FIRST (Phase 5 C1), because it is where a Collector spends time
+     and where saying "I'm looking for this" now happens. It counts nothing:
+     the catalogue is not a collection of theirs, and a number beside it would
+     be a number about MetYet rather than about them. */
+  { id: "browse", label: "Browse", count: null, view: Browse,
+    title: "Browse",
+    sub: "Find a card by Pokémon, by set, or by who drew it" },
   { id: "goals", label: "Goals", count: "goals", view: Goals,
     title: "Goals",
     sub: "What you're looking for, and what your Trusted Partners work from" },
@@ -106,6 +115,51 @@ const CSS = `
 .mcs :focus-visible { outline:2px solid var(--t1); outline-offset:2px; }
 .mcs p { margin:0; }
 .mcs .disp { font-family:'Archivo',system-ui,sans-serif; }
+
+/* ---- browse: the doorways, the grid and the specification panel (C1) ---- */
+.mcs-br { display:flex; flex-direction:column; gap:10px; }
+.mcs-br-doors { display:flex; gap:6px; }
+.mcs-br-door { border:1px solid var(--line); background:var(--panel); color:var(--muted);
+  border-radius:999px; padding:5px 12px; font-size:13px; }
+.mcs-br-door.on { border-color:var(--t1); background:var(--t1-bg); color:var(--t1); font-weight:600; }
+.mcs-br-find { display:grid; grid-template-columns:1fr auto; gap:4px 10px; align-items:center; }
+.mcs-br-lab { font-size:12px; color:var(--faint); }
+.mcs-br-in { border:1px solid var(--line); border-radius:6px; padding:7px 9px; font:inherit;
+  background:var(--panel); color:var(--text); min-width:0; }
+.mcs-br-in.n { width:88px; }
+.mcs-br-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:4px;
+  max-height:240px; overflow:auto; }
+.mcs-br-note { font-size:12px; color:var(--faint); }
+.mcs-br-open { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:0; }
+.mcs-br-back { border:0; background:none; color:var(--t1); font-size:13px; padding:0;
+  text-decoration:underline; }
+.mcs-br-empty { margin:0; color:var(--muted); font-size:13px; }
+.mcs-br-count { margin:0; color:var(--faint); font-size:12px; }
+.mcs-br-grid { list-style:none; margin:0; padding:0; display:grid; gap:10px;
+  grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); }
+.mcs-br-cell { position:relative; }
+.mcs-br-cell.on .mcs-br-card { border-color:var(--t1); background:var(--t1-bg); }
+.mcs-br-card { display:flex; flex-direction:column; gap:4px; width:100%; text-align:left;
+  border:1px solid var(--line); border-radius:8px; background:var(--panel); padding:8px; }
+.mcs-br-art { display:flex; align-items:center; justify-content:center; aspect-ratio:5/7;
+  background:var(--line-soft); border-radius:5px; overflow:hidden; }
+.mcs-br-art img { width:100%; height:100%; object-fit:contain; }
+.mcs-br-plate { font-size:12px; color:var(--muted); text-align:center; padding:6px; }
+.mcs-br-name { font-size:13px; font-weight:600; }
+.mcs-br-sub { font-size:11px; color:var(--faint); }
+.mcs-br-plus { position:absolute; top:12px; right:12px; width:26px; height:26px; border-radius:999px;
+  border:1px solid var(--line); background:var(--panel); color:var(--t1); font-size:16px;
+  line-height:1; display:flex; align-items:center; justify-content:center; }
+.mcs-br-pager { display:flex; align-items:center; justify-content:center; gap:12px; margin:0; }
+.mcs-br-page { border:1px solid var(--line); background:var(--panel); color:var(--text);
+  border-radius:6px; padding:5px 10px; font-size:13px; }
+.mcs-br-page:disabled { color:var(--faint); }
+.mcs-br-pos { font-size:12px; color:var(--faint); }
+.mcs-spec { border:1px solid var(--t1); border-radius:10px; background:var(--t1-bg);
+  padding:12px; display:flex; flex-direction:column; gap:8px; }
+.mcs-spec-sub { margin:0; font-size:12px; color:var(--muted); }
+.mcs-spec-ask { margin:0; font-size:13px; font-weight:600; }
+.mcs-spec-net { margin:0; font-size:13px; color:var(--t1); }
 
 /* ---- the top of a phone ---- */
 .mcs-top { background:var(--panel); border-bottom:1px solid var(--line); padding:14px 16px;
@@ -238,13 +292,21 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
      holds that shop is what they came for. Everyone else opens where they
      always did. */
   const [section, setSection] = useState(joined ? "partners" : SECTIONS[0].id);
+  /* THE BROWSING SESSION LIVES HERE, above the section that uses it, so that
+     leaving Browse and coming back lands where it was left rather than at an
+     empty search box. It holds a doorway, what was typed, which set or artist
+     is open, the page and the rows — and nothing durable: it is gone when the
+     tab is closed, which is exactly what a browsing session should be. */
+  const [browseSession, setBrowseSession] = useState(EMPTY_SESSION);
 
   const who = describeActor(state);
   /* Row counts of collections the SERVER scoped to this Collector. Nothing
      here decides what any of them mean — which is why there is no
      opportunities count: "active" is a judgement, and it is the server's. */
   const counts = {};
-  for (const s of SECTIONS) counts[s.id] = rows(state && state[s.count]).length;
+  for (const s of SECTIONS) {
+    if (s.count) counts[s.id] = rows(state && state[s.count]).length;
+  }
 
   const meta = SECTIONS.find((s) => s.id === section) || SECTIONS[0];
   const View = meta.view;
@@ -310,7 +372,7 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
               className={"mcs-i" + (s.id === section ? " on" : "")}
               aria-current={s.id === section ? "page" : undefined}
               onClick={() => setSection(s.id)}>
-              <span className="c">{counts[s.id]}</span>
+              {s.count ? <span className="c">{counts[s.id]}</span> : null}
               <span className="l">{s.label}</span>
             </button>
           ))}
@@ -322,7 +384,10 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
               (Batch 7), so it is the one that receives callbacks. Every other
               section is handed the projection and nothing else. */}
           <View state={state} {...(meta.id === "goals"
-            ? { onAddGoal, onSetPriority, onRemoveGoal, onBrowseCards } : {})} />
+            ? { onAddGoal, onSetPriority, onRemoveGoal, onBrowseCards }
+            : meta.id === "browse"
+              ? { onAddGoal, onBrowseCards, session: browseSession, onSession: setBrowseSession }
+              : {})} />
         </main>
       </div>
     </div>

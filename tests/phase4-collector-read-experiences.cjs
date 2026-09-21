@@ -65,7 +65,9 @@ const COLLECTOR_FILES = fs.readdirSync(path.join(ROOT, "client", "collector"), {
 const ME = "c-8x21";
 const P1 = "p-north";
 const P2 = "p-second";
-const NAV = ["Goals", "Trusted Partners"];
+/* C1 put Browse at the front: it is where a Collector finds a card, and
+   saying "I am looking for this" now happens while browsing. */
+const NAV = ["Browse", "Goals", "Trusted Partners"];
 
 /* ---------------------------------------------------- the real projection */
 
@@ -180,6 +182,16 @@ const show = (state, section = null) => {
   if (section) clickText(r, section);
   return r;
 };
+/* THE SECTION'S OWN TEXT, without the shell around it (C1). The navigation is
+   on screen in every section, so an assertion about what a SECTION says has to
+   be made of the section — otherwise a nav label is read as the section's own
+   words, which is how "Browse" became marketplace framing on the Trusted
+   Partners screen. */
+const sectionText = (r) => {
+  const main = r.root.findAll((n) => n.type === "main")[0];
+  return main ? instText(main).replace(/\s+/g, " ") : "";
+};
+
 /* The rendered text of ONE record block, found by something inside it. */
 const recordWith = (r, needle) => {
   const a = r.root.findAll((n) => n.type === "article").find((n) => instText(n).includes(needle));
@@ -204,7 +216,7 @@ const onEverySection = (r, check) => {
 /* ============================================================== A */
 describe("A. Goals — and the one place coordination appears", () => {
   test("an empty Goals section is a sentence, not a failure and not a control", () => {
-    const shown = flat(show(EMPTY));
+    const shown = flat(show(EMPTY, "Goals"));
     assert(/haven't set any goals yet/.test(shown), shown);
     assert(/how your Trusted Partners know what to look out for/.test(shown),
       "it does not say what a goal is for: " + shown);
@@ -214,7 +226,7 @@ describe("A. Goals — and the one place coordination appears", () => {
   });
 
   test("several goals render, each from its own projected row", () => {
-    const r = show(FULL);
+    const r = show(FULL, "Goals");
     const ray = recordWith(r, "Rayquaza Gold Star");
     const blast = recordWith(r, "Blastoise");
     assert(ray.includes("RAYQUAZA-NOTE") && !ray.includes("BLASTOISE-NOTE"), "notes crossed: " + ray);
@@ -237,7 +249,7 @@ describe("A. Goals — and the one place coordination appears", () => {
       { id: "g-a", collectorId: ME, cardId: "k1", tier: "primary", note: "FIRST-NOTE", since: "2026-01-01" },
       { id: "g-b", collectorId: ME, cardId: "k1", tier: "secondary", note: "SECOND-NOTE", since: "2026-02-02" },
     ] };
-    const r = show(twins);
+    const r = show(twins, "Goals");
     const all = records(r);
     eq(all.length, 2, "two goals for one card collapsed into " + all.length);
     assert(all.some((t) => t.includes("FIRST-NOTE")) && all.some((t) => t.includes("SECOND-NOTE")),
@@ -245,7 +257,7 @@ describe("A. Goals — and the one place coordination appears", () => {
   });
 
   test("coordination attaches by goalId, and to no other goal", () => {
-    const r = show(FULL);
+    const r = show(FULL, "Goals");
     const ray = recordWith(r, "RAYQUAZA-NOTE");
     const blast = recordWith(r, "BLASTOISE-NOTE");
     assert(ray.includes("Choosing what to trade"), "the server's stage, in the product's words: " + ray);
@@ -260,7 +272,7 @@ describe("A. Goals — and the one place coordination appears", () => {
       { id: "o-x", collectorId: ME, goalId: "g-does-not-exist", partnerId: P1, cardId: "k1",
         stage: "deal", listedPrice: 1234, updated: "2026-05-05" },
     ] };
-    const shown = flat(show(orphan));
+    const shown = flat(show(orphan, "Goals"));
     assert(!shown.includes("$1,234"), "an orphan deal was attached to a goal: " + shown);
     assert(!/Agreeing the deal/.test(shown), "and its stage rendered: " + shown);
   });
@@ -277,7 +289,7 @@ describe("A. Goals — and the one place coordination appears", () => {
     const odd = { ...FULL, opportunities: [
       { id: "o-e", collectorId: ME, goalId: "g-ray", partnerId: P1, stage: "escrow-hold",
         updated: "2026-06-06" }] };
-    const shown = flat(show(odd));
+    const shown = flat(show(odd, "Goals"));
     assert(shown.includes("escrow-hold"), "the stage vanished: " + shown);
     assert(/not a step this version knows/.test(shown), "and was passed off as familiar: " + shown);
     assert(!/Agreeing a price|Choosing what to trade|Valuing|Handing it over/.test(shown),
@@ -300,7 +312,7 @@ describe("A. Goals — and the one place coordination appears", () => {
       "a section appeared that the product does not offer");
     onEverySection(r, (shown) =>
       assert(!/opportunit/i.test(shown), "the word appears as a product: " + shown));
-    eq(SHELL_MOD.SECTIONS.map((x) => x.id).join(","), "goals,partners");
+    eq(SHELL_MOD.SECTIONS.map((x) => x.id).join(","), "browse,goals,partners");
     /* Restated in Batch 8.1: the Trade Binder is declared deferred rather
        than offered, and "no Opportunities product" is unaffected by it. */
     eq(SHELL_MOD.DEFERRED_SECTIONS.map((x) => x.id).join(","), "binder");
@@ -365,11 +377,14 @@ describe("B. Trade Binder", () => {
 /* ============================================================== C */
 describe("C. Trusted Partners", () => {
   test("an empty list is a sentence about relationships, not a marketplace", () => {
-    const shown = flat(show(EMPTY, "Trusted Partners"));
+    const r = show(EMPTY, "Trusted Partners");
+    const shown = flat(r);
     assert(/no Trusted Partners yet/.test(shown), shown);
     assert(/A shop invites you/.test(shown), "it does not say how a relationship starts");
-    assert(!/browse|find a shop|search|marketplace|discover|join now/i.test(shown),
-      "marketplace framing: " + shown);
+    /* Restated in C1: the SECTION's own words, not the navigation's. Browse is
+       a place to find a card, and it is not on this screen. */
+    assert(!/browse|find a shop|search|marketplace|discover|join now/i.test(sectionText(r)),
+      "marketplace framing: " + sectionText(r));
   });
 
   test("each partner renders with their own profile and their own relationship", () => {
@@ -410,11 +425,37 @@ describe("C. Trusted Partners", () => {
   test("a partner's stock is not rendered — this is a network, not a shop window", () => {
     const withStock = { ...FULL, inventory: [
       { invId: "i1", partnerId: P1, cardId: "k1", ask: 4200, status: "available", cert: "STOCK-CERT" }] };
-    const shown = flat(show(withStock, "Trusted Partners"));
-    assert(!shown.includes("STOCK-CERT") && !shown.includes("$4,200"),
-      "a partner's inventory was rendered: " + shown);
+    for (const section of ["Trusted Partners", "Goals", "Browse"]) {
+      const shown = flat(show(withStock, section));
+      assert(!shown.includes("STOCK-CERT") && !shown.includes("$4,200") && !shown.includes("4200"),
+        `a partner's inventory was rendered in ${section}: ` + shown);
+    }
+    /* RESTATED IN C1, AND IT IS A NARROWER RULE THAN IT WAS, not a wider one.
+       It used to say the Collector surface must not read `inventory` at all —
+       a blanket ban that stood in for the real rule while nothing needed the
+       collection. Browse now needs one thing from it: HOW MANY of a
+       Collector's Trusted Partners have the card they are looking at. That is
+       a count of people, from rows the server already decided they may see,
+       and it is the opposite of a shop window — it names no partner, no price,
+       no certificate and no copy.
+
+       So the rule is stated as what it always meant: a copy's own facts never
+       reach a Collector's screen. The field names below are the whole of what
+       a shop window would be made of, and none of them is read anywhere under
+       `client/collector/`. */
     const bare = COLLECTOR_FILES.map(code).join("\n");
-    assert(!/state\.inventory|\binventory\b/.test(bare), "the Collector surface reads inventory at all");
+    /* The fields that only ever belong to a TRUSTED PARTNER'S copy. `cert`,
+       `photos` and `market` are deliberately not on this list: those are facts
+       about a Collector's OWN binder copy, which their own screen may show and
+       always could. */
+    for (const field of ["ask", "cost", "acquired", "invId"]) {
+      assert(!new RegExp(`\\.${field}\\b|\\["${field}"\\]`).test(bare),
+        `the Collector surface reads a copy's ${field}`);
+    }
+    /* And inventory is counted, never listed: no screen turns those rows into
+       anything a person reads one by one. */
+    assert(!/inventory\)[\s.]*\.?(map|forEach|slice)|inventory\.map/.test(bare),
+      "the Collector surface renders inventory rows");
   });
 });
 
@@ -423,7 +464,7 @@ describe("D. joins are by explicit id, and a missing one yields nothing", () => 
   test("a goal whose card is not in the catalogue still renders, and borrows none", () => {
     const state = { ...FULL, goals: [
       { id: "g-x", collectorId: ME, cardId: "not-in-catalogue", tier: "primary", note: "ORPHAN-NOTE" }] };
-    const r = show(state);
+    const r = show(state, "Goals");
     const rec = recordWith(r, "ORPHAN-NOTE");
     assert(/isn't in your catalogue/.test(rec), "the orphan goal vanished: " + rec);
     CATALOG.forEach((c) => assert(!rec.includes(c.name), `it borrowed "${c.name}": ` + rec));
@@ -448,7 +489,7 @@ describe("D. joins are by explicit id, and a missing one yields nothing", () => 
     const state = { ...FULL, opportunities: [
       { id: "o-s", collectorId: ME, goalId: "g-ray", partnerId: "p-stranger",
         stage: "deal", updated: "2026-07-07" }] };
-    const rec = recordWith(show(state), "RAYQUAZA-NOTE");
+    const rec = recordWith(show(state, "Goals"), "RAYQUAZA-NOTE");
     assert(rec.includes("Agreeing the deal"), "the stage was lost with the partner: " + rec);
     assert(!rec.includes("Northline Cards") && !rec.includes("Second Shop"),
       "a partner name was substituted: " + rec);
@@ -548,11 +589,22 @@ describe("F. nothing acts, nothing mutates, nothing forbidden is imported", () =
        there is nothing to press but navigation — which is the property that
        matters and is what is asserted. A surface that offered a control it
        could not deliver would fail here first. */
+    /* RESTATED IN C1. Browse has controls of its own — three doorways and a
+       search — so "nothing to press but navigation" is asserted of the sections
+       that offer nothing, and Browse's own controls are named rather than
+       counted away. The property is unchanged: a section handed no callbacks
+       offers no way to change anything. */
     const r = show(FULL);
-    for (const s of NAV) {
-      eq(buttons(r).map(instText).length, NAV.length + 1, "an extra control appeared in " + s);
+    for (const s of ["Goals", "Trusted Partners"]) {
       clickText(r, s);
+      eq(buttons(r).map(instText).length, NAV.length + 1, "an extra control appeared in " + s);
     }
+    clickText(r, "Browse");
+    const browsing = buttons(r).map(instText).map((l) => l.trim());
+    /* A nav button carries its count ("2 Goals"), so it is matched by the label
+       it contains rather than by equality. */
+    const own = browsing.filter((l) => !NAV.some((n) => l.includes(n)) && l !== "Sign out");
+    eq(own.join(","), "Pokémon,Set,Artist", "Browse grew a control: " + own.join(" | "));
     const bare = COLLECTOR_FILES.map(code).join("\n");
     /* Binder entries, interests and invitations are still nobody's to write
        from here; each moves with its own batch. */
