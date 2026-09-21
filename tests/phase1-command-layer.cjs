@@ -64,6 +64,7 @@ function world() {
       { offered: true, id: "b2", collectorId: "c1", cardId: "k5", market: 200, cert: null, photos: photos("b2") },
       { offered: true, id: "b3", collectorId: "c2", cardId: "k2", market: 300, cert: null, photos: photos("b3") },
     ],
+    binders: [], binderEntries: [],
     interests: [], conversations: [], opportunities: [], preferences: [], activity: [],
   });
 }

@@ -44,6 +44,12 @@ function createStore(seed, options = {}) {
     goals: seed.goals,
     inventory: seed.inventory,
     collectorCopies: seed.collectorCopies,
+    /* WHERE A CARD BELONGS (C3.1). The demo seeds none: a Binder organises
+       CANONICAL cards, and the prototype world is built on the legacy
+       catalogue, so there is nothing here for one to hold. Empty is the honest
+       answer, not a gap. */
+    binders: seed.binders || [],
+    binderEntries: seed.binderEntries || [],
     interests: seed.interests,
     conversations: seed.conversations,
     photoRequests: seed.photoRequests || [],

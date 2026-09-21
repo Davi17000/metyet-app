@@ -29,7 +29,7 @@ const world = () => createStore({
     { id: "p2", name: "Complete Collectibles" }],
   goals: [],
   inventory: [],
-  collectorCopies: [],
+  collectorCopies: [], binders: [], binderEntries: [],
   interests: [],
   conversations: [],
   opportunities: [],
@@ -763,7 +763,7 @@ describe("Trusted Partner runtime is the shared store", () => {
     const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
     /* PHASE 1: addGoal is validated at the command boundary (the collector and
        the card must exist), so the world names them. */
-    const st = createStore({ goals: [{ id: "g1" }], inventory: [], collectorCopies: [],
+    const st = createStore({ goals: [{ id: "g1" }], inventory: [], collectorCopies: [], binders: [], binderEntries: [],
       interests: [], conversations: [], opportunities: [],
       catalog: [{ id: "i17", name: "Charizard", set: "Base Set", num: "4/102", print: "Holo",
         edition: "Unlimited", language: "English", grade: "PSA 9", condition: null }],
@@ -895,7 +895,7 @@ describe("Secondary goal gating", () => {
     collectors: [{ id: "c1" }], partners: [{ id: "p2" }], preferences: [],
     goals: [{ id: "gs", collectorId: "c1", cardId: "k1", tier: "secondary" },
       { id: "gp", collectorId: "c1", cardId: "k2", tier: "primary" }],
-    inventory: [], collectorCopies: [], interests: [], conversations: [], opportunities: [],
+    inventory: [], collectorCopies: [], binders: [], binderEntries: [], interests: [], conversations: [], opportunities: [],
   });
   /* PHASE 1: the offer is made on a listed copy of the goal's card (see listed()). */
   const offer = (st, goalId) => {

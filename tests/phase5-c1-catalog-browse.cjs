@@ -77,7 +77,7 @@ async function world() {
     collectors: [{ id: "c1", name: "Casey" }],
     partners: [{ id: "p1", name: "Northline" }, { id: "p2", name: "Second" }],
     relationships: [{ partnerId: "p1", collectorId: "c1", status: "accepted", at: "2030-01-01" }],
-    invitations: [], goals: [], inventory: [], collectorCopies: [], interests: [],
+    invitations: [], goals: [], inventory: [], collectorCopies: [], binders: [], binderEntries: [], interests: [],
     opportunities: [], conversations: [], photoRequests: [], copyReviews: [],
   });
   const accounts = createAccountDirectory(db);

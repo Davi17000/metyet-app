@@ -103,7 +103,7 @@ const EMPTY = Object.freeze({
   actor: { seat: "collector", collectorId: COLLECTOR },
   collectors: [{ id: COLLECTOR, name: "Casey Lin", short: "Casey L.", city: "Brooklyn, NY" }],
   partners: [], relationships: [], invitations: [], goals: [], preferences: [],
-  inventory: [], collectorCopies: [], interests: [], opportunities: [], conversations: [],
+  inventory: [], collectorCopies: [], binders: [], binderEntries: [], interests: [], opportunities: [], conversations: [],
   activity: [], photoRequests: [], copyReviews: [], counterparties: [], catalog: [],
 });
 
@@ -122,7 +122,7 @@ const FULL = Object.freeze({
 const TP_VIEW = Object.freeze({
   actor: { seat: "tp", partnerId: PARTNER },
   partners: [{ id: PARTNER, name: "Northline Cards" }],
-  collectors: [], relationships: [], goals: [], collectorCopies: [], inventory: [],
+  collectors: [], relationships: [], goals: [], collectorCopies: [], binders: [], binderEntries: [], inventory: [],
   opportunities: [], catalog: [], counterparties: [],
 });
 

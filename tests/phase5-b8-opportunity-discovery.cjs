@@ -78,7 +78,7 @@ async function world() {
       { partnerId: "p1", collectorId: "c1", status: "accepted", at: "2030-01-01" },
       { partnerId: "p1", collectorId: "c2", status: "accepted", at: "2030-01-01" },
     ],
-    invitations: [], goals: [], inventory: [], collectorCopies: [], interests: [],
+    invitations: [], goals: [], inventory: [], collectorCopies: [], binders: [], binderEntries: [], interests: [],
     opportunities: [], conversations: [], photoRequests: [], copyReviews: [],
   });
   const accounts = createAccountDirectory(db);
@@ -367,7 +367,7 @@ describe("B. what is not an overlap, however much it resembles one", () => {
       goals: [{ id: "g1", collectorId: "c1", cardId: "cardX", tier: "primary", since: "2030-01-01" }],
       inventory: [{ invId: "i1", partnerId: "p1", cardId: "cardX", ask: 900,
         photos: { front: null, back: null }, archived: false }],
-      collectorCopies: [], interests: [], opportunities: [], conversations: [],
+      collectorCopies: [], binders: [], binderEntries: [], interests: [], opportunities: [], conversations: [],
       photoRequests: [], copyReviews: [],
     });
     const mine = await view(ctx, "casey");
@@ -708,7 +708,7 @@ describe("F. the deal record's own migration, and the hole it closed", () => {
       goals: [{ id: "g1", collectorId: "c1", cardId: "cardX", tier: "primary", since: "2030-01-01" }],
       inventory: [{ invId: "i1", partnerId: "p1", cardId: "cardX", ask: 900,
         photos: { front: null, back: null }, archived: false }],
-      collectorCopies: [], interests: [], opportunities: [], conversations: [],
+      collectorCopies: [], binders: [], binderEntries: [], interests: [], opportunities: [], conversations: [],
       photoRequests: [], copyReviews: [],
     });
     await acted(ctx, ACTOR.casey, "startOpportunity",
@@ -721,7 +721,7 @@ describe("F. the deal record's own migration, and the hole it closed", () => {
   test("the world refuses a deal that names no card, or two", () => {
     const base = {
       catalog: [], collectors: [{ id: "c1" }], partners: [{ id: "p1" }],
-      relationships: [], invitations: [], goals: [], inventory: [], collectorCopies: [],
+      relationships: [], invitations: [], goals: [], inventory: [], collectorCopies: [], binders: [], binderEntries: [],
       interests: [], conversations: [], photoRequests: [], copyReviews: [],
     };
     const deal = (extra) => ({ id: "o1", collectorId: "c1", partnerId: "p1",
@@ -915,7 +915,7 @@ const canonicalWorld = (over = {}) => ({
     since: "2030-01-02", note: "" }],
   inventory: [{ invId: "i1", partnerId: "p1", canonicalCardId: CARD, ask: 900, cost: 400,
     acquired: "2029-01-01", note: "PRIVATE", photos: { front: null, back: null }, archived: false }],
-  collectorCopies: [], interests: [], opportunities: [], conversations: [],
+  collectorCopies: [], binders: [], binderEntries: [], interests: [], opportunities: [], conversations: [],
   photoRequests: [], copyReviews: [], ...over,
 });
 const describer = () => ({

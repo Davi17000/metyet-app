@@ -104,6 +104,7 @@ const world = () => ({
     acquired: MARK.acquired, archived: false, photos: { front: "i1:front", back: "i1:back" } }],
   collectorCopies: [{ offered: true, id: "b1", collectorId: COLLECTOR, cardId: "k2", market: 900, cert: "CASEY-CERT-9001",
     photos: { front: "b1:front", back: "b1:back" } }],
+  binders: [], binderEntries: [],
   interests: [{ partnerId: PARTNER, binderId: "b1", at: "2026-02-02" }],
   conversations: [], opportunities: [], photoRequests: [], copyReviews: [],
   activity: [{ id: "a1", partnerId: PARTNER, collectorId: COLLECTOR, type: "manual",

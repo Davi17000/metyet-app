@@ -89,7 +89,7 @@ const REAL_PRISTINE = JSON.stringify(REAL);
 const EMPTY = Object.freeze({
   actor: { seat: "tp", partnerId: PARTNER },
   catalog: [], collectors: [], partners: [{ id: PARTNER, name: "Northline Cards" }],
-  relationships: [], invitations: [], goals: [], preferences: [], inventory: [], collectorCopies: [],
+  relationships: [], invitations: [], goals: [], preferences: [], inventory: [], collectorCopies: [], binders: [], binderEntries: [],
   interests: [], opportunities: [], conversations: [], activity: [], photoRequests: [],
   copyReviews: [], counterparties: [],
 });

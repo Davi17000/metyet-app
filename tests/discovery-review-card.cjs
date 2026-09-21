@@ -86,7 +86,7 @@ const mixed = () => createStore({
   catalog: [CARD_G, CARD_R],
   collectors: [{ id: ME, name: "Casey", prefs: [] }],
   partners: [{ id: "p2", name: "Northline Cards" }, { id: "p3", name: "Complete Collectibles" }],
-  goals: [], collectorCopies: [], interests: [], conversations: [], opportunities: [],
+  goals: [], collectorCopies: [], binders: [], binderEntries: [], interests: [], conversations: [], opportunities: [],
   preferences: [], photoRequests: [], copyReviews: [],
   inventory: [
     { invId: "g-stock", partnerId: "p2", cardId: "kg", ask: 4200, archived: false,

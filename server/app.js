@@ -72,6 +72,25 @@ const BODY_KEYS = ["command", "payload"];
 /* `email` is accepted only when MetYet can actually send (Phase 5 Batch 3B-2).
    A field that is taken and then quietly ignored is worse than one that is
    refused: a partner would believe an invitation had been emailed. */
+/* THE COMMANDS THAT NAME A CANONICAL CARD, and where each one puts it.
+
+   A list rather than a chain of `command === "…"` comparisons, for the reason
+   `server/exposed-commands.js` is a list: a rule spread across an `if` cannot
+   be asserted, and the next person to add a card-naming command has to notice
+   the guard exists. This one can be read by a test, which is what stops the
+   guard quietly falling behind the command table.
+
+   `CARD_IN_COPY` is the shape distinction and nothing more: supply names its
+   card inside a `copy` object, demand and organisation name it directly. */
+const CARD_IN_COPY = new Set(["addInventoryCopy", "addCollectorCopy"]);
+const CARD_NAMING_COMMANDS = Object.freeze([
+  "addInventoryCopy",   // TP:        I have one of those
+  "addCollectorCopy",   // Collector: I have one of those
+  "addGoal",            // Collector: I want one of those
+  "addBinderEntry",     // Collector: that one belongs here          (C3.1)
+]);
+const namesACanonicalCard = (command) => CARD_NAMING_COMMANDS.includes(command);
+
 const LOOKS_LIKE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const INVITATION_BODY_KEYS = ["recipient", "note"];
 const INVITATION_BODY_KEYS_WITH_DELIVERY = [...INVITATION_BODY_KEYS, "email"];
@@ -432,7 +451,7 @@ function createApp({
        This is a GUARD, not a second authorization system: it decides nothing
        about who may act. The seat, the ownership and every copy fact are still
        the command's, and the foreign key is still the backstop underneath. */
-    if (command === "addInventoryCopy" || command === "addGoal" || command === "addCollectorCopy") {
+    if (namesACanonicalCard(command)) {
       /* Supply names a card inside a `copy`; demand names one directly. Both
          are a person choosing an existing card, so both are checked the same
          way — and an existing Goal is never revisited by this, so a card
@@ -444,10 +463,18 @@ function createApp({
          as inventory does, because a Collector's copy and a partner's copy are
          the same kind of object owned by different people. A copy already
          recorded is never revisited either: a card withdrawn from the catalog
-         later does not take somebody's cards off their own shelf. */
-      const named = command === "addGoal"
-        ? payload && payload.canonicalCardId
-        : payload && payload.copy && payload.copy.canonicalCardId;
+         later does not take somebody's cards off their own shelf.
+
+         `addBinderEntry` joined them in C3.1, and it is the same sentence in a
+         third voice: a Collector saying "this card belongs here". It names the
+         card directly, like a Goal. The command is not on the production
+         allow-list yet, so this guard is unreachable from a browser today —
+         it is written now so that the batch which opens that door does not
+         also have to remember to close this one. An entry already filed is
+         never revisited either. */
+      const named = CARD_IN_COPY.has(command)
+        ? payload && payload.copy && payload.copy.canonicalCardId
+        : payload && payload.canonicalCardId;
       if (typeof named === "string" && named) {
         /* No catalog injected means this deployment has no cards to choose
            from, which is the same answer as a card that is not there: one
@@ -841,4 +868,4 @@ function createApp({
   return app;
 }
 
-module.exports = { createApp, FORBIDDEN_PAYLOAD_KEYS };
+module.exports = { createApp, FORBIDDEN_PAYLOAD_KEYS, CARD_NAMING_COMMANDS };

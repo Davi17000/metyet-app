@@ -61,10 +61,11 @@ const D = require("./metyet-domain.js");
 /* `binder` became `collectorCopies` in C2. It was never a binder: it is a
    Collector's own physical card, the mirror image of a Trusted Partner's
    `inventory`. The word is now reserved for the named organisational grouping
-   C3 will add, whose membership points at a canonical card. */
+   C3 will add, whose membership points at a canonical card — which is now
+   `binders` and `binderEntries` below (C3.1). */
 const REQUIRED_COLLECTIONS = ["collectors", "partners", "relationships", "invitations",
-  "goals", "inventory", "collectorCopies", "interests", "opportunities", "conversations",
-  "photoRequests", "copyReviews"];
+  "goals", "inventory", "collectorCopies", "binders", "binderEntries", "interests",
+  "opportunities", "conversations", "photoRequests", "copyReviews"];
 const OPTIONAL_COLLECTIONS = ["catalog", "preferences", "activity"];
 
 /* The stages an Opportunity occupies: D.STAGES without the two intent stages,
@@ -299,7 +300,58 @@ function validateWorld(state) {
       report("field.invalid", `${path}.market`, `${who} has an invalid reference value.`);
     }
   }
+  /* WHERE A CARD BELONGS (Phase 5 C3.1).
+
+     A Binder is a name and an owner; a BinderEntry is one canonical card filed
+     in one Binder. The rules below are about those two facts and NOTHING ELSE:
+     there is deliberately no check that the card is wanted, owned or offered,
+     because a Binder entry whose card the Collector neither wants nor owns is
+     valid curation — the commonest state a binder starts in. Coupling this to
+     Goals or copies would make organising imply demand, which is the one thing
+     a Binder must never do. */
+  for (const [b, path] of C.binders) {
+    const who = `Binder "${b.id}"`;
+    ref(collectors, b.collectorId, `${path}.collectorId`, "collector", who);
+    if (typeof b.name !== "string" || !b.name.trim()) {
+      report("field.invalid", `${path}.name`, `${who} has no name. A Binder is a name and a set of cards.`);
+    }
+    /* Archived is a TIME or nothing — "when it was put away", not a boolean.
+       A timestamp says when, which a boolean cannot, and `null` is the only
+       other thing it may be: absent and null both mean active, and neither is
+       an ambiguity because there is no third state to confuse them with. */
+    if (!blank(b.archivedAt) && typeof b.archivedAt !== "string") {
+      report("field.invalid", `${path}.archivedAt`,
+        `${who} has an invalid archivedAt; it is a timestamp or null.`);
+    }
+  }
+  const binders = index("binders");
+  const filed = new Set();
+  for (const [e, path] of C.binderEntries) {
+    const who = `Binder entry for card "${e.canonicalCardId}"`;
+    ref(binders, e.binderId, `${path}.binderId`, "binder", who);
+    /* The card is named canonically and only canonically. A Binder organises
+       printings from the catalog, never a row in the demo's legacy table — it
+       is a concept that did not exist before canonical identity did, so it has
+       no legacy form to be compatible with. Existence is the catalog's answer
+       and the foreign key's, exactly as it is for a Goal's canonical card. */
+    if (!isId(e.canonicalCardId)) {
+      report("ref.missing", `${path}.canonicalCardId`, `${who} names no canonical card.`);
+    }
+    /* ONE MEMBERSHIP PER CARD PER BINDER. A binder is a set. The command makes
+       a repeat add a no-op; this is what makes it true for a world assembled
+       any other way, and it mirrors the unique index in migration 0013. */
+    const key = `${e.binderId}::${e.canonicalCardId}`;
+    if (isId(e.binderId) && isId(e.canonicalCardId)) {
+      if (filed.has(key)) {
+        report("id.duplicate", `${path}.canonicalCardId`,
+          `Binder "${e.binderId}" files card "${e.canonicalCardId}" more than once; a binder is a set of cards.`);
+      } else filed.add(key);
+    }
+  }
   for (const [x, path] of C.interests) {
+    /* `binderId` HERE IS A COLLECTOR COPY, not a Binder — legacy naming from
+       before C2 renamed `binder_copies`, kept as debt (domain/README.md). The
+       Binder rules are above and share nothing with this. */
     const who = `Interest of "${x.partnerId}" in "${x.binderId}"`;
     ref(partners, x.partnerId, `${path}.partnerId`, "partner", who);
     ref(collectorCopies, x.binderId, `${path}.binderId`, "collector copy", who);

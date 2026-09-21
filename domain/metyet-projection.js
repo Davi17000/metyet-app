@@ -253,8 +253,8 @@ const counterpartiesFrom = (rows, key, isNetwork, records, fields) => {
 
 /* ------------------------------------------------------------- THE EMPTY VIEW */
 const COLLECTIONS = ["catalog", "collectors", "partners", "relationships", "invitations",
-  "goals", "preferences", "inventory", "collectorCopies", "interests", "opportunities",
-  "conversations", "activity", "photoRequests", "copyReviews"];
+  "goals", "preferences", "inventory", "collectorCopies", "binders", "binderEntries",
+  "interests", "opportunities", "conversations", "activity", "photoRequests", "copyReviews"];
 const SECTIONS = ["actor", ...COLLECTIONS, "counterparties", "discoveries"];
 const empty = () => {
   const out = { actor: null };
@@ -290,6 +290,8 @@ function projectForCollector(state, me) {
   const copyReviews = list(state.copyReviews).filter((r) => r.collectorId === cid);
   const collectorCopies = list(state.collectorCopies).filter((b) => b.collectorId === cid);
   const myCopyIds = new Set(collectorCopies.map((b) => b.id));
+  const myBinders = list(state.binders).filter((b) => b.collectorId === cid);
+  const myBinderIds = new Set(myBinders.map((b) => b.id));
 
   /* Inventory: the current supply of Trusted Partners, and the exact copies this
      collector's own deals name — each with a status from their own deals only.
@@ -323,6 +325,13 @@ function projectForCollector(state, me) {
        offering is a flag on it, and a Collector who is not offering a card must
        still be able to see that they own it. */
     collectorCopies: collectorCopies.map((b) => ({ ...clone(b), status: D.collectorCopyStatus(b.id, allOpps) })),
+    /* WHERE THEIR CARDS BELONG — theirs, and nobody else's (Phase 5 C3.1).
+       Whole, because it is their own organisation and there is nothing in it
+       they should be kept from. The entries are scoped through the binders:
+       membership is only meaningful inside a binder, so a binder they do not
+       own cannot bring its cards into view. */
+    binders: clone(myBinders),
+    binderEntries: clone(list(state.binderEntries).filter((e) => myBinderIds.has(e.binderId))),
     interests: list(state.interests)
       .filter((x) => myCopyIds.has(x.binderId) && related(x.partnerId))
       .map((x) => pick(x, INTEREST_FOR_COLLECTOR)),
@@ -396,6 +405,20 @@ function projectForPartner(state, me) {
     inventory: list(state.inventory).filter((i) => i.partnerId === pid)
       .map((i) => ({ ...clone(i), status: D.inventoryCopyStatus(i.invId, allOpps) })),
     collectorCopies,
+    /* HOW SOMEBODY ORGANISES THEIR COLLECTION IS NOT A FACT ABOUT A TRADE
+       (Phase 5 C3.1). A Trusted Partner receives no binder name, no binder id,
+       no membership, and — just as importantly — no COUNT and no derived hint.
+       "This card is in three of their binders" would leak the same thing the
+       names would: how much this Collector cares about a card, which is
+       negotiating information they never offered.
+
+       Written as an explicit empty rather than an omitted key, so that the
+       answer is a statement somebody made rather than a line nobody wrote. It
+       is also what keeps a card's presence in a binder from ever being read as
+       demand: demand is a Goal, a Goal is projected above, and there is exactly
+       one way for a partner to learn that a Collector wants something. */
+    binders: [],
+    binderEntries: [],
     interests: clone(list(state.interests).filter((x) => x.partnerId === pid)),
     opportunities: opportunities.map(opportunityForPartner),
     conversations: clone(conversations),

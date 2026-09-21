@@ -11,7 +11,7 @@ same questions in different vocabularies.
 | Module | Owns |
 |---|---|
 | `metyet-domain.js` | Lifecycle, settlement arithmetic, derived status, the `INVARIANTS` and `REFUSE` tables |
-| `metyet-commands.js` | Every state change. 43 commands; a command is a pure function of `(state, actor, payload, ctx)` |
+| `metyet-commands.js` | Every state change. 48 commands; a command is a pure function of `(state, actor, payload, ctx)` |
 | `metyet-world.js` | `validateWorld` — what a valid canonical world is, checked on every load and before every save |
 | `metyet-projection.js` | `projectForActor` — **the privacy boundary** |
 | `metyet-discovery.js` | `discoveriesIn` — computed Goal × Inventory overlap |
@@ -35,9 +35,9 @@ projection JSON from `GET /api/view` and nothing else.
 
 `collectorCopies` is a Collector's own physical cards — the mirror image of a
 Trusted Partner's `inventory`, owned by the other seat. **It was called
-`binder` and it was never a binder.** The word "Binder" is wanted for a named
-grouping a Collector makes for themselves ("Mudkip Collection"), whose
-membership points at a *canonical card*; that concept does not exist yet.
+`binder` and it was never a binder.** The word "Binder" now means the named
+grouping a Collector makes for themselves ("Mudkip Collection"), which C3.1
+added — see below.
 
 Two facts, not one:
 
@@ -107,6 +107,63 @@ The table itself is `metyet.collector_copies` (migration 0011); foreign keys
 followed the rename automatically, so those columns point at exactly the rows
 they always did.
 
+## Where a card belongs: Binders (Phase 5 C3.1)
+
+**Four durable facts about a Collector and a card, and they are independent:**
+
+| Fact | Record | Changed by |
+|---|---|---|
+| **This card belongs here** | `binders` + `binderEntries` | `createBinder`, `renameBinder`, `setBinderArchived`, `addBinderEntry`, `removeBinderEntry` |
+| **I want this card** | `goals` | `addGoal` / `updateGoalTier` / `removeGoal` |
+| **I own this physical copy** | `collectorCopies` | `addCollectorCopy` / `removeCollectorCopy` |
+| **I'll trade or sell that copy** | `offered` | `setCollectorCopyOffered` |
+
+A `Binder` is an id, an owner, a name, `createdAt` and `archivedAt` (a
+timestamp or null — archiving is reversible and there is no permanent delete).
+A `BinderEntry` is a `binderId` and a `canonicalCardId`. Nothing else; no
+description, cover, ordering, sharing flag, tags or counts.
+
+**Membership points at the CANONICAL CARD — not a Goal, not a CollectorCopy.**
+This is the whole design and it is load-bearing. `removeCollectorCopy` deletes
+a copy and cascades its interests, so if membership named a copy, *selling a
+card would silently delete its place in the binder*. If it named a Goal,
+satisfying the goal would do the same. The canonical card is the only reference
+that survives every transition the product supports. It also answers the copies
+question for free: three physical copies of one card are three objects and
+**one** place that card belongs.
+
+**Organising is not wanting.** A binder may hold a card the Collector neither
+wants nor owns — that is curation, and it is the state most binders start in.
+Nothing in the binder commands reads or writes a Goal or a copy, and a filed
+card produces no Discovery. Demand is a Goal, and a Goal is the only way a
+partner ever learns that a Collector wants something.
+
+**Binders are Collector-private.** `projectForActor` gives them to the owner
+whole and to every partner as an explicit empty — no name, no id, no
+membership, and **no count**: "this card is in three of their binders" leaks
+how much the Collector cares about a card, which is negotiating information
+they never offered. A test asserts against the whole serialised partner
+response, not a field list.
+
+**There is no persisted "Trade Binder", and there will not be one.** A trade
+view is `collectorCopies` where `offered === true` — a read over a fact that
+already exists. Storing it as a Binder would be a second source of truth for a
+boolean.
+
+### ⚠ `binder_id` means two different things in this schema
+
+| Where | What it actually names |
+|---|---|
+| `binder_entries.binder_id` | **a Binder** (C3.1) — the only place that column name means what it says |
+| `interests.binder_id` | a **collector copy** — legacy |
+| `opportunity_trade_refs.binder_id` | a **collector copy** — legacy |
+| `binderId` on a trade card, `binderIds` on `proposeTradeSelection` | a **collector copy** — legacy |
+| `markBinderReviewed`, `relationships.binderReviewedAt` | a partner opened a Collector's **cards** — legacy |
+
+The legacy names predate C2's rename of `binder_copies` to `collector_copies`
+and were left alone because renaming a column inside the trade package is the
+trade batch's work. **Never join them to a Binder.** C3.1 did not rename them.
+
 ## Five things to know before changing anything
 
 **Discovery is computed; Opportunity is persisted.** They share a word and are
@@ -154,6 +211,7 @@ exactly one reference. The rest move with the batches that own them.
 | Relationship | `metyet-registration.js` `acceptCollectorInvitation` → `isRelated` in `metyet-commands.js` |
 | Goals | `metyet-commands.js` `addGoal` → `GOAL_FOR_PARTNER` in `metyet-projection.js` → `client/collector/sections/Goals.jsx` |
 | Inventory | `metyet-commands.js` `addInventoryCopy` → `INVENTORY_FOR_COLLECTOR` → `client/tp/sections/Inventory.jsx` |
+| Binders | `metyet-commands.js` `createBinder` / `addBinderEntry` → `projectForActor` (owner only) → no surface yet (C3.1 ships none) |
 | A Collector's own cards | `metyet-commands.js` `addCollectorCopy` / `setCollectorCopyOffered` → `COLLECTOR_COPY_FOR_PARTNER` → `client/collector/sections/MyCards.jsx` (built, not yet in the navigation) |
 | Discovery | `metyet-discovery.js` → `withDiscoveries` in `metyet-projection.js` → both shells |
 | Opportunity | `metyet-commands.js` `startOpportunity` → `metyet-domain.js` `STAGES` (no production surface sends these yet) |

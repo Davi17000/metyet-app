@@ -63,6 +63,7 @@ function seed() {
       { offered: true, id: "b1", collectorId: "c1", cardId: "k2", market: 350, cert: null, photos: photos("b1") },
       { offered: true, id: "b2", collectorId: "c1", cardId: "k5", market: 200, cert: null, photos: photos("b2") },
     ],
+    binders: [], binderEntries: [],
     interests: [], conversations: [], opportunities: [], photoRequests: [], copyReviews: [],
     preferences: [], activity: [],
   };
@@ -140,6 +141,21 @@ function everyCommand(store, rec) {
   x(TP1, "setInterest", { binderId: b, on: true });
   step("setInterest", { interest: s().interests.find((i) => i.binderId === b) });
   x(C1, "removeCollectorCopy", { copyId: b });
+
+  /* PHASE 5 C3.1: where a card belongs. Organisation is its own fact, so these
+     touch no Goal and no copy — which is why they sit here on their own rather
+     than beside the copy commands above. The card is a LEGACY one because this
+     suite's world is the legacy-catalogue world; the canonical reference and
+     its foreign key are proved in tests/phase5-c31-binder-foundation.cjs. */
+  const bd = x(C1, "createBinder", { name: "Mudkip Collection", id: FORGED });
+  step("createBinder", { id: bd, binder: s().binders.find((q) => q.id === bd) });
+  x(C1, "renameBinder", { binderId: bd, name: "Water Starters" });
+  step("renameBinder", { binder: s().binders.find((q) => q.id === bd) });
+  x(C1, "addBinderEntry", { binderId: bd, canonicalCardId: "cc-legacy-probe" });
+  step("addBinderEntry", { entry: s().binderEntries.find((e) => e.binderId === bd) });
+  x(C1, "setBinderArchived", { binderId: bd, archived: true });
+  step("setBinderArchived", { binder: s().binders.find((q) => q.id === bd) });
+  x(C1, "removeBinderEntry", { binderId: bd, canonicalCardId: "cc-legacy-probe" });
 
   /* PHASE 5 BATCH 2: an invitation names nobody. It creates no Collector, so
      there is no id for a caller to forge and no profile to smuggle a
@@ -296,7 +312,12 @@ describe("A. runtime contract", () => {
 
 /* ============================================================== B */
 describe("B. every minted id comes from the injected runtime", () => {
-  /* 42 BECAME 43 IN C2, and the three that changed are named here so the number
+  /* 43 BECAME 48 IN C3.1, which added the five Binder commands — `createBinder`,
+     `renameBinder`, `setBinderArchived`, `addBinderEntry` and `removeBinderEntry`.
+     None of them is exposed to production; this suite runs the whole command
+     table past that door, which is exactly why they have to be exercised here.
+
+     42 BECAME 43 IN C2, and the three that changed are named here so the number
      is not the only record of it: `addBinderCopy`, `updateBinderCopy` and
      `removeBinderCopy` became `addCollectorCopy`, `updateCollectorCopy` and
      `removeCollectorCopy`, and `setCollectorCopyOffered` is new — willingness
@@ -304,11 +325,11 @@ describe("B. every minted id comes from the injected runtime", () => {
      implied. The pin is restated, not loosened: every name in the table must
      still be exercised by the script above, and the exact total is still
      asserted rather than compared loosely. */
-  test("all 43 commands ran", () => {
+  test("all 48 commands ran", () => {
     const { ran } = every();
     const missing = C.COMMAND_NAMES.filter((n) => !ran.has(n));
     eq(missing.join(","), "", "commands not exercised");
-    eq(C.COMMAND_NAMES.length, 43, "the command set");
+    eq(C.COMMAND_NAMES.length, 48, "the command set");
   });
 
   test("each new record's id is exactly what the runtime handed out, with the record's prefix", () => {
@@ -824,10 +845,23 @@ describe("K. validateWorld rejects malformed worlds, naming what to fix", () => 
     expectError(w3, "collection.not-array", "activity");
     const w4 = base(); w4.goals.push("g9");
     expectError(w4, "record.not-object", "goals[");
-    /* Twelve, since Phase 5 Batch 5 moved `catalog` to the optional list: a
-       production world holds no cards, because card identity is a reference
-       work with its own schema rather than a record of what happened. */
-    eq(REQUIRED_COLLECTIONS.length, 12, "twelve required collections");
+    /* Twelve became FOURTEEN in Phase 5 C3.1, which added `binders` and
+       `binderEntries`. They are REQUIRED rather than optional, deliberately and
+       on the C2.1 lesson: an optional collection is one an absence can stand in
+       for, and "this Collector has organised nothing" is a real answer that an
+       empty array states and a missing key does not. A world that omits them is
+       refused on load and before every save.
+
+       (Twelve was itself a restatement: Batch 5 moved `catalog` to the optional
+       list, because a production world holds no cards — card identity is a
+       reference work with its own schema rather than a record of what
+       happened.) */
+    eq(REQUIRED_COLLECTIONS.length, 14, "fourteen required collections");
+    for (const name of ["binders", "binderEntries"]) {
+      assert(REQUIRED_COLLECTIONS.includes(name), `${name} is not required`);
+      const missing = base(); delete missing[name];
+      expectError(missing, "collection.missing", name);
+    }
     assert(!REQUIRED_COLLECTIONS.includes("catalog"), "and a world need not carry a catalog");
   });
 

@@ -144,6 +144,7 @@ function seed() {
       { offered: true, id: "b2", collectorId: "c2", cardId: "k5", market: 222, cert: null, photos: photos("b2") },
       /* Casey's, offered, and in no deal — see the setInterest step below. */
       { offered: true, id: "b3", collectorId: "c1", cardId: "k5", market: 180, cert: null, photos: photos("b3") }],
+    binders: [], binderEntries: [],
     interests: [], conversations: [], opportunities: [], photoRequests: [], copyReviews: [],
   };
 }

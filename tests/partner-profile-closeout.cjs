@@ -70,6 +70,7 @@ const world = ({ stock = 3 } = {}) => {
     collectors: [{ id: ME, name: "Casey", prefs: [] }],
     partners: [{ id: "nl", name: "Northline Cards", city: "Duluth, Minnesota" },
       { id: "cv", name: "Card Vault", city: "St Paul, Minnesota" }],
+    binders: [], binderEntries: [],
     goals: [], interests: [], conversations: [], opportunities: [],
     preferences: [], photoRequests: [], copyReviews: [],
     collectorCopies: [{ offered: true, id: "b1", collectorId: ME, cardId: "ka", market: 900,
