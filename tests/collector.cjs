@@ -687,7 +687,7 @@ const SEED = buildCanonicalSeed();
     const { buildCanonicalSeed } = require("../dist/MetYet.cjs");
 const SEED = buildCanonicalSeed();
     const shown = new Set([...SEED.goals.map((g) => g.cardId),
-      ...SEED.binder.map((b) => b.cardId), ...SEED.inventory.map((i) => i.cardId)]);
+      ...SEED.collectorCopies.map((b) => b.cardId), ...SEED.inventory.map((i) => i.cardId)]);
     shown.forEach((id) => {
       const c = SEED.catalog.find((x) => x.id === id);
       assert(c, "catalog has " + id);
@@ -1388,7 +1388,7 @@ describe("Trade Binder add uses the shared identity flow", () => {
 
     const s2 = __store.get().get();
     eq(s2.catalog.length, before, "no duplicate catalog identity was created");
-    const copy = s2.binder[s2.binder.length - 1];
+    const copy = s2.collectorCopies[s2.collectorCopies.length - 1];
     const card = s2.catalog.find((c) => c.id === copy.cardId);
     eq(card.id, "i1", "it resolved to the canonical record the TP already uses");
   });

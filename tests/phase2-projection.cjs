@@ -238,14 +238,14 @@ describe("B · Trusted Partner projection", () => {
       for (const n of [V.marketA, V.marketAB1, V.marketAB2, V.marketB, V.marketX]) {
         assert(!hasNumber(P[name], n), `${name} sees binder reference value ${n}`);
       }
-      const allowed = new Set([...FIELD_RULES.BINDER_FOR_PARTNER, "status"]);
-      for (const b of P[name].binder) for (const k of Object.keys(b)) assert(allowed.has(k), `${name} binder field ${k}`);
+      const allowed = new Set([...FIELD_RULES.COLLECTOR_COPY_FOR_PARTNER, "status"]);
+      for (const b of P[name].collectorCopies) for (const k of Object.keys(b)) assert(allowed.has(k), `${name} binder field ${k}`);
     }
     /* Network supply (§6) excludes copies another deal holds or traded; own deals keep theirs. */
-    const statuses = (proj) => proj.binder.map((b) => b.id + ":" + b.status);
-    sameSet(statuses(P.pA), ["bA:traded", "bAB1:traded"], "pA binder: bAB2 is held by Beta's deal");
-    sameSet(statuses(P.pB), ["bAB2:reserved", "bB:available"], "pB binder: bAB1 was traded to Alpha");
-    eq(P.pC.binder.length, 0);
+    const statuses = (proj) => proj.collectorCopies.map((b) => b.id + ":" + b.status);
+    sameSet(statuses(P.pA), ["bA:traded", "bAB1:traded"], "pA collectorCopies: bAB2 is held by Beta's deal");
+    sameSet(statuses(P.pB), ["bAB2:reserved", "bB:available"], "pB collectorCopies: bAB1 was traded to Alpha");
+    eq(P.pC.collectorCopies.length, 0);
   });
 
   test("13 excludes another TP's Interest", () => {
@@ -345,10 +345,10 @@ describe("C · Workflow state shared by both participants", () => {
     /* Partner side: the collector's exact BinderCopy in Alpha's completed deal. */
     const row = opp(P.pA, ids.oA).trade.cards[0];
     eq(row.binderId, "bA"); eq(row.cert, "PSA-bA"); eq(row.photos.front, "photo:bA:front");
-    const bA = P.pA.binder.find((b) => b.id === "bA");
+    const bA = P.pA.collectorCopies.find((b) => b.id === "bA");
     eq(bA.cert, "PSA-bA"); eq(bA.status, "traded"); assert(!("market" in bA), "bA market reached pA");
     /* A reserved copy in a submitted package, seen by its partner. */
-    const bAB2 = P.pB.binder.find((b) => b.id === "bAB2");
+    const bAB2 = P.pB.collectorCopies.find((b) => b.id === "bAB2");
     eq(bAB2.status, "reserved"); assert(!("market" in bAB2));
     eq(opp(P.pB, ids.oAB).trade.cards[0].binderId, "bAB2");
     /* Collector side: the exact InventoryCopy they bought. */
@@ -359,7 +359,7 @@ describe("C · Workflow state shared by both participants", () => {
     const iA5 = P.cAB.inventory.find((i) => i.invId === "iA5");
     eq(iA5.status, "sold"); assert(!("cost" in iA5));
     /* The collector's own copy keeps its own reference value. */
-    eq(P.cA.binder.find((b) => b.id === "bA").market, V.marketA);
+    eq(P.cA.collectorCopies.find((b) => b.id === "bA").market, V.marketA);
   });
 });
 
@@ -543,7 +543,7 @@ describe("F · Edge states", () => {
     assert(!hasText(pA, MARK.prefA), "cA tags leaked");
     /* No goals; only the copy the partner's own deal traded, without a reference value. */
     eq(pA.goals.filter((g) => g.collectorId === "cA").length, 0, "goals of an ex-network collector");
-    sameSet(pA.binder.filter((b) => b.collectorId === "cA").map((b) => b.id + ":" + b.status), ["bA:traded"],
+    sameSet(pA.collectorCopies.filter((b) => b.collectorId === "cA").map((b) => b.id + ":" + b.status), ["bA:traded"],
       "binder of an ex-network collector");
     assert(!hasNumber(pA, V.marketA));
     /* Collector side: Alpha's supply is gone — photo request and Review Card notwithstanding. */
@@ -559,7 +559,7 @@ describe("F · Edge states", () => {
     const pB = projectForActor(s, ACTORS.pB), cAB = projectForActor(s, ACTORS.cAB);
     eq(opp(pB, ids.oAB).trade.cards.length, 0, "partner sees draft package rows");
     eq(opp(cAB, ids.oAB).trade.cards.length, 1, "collector lost its own draft");
-    eq(pB.binder.find((b) => b.id === "bAB2").status, "available", "a draft reserves nothing");
+    eq(pB.collectorCopies.find((b) => b.id === "bAB2").status, "available", "a draft reserves nothing");
   });
 
   test("the product seed's collections are all classified, and its projections hold the field boundary", () => {
@@ -593,7 +593,7 @@ const withRelationship = (state, partnerId, collectorId, status) => {
 };
 /* Network calculations read these: an "available" copy is supply. */
 const supplyRows = (proj) => proj.inventory.filter((i) => i.status === "available");
-const binderSupplyRows = (proj) => proj.binder.filter((b) => b.status === "available");
+const binderSupplyRows = (proj) => proj.collectorCopies.filter((b) => b.status === "available");
 
 describe("G1 · A pending invitation is not a Relationship", () => {
   test("TP with a pending invitation to an unrelated Collector sees its invitation, never that Collector's network data", () => {
@@ -606,7 +606,7 @@ describe("G1 · A pending invitation is not a Relationship", () => {
     eq(json(pC.counterparties.find((c) => c.id === "cX")),
       json({ id: "cX", name: "Xander No-Network", short: "Xander N." }), "invitee identity");
     /* None of cX's network-facing data. */
-    eq(pC.goals.length, 0, "invitee goals"); eq(pC.binder.length, 0, "invitee binder");
+    eq(pC.goals.length, 0, "invitee goals"); eq(pC.collectorCopies.length, 0, "invitee binder");
     eq(pC.preferences.length, 0, "invitee preference rows"); eq(pC.interests.length, 0);
     for (const t of [MARK.prefX, "Nowhere"]) assert(!hasText(pC, t), `pC sees invitee's "${t}"`);
     for (const id of ["gX", "bX"]) assert(!tokens(pC).has(id), `pC names ${id}`);
@@ -627,14 +627,14 @@ describe("G1 · A pending invitation is not a Relationship", () => {
     const pC = projectForActor(accepted, ACTORS.pC), cX = projectForActor(accepted, ACTORS.cX);
     sameSet(idsOf(pC.collectors), ["cX"], "now in the Collector Network");
     assert(!pC.counterparties.some((c) => c.id === "cX"), "network and counterparties overlap");
-    sameSet(idsOf(pC.goals), ["gX"]); sameSet(idsOf(pC.binder), ["bX"]);
+    sameSet(idsOf(pC.goals), ["gX"]); sameSet(idsOf(pC.collectorCopies), ["bX"]);
     assert(hasText(pC, MARK.prefX), "tags reach the partner once related");
     assert(!hasNumber(pC, V.marketX), "reference value still never crosses");
     sameSet(idsOf(cX.partners), ["pC"]); eq(cX.counterparties.length, 0);
     sameSet(cX.inventory.map((i) => i.invId + ":" + i.status), ["iC1:available"], "Gamma's supply once related");
     for (const status of ["pending", "declined", "ended"]) {
       const p = projectForActor(withRelationship(S, "pC", "cX", status), ACTORS.pC);
-      eq(p.collectors.length + p.goals.length + p.binder.length + p.preferences.length, 0, `relationship ${status}`);
+      eq(p.collectors.length + p.goals.length + p.collectorCopies.length + p.preferences.length, 0, `relationship ${status}`);
     }
   });
 });
@@ -681,7 +681,7 @@ describe("G2 · A shared record names a counterparty; it never adds network or s
     assert(!pB.collectors.some((c) => c.id === "cB"));
     eq(pB.goals.filter((g) => g.collectorId === "cB").length, 0, "ex-network goals");
     assert(!hasText(pB, MARK.goalNoteB) && !hasText(pB, MARK.prefB), "ex-network goal note or tags");
-    assert(!pB.binder.some((b) => b.collectorId === "cB"), "ex-network binder");
+    assert(!pB.collectorCopies.some((b) => b.collectorId === "cB"), "ex-network binder");
   });
 
   test("every supply row, in every projection, belongs to the actor's network", () => {
@@ -711,11 +711,11 @@ describe("G3 · No copy status derives from a deal the viewer is not in", () => 
   const HELD = ["reserved", "committed", "valued", "deal", "fulfillment", "traded"];
 
   test("the lifecycle really moves: Alpha sees bAB1 reserved, committed, traded", () => {
-    const world = (label) => D.binderCopyStatus("bAB1", snaps[label].opportunities);
+    const world = (label) => D.collectorCopyStatus("bAB1", snaps[label].opportunities);
     eq([ "agreed", "reserved", "committed", "traded"].map(world).join(), "available,reserved,committed,traded", "canonical bAB1");
-    const alpha = (label) => project(label, "pA").binder.find((b) => b.id === "bAB1").status;
+    const alpha = (label) => project(label, "pA").collectorCopies.find((b) => b.id === "bAB1").status;
     eq(["agreed", "reserved", "committed", "traded"].map(alpha).join(), "available,reserved,committed,traded", "Alpha's own view");
-    eq(project("committed", "cAB").binder.find((b) => b.id === "bAB1").status, "committed", "the owner's view");
+    eq(project("committed", "cAB").collectorCopies.find((b) => b.id === "bAB1").status, "committed", "the owner's view");
   });
 
   test("Beta, related to the same Collector, cannot tell Alpha's deal reserved, committed or completed the copy", () => {
@@ -726,17 +726,17 @@ describe("G3 · No copy status derives from a deal the viewer is not in", () => 
     }
     for (const label of ["beforeOffer", "offered", "agreed"]) eq(beta[label], beta.beforeOffer, `Beta at "${label}"`);
     /* While free, the copy is Beta's supply; once Alpha's deal holds it, it is simply gone. */
-    eq(project("agreed", "pB").binder.find((b) => b.id === "bAB1").status, "available");
-    for (const label of HELD) assert(!project(label, "pB").binder.some((b) => b.id === "bAB1"), `bAB1 visible to Beta at ${label}`);
+    eq(project("agreed", "pB").collectorCopies.find((b) => b.id === "bAB1").status, "available");
+    for (const label of HELD) assert(!project(label, "pB").collectorCopies.some((b) => b.id === "bAB1"), `bAB1 visible to Beta at ${label}`);
     /* Beta's own interest in the copy is Beta's record and does not move. */
     assert(project("traded", "pB").interests.some((x) => x.binderId === "bAB1"));
     /* No status anywhere in Beta's projection comes from a deal Beta is not in. */
     for (const label of Object.keys(snaps)) {
       const p = project(label, "pB");
       const mine = snaps[label].opportunities.filter((o) => o.partnerId === "pB");
-      for (const b of p.binder) {
+      for (const b of p.collectorCopies) {
         if (b.status === "available" || b.status === "unavailable") continue;
-        eq(b.status, D.binderCopyStatus(b.id, mine), `${label}: Beta's status for ${b.id}`);
+        eq(b.status, D.collectorCopyStatus(b.id, mine), `${label}: Beta's status for ${b.id}`);
       }
     }
   });
@@ -765,21 +765,21 @@ describe("G3 · No copy status derives from a deal the viewer is not in", () => 
     };
     const betaDeal = w.store.get().opportunities.find((o) => o.id === w.ids.oAB);
     x(w.actors.cAB, "withdrawTradeCard", { oppId: betaDeal.id, tradeCardId: betaDeal.trade.cards[0].id });
-    const free = projectForActor(w.store.get(), w.actors.pB).binder.find((b) => b.id === "bAB2");
+    const free = projectForActor(w.store.get(), w.actors.pB).collectorCopies.find((b) => b.id === "bAB2");
     eq(free.status, "available", "withdrawn from Beta's deal, free again");
     const invId = x(w.actors.pA, "addInventoryCopy", { copy: { cardId: "k5", ask: 1600, cost: 1 } });
     const alphaDeal = x(w.actors.cAB, "startOpportunity", { goalId: "gAB2", invId, amount: 1500 });
     x(w.actors.pA, "acceptPrice", { oppId: alphaDeal });
     x(w.actors.cAB, "proposeTradeSelection", { oppId: alphaDeal, binderIds: ["bAB2"] });
     const reserved = w.store.get();
-    eq(D.binderCopyStatus("bAB2", reserved.opportunities), "reserved", "canonical");
+    eq(D.collectorCopyStatus("bAB2", reserved.opportunities), "reserved", "canonical");
     const pB1 = projectForActor(reserved, w.actors.pB);
-    eq(pB1.binder.find((b) => b.id === "bAB2").status, "unavailable", "Beta's view of a copy its own deal names");
+    eq(pB1.collectorCopies.find((b) => b.id === "bAB2").status, "unavailable", "Beta's view of a copy its own deal names");
     x(w.actors.pA, "reviewTradeCard", { oppId: alphaDeal, decision: "accepted" });
     const pB2 = projectForActor(w.store.get(), w.actors.pB);
     eq(json(pB2), json(pB1), "Beta's projection moved when Alpha's deal committed the copy");
     assert(!tokens(pB2).has(alphaDeal), "Beta names Alpha's deal");
-    eq(projectForActor(w.store.get(), w.actors.pA).binder.find((b) => b.id === "bAB2").status, "committed", "Alpha's own view");
+    eq(projectForActor(w.store.get(), w.actors.pA).collectorCopies.find((b) => b.id === "bAB2").status, "committed", "Alpha's own view");
   });
 });
 

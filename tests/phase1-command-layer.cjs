@@ -59,10 +59,10 @@ function world() {
       { invId: "i5", partnerId: "p3", cardId: "k1", ask: 900, cost: 600, archived: false, photos: photos("i5") },
       { invId: "i6", partnerId: "p1", cardId: "k5", ask: 800, cost: 500, archived: false, photos: photos("i6") },
     ],
-    binder: [
-      { id: "b1", collectorId: "c1", cardId: "k2", market: 350, cert: "PSA 11", photos: photos("b1") },
-      { id: "b2", collectorId: "c1", cardId: "k5", market: 200, cert: null, photos: photos("b2") },
-      { id: "b3", collectorId: "c2", cardId: "k2", market: 300, cert: null, photos: photos("b3") },
+    collectorCopies: [
+      { offered: true, id: "b1", collectorId: "c1", cardId: "k2", market: 350, cert: "PSA 11", photos: photos("b1") },
+      { offered: true, id: "b2", collectorId: "c1", cardId: "k5", market: 200, cert: null, photos: photos("b2") },
+      { offered: true, id: "b3", collectorId: "c2", cardId: "k2", market: 300, cert: null, photos: photos("b3") },
     ],
     interests: [], conversations: [], opportunities: [], preferences: [], activity: [],
   });
@@ -377,28 +377,28 @@ describe("E. BinderCopy reservation and commitment", () => {
     ok(s.execute(C1, "startOpportunity", { goalId: "g6", invId: "i6", amount: 700 }));
     const b = s.get().opportunities.find((o) => o.goalId === "g6").id;
     ok(s.execute(TP1, "acceptPrice", { oppId: b }));
-    eq(D.binderCopyStatus("b1", s.get().opportunities), "available", "nothing submitted: draft reserves nothing");
+    eq(D.collectorCopyStatus("b1", s.get().opportunities), "available", "nothing submitted: draft reserves nothing");
     ok(s.execute(C1, "proposeTradeSelection", { oppId: a, binderIds: ["b1"] }));
-    eq(D.binderCopyStatus("b1", s.get().opportunities), "reserved");
+    eq(D.collectorCopyStatus("b1", s.get().opportunities), "reserved");
     no(s.execute(C1, "proposeTradeSelection", { oppId: b, binderIds: ["b1"] }), R.copyReserved, "cannot submit elsewhere");
-    no(s.execute(C1, "removeBinderCopy", { binderId: "b1" }), R.copyReserved);
+    no(s.execute(C1, "removeCollectorCopy", { copyId: "b1" }), R.copyReserved);
     no(s.execute(C1, "proposeTradeSelection", { oppId: b, binderIds: ["b3"] }), R.notOwner, "only your own copies");
   });
   test("reserved withdrawal allowed before acceptance and releases the copy", () => {
     const x = at("reserved");
     ok(x.s.execute(C1, "withdrawTradeCard", { oppId: x.id, tradeCardId: x.row() }));
-    eq(D.binderCopyStatus("b1", x.s.get().opportunities), "available", "released");
+    eq(D.collectorCopyStatus("b1", x.s.get().opportunities), "available", "released");
     const o = opp(x.s, x.id);
     eq(o.trade.cards.length, 1, "the row stays as history");
     eq(o.stage, "deal", "nothing left to review: the package resolves to cash");
   });
   test("partner acceptance commits; committed withdrawal, removal and reuse blocked; cert locked", () => {
     const x = at("value-trade");
-    eq(D.binderCopyStatus("b1", x.s.get().opportunities), "committed");
+    eq(D.collectorCopyStatus("b1", x.s.get().opportunities), "committed");
     no(x.s.execute(C1, "withdrawTradeCard", { oppId: x.id, tradeCardId: x.row() }), R.copyCommitted, "no unilateral withdrawal");
-    no(x.s.execute(C1, "removeBinderCopy", { binderId: "b1" }), R.copyCommitted);
-    no(x.s.execute(C1, "updateBinderCopy", { binderId: "b1", patch: { cert: "PSA 77" } }), R.copyCommitted);
-    ok(x.s.execute(C1, "updateBinderCopy", { binderId: "b1", patch: { market: 360 } }), "private value still editable");
+    no(x.s.execute(C1, "removeCollectorCopy", { copyId: "b1" }), R.copyCommitted);
+    no(x.s.execute(C1, "updateCollectorCopy", { copyId: "b1", patch: { cert: "PSA 77" } }), R.copyCommitted);
+    ok(x.s.execute(C1, "updateCollectorCopy", { copyId: "b1", patch: { market: 360 } }), "private value still editable");
     ok(x.s.execute(C1, "startOpportunity", { goalId: "g6", invId: "i6", amount: 700 }));
     const b = x.s.get().opportunities.find((o) => o.goalId === "g6").id;
     ok(x.s.execute(TP1, "acceptPrice", { oppId: b }));
@@ -410,12 +410,12 @@ describe("E. BinderCopy reservation and commitment", () => {
   });
   test("cancellation releases; completion makes it Traded; history references survive", () => {
     const x = at("cancelled");
-    eq(D.binderCopyStatus("b1", x.s.get().opportunities), "available");
-    assert(x.s.get().binder.some((b) => b.id === "b1"), "copy stays in the binder");
+    eq(D.collectorCopyStatus("b1", x.s.get().opportunities), "available");
+    assert(x.s.get().collectorCopies.some((b) => b.id === "b1"), "copy stays in the binder");
     const y = at("completed");
-    eq(D.binderCopyStatus("b1", y.s.get().opportunities), "traded");
+    eq(D.collectorCopyStatus("b1", y.s.get().opportunities), "traded");
     eq(opp(y.s, y.id).trade.cards[0].binderId, "b1", "the completed deal still names the exact copy");
-    no(y.s.execute(C1, "removeBinderCopy", { binderId: "b1" }), R.copyCommitted, "history is not deleted");
+    no(y.s.execute(C1, "removeCollectorCopy", { copyId: "b1" }), R.copyCommitted, "history is not deleted");
   });
 });
 

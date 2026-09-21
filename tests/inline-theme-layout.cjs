@@ -228,7 +228,7 @@ describe("Duplication and hierarchy hold across all five stages", () => {
     const r = mk();
     const o = oppAt("value-trade");
     expand(r, goalOf(o));
-    const owned = new Set(S().binder.filter((b) => b.collectorId === ME).map((b) => b.id));
+    const owned = new Set(S().collectorCopies.filter((b) => b.collectorId === ME).map((b) => b.id));
     D.acceptedTradeCards(o).forEach((tc) => assert(owned.has(tc.binderId),
       "every trade term names a copy the collector owns"));
   });

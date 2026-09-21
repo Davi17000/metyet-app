@@ -59,9 +59,9 @@ function seed() {
       { invId: "i2", partnerId: "p1", cardId: "k1", ask: 1100, cost: 800, archived: false, photos: photos("i2") },
       { invId: "i3", partnerId: "p1", cardId: "k1", ask: 1200, cost: 900, archived: false, photos: photos("i3") },
     ],
-    binder: [
-      { id: "b1", collectorId: "c1", cardId: "k2", market: 350, cert: null, photos: photos("b1") },
-      { id: "b2", collectorId: "c1", cardId: "k5", market: 200, cert: null, photos: photos("b2") },
+    collectorCopies: [
+      { offered: true, id: "b1", collectorId: "c1", cardId: "k2", market: 350, cert: null, photos: photos("b1") },
+      { offered: true, id: "b2", collectorId: "c1", cardId: "k5", market: 200, cert: null, photos: photos("b2") },
     ],
     interests: [], conversations: [], opportunities: [], photoRequests: [], copyReviews: [],
     preferences: [], activity: [],
@@ -87,7 +87,7 @@ function recording(base = RT.deterministicRuntime()) {
 }
 
 /* ------------------------------------------------------------ EVERY COMMAND
-   Runs all 41 commands once or more on one store, every call carrying a forged
+   Runs all 43 commands once or more on one store, every call carrying a forged
    `at` and, where a nested record can carry one, a forged id or timestamp too.
    Returns what each step was given (T = that command's runtime time) and what
    it wrote, for the tests below to check. */
@@ -127,14 +127,19 @@ function everyCommand(store, rec) {
   step("addCopyPhotos", { request: s().photoRequests.find((r) => r.id === pr) });
   x(TP1, "removeInventoryCopy", { invId: inv });
 
-  const b = x(C1, "addBinderCopy", { copy: { cardId: "k2", market: 100, photos: photos("new"),
+  const b = x(C1, "addCollectorCopy", { copy: { cardId: "k2", market: 100, photos: photos("new"),
     id: FORGED, addedAt: FORGED_AT, updatedAt: FORGED_AT } });
-  step("addBinderCopy", { id: b, copy: s().binder.find((q) => q.id === b) });
-  x(C1, "updateBinderCopy", { binderId: b, patch: { market: 120, addedAt: FORGED_AT, updatedAt: FORGED_AT } });
-  step("updateBinderCopy", { copy: s().binder.find((q) => q.id === b) });
+  step("addCollectorCopy", { id: b, copy: s().collectorCopies.find((q) => q.id === b) });
+  x(C1, "updateCollectorCopy", { copyId: b, patch: { market: 120, addedAt: FORGED_AT, updatedAt: FORGED_AT } });
+  step("updateCollectorCopy", { copy: s().collectorCopies.find((q) => q.id === b) });
+  /* OFFERING IS ITS OWN ACT (Phase 5 C2), and it has to happen before a partner
+     can be interested: `addCollectorCopy` records ownership and offers nothing,
+     and `setInterest` refuses a copy its owner is not offering. */
+  x(C1, "setCollectorCopyOffered", { copyId: b, offered: true });
+  step("setCollectorCopyOffered", { copy: s().collectorCopies.find((q) => q.id === b) });
   x(TP1, "setInterest", { binderId: b, on: true });
   step("setInterest", { interest: s().interests.find((i) => i.binderId === b) });
-  x(C1, "removeBinderCopy", { binderId: b });
+  x(C1, "removeCollectorCopy", { copyId: b });
 
   /* PHASE 5 BATCH 2: an invitation names nobody. It creates no Collector, so
      there is no id for a caller to forge and no profile to smuggle a
@@ -211,7 +216,7 @@ function everyCommand(store, rec) {
   x(C2, "cancelOpportunity", { oppId: k });
   step("cancelOpportunity", { opp: opp(k) });
 
-  out.ids = { goal: g, inv, pr, rv, binder: b, invited, o, w, k };
+  out.ids = { goal: g, inv, pr, rv, collectorCopies: b, invited, o, w, k };
   return out;
 }
 
@@ -291,18 +296,26 @@ describe("A. runtime contract", () => {
 
 /* ============================================================== B */
 describe("B. every minted id comes from the injected runtime", () => {
-  test("all 41 commands ran", () => {
+  /* 42 BECAME 43 IN C2, and the three that changed are named here so the number
+     is not the only record of it: `addBinderCopy`, `updateBinderCopy` and
+     `removeBinderCopy` became `addCollectorCopy`, `updateCollectorCopy` and
+     `removeCollectorCopy`, and `setCollectorCopyOffered` is new — willingness
+     to trade became a thing a Collector says rather than a thing deletion
+     implied. The pin is restated, not loosened: every name in the table must
+     still be exercised by the script above, and the exact total is still
+     asserted rather than compared loosely. */
+  test("all 43 commands ran", () => {
     const { ran } = every();
     const missing = C.COMMAND_NAMES.filter((n) => !ran.has(n));
     eq(missing.join(","), "", "commands not exercised");
-    eq(C.COMMAND_NAMES.length, 42, "the command set");
+    eq(C.COMMAND_NAMES.length, 43, "the command set");
   });
 
   test("each new record's id is exactly what the runtime handed out, with the record's prefix", () => {
     const { steps, rec, ids } = every();
     const handed = new Set(rec.log.ids);
     const expect = [["addGoal", "g"], ["addInventoryCopy", "invk1-"], ["requestPhotos", "pr"],
-      ["reviewCopy", "rv"], ["addBinderCopy", "b"], ["inviteCollector", "inv-"], ["startOpportunity", "o"]];
+      ["reviewCopy", "rv"], ["addCollectorCopy", "b"], ["inviteCollector", "inv-"], ["startOpportunity", "o"]];
     for (const [name, prefix] of expect) {
       const id = steps[name].id;
       assert(countedId(prefix).test(id), `${name} id "${id}" has the runtime's shape for "${prefix}"`);
@@ -350,8 +363,9 @@ describe("C. every authoritative timestamp is the injected runtime's time", () =
     reviewCopy: (x) => [x.review.at],
     endReview: (x) => [x.review.endedAt],
     addCopyPhotos: (x) => [x.request.fulfilledAt],
-    addBinderCopy: (x) => [x.copy.addedAt],
-    updateBinderCopy: (x) => [x.copy.updatedAt],
+    addCollectorCopy: (x) => [x.copy.addedAt],
+    updateCollectorCopy: (x) => [x.copy.updatedAt],
+    setCollectorCopyOffered: (x) => [x.copy.updatedAt],
     setInterest: (x) => [x.interest.at],
     inviteCollector: (x) => [x.invitation.at],
     revokeCollectorInvitation: (x) => [x.invitation.revokedAt],
@@ -415,9 +429,9 @@ describe("D. caller proposals never survive an authoritative runtime", () => {
 
   test("nested timestamps a copy or patch carries are replaced, not merged", () => {
     const { steps } = every();
-    eq(steps.addBinderCopy.copy.updatedAt, undefined, "a new binder copy has no caller updatedAt");
+    eq(steps.addCollectorCopy.copy.updatedAt, undefined, "a new binder copy has no caller updatedAt");
     eq(steps.addInventoryCopy.copy.updatedAt, undefined, "a new inventory copy has no caller updatedAt");
-    eq(steps.updateBinderCopy.copy.addedAt, steps.addBinderCopy.T, "a patch cannot move addedAt");
+    eq(steps.updateCollectorCopy.copy.addedAt, steps.addCollectorCopy.T, "a patch cannot move addedAt");
   });
 
   /* PHASE 5 BATCH 2 REPLACED THE RULE THIS TESTED. There is no pending invitee
@@ -502,7 +516,15 @@ describe("F. refusals stay atomic", () => {
       [C2, "acceptPrice", { oppId: o }, R.notParticipant],
       [C1, "chooseCashOnly", { oppId: o }, R.wrongStage],
       [C1, "removeGoal", { goalId: "g1" }, R.goalLocked],
-      [C1, "addBinderCopy", { copy: { cardId: "k2", photos: { front: "f" } } }, R.photosRequired],
+      /* WAS: addCollectorCopy with one photograph, refused `photos-required`.
+         C2 moved that requirement to proposeTradeSelection, where the copy is
+         actually handed to somebody to value — recording that you own a card
+         is not an offer and no longer demands pictures. The row is REPLACED,
+         not dropped: it now pins a rule this batch added, that `offered` cannot
+         be changed by an update patch, so willingness only ever changes through
+         setCollectorCopyOffered. The photograph rule's new home is proved in
+         tests/phase5-c2-collector-copy.cjs. */
+      [C1, "updateCollectorCopy", { copyId: "b1", patch: { offered: false } }, R.identityImmutable],
       [C1, "noSuchCommand", {}, R.unknownCommand],
     ];
     for (const [actor, cmd, payload, code] of refs) {
@@ -539,8 +561,8 @@ describe("G. the prototype compatibility adapter", () => {
     eq(ok(store.execute(TP1, "addInventoryCopy", { copy: { invId: "inv-fixture", cardId: "k1", ask: 5 }, at: "2026-08-09" })),
       "inv-fixture", "a fixture's own id");
     eq(store.get().inventory.find((i) => i.invId === "inv-fixture").addedAt, "2026-08-09", "stamped with the demo date");
-    const b = ok(store.execute(C1, "addBinderCopy", { copy: { id: "b-fixture", cardId: "k2", photos: photos("x"), addedAt: "2026-08-01" } }));
-    eq(store.get().binder.find((x) => x.id === b).addedAt, "2026-08-01", "a copy's own addedAt");
+    const b = ok(store.execute(C1, "addCollectorCopy", { copy: { offered: true, id: "b-fixture", cardId: "k2", photos: photos("x"), addedAt: "2026-08-01" } }));
+    eq(store.get().collectorCopies.find((x) => x.id === b).addedAt, "2026-08-01", "a copy's own addedAt");
   });
 
   test("with no demo date, optional stamps stay absent and thread entries take the process clock", () => {
@@ -740,7 +762,7 @@ describe("J. validateWorld accepts established worlds", () => {
     }
   });
 
-  test("a world built by all 41 commands, before and after a JSON round trip", () => {
+  test("a world built by all 43 commands, before and after a JSON round trip", () => {
     const { store } = every();
     const r = validateWorld(store.get());
     assert(r.ok, explain(r));
@@ -796,8 +818,8 @@ describe("K. validateWorld rejects malformed worlds, naming what to fix", () => 
   test("a missing or mistyped collection, and a non-object record", () => {
     const w = base(); delete w.opportunities;
     expectError(w, "collection.missing", "opportunities");
-    const w2 = base(); w2.binder = {};
-    expectError(w2, "collection.not-array", "binder");
+    const w2 = base(); w2.collectorCopies = {};
+    expectError(w2, "collection.not-array", "collectorCopies");
     const w3 = base(); w3.activity = "none";
     expectError(w3, "collection.not-array", "activity");
     const w4 = base(); w4.goals.push("g9");
@@ -851,7 +873,7 @@ describe("K. validateWorld rejects malformed worlds, naming what to fix", () => 
     w2.goals.find((g) => g.id === "g1").collectorId = "c2";
     expectError(w2, "ref.owner-mismatch", `opportunities[${i2}].goalId`, ["c1", "c2"]);
     const w3 = base(); const i3 = oppIndex(w3, ids().o);
-    w3.binder.find((b) => b.id === "b1").collectorId = "c2";
+    w3.collectorCopies.find((b) => b.id === "b1").collectorId = "c2";
     expectError(w3, "ref.owner-mismatch", `opportunities[${i3}].trade.cards[0].binderId`, ["b1"]);
     const w4 = base(); w4.photoRequests[0].partnerId = "p2";
     expectError(w4, "ref.owner-mismatch", "photoRequests[0].partnerId");

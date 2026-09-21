@@ -51,16 +51,16 @@ const world = () => {
     partners: [{ id: "nl", name: "Northline Cards", city: "Duluth, Minnesota" }],
     goals: [], interests: [], conversations: [], opportunities: [],
     preferences: [], photoRequests: [], copyReviews: [],
-    binder: [
-      { id: "b1", collectorId: ME, cardId: "ka", market: 900, cert: "PSA 111",
+    collectorCopies: [
+      { offered: true, id: "b1", collectorId: ME, cardId: "ka", market: 900, cert: "PSA 111",
         photos: { front: "f1", back: "k1" }, addedAt: "2026-01-02" },
-      { id: "b2", collectorId: ME, cardId: "ka", market: 900, cert: "PSA 222",
+      { offered: true, id: "b2", collectorId: ME, cardId: "ka", market: 900, cert: "PSA 222",
         photos: { front: "f2", back: "k2" }, addedAt: "2026-01-02" },
     ],
     inventory: [{ invId: "inv-1", partnerId: "nl", cardId: "kt", ask: 4000,
       archived: false, photos: { front: "f", back: "b" } }],
   });
-  const copy = (id) => st.get().binder.find((b) => b.id === id);
+  const copy = (id) => st.get().collectorCopies.find((b) => b.id === id);
   const view = () => collectorView(st.get(), ME);
   return { st, copy, view };
 };
@@ -76,7 +76,7 @@ const committed = (w) => {
   w.st.actions.reviewTradeCards({ oppId: o, decision: "accepted", at: AT });
   return { o, rowId: row.id };
 };
-const edit = (w, id, patch) => w.st.actions.updateBinderCopy({ binderId: id, patch, at: AT });
+const edit = (w, id, patch) => w.st.actions.updateCollectorCopy({ copyId: id, patch, at: AT });
 
 describe("A. Editing preserves the copy", () => {
   test("the id and card identity survive", () => {
@@ -110,9 +110,9 @@ describe("A. Editing preserves the copy", () => {
   test("availability is unaffected", () => {
     const w = world();
     committed(w);
-    eq(w.view().binderCopyState("b1").state, "in-deal", "before");
+    eq(w.view().collectorCopyState("b1").state, "in-deal", "before");
     edit(w, "b1", { market: 1500 });
-    eq(w.view().binderCopyState("b1").state, "in-deal", "and after");
+    eq(w.view().collectorCopyState("b1").state, "in-deal", "and after");
   });
 
   test("duplicates stay independent", () => {
@@ -125,10 +125,10 @@ describe("A. Editing preserves the copy", () => {
   test("no copy is destroyed and recreated", () => {
     const w = world();
     edit(w, "b1", { market: 1500 });
-    eq(w.st.get().binder.length, 2, "still two copies");
-    /* PHASE 1: the edit is the updateBinderCopy command. */
+    eq(w.st.get().collectorCopies.length, 2, "still two copies");
+    /* PHASE 1: the edit is the updateCollectorCopy command. */
     const src = code(fs.readFileSync(path.join(ROOT, "domain", "metyet-commands.js"), "utf8"));
-    const fn = src.slice(src.indexOf("updateBinderCopy(state"), src.indexOf("removeBinderCopy(state"));
+    const fn = src.slice(src.indexOf("updateCollectorCopy(state"), src.indexOf("removeCollectorCopy(state"));
     assert(!/filter\(/.test(fn), "the action removes nothing");
     assert(/id: copy\.id, cardId: copy\.cardId/.test(fn), "and pins identity explicitly");
   });
@@ -175,13 +175,28 @@ describe("B. What may and may not change", () => {
     eq(w.copy("b1").photos.front, "new", "and better pictures are always welcome");
   });
 
-  test("the photo invariant is reused, not weakened", () => {
+  /* RESTATED IN PHASE 5 C2.
+
+     WAS: editing a copy down to one face was refused `photos-required`, and
+     there were TWO predicates saying the same thing — `binderCopyPhotographed`
+     for the Collector's seat and `copyPhotographed` for the partner's.
+     WHY IT CHANGED: owning a card and offering it to be valued became two
+     facts. A Collector may hold a card they have only half photographed; the
+     requirement belongs where the copy is handed over, which is
+     `proposeTradeSelection`, not at every edit of a record they own.
+     WHAT REPLACES IT: the edit path keeps every protection it had that is about
+     the EDIT — a committed copy's certificate is still frozen, a negative value
+     is still refused — and the photo standard is now one predicate for both
+     seats, asserted here to still exist and to still be strict. Its new
+     enforcement point is proved in tests/phase5-c2-collector-copy.cjs. */
+  test("the photo invariant is one predicate, still strict, and no longer at the edit door", () => {
     const w = world();
-    eq(edit(w, "b1", { photos: { front: "f", back: null } }).refused,
-      D.REFUSE.photosRequired, "both faces or the copy does not exist");
-    eq(w.copy("b1").photos.back, "k1", "and the copy is untouched");
-    assert(D.INVARIANTS.binderCopyPhotographed({ front: "a", back: "b" }),
-      "the same invariant the add path uses");
+    const r = edit(w, "b1", { photos: { front: "f", back: null } });
+    assert(!r.refused, "a Collector may edit their own record down to one face");
+    eq(w.copy("b1").photos.back, null, "and the edit landed");
+    assert(D.INVARIANTS.copyPhotographed({ front: "a", back: "b" }), "both faces is photographed");
+    assert(!D.INVARIANTS.copyPhotographed({ front: "a", back: null }), "one face is not");
+    eq(D.INVARIANTS.binderCopyPhotographed, undefined, "the duplicate predicate is gone");
   });
 
   test("an invalid private value is refused", () => {
@@ -216,13 +231,13 @@ describe("C. Editing touches no deal", () => {
     edit(w, "b1", { market: 2500 });
     eq(JSON.stringify(w.st.get().opportunities.find((x) => x.id === o)), before,
       "history stays history");
-    eq(w.view().binderCopyState("b1").state, "traded", "and the copy stays traded");
+    eq(w.view().collectorCopyState("b1").state, "traded", "and the copy stays traded");
   });
 
   test("the UI writes nothing directly", () => {
     const sheet = code(COL).slice(code(COL).indexOf("function BinderCopy("),
       code(COL).indexOf("function BinderCopy(") + 5000);
-    assert(/st\.updateBinderCopy\(b\.id,/.test(sheet), "it calls the canonical action");
+    assert(/st\.updateCollectorCopy\(b\.id,/.test(sheet), "it calls the canonical action");
     ["binder:", "cardId:", "stage:"].forEach((f) =>
       assert(!sheet.includes(f), "no direct write of " + f));
   });
@@ -233,7 +248,7 @@ describe("C. Editing touches no deal", () => {
     assert(/const \[editing, setEditing\] = useState\(false\)/.test(sheet),
       "editing is local state");
     const cancel = sheet.slice(sheet.indexOf("Cancel"), sheet.indexOf("Save changes"));
-    assert(!/updateBinderCopy/.test(cancel), "cancel saves nothing");
+    assert(!/updateCollectorCopy/.test(cancel), "cancel saves nothing");
     assert(/setMkt\(b\.market/.test(sheet), "and restores the copy's own values");
   });
 });

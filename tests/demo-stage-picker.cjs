@@ -158,7 +158,7 @@ describe("C. Each loaded stage is canonically valid", () => {
       const r = mk();
       pick(r, id);
       const o = demoOpp();
-      const owned = new Set(S().binder.filter((b) => b.collectorId === ME).map((b) => b.id));
+      const owned = new Set(S().collectorCopies.filter((b) => b.collectorId === ME).map((b) => b.id));
 
       if (id === "agree-price") {
         eq(o.agreedPrice, null, "no settled price yet");

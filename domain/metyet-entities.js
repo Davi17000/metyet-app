@@ -8,15 +8,17 @@
       detail, not the domain. Every inventory copy now names its owner, and the
       logged-in partner is simply `p-self`.
 
-   2. INTEREST IS A RELATIONSHIP, not a boolean. `tpInterest: true` on a binder
-      copy could only ever mean "the one partner". The canonical form is
-      TrustedPartner -> exact BinderCopy, which is what lets a collector see
-      WHICH partners would consider a given copy.
+   2. INTEREST IS A RELATIONSHIP, not a boolean. `tpInterest: true` on a
+      Collector's copy could only ever mean "the one partner". The canonical
+      form is TrustedPartner -> exact CollectorCopy, which is what lets a
+      collector see WHICH partners would consider a given copy. The stored field
+      is still spelled `binderId`; it names a collector copy and is written-down
+      naming debt (domain/README.md), not a second concept.
 
    3. CONVERSATIONS are a real model. Neither prototype had one: the TP had a
       price thread inside an opportunity plus an activity log, the Collector had
       a bare contact record. Reach out needs a context that can name a collector,
-      a partner, and optionally a goal, an inventory copy, a binder copy or an
+      a partner, and optionally a goal, an inventory copy, a collector copy or an
       opportunity — without requiring any of them.
    ========================================================================== */
 
@@ -37,14 +39,16 @@ const SELF = "p-self";          // the Trusted Partner using the TP workspace
 
 /* ---------------------------------------------------------------- INTEREST */
 
-/* TrustedPartner would consider this exact BinderCopy in a trade. Not an offer,
-   not a reservation, not a valuation, not demand. */
+/* TrustedPartner would consider this exact CollectorCopy in a trade. Not an
+   offer, not a reservation, not a valuation, not demand — and since C2 it is
+   not a way to reach an unoffered copy either: `setInterest` refuses a copy its
+   owner is not offering, the same way the projection never sent it. */
 const interestKey = (partnerId, binderId) => partnerId + "::" + binderId;
 const hasInterest = (interests, partnerId, binderId) =>
   interests.some((i) => i.partnerId === partnerId && i.binderId === binderId);
 const partnersInterestedIn = (interests, binderId) =>
   interests.filter((i) => i.binderId === binderId).map((i) => i.partnerId);
-const binderCopiesInterestedBy = (interests, partnerId) =>
+const collectorCopiesInterestedBy = (interests, partnerId) =>
   interests.filter((i) => i.partnerId === partnerId).map((i) => i.binderId);
 
 /* -------------------------------------------------------------- SELECTORS */
@@ -70,20 +74,25 @@ const demandForIdentity = (goals, card, cardById, excludeCollectorId) =>
 
 /* ------------------------------------------------------------ PROJECTIONS
 
-   VISIBILITY IS A DOMAIN RULE, not a UI convention. A binder copy carries the
-   collector's private reference value; the partner-facing projection removes
-   it at the domain boundary so it cannot reach a TP surface even by accident.
-   Everything a TP may legitimately see about a copy survives. */
+   VISIBILITY IS A DOMAIN RULE, not a UI convention. A collector copy carries
+   the collector's private reference value; the partner-facing projection
+   removes it at the domain boundary so it cannot reach a TP surface even by
+   accident. Everything a TP may legitimately see about a copy survives.
 
-const binderCopyForPartner = (cc) => {
+   These two helpers are the PROTOTYPE's boundary. Production's is the allow-list
+   in metyet-projection.js (COLLECTOR_COPY_FOR_PARTNER), which is stricter in the
+   way that matters: it names what may cross rather than what may not, so a field
+   nobody has classified does not cross. Both strip `market`. */
+
+const collectorCopyForPartner = (cc) => {
   if (!cc) return null;
   const { market, ...visible } = cc;      // `market` is the collector's own number
   return visible;
 };
-const binderCopiesForPartner = (ccs) => ccs.map(binderCopyForPartner);
+const collectorCopiesForPartner = (ccs) => ccs.map(collectorCopyForPartner);
 
 /* The collector sees their own copy whole, including their private value. */
-const binderCopyForOwner = (cc) => cc;
+const collectorCopyForOwner = (cc) => cc;
 
 /* A negotiation value only becomes shared when it is intentionally submitted.
    Draft input lives in component state on either side and never reaches here. */
@@ -92,8 +101,8 @@ const submittedMarketOf = (tc, by) =>
 
 module.exports = {
   SELF,
-  interestKey, hasInterest, partnersInterestedIn, binderCopiesInterestedBy,
+  interestKey, hasInterest, partnersInterestedIn, collectorCopiesInterestedBy,
   inventoryOf, partnersHolding, goalsMatchingCard, demandForIdentity,
-  binderCopyForPartner, binderCopiesForPartner, binderCopyForOwner,
+  collectorCopyForPartner, collectorCopiesForPartner, collectorCopyForOwner,
   submittedMarketOf,
 };

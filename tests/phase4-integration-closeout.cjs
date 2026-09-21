@@ -237,7 +237,7 @@ describe("B. projection -> seat routing -> the seat's own shell", () => {
          the real server — that is a projection property and it is unchanged.
          What is gone is the tab that showed it, because nothing in production
          can put a card in a binder yet. */
-      eq(store.get().binder.map((b) => b.cert).join(), "CASEY-CERT-9001",
+      eq(store.get().collectorCopies.map((b) => b.cert).join(), "CASEY-CERT-9001",
         "their own binder copy did not reach them");
       clickText(r, "Trusted Partners");
       assert(flat(r).includes("Northline"), "their own partner: " + flat(r));

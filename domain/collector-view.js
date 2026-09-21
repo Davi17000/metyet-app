@@ -18,8 +18,8 @@ function collectorView(state, meId) {
   const partnerById = (id) => state.partners.find((p) => p.id === id);
 
   const myGoals = () => state.goals.filter((g) => g.collectorId === meId);
-  const myBinder = () => state.binder.filter((b) => b.collectorId === meId)
-    .map(E.binderCopyForOwner);                      // the owner sees their own value
+  const myCopies = () => state.collectorCopies.filter((b) => b.collectorId === meId)
+    .map(E.collectorCopyForOwner);                      // the owner sees their own value
   const myOpps = () => state.opportunities.filter((o) => o.collectorId === meId);
   /* Preferences are stated by the collector, so they live on the collector
      record. A separate preferences table is read too, if a deployment keeps one. */
@@ -115,15 +115,15 @@ function collectorView(state, meId) {
     return [...best.values()].filter((x) => x.partner);
   };
 
-  /* Which partners would consider an exact binder copy. Canonical relationship. */
+  /* Which partners would consider an exact collector copy. Canonical relationship. */
   const interestIn = (binderId) => state.interests
     .filter((i) => i.binderId === binderId)
     .map((i) => ({ ...i, partner: partnerById(i.partnerId) }))
     .filter((x) => x.partner);
 
   const interestCountFrom = (partnerId) =>
-    E.binderCopiesInterestedBy(state.interests, partnerId)
-      .filter((bid) => state.binder.some((b) => b.id === bid && b.collectorId === meId)).length;
+    E.collectorCopiesInterestedBy(state.interests, partnerId)
+      .filter((bid) => state.collectorCopies.some((b) => b.id === bid && b.collectorId === meId)).length;
 
   /* FOR YOU — an explicit preference filter, never a recommendation. Cards
      already on the goal list are excluded so the categories stay distinct. */
@@ -151,9 +151,9 @@ function collectorView(state, meId) {
      becomes "in a deal" when a partner accepts it into an active trade, and
      "traded" when that deal completes. Withdrawn and rejected rows release it.
 
-     Identity is the binder copy, never the card: two copies of the same card
+     Identity is the collector copy, never the card: two copies of the same card
      are two different objects and can be in two different places. */
-  const binderCopyState = (binderId) => {
+  const collectorCopyState = (binderId) => {
     /* Contract §4: Available -> Reserved (in a submitted package) -> Committed
        (accepted by the partner) -> Traded. "in-deal" is the committed state's
        existing name on screen. */
@@ -180,7 +180,7 @@ function collectorView(state, meId) {
       partner: partnerById(pid),
       active: mine.filter(D.isActive),
       history: mine.filter((o) => !D.isActive(o)),
-      interests: myBinder().filter((b) => interestIn(b.id)
+      interests: myCopies().filter((b) => interestIn(b.id)
         .some((i) => i.partnerId === pid)),
     };
   };
@@ -281,8 +281,18 @@ function collectorView(state, meId) {
     const used = new Set(((opp.trade && opp.trade.cards) || []).map((c) => c.binderId));
     /* Availability gates; interest only orders. A copy reserved or committed in
        another active package, or already traded, is not available to submit. */
-    const open = myBinder().filter((b) => !used.has(b.id)
-      && D.binderCopyStatus(b.id, state.opportunities, opp.id) === "available");
+    /* AND THE SAME PHOTOGRAPH RULE THE COMMAND APPLIES (Phase 5 C2). A copy
+       without both faces cannot be submitted — `proposeTradeSelection` refuses
+       it — so offering it here would be offering a button that fails. The view
+       does not decide the rule; it reads the same predicate.
+
+       `offered` is deliberately NOT a filter here. Broadcasting a card to your
+       whole network and putting it into ONE deal with ONE partner are different
+       acts, and the command draws the same line: a Collector may put a card
+       they were not advertising into a trade they chose to open. */
+    const open = myCopies().filter((b) => !used.has(b.id)
+      && D.INVARIANTS.copyPhotographed(b.photos)
+      && D.collectorCopyStatus(b.id, state.opportunities, opp.id) === "available");
     const keen = (b) => E.hasInterest(state.interests, partnerId, b.id);
     return { interested: open.filter(keen), other: open.filter((b) => !keen(b)) };
   };
@@ -319,9 +329,9 @@ function collectorView(state, meId) {
 
   return {
     meId, cardById, partnerById, catalog: state.catalog,
-    myGoals, myBinder, myOpps, myPrefs,
+    myGoals, myCopies, myOpps, myPrefs,
     partnersWith, interestIn, interestCountFrom, forYou, partnerProfile,
-    binderCopyState, partnerRelationship, partnerInventorySummary,
+    collectorCopyState, partnerRelationship, partnerInventorySummary,
     copyPhotos, photoState, photoRequestFor, inventoryCopy, pursuitFor, pursuitStep,
     stateOf, openOppForGoal, goalFor, conversationsFor, tradeGroups, turnFor,
     threadWith, threadsForCard, partnersTalkedTo,

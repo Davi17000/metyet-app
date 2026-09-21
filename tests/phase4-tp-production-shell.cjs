@@ -88,7 +88,7 @@ const sessionBody = (inSeconds = 3600) => ({ access_token: ACCESS, refresh_token
 const EMPTY_TP = Object.freeze({
   actor: { seat: "tp", partnerId: PARTNER },
   catalog: [], collectors: [], partners: [{ id: PARTNER, name: "Northline Cards", since: "2026-09-01" }],
-  relationships: [], invitations: [], goals: [], preferences: [], inventory: [], binder: [],
+  relationships: [], invitations: [], goals: [], preferences: [], inventory: [], collectorCopies: [],
   interests: [], opportunities: [], conversations: [], activity: [], photoRequests: [],
   copyReviews: [], counterparties: [],
 });
@@ -102,7 +102,7 @@ const FULL_TP = Object.freeze({
   collectors: [{ id: "c1", name: "Sarah Mendel", short: "Sarah M.", city: "Minneapolis, MN" }],
   relationships: [{ partnerId: PARTNER, collectorId: "c1", status: "accepted", at: "2024-06-02" }],
   goals: [{ id: "g0", collectorId: "c1", cardId: "i1", tier: "primary" }],
-  binder: [{ id: "cc0", collectorId: "c1", cardId: "i2", status: "available" }],
+  collectorCopies: [{ offered: true, id: "cc0", collectorId: "c1", cardId: "i2", status: "available" }],
   /* `status` is the server's answer. The second row is SOLD while no
      opportunity references it — a client that recomputed the rule would
      disagree, which is exactly what the test below is for. */
@@ -381,7 +381,7 @@ describe("B. the shell is the product, and all of it is the server's data", () =
        just the one that used to hold it. */
     const everything = TP_FILES.map(code).join("\n");
     assert(/\.status\b/.test(everything), "the status is read from the row");
-    assert(!/isCompleted|soldInventoryIds|inventoryCopyStatus|binderCopyStatus/.test(everything),
+    assert(!/isCompleted|soldInventoryIds|inventoryCopyStatus|collectorCopyStatus/.test(everything),
       "the shell re-derives a canonical rule");
   });
 

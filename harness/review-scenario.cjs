@@ -46,12 +46,14 @@ const seed = () => ({
   goals: [], interests: [], conversations: [], opportunities: [],
   preferences: [], photoRequests: [], copyReviews: [],
   relationships: [{ partnerId: TP, collectorId: ME, status: "accepted", at: DAY(1) }],
-  /* Two copies the collector will offer, both photographed. */
-  binder: [
-    { id: "rev-copy-a", collectorId: ME, cardId: GIVE_A.id, market: 900,
+  /* Two copies the collector OWNS AND OFFERS, both photographed. `offered` is
+     explicit (C2): the scenario is about a partner evaluating supply, and a copy
+     that is not offered is not supply. */
+  collectorCopies: [
+    { id: "rev-copy-a", collectorId: ME, cardId: GIVE_A.id, market: 900, offered: true,
       photos: { front: "binder:rev-a:front", back: "binder:rev-a:back" },
       cert: "PSA 44000001", addedAt: DAY(1) },
-    { id: "rev-copy-b", collectorId: ME, cardId: GIVE_B.id, market: 600,
+    { id: "rev-copy-b", collectorId: ME, cardId: GIVE_B.id, market: 600, offered: true,
       photos: { front: "binder:rev-b:front", back: "binder:rev-b:back" },
       cert: "PSA 44000002", addedAt: DAY(1) },
   ],

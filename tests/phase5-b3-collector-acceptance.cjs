@@ -718,7 +718,7 @@ describe("F. nothing partial survives a failure", () => {
        to split it into two commands. */
     const { validateWorld } = require("../domain/metyet-world.js");
     const empty = { catalog: [], collectors: [], partners: [{ id: "p1" }], relationships: [],
-      invitations: [], goals: [], preferences: [], inventory: [], binder: [], interests: [],
+      invitations: [], goals: [], preferences: [], inventory: [], collectorCopies: [], interests: [],
       conversations: [], opportunities: [], photoRequests: [], copyReviews: [], activity: [] };
     const half = { ...empty, invitations: [{ id: "inv-1", partnerId: "p1", collectorId: null,
       at: "2030-01-01T00:00:00.000Z", expiresAt: "2030-01-15T00:00:00.000Z",

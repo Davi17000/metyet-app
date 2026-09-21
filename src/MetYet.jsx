@@ -2182,7 +2182,7 @@ function seedRelationships(world) {
   world.collectors.forEach((c) => add(SELF_PARTNER, c.id, c.since, authoredBy(c)));
   world.partners.forEach((p) => add(p.id, "c12", p.since));
   world.interests.forEach((i) => {
-    const b = world.binder.find((x) => x.id === i.binderId);
+    const b = world.collectorCopies.find((x) => x.id === i.binderId);
     if (b) add(i.partnerId, b.collectorId, i.at);
   });
   world.opportunities.forEach((o) => add(o.partnerId, o.collectorId, o.updated));
@@ -2273,8 +2273,12 @@ export function buildCanonicalSeed(opts) {
       secondarySince: g[2] === "primary" ? g[5] : null,
     })),
     opportunities: buildOpps(oppsSeed, goalsSeed),
-    binder: COLLECTOR_CARDS_SEED.map((r, i) => ({ id: "cc" + i, cardId: r[0], collectorId: r[1], market: r[3], photos: r[4], cert: r[5], addedAt: r[6] })),
-    /* CANONICAL INTEREST: TrustedPartner -> exact BinderCopy. */
+    /* The demo's collector copies are all OFFERED (C2): every one of them was
+       seeded as trade supply and the screens that show them are trade screens.
+       A copy a Collector owns without offering is a real state and the commands
+       make it, but the demo has no seed row for one. */
+    collectorCopies: COLLECTOR_CARDS_SEED.map((r, i) => ({ id: "cc" + i, cardId: r[0], collectorId: r[1], market: r[3], photos: r[4], cert: r[5], addedAt: r[6], offered: true })),
+    /* CANONICAL INTEREST: TrustedPartner -> exact CollectorCopy. */
     interests: (() => {
     const rows = [];
     COLLECTOR_CARDS_SEED.forEach((r, i) => {
@@ -2736,7 +2740,7 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
   const goals = canon.goals;
   const collectors = canon.collectors;
   const opps = canon.opportunities;
-  const collectorCards = canon.binder;
+  const collectorCards = canon.collectorCopies;
   const interests = canon.interests;
   const activity = canon.activity || [];
   const threads = canon.conversations;
@@ -3236,10 +3240,17 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
     "completed");
   };
 
-  /* The binder invariant lives in the command: both faces or no copy. */
+  /* THE DEMO ASKS FOR PHOTOS HERE; THE COMMAND NO LONGER DOES (C2).
+     `addCollectorCopy` records ownership and requires no photograph, because
+     owning a card is not an offer to trade it. This screen IS an offer — it is
+     the trade binder — so it collects both faces before it offers, and the
+     canonical requirement bites later, where evaluation happens, in
+     proposeTradeSelection. The check below is this screen's standard, not the
+     invariant. */
   const collectorAddBinderCard = (collectorId, cardId, market, photos, cert) => {
     if (!hasBothPhotos(photos)) { say("A trade binder copy needs both a front and a back photo."); return false; }
-    const r = run(asCollector(collectorId), "addBinderCopy", { copy: {
+    const r = run(asCollector(collectorId), "addCollectorCopy", { copy: {
+      offered: true,
       id: "cc" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
       cardId,
       market: market == null || market === "" ? null : Number(market),
@@ -3255,7 +3266,7 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
   const attachBinderPhotos = (ccId) => {
     const cc = collectorCards.find((c) => c.id === ccId);
     if (!cc) return;
-    const r = run(asCollector(cc.collectorId), "updateBinderCopy", { binderId: ccId,
+    const r = run(asCollector(cc.collectorId), "updateCollectorCopy", { copyId: ccId,
       patch: { photos: { front: "binder:" + cc.cardId + ":front", back: "binder:" + cc.cardId + ":back" } } });
     if (r.ok) say("Photos added to the collector's trade binder.");
   };
@@ -4967,7 +4978,7 @@ function SelectTradeReview({ ctx, opp }) {
      committed in another active Opportunity, or already Traded, is not offered
      (contract §4 — one exact BinderCopy, one active package). */
   const addable = collectorCards.filter((cc) => cc.collectorId === opp.collectorId && interestedIn(cc.id) && !inPackage.has(cc.cardId)
-    && SharedID.binderCopyStatus(cc.id, opps, opp.id) === "available");
+    && SharedID.collectorCopyStatus(cc.id, opps, opp.id) === "available");
 
   const summary = [
     accepted.length ? `${accepted.length} accepted` : null,

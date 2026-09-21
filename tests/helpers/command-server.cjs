@@ -102,7 +102,7 @@ const world = () => ({
   preferences: [],
   inventory: [{ invId: "i1", partnerId: PARTNER, cardId: "k1", ask: 4200, cost: MARK.cost,
     acquired: MARK.acquired, archived: false, photos: { front: "i1:front", back: "i1:back" } }],
-  binder: [{ id: "b1", collectorId: COLLECTOR, cardId: "k2", market: 900, cert: "CASEY-CERT-9001",
+  collectorCopies: [{ offered: true, id: "b1", collectorId: COLLECTOR, cardId: "k2", market: 900, cert: "CASEY-CERT-9001",
     photos: { front: "b1:front", back: "b1:back" } }],
   interests: [{ partnerId: PARTNER, binderId: "b1", at: "2026-02-02" }],
   conversations: [], opportunities: [], photoRequests: [], copyReviews: [],

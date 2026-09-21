@@ -124,7 +124,7 @@ describe("A. Collapsed active-deal state", () => {
     assert(/Your move/.test(txt(cls(cardFor(r, g), "goal-deal")[0])),
       "the collector's turn is stated");
 
-    const copy = S().binder.find((b) => b.collectorId === ME);
+    const copy = S().collectorCopies.find((b) => b.collectorId === ME);
     TR.act(() => { acts().patchOpportunity(o.id, (x) => ({ ...x,
       trade: { mode: "trade", submitted: true,
         cards: [{ binderId: copy.id, cardId: copy.cardId, inclusion: "proposed" }] } })); });
@@ -171,7 +171,7 @@ describe("B. Inline expansion", () => {
     const r0 = mk();
     const o = oppAt("select-trade");
     const g = goalOf(o);
-    const copy = S().binder.find((b) => b.collectorId === ME);
+    const copy = S().collectorCopies.find((b) => b.collectorId === ME);
     TR.act(() => { acts().patchOpportunity(o.id, (x) => ({ ...x,
       trade: { mode: "trade", submitted: true,
         cards: [{ binderId: copy.id, cardId: copy.cardId, inclusion: "proposed" }] } })); });
@@ -257,7 +257,7 @@ describe("D. Every stage renders inline", () => {
       assert(cls(card, "chat-embed")[0], stage + ": and its conversation");
       /* Value Trade in particular must resolve real BinderCopies. */
       if (["value-trade", "deal", "fulfillment"].includes(stage)) {
-        const owned = new Set(S().binder.filter((x) => x.collectorId === ME).map((x) => x.id));
+        const owned = new Set(S().collectorCopies.filter((x) => x.collectorId === ME).map((x) => x.id));
         D.acceptedTradeCards(o).forEach((tc) => assert(owned.has(tc.binderId),
           stage + ": every trade term names a real copy"));
       }

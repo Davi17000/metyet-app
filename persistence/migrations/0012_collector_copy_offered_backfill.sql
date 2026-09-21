@@ -1,0 +1,42 @@
+-- ============================================================================
+-- 0012 — WHAT A COPY THAT EXISTED BEFORE C2 MEANT (Phase 5 C2.1)
+--
+-- Migration 0011 renamed `binder_copies` to `collector_copies` and separated
+-- two facts that used to be one: OWNING a card, and OFFERING it. It said that
+-- `offered` costs no column because it lives in `attrs`, and that existing rows
+-- would get their value "when the world repository next writes them".
+--
+-- THAT WAS WRONG, AND THIS FILE IS THE CORRECTION. Nothing gives them one. A
+-- row written before C2 has no `offered` key in its `attrs`, so it loads as
+-- `undefined`, and `undefined !== true`, so the projection stops treating it as
+-- trade supply. A Trusted Partner who could see a Collector's card on Monday
+-- saw nothing on Tuesday, and no command, no log and no error said why. The
+-- card was still owned; the fact that it was on offer had quietly evaporated.
+--
+-- WHAT THE ABSENCE ACTUALLY MEANS. Before C2 a Collector's copy existed ONLY
+-- because it had been put up for trade — adding one was the act of offering it,
+-- which is the very conflation C2 exists to undo. So a row with no `offered`
+-- key is not an unknown; it is a row from a world where the answer was always
+-- yes. Writing that down is preserving its meaning, not guessing at it.
+--
+-- WHY A NEW FILE RATHER THAN AN EDIT TO 0011. migrate.js records the SHA-256 of
+-- every applied migration and refuses one that has changed since it ran. Any
+-- environment that has already applied 0011 would reject an edited copy of it
+-- and never run the backfill. A new file runs everywhere, once, in order.
+--
+-- IDEMPOTENT BY ITS WHERE CLAUSE. It touches only rows where the key is ABSENT.
+-- A copy explicitly recorded as `offered: false` after C2 is a decision its
+-- owner made and is left exactly alone; so is one explicitly `true`. Re-running
+-- this changes nothing, and it cannot un-say something somebody said.
+--
+-- AFTER THIS, `offered` IS NOT OPTIONAL. validateWorld requires
+-- `typeof offered === "boolean"` on every collector copy, so absent, null and
+-- tri-state are no longer valid canonical states — they fail loudly on load and
+-- before every save rather than degrading into "not offered". That check is
+-- what makes this a one-time correction instead of a rule somebody has to
+-- remember.
+-- ============================================================================
+
+update metyet.collector_copies
+   set attrs = attrs || '{"offered": true}'::jsonb
+ where attrs -> 'offered' is null;

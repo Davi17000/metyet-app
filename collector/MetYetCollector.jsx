@@ -2824,7 +2824,7 @@ function Binder({ st, go }) {
                     collector can offer again, and saying so here saves them
                     discovering it at Select Trade. */}
                 {(() => {
-                  const cs = st.binderCopyState(b.id);
+                  const cs = st.collectorCopyState(b.id);
                   if (cs.state === "available") return null;
                   return (
                     <div className={"bnd-av " + cs.state}>
@@ -2859,10 +2859,10 @@ function BinderCopy({ b, st, onClose, go }) {
   const [cert, setCert] = useState(b.cert || "");
   const [note, setNote] = useState("");
 
-  const committed = st.binderCopyState(b.id).state === "in-deal";
+  const committed = st.collectorCopyState(b.id).state === "in-deal";
 
   const save = () => {
-    const res = st.updateBinderCopy(b.id, {
+    const res = st.updateCollectorCopy(b.id, {
       market: mkt === "" ? null : Number(mkt),
       ...(committed ? {} : { cert: cert.trim() || null }),
     });
@@ -5785,7 +5785,7 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
       /* ---- canonical reads, via the persona selector ---- */
       ...v,
       goals: v.myGoals(),
-      binder: v.myBinder(),
+      binder: v.myCopies(),
       opps: v.myOpps(),
       partners: state.partners,                       // Trusted Partners: accepted Relationships only
       /* A Trusted Partner, or — for a record this collector takes part in with a
@@ -5796,7 +5796,7 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
         || (state.counterparties || []).find((p) => p.id === id),
       /* This collector's Relationship with a partner; `at` is when it began. */
       relationshipWith: (pid) => (state.relationships || []).find((r) => r.partnerId === pid) || null,
-      binderById: (id) => v.myBinder().find((b) => b.id === id),
+      binderById: (id) => v.myCopies().find((b) => b.id === id),
       contactsFor: (goalId, partnerId) => v.conversationsFor(goalId, partnerId),
       eligibleFor: (pid, o) => v.tradeGroups(pid, o),
 
@@ -5808,8 +5808,12 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
       addGoalForIdentity: (resolved, tier) => val(exec("addGoal", { cardId: resolved.id, tier })),
       setTier: (goalId, tier) => lg(exec("updateGoalTier", { goalId, tier })),
       removeGoal: (goalId) => exec("removeGoal", { goalId }).ok,
-      addCopy: (cardId, mine, photos, cert) => val(exec("addBinderCopy", { copy: {
-        id: "b" + Date.now().toString(36), cardId,
+      /* `offered: true` is explicit (Phase 5 C2). This control is the Trade
+         Binder's "add a copy", so adding here IS offering; the command itself
+         defaults to not offered, because owning a card says nothing about
+         wanting to part with it. */
+      addCopy: (cardId, mine, photos, cert) => val(exec("addCollectorCopy", { copy: {
+        id: "b" + Date.now().toString(36), cardId, offered: true,
         market: mine === "" ? null : Number(mine),
         cert: cert && cert.trim() ? cert.trim() : null, addedAt: AT, photos } })),
       /* Reaching out writes to the SAME thread the Trusted Partner reads. An
@@ -5867,7 +5871,7 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
          agreeing to the figure currently on the table. */
       dealAdjustAccept: (id) => lg(exec("acceptDeal", { oppId: id })),
       markDealViewed: (oppId, surface) => lg(exec("markDealViewed", { oppId, surface })),
-      updateBinderCopy: (binderId, patch) => lg(exec("updateBinderCopy", { binderId, patch })),
+      updateCollectorCopy: (copyId, patch) => lg(exec("updateCollectorCopy", { copyId, patch })),
       chooseCashOnly: (id) => lg(exec("chooseCashOnly", { oppId: id })),
       withdrawTradeCard: (id, tradeCardId) => lg(exec("withdrawTradeCard", { oppId: id, tradeCardId })),
       confirmHandoff: (id) => lg(exec("confirmHandoff", { oppId: id })),

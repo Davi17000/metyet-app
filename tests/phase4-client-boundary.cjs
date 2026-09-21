@@ -58,7 +58,7 @@ const URL_OK = "https://app.metyet.io";
 const PROJECTION = (partnerId = "tp_9k2m") => ({
   actor: { seat: "tp", partnerId },
   catalog: [], collectors: [], partners: [{ id: partnerId, name: "Northline Cards", tradeRate: 0.8 }],
-  relationships: [], goals: [], inventory: [], binder: [], opportunities: [],
+  relationships: [], goals: [], inventory: [], collectorCopies: [], opportunities: [],
 });
 
 /* A server, recorded. Nothing here reaches a network. */

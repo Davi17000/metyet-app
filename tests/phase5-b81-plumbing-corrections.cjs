@@ -8,7 +8,7 @@
    B. a goal's birthday an immutable createdAt, and a lifecycle that leaves it alone
    C. what happened     one log line per success, and a count of discoveries
    D. what is not said  the things that must never reach a log
-   E. the empty promise the Trade Binder is not a place a Collector can go
+   E. Your Cards (the Trade Binder until C2) is not a place a Collector can go
    F. the map           domain/README.md says what is production and what is not
    ========================================================================== */
 
@@ -70,7 +70,7 @@ async function world() {
     collectors: [{ id: "c1", name: "Casey" }],
     partners: [{ id: "p1", name: "Northline" }],
     relationships: [{ partnerId: "p1", collectorId: "c1", status: "accepted", at: "2030-01-01" }],
-    invitations: [], goals: [], inventory: [], binder: [], interests: [],
+    invitations: [], goals: [], inventory: [], collectorCopies: [], interests: [],
     opportunities: [], conversations: [], photoRequests: [], copyReviews: [],
   });
   const accounts = createAccountDirectory(db);
@@ -442,7 +442,7 @@ describe("D. what is deliberately not said", () => {
 });
 
 /* ============================================================== E */
-describe("E. the Trade Binder is not a place a Collector can go", () => {
+describe("E. Your Cards is not a place a Collector can go", () => {
 
   const SHELL = read("client/collector/CollectorShell.jsx");
 
@@ -455,22 +455,27 @@ describe("E. the Trade Binder is not a place a Collector can go", () => {
     }).outputFiles[0].text;
     const mod = { exports: {} };
     new Function("module", "exports", "require", shell)(mod, mod.exports, require);
-    /* C1 put Browse in front of Goals. The Trade Binder is still not in
+    /* C1 put Browse in front of Goals. Your Cards is still not in
        this list, which is what this test is about. */
     eq(mod.exports.SECTIONS.map((s) => s.id).join(","), "browse,goals,partners");
-    eq(mod.exports.DEFERRED_SECTIONS.map((s) => s.id).join(","), "binder");
+    eq(mod.exports.DEFERRED_SECTIONS.map((s) => s.id).join(","), "my-cards");
     assert(typeof mod.exports.DEFERRED_SECTIONS[0].view === "function",
       "the section component was deleted rather than deferred");
   });
 
   test("the domain, the table and the projection are untouched", () => {
     const commands = read("domain/metyet-commands.js");
-    for (const name of ["addBinderCopy", "updateBinderCopy", "removeBinderCopy", "setInterest"]) {
+    for (const name of ["addCollectorCopy", "updateCollectorCopy", "removeCollectorCopy", "setInterest"]) {
       assert(commands.includes(`${name}(state, a,`), `${name} was removed`);
     }
-    assert(FIELD_RULES.BINDER_FOR_PARTNER.length > 0, "the binder projection rule was removed");
-    assert(fs.existsSync(path.join(ROOT, "client", "collector", "sections", "TradeBinder.jsx")),
+    assert(FIELD_RULES.COLLECTOR_COPY_FOR_PARTNER.length > 0, "the binder projection rule was removed");
+    /* The file is MyCards.jsx since C2 — the section was renamed, not deleted,
+       which is what this assertion has always been about: deferring a section
+       must not quietly become removing it. */
+    assert(fs.existsSync(path.join(ROOT, "client", "collector", "sections", "MyCards.jsx")),
       "the section file was deleted");
+    assert(!fs.existsSync(path.join(ROOT, "client", "collector", "sections", "TradeBinder.jsx")),
+      "the old name is still there too — one concept, one file");
   });
 
   test("and the batch that makes it real moves one entry", () => {

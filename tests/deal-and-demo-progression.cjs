@@ -65,7 +65,7 @@ const world = (reviewed = true) => {
     catalog: [A_CARD, B_CARD, TARGET],
     collectors: [{ id: "casey", name: "Casey", prefs: [] }],
     partners: [{ id: "nl", name: "Northline Cards" }],
-    goals: [], binder: [], interests: [], conversations: [], opportunities: [],
+    goals: [], collectorCopies: [], interests: [], conversations: [], opportunities: [],
     preferences: [], photoRequests: [], copyReviews: [],
     inventory: [{ invId: "inv-1", partnerId: "nl", cardId: "kt", ask: 4200,
       archived: false, photos: { front: "f", back: "b" } }],

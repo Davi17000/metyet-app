@@ -30,7 +30,7 @@ const world = () => createStore({
   catalog: [CARD, OTHER],
   collectors: [{ id: "c1", name: "Casey", prefs: [] }],
   partners: [{ id: "p2", name: "Rina" }, { id: "p3", name: "Marcus" }],
-  goals: [], binder: [], interests: [], conversations: [], opportunities: [],
+  goals: [], collectorCopies: [], interests: [], conversations: [], opportunities: [],
   preferences: [],
   /* Photographed: these tests are about who can read a conversation, not about
      photography, so the copies must be ones a collector could negotiate over. */

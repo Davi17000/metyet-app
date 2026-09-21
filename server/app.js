@@ -432,11 +432,19 @@ function createApp({
        This is a GUARD, not a second authorization system: it decides nothing
        about who may act. The seat, the ownership and every copy fact are still
        the command's, and the foreign key is still the backstop underneath. */
-    if (command === "addInventoryCopy" || command === "addGoal") {
+    if (command === "addInventoryCopy" || command === "addGoal" || command === "addCollectorCopy") {
       /* Supply names a card inside a `copy`; demand names one directly. Both
          are a person choosing an existing card, so both are checked the same
          way — and an existing Goal is never revisited by this, so a card
-         withdrawn later leaves somebody's stated demand exactly where it is. */
+         withdrawn later leaves somebody's stated demand exactly where it is.
+
+         `addCollectorCopy` joined them in C2 (Phase 5), and it is the same
+         sentence from the other seat: a Collector saying "I have one of those"
+         about a card the catalog holds. It reads `copy.canonicalCardId` exactly
+         as inventory does, because a Collector's copy and a partner's copy are
+         the same kind of object owned by different people. A copy already
+         recorded is never revisited either: a card withdrawn from the catalog
+         later does not take somebody's cards off their own shelf. */
       const named = command === "addGoal"
         ? payload && payload.canonicalCardId
         : payload && payload.copy && payload.copy.canonicalCardId;

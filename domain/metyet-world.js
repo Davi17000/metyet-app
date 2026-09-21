@@ -29,7 +29,7 @@
    NOT ASSERTED, deliberately: that a BinderCopy is held by one deal at a time.
    proposeTradeSelection refuses a copy another live deal has reserved or
    committed, so commands never create a double hold; but the prototype's demo
-   seed assigns one binder copy per card identity to several deals, live and
+   seed assigns one collector copy per card identity to several deals, live and
    completed, and seed-integrity.cjs accepts that ("two different deals may
    legitimately settle the same copy"). Asserting it here would reject the
    established demo world. Revisit when the demo seed is separated from product
@@ -58,8 +58,12 @@ const D = require("./metyet-domain.js");
    here are held by a database foreign key to a canonical card instead — which
    is a stronger guarantee than this one, not a weaker one, because it cannot be
    bypassed by a caller that forgets to validate. */
+/* `binder` became `collectorCopies` in C2. It was never a binder: it is a
+   Collector's own physical card, the mirror image of a Trusted Partner's
+   `inventory`. The word is now reserved for the named organisational grouping
+   C3 will add, whose membership points at a canonical card. */
 const REQUIRED_COLLECTIONS = ["collectors", "partners", "relationships", "invitations",
-  "goals", "inventory", "binder", "interests", "opportunities", "conversations",
+  "goals", "inventory", "collectorCopies", "interests", "opportunities", "conversations",
   "photoRequests", "copyReviews"];
 const OPTIONAL_COLLECTIONS = ["catalog", "preferences", "activity"];
 
@@ -125,7 +129,7 @@ function validateWorld(state) {
   const partners = index("partners");
   const goals = index("goals");
   const inventory = index("inventory", "invId");
-  const binder = index("binder");
+  const collectorCopies = index("collectorCopies");
   const opportunities = index("opportunities");
   index("invitations");
   index("conversations");
@@ -248,10 +252,49 @@ function validateWorld(state) {
       report("field.invalid", `${path}.archived`, `${who}.archived must be true or false.`);
     }
   }
-  for (const [b, path] of C.binder) {
-    const who = `BinderCopy "${b.id}"`;
+  for (const [b, path] of C.collectorCopies) {
+    const who = `CollectorCopy "${b.id}"`;
     ref(collectors, b.collectorId, `${path}.collectorId`, "collector", who);
-    cardRef(b.cardId, `${path}.cardId`, who);
+    /* A COPY NAMES ITS CARD ONE WAY OR THE OTHER (Phase 5 C2), on the rule an
+       InventoryCopy has followed since Batch 6. Owning nothing is not owning,
+       and owning two cards at once is two copies. */
+    const canonical = isId(b.canonicalCardId);
+    const legacy = isId(b.cardId);
+    if (canonical && legacy) {
+      report("ref.ambiguous", `${path}.canonicalCardId`,
+        `${who} names both a canonical card and a catalogue card; a copy is of one card.`);
+    } else if (!canonical && !legacy) {
+      report("ref.missing", `${path}.cardId`, `${who} names no card.`);
+    } else if (legacy) {
+      cardRef(b.cardId, `${path}.cardId`, who);
+    }
+    /* OWNING AND OFFERING ARE DIFFERENT FACTS (C2). `offered` is the owner's
+       willingness; the deal status beside it is derived from the
+       opportunities and is never stored. A copy that says neither true nor
+       false about offering says nothing, which is not a state.
+
+       C2.1 MADE THE CODE SAY WHAT THAT COMMENT ALREADY SAID. It used to accept
+       a blank `offered` and only refuse a non-boolean one, which let exactly
+       the state described above exist — and it was not hypothetical: every row
+       written before C2 had no `offered` key, loaded as `undefined`, and
+       silently stopped being trade supply because `undefined !== true`. The
+       absence was doing the work of `false` without anybody having said it.
+
+       Migration 0012 writes the historical answer onto those rows; this makes
+       the ambiguity unrepresentable from here on, on load and before every
+       save. Three states collapse to two, which is the whole point: a boolean
+       question deserves a boolean. */
+    if (typeof b.offered !== "boolean") {
+      report("field.invalid", `${path}.offered`,
+        `${who} does not say whether it is offered. Owning a copy and offering it are `
+        + `separate facts, and both must be stated (true or false).`);
+    }
+    if (b.grade && !D.GRADED_VALUES.includes(b.grade)) {
+      report("field.invalid", `${path}.grade`, `${who} has a grade the product has no word for.`);
+    }
+    if (b.condition && !D.CONDITION_VALUES.includes(b.condition)) {
+      report("field.invalid", `${path}.condition`, `${who} has a condition the product has no word for.`);
+    }
     if (!blank(b.market) && !(Number(b.market) >= 0)) {
       report("field.invalid", `${path}.market`, `${who} has an invalid reference value.`);
     }
@@ -259,7 +302,7 @@ function validateWorld(state) {
   for (const [x, path] of C.interests) {
     const who = `Interest of "${x.partnerId}" in "${x.binderId}"`;
     ref(partners, x.partnerId, `${path}.partnerId`, "partner", who);
-    ref(binder, x.binderId, `${path}.binderId`, "binder copy", who);
+    ref(collectorCopies, x.binderId, `${path}.binderId`, "collector copy", who);
   }
   /* A photo request or Review Card is about one partner's exact copy. */
   for (const name of ["photoRequests", "copyReviews"]) {
@@ -358,11 +401,35 @@ function validateWorld(state) {
       if (!isId(row.id)) report("id.missing", `${rp}.id`, `A trade row of ${who} has no id.`);
       else if (rowIds.has(row.id)) report("id.duplicate", `${rp}.id`, `${rowWho} appears twice.`);
       else rowIds.add(row.id);
-      cardRef(row.cardId, `${rp}.cardId`, rowWho);
+      /* EXACTLY ONE CARD REFERENCE (C2), the same rule inventory, goals,
+         opportunities and collector copies each carry: a row names its card
+         canonically or legacily, never both and never neither. */
+      const rowCanonical = isId(row.canonicalCardId);
+      const rowLegacy = isId(row.cardId);
+      if (rowCanonical && rowLegacy) {
+        report("ref.ambiguous", `${rp}.canonicalCardId`,
+          `${rowWho} names both a canonical card and a legacy card.`);
+      } else if (!rowCanonical && !rowLegacy) {
+        report("ref.missing", `${rp}.cardId`, `${rowWho} names no card.`);
+      } else if (rowLegacy) {
+        cardRef(row.cardId, `${rp}.cardId`, rowWho);
+      }
       if (blank(row.binderId)) return;
-      const b = ref(binder, row.binderId, `${rp}.binderId`, "binder copy", rowWho);
+      const b = ref(collectorCopies, row.binderId, `${rp}.binderId`, "collector copy", rowWho);
       if (b && b.collectorId !== o.collectorId) {
-        ownerMismatch(`${rp}.binderId`, `${rowWho} offers binder copy "${row.binderId}", which belongs to "${b.collectorId}", not "${o.collectorId}".`);
+        ownerMismatch(`${rp}.binderId`, `${rowWho} offers collector copy "${row.binderId}", which belongs to "${b.collectorId}", not "${o.collectorId}".`);
+      }
+      /* And the row must name the card its copy names. A package that pointed at
+         one card while carrying a copy of another would let a Collector be paid
+         for something they are not handing over. */
+      if (b) {
+        const same = rowCanonical
+          ? b.canonicalCardId === row.canonicalCardId
+          : b.cardId === row.cardId;
+        if (!same) {
+          report("ref.mismatch", `${rp}.binderId`,
+            `${rowWho} names a different card from collector copy "${row.binderId}".`);
+        }
       }
     });
 

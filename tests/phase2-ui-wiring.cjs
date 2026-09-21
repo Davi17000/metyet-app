@@ -75,9 +75,9 @@ function markedWorld() {
       { invId: "iZ1", partnerId: "pZ", cardId: "i17", ask: 7777, cost: NUM.zenithCost, acquired: "2011-11-12",
         archived: false, addedAt: AT, cert: "PSA-ZENITH", photos: { front: "copy:iZ1:front", back: "copy:iZ1:back" } },
     ],
-    binder: [
-      ...seed.binder.map((b) => (b.id === "cc27" ? { ...b, market: NUM.caseyMarket } : b)),
-      { id: "bZ", collectorId: "cZ", cardId: "x1", market: NUM.zoraMarket, addedAt: AT, cert: "PSA-bZ",
+    collectorCopies: [
+      ...seed.collectorCopies.map((b) => (b.id === "cc27" ? { offered: true, ...b, market: NUM.caseyMarket } : b)),
+      { offered: true, id: "bZ", collectorId: "cZ", cardId: "x1", market: NUM.zoraMarket, addedAt: AT, cert: "PSA-bZ",
         photos: { front: "binder:bZ:front", back: "binder:bZ:back" } },
     ],
     interests: [...seed.interests, { partnerId: "pZ", binderId: "bZ", at: AT }],
@@ -191,7 +191,7 @@ describe("A · The persona roots hand screens a projection, never the canonical 
     const ctx = ctxOf(r);
     const proj = projectForActor(W.store.get(), { partnerId: "p-self" });
     const pairs = { collectors: "collectors", opps: "opportunities", inventory: "inventory", goals: "goals",
-      collectorCards: "binder", interests: "interests", activity: "activity", threads: "conversations",
+      collectorCards: "collectorCopies", interests: "interests", activity: "activity", threads: "conversations",
       cardDb: "catalog", invitations: "invitations", counterparties: "counterparties" };
     for (const [local, key] of Object.entries(pairs)) eq(json(ctx[local]), json(proj[key]), `ctx.${local} is projection.${key}`);
     /* Non-vacuous: the canonical world really holds more. */

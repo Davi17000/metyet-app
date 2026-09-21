@@ -56,7 +56,7 @@ async function world() {
     collectors: [{ id: "c1", name: "Casey" }],
     partners: [{ id: "p1", name: "Northline" }, { id: "p2", name: "Second" }],
     relationships: [{ partnerId: "p1", collectorId: "c1", status: "accepted", at: "2030-01-01" }],
-    invitations: [], goals: [], inventory: [], binder: [], interests: [],
+    invitations: [], goals: [], inventory: [], collectorCopies: [], interests: [],
     opportunities: [], conversations: [], photoRequests: [], copyReviews: [],
   });
   const accounts = createAccountDirectory(db);
@@ -508,13 +508,18 @@ describe("F. everything that already worked", () => {
     assert(!/metyet\.goals|binder_copies|opportunities|conversations/.test(migration),
       "the Batch 6 migration touched a table that is not inventory");
     assert(/inventory_copies/.test(migration), "and it is the one it says it is");
-    /* Binder, opportunities, trade rows and conversations are still waiting for
-       the batch that rewrites the command that writes each of them. */
+    /* RESTATED IN C2, WHICH IS THE BATCH THAT MOVED COLLECTOR COPIES — by their
+       own migration (0011), which is again the whole point of the boundary.
+       `addCollectorCopy` names a canonical card now and this list no longer
+       forbids it. Opportunities' trade rows and conversations are still waiting
+       for the batch that rewrites the command that writes each of them, and
+       they are what the list holds now, so the rule still bites. */
     const commands = code("domain/metyet-commands.js");
-    for (const [name, next] of [["addBinderCopy", "canonicalCardId"]]) {
-      const body = commands.slice(commands.indexOf(`${name}(state`),
-        commands.indexOf(`${name}(state`) + 900);
-      if (body) assert(!new RegExp(next).test(body), `${name} moved ahead of its batch`);
+    for (const [name, next] of [["sendMessage", "canonicalCardId"], ["recordNote", "canonicalCardId"]]) {
+      const at = commands.indexOf(`${name}(state`);
+      assert(at >= 0, `${name} is not in the command table`);
+      const body = commands.slice(at, at + 900);
+      assert(!new RegExp(next).test(body), `${name} moved ahead of its batch`);
     }
   });
 

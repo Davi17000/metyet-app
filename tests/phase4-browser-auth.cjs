@@ -304,7 +304,7 @@ describe("C. it composes with the real api client and production store", () => {
      left a hole for actually fits it. */
   const PROJECTION = { actor: { seat: "tp", partnerId: "tp_9k2m" },
     catalog: [], collectors: [], partners: [{ id: "tp_9k2m", name: "Northline Cards" }],
-    relationships: [], goals: [], inventory: [], binder: [], opportunities: [] };
+    relationships: [], goals: [], inventory: [], collectorCopies: [], opportunities: [] };
 
   /* One recorder for both hosts: the provider and the MetYet API. */
   const world = (apiReplies) => {

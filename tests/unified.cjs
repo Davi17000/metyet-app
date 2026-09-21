@@ -169,7 +169,7 @@ describe("6. Switching preserves state and never reseeds", () => {
     enter(r, "tp");
     const snap = () => {
       const s = state(r);
-      return ["goals", "inventory", "binder", "interests", "opportunities",
+      return ["goals", "inventory", "collectorCopies", "interests", "opportunities",
         "conversations", "collectors", "catalog"].map((k) => k + ":" + s[k].length).join("|");
     };
     const before = snap();
@@ -191,7 +191,7 @@ describe("6. Switching preserves state and never reseeds", () => {
     const r = mk();
     enter(r, "tp");
     const st = storeOf(r);
-    const copy = st.get().binder.find((b) => b.collectorId === "c12");
+    const copy = st.get().collectorCopies.find((b) => b.collectorId === "c12");
     assert(copy, "Casey has a binder copy");
     TR.act(() => { st.actions.setInterest("p-self", copy.id, true, "2026-08-14"); });
     switchTo(r, "Collector");
@@ -261,7 +261,7 @@ describe("8. The shell holds no domain logic", () => {
   test("privacy still holds through the shell", () => {
     const r = mk();
     enter(r, "tp");
-    const priv = state(r).binder.find((b) => b.collectorId === "c12" && b.market != null);
+    const priv = state(r).collectorCopies.find((b) => b.collectorId === "c12" && b.market != null);
     assert(priv, "Casey has a private reference value");
     /* The TP is looking at the whole store, but its surfaces must never show it. */
     assert(!txt(r.root).includes(String(priv.market)),

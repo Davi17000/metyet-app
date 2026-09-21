@@ -77,7 +77,7 @@ async function world() {
     collectors: [{ id: "c1", name: "Casey" }],
     partners: [{ id: "p1", name: "Northline" }, { id: "p2", name: "Second" }],
     relationships: [{ partnerId: "p1", collectorId: "c1", status: "accepted", at: "2030-01-01" }],
-    invitations: [], goals: [], inventory: [], binder: [], interests: [],
+    invitations: [], goals: [], inventory: [], collectorCopies: [], interests: [],
     opportunities: [], conversations: [], photoRequests: [], copyReviews: [],
   });
   const accounts = createAccountDirectory(db);
@@ -688,10 +688,21 @@ describe("G. boundaries, and what did not change", () => {
     assert(!/lockWorld|loadWorld/.test(repo), "the catalog reached the world");
   });
 
-  test("no command was added to reach any of this", () => {
-    eq(json([...EXPOSED_COMMANDS].sort()), json(["addGoal", "addInventoryCopy", "removeGoal",
-      "revokeCollectorInvitation", "updateGoalTier", "updatePartnerProfile"].sort()),
-      "C1 opened a door it did not need");
+  /* RESTATED IN C2, WHICH OPENED THREE DOORS ON PURPOSE — the three a Collector
+     needs to own a card and to say whether they are offering it. What C1 has to
+     keep true is that IT opened none, and that the browse surface still names
+     no command at all. The second assertion is the one that carries the weight
+     and it is unchanged; the list is restated with C2's additions named, so the
+     next batch that edits this line has to say which door it opened and why. */
+  test("no command was added to reach any of this, and C2's three are named", () => {
+    eq(json([...EXPOSED_COMMANDS].sort()), json([
+      "addGoal", "addInventoryCopy", "removeGoal",
+      "revokeCollectorInvitation", "updateGoalTier", "updatePartnerProfile",
+      /* C2, and only these three: owning, offering, no longer owning. */
+      "addCollectorCopy", "setCollectorCopyOffered", "removeCollectorCopy",
+    ].sort()), "a door was opened that nobody declared");
+    assert(!EXPOSED_COMMANDS.includes("updateCollectorCopy"),
+      "editing a copy has no production surface and must not be exposed");
     const browserCode = code("client/browse/CardBrowser.jsx");
     assert(!EXPOSED_COMMANDS.some((c) => browserCode.includes(c)),
       "the shared browser names a command");

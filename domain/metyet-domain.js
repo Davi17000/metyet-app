@@ -716,15 +716,16 @@ const INVARIANTS = {
   copyCommittedTo: (invId, opps, exceptOppId) => (invId == null ? null
     : (opps || []).find((o) => o.invId === invId && o.id !== exceptOppId
       && isActive(o) && o.agreedPrice != null) || null),
-  /* A binder copy is a physical thing a partner must be able to evaluate.
-     Both faces or it does not exist. */
-  binderCopyPhotographed: (photos) => !!(photos && photos.front && photos.back),
-  /* THE SAME RULE, FOR THE OTHER SIDE'S SHELF. A stock image identifies the
-     card; actual front and back photos identify the specific physical copy, and
-     price depends on condition — so a copy is ready to be negotiated over only
-     once both faces of THAT copy exist. One face is not enough, and there is
-     deliberately no separate predicate: it is the same standard a collector's
-     binder copy has always had to meet. */
+  /* WHEN A PHYSICAL COPY CAN BE EVALUATED. A stock image identifies the CARD;
+     actual front and back photos identify the SPECIFIC PHYSICAL COPY, and what
+     a copy is worth depends on the condition of that copy — so a copy is ready
+     to be negotiated over only once both of its faces exist. One face is not
+     enough.
+
+     ONE PREDICATE, NOT TWO (C2). `binderCopyPhotographed` and `copyPhotographed`
+     were the same expression under two names, one per seat, which is how a rule
+     starts drifting from itself. The standard does not depend on who owns the
+     card, so neither does the predicate. */
   copyPhotographed: (photos) => !!(photos && photos.front && photos.back),
   /* An Opportunity is evidence of active pursuit. A Secondary goal is a
      watchlist entry — the collector is looking, not chasing — so a deal cannot
@@ -821,6 +822,57 @@ const GRADED_VALUES = ["Raw", "PSA 1", "PSA 2", "PSA 3", "PSA 4", "PSA 5",
 const CONDITION_VALUES = ["Near Mint", "Lightly Played", "Moderately Played",
   "Heavily Played", "Damaged"];
 
+/* ---------------------------------------------- READING A COPY'S CONDITION
+   (Phase 5 C2)
+
+   `grade` is STORED as a string — "Raw", or a grading label like "PSA 9" — and
+   C2 did not change that. What it changed is that there is now ONE place that
+   decides what such a string MEANS, instead of the decision being made again
+   in each presenter with its own regex.
+
+   THE STORED SHAPE IS NOT THE CONCEPTUAL SHAPE, and this function is the seam
+   between them. Conceptually a copy is:
+
+       raw     → grading state `raw`, a `condition`, no grader and no number
+       graded  → grading state `graded`, a `grader`, a numeric `grade`,
+                 and no raw condition
+
+   That is what comes back here, parsed out of the string, from whichever seat
+   is asking — a partner's inventory copy and a Collector's own copy are the
+   same kind of object, so they read the same way.
+
+   WHY THE STRING STAYS, FOR NOW. Splitting the storage into `gradingState`,
+   `grader` and a numeric `grade` would touch every inventory row already
+   written, both `attrs` blobs, the prototype's card picker, the identity
+   vocabulary in `identityFrom`, and both presenters — a migration of live data
+   in a batch whose subject is ownership. The C2 report states that tradeoff.
+   What this gives instead is the thing that makes the migration cheap when it
+   comes: one reader to change, and a grading company that appears in exactly
+   one regex rather than in four files. Nothing outside this function should
+   ever test a grade string against /psa/i again.
+
+   IT IS NOT PART OF CARD IDENTITY. A grade describes THIS physical copy, not
+   which card it is — Batch 5 moved it off identity and C2 does not move it
+   back. `grader` is deliberately not a canonical-card dimension. */
+const GRADE_LABEL = /^([A-Za-z]{2,4})\s*([0-9]{1,2}(?:\.[05])?)$/;
+const gradingOf = (copy) => {
+  const grade = typeof (copy && copy.grade) === "string" ? copy.grade.trim() : "";
+  const condition = typeof (copy && copy.condition) === "string" ? copy.condition.trim() : "";
+  if (grade && !/^raw$/i.test(grade)) {
+    const m = GRADE_LABEL.exec(grade);
+    return { state: "graded", grader: m ? m[1].toUpperCase() : null,
+      grade: m ? Number(m[2]) : null, condition: null, label: grade };
+  }
+  /* "Raw" stated, or nothing stated at all: those are different answers and
+     stay different. A copy nobody has described is not a raw copy. */
+  if (/^raw$/i.test(grade)) {
+    return { state: "raw", grader: null, grade: null, condition: condition || null,
+      label: condition ? `Raw · ${condition}` : "Raw" };
+  }
+  return { state: "unstated", grader: null, grade: null, condition: condition || null,
+    label: condition || null };
+};
+
 /* Free-text search over the canonical catalog. Every term must appear somewhere
    in the record; name matches rank above set matches. */
 function searchCards(cards, query) {
@@ -887,6 +939,7 @@ const identityFrom = (printed, copy, edition) => {
 
 module.exports.GRADED_VALUES = GRADED_VALUES;
 module.exports.CONDITION_VALUES = CONDITION_VALUES;
+module.exports.gradingOf = gradingOf;
 module.exports.searchCards = searchCards;
 module.exports.printKey = printKey;
 module.exports.printedCards = printedCards;
@@ -1121,7 +1174,7 @@ const binderRowState = (o, row) => {
   if (row.inclusion === "proposed" && o.trade && o.trade.submitted) return "reserved";
   return null;                       // draft, rejected or withdrawn rows hold nothing
 };
-const binderCopyStatus = (binderId, opps, exceptOppId) => {
+const collectorCopyStatus = (binderId, opps, exceptOppId) => {
   let status = "available";
   for (const o of opps || []) {
     if (o.id === exceptOppId) continue;
@@ -1150,21 +1203,37 @@ const emptyFulfillment = () => ({ method: null, show: "", date: "", time: "",
 /* The row id here labels a DRAFT row (the Trusted Partner's client-side package
    editor and test fixtures). A row that enters canonical state is re-identified
    by the command runtime at submission (proposeTradeSelection). */
-const emptyTradeCard = (cardId, photos, cert, binderId) => ({
-  id: "tc" + cardId + "-" + randomToken(8),
-  cardId, binderId: binderId || null, inclusion: "proposed", reviewedAt: null,
-  withdrawn: false, withdrawnAt: null,
-  collectorMarket: null, tpMarket: null, agreedMarket: null, valueThread: [],
-  collectorPercent: null, tpPercent: null, agreedPercent: null, percentThread: [],
-  cert: cert || null, photos: photos || { front: null, back: null },
-});
+/* EXACTLY ONE CARD REFERENCE, HERE TOO (Phase 5 C2). A trade row names the card
+   the copy it carries names, and since C2 a Collector's copy may name a
+   canonical card instead of a legacy one. `canonicalCardId` is the fifth
+   argument rather than a replacement for the first, so every existing caller —
+   the demo, the draft editor, the fixtures — is untouched: pass it and the row
+   carries `canonicalCardId` and NO `cardId`; omit it and nothing changes.
+
+   This is the same move Batch 6 made for inventory, Batch 7 for goals and Batch
+   8 for opportunities, and it is here now for one reason: without it a
+   production Collector's copy — which has no legacy card — could be owned and
+   offered but never actually put into a trade. validateWorld requires one of
+   the two references and refuses both. */
+const emptyTradeCard = (cardId, photos, cert, binderId, canonicalCardId) => {
+  const canonical = typeof canonicalCardId === "string" && canonicalCardId;
+  return {
+    id: "tc" + (canonical || cardId) + "-" + randomToken(8),
+    ...(canonical ? { canonicalCardId: canonical } : { cardId }),
+    binderId: binderId || null, inclusion: "proposed", reviewedAt: null,
+    withdrawn: false, withdrawnAt: null,
+    collectorMarket: null, tpMarket: null, agreedMarket: null, valueThread: [],
+    collectorPercent: null, tpPercent: null, agreedPercent: null, percentThread: [],
+    cert: cert || null, photos: photos || { front: null, back: null },
+  };
+};
 
 module.exports.finalAgreementGiven = finalAgreementGiven;
 module.exports.cancelledAfterAgreement = cancelledAfterAgreement;
 module.exports.currentCashFigure = currentCashFigure;
 module.exports.inventoryCopyStatus = inventoryCopyStatus;
 module.exports.soldInventoryIds = soldInventoryIds;
-module.exports.binderCopyStatus = binderCopyStatus;
+module.exports.collectorCopyStatus = collectorCopyStatus;
 module.exports.binderRowState = binderRowState;
 module.exports.goalLocked = goalLocked;
 module.exports.emptyDeal = emptyDeal;

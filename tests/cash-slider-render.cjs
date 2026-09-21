@@ -62,7 +62,7 @@ const worldAt = (currentSigned) => {
   const st = createStore({
     catalog: [GIVE, WANT], collectors: [{ id: "c12", name: "Casey", prefs: [] }],
     partners: [{ id: "p", name: PARTNER }],
-    goals: [], binder: [], interests: [], conversations: [], opportunities: [],
+    goals: [], collectorCopies: [], interests: [], conversations: [], opportunities: [],
     preferences: [], photoRequests: [], copyReviews: [],
     inventory: [{ invId: "i", partnerId: "p", cardId: "kt", ask: price,
       archived: false, photos: { front: "f", back: "b" } }],

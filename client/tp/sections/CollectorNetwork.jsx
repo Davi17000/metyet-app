@@ -9,7 +9,7 @@
    appear here because the server never sent them.
 
    THE JOIN IS BY IDENTIFIER, NEVER BY POSITION. A collector's relationship,
-   goals and binder copies are found by matching `collectorId` — not by taking
+   goals and offered copies are found by matching `collectorId` — not by taking
    the row at the same index, and not by taking the first one. Row order is not
    a fact the server promised, and a screen that depends on it is a screen that
    silently shows one person's data against another's name.
@@ -20,7 +20,7 @@
    partner may see. Preference tags are the same rule (D-2), and they are the
    matching profile this product runs on, so they belong on the card.
 
-   The relationship's start, your own last contact, your own binder review time
+   The relationship's start, your own last contact, your own card review time
    and your own note are RELATIONSHIP_PARTNER_PRIVATE: they are yours, about
    your relationship, and only you receive them. Another Trusted Partner's notes
    about the same collector are not in this projection and there is no code path
@@ -167,7 +167,7 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
     })();
     return () => { current = false; };
   }, [wantedIds.join(","), onBrowseCards]);
-  const binderOf = groupBy(state && state.binder, "collectorId");
+  const copiesOf = groupBy(state && state.collectorCopies, "collectorId");
   const oppsOf = groupBy(state && state.opportunities, "collectorId");
 
   /* Most recently in contact first, when that is known; the rest keep the
@@ -515,7 +515,10 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
         {ordered.map((c) => {
           const rel = relationshipOf.get(c.id) || null;
           const goals = goalsOf.get(c.id) || [];
-          const binder = binderOf.get(c.id) || [];
+          /* Only the copies this Collector is OFFERING reach a partner at all
+             (C2) — the projection dropped the rest, so this is a count of
+             supply, not of what they own. */
+          const offeredCopies = copiesOf.get(c.id) || [];
           const live = (oppsOf.get(c.id) || []).filter((o) => o.stage !== "completed");
           const prefs = rows(c.prefs).map(text).filter(Boolean);
 
@@ -531,9 +534,9 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
                 <>
                   <Fact label="In your network since" value={day(rel && rel.at)} mono />
                   <Fact label="Last contact" value={day(rel && rel.last)} mono />
-                  <Fact label="Binder reviewed" value={day(rel && rel.binderReviewedAt)} mono />
+                  <Fact label="Cards reviewed" value={day(rel && rel.binderReviewedAt)} mono />
                   <Fact label="Goals" value={goals.length ? String(goals.length) : null} mono />
-                  <Fact label="Binder copies" value={binder.length ? String(binder.length) : null} mono />
+                  <Fact label="Cards offered" value={offeredCopies.length ? String(offeredCopies.length) : null} mono />
                   <Fact label="In progress" value={live.length ? String(live.length) : null} mono />
                 </>
               }

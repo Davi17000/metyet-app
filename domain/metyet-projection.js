@@ -14,7 +14,7 @@
      NETWORK  whose data. A CURRENT ACCEPTED RELATIONSHIP (isRelated) is the only
               thing that puts a counterparty into the actor's network: the
               collector's Trusted Partners and their supply; the partner's
-              Collector Network, its Goals, preference tags and Binder supply.
+              Collector Network, its Goals, preference tags and offered copies.
               Taking part in a specific record — an Opportunity, a Conversation,
               a photo request, an invitation — makes THAT RECORD visible, and
               names the other party in `counterparties` with bare identity. It
@@ -170,10 +170,22 @@ const PREFERENCE_FOR_PARTNER = ["collectorId", "tags"];
 const INVENTORY_FOR_COLLECTOR = ["invId", "partnerId", "cardId", "canonicalCardId",
   "grade", "condition", "ask", "cert", "photos", "addedAt", "archived"];
 
-/* A BinderCopy as a partner sees it: identity, photos, cert. The reference
-   value (`market`) and any unlisted field are collector-private. */
-const BINDER_FOR_PARTNER = ["id", "collectorId", "cardId", "photos", "cert",
-  "addedAt", "updatedAt"];
+/* A CollectorCopy as a partner sees it: identity, photos, cert. The reference
+   value (`market`) and any unlisted field are collector-private.
+
+   `canonicalCardId` joined the list in Batch C2 for the same reason it joined
+   INVENTORY_FOR_COLLECTOR in Batch 6 — it IS the identity now, and a copy whose
+   card the viewer cannot resolve is a copy of nothing. `grade` and `condition`
+   joined it for the same reason they are on the inventory list: they describe
+   the very thing being offered, and a partner who cannot see whether a copy is
+   PSA 9 or heavily played cannot value it. `offered` joined it because a partner
+   who receives the copy at all is being told it is available to them, and the
+   field saying so should not be the one thing they have to infer.
+
+   `market` is still not here, and the reason has not changed: it is what the
+   Collector thinks the card is worth, which is their side of a negotiation. */
+const COLLECTOR_COPY_FOR_PARTNER = ["id", "collectorId", "cardId", "canonicalCardId",
+  "grade", "condition", "offered", "photos", "cert", "addedAt", "updatedAt"];
 
 /* A partner's interest as the owning Collector sees it. */
 const INTEREST_FOR_COLLECTOR = ["partnerId", "binderId", "at"];
@@ -241,7 +253,7 @@ const counterpartiesFrom = (rows, key, isNetwork, records, fields) => {
 
 /* ------------------------------------------------------------- THE EMPTY VIEW */
 const COLLECTIONS = ["catalog", "collectors", "partners", "relationships", "invitations",
-  "goals", "preferences", "inventory", "binder", "interests", "opportunities",
+  "goals", "preferences", "inventory", "collectorCopies", "interests", "opportunities",
   "conversations", "activity", "photoRequests", "copyReviews"];
 const SECTIONS = ["actor", ...COLLECTIONS, "counterparties", "discoveries"];
 const empty = () => {
@@ -276,8 +288,8 @@ function projectForCollector(state, me) {
   const invitations = list(state.invitations).filter((i) => i.collectorId === cid);
   const photoRequests = list(state.photoRequests).filter((r) => r.collectorId === cid);
   const copyReviews = list(state.copyReviews).filter((r) => r.collectorId === cid);
-  const binder = list(state.binder).filter((b) => b.collectorId === cid);
-  const myBinderIds = new Set(binder.map((b) => b.id));
+  const collectorCopies = list(state.collectorCopies).filter((b) => b.collectorId === cid);
+  const myCopyIds = new Set(collectorCopies.map((b) => b.id));
 
   /* Inventory: the current supply of Trusted Partners, and the exact copies this
      collector's own deals name — each with a status from their own deals only.
@@ -306,9 +318,13 @@ function projectForCollector(state, me) {
     goals: clone(list(state.goals).filter((g) => g.collectorId === cid)),
     preferences: clone(list(state.preferences).filter((p) => p.collectorId === cid)),
     inventory,
-    binder: binder.map((b) => ({ ...clone(b), status: D.binderCopyStatus(b.id, allOpps) })),
+    /* The Collector's own cards, whole: every field including `market` and
+       `offered`, and every copy whether offered or not. Owning is the fact;
+       offering is a flag on it, and a Collector who is not offering a card must
+       still be able to see that they own it. */
+    collectorCopies: collectorCopies.map((b) => ({ ...clone(b), status: D.collectorCopyStatus(b.id, allOpps) })),
     interests: list(state.interests)
-      .filter((x) => myBinderIds.has(x.binderId) && related(x.partnerId))
+      .filter((x) => myCopyIds.has(x.binderId) && related(x.partnerId))
       .map((x) => pick(x, INTEREST_FOR_COLLECTOR)),
     opportunities: opportunities.map((o) => ownReadPosition(omit(o, OPPORTUNITY_PARTNER_PRIVATE), "collector")),
     conversations: clone(conversations),
@@ -332,17 +348,35 @@ function projectForPartner(state, me) {
   const invitations = list(state.invitations).filter((i) => i.partnerId === pid);
   const photoRequests = list(state.photoRequests).filter((r) => r.partnerId === pid);
 
-  /* Binder: the Collector Network's supply, and the exact copies this partner's
-     own submitted packages name — each with a status from their own deals only.
-     The reference value never crosses (BINDER_FOR_PARTNER). */
-  const referencedBinder = new Set(opportunities.flatMap(submittedRows)
+  /* Collector copies: the Collector Network's TRADE SUPPLY, and the exact copies
+     this partner's own submitted packages name — each with a status from their
+     own deals only. The reference value never crosses
+     (COLLECTOR_COPY_FOR_PARTNER).
+
+     SUPPLY IS OFFERED SUPPLY (Phase 5 C2). Before this batch, owning a copy and
+     offering it were the same act: a copy existed only because the Collector put
+     it up for trade, and "I no longer want to trade this" could only be said by
+     deleting the record — which threw away the photographs, the certificate and
+     the fact of ownership along with the willingness. A Collector can now own a
+     card without offering it, so membership of a partner's supply asks the extra
+     question: is this copy OFFERED. An unoffered copy is not supply, and a copy
+     that stops being offered leaves supply without its owner losing it.
+
+     A copy a partner has already named in a submitted package still reaches them
+     as UNAVAILABLE even once it stops being offered — that is `referenced`, and
+     it is the same rule as a copy committed to somebody else's deal. A partner
+     who has staked a negotiation on a card is told the card is gone, not shown a
+     hole where their own proposal used to be. What they are never given is a
+     copy they never named that its owner is not offering: copyForViewer returns
+     null for it, and a null is dropped. */
+  const referencedCopies = new Set(opportunities.flatMap(submittedRows)
     .map((row) => row.binderId).filter((x) => x != null));
-  const binder = list(state.binder)
-    .map((b) => copyForViewer(pick(b, BINDER_FOR_PARTNER), {
-      own: D.binderCopyStatus(b.id, opportunities),
-      world: D.binderCopyStatus(b.id, allOpps),
-      inSupply: inNetwork(b.collectorId),
-      referenced: referencedBinder.has(b.id),
+  const collectorCopies = list(state.collectorCopies)
+    .map((b) => copyForViewer(pick(b, COLLECTOR_COPY_FOR_PARTNER), {
+      own: D.collectorCopyStatus(b.id, opportunities),
+      world: D.collectorCopyStatus(b.id, allOpps),
+      inSupply: inNetwork(b.collectorId) && b.offered === true,
+      referenced: referencedCopies.has(b.id),
     }))
     .filter(Boolean);
 
@@ -361,7 +395,7 @@ function projectForPartner(state, me) {
       .map((p) => pick(p, PREFERENCE_FOR_PARTNER)),
     inventory: list(state.inventory).filter((i) => i.partnerId === pid)
       .map((i) => ({ ...clone(i), status: D.inventoryCopyStatus(i.invId, allOpps) })),
-    binder,
+    collectorCopies,
     interests: clone(list(state.interests).filter((x) => x.partnerId === pid)),
     opportunities: opportunities.map(opportunityForPartner),
     conversations: clone(conversations),
@@ -387,7 +421,7 @@ const FIELD_RULES = Object.freeze({
   PARTNER_FOR_COLLECTOR, PARTNER_IDENTITY,
   RELATIONSHIP_SHARED, RELATIONSHIP_PARTNER_PRIVATE, INVITATION_FOR_INVITEE,
   GOAL_FOR_PARTNER, PREFERENCE_FOR_PARTNER, INVENTORY_FOR_COLLECTOR,
-  BINDER_FOR_PARTNER, INTEREST_FOR_COLLECTOR, OPPORTUNITY_PARTNER_PRIVATE,
+  COLLECTOR_COPY_FOR_PARTNER, INTEREST_FOR_COLLECTOR, OPPORTUNITY_PARTNER_PRIVATE,
 });
 
 module.exports = { projectForActor, FIELD_RULES, PROJECTED_COLLECTIONS: COLLECTIONS,

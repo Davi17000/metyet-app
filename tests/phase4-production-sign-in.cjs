@@ -65,7 +65,7 @@ const sessionBody = (inSeconds = 3600) => ({ access_token: ACCESS, refresh_token
    own field. There is no `actor.id`, which is the bug Batch 1 had to fix. */
 const PROJECTION = { actor: { seat: "tp", partnerId: PARTNER },
   catalog: [], collectors: [], partners: [{ id: PARTNER, name: "Northline Cards", tradeRate: 0.8 }],
-  relationships: [], goals: [], inventory: [], binder: [], opportunities: [] };
+  relationships: [], goals: [], inventory: [], collectorCopies: [], opportunities: [] };
 
 /* One recorder for both hosts. Every module below is the real one. */
 function wire({ otp = { status: 200, body: {} }, verify = { status: 200, body: sessionBody() },

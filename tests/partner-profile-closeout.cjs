@@ -72,7 +72,7 @@ const world = ({ stock = 3 } = {}) => {
       { id: "cv", name: "Card Vault", city: "St Paul, Minnesota" }],
     goals: [], interests: [], conversations: [], opportunities: [],
     preferences: [], photoRequests: [], copyReviews: [],
-    binder: [{ id: "b1", collectorId: ME, cardId: "ka", market: 900,
+    collectorCopies: [{ offered: true, id: "b1", collectorId: ME, cardId: "ka", market: 900,
       photos: { front: "f", back: "b" } }],
     inventory,
   });

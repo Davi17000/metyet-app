@@ -29,7 +29,7 @@ const world = () => createStore({
     { id: "p2", name: "Complete Collectibles" }],
   goals: [],
   inventory: [],
-  binder: [],
+  collectorCopies: [],
   interests: [],
   conversations: [],
   opportunities: [],
@@ -53,15 +53,15 @@ const listed = (st, partnerId, cardId, ask) => {
 /* The two projections. Neither holds state; both read the one store. */
 const asPartner = (s, partnerId) => ({
   myInventory: E.inventoryOf(s.inventory, partnerId),
-  networkSupply: E.binderCopiesForPartner(s.binder),          // privacy applied here
-  myInterests: E.binderCopiesInterestedBy(s.interests, partnerId),
+  networkSupply: E.collectorCopiesForPartner(s.collectorCopies),          // privacy applied here
+  myInterests: E.collectorCopiesInterestedBy(s.interests, partnerId),
   myOpportunities: s.opportunities.filter((o) => o.partnerId === partnerId),
   networkDemand: s.goals,
   conversations: s.conversations.filter((c) => c.partnerId === partnerId),
 });
 const asCollector = (s, collectorId) => ({
   myGoals: s.goals.filter((g) => g.collectorId === collectorId),
-  myBinder: s.binder.filter((b) => b.collectorId === collectorId).map(E.binderCopyForOwner),
+  myCopies: s.collectorCopies.filter((b) => b.collectorId === collectorId).map(E.collectorCopyForOwner),
   partnersInterested: (binderId) => E.partnersInterestedIn(s.interests, binderId),
   myOpportunities: s.opportunities.filter((o) => o.collectorId === collectorId),
   supplyFor: (cardId) => E.partnersHolding(s.inventory, s.catalog.find((c) => c.id === cardId),
@@ -101,28 +101,46 @@ describe("B. TP Inventory -> Collector Supply", () => {
 describe("C. Collector Binder -> TP Network Supply", () => {
   test("one binder copy, visible from both sides", () => {
     const st = world();
-    const id = st.actions.addBinderCopy({ id: "b1", collectorId: "c1", cardId: "k2",
+    const id = st.actions.addCollectorCopy({ offered: true, id: "b1", collectorId: "c1", cardId: "k2",
       market: 700, cert: "PSA 1", addedAt: AT, photos: { front: "f", back: "b" } });
 
-    eq(st.get().binder.length, 1, "exactly one BinderCopy");
+    eq(st.get().collectorCopies.length, 1, "exactly one BinderCopy");
     assert(id, "created");
-    eq(asCollector(st.get(), "c1").myBinder.length, 1, "the collector sees it");
+    eq(asCollector(st.get(), "c1").myCopies.length, 1, "the collector sees it");
     eq(asPartner(st.get(), "p-self").networkSupply.length, 1, "the partner sees the same copy");
     eq(asPartner(st.get(), "p-self").networkSupply[0].id, "b1", "the same record, by id");
   });
 
-  test("the photo invariant holds at the domain, not the form", () => {
+  /* RESTATED IN PHASE 5 C2, NOT DROPPED.
+
+     WAS: adding a copy with one face was refused, and nothing was created.
+     WHY IT CHANGED: that put an EVALUATION rule in front of an OWNERSHIP fact.
+     Recording that you own a card is not an offer to trade it, and a Collector
+     with a shoebox and no lightbox could record nothing at all — so there was
+     nothing to photograph later and no prompt to do it.
+     WHAT REPLACES IT: the same invariant, still at the domain and still not at
+     the form, applied where the copy is actually handed to somebody to value.
+     `proposeTradeSelection` refuses `photos-required`; proved end to end in
+     tests/phase5-c2-collector-copy.cjs. Here we pin the half this file owns:
+     the ADD path now records the object, and the invariant it used to call is
+     the one single predicate both seats share. */
+  test("the photo invariant is one predicate, and adding a copy is not where it bites", () => {
     const st = world();
-    eq(st.actions.addBinderCopy({ id: "bx", collectorId: "c1", cardId: "k2",
-      photos: { front: "f", back: null } }), null, "one face is refused");
-    eq(st.get().binder.length, 0, "and nothing was created");
+    const id = st.actions.addCollectorCopy({ offered: true, id: "bx", collectorId: "c1", cardId: "k2",
+      photos: { front: "f", back: null } });
+    eq(id, "bx", "a half-photographed card is still a card you own");
+    eq(st.get().collectorCopies.length, 1, "and it was created");
+    assert(!D.INVARIANTS.copyPhotographed({ front: "f", back: null }), "one face is not photographed");
+    assert(D.INVARIANTS.copyPhotographed({ front: "f", back: "b" }), "both faces are");
+    eq(D.INVARIANTS.binderCopyPhotographed, undefined,
+      "and there is no second predicate under the old name");
   });
 });
 
 describe("D. TP Interested -> Collector signal", () => {
   test("one interest relationship, read from both ends", () => {
     const st = world();
-    st.actions.addBinderCopy({ id: "b1", collectorId: "c1", cardId: "k2", market: 700,
+    st.actions.addCollectorCopy({ offered: true, id: "b1", collectorId: "c1", cardId: "k2", market: 700,
       addedAt: AT, photos: { front: "f", back: "b" } });
     st.actions.setInterest("p-self", "b1", true, AT);
 
@@ -135,7 +153,7 @@ describe("D. TP Interested -> Collector signal", () => {
 
   test("interest is per exact copy, not per identity", () => {
     const st = world();
-    ["b1", "b2"].forEach((id) => st.actions.addBinderCopy({ id, collectorId: "c1", cardId: "k2",
+    ["b1", "b2"].forEach((id) => st.actions.addCollectorCopy({ offered: true, id, collectorId: "c1", cardId: "k2",
       market: 700, addedAt: AT, photos: { front: "f", back: "b" } }));
     st.actions.setInterest("p-self", "b1", true, AT);
     eq(asCollector(st.get(), "c1").partnersInterested("b2").length, 0,
@@ -144,7 +162,7 @@ describe("D. TP Interested -> Collector signal", () => {
 
   test("removing interest clears both views at once", () => {
     const st = world();
-    st.actions.addBinderCopy({ id: "b1", collectorId: "c1", cardId: "k2", market: 700,
+    st.actions.addCollectorCopy({ offered: true, id: "b1", collectorId: "c1", cardId: "k2", market: 700,
       addedAt: AT, photos: { front: "f", back: "b" } });
     st.actions.setInterest("p-self", "b1", true, AT);
     st.actions.setInterest("p-self", "b1", false, AT);
@@ -180,7 +198,7 @@ describe("E. Collector Reach out -> TP conversation", () => {
 describe("F. TP Reach out -> Collector conversation", () => {
   test("the inverse holds, with binder-copy context", () => {
     const st = world();
-    st.actions.addBinderCopy({ id: "b1", collectorId: "c1", cardId: "k2", market: 700,
+    st.actions.addCollectorCopy({ offered: true, id: "b1", collectorId: "c1", cardId: "k2", market: 700,
       addedAt: AT, photos: { front: "f", back: "b" } });
     st.actions.reachOut({ collectorId: "c1", partnerId: "p2", cardId: "k2", by: "tp",
       text: "Would you trade this?", at: AT });
@@ -271,7 +289,7 @@ describe("I. Agree on Price", () => {
 describe("J. Select Trade", () => {
   test("exact binder ids, interest orders but never gates, no money, no private value", () => {
     const st = world();
-    ["b1", "b2"].forEach((id, i) => st.actions.addBinderCopy({ id, collectorId: "c1",
+    ["b1", "b2"].forEach((id, i) => st.actions.addCollectorCopy({ offered: true, id, collectorId: "c1",
       cardId: i ? "k2" : "k3", market: 700 + i, addedAt: AT, photos: { front: "f", back: "b" } }));
     st.actions.setInterest("p2", "b1", true, AT);
     const gid = st.actions.addGoal({ collectorId: "c1", cardId: "k1", tier: "primary", at: AT });
@@ -279,8 +297,8 @@ describe("J. Select Trade", () => {
       cardId: "k1", invId: listed(st, "p2", "k1", 4200), listedPrice: 4200, amount: 3700, at: AT });
 
     /* Every copy is eligible; interest only orders them. */
-    const keen = E.binderCopiesInterestedBy(st.get().interests, "p2");
-    const mine = asCollector(st.get(), "c1").myBinder;
+    const keen = E.collectorCopiesInterestedBy(st.get().interests, "p2");
+    const mine = asCollector(st.get(), "c1").myCopies;
     const ordered = [...mine.filter((b) => keen.includes(b.id)),
       ...mine.filter((b) => !keen.includes(b.id))];
     eq(ordered.length, 2, "both copies are eligible");
@@ -301,7 +319,7 @@ describe("J. Select Trade", () => {
 describe("K. Value Trade", () => {
   test("both personas derive identical settled terms", () => {
     const st = world();
-    st.actions.addBinderCopy({ id: "b1", collectorId: "c1", cardId: "k2", market: 700,
+    st.actions.addCollectorCopy({ offered: true, id: "b1", collectorId: "c1", cardId: "k2", market: 700,
       addedAt: AT, photos: { front: "f", back: "b" } });
     const gid = st.actions.addGoal({ collectorId: "c1", cardId: "k1", tier: "primary", at: AT });
     const oid = st.actions.startOpportunity({ goalId: gid, collectorId: "c1", partnerId: "p2",
@@ -322,7 +340,7 @@ describe("K. Value Trade", () => {
 describe("L. Deal", () => {
   test("one cash difference, identical from both sides", () => {
     const st = world();
-    st.actions.addBinderCopy({ id: "b1", collectorId: "c1", cardId: "k2", market: 700,
+    st.actions.addCollectorCopy({ offered: true, id: "b1", collectorId: "c1", cardId: "k2", market: 700,
       addedAt: AT, photos: { front: "f", back: "b" } });
     const gid = st.actions.addGoal({ collectorId: "c1", cardId: "k1", tier: "primary", at: AT });
     const oid = st.actions.startOpportunity({ goalId: gid, collectorId: "c1", partnerId: "p2",
@@ -382,7 +400,7 @@ describe("N. Failed negotiation unlocks the Goal", () => {
 describe("O. Privacy", () => {
   test("the collector's reference value cannot reach any TP projection", () => {
     const st = world();
-    st.actions.addBinderCopy({ id: "b1", collectorId: "c1", cardId: "k2", market: 999,
+    st.actions.addCollectorCopy({ offered: true, id: "b1", collectorId: "c1", cardId: "k2", market: 999,
       cert: "PSA 123", addedAt: AT, photos: { front: "f", back: "b" } });
     st.actions.setInterest("p-self", "b1", true, AT);
 
@@ -396,7 +414,7 @@ describe("O. Privacy", () => {
     assert(tp.networkSupply[0].photos, "photos still visible");
 
     /* The owner keeps their own number. */
-    eq(asCollector(st.get(), "c1").myBinder[0].market, 999, "the collector still sees it");
+    eq(asCollector(st.get(), "c1").myCopies[0].market, 999, "the collector still sees it");
   });
 
   test("privacy is enforced at the domain boundary, not by each screen", () => {
@@ -411,7 +429,7 @@ describe("The governing rule holds", () => {
   test("no action writes two records for one concept", () => {
     const st = world();
     const gid = st.actions.addGoal({ collectorId: "c1", cardId: "k1", tier: "primary", at: AT });
-    st.actions.addBinderCopy({ id: "b1", collectorId: "c1", cardId: "k2", market: 700,
+    st.actions.addCollectorCopy({ offered: true, id: "b1", collectorId: "c1", cardId: "k2", market: 700,
       addedAt: AT, photos: { front: "f", back: "b" } });
     st.actions.setInterest("p-self", "b1", true, AT);
     st.actions.reachOut({ collectorId: "c1", partnerId: "p2", cardId: "k1", text: "hi", at: AT });
@@ -420,7 +438,7 @@ describe("The governing rule holds", () => {
 
     const s = st.get();
     eq(s.goals.length, 1, "one goal");
-    eq(s.binder.length, 1, "one binder copy");
+    eq(s.collectorCopies.length, 1, "one binder copy");
     eq(s.interests.length, 1, "one interest");
     eq(s.conversations.length, 1, "one conversation");
     eq(s.opportunities.length, 1, "one opportunity");
@@ -699,7 +717,7 @@ describe("Trusted Partner runtime is the shared store", () => {
     const root = src();
     [["cardDb", "catalog"], ["inventory", "inventory"], ["goals", "goals"],
       ["collectors", "collectors"], ["opps", "opportunities"],
-      ["collectorCards", "binder"], ["interests", "interests"],
+      ["collectorCards", "collectorCopies"], ["interests", "interests"],
       ["activity", "activity"], ["threads", "conversations"]].forEach(([local, key]) =>
       /* PHASE 1: read-only canonical reads — no setter exists to write back. */
       assert(new RegExp("const " + local + " = canon\\." + key + "\\b").test(root),
@@ -745,7 +763,7 @@ describe("Trusted Partner runtime is the shared store", () => {
     const { createStore } = require("./fixture-store.cjs");   // hand-built worlds declare their Relationships (contract §2)
     /* PHASE 1: addGoal is validated at the command boundary (the collector and
        the card must exist), so the world names them. */
-    const st = createStore({ goals: [{ id: "g1" }], inventory: [], binder: [],
+    const st = createStore({ goals: [{ id: "g1" }], inventory: [], collectorCopies: [],
       interests: [], conversations: [], opportunities: [],
       catalog: [{ id: "i17", name: "Charizard", set: "Base Set", num: "4/102", print: "Holo",
         edition: "Unlimited", language: "English", grade: "PSA 9", condition: null }],
@@ -877,7 +895,7 @@ describe("Secondary goal gating", () => {
     collectors: [{ id: "c1" }], partners: [{ id: "p2" }], preferences: [],
     goals: [{ id: "gs", collectorId: "c1", cardId: "k1", tier: "secondary" },
       { id: "gp", collectorId: "c1", cardId: "k2", tier: "primary" }],
-    inventory: [], binder: [], interests: [], conversations: [], opportunities: [],
+    inventory: [], collectorCopies: [], interests: [], conversations: [], opportunities: [],
   });
   /* PHASE 1: the offer is made on a listed copy of the goal's card (see listed()). */
   const offer = (st, goalId) => {
@@ -1018,7 +1036,7 @@ describe("Progressive deal receipt", () => {
   const { buildCanonicalSeed } = require("../dist/MetYet.cjs");
   const seed = () => buildCanonicalSeed();
   const ctxFor = (s2) => ({
-    binderById: (id) => s2.binder.find((b) => b.id === id),
+    binderById: (id) => s2.collectorCopies.find((b) => b.id === id),
     cardById: (id) => s2.catalog.find((c) => c.id === id),
     partnerById: (id) => s2.partners.find((p) => p.id === id),
   });

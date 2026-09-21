@@ -103,7 +103,7 @@ const EMPTY = Object.freeze({
   actor: { seat: "collector", collectorId: COLLECTOR },
   collectors: [{ id: COLLECTOR, name: "Casey Lin", short: "Casey L.", city: "Brooklyn, NY" }],
   partners: [], relationships: [], invitations: [], goals: [], preferences: [],
-  inventory: [], binder: [], interests: [], opportunities: [], conversations: [],
+  inventory: [], collectorCopies: [], interests: [], opportunities: [], conversations: [],
   activity: [], photoRequests: [], copyReviews: [], counterparties: [], catalog: [],
 });
 
@@ -111,7 +111,7 @@ const FULL = Object.freeze({
   ...EMPTY,
   goals: [{ id: "g1", collectorId: COLLECTOR, cardId: "k1", tier: "primary" },
     { id: "g2", collectorId: COLLECTOR, cardId: "k2", tier: "secondary" }],
-  binder: [{ id: "b1", collectorId: COLLECTOR, cardId: "k3", status: "available" }],
+  collectorCopies: [{ offered: true, id: "b1", collectorId: COLLECTOR, cardId: "k3", status: "available" }],
   partners: [{ id: PARTNER, name: "Northline Cards", city: "Duluth, Minnesota" },
     { id: "p-2", name: "Second Shop" }, { id: "p-3", name: "Third Shop" }],
   relationships: [{ partnerId: PARTNER, collectorId: COLLECTOR, status: "accepted", at: "2025-09-03" }],
@@ -122,7 +122,7 @@ const FULL = Object.freeze({
 const TP_VIEW = Object.freeze({
   actor: { seat: "tp", partnerId: PARTNER },
   partners: [{ id: PARTNER, name: "Northline Cards" }],
-  collectors: [], relationships: [], goals: [], binder: [], inventory: [],
+  collectors: [], relationships: [], goals: [], collectorCopies: [], inventory: [],
   opportunities: [], catalog: [], counterparties: [],
 });
 
@@ -165,7 +165,7 @@ const clickText = (r, label) => {
   assert(button, `no button "${label}" among: ${buttons(r).map(instText).join(" | ")}`);
   TR.act(() => { button.props.onClick(); });
 };
-/* RESTATED IN BATCH 8.1. The Trade Binder left the Collector's navigation:
+/* RESTATED IN BATCH 8.1, AND AGAIN IN C2 (renamed Your Cards). It left the Collector's navigation:
    its only writer needs a legacy catalogue row, production has none, so every
    Collector had a tab that opened onto something that could never fill. The
    section itself is untouched and still ships, so the assertions about what it
@@ -243,7 +243,7 @@ describe("A. the seat routes, and the seats stay apart", () => {
     const r = render(React.createElement(ProductionApp, { state: TP_VIEW }));
     assert(looksLikeTpShell(r), "the TP lost their workspace: " + flat(r));
     assert(!looksLikeCollectorShell(r), "a TP was shown the Collector app: " + flat(r));
-    assert(!/Trade Binder/.test(flat(r)), "a Collector section leaked in: " + flat(r));
+    assert(!/Your Cards/.test(flat(r)), "a Collector section leaked in: " + flat(r));
   });
 
   test("the router names both seats and nothing else decides", () => {
@@ -338,8 +338,8 @@ describe("C. the shell: its sections, and counts that are row counts", () => {
     NAV.forEach((n, i) => assert(labels[i].includes(n), `section ${i} is not ${n}`));
     eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "browse,goals,partners");
     /* Built, kept, and deliberately not offered. */
-    eq(SHELL_MOD.DEFERRED_SECTIONS.map((s) => s.id).join(","), "binder");
-    assert(!buttons(r).some((b) => instText(b).includes("Trade Binder")),
+    eq(SHELL_MOD.DEFERRED_SECTIONS.map((s) => s.id).join(","), "my-cards");
+    assert(!buttons(r).some((b) => instText(b).includes("Your Cards")),
       "a Collector can reach a section that can never have anything in it");
     /* And the prototype agrees about the labels that CAME from it. Browse is
        C1's own and the prototype has no equivalent — it never had a gallery —
@@ -358,7 +358,7 @@ describe("C. the shell: its sections, and counts that are row counts", () => {
        counted it is no longer offered. */
     assert(/2 Goals/.test(shown), "goals: " + shown);
     assert(/3 Trusted Partners/.test(shown), "partners: " + shown);
-    assert(!/Trade Binder/.test(shown), "the deferred section is counted: " + shown);
+    assert(!/Your Cards/.test(shown), "the deferred section is counted: " + shown);
     /* RESTATED IN C1. Browse counts NOTHING, and that is the point: the
        catalogue is not a collection of this Collector's, so a number beside it
        would be a fact about MetYet wearing the clothes of a fact about them.
@@ -414,7 +414,7 @@ describe("C. the shell: its sections, and counts that are row counts", () => {
     assert(looksLikeCollectorShell(r), "an empty account lost its navigation");
     clickText(r, "Goals");
     assert(/haven't set any goals yet/.test(flat(r)), flat(r));
-    assert(/Trade Binder is empty/.test(flat(show(EMPTY, "Trade Binder"))), "the deferred section");
+    assert(/haven't recorded any cards yet/.test(flat(show(EMPTY, "Your Cards"))), "the deferred section");
     clickText(r, "Trusted Partners");
     assert(/no Trusted Partners yet/.test(flat(r)), flat(r));
     const all = flat(r);
@@ -430,7 +430,7 @@ describe("C. the shell: its sections, and counts that are row counts", () => {
     for (const s of NAV) { clickText(r, s); assert(flat(r).length > 0, `${s} rendered nothing`); }
     assert(flat(r).includes("Casey Lin"));
     /* And ragged rows. */
-    const ragged = { ...EMPTY, goals: [null, {}], binder: "not an array", partners: [null, { id: "p" }] };
+    const ragged = { ...EMPTY, goals: [null, {}], collectorCopies: "not an array", partners: [null, { id: "p" }] };
     const r2 = show(ragged);
     assert(looksLikeCollectorShell(r2), "a ragged projection took the product down");
     assert(!/\[object Object\]|undefined|NaN/.test(flat(r2)), "something leaked: " + flat(r2));

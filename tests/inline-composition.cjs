@@ -213,7 +213,7 @@ describe("C. Stage details are canonical and leak nothing", () => {
       .forEach((k) => assert(!keys.includes(k),
         k + " belongs to a later stage and must not appear"));
     /* And the receipt itself blanks them, which is why the column cannot. */
-    const rec = D.receiptForOpportunity(o, { binderById: (id) => S().binder.find((b) => b.id === id),
+    const rec = D.receiptForOpportunity(o, { binderById: (id) => S().collectorCopies.find((b) => b.id === id),
       cardById: (id) => S().catalog.find((c) => c.id === id),
       partnerById: (id) => S().partners.find((p) => p.id === id) });
     eq(rec.stages[3].balance, null, "the Deal row is blank at Select Trade");
