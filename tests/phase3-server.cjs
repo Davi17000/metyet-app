@@ -29,6 +29,9 @@ const { createWorldRepository } = require("../persistence/world-repository.js");
 const { createAccountDirectory, AccountError } = require("../server/auth/accounts.js");
 const { createTokenVerifier } = require("../server/auth/token-verifier.js");
 const { createApp, FORBIDDEN_PAYLOAD_KEYS } = require("../server/app.js");
+const { EXPOSED_COMMANDS } = require("../server/exposed-commands.js");
+const { executeCommand } = require("../persistence/command-transaction.js");
+const { COMMAND_NAMES } = require("../domain/metyet-commands.js");
 const { loadServerConfig, describeConfig } = require("../server/config.js");
 const { API_ERRORS } = require("../server/errors.js");
 
@@ -133,6 +136,40 @@ async function serve({ seed = world(), runtimeFor = runtime, repositoryWrapper }
 const get = (app, subject, url = "/api/view") => app.inject({ method: "GET", url, headers: subject ? bearer(subject) : {} });
 const send = (app, subject, body, url = "/api/commands") => app.inject({ method: "POST", url,
   headers: { ...(subject ? bearer(subject) : {}), "content-type": "application/json" }, payload: body });
+
+/* PAST THE DOOR (Phase 5 Batch 8.1).
+
+   `POST /api/commands` now offers only the commands a production surface
+   sends. Everything else in the domain is written, tested and deliberately not
+   reachable over HTTP — which is a fact about the PRODUCT, not about the
+   domain, and several tests below are about the domain.
+
+   So those tests run their command where the route runs it: `executeCommand`,
+   the same transaction layer, against the same real database, taking the same
+   world lock and running the same validateWorld. Nothing is stubbed and
+   nothing is weakened — the assertions that follow are the ones that always
+   followed. Each of them also now asserts that the same command is refused at
+   the HTTP boundary, which is the new property and is stricter than what those
+   tests used to prove. */
+const ACTORS = { casey: { collectorId: "c1" }, dana: { collectorId: "c2" },
+  northline: { partnerId: "p1" }, second: { partnerId: "p2" } };
+/* ONE CLOCK, SHARED AND ALWAYS ADVANCING — because a server has one. A fresh
+   runtime per call would restart time, and two seats marking a deal viewed
+   would be stamped the same second, which is not a thing that can happen and
+   would make "no read receipt crosses" unprovable by coincidence. It starts a
+   year after the app's so the two can never mint the same id either. */
+let pastDoorClock = null;
+const pastDoor = () => (pastDoorClock
+  || (pastDoorClock = RT.deterministicRuntime({ start: "2031-01-01T00:00:00.000Z", stepMs: 60000 })));
+const direct = (repository, actor, command, payload) =>
+  executeCommand(repository, { actor, command, payload, runtime: pastDoor() });
+/* Whatever the actor, whatever the payload: a command the product does not
+   offer is answered the same way and never reaches the world. */
+const closedOverHttp = async (app, subject, command, payload = {}) => {
+  const res = await send(app, subject, { command, payload });
+  eq(res.statusCode, 409, `${command} over HTTP`);
+  eq(res.json().error.refused, "command-unavailable", `${command} over HTTP`);
+};
 
 async function dump(pg) {
   const tables = (await pg.query("select table_name from information_schema.tables where table_schema = 'metyet' order by 1")).rows;
@@ -331,13 +368,20 @@ describe("D. privacy, adversarially", () => {
     assert(state.binder.every((b) => b.collectorId === "c1"), "no binder outside the network");
   });
 
+  /* RESTATED IN BATCH 8.1. This test is about the PROJECTION — a reading
+     position belongs to the seat that read, and neither seat learns the
+     other's. That property is unchanged and every assertion below is the one
+     that was always here; only the way the two positions get written has moved
+     past the door, because no production screen marks a deal viewed. */
   test("reading positions stay with the seat that read", async () => {
     const { app, repository } = await serve();
-    const started = await send(app, SUBJECTS.casey, { command: "startOpportunity", payload: { goalId: "g1", invId: "i1", amount: 900 } });
-    eq(started.statusCode, 200, started.body);
-    const oppId = started.json().value;
-    eq((await send(app, SUBJECTS.casey, { command: "markDealViewed", payload: { oppId, surface: "messages" } })).statusCode, 200);
-    eq((await send(app, SUBJECTS.northline, { command: "markDealViewed", payload: { oppId, surface: "timeline" } })).statusCode, 200);
+    await closedOverHttp(app, SUBJECTS.casey, "markDealViewed", { oppId: "o1", surface: "messages" });
+    const started = await direct(repository, ACTORS.casey, "startOpportunity",
+      { goalId: "g1", invId: "i1", amount: 900 });
+    eq(started.ok, true, JSON.stringify(started.refused));
+    const oppId = started.value;
+    eq((await direct(repository, ACTORS.casey, "markDealViewed", { oppId, surface: "messages" })).ok, true);
+    eq((await direct(repository, ACTORS.northline, "markDealViewed", { oppId, surface: "timeline" })).ok, true);
     const canonical = (await repository.loadWorld()).opportunities[0].viewedAt;
     assert(canonical.collector && canonical.tp, "canonical state keeps both");
     const casey = (await get(app, SUBJECTS.casey)).json().state.opportunities[0];
@@ -402,12 +446,23 @@ describe("E. the command endpoint", () => {
     eq(await dump(pg), before, "the database is untouched");
   });
 
+  /* RESTATED IN BATCH 8.1, and it now proves more than it did. It used to say
+     that a command nobody has answers 409 and writes nothing. It still does —
+     and it also says that a command that does not exist and a real command the
+     product does not offer are answered IDENTICALLY, so the reply cannot be
+     used to read the domain's command table from outside. */
   test("an unknown or malformed command is answered safely", async () => {
     const { app, pg } = await serve();
     const before = await dump(pg);
     const unknown = await send(app, SUBJECTS.casey, { command: "dropEverything", payload: {} });
     eq(unknown.statusCode, 409);
-    eq(unknown.json().error.refused, "unknown-command");
+    eq(unknown.json().error.refused, "command-unavailable");
+    /* A real command, fully implemented, that no surface sends. */
+    const real = await send(app, SUBJECTS.casey, { command: "resolveCardIdentity", payload: {} });
+    eq(real.statusCode, unknown.statusCode, "same status as a command that does not exist");
+    eq(JSON.stringify({ ...real.json().error, requestId: null }),
+      JSON.stringify({ ...unknown.json().error, requestId: null }),
+      "and the same body — existence is not observable from outside");
     for (const body of [{}, { command: "" }, { command: 7 }, { command: "addGoal", payload: [] },
       { command: "addGoal", payload: "k2" }, { command: "addGoal", extra: 1 }, "not-an-object"]) {
       const res = await send(app, SUBJECTS.casey, body);
@@ -421,18 +476,28 @@ describe("E. the command endpoint", () => {
     eq(await dump(pg), before, "nothing was written by any of it");
   });
 
+  /* RESTATED IN BATCH 8.1. The deal lifecycle is built and tested and no
+     production screen sends any of it, so the four steps run past the door
+     while the two things this test actually proves — that the deal advances
+     through the real stack, and that the partner's trade % never crosses to
+     the Collector — are asserted exactly as before, the second one still over
+     HTTP. The steps are also proved closed at the boundary. */
   test("a full deal runs through the API, seat by seat", async () => {
     const { app, repository } = await serve();
-    const started = await send(app, SUBJECTS.casey, { command: "startOpportunity", payload: { goalId: "g1", invId: "i1", amount: 900 } });
-    const oppId = started.json().value;
+    await closedOverHttp(app, SUBJECTS.casey, "startOpportunity",
+      { goalId: "g1", invId: "i1", amount: 900 });
+    const started = await direct(repository, ACTORS.casey, "startOpportunity",
+      { goalId: "g1", invId: "i1", amount: 900 });
+    eq(started.ok, true, JSON.stringify(started.refused));
+    const oppId = started.value;
     const steps = [
-      [SUBJECTS.northline, "acceptPrice", { oppId }],
-      [SUBJECTS.casey, "proposeTradeSelection", { oppId, binderIds: ["b1"] }],
-      [SUBJECTS.northline, "reviewTradeCard", { oppId, decision: "accepted" }],
+      [ACTORS.northline, "acceptPrice", { oppId }],
+      [ACTORS.casey, "proposeTradeSelection", { oppId, binderIds: ["b1"] }],
+      [ACTORS.northline, "reviewTradeCard", { oppId, decision: "accepted" }],
     ];
-    for (const [subject, command, payload] of steps) {
-      const res = await send(app, subject, { command, payload });
-      eq(res.statusCode, 200, `${command}: ${res.body}`);
+    for (const [actor, command, payload] of steps) {
+      const res = await direct(repository, actor, command, payload);
+      eq(res.ok, true, `${command}: ${JSON.stringify(res.refused)}`);
     }
     const world = await repository.loadWorld();
     eq(world.opportunities[0].stage, "value-trade", "the deal advanced");
@@ -477,33 +542,49 @@ describe("F. authority cannot be claimed by a request", () => {
     eq(await dump(pg), before, "nothing written");
   });
 
+  /* RESTATED IN BATCH 8.1. Notes and messages are built and unexposed, so the
+     two commands run past the door — and the property this test is named for
+     is untouched: a party named in a payload is the SUBJECT of the record, and
+     the OWNER is still the authenticated actor and never the payload. */
   test("legitimate domain ids in a payload still work, and still grant nothing", async () => {
     const { app, repository } = await serve();
+    await closedOverHttp(app, SUBJECTS.northline, "recordNote", { collectorId: "c2" });
+    await closedOverHttp(app, SUBJECTS.casey, "sendMessage", { partnerId: "p1" });
     /* A Trusted Partner names the collector its note is about: legitimate. */
-    const note = await send(app, SUBJECTS.northline, { command: "recordNote",
-      payload: { collectorId: "c2", cardId: "k1", activity: { type: "manual", text: "Called Dana" } } });
-    eq(note.statusCode, 200, note.body);
+    const note = await direct(repository, ACTORS.northline, "recordNote",
+      { collectorId: "c2", cardId: "k1", activity: { type: "manual", text: "Called Dana" } });
+    eq(note.ok, true, JSON.stringify(note.refused));
     /* A collector names the partner it is writing to: legitimate. */
-    const message = await send(app, SUBJECTS.casey, { command: "sendMessage", payload: { partnerId: "p1", cardId: "k1", text: "Still keen" } });
-    eq(message.statusCode, 200, message.body);
+    const message = await direct(repository, ACTORS.casey, "sendMessage",
+      { partnerId: "p1", cardId: "k1", text: "Still keen" });
+    eq(message.ok, true, JSON.stringify(message.refused));
     const world = await repository.loadWorld();
     eq(world.activity[0].partnerId, "p1", "the note belongs to the authenticated partner");
     eq(world.conversations[0].collectorId, "c1", "the message belongs to the authenticated collector");
   });
 
   test("naming another party's record does not act for them", async () => {
-    const { app, pg } = await serve();
+    const { app, pg, repository } = await serve();
     const before = await dump(pg);
+    /* RESTATED IN BATCH 8.1. The rule is unchanged — naming somebody else's
+       record does not let you act on it — and every refusal below is the one
+       the domain always gave. What moved is where three of the four are asked:
+       only `updateGoalTier` is a command the product offers, so the other three
+       are asked past the door, and are separately proved shut at it. */
+    const exposed = await send(app, SUBJECTS.casey,
+      { command: "updateGoalTier", payload: { goalId: "g2", tier: "secondary" } });
+    eq(exposed.statusCode, 409, "an offered command still reaches its own rule");
+    eq(exposed.json().error.refused, "not-owner");
     const cases = [
-      [SUBJECTS.casey, { command: "updateGoalTier", payload: { goalId: "g2", tier: "secondary" } }, "not-owner"],
-      [SUBJECTS.casey, { command: "updateInventoryCopy", payload: { invId: "i1", patch: { ask: 1 } } }, "not-owner"],
-      [SUBJECTS.dana, { command: "startOpportunity", payload: { goalId: "g1", invId: "i1", amount: 900 } }, "not-owner"],
-      [SUBJECTS.second, { command: "markBinderReviewed", payload: { collectorId: "c2" } }, "no-relationship"],
+      [ACTORS.casey, SUBJECTS.casey, "updateInventoryCopy", { invId: "i1", patch: { ask: 1 } }, "not-owner"],
+      [ACTORS.dana, SUBJECTS.dana, "startOpportunity", { goalId: "g1", invId: "i1", amount: 900 }, "not-owner"],
+      [ACTORS.second, SUBJECTS.second, "markBinderReviewed", { collectorId: "c2" }, "no-relationship"],
     ];
-    for (const [subject, body, refused] of cases) {
-      const res = await send(app, subject, body);
-      eq(res.statusCode, 409, JSON.stringify(body));
-      eq(res.json().error.refused, refused, JSON.stringify(body));
+    for (const [actor, subject, command, payload, refused] of cases) {
+      await closedOverHttp(app, subject, command, payload);
+      const res = await direct(repository, actor, command, payload);
+      eq(res.ok, false, command);
+      eq(res.refused, refused, command);
     }
     eq(await dump(pg), before, "and nothing was written");
   });

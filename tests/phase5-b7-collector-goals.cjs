@@ -31,6 +31,7 @@ const { migrate } = require("../persistence/migrate.js");
 const { createWorldRepository } = require("../persistence/world-repository.js");
 const { createCatalogRepository } = require("../persistence/catalog-repository.js");
 const { createApp } = require("../server/app.js");
+const { executeCommand } = require("../persistence/command-transaction.js");
 const { createAccountDirectory } = require("../server/auth/accounts.js");
 const { validateWorld } = require("../domain/metyet-world.js");
 const RT = require("../domain/metyet-runtime.js");
@@ -139,14 +140,25 @@ describe("A. whose demand this is, and who decided", () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const goalId = (await want(ctx.app, "casey", cards.unlimited)).json().value;
+    /* RESTATED IN BATCH 8.1. The rule is Batch 7's and is unchanged: a Goal is
+       its Collector's, and no other Collector may retier, confirm or remove it.
+       Two of the three are commands the product offers and are still asked over
+       HTTP. `confirmGoal` is Batch 7 domain work that no screen sends, so it is
+       asked through the same transaction the route uses — and is separately
+       proved shut at the boundary. */
     for (const [command, payload] of [
       ["updateGoalTier", { goalId, tier: "secondary" }],
-      ["confirmGoal", { goalId }],
       ["removeGoal", { goalId }],
     ]) {
       const res = await post(ctx.app, "dana", command, payload);
       eq(res.json().error.refused, "not-owner", command);
     }
+    const closed = await post(ctx.app, "dana", "confirmGoal", { goalId });
+    eq(closed.statusCode, 409, closed.body);
+    eq(closed.json().error.refused, "command-unavailable", "confirmGoal is not offered");
+    const confirmed = await executeCommand(ctx.repository,
+      { actor: { collectorId: "c2" }, command: "confirmGoal", payload: { goalId }, runtime: ctx.runtime });
+    eq(confirmed.refused, "not-owner", "confirmGoal");
     eq((await goalsOf(ctx)).length, 1, "and the goal is untouched");
   });
 });

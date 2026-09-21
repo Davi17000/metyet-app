@@ -65,7 +65,7 @@ const COLLECTOR_FILES = fs.readdirSync(path.join(ROOT, "client", "collector"), {
 const ME = "c-8x21";
 const P1 = "p-north";
 const P2 = "p-second";
-const NAV = ["Goals", "Trade Binder", "Trusted Partners"];
+const NAV = ["Goals", "Trusted Partners"];
 
 /* ---------------------------------------------------- the real projection */
 
@@ -165,7 +165,17 @@ const clickText = (r, label) => {
   assert(b, `no button "${label}" among: ${buttons(r).map(instText).join(" | ")}`);
   TR.act(() => { b.props.onClick(); });
 };
+/* RESTATED IN BATCH 8.1. The Trade Binder left the Collector's navigation:
+   its only writer needs a legacy catalogue row, production has none, so every
+   Collector had a tab that opened onto something that could never fill. The
+   section itself is untouched and still ships, so the assertions about what it
+   renders are untouched too — they render it the way the shell would, with the
+   same single `state` prop, instead of pressing a button that is no longer
+   there. Section C separately proves it cannot be reached. */
+const DEFERRED = SHELL_MOD.DEFERRED_SECTIONS || [];
 const show = (state, section = null) => {
+  const deferred = DEFERRED.find((s) => s.label === section);
+  if (deferred) return render(React.createElement(deferred.view, { state }));
   const r = render(React.createElement(CollectorShell, { state }));
   if (section) clickText(r, section);
   return r;
@@ -286,10 +296,14 @@ describe("A. Goals — and the one place coordination appears", () => {
   test("there is no Collector Opportunities product", () => {
     const r = show(FULL);
     const labels = buttons(r).map(instText);
-    eq(labels.filter((l) => NAV.some((n) => l.includes(n))).length, 3, "a fourth section appeared");
+    eq(labels.filter((l) => NAV.some((n) => l.includes(n))).length, NAV.length,
+      "a section appeared that the product does not offer");
     onEverySection(r, (shown) =>
       assert(!/opportunit/i.test(shown), "the word appears as a product: " + shown));
-    eq(SHELL_MOD.SECTIONS.map((x) => x.id).join(","), "goals,binder,partners");
+    eq(SHELL_MOD.SECTIONS.map((x) => x.id).join(","), "goals,partners");
+    /* Restated in Batch 8.1: the Trade Binder is declared deferred rather
+       than offered, and "no Opportunities product" is unaffected by it. */
+    eq(SHELL_MOD.DEFERRED_SECTIONS.map((x) => x.id).join(","), "binder");
   });
 });
 
@@ -382,7 +396,7 @@ describe("C. Trusted Partners", () => {
   test("no invitation, acceptance or relationship control exists", () => {
     const r = show(FULL, "Trusted Partners");
     const labels = buttons(r).map(instText);
-    eq(labels.length, 4, "an extra control appeared: " + labels.join(" | "));
+    eq(labels.length, NAV.length + 1, "an extra control appeared: " + labels.join(" | "));
     /* CONTROLS are what this forbids. "accepted" is the relationship STATUS the
        server sent, rendered as a tag — banning the substring flagged the
        projection's own word, which is data. So: no control carries an action
@@ -536,7 +550,7 @@ describe("F. nothing acts, nothing mutates, nothing forbidden is imported", () =
        could not deliver would fail here first. */
     const r = show(FULL);
     for (const s of NAV) {
-      eq(buttons(r).map(instText).length, 4, "an extra control appeared in " + s);
+      eq(buttons(r).map(instText).length, NAV.length + 1, "an extra control appeared in " + s);
       clickText(r, s);
     }
     const bare = COLLECTOR_FILES.map(code).join("\n");

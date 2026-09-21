@@ -238,7 +238,10 @@ describe("A. the seat decides, and only the seat", () => {
        reached a truthful "not in this release" notice; the assertion that
        mattered was never the wording but that a Collector does NOT get the
        Trusted Partner workspace, and that is unchanged and still first. */
-    ["Goals", "Trade Binder", "Trusted Partners"].forEach((label) => {
+    /* Restated in Batch 8.1: the Trade Binder left the Collector's navigation
+       until a Collector can put a card in one. What this asserts is unchanged —
+       a Collector gets the Collector app, whole. */
+    ["Goals", "Trusted Partners"].forEach((label) => {
       assert(hasButton(r, label), `the Collector app is missing ${label}: ` + shown);
     });
     assert(!/Collector Network|Inventory/.test(shown), "a TP section leaked into it: " + shown);
