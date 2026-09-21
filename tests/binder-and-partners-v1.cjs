@@ -49,9 +49,9 @@ const world = () => {
     partners: [{ id: "nl", name: "Northline Cards" }, { id: "cv", name: "Card Vault" }],
     goals: [], interests: [], conversations: [], opportunities: [],
     preferences: [], photoRequests: [], copyReviews: [],
-    binder: [
-      { id: "b1", collectorId: ME, cardId: "ka", market: 900, photos: { front: "f", back: "b" } },
-      { id: "b2", collectorId: ME, cardId: "ka", market: 900, photos: { front: "f", back: "b" } },
+    collectorCopies: [
+      { offered: true, id: "b1", collectorId: ME, cardId: "ka", market: 900, photos: { front: "f", back: "b" } },
+      { offered: true, id: "b2", collectorId: ME, cardId: "ka", market: 900, photos: { front: "f", back: "b" } },
     ],
     inventory: [{ invId: "inv-1", partnerId: "nl", cardId: "kt", ask: 4000,
       archived: false, photos: { front: "f", back: "b" } }],
@@ -70,13 +70,13 @@ const offering = (w, binderIds) => {
     trade: { ...x.trade, submitted: true, cards: rows } }));
   return { o, rows };
 };
-const stateOf = (w, bid) => w.view().binderCopyState(bid).state;
+const stateOf = (w, bid) => w.view().collectorCopyState(bid).state;
 
 describe("A. Availability is derived from the deals themselves", () => {
   test("an untouched copy is available", () => {
     const w = world();
     eq(stateOf(w, "b1"), "available", "nothing has claimed it");
-    eq(w.view().binderCopyState("b1").opp, null, "and no deal is named");
+    eq(w.view().collectorCopyState("b1").opp, null, "and no deal is named");
   });
 
   /* PHASE 1 (contract §4): submitting the package RESERVES each exact copy,
@@ -96,7 +96,7 @@ describe("A. Availability is derived from the deals themselves", () => {
     const { o } = offering(w, ["b1"]);
     w.st.actions.reviewTradeCards({ oppId: o, decision: "accepted", at: AT });
     eq(stateOf(w, "b1"), "in-deal", "now it is committed");
-    eq(w.view().binderCopyState("b1").opp.id, o, "and the deal is identified");
+    eq(w.view().collectorCopyState("b1").opp.id, o, "and the deal is identified");
   });
 
   test("completion makes it traded", () => {
@@ -147,17 +147,17 @@ describe("A. Availability is derived from the deals themselves", () => {
 
   test("nothing stores availability", () => {
     const w = world();
-    const copy = w.view().myBinder().find((b) => b.id === "b1");
+    const copy = w.view().myCopies().find((b) => b.id === "b1");
     ["availability", "available", "inDeal", "traded"].forEach((k) =>
       assert(!(k in copy), "no stored " + k + " flag"));
-    assert(/const binderCopyState = \(binderId\)/.test(code(VIEW)),
+    assert(/const collectorCopyState = \(binderId\)/.test(code(VIEW)),
       "it is a projection");
     assert(/c\.binderId === binderId/.test(code(VIEW)),
       "keyed on the exact copy, never the card");
   });
 
   test("the Binder shows it without inventing a second source", () => {
-    assert(/st\.binderCopyState\(b\.id\)/.test(code(COL)), "read from the projection");
+    assert(/st\.collectorCopyState\(b\.id\)/.test(code(COL)), "read from the projection");
     assert(!/availability:/.test(code(COL)), "and never written by the UI");
   });
 });
@@ -243,7 +243,7 @@ describe("C. Cross-tab integrity", () => {
     w.st.actions.reviewTradeCards({ oppId: o, decision: "accepted", at: AT });
     const fromDeal = w.view().myOpps().find((x) => x.id === o)
       .trade.cards.find((c) => c.binderId === "b1");
-    const fromBinder = w.view().myBinder().find((b) => b.id === "b1");
+    const fromBinder = w.view().myCopies().find((b) => b.id === "b1");
     eq(fromDeal.binderId, fromBinder.id, "one copy identity");
     eq(fromDeal.id, rows[0].id, "and the trade row keeps its own");
     assert(fromDeal.id !== fromDeal.binderId, "the two are not interchangeable");
@@ -306,17 +306,21 @@ describe("D. Binder still feeds Select Trade", () => {
     const { o } = offering(w, ["b1"]);
     const before = w.view().tradeGroups("nl", w.view().myOpps().find((x) => x.id === o));
     const beforeIds = [...before.interested, ...before.other].map((b) => b.id);
-    /* A binder copy exists only with both faces photographed — the collector
-       is offering a specific physical object, and a partner must be able to
-       see it. The canonical action enforces that. */
-    eq(w.st.actions.addBinderCopy({ id: "bx", collectorId: ME, cardId: "ka", market: 900 }),
-      null, "an unphotographed copy is refused");
-    w.st.actions.addBinderCopy({ id: "b3", collectorId: ME, cardId: "ka", market: 900,
+    /* RESTATED IN C2. It used to read: an unphotographed copy is REFUSED at the
+       add door. It now reads: an unphotographed copy is created — you own it —
+       but it does not become OFFERABLE, because the trade-selection view only
+       lists copies a partner could actually evaluate. The rule did not weaken;
+       it moved to where it bites, and this assertion follows it rather than
+       being deleted. */
+    const unshot = w.st.actions.addCollectorCopy({ offered: true, id: "bx", collectorId: ME, cardId: "ka", market: 900 });
+    eq(unshot, "bx", "an unphotographed card is still a card you own");
+    w.st.actions.addCollectorCopy({ offered: true, id: "b3", collectorId: ME, cardId: "ka", market: 900,
       photos: { front: "f", back: "b" } });
     const after = w.view().tradeGroups("nl", w.view().myOpps().find((x) => x.id === o));
     const afterIds = [...after.interested, ...after.other].map((b) => b.id);
     assert(!beforeIds.includes("b3"), "not there before");
     assert(afterIds.includes("b3"), "and offerable after");
+    assert(!afterIds.includes("bx"), "the unphotographed copy is owned, and not offerable");
   });
 
   test("a copy already in this trade is not offered twice", () => {
@@ -342,7 +346,7 @@ describe("D. Binder still feeds Select Trade", () => {
     const { o } = offering(w, ["b1"]);
     const before = JSON.stringify(w.st.get().opportunities);
     /* Reading is all the Binder does. */
-    w.view().myBinder().forEach((b) => w.view().binderCopyState(b.id));
+    w.view().myCopies().forEach((b) => w.view().collectorCopyState(b.id));
     w.view().partnerRelationship("nl");
     eq(JSON.stringify(w.st.get().opportunities), before, "byte-identical afterwards");
   });
@@ -375,7 +379,7 @@ describe("E. Goals remains the only workflow", () => {
 
   test("the availability projection is read-only", () => {
     const view = code(VIEW);
-    const fn = view.slice(view.indexOf("const binderCopyState"),
+    const fn = view.slice(view.indexOf("const collectorCopyState"),
       view.indexOf("const partnerRelationship"));
     assert(!/state\.opportunities\s*=|\.push\(|patch/.test(fn), "it mutates nothing");
     assert(/D\.isCompleted\(o\)/.test(fn) && /D\.isActive\(o\)/.test(fn),

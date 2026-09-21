@@ -184,6 +184,57 @@ export function addInventoryCopy(target) {
       ask, cost, acquired, cert, note } });
 }
 
+/* ------------------------------------- A COLLECTOR'S OWN CARDS (Phase 5 C2)
+
+   OWNING AND OFFERING ARE TWO SENTENCES, SO THEY ARE TWO BINDINGS.
+
+   Before C2 they were one. A Collector's copy existed only because they had put
+   it up for trade, so "I own this" could not be said on its own, and "I'm not
+   trading this any more" could only be said by deleting the record — throwing
+   away the photographs, the certificate and the fact of ownership to change an
+   answer about willingness. This file could not have bound them separately,
+   because the domain did not have them separately.
+
+   Now it does. `addOwnedCopy` records the object. `setCopyOffered` says what the
+   owner is currently willing to do with it, and it is the ONLY way to say that:
+   `offered` is refused inside an update patch, so a screen editing a value can
+   never change what the card is doing in the world. `removeOwnedCopy` says the
+   card has left the Collector's hands, which is the only thing deletion means
+   now.
+
+   NO OWNER FIELD, for the same reason inventory has none: the Collector is the
+   authenticated actor and the server would ignore anything sent. NO CARD
+   DESCRIPTION, for the same reason: a copy REFERS to a card by an id the server
+   minted, and a surface that could describe one could invent one.
+
+   NO PHOTOGRAPHS ARE REQUIRED HERE. They are required where the card is handed
+   to somebody else to value — see proposeTradeSelection. A Collector with a
+   shoebox and no lightbox can record what they own today and photograph it
+   later, which is the whole point of separating the two acts. */
+export function addOwnedCopy(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("addOwnedCopy: the production store is required");
+  }
+  return ({ canonicalCardId, grade = null, condition = null, market = null,
+    cert = null, note = null, offered = false } = {}) =>
+    target.execute("addCollectorCopy", { copy: { canonicalCardId, grade, condition,
+      market, cert, note, offered } });
+}
+
+export function setCopyOffered(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("setCopyOffered: the production store is required");
+  }
+  return (copyId, offered) => target.execute("setCollectorCopyOffered", { copyId, offered });
+}
+
+export function removeOwnedCopy(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("removeOwnedCopy: the production store is required");
+  }
+  return (copyId) => target.execute("removeCollectorCopy", { copyId });
+}
+
 /* Looking for a card to add. Three reads, no writes: the browse query, one
    context with the printings a person may choose between, and the description
    of cards a screen already holds ids for. A surface that can find a card can

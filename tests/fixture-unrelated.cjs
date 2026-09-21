@@ -126,12 +126,19 @@ function unrelatedWorld() {
       { invId: "iC1", partnerId: "pC", cardId: "k1", ask: 3800, cost: V.costC1, archived: false,
         addedAt: AT, cert: "PSA-C1", photos: shot("iC1") },
     ],
-    binder: [
-      { id: "bA", collectorId: "cA", cardId: "k2", market: V.marketA, photos: shot("bA"), cert: "PSA-bA", addedAt: AT },
-      { id: "bAB1", collectorId: "cAB", cardId: "k4", market: V.marketAB1, photos: shot("bAB1"), cert: "PSA-bAB1", addedAt: AT },
-      { id: "bAB2", collectorId: "cAB", cardId: "k2", market: V.marketAB2, photos: shot("bAB2"), cert: "PSA-bAB2", addedAt: AT },
-      { id: "bB", collectorId: "cB", cardId: "k4", market: V.marketB, photos: shot("bB"), cert: "PSA-bB", addedAt: AT },
-      { id: "bX", collectorId: "cX", cardId: "k4", market: V.marketX, photos: shot("bX"), cert: "PSA-bX", addedAt: AT },
+    /* Every copy here is OWNED AND OFFERED (Phase 5 C2). This fixture exists to
+       exercise the NETWORK boundary — who may see whose supply — so each copy
+       has to be supply for that question to be asked at all. The other half of
+       the rule, that an UNOFFERED copy is not supply even inside the network,
+       is a different question and is proved in phase5-c2-collector-copy.cjs
+       against its own fixture. Mixing the two here would make every network
+       assertion below ambiguous about which rule excluded a row. */
+    collectorCopies: [
+      { id: "bA", collectorId: "cA", cardId: "k2", market: V.marketA, offered: true, photos: shot("bA"), cert: "PSA-bA", addedAt: AT },
+      { id: "bAB1", collectorId: "cAB", cardId: "k4", market: V.marketAB1, offered: true, photos: shot("bAB1"), cert: "PSA-bAB1", addedAt: AT },
+      { id: "bAB2", collectorId: "cAB", cardId: "k2", market: V.marketAB2, offered: true, photos: shot("bAB2"), cert: "PSA-bAB2", addedAt: AT },
+      { id: "bB", collectorId: "cB", cardId: "k4", market: V.marketB, offered: true, photos: shot("bB"), cert: "PSA-bB", addedAt: AT },
+      { id: "bX", collectorId: "cX", cardId: "k4", market: V.marketX, offered: true, photos: shot("bX"), cert: "PSA-bX", addedAt: AT },
     ],
     interests: [
       { partnerId: "pA", binderId: "bA", at: AT }, { partnerId: "pA", binderId: "bAB1", at: AT },

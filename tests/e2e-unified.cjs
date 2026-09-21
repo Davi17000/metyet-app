@@ -52,9 +52,9 @@ const casey = (r) => collectorView(S(r), CASEY);
 /* Persona-scoped reads, matching how each experience actually looks at state. */
 const tpSees = (r) => ({
   goals: S(r).goals,
-  networkSupply: E.binderCopiesForPartner(S(r).binder),
+  networkSupply: E.collectorCopiesForPartner(S(r).collectorCopies),
   myInventory: E.inventoryOf(S(r).inventory, SELF),
-  myInterests: E.binderCopiesInterestedBy(S(r).interests, SELF),
+  myInterests: E.collectorCopiesInterestedBy(S(r).interests, SELF),
   conversations: S(r).conversations.filter((c) => c.partnerId === SELF),
   opportunities: S(r).opportunities.filter((o) => o.partnerId === SELF),
 });
@@ -159,13 +159,13 @@ describe("C. Collector Binder -> TP Network Supply", () => {
   test("a copy added in the Collector UI appears to the TP by exact id", () => {
     const r = shell();
     enter(r, "collector");
-    const before = S(r).binder.length;
+    const before = S(r).collectorCopies.length;
 
     click(cls(r, "nav-i").find((b) => txt(b).includes("Trade Binder")));
-    addBinderCopy(r);
+    addCollectorCopy(r);
 
-    eq(S(r).binder.length, before + 1, "one BinderCopy created");
-    const copy = S(r).binder[S(r).binder.length - 1];
+    eq(S(r).collectorCopies.length, before + 1, "one BinderCopy created");
+    const copy = S(r).collectorCopies[S(r).collectorCopies.length - 1];
     eq(copy.collectorId, CASEY, "it is Casey's");
 
     switchTo(r, "Trusted Partner");
@@ -180,8 +180,8 @@ describe("D. TP Interest -> Collector signal", () => {
   test("interest is one relationship, visible to Casey, creating no Opportunity", () => {
     const r = shell();
     enter(r, "collector");
-    const cold = casey(r).myBinder().find((b) => casey(r).interestIn(b.id).length === 0)
-      || casey(r).myBinder()[0];
+    const cold = casey(r).myCopies().find((b) => casey(r).interestIn(b.id).length === 0)
+      || casey(r).myCopies()[0];
     const oppsBefore = S(r).opportunities.length;
 
     switchTo(r, "Trusted Partner");
@@ -244,7 +244,7 @@ describe("F. TP Reach out -> Collector Conversation", () => {
   test("the inverse holds, with exact BinderCopy context", () => {
     const r = shell();
     enter(r, "tp");
-    const copy = S(r).binder.find((b) => b.collectorId === CASEY);
+    const copy = S(r).collectorCopies.find((b) => b.collectorId === CASEY);
     const oppsBefore = S(r).opportunities.length;
     const intBefore = S(r).interests.length;
 
@@ -405,7 +405,7 @@ const goalWithSupply = (r) => goalNodes(r).find((n) => supplyOrReach(n));
 
 /* Add a binder copy through the staged flow: identify the exact card, then
    describe the copy. Mirrors the Trusted Partner's Add to Inventory. */
-const addBinderCopy = (r, term) => {
+const addCollectorCopy = (r, term) => {
   click(btn(r, "Add a card"));
   const q = cls(r, "cip-q")[0];
   assert(q, "the shared identity search");
@@ -563,7 +563,7 @@ describe("J. Select Trade across personas", () => {
     /* Money and private value must not appear on this stage. */
     assert(!/\$\d/.test(txt(panel)), "no money on the stage surface: " + txt(panel).slice(0, 80));
     assert(!/%/.test(txt(panel)), "and no percentages");
-    const privs = casey(r).myBinder().map((b) => b.market).filter((m) => m != null);
+    const privs = casey(r).myCopies().map((b) => b.market).filter((m) => m != null);
     privs.forEach((m) => assert(!txt(panel).includes(String(m)),
       "no private valuation leaked into Select Trade"));
 
@@ -574,12 +574,12 @@ describe("J. Select Trade across personas", () => {
     const tp = S(r).opportunities.find((x) => x.id === opp.id);
     eq(tp.trade.cards.map((c) => c.binderId).join(), proposed.join(),
       "the TP sees the EXACT same BinderCopy ids");
-    proposed.forEach((id) => assert(S(r).binder.some((b) => b.id === id || b.cardId === id),
+    proposed.forEach((id) => assert(S(r).collectorCopies.some((b) => b.id === id || b.cardId === id),
       "each resolves to a real canonical record: " + id));
     /* Interest orders eligibility but never gates it. */
     const groups = casey(r).tradeGroups(SELF, opp);
     eq(groups.interested.length + groups.other.length,
-      casey(r).myBinder().filter((b) => !new Set(proposed).has(b.id)).length,
+      casey(r).myCopies().filter((b) => !new Set(proposed).has(b.id)).length,
       "every remaining copy is eligible, interested or not");
   });
 });
@@ -598,7 +598,7 @@ describe("K. Value Trade across personas", () => {
     settled.forEach((c) => {
       eq(D.tradeValueOf(c), Math.round(c.agreedMarket * c.agreedPercent),
         "trade value is agreedMarket x agreedPercent");
-      const priv = S(r).binder.find((b) => b.id === c.binderId);
+      const priv = S(r).collectorCopies.find((b) => b.id === c.binderId);
       if (priv && priv.market != null) {
         assert(c.agreedMarket !== priv.market || c.collectorMarket === priv.market,
           "an agreed value is only ever a submitted one, never the private note by default");
@@ -690,7 +690,7 @@ describe("O. Privacy through actual persona switching", () => {
     click(cls(r, "nav-i").find((b) => txt(b).includes("Trade Binder")));
     /* Open the FIRST rendered tile, then read the value of the copy it belongs to,
        so the assertion is about the card actually on screen. */
-    const order = casey(r).myBinder();
+    const order = casey(r).myCopies();
     click(cls(r, "bnd-c")[0]);
     const withVal = order.find((b) => txt(cls(r, "sheet")[0]).includes(
       casey(r).cardById(b.cardId).name) && b.market != null);
@@ -704,7 +704,7 @@ describe("O. Privacy through actual persona switching", () => {
   test("after switching to TP it is absent from every TP surface", () => {
     const r = shell();
     enter(r, "collector");
-    const withVal = casey(r).myBinder().find((b) => b.market != null);
+    const withVal = casey(r).myCopies().find((b) => b.market != null);
     const priv = String(withVal.market);
 
     switchTo(r, "Trusted Partner");
@@ -717,12 +717,12 @@ describe("O. Privacy through actual persona switching", () => {
   test("it is absent from the TP-safe projection", () => {
     const r = shell();
     enter(r, "tp");
-    const copies = E.binderCopiesForPartner(S(r).binder);
+    const copies = E.collectorCopiesForPartner(S(r).collectorCopies);
     copies.forEach((b) => eq(b.market, undefined, "the field is absent, not blanked"));
     /* Assert the FIELD is gone rather than scanning for digits — cert numbers and
        dates contain the same digit runs, which would make a substring scan lie. */
     copies.forEach((b) => assert(!("market" in b), "the key itself is absent"));
-    const owner = S(r).binder.find((b) => b.market != null);
+    const owner = S(r).collectorCopies.find((b) => b.market != null);
     const projected = copies.find((b) => b.id === owner.id);
     assert(projected, "the copy still projects");
     assert(projected.cert === owner.cert && projected.photos, "everything legitimate survives");
@@ -735,7 +735,7 @@ describe("O. Privacy through actual persona switching", () => {
       .flatMap((o) => (o.trade && o.trade.cards) || [])
       .filter((c) => c.agreedMarket == null && c.binderId);
     unsettled.forEach((c) => {
-      const copy = S(r).binder.find((b) => b.id === c.binderId);
+      const copy = S(r).collectorCopies.find((b) => b.id === c.binderId);
       if (copy && copy.market != null) {
         assert(c.collectorMarket == null || c.collectorMarket !== copy.market
           || c.agreedMarket == null,
@@ -748,10 +748,10 @@ describe("O. Privacy through actual persona switching", () => {
   test("switching persona does not mutate or erase the private field", () => {
     const r = shell();
     enter(r, "collector");
-    const before = casey(r).myBinder().map((b) => b.id + ":" + b.market).join("|");
+    const before = casey(r).myCopies().map((b) => b.id + ":" + b.market).join("|");
     switchTo(r, "Trusted Partner");
     switchTo(r, "Collector");
-    eq(casey(r).myBinder().map((b) => b.id + ":" + b.market).join("|"), before,
+    eq(casey(r).myCopies().map((b) => b.id + ":" + b.market).join("|"), before,
       "every private valuation is exactly as it was");
   });
 
@@ -793,7 +793,7 @@ describe("The shell never chooses which reality exists", () => {
     const r = shell();
     enter(r, "collector");
     const goals0 = S(r).goals.length;
-    const binder0 = S(r).binder.length;
+    const binder0 = S(r).collectorCopies.length;
     const int0 = S(r).interests.length;
     const conv0 = S(r).conversations.length;
 
@@ -813,7 +813,7 @@ describe("The shell never chooses which reality exists", () => {
 
     /* TP acts */
     switchTo(r, "Trusted Partner");
-    const copy = S(r).binder.find((b) => b.collectorId === CASEY);
+    const copy = S(r).collectorCopies.find((b) => b.collectorId === CASEY);
     TR.act(() => { store(r).actions.setInterest(SELF, copy.id, true, "2026-08-14"); });
     TR.act(() => { store(r).actions.addInventoryCopy({ invId: "inv-e2e-mix", partnerId: SELF,
       cardId: g.cardId, ask: 999, cost: 700, acquired: "2026-08-14", archived: false,
@@ -822,14 +822,14 @@ describe("The shell never chooses which reality exists", () => {
     /* Collector acts again */
     switchTo(r, "Collector");
     click(cls(r, "nav-i").find((b) => txt(b).includes("Trade Binder")));
-    addBinderCopy(r);
+    addCollectorCopy(r);
 
     /* Everything both sides did is still there, together. */
     switchTo(r, "Trusted Partner");
     eq(S(r).conversations.length, conv0 + 1, "the Collector's conversation survived");
     assert(S(r).interests.length >= int0, "the TP's interest survived");
     assert(S(r).inventory.some((i) => i.invId === "inv-e2e-mix"), "the TP's copy survived");
-    eq(S(r).binder.length, binder0 + 1, "the Collector's binder copy survived");
+    eq(S(r).collectorCopies.length, binder0 + 1, "the Collector's binder copy survived");
     eq(S(r).goals.length, goals0, "and nothing was reseeded");
   });
 
@@ -847,7 +847,7 @@ describe("The shell never chooses which reality exists", () => {
     const r = shell();
     enter(r, "tp");
     const s = S(r);
-    ["goals", "binder", "interests", "opportunities", "conversations", "inventory"]
+    ["goals", "collectorCopies", "interests", "opportunities", "conversations", "inventory"]
       .forEach((k) => {
         const ids = s[k].map((x) => x.id || x.invId || (x.partnerId + "::" + x.binderId));
         eq(new Set(ids).size, ids.length, "no duplicate records in " + k);

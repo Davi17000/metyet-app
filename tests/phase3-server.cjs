@@ -71,9 +71,9 @@ function world() {
       { invId: "i2", partnerId: "p1", cardId: "k5", ask: 900, cost: 400, archived: false, photos: photos("i2") },
       { invId: "i3", partnerId: "p2", cardId: "k1", ask: 1200, cost: MARK.p2Cost, archived: false, photos: photos("i3") },
     ],
-    binder: [
-      { id: "b1", collectorId: "c1", cardId: "k2", market: MARK.binderCasey, cert: null, photos: photos("b1") },
-      { id: "b2", collectorId: "c2", cardId: "k5", market: MARK.binderDana, cert: null, photos: photos("b2") },
+    collectorCopies: [
+      { offered: true, id: "b1", collectorId: "c1", cardId: "k2", market: MARK.binderCasey, cert: null, photos: photos("b1") },
+      { offered: true, id: "b2", collectorId: "c2", cardId: "k5", market: MARK.binderDana, cert: null, photos: photos("b2") },
     ],
     interests: [], conversations: [], opportunities: [], photoRequests: [], copyReviews: [],
     activity: [{ id: "a1", partnerId: "p1", collectorId: "c1", type: "manual", text: MARK.activity, date: "2026-04-04" }],
@@ -336,7 +336,7 @@ describe("D. privacy, adversarially", () => {
     const state = JSON.parse(body).state;
     eq(state.activity.length, 0, "activity is partner-private");
     eq(state.collectors.map((c) => c.id).join(), "c1", "no other collector");
-    assert(state.binder.every((b) => b.collectorId === "c1"), "only their own binder");
+    assert(state.collectorCopies.every((b) => b.collectorId === "c1"), "only their own binder");
   });
 
   test("the Trusted Partner's acquisition cost stays with the Trusted Partner", async () => {
@@ -365,7 +365,7 @@ describe("D. privacy, adversarially", () => {
     const state = (await get(app, SUBJECTS.second)).json().state;
     eq(state.collectors.map((c) => c.id).join(), "c1", "only its own network");
     assert(!state.goals.some((g) => g.collectorId === "c2"), "no goals of a collector it does not know");
-    assert(state.binder.every((b) => b.collectorId === "c1"), "no binder outside the network");
+    assert(state.collectorCopies.every((b) => b.collectorId === "c1"), "no binder outside the network");
   });
 
   /* RESTATED IN BATCH 8.1. This test is about the PROJECTION — a reading

@@ -59,7 +59,7 @@ const real = ({ price, market, pct }) => {
     catalog: [GIVE, TARGET],
     collectors: [{ id: "casey", name: "Casey", prefs: [] }],
     partners: [{ id: "nl", name: "Northline Cards" }],
-    goals: [], binder: [], interests: [], conversations: [], opportunities: [],
+    goals: [], collectorCopies: [], interests: [], conversations: [], opportunities: [],
     preferences: [], photoRequests: [], copyReviews: [],
     inventory: [{ invId: "inv-1", partnerId: "nl", cardId: "kt", ask: price,
       archived: false, photos: { front: "f", back: "b" } }],

@@ -45,7 +45,7 @@ describe("Every seeded trade term names a real BinderCopy", () => {
 
     test(label + ": every binderId resolves", () => {
       const s = seed(review);
-      const byId = new Map(s.binder.map((b) => [b.id, b]));
+      const byId = new Map(s.collectorCopies.map((b) => [b.id, b]));
       const all = tradeCardsOf(s);
       assert(all.length > 0, "there are seeded trade terms to check");
       all.forEach(({ o, c }) => {
@@ -57,7 +57,7 @@ describe("Every seeded trade term names a real BinderCopy", () => {
 
     test(label + ": the copy belongs to the opportunity's collector", () => {
       const s = seed(review);
-      const byId = new Map(s.binder.map((b) => [b.id, b]));
+      const byId = new Map(s.collectorCopies.map((b) => [b.id, b]));
       tradeCardsOf(s).forEach(({ o, c }) => {
         const b = byId.get(c.binderId);
         eq(b.collectorId, o.collectorId,
@@ -67,7 +67,7 @@ describe("Every seeded trade term names a real BinderCopy", () => {
 
     test(label + ": the copy is the card the term claims", () => {
       const s = seed(review);
-      const byId = new Map(s.binder.map((b) => [b.id, b]));
+      const byId = new Map(s.collectorCopies.map((b) => [b.id, b]));
       tradeCardsOf(s).forEach(({ o, c }) => {
         eq(byId.get(c.binderId).cardId, c.cardId,
           o.id + ": binderId and cardId describe the same card");
@@ -91,7 +91,7 @@ describe("Every seeded trade term names a real BinderCopy", () => {
        settle the same copy at different values, so the invariant asserted here
        is referential, not arithmetic: the copy exists and is valued. */
     const s = seed(true);
-    const byId = new Map(s.binder.map((b) => [b.id, b]));
+    const byId = new Map(s.collectorCopies.map((b) => [b.id, b]));
     tradeCardsOf(s).forEach(({ o, c }) => {
       const b = byId.get(c.binderId);
       assert(b.market != null, o.id + ": the referenced copy has a market value");
@@ -154,7 +154,7 @@ describe("The repair moved no id, stage or term", () => {
         assert(D.acceptedTradeCards(o).length >= 1,
           o.id + ": accepted cards exist to be valued");
       }
-      const owned = new Set(s.binder.filter((b) => b.collectorId === o.collectorId)
+      const owned = new Set(s.collectorCopies.filter((b) => b.collectorId === o.collectorId)
         .map((b) => b.id));
       ((o.trade && o.trade.cards) || []).forEach((c) => assert(owned.has(c.binderId),
         o.id + ": every trade term names a copy this collector owns"));
@@ -184,7 +184,7 @@ describe("All five Collector review stages open", () => {
 
       /* Downstream stages must reconcile their trade terms against real copies. */
       if (["value-trade", "deal", "fulfillment"].includes(stage)) {
-        const owned = new Set(S().binder.filter((b) => b.collectorId === ME).map((b) => b.id));
+        const owned = new Set(S().collectorCopies.filter((b) => b.collectorId === ME).map((b) => b.id));
         D.acceptedTradeCards(o).forEach((tc) => assert(owned.has(tc.binderId),
           stage + ": every accepted card is a copy the collector owns"));
         assert(st_binderResolves(S(), o), stage + ": the workspace can resolve every term");
@@ -194,7 +194,7 @@ describe("All five Collector review stages open", () => {
 
   /* The lookup the workspace itself performs when rendering a trade term. */
   const st_binderResolves = (s, o) => D.acceptedTradeCards(o).every((tc) =>
-    s.binder.some((b) => b.id === tc.binderId));
+    s.collectorCopies.some((b) => b.id === tc.binderId));
 
   test("Value Trade specifically renders its per-card rows", () => {
     const r = mk();
@@ -206,7 +206,7 @@ describe("All five Collector review stages open", () => {
     click(cls(card, "goal-deal")[0]);
     const body = txt(r.root);
     D.acceptedTradeCards(o).forEach((tc) => {
-      const bc = S().binder.find((b) => b.id === tc.binderId);
+      const bc = S().collectorCopies.find((b) => b.id === tc.binderId);
       const cc = S().catalog.find((x) => x.id === bc.cardId);
       assert(body.includes(cc.name),
         "the traded card " + cc.name + " is named in the workspace");

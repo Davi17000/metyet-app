@@ -140,8 +140,8 @@ function seed() {
       { invId: "i2", partnerId: "p1", cardId: "k1", ask: "1100", cost: 800, archived: false, photos: photos("i2") },
       { invId: "i3", partnerId: "p2", cardId: "k1", ask: 1200, cost: 900, archived: false, photos: { front: null, back: null } },
     ],
-    binder: [{ id: "b1", collectorId: "c1", cardId: "k2", market: 350, cert: null, photos: photos("b1") },
-      { id: "b2", collectorId: "c2", cardId: "k5", market: 222, cert: null, photos: photos("b2") }],
+    collectorCopies: [{ offered: true, id: "b1", collectorId: "c1", cardId: "k2", market: 350, cert: null, photos: photos("b1") },
+      { offered: true, id: "b2", collectorId: "c2", cardId: "k5", market: 222, cert: null, photos: photos("b2") }],
     interests: [], conversations: [], opportunities: [], photoRequests: [], copyReviews: [],
   };
 }
@@ -332,7 +332,7 @@ describe("B. round-trip fidelity", () => {
     const i1 = back.inventory.find((i) => i.invId === "i1");
     eq(i1.cost, 3131.31, "acquisition cost"); eq(i1.acquired, "2020-05-05", "acquisition date");
     eq(back.partners.find((p) => p.id === "p1").tradeRate, 0.8, "default trade %");
-    eq(back.binder.find((b) => b.id === "b1").market, 350, "binder reference value");
+    eq(back.collectorCopies.find((b) => b.id === "b1").market, 350, "binder reference value");
     eq(back.relationships[2].note, "P2-PRIVATE-NOTE", "relationship note");
     const viewed = back.opportunities.find((o) => o.goalId === "g1").viewedAt;
     assert(viewed.tp && viewed.collector, "both seats' reading positions");

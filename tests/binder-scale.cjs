@@ -37,11 +37,11 @@ function mount(n, flagged, opts) {
   const { cards, binder } = fixture(n, flagged, opts);
   /* Interest is a relationship now, so the stub holds it as one rather than as a
      flag on the copy. */
-  const state = { binder: binder.slice(),
+  const state = { collectorCopies: binder.slice(),
     interests: (flagged || []).map((i) => ({ partnerId: "p-self", binderId: binder[i] && binder[i].id })).filter((x) => x.binderId) };
   const ctx = {
     card: (id) => cards.find((c) => c.id === id),
-    get collectorCards() { return state.binder; },
+    get collectorCards() { return state.collectorCopies; },
     // the section carries a collector-side demo control; the stub supplies what it reads
     collector: () => ({ short: "Test C.", name: "Test Collector" }),
     setModal: () => {},
@@ -226,7 +226,7 @@ describe("Newest additions come first", () => {
 
   test("ordering does not mutate the underlying binder array", () => {
     const { state, original } = mount(6, [4, 5]);
-    eq(state.binder.map((cc) => cc.id).join(","), original.map((cc) => cc.id).join(","),
+    eq(state.collectorCopies.map((cc) => cc.id).join(","), original.map((cc) => cc.id).join(","),
       "collectorCards order is untouched by presentation ordering");
   });
 });
@@ -374,7 +374,7 @@ describe("The collector's private value stays private", () => {
 
   test("the record still carries the value for the collector's own use", () => {
     const { state } = mount(3);
-    assert(state.binder.every((cc) => cc.market != null), "the private reference is preserved in state");
+    assert(state.collectorCopies.every((cc) => cc.market != null), "the private reference is preserved in state");
   });
 });
 

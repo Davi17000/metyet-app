@@ -303,53 +303,116 @@ const COMMANDS = {
         && complete ? { ...r, fulfilledAt: at || null } : r)) }, complete);
   },
 
-  /* ------------------------------------------------------------ binder */
-  addBinderCopy(state, a, { copy }, ctx) {
+  /* ------------------------------------------- a Collector's own cards (C2)
+
+     THIS WAS CALLED A BINDER AND IT WAS NEVER ONE. It is a Collector's own
+     physical card — the mirror image of a Trusted Partner's InventoryCopy,
+     owned by the other seat. The word "Binder" now belongs to the named
+     organisational grouping C3 will add, and keeping it here would have left
+     two different things wearing it.
+
+     OWNING AND OFFERING ARE DIFFERENT FACTS, and separating them is the whole
+     point of this batch. Until now the only way to stop offering a card was to
+     delete the record that you owned it, which lost a true thing to express a
+     different one. `offered` is the owner's willingness; the status beside it
+     — available, reserved, committed, traded — is derived from the deals and
+     is never stored.
+
+     AND A PHOTOGRAPH IS NO LONGER THE PRICE OF ADMISSION. Both faces used to be
+     required to record that you own a card at all. The reason for that rule is
+     real — somebody has to be able to evaluate a specific physical card before
+     trading for it — but the moment it applies is when the copy enters a trade
+     package, not when its owner writes it down. The requirement moved to
+     `proposeTradeSelection`, which is where the evaluation happens. */
+  addCollectorCopy(state, a, { copy }, ctx) {
     if (a.seat !== "collector") return refuse(R.notOwner);
-    if (!copy || !cardById(state, copy.cardId)) return refuse(R.notFound);
-    if (!D.INVARIANTS.binderCopyPhotographed(copy.photos)) return refuse(R.photosRequired);
+    if (!copy) return refuse(R.notFound);
+    const canonical = typeof copy.canonicalCardId === "string" && copy.canonicalCardId;
+    if (canonical && copy.cardId) return refuse(R.notFound);
+    if (!canonical && !cardById(state, copy.cardId)) return refuse(R.notFound);
+    /* Stated or not stated — an empty string is not stated. The vocabulary is
+       the domain's, shared with a Trusted Partner's shelf, because a PSA 9 is
+       a PSA 9 whoever is holding it. */
+    if (copy.grade && !D.GRADED_VALUES.includes(copy.grade)) return refuse(R.notFound);
+    if (copy.condition && !D.CONDITION_VALUES.includes(copy.condition)) return refuse(R.notFound);
     if (copy.market != null && !(Number(copy.market) >= 0)) return refuse(R.invalidAmount);
-    const { id: askedId, addedAt: askedAt, updatedAt, ...facts } = copy;
+    const { id: askedId, addedAt: askedAt, updatedAt, offered, ...facts } = copy;
     const id = ctx.id("b", askedId);
-    if (list(state.binder).some((b) => b.id === id)) return refuse(R.copyInUse);
+    if (list(state.collectorCopies).some((b) => b.id === id)) return refuse(R.copyInUse);
     const addedAt = ctx.time(askedAt);
-    const row = { ...facts, id, collectorId: a.collectorId, ...(addedAt ? { addedAt } : {}) };
-    return done({ ...state, binder: [...list(state.binder), row] }, id);
+    /* A NEW COPY IS NOT OFFERED UNLESS ITS OWNER SAYS SO. Recording that you
+       own a card is the base fact; parting with it is a decision, and a
+       decision nobody made is not one to assume. */
+    const row = { ...facts, id, collectorId: a.collectorId, offered: offered === true,
+      ...(addedAt ? { addedAt } : {}) };
+    return done({ ...state, collectorCopies: [...list(state.collectorCopies), row] }, id);
   },
 
-  updateBinderCopy(state, a, { binderId, patch }, ctx) {
+  updateCollectorCopy(state, a, { copyId, patch }, ctx) {
     const at = ctx.at;
-    const copy = list(state.binder).find((b) => b.id === binderId);
+    const copy = list(state.collectorCopies).find((b) => b.id === copyId);
     if (!copy) return refuse(R.copyUnavailable);
     if (a.seat !== "collector" || copy.collectorId !== a.collectorId) return refuse(R.notOwner);
     /* addedAt and updatedAt are the command's, never the patch's. */
     const { addedAt, updatedAt, ...p } = patch || {};
-    if ("cardId" in p || "id" in p || "collectorId" in p) return refuse(R.identityImmutable);
-    const status = D.binderCopyStatus(binderId, state.opportunities);
+    if ("cardId" in p || "canonicalCardId" in p || "id" in p || "collectorId" in p) {
+      return refuse(R.identityImmutable);
+    }
+    /* Willingness has its own command, so that "I am not selling this" and "I
+       was wrong about the certificate" are never the same edit. */
+    if ("offered" in p) return refuse(R.identityImmutable);
+    const status = D.collectorCopyStatus(copyId, state.opportunities);
     if ("cert" in p && p.cert !== copy.cert && (status === "committed" || status === "traded")) {
       return refuse(R.copyCommitted);
     }
-    const next = { ...copy, ...p, id: copy.id, cardId: copy.cardId, collectorId: copy.collectorId };
-    if (!D.INVARIANTS.binderCopyPhotographed(next.photos)) return refuse(R.photosRequired);
+    if (p.grade && !D.GRADED_VALUES.includes(p.grade)) return refuse(R.notFound);
+    if (p.condition && !D.CONDITION_VALUES.includes(p.condition)) return refuse(R.notFound);
+    const next = { ...copy, ...p, id: copy.id, cardId: copy.cardId,
+      canonicalCardId: copy.canonicalCardId, collectorId: copy.collectorId,
+      offered: copy.offered === true };
     if (next.market != null && !(Number(next.market) >= 0)) return refuse(R.invalidAmount);
-    return done({ ...state, binder: list(state.binder).map((b) => (b.id === binderId
-      ? { ...next, updatedAt: at || b.updatedAt } : b)) }, binderId);
+    return done({ ...state, collectorCopies: list(state.collectorCopies).map((b) => (b.id === copyId
+      ? { ...next, updatedAt: at || b.updatedAt } : b)) }, copyId);
+  },
+
+  /* WILLINGNESS, AND NOTHING ELSE (C2). Turning this off leaves the copy, its
+     card, its grade, its certificate and its photographs exactly where they
+     were — the Collector still owns it, and says so. Turning it back on is the
+     same record becoming supply again, not a new one.
+
+     A deal that has already taken the copy is untouched: a committed or traded
+     copy keeps its history whatever its owner now says about offering it, and
+     the derived status is what the trade model reads. */
+  setCollectorCopyOffered(state, a, { copyId, offered }, ctx) {
+    const at = ctx.at;
+    const copy = list(state.collectorCopies).find((b) => b.id === copyId);
+    if (!copy) return refuse(R.notFound);
+    if (a.seat !== "collector" || copy.collectorId !== a.collectorId) return refuse(R.notOwner);
+    if (typeof offered !== "boolean") return refuse(R.notFound);
+    if (copy.offered === offered) return done(state, copyId);
+    return done({ ...state, collectorCopies: list(state.collectorCopies).map((b) => (b.id === copyId
+      ? { ...b, offered, ...(at ? { updatedAt: at } : {}) } : b)) }, copyId);
   },
 
   /* A copy any deal references is part of that deal's record: while reserved
      or committed it holds the deal together, and afterwards it is history.
-     Only a copy no opportunity has ever held can be removed. */
-  removeBinderCopy(state, a, { binderId }, ctx) {
-    const copy = list(state.binder).find((b) => b.id === binderId);
+     Only a copy no opportunity has ever held can be removed.
+
+     THIS IS NOT HOW YOU STOP SELLING SOMETHING (C2). Removing the record says
+     the Collector does not own the card — it was bought, lost, or was never
+     theirs. `setCollectorCopyOffered` is for changing their mind about parting
+     with one they still have. */
+  removeCollectorCopy(state, a, { copyId }, ctx) {
+    const copy = list(state.collectorCopies).find((b) => b.id === copyId);
     if (!copy) return refuse(R.notFound);
     if (a.seat !== "collector" || copy.collectorId !== a.collectorId) return refuse(R.notOwner);
-    const status = D.binderCopyStatus(binderId, state.opportunities);
+    const status = D.collectorCopyStatus(copyId, state.opportunities);
     if (status === "committed" || status === "traded") return refuse(R.copyCommitted);
     if (status === "reserved") return refuse(R.copyReserved);
     if (list(state.opportunities).some((o) => (o.trade && o.trade.cards || [])
-      .some((c) => c.binderId === binderId))) return refuse(R.copyInUse);
-    return done({ ...state, binder: list(state.binder).filter((b) => b.id !== binderId),
-      interests: list(state.interests).filter((i) => i.binderId !== binderId) }, true);
+      .some((c) => c.binderId === copyId))) return refuse(R.copyInUse);
+    return done({ ...state, collectorCopies: list(state.collectorCopies).filter((b) => b.id !== copyId),
+      interests: list(state.interests).filter((i) => i.binderId !== copyId) }, true);
   },
 
   /* ------------------------------------------------------------ relationships & profile */
@@ -447,12 +510,26 @@ const COMMANDS = {
       ? { ...r, binderReviewedAt: ctx.at } : r)) }, collectorId);
   },
 
-  /* TPInterest references an exact BinderCopy in the partner's network. */
+  /* TPInterest references an exact CollectorCopy in the partner's network.
+
+     `binderId` is the parameter name and `interests.binderId` is the stored
+     field; both are legacy naming debt, written down in domain/README.md. They
+     name a collector copy and always did. Renaming them touches the interest
+     model and the trade package, which is not this batch's work.
+
+     INTEREST IS IN SOMETHING OFFERED (C2). A partner may only mark interest in
+     a copy that its owner is offering — the same copies the projection gives
+     them. Without this, a partner who learned an id could register interest in
+     a card the Collector has withdrawn, and the Collector would see interest in
+     something they are not offering. `notFound`, not a distinct refusal: a copy
+     the partner may not see does not exist for them, and a refusal that told
+     them apart would be the leak. */
   setInterest(state, a, { binderId, on }, ctx) {
     const at = ctx.at;
     if (a.seat !== "tp") return refuse(R.notOwner);
-    const copy = list(state.binder).find((b) => b.id === binderId);
+    const copy = list(state.collectorCopies).find((b) => b.id === binderId);
     if (!copy) return refuse(R.notFound);
+    if (copy.offered !== true) return refuse(R.notFound);
     if (!isRelated(state, a.partnerId, copy.collectorId)) return refuse(R.noRelationship);
     const has = list(state.interests).some((i) => i.partnerId === a.partnerId && i.binderId === binderId);
     if (!!on === has) return done(state, has);
@@ -660,7 +737,28 @@ const COMMANDS = {
   /* ------------------------------------------------------------ select trade */
   /* Submitting the package. Draft selection lived in the collector's own UI
      until now and reserved nothing; submission reserves each exact copy. An
-     empty package is the cash-only choice. */
+     empty package is the cash-only choice.
+
+     THIS IS WHERE THE PHOTOGRAPH REQUIREMENT LIVES NOW (Phase 5 C2).
+
+     It used to live at the door: `addBinderCopy` refused a copy without both
+     faces, so a Collector could not record owning a card they had not yet
+     photographed. That put an evaluation rule in front of an ownership fact,
+     and it cost the product the thing the rule was for — a Collector with a
+     shoebox and no lightbox could record nothing, so there was nothing to
+     photograph later and no prompt to do it.
+
+     Evaluation actually happens HERE: this is the first moment a specific
+     physical copy is handed to somebody else to put a value on. `binderIds` is
+     legacy naming (see setInterest); these are collector copy ids. A copy
+     entering a submitted package without both faces would ask a partner to
+     price a card they cannot see, which is exactly what `copyPhotographed`
+     exists to prevent — and it is the same standard `startOpportunity` already
+     applies to the partner's own copy on the other side of the deal.
+
+     The requirement did not weaken; it moved to where it bites. Owning is now
+     free, offering is free, and the photographs are required at the point where
+     their absence would actually harm somebody. */
   proposeTradeSelection(state, a, { oppId, binderIds }, ctx) {
     const at = ctx.at;
     if (a.seat !== "collector") return refuse(R.notOwner);
@@ -673,14 +771,19 @@ const COMMANDS = {
     if (new Set(ids).size !== ids.length) return refuse(R.copyInUse);
     const rows = [];
     for (const bid of ids) {
-      const b = list(state.binder).find((x) => x.id === bid);
+      const b = list(state.collectorCopies).find((x) => x.id === bid);
       if (!b) return refuse(R.notFound);
       if (b.collectorId !== a.collectorId) return refuse(R.notOwner);
-      const status = D.binderCopyStatus(bid, state.opportunities, oppId);
+      if (!D.INVARIANTS.copyPhotographed(b.photos)) return refuse(R.photosRequired);
+      const status = D.collectorCopyStatus(bid, state.opportunities, oppId);
       if (status === "reserved") return refuse(R.copyReserved);
       if (status === "committed") return refuse(R.copyCommitted);
       if (status === "traded") return refuse(R.copyUnavailable);
-      rows.push({ ...D.emptyTradeCard(b.cardId, b.photos, b.cert, bid), id: ctx.id("tc" + b.cardId + "-") });
+      /* The row names the card the COPY names, whichever way the copy names it
+         (C2). A Collector's copy recorded in production has a canonical card
+         and no legacy one; the demo's copies have the reverse. */
+      rows.push({ ...D.emptyTradeCard(b.cardId, b.photos, b.cert, bid, b.canonicalCardId),
+        id: ctx.id("tc" + (b.canonicalCardId || b.cardId) + "-") });
     }
     if (!rows.length) {
       return done(withOpp(state, oppId, (x) => stamp({ ...x, stage: "deal",

@@ -43,7 +43,7 @@ function createStore(seed, options = {}) {
     partners: seed.partners,
     goals: seed.goals,
     inventory: seed.inventory,
-    binder: seed.binder,
+    collectorCopies: seed.collectorCopies,
     interests: seed.interests,
     conversations: seed.conversations,
     photoRequests: seed.photoRequests || [],
@@ -116,15 +116,26 @@ function createStore(seed, options = {}) {
       const i = s.inventory.find((x) => x.invId === invId) || {};
       return legacy({ partnerId: i.partnerId }, "removeInventoryCopy", { invId });
     },
-    addBinderCopy: (copy) => legacy({ collectorId: copy.collectorId }, "addBinderCopy", { copy }, "id"),
-    updateBinderCopy: ({ binderId, patch, at }) => {
-      const b = s.binder.find((x) => x.id === binderId) || {};
-      const r = execute({ collectorId: b.collectorId }, "updateBinderCopy", { binderId, patch, at });
+    /* A Collector's own cards (C2). The facade is thin on purpose: it resolves
+       the owner from the record so a caller cannot name one, and then runs the
+       canonical command. `copyId` is the parameter the commands take; the old
+       `binderId` spelling is gone from this seat entirely. */
+    addCollectorCopy: (copy) => legacy({ collectorId: copy.collectorId }, "addCollectorCopy", { copy }, "id"),
+    updateCollectorCopy: ({ copyId, patch, at }) => {
+      const b = s.collectorCopies.find((x) => x.id === copyId) || {};
+      const r = execute({ collectorId: b.collectorId }, "updateCollectorCopy", { copyId, patch, at });
       return r.ok ? r.value : { refused: r.refused === D.REFUSE.unknownActor ? D.REFUSE.copyUnavailable : r.refused };
     },
-    removeBinderCopy: (binderId) => {
-      const b = s.binder.find((x) => x.id === binderId) || {};
-      return legacy({ collectorId: b.collectorId }, "removeBinderCopy", { binderId });
+    /* Willingness has its own door, and it is the ONLY door: `offered` is
+       refused inside an update patch, so "I own this" and "I am offering this"
+       can never be changed by the same accidental call. */
+    setCollectorCopyOffered: ({ copyId, offered }) => {
+      const b = s.collectorCopies.find((x) => x.id === copyId) || {};
+      return legacy({ collectorId: b.collectorId }, "setCollectorCopyOffered", { copyId, offered });
+    },
+    removeCollectorCopy: (copyId) => {
+      const b = s.collectorCopies.find((x) => x.id === copyId) || {};
+      return legacy({ collectorId: b.collectorId }, "removeCollectorCopy", { copyId });
     },
     updatePartnerProfile: ({ partnerId, patch }) => legacy({ partnerId }, "updatePartnerProfile", { patch }, "id"),
     markDealViewed: ({ oppId, by, surface, at }) =>

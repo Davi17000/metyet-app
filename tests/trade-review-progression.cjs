@@ -40,7 +40,7 @@ const awaitingReview = (n = 1) => {
   const st = createStore({
     catalog: [GIVE, WANT], collectors: [{ id: "c", name: "Casey", prefs: [] }],
     partners: [{ id: "p", name: "Northline Cards" }],
-    goals: [], binder: [], interests: [], conversations: [], opportunities: [],
+    goals: [], collectorCopies: [], interests: [], conversations: [], opportunities: [],
     preferences: [], photoRequests: [], copyReviews: [],
     inventory: [{ invId: "i", partnerId: "p", cardId: "kt", ask: 4000,
       archived: false, photos: { front: "f", back: "b" } }],

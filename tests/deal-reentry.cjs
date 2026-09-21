@@ -66,7 +66,7 @@ const dealShape = (o) => JSON.stringify({
 /* Hand the turn to the partner through canonical state: at Select Trade, cards
    submitted and still proposed means the partner is the one who must act. */
 const handToPartner = (oppId) => {
-  const copy = S().binder.find((b) => b.collectorId === "c12");
+  const copy = S().collectorCopies.find((b) => b.collectorId === "c12");
   TR.act(() => { acts().patchOpportunity(oppId, (x) => ({ ...x,
     stage: "select-trade",
     trade: { submitted: true,

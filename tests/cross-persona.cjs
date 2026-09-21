@@ -36,7 +36,7 @@ const nav = (r, l) => click(cls(r, "nav-i").find((b) => txt(b).includes(l)));
 
 /* Add a binder copy through the staged flow: identify the exact card, then
    describe the copy. Mirrors the Trusted Partner's Add to Inventory. */
-const addBinderCopy = (r, term) => {
+const addCollectorCopy = (r, term) => {
   click(btn(r, "Add a card"));
   const q = cls(r, "cip-q")[0];
   assert(q, "the shared identity search");
@@ -94,9 +94,9 @@ const partnerView = (partnerId = SELF_PARTNER) => {
   return {
     state: s,
     myInventory: E.inventoryOf(s.inventory, partnerId),
-    networkSupply: E.binderCopiesForPartner(s.binder),
+    networkSupply: E.collectorCopiesForPartner(s.collectorCopies),
     networkDemand: s.goals.filter((g) => g.collectorId !== null),
-    myInterests: E.binderCopiesInterestedBy(s.interests, partnerId),
+    myInterests: E.collectorCopiesInterestedBy(s.interests, partnerId),
     myOpportunities: s.opportunities.filter((o) => o.partnerId === partnerId),
     /* Threads are keyed on collector + partner + card identity, so a partner
      participates in their OWN threads and in no one else's. */
@@ -160,11 +160,11 @@ describe("3. Collector adds a Binder copy -> TP sees the same copy id", () => {
     const before = partnerView().networkSupply.length;
     const r = collector();
     nav(r, "Trade Binder");
-    addBinderCopy(r);
+    addCollectorCopy(r);
 
     const supply = partnerView().networkSupply;
     eq(supply.length, before + 1, "the TP network supply gained exactly one copy");
-    const mine = cv().myBinder();
+    const mine = cv().myCopies();
     const newest = mine[mine.length - 1];
     assert(supply.some((b) => b.id === newest.id), "the SAME copy id, not a reconstruction");
   });
@@ -174,8 +174,8 @@ describe("4. TP marks Interested -> Collector sees that exact partner", () => {
   test("through the TP action, on the exact copy", () => {
     fresh();
     /* A copy of Casey's that no partner has flagged. */
-    const cold = cv().myBinder().find((b) => cv().interestIn(b.id).length === 0)
-      || cv().myBinder()[0];
+    const cold = cv().myCopies().find((b) => cv().interestIn(b.id).length === 0)
+      || cv().myCopies()[0];
     const ID = cold.id;
     partnerView().markInterested(ID, true);
 
@@ -194,7 +194,7 @@ describe("4. TP marks Interested -> Collector sees that exact partner", () => {
 
   test("removing it clears the collector signal", () => {
     fresh();
-    const b = cv().myBinder()[0];
+    const b = cv().myCopies()[0];
     partnerView().markInterested(b.id, true);
     partnerView().markInterested(b.id, false);
     assert(!cv().interestIn(b.id).some((x) => x.partnerId === SELF_PARTNER),
@@ -341,7 +341,7 @@ describe("8. Collector proposes a Binder copy -> TP reviews that same id", () =>
       "the partner acted on the exact BinderCopy id");
     /* TP-seeded trade cards reference the card identity; copies added through the
        Collector reference the exact BinderCopy. Either way it is a real record. */
-    assert(st0().binder.some((b) => b.id === proposed[0] || b.cardId === proposed[0]),
+    assert(st0().collectorCopies.some((b) => b.id === proposed[0] || b.cardId === proposed[0]),
       "and it resolves to a real canonical record, not a clone");
   });
 });
@@ -397,7 +397,7 @@ describe("10. Unsuccessful end -> terminal history, Goal back to Seeking", () =>
 describe("11. Privacy, through the real projections", () => {
   test("the collector's reference value never reaches a TP surface", () => {
     fresh();
-    const mine = cv().myBinder().find((b) => b.market != null);
+    const mine = cv().myCopies().find((b) => b.market != null);
     assert(mine, "Casey has a private reference value on a copy");
     const priv = mine.market;
     assert(priv > 0, "the collector has a private value");
@@ -434,7 +434,7 @@ describe("12. There is one store, and no synchronisation", () => {
     collector();
     const b = __store.get();
     eq(a.goals, b.goals, "rendering the Collector does not fork state");
-    eq(a.binder, b.binder, "nor the binder");
+    eq(a.collectorCopies, b.collectorCopies, "nor the binder");
   });
 
   test("the Collector component owns no shared-domain fixture", () => {

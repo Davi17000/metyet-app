@@ -55,6 +55,15 @@ const EXPOSED_COMMANDS = Object.freeze([
   "updateGoalTier",              // Collector → Goals, hunting ⇄ keeping an eye out
   "removeGoal",                  // Collector → Goals, "No longer looking"
   "addInventoryCopy",            // TP → Inventory, "Add a copy"
+  /* A COLLECTOR'S OWN CARDS (Phase 5 C2). Three commands, which is the whole of
+     the concept: record that you own a card, say whether you are offering it,
+     and say you no longer own it. `updateCollectorCopy` is deliberately NOT
+     here — editing a copy's value, certificate or photographs is a surface C2
+     does not build, and a command with no surface is not shipped. It is written
+     and tested; it joins this list in the batch that gives it a screen. */
+  "addCollectorCopy",            // Collector → Your Cards, "I own this card"
+  "setCollectorCopyOffered",     // Collector → Your Cards, offering ⇄ not offering
+  "removeCollectorCopy",         // Collector → Your Cards, "I no longer own this"
 ]);
 
 /* ONE ANSWER FOR TWO QUESTIONS, ON PURPOSE. A command that does not exist and a

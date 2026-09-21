@@ -12,7 +12,9 @@
 
      Goals            what you want. The only transaction workflow in MetYet:
                       a deal is a goal being worked, not a separate thing.
-     Trade Binder     what you could trade. Supply, not a workflow.
+     Your Cards       what you own, and which of it you're offering. Supply,
+                      not a workflow. (Called the Trade Binder until C2, when
+                      owning and offering became two facts instead of one.)
      Trusted Partners who you deal with. A relationship network, not a market.
 
    Those are the prototype's own three, with its own labels and its own order,
@@ -25,7 +27,7 @@
 
    THIS IS A SHELL. Identity, navigation, counts, sign-out. Each section says
    truthfully what it is and what it holds, and stops there — reading a goal,
-   opening a binder copy, looking at a Trusted Partner's profile all belong to
+   opening one of your own cards, looking at a Trusted Partner's profile all belong to
    the next batch, and a placeholder that pretends otherwise would be worse
    than one that admits it.
 
@@ -58,7 +60,7 @@ import { rows } from "./present.js";
 import { EMPTY_SESSION } from "../browse/CardBrowser.jsx";
 import Browse from "./sections/Browse.jsx";
 import Goals from "./sections/Goals.jsx";
-import TradeBinder from "./sections/TradeBinder.jsx";
+import MyCards from "./sections/MyCards.jsx";
 import TrustedPartners from "./sections/TrustedPartners.jsx";
 
 /* What the Collector can actually open, in the product's own order and words.
@@ -81,26 +83,32 @@ export const SECTIONS = Object.freeze([
     sub: "The shops you deal with" },
 ]);
 
-/* BUILT, AND NOT YET TRUE (Phase 5 Batch 8.1).
+/* BUILT, AND NOT YET REACHABLE — AND THE REASON CHANGED IN C2.
 
-   The Trade Binder shipped as a destination before it shipped as a feature. Its
-   section renders, its nav counts rows, and the collection it reads can never
-   have any: the only command that writes a binder copy needs a row in the
-   legacy catalogue, and production's legacy catalogue is empty and is meant to
-   stay that way. So every Collector had a tab that promised something, opened,
-   and was permanently empty — which is a worse answer than not offering it.
+   Batch 8.1 deferred this section because it was IMPOSSIBLE: the only command
+   that wrote a Collector's copy demanded a row in the legacy catalogue, and
+   production's legacy catalogue is empty and is meant to stay that way. Every
+   Collector had a tab that promised something, opened, and could never hold
+   anything — a worse answer than not offering it.
 
-   It is kept here rather than deleted because none of it is wrong: the section
-   component, the domain commands, the table and the projection are all ready
-   for the batch that makes a Binder real. That batch moves this entry back up
-   into SECTIONS, and does nothing else here.
+   That is fixed. A copy now names a canonical card (migration 0011), the three
+   commands behind this screen are written, tested and exposed to production
+   (server/exposed-commands.js), and the projection gives the owner their own
+   cards whole. What is missing is the other half of the screen: the control
+   that RECORDS a card you own, which belongs beside the card in Browse where
+   you are already looking at it. C2 built the concept; the batch that adds that
+   control moves this entry up into SECTIONS, and does nothing else here.
+
+   The count is `collectorCopies`, the collection's canonical name since C2.
+   Keeping the entry live and correct — rather than deleting it and rebuilding
+   it later — is what made this batch's rename fail loudly instead of quietly.
 
    A person cannot reach it: it is not in the navigation, and `section` is only
    ever set from a SECTIONS id. */
 export const DEFERRED_SECTIONS = Object.freeze([
-  { id: "binder", label: "Trade Binder", count: "binder", view: TradeBinder,
-    title: "Trade Binder",
-    sub: "What you could put into a trade" },
+  { id: "my-cards", label: "Your Cards", count: "collectorCopies", view: MyCards,
+    title: "Your Cards",
+    sub: "What you own, and what you're offering" },
 ]);
 
 const CSS = `

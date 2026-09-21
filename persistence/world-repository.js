@@ -91,8 +91,16 @@ const TABLES = [
   { collection: "inventory", table: "inventory_copies", key: ["inv_id"],
     fields: [["invId", "inv_id"], ["partnerId", "partner_id"]],
     mirrors: [["cardId", "card_id"], ["canonicalCardId", "canonical_card_id"]] },
-  { collection: "binder", table: "binder_copies", key: ["id"],
-    fields: [["id", "id"], ["collectorId", "collector_id"], ["cardId", "card_id"]] },
+  /* A COLLECTOR'S OWN CARDS (renamed in C2). `cardId` became a MIRROR and
+     `canonicalCardId` arrived beside it, for the reason inventory's did in
+     Batch 6 and a Goal's in Batch 7: a copy names its card one way or the
+     other, so neither column is always present. validateWorld requires one and
+     refuses both. The table is `collector_copies`; `interests.binder_id` and
+     `opportunity_trade_refs.binder_id` still point at it under the old word,
+     which is written down as debt in domain/README.md. */
+  { collection: "collectorCopies", table: "collector_copies", key: ["id"],
+    fields: [["id", "id"], ["collectorId", "collector_id"]],
+    mirrors: [["cardId", "card_id"], ["canonicalCardId", "canonical_card_id"]] },
   { collection: "interests", table: "interests", key: ["ord"],
     fields: [["partnerId", "partner_id"], ["binderId", "binder_id"]] },
   /* `cardId` became a MIRROR in Batch 8, and `canonicalCardId` arrived beside
@@ -118,7 +126,8 @@ const CHILD_TABLES = [
   { table: "conversation_entries", key: ["conversation_id", "ord"],
     columns: ["conversation_id", "ord", "id", "attrs"] },
   { table: "opportunity_trade_refs", key: ["opportunity_id", "row_ord"],
-    columns: ["opportunity_id", "row_ord", "trade_card_id", "collector_id", "card_id", "binder_id"] },
+    columns: ["opportunity_id", "row_ord", "trade_card_id", "collector_id", "card_id",
+      "canonical_card_id", "binder_id"] },
 ];
 const COLLECTIONS = TABLES.map((t) => t.collection);
 const OPTIONAL = ["preferences", "activity"];
@@ -205,13 +214,19 @@ function toRows(world) {
   return rows;
 }
 
-/* The exact BinderCopy references of every trade package, one row per trade row. */
+/* The exact CollectorCopy references of every trade package, one row per trade
+   row. `canonical_card_id` arrived in C2 for the reason the copy's did: a row
+   names its card one way or the other, so neither column is always present.
+   validateWorld requires one and refuses both. */
 function tradeRefs(opportunities) {
   const out = [];
   for (const o of opportunities) {
     const cards = o.trade && typeof o.trade === "object" && Array.isArray(o.trade.cards) ? o.trade.cards : [];
     cards.forEach((c, i) => out.push({ opportunity_id: o.id, row_ord: i, trade_card_id: c.id,
-      collector_id: o.collectorId, card_id: c.cardId, binder_id: isId(c.binderId) ? c.binderId : null }));
+      collector_id: o.collectorId,
+      card_id: isId(c.cardId) ? c.cardId : null,
+      canonical_card_id: isId(c.canonicalCardId) ? c.canonicalCardId : null,
+      binder_id: isId(c.binderId) ? c.binderId : null }));
   }
   return out;
 }

@@ -163,7 +163,7 @@ describe("2. The designated review deal walks the real lifecycle", () => {
     eq(cur().agreedPrice, 4032, "carrying the settled price forward");
 
     /* Select Trade -> submit a package the partner then reviews. */
-    const copy = st.get().binder.find((b) => b.collectorId === ME);
+    const copy = st.get().collectorCopies.find((b) => b.collectorId === ME);
     A.patchOpportunity(id, (o) => ({ ...o, trade: { mode: "trade", submitted: true,
       cards: [{ binderId: copy.id, cardId: copy.cardId, inclusion: "proposed" }] } }));
     eq(D.nextActor(cur()).actor, "partner", "the wait falls to the partner naturally");

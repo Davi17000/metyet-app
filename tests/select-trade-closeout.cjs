@@ -59,7 +59,7 @@ const atSelectTrade = (rows) => {
     catalog: [A_CARD, TARGET],
     collectors: [{ id: "casey", name: "Casey", prefs: [] }],
     partners: [{ id: "nl", name: "Northline Cards" }],
-    goals: [], binder: [], interests: [], conversations: [], opportunities: [],
+    goals: [], collectorCopies: [], interests: [], conversations: [], opportunities: [],
     preferences: [], photoRequests: [], copyReviews: [],
     inventory: [{ invId: "inv-1", partnerId: "nl", cardId: "kt", ask: 4200,
       archived: false, photos: { front: "f", back: "b" } }],
@@ -195,10 +195,10 @@ describe("B. Update Binder navigates and nothing else", () => {
   test("the whole world is untouched, not just the deal", () => {
     render();
     const before = JSON.stringify({ o: S().opportunities, c: S().conversations,
-      b: S().binder, i: S().interests });
+      b: S().collectorCopies, i: S().interests });
     press(/^Update Binder$/);
     eq(JSON.stringify({ o: S().opportunities, c: S().conversations,
-      b: S().binder, i: S().interests }), before, "navigation only");
+      b: S().collectorCopies, i: S().interests }), before, "navigation only");
   });
 
   test("it does not compete with sending the cards", () => {
@@ -290,7 +290,13 @@ describe("D. Nothing upstream or downstream regressed", () => {
        every row with the shared factory; the Collector sends binder ids only. */
     const src = code(COL);
     const cmd = code(fs.readFileSync(path.join(ROOT, "domain", "metyet-commands.js"), "utf8"));
-    assert(/D\.emptyTradeCard\(b\.cardId, b\.photos, b\.cert, bid\)/.test(cmd), "the shared factory");
+    /* RESTATED IN C2, which gave the factory a fifth argument: a row names the
+       card its COPY names, and since C2 a Collector's copy may name a canonical
+       card instead of a legacy one. The pin is the same pin — submission builds
+       every row with the shared factory and hand-builds none — and it is now
+       stricter, because it also fixes which reference is passed. */
+    assert(/D\.emptyTradeCard\(b\.cardId, b\.photos, b\.cert, bid, b\.canonicalCardId\)/.test(cmd),
+      "the shared factory");
     assert(!/inclusion: "proposed"/.test(src) && !/inclusion: "proposed"/.test(cmd), "not a hand-built row");
   });
 

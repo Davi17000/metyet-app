@@ -112,7 +112,7 @@ describe("A. Primary Goal becomes the Deal Flow once an offer exists", () => {
     assert(cls(r, "idf-stage")[0], "opens directly when it is your move");
 
     /* Hand the turn to the partner through canonical state, then re-enter. */
-    const copy = S().binder.find((b) => b.collectorId === ME);
+    const copy = S().collectorCopies.find((b) => b.collectorId === ME);
     TR.act(() => { acts().patchOpportunity(o.id, (x) => ({ ...x,
       agreedPrice: 4032, stage: "select-trade",
       trade: { mode: "trade", submitted: true,
@@ -130,7 +130,7 @@ describe("A. Primary Goal becomes the Deal Flow once an offer exists", () => {
   test("re-entering a waiting deal mutates nothing", () => {
     const r = mk();
     const o = reviewOpp();
-    const copy = S().binder.find((b) => b.collectorId === ME);
+    const copy = S().collectorCopies.find((b) => b.collectorId === ME);
     TR.act(() => { acts().patchOpportunity(o.id, (x) => ({ ...x,
       agreedPrice: 4032, stage: "select-trade",
       trade: { mode: "trade", submitted: true,
@@ -237,7 +237,7 @@ describe("B. Conversation is embedded, not a destination", () => {
   test("the collector can write while the partner owns the turn", () => {
     const r = mk();
     const o = reviewOpp();
-    const copy = S().binder.find((b) => b.collectorId === ME);
+    const copy = S().collectorCopies.find((b) => b.collectorId === ME);
     TR.act(() => { acts().patchOpportunity(o.id, (x) => ({ ...x,
       agreedPrice: 4032, stage: "select-trade",
       trade: { mode: "trade", submitted: true,
@@ -318,7 +318,7 @@ describe("B. Conversation is embedded, not a destination", () => {
     const card = S().catalog.find((c) => c.id === o.cardId);
     openDeal(r, o);
     send(r, "AT-PRICE");
-    const copy = S().binder.find((b) => b.collectorId === ME);
+    const copy = S().collectorCopies.find((b) => b.collectorId === ME);
     TR.act(() => { acts().patchOpportunity(o.id, (x) => ({ ...x,
       agreedPrice: 4032, stage: "select-trade",
       trade: { mode: "trade", submitted: false,
@@ -374,7 +374,7 @@ describe("C. The review harness still works after consolidation", () => {
      cert and market value from. Fully covered in tests/seed-integrity.cjs. */
   test("seeded trade terms resolve to real binder copies", () => {
     mk();
-    const ids = new Set(S().binder.filter((b) => b.collectorId === ME).map((b) => b.id));
+    const ids = new Set(S().collectorCopies.filter((b) => b.collectorId === ME).map((b) => b.id));
     const o = S().opportunities.find((x) => x.collectorId === ME && D.isActive(x)
       && x.stage === "value-trade");
     const cards = D.acceptedTradeCards(o);

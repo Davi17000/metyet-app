@@ -22,7 +22,7 @@
    and no identity can be replaced.
 
      A  Goals, and the one place coordination appears
-     B  Trade Binder
+     B  Your Cards (the Trade Binder until C2)
      C  Trusted Partners
      D  joins: explicit ids, and what happens when one is missing
      E  privacy: TP-private fields and cross-Collector identity
@@ -90,7 +90,7 @@ const EMPTY = Object.freeze({
   actor: { seat: "collector", collectorId: ME },
   collectors: [{ id: ME, name: "Casey Lin", city: "Brooklyn, NY" }],
   partners: [], relationships: [], invitations: [], goals: [], preferences: [],
-  inventory: [], binder: [], interests: [], opportunities: [], conversations: [],
+  inventory: [], collectorCopies: [], interests: [], opportunities: [], conversations: [],
   activity: [], photoRequests: [], copyReviews: [], counterparties: [], catalog: [],
 });
 
@@ -110,10 +110,10 @@ const FULL = Object.freeze({
     { id: "g-blast", collectorId: ME, cardId: "k2", tier: "secondary", note: "BLASTOISE-NOTE",
       since: "2026-01-05" },
   ],
-  binder: [
-    { id: "b-umb", collectorId: ME, cardId: "k3", market: 2050, cert: "PSA 63118845",
+  collectorCopies: [
+    { offered: true, id: "b-umb", collectorId: ME, cardId: "k3", market: 2050, cert: "PSA 63118845",
       addedAt: "2025-10-10", status: "available", photos: { front: "binder:k3:front", back: "binder:k3:back" } },
-    { id: "b-blast", collectorId: ME, cardId: "k2", market: 900, cert: "PSA 71204885",
+    { offered: true, id: "b-blast", collectorId: ME, cardId: "k2", market: 900, cert: "PSA 71204885",
       addedAt: "2025-04-01", status: "traded", photos: { front: "binder:k2:front" } },
   ],
   interests: [{ partnerId: P2, binderId: "b-umb", at: "2025-10-10" }],
@@ -167,7 +167,7 @@ const clickText = (r, label) => {
   assert(b, `no button "${label}" among: ${buttons(r).map(instText).join(" | ")}`);
   TR.act(() => { b.props.onClick(); });
 };
-/* RESTATED IN BATCH 8.1. The Trade Binder left the Collector's navigation:
+/* RESTATED IN BATCH 8.1, AND AGAIN IN C2 (renamed Your Cards). It left the Collector's navigation:
    its only writer needs a legacy catalogue row, production has none, so every
    Collector had a tab that opened onto something that could never fill. The
    section itself is untouched and still ships, so the assertions about what it
@@ -313,23 +313,29 @@ describe("A. Goals — and the one place coordination appears", () => {
     onEverySection(r, (shown) =>
       assert(!/opportunit/i.test(shown), "the word appears as a product: " + shown));
     eq(SHELL_MOD.SECTIONS.map((x) => x.id).join(","), "browse,goals,partners");
-    /* Restated in Batch 8.1: the Trade Binder is declared deferred rather
+    /* Restated in Batch 8.1, renamed in C2: Your Cards is declared deferred rather
        than offered, and "no Opportunities product" is unaffected by it. */
-    eq(SHELL_MOD.DEFERRED_SECTIONS.map((x) => x.id).join(","), "binder");
+    eq(SHELL_MOD.DEFERRED_SECTIONS.map((x) => x.id).join(","), "my-cards");
   });
 });
 
 /* ============================================================== B */
-describe("B. Trade Binder", () => {
-  test("an empty binder is a sentence, and offers nothing unbuilt", () => {
-    const shown = flat(show(EMPTY, "Trade Binder"));
-    assert(/Trade Binder is empty/.test(shown), shown);
-    assert(/what you can offer in a trade/.test(shown), "it does not say what the binder is for");
+describe("B. Your Cards", () => {
+  test("an empty shelf is a sentence, and offers nothing unbuilt", () => {
+    const shown = flat(show(EMPTY, "Your Cards"));
+    assert(/haven't recorded any cards yet/.test(shown), shown);
+    /* RESTATED IN C2. It used to require the sentence to say what the binder was
+       FOR — "what you can offer in a trade" — because owning and offering were
+       the same act. They are two acts now, so the empty state has to say both:
+       a card here is one you own, and offering it is a separate choice. That is
+       a stricter requirement than the old one, not a looser one. */
+    assert(/a card here is one you own/i.test(shown), "it does not say what a card here is");
+    assert(/offering one is a separate choice/i.test(shown), "it does not say offering is separate");
     assert(!/error|failed|unavailable/i.test(shown), "empty reads as broken: " + shown);
   });
 
   test("each copy renders from its own row, with its own cert and value", () => {
-    const r = show(FULL, "Trade Binder");
+    const r = show(FULL, "Your Cards");
     const umb = recordWith(r, "Umbreon");
     const blast = recordWith(r, "Blastoise");
     assert(umb.includes("PSA 63118845") && !umb.includes("PSA 71204885"), "certs crossed: " + umb);
@@ -343,23 +349,23 @@ describe("B. Trade Binder", () => {
   test("status is the server's answer, not one worked out here", () => {
     /* `b-blast` is TRADED while no opportunity in the projection references it.
        A client that re-derived the rule would call it available. */
-    const r = show(FULL, "Trade Binder");
+    const r = show(FULL, "Your Cards");
     assert(recordWith(r, "PSA 71204885").includes("Traded"), "the server's status was overruled");
     const bare = COLLECTOR_FILES.map(code).join("\n");
     assert(/copy\.status/.test(bare), "the status is read from the row");
-    assert(!/binderCopyStatus|binderRowState|inclusion|withdrawn/.test(bare),
+    assert(!/collectorCopyStatus|binderRowState|inclusion|withdrawn/.test(bare),
       "the shell re-derives a canonical rule");
   });
 
   test("an unfamiliar status survives as itself", () => {
-    const odd = { ...FULL, binder: [{ id: "b-x", collectorId: ME, cardId: "k3", status: "impounded" }] };
-    const shown = flat(show(odd, "Trade Binder"));
+    const odd = { ...FULL, collectorCopies: [{ offered: true, id: "b-x", collectorId: ME, cardId: "k3", status: "impounded" }] };
+    const shown = flat(show(odd, "Your Cards"));
     assert(shown.includes("impounded"), "the status vanished: " + shown);
     assert(!/Available|Reserved|Committed|Traded/.test(shown), "it was rounded: " + shown);
   });
 
   test("interest attaches by binderId, and names no partner it cannot", () => {
-    const r = show(FULL, "Trade Binder");
+    const r = show(FULL, "Your Cards");
     const umb = recordWith(r, "PSA 63118845");
     assert(umb.includes("Second Shop"), "the interested partner, by partnerId: " + umb);
     const blast = recordWith(r, "PSA 71204885");
@@ -471,15 +477,15 @@ describe("D. joins are by explicit id, and a missing one yields nothing", () => 
   });
 
   test("a binder copy whose card is missing renders without borrowing one", () => {
-    const state = { ...FULL, binder: [
-      { id: "b-x", collectorId: ME, cardId: "nope", cert: "LONE-CERT", status: "available" }] };
-    const rec = recordWith(show(state, "Trade Binder"), "LONE-CERT");
+    const state = { ...FULL, collectorCopies: [
+      { offered: true, id: "b-x", collectorId: ME, cardId: "nope", cert: "LONE-CERT", status: "available" }] };
+    const rec = recordWith(show(state, "Your Cards"), "LONE-CERT");
     CATALOG.forEach((c) => assert(!rec.includes(c.name), `it borrowed "${c.name}": ` + rec));
   });
 
   test("an interest naming a partner who is not there names nobody", () => {
     const state = { ...FULL, interests: [{ partnerId: "p-stranger", binderId: "b-umb", at: "2025-01-01" }] };
-    const rec = recordWith(show(state, "Trade Binder"), "PSA 63118845");
+    const rec = recordWith(show(state, "Your Cards"), "PSA 63118845");
     assert(!rec.includes("Northline Cards") && !rec.includes("Second Shop"),
       "the first partner was substituted: " + rec);
     assert(!/Interested/.test(rec), "an interest line was drawn with nobody in it: " + rec);
@@ -508,7 +514,7 @@ describe("D. joins are by explicit id, and a missing one yields nothing", () => 
     const ragged = { ...EMPTY,
       catalog: [null, { id: null, name: "Nameless" }],
       goals: [null, {}, { id: "g" }],
-      binder: "not an array",
+      collectorCopies: "not an array",
       interests: [null, {}],
       partners: [null, { id: "p" }],
       relationships: [null, {}],
@@ -609,7 +615,7 @@ describe("F. nothing acts, nothing mutates, nothing forbidden is imported", () =
     /* Binder entries, interests and invitations are still nobody's to write
        from here; each moves with its own batch. */
     assert(!/execute\s*\(|\.command\s*\(/.test(bare), "a mutation path appeared");
-    assert(!/addBinderCopy|setInterest|inviteCollector/.test(bare),
+    assert(!/addCollectorCopy|setInterest|inviteCollector/.test(bare),
       "a surface grew a write that belongs to a later batch");
   });
 
@@ -650,13 +656,13 @@ describe("G. the Trusted Partner and the demo are untouched", () => {
       partners: [{ id: P1, name: "Northline Cards" }],
       collectors: [{ id: ME, name: "Casey Lin", city: "Brooklyn, NY" }],
       relationships: [{ partnerId: P1, collectorId: ME, status: "accepted", at: "2024-06-02" }],
-      catalog: CATALOG, goals: [], binder: [], opportunities: [], counterparties: [],
+      catalog: CATALOG, goals: [], collectorCopies: [], opportunities: [], counterparties: [],
       inventory: [{ invId: "i1", partnerId: P1, cardId: "k1", ask: 4200, cost: 3100,
         archived: false, status: "available" }] };
     const r = render(React.createElement(ProductionApp, { state: tp }));
     ["Collector Network", "Inventory", "Opportunities"].forEach((label) =>
       assert(buttons(r).some((b) => instText(b).includes(label)), `the TP lost ${label}`));
-    assert(!buttons(r).some((b) => instText(b).includes("Trade Binder")),
+    assert(!buttons(r).some((b) => instText(b).includes("Your Cards")),
       "a Collector section leaked into the TP workspace");
     clickText(r, "Inventory");
     assert(/\$3,100/.test(flat(r)), "a TP can no longer see their own acquisition cost: " + flat(r));

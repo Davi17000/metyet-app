@@ -89,7 +89,7 @@ const REAL_PRISTINE = JSON.stringify(REAL);
 const EMPTY = Object.freeze({
   actor: { seat: "tp", partnerId: PARTNER },
   catalog: [], collectors: [], partners: [{ id: PARTNER, name: "Northline Cards" }],
-  relationships: [], invitations: [], goals: [], preferences: [], inventory: [], binder: [],
+  relationships: [], invitations: [], goals: [], preferences: [], inventory: [], collectorCopies: [],
   interests: [], opportunities: [], conversations: [], activity: [], photoRequests: [],
   copyReviews: [], counterparties: [],
 });
@@ -196,7 +196,7 @@ describe("B. every join is by identifier, never by position", () => {
       { id: "gB", collectorId: "cB", cardId: "cardB", tier: "secondary", note: "BO WANTS BLASTOISE" },
       { id: "gA", collectorId: "cA", cardId: "cardA", tier: "primary", note: "ADA WANTS CHARIZARD" },
     ],
-    binder: [{ id: "bB1", collectorId: "cB" }, { id: "bB2", collectorId: "cB" }],
+    collectorCopies: [{ offered: true, id: "bB1", collectorId: "cB" }, { offered: true, id: "bB2", collectorId: "cB" }],
   });
 
   test("each collector's own relationship note, date and goals attach to them", () => {
@@ -213,9 +213,12 @@ describe("B. every join is by identifier, never by position", () => {
 
     assert(bo.includes("BO'S NOTE") && !bo.includes("ADA'S NOTE"), "notes crossed over: " + bo);
     assert(bo.includes("BO WANTS BLASTOISE"), bo);
-    /* Two binder copies belong to Bo and none to Ada. */
-    assert(/Binder copies 2/.test(bo), "Bo's binder count: " + bo);
-    assert(!/Binder copies/.test(ada), "Ada was given a binder count she has not got: " + ada);
+    /* Two collector copies belong to Bo and none to Ada. The label reads "Cards
+       offered" since C2, and says what it counts: a partner only ever receives
+       a Collector's OFFERED copies, so this was never a count of what Bo owns
+       and no longer pretends to be. */
+    assert(/Cards offered 2/.test(bo), "Bo's offered-card count: " + bo);
+    assert(!/Cards offered/.test(ada), "Ada was given a count she has not got: " + ada);
   });
 
   test("a relationship for somebody else's collector attaches to nobody", () => {
@@ -470,7 +473,7 @@ describe("E. empty and ragged projections are ordinary cases", () => {
       catalog: [null, { id: null, name: "Nameless" }],
       inventory: [null, { invId: "x" }, {}],
       opportunities: [null, { id: "o" }, { id: "o2", stage: 7 }],
-      binder: "not an array", counterparties: null };
+      collectorCopies: "not an array", counterparties: null };
     const r = show(ragged);
     for (const s of sections) { clickText(r, s); assert(flat(r).length > 0, `${s} rendered nothing`); }
     assert(!/\[object Object\]|undefined|NaN/.test(flat(r)), "something leaked: " + flat(r));

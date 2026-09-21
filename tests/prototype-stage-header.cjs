@@ -171,7 +171,7 @@ describe("C. Selecting a stage loads that canonical stage", () => {
       if (["value-trade", "deal", "fulfillment"].includes(stage)) {
         assert(D.acceptedTradeCards(o).length >= 1, stage + ": has cards to work with");
       }
-      const owned = new Set(s.binder.filter((b) => b.collectorId === ME).map((b) => b.id));
+      const owned = new Set(s.collectorCopies.filter((b) => b.collectorId === ME).map((b) => b.id));
       ((o.trade && o.trade.cards) || []).forEach((c) => assert(owned.has(c.binderId),
         stage + ": every trade term names a real BinderCopy"));
     });
