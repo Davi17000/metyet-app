@@ -58,13 +58,28 @@ somewhere you can get it wrong:
    were always there). A copy the partner already named in a submitted package
    still reaches them as `unavailable`, the same as one committed elsewhere — a
    partner who staked a negotiation on a card is told it is gone, not shown a
-   hole. `setInterest` refuses an unoffered copy with `not-found`, which is the
-   same answer a copy that does not exist gets, on purpose.
+   hole. `setInterest` refuses NEW interest in an unoffered copy with
+   `not-found`, which is the same answer a copy that does not exist gets, on
+   purpose — but **withdrawing** existing interest always works, and so does
+   withdrawing it from a copy a deal is holding. Putting a card down is not the
+   same act as picking it up: Interest reserves nothing, and a partner whose
+   needs have changed must be able to clear a stale signal without the Collector
+   having to re-offer a card they just took off the table (C2.1).
+   `setInterest` also refuses NEW interest in a copy whose derived status is not
+   `available`, so a card already reserved, committed or traded inside a deal
+   takes no second claimant. That is the same derivation the projection uses;
+   there is no new state and no second source of truth.
 2. **`offered` cannot ride in on a patch.** `updateCollectorCopy` refuses it
    with `identity-immutable`, so a screen editing a reference value can never
    change what a card is doing in the world.
 3. **New copies default to `offered: false`.** Owning is the base fact. Rows
-   that existed before C2 are offered, because that is what creating one meant.
+   that existed before C2 are offered, because creating one *was* offering it —
+   migration **0012** writes that answer onto them. C2 claimed the repository
+   would supply it on the next write; nothing did, so those rows loaded as
+   `undefined`, and `undefined !== true` silently removed every Collector's
+   existing supply from their partners' view. `validateWorld` now requires
+   `typeof offered === "boolean"`, so absent and tri-state are not states a
+   canonical world can be in (C2.1).
 
 **The photograph requirement moved.** It used to be at the door
 (`addBinderCopy` refused a copy without both faces), which put an *evaluation*

@@ -896,13 +896,43 @@ describe("I. everything else, exactly as it was", () => {
       "and nothing about Casey's cards reached them");
   });
 
-  test("this batch's migration touched one table, and it is the one it says it is", () => {
-    const migration = read("persistence/migrations/0011_collector_copies.sql").replace(/^--.*$/gm, "");
-    assert(/binder_copies rename to collector_copies/.test(migration), "the rename is missing");
-    assert(!/metyet\.goals|inventory_copies|metyet\.opportunities|conversations/.test(migration),
-      "the C2 migration touched a table that is not the Collector's copies");
+  /* CORRECTED IN C2.1. This test was called "touched one table", and it was not
+     true: 0011 alters `collector_copies` AND `opportunity_trade_refs`, on
+     purpose — without the second, a canonical Collector copy could never enter
+     a trade package (see the migration's own header). The old assertion passed
+     only because its regex happened to omit the table it should have named,
+     which is the worst way for a scope test to pass. It now names the two
+     tables C2 is allowed to touch, and refuses every other one by listing them,
+     so the next batch to widen the migration has to widen this line too. */
+  test("the C2 migrations touch exactly the two tables they say they do", () => {
+    /* `binder_copies` and `collector_copies` are the same table either side of
+       the rename statement, so the old name collapses into the new one — the
+       question here is which OBJECTS the migration reaches, not how many names
+       they have had. */
+    const tables = (sql) => [...sql.matchAll(/\balter table\s+metyet\.(\w+)/g)].map((m) => m[1])
+      .concat([...sql.matchAll(/\bupdate\s+metyet\.(\w+)/g)].map((m) => m[1]))
+      .map((t) => (t === "binder_copies" ? "collector_copies" : t));
+
+    const rename = read("persistence/migrations/0011_collector_copies.sql").replace(/^--.*$/gm, "");
+    assert(/binder_copies rename to collector_copies/.test(rename), "the rename is missing");
+    eq([...new Set(tables(rename))].sort().join(","), "collector_copies,opportunity_trade_refs",
+      "0011 touched a table it does not declare");
     /* `offered` costs no column: a fact about the record lives with the record. */
-    assert(!/add column offered/i.test(migration), "offered became a column");
+    assert(!/add column offered/i.test(rename), "offered became a column");
+
+    /* C2.1's backfill touches one table and writes one key. */
+    const backfill = read("persistence/migrations/0012_collector_copy_offered_backfill.sql")
+      .replace(/^--.*$/gm, "");
+    eq([...new Set(tables(backfill))].sort().join(","), "collector_copies",
+      "0012 touched a table it does not declare");
+    assert(/attrs -> 'offered' is null/.test(backfill),
+      "0012 must touch only rows where `offered` is ABSENT — an explicit false is a decision");
+
+    /* And neither one reaches the collections other batches own. */
+    for (const sql of [rename, backfill]) {
+      assert(!/metyet\.goals|inventory_copies|metyet\.conversations|metyet\.interests/.test(sql),
+        "a C2 migration reached a table another batch owns");
+    }
   });
 
   test("a full world built through C2's commands still validates and round-trips", async () => {

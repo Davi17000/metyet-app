@@ -271,9 +271,23 @@ function validateWorld(state) {
     /* OWNING AND OFFERING ARE DIFFERENT FACTS (C2). `offered` is the owner's
        willingness; the deal status beside it is derived from the
        opportunities and is never stored. A copy that says neither true nor
-       false about offering says nothing, which is not a state. */
-    if (!blank(b.offered) && typeof b.offered !== "boolean") {
-      report("field.invalid", `${path}.offered`, `${who} has a non-boolean "offered".`);
+       false about offering says nothing, which is not a state.
+
+       C2.1 MADE THE CODE SAY WHAT THAT COMMENT ALREADY SAID. It used to accept
+       a blank `offered` and only refuse a non-boolean one, which let exactly
+       the state described above exist — and it was not hypothetical: every row
+       written before C2 had no `offered` key, loaded as `undefined`, and
+       silently stopped being trade supply because `undefined !== true`. The
+       absence was doing the work of `false` without anybody having said it.
+
+       Migration 0012 writes the historical answer onto those rows; this makes
+       the ambiguity unrepresentable from here on, on load and before every
+       save. Three states collapse to two, which is the whole point: a boolean
+       question deserves a boolean. */
+    if (typeof b.offered !== "boolean") {
+      report("field.invalid", `${path}.offered`,
+        `${who} does not say whether it is offered. Owning a copy and offering it are `
+        + `separate facts, and both must be stated (true or false).`);
     }
     if (b.grade && !D.GRADED_VALUES.includes(b.grade)) {
       report("field.invalid", `${path}.grade`, `${who} has a grade the product has no word for.`);

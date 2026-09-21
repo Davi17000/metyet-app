@@ -523,16 +523,44 @@ const COMMANDS = {
      a card the Collector has withdrawn, and the Collector would see interest in
      something they are not offering. `notFound`, not a distinct refusal: a copy
      the partner may not see does not exist for them, and a refusal that told
-     them apart would be the leak. */
+     them apart would be the leak.
+
+     BUT PUTTING A CARD DOWN IS NOT THE SAME ACT AS PICKING IT UP (C2.1), and
+     C2 gated both on the same condition, which was a mistake. Interest is a
+     partner pulling an offered card aside to think about; it reserves nothing
+     and promises nothing. When the Collector then withdraws the offer, the
+     partner was left holding a signal they could not put down: `on: false` was
+     refused along with `on: true`, so the Collector went on seeing interest in
+     a card they had taken off the table, and the only way to clear it was for
+     them to re-offer the card they had just decided not to offer.
+
+     So the gates below apply to CREATING interest only. Withdrawal needs the
+     copy to exist and the relationship to be current, and nothing else — it
+     removes a signal rather than making one, and a partner whose needs have
+     changed is allowed to say so.
+
+     AND A COPY A DEAL IS HOLDING TAKES NO NEW INTEREST (C2.1). Interest does
+     not reserve a copy and this does not make it reserve one; it is the other
+     direction. Once a specific physical card is reserved or committed inside an
+     active deal — or has already been traded away — it cannot participate in
+     another acquisition, so inviting a second partner to line up behind it
+     would be recording a signal the product cannot honour. The status is the
+     one the rest of the domain derives from the opportunities
+     (`collectorCopyStatus`); nothing new is stored and there is no second
+     source of truth. Existing interest in such a copy stays withdrawable, for
+     the same reason as above. */
   setInterest(state, a, { binderId, on }, ctx) {
     const at = ctx.at;
     if (a.seat !== "tp") return refuse(R.notOwner);
     const copy = list(state.collectorCopies).find((b) => b.id === binderId);
     if (!copy) return refuse(R.notFound);
-    if (copy.offered !== true) return refuse(R.notFound);
+    if (on && copy.offered !== true) return refuse(R.notFound);
     if (!isRelated(state, a.partnerId, copy.collectorId)) return refuse(R.noRelationship);
     const has = list(state.interests).some((i) => i.partnerId === a.partnerId && i.binderId === binderId);
     if (!!on === has) return done(state, has);
+    if (on && D.collectorCopyStatus(binderId, list(state.opportunities)) !== "available") {
+      return refuse(R.copyUnavailable);
+    }
     return done({ ...state, interests: on
       ? [...list(state.interests), { partnerId: a.partnerId, binderId, at }]
       : list(state.interests).filter((i) => !(i.partnerId === a.partnerId && i.binderId === binderId)) }, !!on);

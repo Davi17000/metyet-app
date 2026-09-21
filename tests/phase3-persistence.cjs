@@ -141,7 +141,9 @@ function seed() {
       { invId: "i3", partnerId: "p2", cardId: "k1", ask: 1200, cost: 900, archived: false, photos: { front: null, back: null } },
     ],
     collectorCopies: [{ offered: true, id: "b1", collectorId: "c1", cardId: "k2", market: 350, cert: null, photos: photos("b1") },
-      { offered: true, id: "b2", collectorId: "c2", cardId: "k5", market: 222, cert: null, photos: photos("b2") }],
+      { offered: true, id: "b2", collectorId: "c2", cardId: "k5", market: 222, cert: null, photos: photos("b2") },
+      /* Casey's, offered, and in no deal — see the setInterest step below. */
+      { offered: true, id: "b3", collectorId: "c1", cardId: "k5", market: 180, cert: null, photos: photos("b3") }],
     interests: [], conversations: [], opportunities: [], photoRequests: [], copyReviews: [],
   };
 }
@@ -177,7 +179,18 @@ const DEAL = [
   [TP1, "inviteCollector", () => ({ email: "new@example.test", note: "met at a show", collector: { name: "New Person" } })],
   [TP1, "recordNote", () => ({ collectorId: "c2", cardId: "k1", milestone: "Called Dana", activity: { type: "manual", text: "Called Dana" } })],
   [C1, "requestPhotos", () => ({ invId: "i3" })],
-  [TP2, "setInterest", () => ({ binderId: "b1", on: true })],
+  /* REPOINTED IN C2.1, from "b1" to "b3". This step runs last, by which time
+     "b1" has been submitted into a trade package, accepted and traded away —
+     and `setInterest` used to accept that because it asked nothing about
+     whether the copy was still available. It does now: a copy a deal is holding
+     takes no new Interest, because inviting a second partner to line up behind
+     a card the product has already promised elsewhere records a signal it
+     cannot honour. "b3" is Casey's too and is in no deal, so the step still
+     exercises exactly what it always did — a related partner expressing
+     interest, persisted and reloaded — at a copy where that is a real thing to
+     do. Withdrawal is unaffected and is proved separately, both here and in
+     tests/phase5-c21-collector-copy-corrections.cjs. */
+  [TP2, "setInterest", () => ({ binderId: "b3", on: true })],
   [TP1, "updateInventoryCopy", () => ({ invId: "i2", patch: { ask: "1150" } })],
 ];
 
