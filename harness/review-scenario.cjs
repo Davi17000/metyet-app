@@ -43,6 +43,7 @@ const seed = () => ({
   partners: [{ id: TP, name: "Northline Cards", city: "Duluth, Minnesota",
     about: "Independent Pokemon dealer working out of Duluth since 2022.",
     specialties: ["Vintage", "PSA", "WOTC"] }],
+  binders: [], binderEntries: [],
   goals: [], interests: [], conversations: [], opportunities: [],
   preferences: [], photoRequests: [], copyReviews: [],
   relationships: [{ partnerId: TP, collectorId: ME, status: "accepted", at: DAY(1) }],

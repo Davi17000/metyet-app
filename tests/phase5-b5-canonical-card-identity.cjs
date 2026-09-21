@@ -437,7 +437,7 @@ describe("C. browsing the catalog without the world", () => {
     /* The world a production deployment actually has: every collection, and
        an empty catalog it will never fill again. */
     const world = { catalog: [], collectors: [{ id: "c1", name: "Casey" }], partners: [], relationships: [],
-      invitations: [], goals: [], inventory: [], collectorCopies: [], interests: [], opportunities: [],
+      invitations: [], goals: [], inventory: [], collectorCopies: [], binders: [], binderEntries: [], interests: [], opportunities: [],
       conversations: [], photoRequests: [], copyReviews: [] };
     await ctx.repository.saveWorld(world);
     const accounts = createAccountDirectory(ctx.db);

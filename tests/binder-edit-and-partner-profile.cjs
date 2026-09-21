@@ -49,6 +49,7 @@ const world = () => {
     catalog: [HAVE, WANT],
     collectors: [{ id: ME, name: "Casey", prefs: [] }],
     partners: [{ id: "nl", name: "Northline Cards", city: "Duluth, Minnesota" }],
+    binders: [], binderEntries: [],
     goals: [], interests: [], conversations: [], opportunities: [],
     preferences: [], photoRequests: [], copyReviews: [],
     collectorCopies: [

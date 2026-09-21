@@ -80,6 +80,7 @@ function markedWorld() {
       { offered: true, id: "bZ", collectorId: "cZ", cardId: "x1", market: NUM.zoraMarket, addedAt: AT, cert: "PSA-bZ",
         photos: { front: "binder:bZ:front", back: "binder:bZ:back" } },
     ],
+    binders: [], binderEntries: [],
     interests: [...seed.interests, { partnerId: "pZ", binderId: "bZ", at: AT }],
   };
   const store = createStore(world);

@@ -82,7 +82,7 @@ async function world() {
     collectors: [{ id: "c1", name: "Casey" }],
     partners: [{ id: "p1", name: "Northline" }, { id: "p2", name: "Second" }],
     relationships: [{ partnerId: "p1", collectorId: "c1", status: "accepted", at: "2030-01-01" }],
-    invitations: [], goals: [], inventory: [], collectorCopies: [], interests: [],
+    invitations: [], goals: [], inventory: [], collectorCopies: [], binders: [], binderEntries: [], interests: [],
     opportunities: [], conversations: [], photoRequests: [], copyReviews: [],
   });
   const accounts = createAccountDirectory(db);
@@ -190,8 +190,17 @@ describe("A. a copy that existed before C2 still means what it meant", () => {
     assert(!("offered" in before.rows[0].attrs), "the fixture already had an `offered`");
 
     const run = await migrate(db, { migrations: all });
-    eq(run.applied.join(","), "0012_collector_copy_offered_backfill",
-      "the upgrade applied something other than the backfill");
+    /* RESTATED IN C3.1. It used to require the upgrade to apply EXACTLY the
+       backfill, which was true when 0012 was the newest migration and becomes
+       false the moment anything is added after it — as C3.1's 0013 was. The
+       property this test owns is that the backfill runs, and runs FIRST in the
+       upgrade; what comes after it belongs to whichever batch added it. So the
+       assertion now pins the position rather than the whole list, which is what
+       it always meant. */
+    eq(run.applied[0], "0012_collector_copy_offered_backfill",
+      "the backfill is not the first thing the upgrade applied");
+    assert(run.applied.every((v) => v > "0011_collector_copies"),
+      "the upgrade re-applied something already recorded: " + run.applied.join(","));
     const after = await pg.query("select attrs from metyet.collector_copies where id = 'b-legacy'");
     eq(after.rows[0].attrs.offered, true, "a row whose existence WAS the offer stays an offer");
   });

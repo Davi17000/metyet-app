@@ -90,7 +90,7 @@ const EMPTY = Object.freeze({
   actor: { seat: "collector", collectorId: ME },
   collectors: [{ id: ME, name: "Casey Lin", city: "Brooklyn, NY" }],
   partners: [], relationships: [], invitations: [], goals: [], preferences: [],
-  inventory: [], collectorCopies: [], interests: [], opportunities: [], conversations: [],
+  inventory: [], collectorCopies: [], binders: [], binderEntries: [], interests: [], opportunities: [], conversations: [],
   activity: [], photoRequests: [], copyReviews: [], counterparties: [], catalog: [],
 });
 
@@ -656,7 +656,7 @@ describe("G. the Trusted Partner and the demo are untouched", () => {
       partners: [{ id: P1, name: "Northline Cards" }],
       collectors: [{ id: ME, name: "Casey Lin", city: "Brooklyn, NY" }],
       relationships: [{ partnerId: P1, collectorId: ME, status: "accepted", at: "2024-06-02" }],
-      catalog: CATALOG, goals: [], collectorCopies: [], opportunities: [], counterparties: [],
+      catalog: CATALOG, goals: [], collectorCopies: [], binders: [], binderEntries: [], opportunities: [], counterparties: [],
       inventory: [{ invId: "i1", partnerId: P1, cardId: "k1", ask: 4200, cost: 3100,
         archived: false, status: "available" }] };
     const r = render(React.createElement(ProductionApp, { state: tp }));

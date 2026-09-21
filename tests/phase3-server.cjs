@@ -75,6 +75,7 @@ function world() {
       { offered: true, id: "b1", collectorId: "c1", cardId: "k2", market: MARK.binderCasey, cert: null, photos: photos("b1") },
       { offered: true, id: "b2", collectorId: "c2", cardId: "k5", market: MARK.binderDana, cert: null, photos: photos("b2") },
     ],
+    binders: [], binderEntries: [],
     interests: [], conversations: [], opportunities: [], photoRequests: [], copyReviews: [],
     activity: [{ id: "a1", partnerId: "p1", collectorId: "c1", type: "manual", text: MARK.activity, date: "2026-04-04" }],
   };

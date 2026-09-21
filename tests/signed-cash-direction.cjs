@@ -38,7 +38,7 @@ const atCash = (price, market) => {
   const st = createStore({
     catalog: [GIVE, WANT], collectors: [{ id: "c", name: "Casey", prefs: [] }],
     partners: [{ id: "p", name: "Northline Cards" }],
-    goals: [], collectorCopies: [], interests: [], conversations: [], opportunities: [],
+    goals: [], collectorCopies: [], binders: [], binderEntries: [], interests: [], conversations: [], opportunities: [],
     preferences: [], photoRequests: [], copyReviews: [],
     inventory: [{ invId: "i", partnerId: "p", cardId: "kt", ask: price,
       archived: false, photos: { front: "f", back: "b" } }],

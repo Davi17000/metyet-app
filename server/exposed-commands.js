@@ -1,11 +1,11 @@
 /* ============================================================================
    WHAT THE PRODUCT CURRENTLY OFFERS (Phase 5 Batch 8.1)
 
-   The domain holds forty-two commands. The product offers six. Until now the
-   difference between those two numbers was a fact about the client — the six
-   were the ones `client/commands.js` happened to bind — and a fact about the
+   The domain holds forty-eight commands. The product offers nine. Until now the
+   difference between those two numbers was a fact about the client — the
+   nine were the ones `client/commands.js` happened to bind — and a fact about the
    client is not a boundary. Anybody who could send one request could send any
-   of the forty-two.
+   of the forty-eight.
 
    Mostly that was harmless, because every command still checks its own seat and
    its own ownership and nothing here changes that. One of them was not.

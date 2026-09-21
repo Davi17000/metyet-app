@@ -92,7 +92,7 @@ async function world() {
     collectors: [{ id: "c1", name: "Casey" }, { id: "c2", name: "Dana" }],
     partners: [{ id: "p1", name: "Northline" }, { id: "p2", name: "Second" }],
     relationships: [{ partnerId: "p1", collectorId: "c1", status: "accepted", at: "2030-01-01" }],
-    invitations: [], goals: [], inventory: [], collectorCopies: [], interests: [],
+    invitations: [], goals: [], inventory: [], collectorCopies: [], binders: [], binderEntries: [], interests: [],
     opportunities: [], conversations: [], photoRequests: [], copyReviews: [],
   });
   const accounts = createAccountDirectory(db);
@@ -954,16 +954,44 @@ describe("I. everything else, exactly as it was", () => {
     assert(w.copyId, "the deal's copy is in there");
   });
 
-  test("the concepts C3 owns do not exist yet", () => {
+  /* RESTATED IN C3.1, WHICH IS THE BATCH THAT BUILT THEM.
+
+     WHAT IT PROTECTED: that C2 did not quietly begin C3 — no Binder table, no
+     Binder command, no Binder section, nothing waiting in the navigation.
+
+     WHY THE OLD WORDING IS NO LONGER CORRECT: `binders` and `binderEntries`,
+     their five commands and migration 0013 now exist, by their own batch and
+     their own migration. "Do not exist yet" was true of the world C2 shipped
+     into and is false of this one; keeping it would mean C3.1 could only pass
+     by deleting its own subject.
+
+     WHAT REPLACES IT, AND WHY IT IS STRICTER: the property C2 actually owned
+     was never "binders are impossible" — it was that C2 SHIPPED NO SURFACE for
+     them. That is now asserted directly and it still holds: C3.1 built the
+     durable concept and deliberately shipped no screen and no open door, so a
+     person still cannot reach a Binder. The navigation check is unchanged, and
+     two new ones are added — no Binder command is exposed to production, and
+     C2's own migrations create no Binder table. The old file-name check
+     degenerated into "nobody named a file Binder"; naming the door is better. */
+  test("C2 shipped no Binder surface, and C3.1 still ships none", () => {
     const files = fs.readdirSync(path.join(ROOT, "client", "collector", "sections"));
     assert(!files.some((f) => /Binder/i.test(f)), "a Binder section appeared: " + files.join(","));
-    const migrations = fs.readdirSync(path.join(ROOT, "persistence", "migrations"));
-    assert(!migrations.some((f) => /_binders?\.sql$/.test(f)), "a named-Binder table appeared");
-    /* `markBinderReviewed` is excluded by name: it is documented legacy naming
-       debt (domain/README.md) for "a partner opened this Collector's cards",
-       not a named-Binder command. Everything else carrying the word would be. */
+
+    /* C2's OWN migrations create no binder table. 0013 does, and is C3.1's. */
+    for (const m of ["0011_collector_copies.sql", "0012_collector_copy_offered_backfill.sql"]) {
+      const sql = read(`persistence/migrations/${m}`).replace(/^--.*$/gm, "");
+      assert(!/create table metyet\.binders?\b/.test(sql), `${m} created a Binder table`);
+    }
+
+    /* The durable commands exist now; NONE of them is reachable from a browser.
+       `markBinderReviewed` is excluded by name: documented legacy naming debt
+       (domain/README.md) for "a partner opened this Collector's cards". */
     const table = C.COMMAND_NAMES.filter((n) => /binder/i.test(n) && n !== "markBinderReviewed");
-    eq(table.join(","), "", "a Binder command appeared: " + table.join(","));
+    assert(table.length > 0, "the Binder commands vanished");
+    for (const name of table) {
+      assert(!EXPOSED_COMMANDS.includes(name), `${name} is exposed to production`);
+    }
+
     /* Read the NAVIGATION itself, not its file's text: a comment explaining what
        a Binder will be is not a Binder in the navigation, and a regex over the
        source cannot tell those apart. */

@@ -49,7 +49,7 @@ const world = (rows = []) => {
     catalog: [CARD, RAW],
     collectors: [{ id: ME, name: "Casey", prefs: [] }],
     partners: [{ id: "nl", name: "Northline Cards", city: "Duluth, Minnesota" }],
-    goals: [], collectorCopies: [], interests: [], conversations: [], opportunities: [],
+    goals: [], collectorCopies: [], binders: [], binderEntries: [], interests: [], conversations: [], opportunities: [],
     preferences: [], photoRequests: [], copyReviews: [],
     inventory: rows.map(([invId, addedAt, archived]) => ({
       invId, partnerId: "nl", cardId: "kt", ask: 4000,

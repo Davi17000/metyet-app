@@ -140,6 +140,7 @@ function unrelatedWorld() {
       { id: "bB", collectorId: "cB", cardId: "k4", market: V.marketB, offered: true, photos: shot("bB"), cert: "PSA-bB", addedAt: AT },
       { id: "bX", collectorId: "cX", cardId: "k4", market: V.marketX, offered: true, photos: shot("bX"), cert: "PSA-bX", addedAt: AT },
     ],
+    binders: [], binderEntries: [],
     interests: [
       { partnerId: "pA", binderId: "bA", at: AT }, { partnerId: "pA", binderId: "bAB1", at: AT },
       { partnerId: "pB", binderId: "bAB1", at: AT }, { partnerId: "pB", binderId: "bB", at: AT },

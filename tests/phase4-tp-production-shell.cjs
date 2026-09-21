@@ -88,7 +88,7 @@ const sessionBody = (inSeconds = 3600) => ({ access_token: ACCESS, refresh_token
 const EMPTY_TP = Object.freeze({
   actor: { seat: "tp", partnerId: PARTNER },
   catalog: [], collectors: [], partners: [{ id: PARTNER, name: "Northline Cards", since: "2026-09-01" }],
-  relationships: [], invitations: [], goals: [], preferences: [], inventory: [], collectorCopies: [],
+  relationships: [], invitations: [], goals: [], preferences: [], inventory: [], collectorCopies: [], binders: [], binderEntries: [],
   interests: [], opportunities: [], conversations: [], activity: [], photoRequests: [],
   copyReviews: [], counterparties: [],
 });

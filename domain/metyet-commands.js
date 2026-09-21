@@ -415,6 +415,118 @@ const COMMANDS = {
       interests: list(state.interests).filter((i) => i.binderId !== copyId) }, true);
   },
 
+  /* ------------------------------------------- where a card belongs (C3.1)
+
+     A Binder is a Collector's own named grouping of canonical cards. It is the
+     fourth durable fact in this family and the first that is about how a person
+     THINKS about their cards rather than what they want, own or will part with:
+
+       Binder        this card belongs here
+       Goal          I want this card
+       CollectorCopy I own this physical copy
+       offered       I am willing to trade or sell that copy
+
+     THEY ARE INDEPENDENT, AND KEEPING THEM SO IS THE POINT. Nothing below
+     creates a Goal, creates a copy, reads one, or changes one. Filing a card
+     says nothing about wanting it; a Binder holding a card the Collector
+     neither wants nor owns is valid curation, and is the state most binders
+     start in. A Binder that implied demand would be a second, silent way of
+     saying "I'm looking for this" — which nobody said.
+
+     MEMBERSHIP NAMES THE CANONICAL CARD. Not a Goal, not a copy. Selling a card
+     must not un-file it, satisfying a goal must not un-file it, and owning
+     three physical copies of one card must not mean three places it belongs.
+     The canonical card is the only reference that survives all of those.
+
+     AND NOBODY ELSE EVER SEES IT. Binders are projected to the owning Collector
+     and to no one else — see metyet-projection.js. A Trusted Partner receives
+     no name, no id, no membership and no count, because how somebody organises
+     their collection is not a fact about a trade. */
+  createBinder(state, a, { name }, ctx) {
+    if (a.seat !== "collector") return refuse(R.notOwner);
+    const clean = typeof name === "string" ? name.trim() : "";
+    if (!clean) return refuse(R.nameRequired);
+    const id = ctx.id("bd");
+    return done({ ...state, binders: [...list(state.binders),
+      { id, collectorId: a.collectorId, name: clean, createdAt: ctx.at, archivedAt: null }] }, id);
+  },
+
+  renameBinder(state, a, { binderId, name }, ctx) {
+    const binder = list(state.binders).find((b) => b.id === binderId);
+    if (!binder) return refuse(R.notFound);
+    if (a.seat !== "collector" || binder.collectorId !== a.collectorId) return refuse(R.notOwner);
+    const clean = typeof name === "string" ? name.trim() : "";
+    if (!clean) return refuse(R.nameRequired);
+    /* A rename changes the name. It does not change the owner, and it does not
+       touch membership — the cards in a binder have nothing to do with what it
+       is called. */
+    return done({ ...state, binders: list(state.binders)
+      .map((b) => (b.id === binderId ? { ...b, name: clean } : b)) }, binderId);
+  },
+
+  /* PUTTING A BINDER AWAY IS REVERSIBLE, WHICH IS WHY THIS IS A `set` AND NOT
+     AN `archive`. The C3 checkpoint proposed `archiveBinder`; the repository's
+     own vocabulary answers otherwise. `setCollectorCopyOffered` established the
+     shape for a reversible state a person controls — one command, a boolean,
+     idempotent — and a one-way `archiveBinder` would need a second command to
+     undo it, which is two names for one decision. The durable form is a
+     TIMESTAMP (`archivedAt`), because "when did I put this away" is worth
+     knowing and a boolean cannot say it; null means active.
+
+     IT TOUCHES NOTHING ELSE. Not the entries — an archived binder still holds
+     its cards, or unarchiving would be a different binder. Not Goals, not
+     copies, not `offered`. There is no permanent deletion here at all: a
+     Collector who wants a binder gone can empty it and put it away, and whether
+     the product should ever really delete one is a decision pilot evidence has
+     not been asked for yet. */
+  setBinderArchived(state, a, { binderId, archived }, ctx) {
+    const binder = list(state.binders).find((b) => b.id === binderId);
+    if (!binder) return refuse(R.notFound);
+    if (a.seat !== "collector" || binder.collectorId !== a.collectorId) return refuse(R.notOwner);
+    if (typeof archived !== "boolean") return refuse(R.notFound);
+    const now = !!binder.archivedAt;
+    if (now === archived) return done(state, binderId);
+    return done({ ...state, binders: list(state.binders).map((b) => (b.id === binderId
+      ? { ...b, archivedAt: archived ? ctx.at : null } : b)) }, binderId);
+  },
+
+  /* FILING A CARD. The canonical card is named by an id the server minted and
+     the caller merely received; whether it EXISTS is the catalog's answer, asked
+     by the server before this runs (server/app.js) and enforced underneath by a
+     foreign key — the same boundary a Goal and a copy each cross, and
+     deliberately not a second mechanism.
+
+     IDEMPOTENT, because a binder is a set. Filing a card you already filed is
+     not a mistake worth a refusal; it is a person doing the thing they meant to
+     have done. The first `addedAt` stands — re-filing does not restamp it, or
+     "when did this go in the binder" would quietly become "when did I last
+     click it". */
+  addBinderEntry(state, a, { binderId, canonicalCardId }, ctx) {
+    const binder = list(state.binders).find((b) => b.id === binderId);
+    if (!binder) return refuse(R.notFound);
+    if (a.seat !== "collector" || binder.collectorId !== a.collectorId) return refuse(R.notOwner);
+    if (typeof canonicalCardId !== "string" || !canonicalCardId) return refuse(R.notFound);
+    const already = list(state.binderEntries)
+      .some((e) => e.binderId === binderId && e.canonicalCardId === canonicalCardId);
+    if (already) return done(state, true);
+    return done({ ...state, binderEntries: [...list(state.binderEntries),
+      { binderId, canonicalCardId, addedAt: ctx.at }] }, true);
+  },
+
+  /* UNFILING A CARD REMOVES ORGANISATION AND NOTHING ELSE. The Collector still
+     wants whatever they wanted and still owns whatever they owned; a card can
+     be taken out of "Mudkip Collection" without any of that changing. */
+  removeBinderEntry(state, a, { binderId, canonicalCardId }, ctx) {
+    const binder = list(state.binders).find((b) => b.id === binderId);
+    if (!binder) return refuse(R.notFound);
+    if (a.seat !== "collector" || binder.collectorId !== a.collectorId) return refuse(R.notOwner);
+    const has = list(state.binderEntries)
+      .some((e) => e.binderId === binderId && e.canonicalCardId === canonicalCardId);
+    if (!has) return done(state, false);
+    return done({ ...state, binderEntries: list(state.binderEntries)
+      .filter((e) => !(e.binderId === binderId && e.canonicalCardId === canonicalCardId)) }, true);
+  },
+
   /* ------------------------------------------------------------ relationships & profile */
   /* AN INVITATION NAMES NOBODY (Phase 5 Batch 2).
 

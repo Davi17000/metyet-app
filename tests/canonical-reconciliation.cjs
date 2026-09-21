@@ -250,7 +250,7 @@ describe("D. Both personas observe one object", () => {
   const world = () => createStore({
     catalog: [CARD], collectors: [{ id: "casey", name: "Casey", prefs: [] }],
     partners: [{ id: "nl", name: "Northline Cards" }],
-    goals: [], collectorCopies: [], interests: [], conversations: [], opportunities: [],
+    goals: [], collectorCopies: [], binders: [], binderEntries: [], interests: [], conversations: [], opportunities: [],
     preferences: [], photoRequests: [], copyReviews: [],
     inventory: [{ invId: "inv-1", partnerId: "nl", cardId: "k1", ask: 4000,
       archived: false, photos: { front: "f", back: "b" } }],

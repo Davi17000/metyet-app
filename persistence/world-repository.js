@@ -101,6 +101,18 @@ const TABLES = [
   { collection: "collectorCopies", table: "collector_copies", key: ["id"],
     fields: [["id", "id"], ["collectorId", "collector_id"]],
     mirrors: [["cardId", "card_id"], ["canonicalCardId", "canonical_card_id"]] },
+  /* WHERE A CARD BELONGS (Phase 5 C3.1). A Binder is a Collector's own named
+     grouping; a BinderEntry is one canonical card filed in one of them.
+     `binderEntries` keys on `ord` like `interests` and `preferences`, because
+     membership carries no domain id of its own — it is the pair. */
+  { collection: "binders", table: "binders", key: ["id"],
+    fields: [["id", "id"], ["collectorId", "collector_id"]] },
+  { collection: "binderEntries", table: "binder_entries", key: ["ord"],
+    fields: [["binderId", "binder_id"], ["canonicalCardId", "canonical_card_id"]] },
+  /* CAREFUL: `interests.binder_id` below names a COLLECTOR COPY, not a Binder.
+     It is legacy naming from before C2 renamed `binder_copies`, kept as debt
+     (domain/README.md). The only column in this schema that genuinely names a
+     Binder is `binder_entries.binder_id` just above. */
   { collection: "interests", table: "interests", key: ["ord"],
     fields: [["partnerId", "partner_id"], ["binderId", "binder_id"]] },
   /* `cardId` became a MIRROR in Batch 8, and `canonicalCardId` arrived beside

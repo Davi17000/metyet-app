@@ -48,7 +48,7 @@ const world = () => createStore({
   catalog: [CARD],
   collectors: [{ id: "c1", name: "Casey", prefs: [] }, { id: "c2", name: "Dana", prefs: [] }],
   partners: [{ id: "p2", name: "Northline Cards" }],
-  goals: [], collectorCopies: [], interests: [], conversations: [], opportunities: [],
+  goals: [], collectorCopies: [], binders: [], binderEntries: [], interests: [], conversations: [], opportunities: [],
   preferences: [], photoRequests: [],
   inventory: [
     { invId: "shot", partnerId: "p2", cardId: "k1", ask: 4200, archived: false,
