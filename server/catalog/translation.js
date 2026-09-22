@@ -2,8 +2,20 @@
    THE PROVIDER TRANSLATION BOUNDARY (Phase 5 Batch 5)
 
      createTranslator({ provider, vocabulary })  ->  { translate, provider }
-     translate(sourceRecord)  ->  { ok: true,  record }
+     translate(sourceRecord)  ->  { ok: true,  record, ignored? }
                                |  { ok: false, quarantine: { reason, detail } }
+                               |  { ok: false, rejected:   { reason, detail } }
+
+   THREE OUTCOMES, NOT TWO (Phase 5 C4). A record either becomes a card, or
+   WAITS — quarantined in `source_mappings`, keyed, counted, re-examined next
+   run — or is REJECTED, which means it cannot be keyed and so cannot wait.
+   The third exists because a quarantine that cannot be stored is not a
+   quarantine, and because the alternative is fabricating a provider id. See
+   `REJECTED` below.
+
+   `translate` does not throw on a bad record. It throws only when it is
+   MISUSED — no provider, no vocabulary — because those are programmer errors
+   and a record is not.
 
    ONE SIDE OF THIS FILE SPEAKS A PROVIDER'S LANGUAGE. THE OTHER SPEAKS MetYet'S.
    Nothing crosses without being named.
@@ -66,6 +78,40 @@ const QUARANTINE = Object.freeze({
   lossy: "lossy-mapping",
 });
 
+/* ------------------------------------------- AND THE ONES THAT CANNOT QUEUE
+   (Phase 5 C4)
+
+   A QUARANTINED record waits in `source_mappings` — it keeps its raw payload,
+   it is counted, and the next import re-examines it. That only works because
+   the row can be KEYED: the table's uniqueness is
+   `(provider, provider_card_id, provider_variant_key)`, and a row with no
+   provider card id has no identity to be remembered by.
+
+   So there is a second, smaller category. A record MetYet cannot key is
+   REJECTED for the run: named in the summary, counted by reason, and written
+   nowhere. The alternative would be to invent a provider id so the row could
+   be stored — which is the one thing the whole catalog design exists to
+   prevent. A fabricated `provider_card_id` is a durable lie about somebody
+   else's data, and it would collide with the next fabricated one.
+
+   Rejection is not a softer quarantine. It is the honest answer to "we cannot
+   even remember that we saw this", and the operator's fix is upstream in the
+   adapter, not in a vocabulary. */
+const REJECTED = Object.freeze({
+  unreadable: "unreadable-record",
+  unkeyable: "unkeyable-record",
+});
+
+/* `printed_total` is an int4 (persistence/migrations/0006_card_catalog.sql).
+   A value outside that is not storable, whatever else is true of it. */
+const INT4_MIN = -2147483648;
+const INT4_MAX = 2147483647;
+const int4OrNull = (value) => {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isInteger(n) && n >= INT4_MIN && n <= INT4_MAX ? n : null;
+};
+
 /* ------------------------------------------------------------- VOCABULARY
 
    A provider vocabulary is a plain declaration:
@@ -107,12 +153,22 @@ function checkVocabulary(vocabulary) {
      {
        providerExpansionId, providerCardId, providerVariantKey,
        collectorNumber, cardName,
+       discriminator?,      -- the reserved collision-breaker; see 0006
        expansionName?, expansionSeries?, expansionReleaseDate?, expansionPrintedTotal?,
        artist?, rarity?, supertype?, subtypes?, pokedexNumbers?,
        imageSmall?, imageLarge?,
        language?,
        unmappable?          -- the adapter's own "I could not carry this"
-     } */
+     }
+
+   `discriminator` was consumed by `translate` from the first day and missing
+   from this list, which is worse than it sounds: it is the fifth segment of a
+   card context's natural key, so an adapter written from this comment alone
+   could not break the collision the schema reserves it for (Phase 5 C4).
+
+   `expansionPrintedTotal`, when it is anything, must be an integer the
+   `printed_total` column can hold. See `int4OrNull` above for what happens
+   when it is not, and why that is not a quarantine. */
 function createTranslator({ provider, vocabulary } = {}) {
   const name = text(provider);
   if (!name) throw new TypeError("translation: a provider name is required");
@@ -146,17 +202,43 @@ function createTranslator({ provider, vocabulary } = {}) {
     },
   });
 
+  /* Not storable anywhere, so it carries no payload and names no provider
+     record — there is nothing to name it BY. It exists to be counted. */
+  const reject = (reason, detail) => ({ ok: false, rejected: { provider: name, reason, detail } });
+
   return {
     provider: name,
 
     translate(source) {
-      if (!isObject(source)) throw new TypeError("translation: a source record is required");
+      /* A RECORD THAT IS NOT A RECORD (Phase 5 C4). `null`, a bare string, a
+         number — an ordinary artefact of a trailing comma or a failed row in
+         somebody's export. This used to throw, which meant one such element
+         took down whatever transaction was open around it. It is classified
+         now, because a malformed element of a well-formed file is a
+         data-quality problem like any other and the pipeline's job is to name
+         those, not to die of them. */
+      if (!isObject(source)) {
+        return reject(REJECTED.unreadable,
+          `a source record must be an object, and this one is ${source === null ? "null" : typeof source}`);
+      }
 
       /* A record MetYet cannot even file: no card id, no number, no name. There
          is nothing here to be uncertain ABOUT. */
-      if (!text(source.providerCardId) || !text(source.collectorNumber) || !text(source.cardName)) {
+      if (!text(source.collectorNumber) || !text(source.cardName)) {
         return refuse(source, QUARANTINE.incomplete,
           "a source record needs a provider card id, a collector number and a card name");
+      }
+
+      /* AND THE HALF OF THAT WHICH CANNOT WAIT IN THE QUEUE (Phase 5 C4). The
+         three fields above are all required, but they are not equal: the
+         provider's card id is what the mapping table is KEYED by, so a record
+         without one cannot be remembered at all. `recordSourceMapping` refuses
+         it — correctly — and before C4 that refusal arrived as a thrown
+         TypeError from inside a quarantine write, which is the one place a
+         quarantine must never fail. It is a run-level rejection now. */
+      if (!text(source.providerCardId)) {
+        return reject(REJECTED.unkeyable,
+          "a source record has no provider card id, so no mapping can be keyed to it");
       }
 
       /* THE ADAPTER'S OWN REFUSAL, honoured first. An adapter that knows it is
@@ -198,8 +280,15 @@ function createTranslator({ provider, vocabulary } = {}) {
         return refuse(source, QUARANTINE.lossy, error.message);
       }
 
+      /* Said out loud so the runner can count it rather than the operator
+         discovering a null months later. */
+      const printedTotalIgnored = source.expansionPrintedTotal != null
+        && source.expansionPrintedTotal !== ""
+        && int4OrNull(source.expansionPrintedTotal) === null;
+
       return {
         ok: true,
+        ...(printedTotalIgnored ? { ignored: ["expansion-printed-total"] } : {}),
         record: {
           provider: name,
           /* The MAPPING decides which MetYet release this is; the RECORD
@@ -211,8 +300,23 @@ function createTranslator({ provider, vocabulary } = {}) {
             name: text(source.expansionName) || expansionCode,
             series: text(source.expansionSeries) || null,
             releaseDate: text(source.expansionReleaseDate) || null,
-            printedTotal: source.expansionPrintedTotal == null
-              ? null : Number(source.expansionPrintedTotal),
+            /* A CHECKLIST TOTAL IS DESCRIPTIVE, AND A BAD ONE IS NOT A BAD
+               CARD (Phase 5 C4). `printed_total` is nullable and explicitly
+               descriptive — nothing validates a collector number against it,
+               because secret rares legitimately exceed it. So a total that the
+               column cannot hold ("102 cards", 10.5, a number past int4) is
+               recorded as "nobody told us", which is true, rather than as a
+               reason to reject the card, which would not be.
+
+               THE REASON IT IS NOT A QUARANTINE. This field arrives on an
+               EXPANSION and every card in that release carries it. One
+               mistyped set total would otherwise quarantine the entire set —
+               hundreds of perfectly identifiable cards, none of them wrong.
+               It used to reach `printed_total integer` as `NaN` and abort the
+               insert, which took the batch with it.
+
+               It is not silent: the runner counts these and names them. */
+            printedTotal: int4OrNull(source.expansionPrintedTotal),
           },
           context: {
             game: "pokemon",
@@ -254,6 +358,13 @@ function createTranslator({ provider, vocabulary } = {}) {
    queue a queue: the record is remembered, counted and re-examined next import,
    rather than dropped on the floor with a log line. */
 async function applyTranslation(catalog, translation, { tx } = {}) {
+  /* REJECTED WRITES NOTHING, and says so (Phase 5 C4). There is no row to
+     write: the record could not be keyed, so storing it would mean inventing
+     the key. A caller that receives this counts it and moves on. */
+  if (!translation.ok && translation.rejected) {
+    return { rejected: true, quarantined: false, reason: translation.rejected.reason };
+  }
+
   if (!translation.ok) {
     const q = translation.quarantine;
     await catalog.recordSourceMapping({
@@ -265,25 +376,38 @@ async function applyTranslation(catalog, translation, { tx } = {}) {
       status: "quarantined",
       quarantineReason: `${q.reason}: ${q.detail}`,
     }, { tx });
-    return { quarantined: true, reason: q.reason };
+    return { quarantined: true, rejected: false, reason: q.reason };
   }
 
   const r = translation.record;
-  const { expansionId } = await catalog.putExpansion(r.expansion, { tx });
-  const { cardContextId } = await catalog.putCardContext(
-    { ...r.context, expansionId }, { tx });
-  const { canonicalCardId } = await catalog.putCanonicalCard(
-    { ...r.canonicalCard, cardContextId }, { tx });
+  const expansion = await catalog.putExpansion(r.expansion, { tx });
+  const context = await catalog.putCardContext(
+    { ...r.context, expansionId: expansion.expansionId }, { tx });
+  const card = await catalog.putCanonicalCard(
+    { ...r.canonicalCard, cardContextId: context.cardContextId }, { tx });
   await catalog.recordSourceMapping({
     provider: r.lineage.provider,
     providerExpansionId: r.lineage.providerExpansionId,
     providerCardId: r.lineage.providerCardId,
     providerVariantKey: r.lineage.providerVariantKey,
-    expansionId, cardContextId, canonicalCardId,
+    expansionId: expansion.expansionId,
+    cardContextId: context.cardContextId,
+    canonicalCardId: card.canonicalCardId,
     raw: r.lineage.raw,
     status: "mapped",
   }, { tx });
-  return { quarantined: false, expansionId, cardContextId, canonicalCardId };
+  /* WHETHER EACH LEVEL WAS MINTED OR FOUND (Phase 5 C4). The repository
+     already answers this — every upsert returns `created` — and this used to
+     discard it, which left a caller unable to say "twelve new releases, three
+     already here" without counting rows itself. Passing it through is how a
+     run summary earns the word "new". */
+  return { quarantined: false, rejected: false,
+    expansionId: expansion.expansionId,
+    cardContextId: context.cardContextId,
+    canonicalCardId: card.canonicalCardId,
+    created: { expansion: expansion.created === true,
+      context: context.created === true,
+      card: card.created === true } };
 }
 
-module.exports = { createTranslator, applyTranslation, checkVocabulary, QUARANTINE };
+module.exports = { createTranslator, applyTranslation, checkVocabulary, QUARANTINE, REJECTED };

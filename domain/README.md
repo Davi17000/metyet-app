@@ -508,6 +508,100 @@ canonical names, sets, numbers and images still come from one batched
 `describe(ids)` at the catalog boundary rather than being copied into a
 discovery, a goal or a relationship.
 
+## Loading the catalog: an operator's job (Phase 5 C4)
+
+Batch 5 built the translation boundary and the canonical repository, tested both
+and shipped **no way to run them** — no route, no CLI verb, no caller of
+`applyTranslation` outside its own suite. So the production catalog could only
+be empty, and `addGoal`, `addCollectorCopy`, `addInventoryCopy` and
+`addBinderEntry` were all refused `card-unavailable` for want of anything to
+name. C4 is the verb, the loop, the transaction boundary and the summary.
+
+**It is an operator command, and there is no HTTP way in.** `catalog-import`
+sits beside `migrate` and `invite-partner` in `server/cli.js`, for the reason
+that file already states: the server never migrates itself and there is no route
+to any of this. A browser cannot mint card identity, and a thirty-thousand-record
+import is not a request.
+
+**File-fed, and that file IS the adapter boundary.** The runner takes an array
+of source records — the provider-neutral shape `translate` documents — so the
+day an approved provider exists, the only new thing is a function that produces
+the same array. Nothing here opens a socket, holds a credential, paginates or
+retries. The vocabulary and the records arrive as **two** paths because they are
+two different kinds of thing: a mapping table MetYet owns and reviewed, and
+somebody else's data. Conflating them is how a provider's words end up deciding
+MetYet's.
+
+**Three outcomes per record, not two.** A record becomes a card; or it is
+QUARANTINED, keyed in `source_mappings` and re-examined next run; or it is
+REJECTED, which means it cannot be keyed and therefore cannot wait. The third is
+new and exists because of a real defect: `source_mappings` is unique on
+`(provider, provider_card_id, provider_variant_key)`, so a record with no
+provider card id has no identity to be remembered by — and the old code
+quarantined it, then threw a `TypeError` from inside the quarantine write. A
+quarantine that cannot be stored is not a quarantine. **The alternative was
+fabricating a provider id, which is the one thing this whole design exists to
+prevent.** A rejection is counted and named in the run summary and written
+nowhere.
+
+**Three ordinary inputs used to crash the pipeline, and are classified now.** A
+`null` element in a records array; a record with no provider card id; and a
+printed total of `"abc"`, `10.5` or `99999999999`. Each threw — the first out of
+`translate`, the second out of `recordSourceMapping`, the third out of Postgres —
+and under a batch transaction any one of them took hundreds of good records with
+it. They are fixed at the translation boundary, where the rule belongs, rather
+than hidden in CLI glue.
+
+**A bad checklist total is not a bad card.** `printed_total` is nullable and
+explicitly descriptive — nothing validates a collector number against it, because
+secret rares legitimately exceed it. So a total the `integer` column cannot hold
+is recorded as "nobody told us", which is true, rather than as a reason to
+quarantine, which would not be. The deciding argument is that the field arrives
+on an EXPANSION and every card in the release carries it: one mistyped set total
+would otherwise quarantine hundreds of perfectly identifiable cards. It is not
+silent — the run counts it.
+
+**Batches, and every write gets the caller's transaction.** ~500 records per
+`db.transaction`. Passing `tx` is not an optimisation: without one the repository
+runs each statement in a transaction of its own, which splits every upsert's
+existence check from its write. A record's expansion, context, card and mapping
+are atomic together, and so is a durable quarantine.
+
+**A fault stops the run.** It does not skip the batch and carry on — a skipped
+batch is silent data loss wearing a success code. The summary names the record
+range that failed, the batch rolled back whole, and **rerun is the recovery**:
+every write is keyed by a natural key and every id is minted once, so running it
+again finishes the job and duplicates nothing.
+
+**A dry run writes nothing and claims nothing it could not know.** It parses,
+validates and classifies exactly as a real run does — the counts of mappable,
+quarantined and rejected are identical — and leaves `created` and `reused` null,
+because a run that wrote nothing cannot say what it would have created.
+
+**Exit codes are four, and 3 is the one that matters.** 0 clean, 1 an
+operational failure, 2 an invocation nobody could act on, **3 completed with
+something quarantined or rejected**. A run that queued a thousand records has
+not failed — the good rows landed — but it is emphatically not a clean success,
+and `0` would let a scheduler swallow it.
+
+**A source row disappearing means nothing.** No withdrawal, no staleness sweep,
+no set difference, no merge and no split. Those are how a catalog synchroniser
+deletes the card somebody was hunting for. Existing re-import revival semantics
+are unchanged and now written down: `putCanonicalCard` sets `status = 'active'`
+on every sighting, so a withdrawal is reversed by the next import that sees the
+card — deliberate, and something any future withdrawal feature must be built
+knowing.
+
+**Presentation is last-write-wins, and C4 does not change it.** `putCardContext`
+rewrites artist, rarity, supertype, subtypes and pokédex numbers on every
+sighting, so two records for one checklist line disagree by whoever is read last,
+and a record that omits a field blanks it. A runner that decided which source was
+more trustworthy would be a second authority over somebody else's data. It is
+pinned by a test so it is a known property rather than a surprise.
+
+**A live provider adapter is still a separate batch, and still permission-dependent.**
+Nothing in C4 chooses one.
+
 ## Five things to know before changing anything
 
 **Discovery is computed; Opportunity is persisted.** They share a word and are
