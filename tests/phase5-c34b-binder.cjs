@@ -40,7 +40,6 @@ const { migrate } = require("../persistence/migrate.js");
 const { createWorldRepository } = require("../persistence/world-repository.js");
 const { createCatalogRepository } = require("../persistence/catalog-repository.js");
 const { createApp } = require("../server/app.js");
-const { executeCommand } = require("../persistence/command-transaction.js");
 const { createAccountDirectory } = require("../server/auth/accounts.js");
 const { projectForActor } = require("../domain/metyet-projection.js");
 const { validateWorld } = require("../domain/metyet-world.js");
@@ -122,9 +121,6 @@ const get = (app, token, url) => app.inject({ method: "GET", url,
 const view = async (app, token) => (await get(app, token, "/api/view")).json().state;
 const load = (ctx) => ctx.repository.loadWorld();
 const refusal = (res) => (res.statusCode === 200 ? null : res.json().error.refused);
-const direct = (ctx, actor, command, payload) =>
-  executeCommand(ctx.repository, { actor, command, payload, runtime: ctx.runtime });
-
 const makeBinder = async (app, token, name) =>
   (await post(app, token, "createBinder", { name })).json().value;
 const file = (app, token, binderId, canonicalCardId) =>
