@@ -426,15 +426,12 @@ function reportImport(summary, say) {
   say(`quarantined: ${summary.quarantined}${reasons(summary.quarantineReasons)}`);
   say(`rejected:    ${summary.rejected}${reasons(summary.rejectionReasons)}`);
   const ignored = reasons(summary.ignored);
-  if (ignored) say(`ignored:    ${ignored}`);
+  if (ignored) say(`ignored:     ${ignored}`);
   if (summary.created) {
     say(`expansions:  new ${summary.created.expansions}  reused ${summary.reused.expansions}`);
     say(`contexts:    new ${summary.created.contexts}  reused ${summary.reused.contexts}`);
     say(`cards:       new ${summary.created.cards}  reused ${summary.reused.cards}`);
     say(`mappings:    ${summary.created.mappings} written`);
-    if (summary.requarantined) {
-      say(`unmapped:    ${summary.requarantined} were mapped before this run and are now quarantined`);
-    }
   }
   if (summary.failedBatch) {
     const f = summary.failedBatch;

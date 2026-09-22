@@ -98,7 +98,6 @@ async function importCatalog({ catalog, db, provider, vocabulary, records,
        have created without doing it. */
     created: null,
     reused: null,
-    requarantined: null,
     failedBatch: null,
     status: null,
   };
@@ -132,16 +131,28 @@ async function importCatalog({ catalog, db, provider, vocabulary, records,
     return summary;
   }
 
-  /* WHAT WAS ALREADY MAPPED, read once before anything is written. It is the
-     only way to say "this run took a card away from a provider's mapping"
-     honestly: the transition is mapped -> quarantined, and after the write
-     both look the same. Bounded to the records in hand, so it costs nothing on
-     a small run and does not grow with the catalog. */
-  const wasMapped = await previouslyMapped(catalog, translator.provider, translated);
+  /* WHAT IS NOT COUNTED HERE, AND WHY (Phase 5 C4).
+
+     A `mapped -> quarantined` transition is the clearest early signal that a
+     vocabulary has fallen behind a provider, and this runner does not report
+     it — because with the repository as it stands it cannot do so honestly.
+
+     The first attempt read the quarantine queue and treated its complement as
+     "was mapped before this run". That is wrong twice over: the complement of
+     "currently quarantined" also contains every key the database has never
+     seen, so a record quarantined on its FIRST sighting was reported as a card
+     taken away; and `readQuarantine` clamps to a hundred rows, so past that
+     the queue read is truncated and even already-quarantined keys fall into
+     the same bucket. Both were measured, not reasoned about.
+
+     Observing it properly needs a read the catalog repository does not offer —
+     the mapped rows for a given provider and a given set of keys — and adding
+     one is a persistence change this batch has no business making. So the
+     counter is absent rather than wrong. The brief asked for it "if safely
+     observable"; it is not, yet. */
 
   const created = { expansions: 0, contexts: 0, cards: 0, mappings: 0 };
   const reused = { expansions: 0, contexts: 0, cards: 0 };
-  let requarantined = 0;
 
   /* The writable ones, in the order they arrived, so a failed batch names a
      range an operator can find in their file. */
@@ -157,34 +168,39 @@ async function importCatalog({ catalog, db, provider, vocabulary, records,
          `tx` is not an optimisation: without it the repository runs each
          statement in a transaction of its own, which splits every upsert's
          existence check from its write. */
+      /* COUNTED INTO A SCRATCH PAIR, MERGED ONLY ON COMMIT. The first version
+         incremented the run's totals inside the callback, so a batch that
+         rolled back still reported the rows it had written before the fault —
+         the database was consistent and the summary beside it was not. */
+      const batchCreated = { expansions: 0, contexts: 0, cards: 0, mappings: 0 };
+      const batchReused = { expansions: 0, contexts: 0, cards: 0 };
       await db.transaction(async (tx) => {
+        batchCreated.expansions = 0; batchCreated.contexts = 0;
+        batchCreated.cards = 0; batchCreated.mappings = 0;
+        batchReused.expansions = 0; batchReused.contexts = 0; batchReused.cards = 0;
         for (const { t } of batch) {
           const result = await applyTranslation(catalog, t, { tx });
           /* Every record that reaches here writes exactly one mapping row,
              mapped or quarantined. */
-          created.mappings += 1;
-          if (result.quarantined) {
-            /* A card this provider HAD mapped and does not any more.
-               `recordSourceMapping` nulls the canonical card when a row is
-               re-quarantined, so this is the only moment it can be observed. */
-            if (t.quarantine && wasMapped.has(mappingKey(t.quarantine))) requarantined += 1;
-            continue;
-          }
+          batchCreated.mappings += 1;
+          if (result.quarantined) continue;
           /* The repository said whether each level was minted or found. */
-          count(created, reused, "expansions", result.created.expansion);
-          count(created, reused, "contexts", result.created.context);
-          count(created, reused, "cards", result.created.card);
+          count(batchCreated, batchReused, "expansions", result.created.expansion);
+          count(batchCreated, batchReused, "contexts", result.created.context);
+          count(batchCreated, batchReused, "cards", result.created.card);
         }
       });
+      for (const key of Object.keys(batchCreated)) created[key] += batchCreated[key];
+      for (const key of Object.keys(batchReused)) reused[key] += batchReused[key];
     } catch (error) {
       /* STOP. The batch rolled back whole, so the world is consistent; what is
          not consistent is anybody's belief about how far the run got, and
          carrying on would make that worse. */
       summary.failedBatch = { from: first, to: last, size: batch.length,
         message: safeText(error) };
+      /* The batch that failed contributed nothing, because it rolled back. */
       summary.created = created;
       summary.reused = reused;
-      summary.requarantined = requarantined;
       summary.status = "failed";
       return summary;
     }
@@ -192,7 +208,6 @@ async function importCatalog({ catalog, db, provider, vocabulary, records,
 
   summary.created = created;
   summary.reused = reused;
-  summary.requarantined = requarantined;
   summary.status = statusOf(summary);
   return summary;
 }
@@ -207,27 +222,6 @@ async function importCatalog({ catalog, db, provider, vocabulary, records,
 const count = (created, reused, key, wasCreated) => {
   if (wasCreated) created[key] += 1; else reused[key] += 1;
 };
-
-const mappingKey = (q) => `${q.provider}\u0000${q.providerCardId}\u0000${q.providerVariantKey}`;
-
-/* Which of the records in hand this provider already had mapped. One read, no
-   lock, and only for the rows a quarantine could displace. */
-async function previouslyMapped(catalog, provider, translated) {
-  const held = new Set();
-  if (typeof catalog.readQuarantine !== "function") return held;
-  const wanted = translated
-    .filter((t) => !t.ok && t.quarantine)
-    .map((t) => mappingKey(t.quarantine));
-  if (!wanted.length) return held;
-  /* A row that is quarantined NOW was not mapped before this run, so the
-     complement of the queue is what "was mapped" means for these keys. */
-  const queued = new Set();
-  for (const row of await catalog.readQuarantine({ provider, limit: 100 })) {
-    queued.add(`${provider}\u0000${row.providerCardId}\u0000${row.providerVariantKey}`);
-  }
-  for (const key of wanted) if (!queued.has(key)) held.add(key);
-  return held;
-}
 
 /* ---------------------------------------------------------------- STATUS */
 

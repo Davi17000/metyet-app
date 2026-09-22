@@ -433,7 +433,26 @@ describe("B. rerun is recovery", () => {
     assert(mapping.canonical_card_id, "it resolved to no card");
   });
 
-  test("a card that stops being mappable is counted as unmapped, and is not deleted", async () => {
+  test("no mapped-to-quarantined counter is reported, because none can be honest", async () => {
+    /* THE FIRST DEFECT THIS BATCH FOUND IN ITSELF, and the brief's own
+       condition — surface the transition "if safely observable". It is not.
+       The runner read the quarantine queue and treated its complement as "was
+       mapped before", which counts every key the database has never seen; and
+       `readQuarantine` caps at a hundred rows, so past that even already
+       quarantined keys land in the same bucket. Both were measured. The
+       counter is absent rather than wrong, and this pins that it stays absent
+       until the repository can answer the question properly. */
+    const ctx = await world();
+    const first = await importing(ctx, [
+      rec({ providerCardId: "p1", providerVariantKey: "nope", collectorNumber: "1", cardName: "A" })]);
+    assert(!("requarantined" in first) || first.requarantined === undefined,
+      "a mapped-to-quarantined counter came back; it must be correct or absent");
+    eq(first.quarantined, 1);
+    const cli = read("server/cli.js");
+    assert(!/unmapped:/.test(cli), "the CLI prints a transition count nothing computes");
+  });
+
+  test("a card that stops being mappable is not deleted, and its old mapping stands", async () => {
     const ctx = await world();
     await importing(ctx, [CHARIZARD]);
     const [was] = await cardIds(ctx);
@@ -578,26 +597,49 @@ describe("D. dry run", () => {
 
   test("it claims no knowledge it could not have without writing", async () => {
     const ctx = await world();
-    const dry = await importing(ctx, GOOD, { dryRun: true });
+    /* A MIXED FIXTURE, deliberately: comparing two all-good runs would compare
+       0 with 0 and prove nothing about the classification agreeing. */
+    const mixed = [...GOOD, null,
+      rec({ providerCardId: "", collectorNumber: "1", cardName: "A" }),
+      rec({ providerCardId: "p9", providerVariantKey: "nope", collectorNumber: "9", cardName: "B" }),
+      rec({ providerCardId: "p8", providerExpansionId: "prov-set-nope", collectorNumber: "8", cardName: "C" }),
+      rec({ providerCardId: "p7", collectorNumber: "7", cardName: "D", expansionPrintedTotal: "lots" })];
+    const dry = await importing(ctx, mixed, { dryRun: true });
     eq(dry.created, null, "a dry run claimed to know what it created");
     eq(dry.reused, null, "a dry run claimed to know what it reused");
-    eq(dry.requarantined, null);
-    /* What it CAN know it does say, and identically to the real run. */
-    const real = await importing(ctx, GOOD);
+
+    /* What it CAN know it says, and identically to the real run — every
+       counter, not merely the ones that happen to be zero. */
+    const real = await importing(ctx, mixed);
+    assert(dry.mappable > 0 && dry.quarantined > 0 && dry.rejected > 0,
+      "the fixture stopped exercising all three outcomes");
+    eq(dry.read, real.read);
+    eq(dry.processed, real.processed);
     eq(dry.mappable, real.mappable);
     eq(dry.quarantined, real.quarantined);
     eq(dry.rejected, real.rejected);
     eq(json(dry.quarantineReasons), json(real.quarantineReasons));
+    eq(json(dry.rejectionReasons), json(real.rejectionReasons));
+    eq(json(dry.ignored), json(real.ignored));
+    eq(dry.status, real.status);
   });
 
-  test("a dry run over a populated catalog still writes nothing", async () => {
+  test("a dry run over a populated catalog changes not one row", async () => {
     const ctx = await world();
     await importing(ctx, GOOD);
-    const before = await shape(ctx);
-    const ids = await cardIds(ctx);
-    await importing(ctx, [...GOOD, MUDKIP], { dryRun: true });
-    eq(json(await shape(ctx)), json(before));
-    eq(json(await cardIds(ctx)), json(ids));
+    /* Every row of every table, not four counts: a dry run that rewrote a
+       presentation column or bumped a `last_seen_at` would pass a count
+       comparison and still have written. */
+    const before = {};
+    for (const table of ["expansions", "card_contexts", "canonical_cards", "source_mappings"]) {
+      before[table] = json(await allRows(ctx, table));
+    }
+    await importing(ctx, [...GOOD, MUDKIP,
+      rec({ providerCardId: "p9", providerVariantKey: "nope", collectorNumber: "9", cardName: "B" })],
+    { dryRun: true });
+    for (const table of Object.keys(before)) {
+      eq(json(await allRows(ctx, table)), before[table], `a dry run changed ${table}`);
+    }
   });
 });
 
@@ -653,6 +695,51 @@ describe("E. the transaction", () => {
     eq(json(await shape(ctx)), json({ expansions: 0, contexts: 0, cards: 0, mappings: 0 }),
       "a failed batch left rows behind");
     eq(exitCodeFor(summary), EXIT.failure);
+  });
+
+  test("a failed batch contributes nothing to the counts it reports", async () => {
+    /* THE SECOND DEFECT THIS BATCH FOUND IN ITSELF. The counters used to be
+       incremented inside the transaction callback, so a batch that rolled back
+       still reported the rows it had written before the fault — the database
+       was consistent and the summary printed beside it was not. */
+    const ctx = await world();
+    let seen = 0;
+    const exploding = { ...ctx.catalog,
+      putCanonicalCard: async (card, options) => {
+        seen += 1;
+        if (seen === 3) throw new Error("connection terminated");
+        return ctx.catalog.putCanonicalCard(card, options);
+      } };
+    const summary = await importCatalog({ catalog: exploding, db: ctx.db, provider: "alpha",
+      vocabulary: VOCAB, records: GOOD, batchSize: 3 });
+    eq(summary.status, "failed");
+    const db = await shape(ctx);
+    eq(json(db), json({ expansions: 0, contexts: 0, cards: 0, mappings: 0 }));
+    eq(summary.created.expansions, db.expansions, "it counted an expansion it rolled back");
+    eq(summary.created.contexts, db.contexts, "it counted a context it rolled back");
+    eq(summary.created.cards, db.cards, "it counted a card it rolled back");
+    eq(summary.created.mappings, db.mappings, "it counted a mapping it rolled back");
+    eq(summary.reused.expansions, 0, "it counted a reuse it rolled back");
+  });
+
+  test("a committed batch before a failed one is still counted", async () => {
+    /* The other half: rolling the counters back too far would be its own lie. */
+    const ctx = await world();
+    let seen = 0;
+    const exploding = { ...ctx.catalog,
+      putCanonicalCard: async (card, options) => {
+        seen += 1;
+        if (seen === 3) throw new Error("connection terminated");
+        return ctx.catalog.putCanonicalCard(card, options);
+      } };
+    const summary = await importCatalog({ catalog: exploding, db: ctx.db, provider: "alpha",
+      vocabulary: VOCAB, records: GOOD, batchSize: 1 });
+    eq(summary.status, "failed");
+    eq(summary.failedBatch.from, 2, "the third record is the one that failed");
+    const db = await shape(ctx);
+    eq(db.cards, 2, "the two batches that committed did not survive");
+    eq(summary.created.cards, db.cards, "the summary disagrees with the database");
+    eq(summary.created.mappings, db.mappings);
   });
 
   test("a later batch is not attempted after an earlier one fails", async () => {
