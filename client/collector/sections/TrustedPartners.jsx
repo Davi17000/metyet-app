@@ -85,9 +85,10 @@ export default function TrustedPartners({ state, onBrowseCards = null }) {
      never a copy of the catalogue's facts into a discovery, a goal or a
      relationship. A card whose description has not arrived still renders — the
      partner still has it. */
-  const shownIds = useMemo(() => [...new Set(rows(state && state.discoveries)
-    .map((d) => d.canonicalCardId).filter(Boolean))],
-  [rows(state && state.discoveries).map((d) => d.canonicalCardId).join(",")]);
+  const shownKey = rows(state && state.discoveries)
+    .map((d) => d.canonicalCardId).filter(Boolean).join(",");
+  const shownIds = useMemo(() => [...new Set(shownKey.split(",").filter(Boolean))],
+    [shownKey]);
   const [described, setDescribed] = useState({});
   useEffect(() => {
     if (!onBrowseCards || !shownIds.length) return undefined;
@@ -102,7 +103,7 @@ export default function TrustedPartners({ state, onBrowseCards = null }) {
       } catch (error) { /* a shop without captions is still your shop */ }
     })();
     return () => { current = false; };
-  }, [shownIds.join(","), onBrowseCards]);
+  }, [shownKey, onBrowseCards]);
 
   return (
     <Panel

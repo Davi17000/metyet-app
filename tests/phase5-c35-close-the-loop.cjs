@@ -312,8 +312,17 @@ describe("A. under your own shop", () => {
     const said = texts(r);
     assert(said.includes("Actively hunting"), said);
     assert(said.includes("Keeping an eye out"), said);
-    /* The words a person reads, not the domain's own names for the tiers. */
-    assert(!/Primary goal|Secondary goal/.test(said), "domain vocabulary reached a Collector: " + said);
+    /* THE WORDS A PERSON READS, not the domain's names for the tiers. The risk
+       on THIS seat is not "Primary goal" — no Collector presenter can emit
+       that — it is `tierIntent` silently failing and the row falling through
+       to `tierLabel`, which on this seat says the bare word "Primary". So the
+       tags are read off the tree and held to the sentence, which is the thing
+       that would actually regress. */
+    const tags = r.root.findAll((n) => n.type === "span"
+      && /mcs-tag/.test(n.props.className || "")).map(instText).map((t) => t.trim());
+    eq(json(tags.filter((t) => /hunting|eye out|Primary|Secondary/.test(t)).sort()),
+      json(["Actively hunting", "Keeping an eye out"]),
+      "a tier tag is not the sentence a person reads: " + json(tags));
   });
 
   test("a card the catalogue has not described yet still appears", async () => {
@@ -640,9 +649,10 @@ describe("D. which copy they want", () => {
       eq(li.findAll((n) => n.type === "input").length, 0, "an input sits beside the criteria");
       eq(li.findAll((n) => n.type === "select").length, 0, "a picker sits beside the criteria");
     }
-    /* And no command could carry it even if one appeared. */
-    assert(!EXPOSED_COMMANDS.includes("updateGoalCriteria")
-      || true, "updateGoalCriteria is a Collector's command");
+    /* And the command that COULD change it is a Collector's, checked at the
+       server rather than by the absence of a button. */
+    assert(EXPOSED_COMMANDS.includes("updateGoalCriteria"),
+      "the criteria command stopped being reachable at all");
     const res = await post(ctx.app, "north", "updateGoalCriteria",
       { goalId: (await load(ctx)).goals[0].id, desired: { grade: "Raw", condition: "Poor" } });
     eq(res.json().error.refused, "not-owner", "a partner edited a Collector's criteria");
@@ -743,15 +753,15 @@ describe("F. the boundaries hold", () => {
     eq(C.COMMAND_NAMES.length, 49, "a command was added or removed");
   });
 
-  test("C3.5 opened no door — asserted against the batch it started from", () => {
+  test("C3.5 opened no door — the whole file is what it was", () => {
+    /* Not the name set: the FILE. A batch that renders two things already on
+       the wire has no business editing the door at all, so the strongest
+       statement is byte equality with the commit this branch started from —
+       which also catches a comment quietly promising a future exposure. */
     const { execFileSync } = require("child_process");
-    const at = execFileSync("git", ["show", "aef60e4:server/exposed-commands.js"],
-      { cwd: ROOT, encoding: "utf8" });
-    const after = at.split("EXPOSED_COMMANDS")[1] || "";
-    const before = (after.slice(0, after.indexOf("]);")).match(/"[a-zA-Z]+"/g) || [])
-      .map((s) => s.slice(1, -1));
-    eq(json([...EXPOSED_COMMANDS].sort()), json(before.sort()),
-      "the production surface moved in a batch that renders two things");
+    eq(execFileSync("git", ["show", "aef60e4:server/exposed-commands.js"],
+      { cwd: ROOT, encoding: "utf8" }), read("server/exposed-commands.js"),
+    "the production door moved in a batch that renders two things");
   });
 
   test("the deal lifecycle is still shut, and so is everything C3.5 might have wanted", async () => {
