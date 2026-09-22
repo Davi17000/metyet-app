@@ -78,21 +78,46 @@ export const cardSetLine = (card) => (card
   ? [text(card.set), text(card.num), card.year ? String(card.year) : null].filter(Boolean).join(" · ") || null
   : null);
 
-/* RAW vs GRADED as the catalogue states it: `grade` carries a grading label or
-   the word "Raw", and `condition` is the raw qualifier. Neither is inferred
-   from the other. */
-export const gradeLine = (card) => {
-  if (!card) return null;
-  const grade = text(card.grade);
-  const condition = text(card.condition);
-  if (grade && /^raw$/i.test(grade)) return condition ? `Raw · ${condition}` : "Raw";
-  if (grade) return grade;
-  return condition || null;
+/* RAW vs GRADED — THE SERVER'S READING, CARRIED ON THE ROW (Phase 5 C3.3).
+
+   This used to be a regex here and the same regex in `client/tp/present.js`,
+   and a third one written out inline in the partner's Inventory. Three
+   implementations of one rule are three answers to it, and they disagreed in
+   exactly the case that matters: a copy saying both `PSA 9` and `Damaged` —
+   writable from C2 until C3.2 shut the door — came out of all three as a clean
+   "PSA 9", with the condition silently dropped.
+
+   The projection now carries `grading`, from the domain's own `gradingRead`:
+   `{ state, grader, grade, condition, label, problem }`. These read it. They
+   decide nothing, which is the whole point — the same move the product already
+   made for a copy's `status`, and for the same reason.
+
+   A ROW WITHOUT A READING STILL RENDERS. `grading` is absent on the legacy
+   prototype's catalogue cards, which are not copies and never had a grading
+   rule of their own; those yield null here rather than an invented answer. */
+export const gradeLine = (row) => {
+  const reading = row && row.grading;
+  return reading && text(reading.label) ? reading.label : null;
 };
 
-export const isGraded = (card) => {
-  const grade = text(card && card.grade);
-  return Boolean(grade) && !/^raw$/i.test(grade);
+export const isGraded = (row) => Boolean(row && row.grading && row.grading.state === "graded");
+
+/* THE CONTRADICTION, WHEN THERE IS ONE. `problem` is the domain's word for a
+   pair that cannot both be true — `graded-has-condition`, `raw-needs-condition`
+   and the two unknown-value cases. A screen that shows a copy shows this too,
+   because the alternative is showing a clean answer for a record that disagrees
+   with itself. Nothing here decides which half is right: it is not knowable
+   from the record, and guessing would be inventing a fact about somebody's
+   card. */
+export const gradeProblem = (row) => (row && row.grading ? row.grading.problem || null : null);
+
+/* What the copy says, in full, when it contradicts itself: both halves, so the
+   person can see what has to be corrected. */
+export const gradeConflictLine = (row) => {
+  const reading = row && row.grading;
+  if (!reading || !reading.problem) return null;
+  const said = [text(reading.label), text(reading.condition)].filter(Boolean);
+  return said.length === 2 ? `${said[0]} and ${said[1]}` : (said[0] || null);
 };
 
 export const cardMarks = (card) => (card

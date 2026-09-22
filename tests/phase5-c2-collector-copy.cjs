@@ -263,9 +263,9 @@ describe("B. two of the same card are two objects", () => {
     }
     eq((await copiesOf(ctx)).length, 4, "four physical objects, one card");
     /* And the Goal rule it is NOT is still the Goal rule (Batch 7). */
-    const first = await post(ctx.app, "casey", "addGoal", { canonicalCardId: cards.shadowless, tier: "primary" });
+    const first = await post(ctx.app, "casey", "addGoal", { canonicalCardId: cards.shadowless, tier: "primary", desired: { grade: "PSA 9" } });
     eq(first.statusCode, 200, first.body);
-    const again = await post(ctx.app, "casey", "addGoal", { canonicalCardId: cards.shadowless, tier: "primary" });
+    const again = await post(ctx.app, "casey", "addGoal", { canonicalCardId: cards.shadowless, tier: "primary", desired: { grade: "PSA 9" } });
     eq(again.statusCode, 409, "a second live Goal for one card is still refused");
   });
 
@@ -464,7 +464,7 @@ async function reservedCopy(ctx, cards) {
   const invId = (await post(ctx.app, "north", "addInventoryCopy",
     { copy: { canonicalCardId: cards.firstEdition, ask: 9000 } })).json().value;
   const goalId = (await post(ctx.app, "casey", "addGoal",
-    { canonicalCardId: cards.firstEdition, tier: "primary" })).json().value;
+    { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } })).json().value;
   const copyId = (await own(ctx.app, "casey", { canonicalCardId: cards.shadowless,
     offered: true, photos: PHOTOS, market: 3000 })).json().value;
 
@@ -506,7 +506,7 @@ describe("E. photographs, where the requirement went", () => {
     const invId = (await post(ctx.app, "north", "addInventoryCopy",
       { copy: { canonicalCardId: cards.firstEdition, ask: 9000 } })).json().value;
     const goalId = (await post(ctx.app, "casey", "addGoal",
-      { canonicalCardId: cards.firstEdition, tier: "primary" })).json().value;
+      { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } })).json().value;
     const copyId = (await own(ctx.app, "casey", { canonicalCardId: cards.shadowless,
       offered: true, photos: { front: "only-one-face" } })).json().value;
     eq((await copyOf(ctx, copyId)).offered, true, "offering it is a statement, and allowed");
@@ -527,7 +527,7 @@ describe("E. photographs, where the requirement went", () => {
     const invId = (await post(ctx.app, "north", "addInventoryCopy",
       { copy: { canonicalCardId: cards.firstEdition, ask: 9000 } })).json().value;
     const goalId = (await post(ctx.app, "casey", "addGoal",
-      { canonicalCardId: cards.firstEdition, tier: "primary" })).json().value;
+      { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } })).json().value;
     const copyId = (await own(ctx.app, "casey", { canonicalCardId: cards.shadowless,
       offered: true, photos: { front: "only-one-face" } })).json().value;
     const oppId = (await direct(ctx, ACTOR.casey, "startOpportunity", { goalId, invId, amount: 9000 })).value;
@@ -694,8 +694,23 @@ describe("G. what a partner receives, and what they do not", () => {
       note: "bought at the show, do not sell under 9k" });
     const seen = (await get(ctx.app, "north", "/api/view")).json().state.collectorCopies;
     eq(seen.length, 1, "supply");
-    const allowed = new Set([...FIELD_RULES.COLLECTOR_COPY_FOR_PARTNER, "status"]);
+    /* `grading` JOINED `status` AS A DERIVED KEY (Phase 5 C3.3).
+       What this protected: that a partner receives exactly the copy fields the
+       allow-list names plus the server's derived answer, and nothing else —
+       above all not the Collector's own reference value or private note.
+       Why naming only `status` is no longer correct: what a copy's grade MEANS
+       is now decided by the server too, for the reason `status` already was.
+       What replaces it, and why it is stricter: the derived key is named, and
+       the reading inside it is checked against the same privacy rule — a
+       derived field is a new way for a private fact to travel, so it is opened
+       and inspected rather than allowed through on the strength of its name. */
+    const allowed = new Set([...FIELD_RULES.COLLECTOR_COPY_FOR_PARTNER, "status", "grading"]);
     for (const k of Object.keys(seen[0])) assert(allowed.has(k), `an unclassified field crossed: ${k}`);
+    eq(json(Object.keys(seen[0].grading).sort()),
+      json(["condition", "grade", "grader", "label", "problem", "state"]),
+      "the grading reading is not the shape the domain produces");
+    eq(seen[0].grading.label, "PSA 9", "the reading the partner is given");
+    eq(seen[0].grading.problem, null, "a sayable copy reported a problem");
     eq(seen[0].canonicalCardId, cards.firstEdition, "which card it is");
     eq(seen[0].grade, "PSA 9", "what the object is");
     eq(seen[0].offered, true, "and that it is on offer");
@@ -742,15 +757,33 @@ describe("G. what a partner receives, and what they do not", () => {
 /* ============================================================== H */
 describe("H. the doors this batch opened, and no others", () => {
 
-  test("the exact exposed production command set after C2", () => {
+  /* SUPERSEDED AND RESTATED (Phase 5 C3.3).
+
+     What this protected: that C2 opened exactly three doors and no fourth
+     arrived unnamed alongside them — the list is edited on purpose, by whoever
+     ships the surface, in the same change that ships it.
+
+     Why the number nine is no longer correct: C3.3 ships the Card
+     Specification panel, which is the surface five written-and-waiting commands
+     were waiting for. `updateCollectorCopy` is C2's own deferred one, and C2
+     said in this file that it would join "in the batch that gives it a screen".
+
+     What replaces it, and why it is stricter: the exact set is still pinned by
+     VALUE and by count, C2's three are still named as C2's, and the five are
+     named with the batch that opened them — so this test still fails the moment
+     a tenth, or a fifteenth, arrives without somebody writing it down. */
+  test("the exact exposed production command set, C2's three among them", () => {
     eq(json([...EXPOSED_COMMANDS].sort()), json([
       "updatePartnerProfile", "revokeCollectorInvitation",
       "addGoal", "updateGoalTier", "removeGoal",
       "addInventoryCopy",
       /* C2 — three, and the whole of the concept. */
       "addCollectorCopy", "setCollectorCopyOffered", "removeCollectorCopy",
+      /* C3.3 — the Card Specification panel's five. */
+      "createBinder", "addBinderEntry", "removeBinderEntry",
+      "updateCollectorCopy", "updateGoalCriteria",
     ].sort()), "the production surface is not what this batch declared");
-    eq(EXPOSED_COMMANDS.length, 9, "and nothing arrived unnamed");
+    eq(EXPOSED_COMMANDS.length, 14, "and nothing arrived unnamed");
   });
 
   test("every exposed name is a real command, and the client sends exactly these", () => {
@@ -762,11 +795,51 @@ describe("H. the doors this batch opened, and no others", () => {
     }
   });
 
-  test("editing a copy is written, tested, and NOT reachable from a browser", async () => {
+  /* SUPERSEDED AND RESTATED (Phase 5 C3.3).
+
+     What this protected: that a command with no surface is not shipped. C2 wrote
+     `updateCollectorCopy`, tested it, and left the door shut, saying here that
+     it would join the product "in the batch that gives it a screen".
+
+     Why it is no longer correct: C3.3 is that batch. The Card Specification
+     panel shows a copy's grade, condition, certificate and reference value, and
+     a screen that shows them while refusing to change them would be worse than
+     one that showed nothing. It is also the only way to correct a copy written
+     before C3.2 that says both PSA 9 and Damaged.
+
+     What replaces it, and why it is stricter: the door is open, so what is
+     asserted now is that the RULES behind it did not move with it — the wrong
+     seat, a non-owner, an immutable identity and a smuggled `offered` are all
+     still refused, over HTTP, which is a stronger statement than "nobody can
+     reach it". */
+  test("editing a copy is reachable now, and every rule behind it still holds", async () => {
     const ctx = await world();
+    const cards = await charizard(ctx);
     assert(C.COMMAND_NAMES.includes("updateCollectorCopy"), "the command exists");
-    assert(!EXPOSED_COMMANDS.includes("updateCollectorCopy"), "and has no production surface");
-    await closedOverHttp(ctx, "casey", "updateCollectorCopy", { copyId: "b1", patch: {} });
+    assert(EXPOSED_COMMANDS.includes("updateCollectorCopy"), "C3.3 gave it a screen");
+    const id = (await own(ctx.app, "casey", { canonicalCardId: cards.firstEdition,
+      grade: "PSA 9", cert: "PSA 1" })).json().value;
+
+    /* It works, for its owner. */
+    const ok = await post(ctx.app, "casey", "updateCollectorCopy", { copyId: id, patch: { cert: "PSA 2" } });
+    eq(ok.statusCode, 200);
+    eq((await copyOf(ctx, id)).cert, "PSA 2");
+
+    /* And the rules are where they were. */
+    const wrongSeat = await post(ctx.app, "north", "updateCollectorCopy",
+      { copyId: id, patch: { cert: "PSA 3" } });
+    eq(wrongSeat.json().error.refused, "not-owner", "a partner edited a Collector's copy");
+    const other = await post(ctx.app, "dana", "updateCollectorCopy",
+      { copyId: id, patch: { cert: "PSA 3" } });
+    eq(other.json().error.refused, "not-owner", "another Collector edited it");
+    const moved = await post(ctx.app, "casey", "updateCollectorCopy",
+      { copyId: id, patch: { canonicalCardId: cards.unlimited } });
+    eq(moved.json().error.refused, "identity-immutable", "a copy was moved to another card");
+    const smuggled = await post(ctx.app, "casey", "updateCollectorCopy",
+      { copyId: id, patch: { offered: true } });
+    eq(smuggled.json().error.refused, "identity-immutable", "offering rode in on an edit");
+    eq((await copyOf(ctx, id)).offered, false, "and it did not take effect anyway");
+    eq((await copyOf(ctx, id)).cert, "PSA 2", "a refused edit changed something");
   });
 
   test("no legacy or future command became reachable", async () => {
@@ -831,7 +904,7 @@ describe("I. everything else, exactly as it was", () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const goalId = (await post(ctx.app, "casey", "addGoal",
-      { canonicalCardId: cards.firstEdition, tier: "secondary" })).json().value;
+      { canonicalCardId: cards.firstEdition, tier: "secondary", desired: { grade: "PSA 9" } })).json().value;
     const invId = (await post(ctx.app, "north", "addInventoryCopy",
       { copy: { canonicalCardId: cards.firstEdition, ask: 9000 } })).json().value;
     eq((await direct(ctx, ACTOR.casey, "startOpportunity", { goalId, invId, amount: 9000 })).refused,
@@ -873,7 +946,7 @@ describe("I. everything else, exactly as it was", () => {
   test("Discovery is still exact, still computed, and still ignores an unoffered copy's owner", async () => {
     const ctx = await world();
     const cards = await charizard(ctx);
-    await post(ctx.app, "casey", "addGoal", { canonicalCardId: cards.firstEdition, tier: "primary" });
+    await post(ctx.app, "casey", "addGoal", { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } });
     await post(ctx.app, "north", "addInventoryCopy", { copy: { canonicalCardId: cards.shadowless, ask: 1 } });
     eq((await get(ctx.app, "casey", "/api/view")).json().state.discoveries.length, 0,
       "a different printing is a different card");
@@ -983,13 +1056,29 @@ describe("I. everything else, exactly as it was", () => {
       assert(!/create table metyet\.binders?\b/.test(sql), `${m} created a Binder table`);
     }
 
-    /* The durable commands exist now; NONE of them is reachable from a browser.
-       `markBinderReviewed` is excluded by name: documented legacy naming debt
-       (domain/README.md) for "a partner opened this Collector's cards". */
+    /* SUPERSEDED IN PART, AND RESTATED (Phase 5 C3.3).
+
+       What this protected: that the Binder commands C3.1 wrote were not
+       reachable from a browser, because C3.1 shipped no surface for them.
+
+       Why it is no longer correct for all five: C3.3 ships the Card
+       Specification panel, where a Collector files THIS card — so creating a
+       binder and changing this card's membership of one are reachable now, on
+       purpose, and named in exposed-commands.js.
+
+       What replaces it, and why it is stricter: the line is drawn where the
+       surface actually is. C3.3 lets a person say where the card in front of
+       them belongs; managing binders AS OBJECTS — renaming one, putting one
+       away — is C3.4's surface and stays shut. Naming which two are still
+       closed is a sharper statement than "all of them are". */
     const table = C.COMMAND_NAMES.filter((n) => /binder/i.test(n) && n !== "markBinderReviewed");
     assert(table.length > 0, "the Binder commands vanished");
-    for (const name of table) {
-      assert(!EXPOSED_COMMANDS.includes(name), `${name} is exposed to production`);
+    const OPENED_BY_C33 = ["createBinder", "addBinderEntry", "removeBinderEntry"];
+    const STILL_C34 = ["renameBinder", "setBinderArchived"];
+    eq(json(table.slice().sort()), json([...OPENED_BY_C33, ...STILL_C34].sort()),
+      "a Binder command arrived or left without being named here");
+    for (const name of STILL_C34) {
+      assert(!EXPOSED_COMMANDS.includes(name), `${name} is exposed before C3.4 builds its surface`);
     }
 
     /* Read the NAVIGATION itself, not its file's text: a comment explaining what

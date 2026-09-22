@@ -47,6 +47,8 @@ import ProductionApp from "../production-app.jsx";
 import { savePartnerProfile, openCollectorInvitation, revokeCollectorInvitation,
   acceptCollectorInvitation, describeCollectorInvitation, addInventoryCopy,
   browseCards, addCollectorGoal, setGoalPriority, removeCollectorGoal,
+  setGoalCriteria, addOwnedCopy, updateOwnedCopy, setCopyOffered, removeOwnedCopy,
+  createBinder, fileCardInBinder, unfileCardFromBinder,
   refreshView } from "../commands.js";
 
 /* Identity is read in exactly one place — client/actor.js — and re-exported
@@ -190,6 +192,49 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
   const onAddGoal = useMemo(() => (store ? addCollectorGoal(store) : null), [store]);
   const onSetPriority = useMemo(() => (store ? setGoalPriority(store) : null), [store]);
   const onRemoveGoal = useMemo(() => (store ? removeCollectorGoal(store) : null), [store]);
+  /* SPECIFYING A CARD (Phase 5 C3.3). One callback rather than eleven, because
+     the panel composes a SEQUENCE and the shell should not have to know which
+     eleven. Each step names a command that already existed — there is no
+     orchestration command, and this function creates no meaning of its own: it
+     is a switch from the panel's word for a step to the binding for it.
+
+     Every branch returns what the store returns, refusals included, because the
+     panel decides what a refusal means for the step it was on and what it
+     leaves still to do. */
+  const onSpecify = useMemo(() => {
+    if (!store) return null;
+    const goal = { add: addCollectorGoal(store), tier: setGoalPriority(store),
+      remove: removeCollectorGoal(store), criteria: setGoalCriteria(store) };
+    const copy = { add: addOwnedCopy(store), update: updateOwnedCopy(store),
+      offered: setCopyOffered(store), remove: removeOwnedCopy(store) };
+    const binder = { create: createBinder(store), file: fileCardInBinder(store),
+      unfile: unfileCardFromBinder(store) };
+    return async (step, canonicalCardId) => {
+      /* THE PANEL SPEAKS ITS OWN WORDS, AND THIS IS WHERE THEY BECOME COMMANDS.
+         A Collector surface may not name a command — it calls the function it
+         was handed, which is what keeps a screen from being a second place that
+         decides what the product can do. So the panel says "file" and "how
+         hard", and the translation lives here, at the boundary that already
+         holds every other binding. */
+      switch (step.kind) {
+        case "make-binder": return binder.create(step.name);
+        case "file": return binder.file(step.binderId, canonicalCardId);
+        case "unfile": return binder.unfile(step.binderId, canonicalCardId);
+        case "wanted-copy": return goal.criteria(step.goalId, step.desired);
+        case "how-hard": return goal.tier(step.goalId, step.tier);
+        case "stop-looking": return goal.remove(step.goalId);
+        case "start-looking": return goal.add({ canonicalCardId, tier: step.tier, desired: step.desired });
+        case "correct-copy": return copy.update(step.copyId, step.patch);
+        case "offering": return copy.offered(step.copyId, step.offered);
+        case "forget-copy": return copy.remove(step.copyId);
+        case "record-copy": return copy.add({ canonicalCardId, ...step.copy });
+        /* A step this build does not know is not guessed at. It cannot happen
+           from the panel in this bundle, and if it ever does the answer is a
+           refusal rather than a command chosen by resemblance. */
+        default: return { ok: false, refused: "command-unavailable" };
+      }
+    };
+  }, [store]);
   /* Phase 5 Batch 2. Bound the same way and for the same reason: a product
      surface is handed a function, never the store. */
   const onInvite = useMemo(() => (store ? openCollectorInvitation(store) : null), [store]);
@@ -582,7 +627,7 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
      one bound callback that saves a Trusted Partner's own profile. */
   return React.createElement(ProductionApp,
     { state: projection, onSignOut: signOut, onSaveProfile, onInvite, onRevokeInvite, onRefresh,
-      onAddCopy, onBrowseCards, onAddGoal, onSetPriority, onRemoveGoal,
+      onAddCopy, onBrowseCards, onAddGoal, onSetPriority, onRemoveGoal, onSpecify,
       /* Phase 5 Batch 3A. Who they just joined, so the shell can greet them by
          it once. It is read from the server's own reply, it is cleared the
          moment they do anything else, and it grants nothing. */

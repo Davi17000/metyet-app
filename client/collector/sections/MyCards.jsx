@@ -44,7 +44,8 @@
 import React from "react";
 import { Panel, Record, Fact, Tag } from "../parts.jsx";
 import { rows, indexById, groupBy, text, day, money, plural, cardTitle, cardSetLine,
-  gradeLine, isGraded, cardMarks, statusLabel, photoNote, byRecency } from "../present.js";
+  gradeLine, isGraded, gradeConflictLine, cardMarks, statusLabel, photoNote,
+  byRecency } from "../present.js";
 
 export default function MyCards({ state }) {
   const copies = rows(state && state.collectorCopies);
@@ -67,7 +68,14 @@ export default function MyCards({ state }) {
     >
       {ordered.map((copy) => {
         const card = catalog.get(copy.cardId) || null;
-        const graded = isGraded(card);
+        /* THE GRADING IS THE COPY'S, NOT THE CARD'S (Phase 5 C3.3). This read
+           the legacy catalogue row, which was right in the model Batch 5
+           replaced and has been wrong since: grade and condition moved onto the
+           copy, and a copy naming a canonical card has no catalogue row here at
+           all — so a canonical copy showed no grading whatsoever. It now reads
+           the copy, through the server's own reading of it. */
+        const graded = isGraded(copy);
+        const conflict = gradeConflictLine(copy);
         /* The partners whose interest row names THIS copy. */
         const interested = (interestsByCopy.get(copy.id) || [])
           .map((i) => partnerName.get(i.partnerId))
@@ -81,7 +89,11 @@ export default function MyCards({ state }) {
             marks={cardMarks(card)}
             tags={
               <>
-                <Tag>{gradeLine(card)}</Tag>
+                <Tag>{gradeLine(copy)}</Tag>
+                {/* A COPY THAT DISAGREES WITH ITSELF SAYS SO (C3.3). Written
+                    before C3.2 closed the door; shown rather than cleaned,
+                    because which half is true is not knowable from here. */}
+                {conflict ? <Tag tone="unknown">{`Says ${conflict}`}</Tag> : null}
                 {/* The SERVER's answer, read from the row. */}
                 <Tag tone={copy.status === "available" ? null : "strong"}>{statusLabel(copy.status)}</Tag>
                 {/* OWNING IS THE ROW; OFFERING IS THIS TAG. Said in both

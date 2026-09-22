@@ -227,6 +227,21 @@ const COMMANDS = {
         .filter((k) => typeof desired[k] === "string" && desired[k].trim())
         .map((k) => [k, desired[k].trim()]))
       : null;
+    /* AND A CANONICAL GOAL MUST STATE THEM (Phase 5 C3.3).
+       C3.2 left this optional and said why: Browse sent `{ canonicalCardId,
+       tier }` and nothing else, so requiring criteria would have made the
+       shipped product's primary action fail for every user. C3.3 is the batch
+       that ships the control, so the requirement arrives with the means to
+       satisfy it.
+
+       SCOPED TO THE CANONICAL PATH, deliberately. `canonicalCardId` is the
+       production way to name a card and the only way the Collector app can;
+       `cardId` is the demo prototype's, resolved against the world's own
+       catalogue, with three call sites and no grade control anywhere near
+       them. Requiring criteria globally would break those, and forty-three
+       test suites, to enforce a rule about a surface neither of them has.
+       Rewriting the demo is a much larger batch wearing this one's name. */
+    if (canonical && !(stated && Object.keys(stated).length)) return refuse(R.criteriaRequired);
     const goal = { id, collectorId: a.collectorId,
       ...(canonical ? { canonicalCardId: canonical } : { cardId }),
       tier: tier === "primary" ? "primary" : "secondary",
@@ -250,6 +265,79 @@ const COMMANDS = {
       if (next === "primary") { patch.secondarySince = g.secondarySince || g.since || null; patch.confirmedAt = at; }
     }
     return done({ ...state, goals: list(state.goals).map((x) => (x.id === goalId ? { ...x, ...patch } : x)) }, goalId);
+  },
+
+  /* WHICH COPY THEY ARE AFTER, CHANGED WITHOUT LOSING THE GOAL (Phase 5 C3.3).
+
+     C3.2 added `desired` and deliberately added no way to edit it, because no
+     surface asked. C3.3's Card Specification does, and the alternative — remove
+     the Goal and create a new one — is not a workaround here, it is a defect:
+
+       it is IMPOSSIBLE exactly when it matters most. `removeGoal` refuses
+       `goal-locked` while an Opportunity is active, so a Collector mid
+       negotiation could never correct the criteria their partner is working
+       from — the one moment being precise about the copy actually matters.
+
+       it is DESTRUCTIVE. `createdAt` is the first step of the only funnel this
+       product has, and Batch 8.1 added it precisely because overwriting it had
+       made that moment unrecoverable. `since`, `confirmedAt` and
+       `secondarySince` would go the same way.
+
+       it is VISIBLE TO THE OTHER SEAT. A partner's screen would show the
+       demand disappear and come back as new, which is a lie about what
+       happened.
+
+     SO IT IS NOT BLOCKED BY AN ACTIVE OPPORTUNITY. Nothing derives from
+     `desired`: Discovery reads none of it (asserted against the source since
+     C3.2), no status depends on it, and no deal references it. It is context a
+     person is allowed to correct, not deal identity.
+
+     IT CHANGES ONE FIELD. Not the tier, not the card, not a timestamp — those
+     each have their own command, or belong to nobody. */
+  updateGoalCriteria(state, a, { goalId, desired }, ctx) {
+    const g = list(state.goals).find((x) => x.id === goalId);
+    if (!g) return refuse(R.notFound);
+    if (a.seat !== "collector" || g.collectorId !== a.collectorId) return refuse(R.notOwner);
+    /* The same shape checks `addGoal` makes, for the same reasons — including
+       the non-string one, which is there because `gradingProblem` reads a
+       number as "not stated" and would have written `{ grade: 9 }` as no
+       criteria at all. */
+    if (desired !== undefined && desired !== null
+      && (typeof desired !== "object" || Array.isArray(desired))) return refuse(R.gradingIncoherent);
+    if (desired && Object.keys(desired).some((k) => k !== "grade" && k !== "condition")) {
+      return refuse(R.gradingIncoherent);
+    }
+    if (desired && ["grade", "condition"].some((k) => k in desired
+      && desired[k] !== null && typeof desired[k] !== "string")) {
+      return refuse(R.gradingIncoherent);
+    }
+    if (desired && D.gradingProblem(desired)) return refuse(R.gradingIncoherent);
+    const stated = desired
+      ? Object.fromEntries(["grade", "condition"]
+        .filter((k) => typeof desired[k] === "string" && desired[k].trim())
+        .map((k) => [k, desired[k].trim()]))
+      : null;
+    const any = !!(stated && Object.keys(stated).length);
+    /* CLEARING IS ALLOWED ONLY WHERE A GOAL MAY EXIST WITHOUT CRITERIA. A
+       canonical Goal states which copy it wants — that is C3.3's rule, and a
+       command that let one be emptied afterwards would be a way back to a
+       state the product no longer creates. A legacy `cardId` Goal has no such
+       rule and may be cleared, because the prototype never had criteria to
+       state. Historical canonical Goals written before this batch stay valid
+       either way: this refuses a NEW absence, it does not invalidate an old
+       one. */
+    if (!any && g.canonicalCardId) return refuse(R.criteriaRequired);
+    const next = any ? { ...g, desired: stated } : (() => {
+      const { desired: gone, ...rest } = g;
+      return rest;
+    })();
+    /* Idempotent: stating what is already stated is not a change, and a retry
+       after a partial commit must not look like one. */
+    const same = any
+      ? (g.desired && g.desired.grade === stated.grade && g.desired.condition === stated.condition)
+      : !("desired" in g);
+    if (same) return done(state, goalId);
+    return done({ ...state, goals: list(state.goals).map((x) => (x.id === goalId ? next : x)) }, goalId);
   },
 
   /* "This is still accurate." Changes only confirmedAt. */

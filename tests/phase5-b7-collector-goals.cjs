@@ -97,8 +97,12 @@ const post = (app, token, command, payload) => app.inject({ method: "POST", url:
   headers: { authorization: `Bearer ${token}` }, payload: { command, payload } });
 const get = (app, token, url) => app.inject({ method: "GET", url,
   headers: { authorization: `Bearer ${token}` } });
+/* A GOAL NOW STATES WHICH COPY IT WANTS (Phase 5 C3.3), so this seed says so.
+   Deliberately a graded value rather than Raw / Near Mint: that pair is the one
+   MetYet must never INFER, and a default sitting in a helper is how an
+   inference starts looking like a fact. Tests about criteria pass their own. */
 const want = (app, token, canonicalCardId, tier = "primary", extra = {}) =>
-  post(app, token, "addGoal", { canonicalCardId, tier, ...extra });
+  post(app, token, "addGoal", { canonicalCardId, tier, desired: { grade: "PSA 9" }, ...extra });
 const goalsOf = async (ctx) => (await ctx.repository.loadWorld()).goals;
 
 /* ============================================================== A */
@@ -297,12 +301,36 @@ describe("C. how hard somebody is looking", () => {
 
   test("a priority change carries no card, so it cannot move one", () => {
     const commands = code("domain/metyet-commands.js");
+    /* NARROWED BY NAME (Phase 5 C3.3). This slice ended at `confirmGoal`, which
+       was the next command in the file until C3.3 put `updateGoalCriteria`
+       between them — and the assertion then read a command it was never about.
+       The boundary is named rather than positional now, so the next command
+       added there cannot quietly widen what this test is looking at. The rule
+       itself is untouched. */
     const body = commands.slice(commands.indexOf("updateGoalTier(state"),
-      commands.indexOf("confirmGoal(state"));
+      commands.indexOf("updateGoalCriteria(state"));
     assert(!/canonicalCardId|cardId/.test(body), "changing intent can reach a card reference");
     const client = code("client/commands.js");
     const binding = client.slice(client.indexOf("export function setGoalPriority"),
       client.indexOf("export function removeCollectorGoal"));
+    assert(!/canonicalCardId|cardId/.test(binding), "the client binding carries a card");
+  });
+
+  /* AND NEITHER DOES A CRITERIA CHANGE (Phase 5 C3.3). The same rule for the
+     command that arrived beside it: correcting which copy you are after must
+     not be a way to move a Goal onto a different card. Its body does read
+     `g.canonicalCardId` — to decide whether criteria may be cleared, which is a
+     question about the Goal it already found — so what is asserted is the
+     PAYLOAD, which is where a caller could smuggle one. */
+  test("nor does a criteria change — there is no card in what goes out", () => {
+    const commands = code("domain/metyet-commands.js");
+    const signature = commands.slice(commands.indexOf("updateGoalCriteria(state"),
+      commands.indexOf("{", commands.indexOf("updateGoalCriteria(state")));
+    assert(!/canonicalCardId|cardId/.test(signature),
+      "the command accepts a card: " + signature);
+    const client = code("client/commands.js");
+    const binding = client.slice(client.indexOf("export function setGoalCriteria"),
+      client.indexOf("export function setGoalPriority"));
     assert(!/canonicalCardId|cardId/.test(binding), "the client binding carries a card");
   });
 

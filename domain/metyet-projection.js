@@ -247,6 +247,34 @@ function copyForViewer(row, { own, world, inSupply, referenced }) {
   return null;
 }
 
+/* --------------------------------------------- WHAT A COPY'S GRADING SAYS
+   (Phase 5 C3.3)
+
+   THE SECOND DERIVED FACT ON A COPY ROW, AND FOR THE SAME REASON AS THE FIRST.
+   `status` is here rather than in the browser because a rule implemented twice
+   is answered twice, and the two answers disagree exactly where it matters.
+   Grading had become the other half of that sentence: `gradeLine` and
+   `isGraded` existed in both client applications, byte-identically, and a third
+   time inline in the Trusted Partner's Inventory — four regexes deciding what
+   "PSA 9" means, none of which knew about the coherence rule C3.2 made
+   authoritative.
+
+   So a contradictory copy — `PSA 9` with a raw condition of `Damaged`, which
+   was writable from C2 until C3.2 closed the door — rendered on screen as a
+   clean "PSA 9". The domain reported the contradiction; nothing read the
+   report. This is the report arriving where it can be read.
+
+   IT ADDS NO INFORMATION. `gradingRead` is a pure function of `grade` and
+   `condition`, and both are already on every row this is applied to: they are
+   on the owner's own copies whole, and they are in INVENTORY_FOR_COLLECTOR and
+   COLLECTOR_COPY_FOR_PARTNER because Batch 6 and C2 put them there. A viewer
+   who receives `grading` learns nothing they could not already compute — which
+   is the point: they should not have to compute it.
+
+   IT IS APPLIED AFTER `pick`, so it can never widen what a seat receives: a
+   field the allow-list dropped is not in the row this reads. */
+const withGrading = (row) => (row ? { ...row, grading: D.gradingRead(row) } : row);
+
 /* ---------------------------------------------------------- COUNTERPARTIES
    Bare identity for the other party of records the actor takes part in, when
    that party is NOT in the actor's network. Related parties are already in the
@@ -306,17 +334,24 @@ function projectForCollector(state, me) {
      while the copy is otherwise visible. */
   const referencedInv = new Set(opportunities.map((o) => o.invId).filter((x) => x != null));
   const inventory = list(state.inventory)
-    .map((i) => copyForViewer(pick(i, INVENTORY_FOR_COLLECTOR), {
+    .map((i) => withGrading(copyForViewer(pick(i, INVENTORY_FOR_COLLECTOR), {
       own: D.inventoryCopyStatus(i.invId, opportunities),
       world: D.inventoryCopyStatus(i.invId, allOpps),
       inSupply: related(i.partnerId) && !i.archived,
       referenced: referencedInv.has(i.invId),
-    }))
+    })))
     .filter(Boolean);
 
   return {
     actor: { seat: "collector", collectorId: cid },
-    catalog: clone(list(state.catalog)),
+    /* THE LEGACY CATALOGUE GETS THE SAME READING (Phase 5 C3.3). In the
+       prototype's model a card's identity folds in its grade and condition —
+       `identityFrom` still does, which is written-down debt — so these rows
+       carry the same two fields a copy does and the same rule applies to them.
+       Giving them the reading is what lets both presenters stop parsing:
+       `gradingOf`'s label is identical to what the old client regex returned
+       in all three of its branches, so no screen changes what it says. */
+    catalog: list(state.catalog).map((c) => withGrading(clone(c))),
     collectors: list(state.collectors).filter((c) => c.id === cid)
       .map((c) => omit(c, COLLECTOR_PARTNER_AUTHORED)),
     partners: list(state.partners).filter((p) => related(p.id))        // Trusted Partners
@@ -331,7 +366,8 @@ function projectForCollector(state, me) {
        `offered`, and every copy whether offered or not. Owning is the fact;
        offering is a flag on it, and a Collector who is not offering a card must
        still be able to see that they own it. */
-    collectorCopies: collectorCopies.map((b) => ({ ...clone(b), status: D.collectorCopyStatus(b.id, allOpps) })),
+    collectorCopies: collectorCopies.map((b) => withGrading({ ...clone(b),
+      status: D.collectorCopyStatus(b.id, allOpps) })),
     /* WHERE THEIR CARDS BELONG — theirs, and nobody else's (Phase 5 C3.1).
        Whole, because it is their own organisation and there is nothing in it
        they should be kept from. The entries are scoped through the binders:
@@ -388,17 +424,24 @@ function projectForPartner(state, me) {
   const referencedCopies = new Set(opportunities.flatMap(submittedRows)
     .map((row) => row.binderId).filter((x) => x != null));
   const collectorCopies = list(state.collectorCopies)
-    .map((b) => copyForViewer(pick(b, COLLECTOR_COPY_FOR_PARTNER), {
+    .map((b) => withGrading(copyForViewer(pick(b, COLLECTOR_COPY_FOR_PARTNER), {
       own: D.collectorCopyStatus(b.id, opportunities),
       world: D.collectorCopyStatus(b.id, allOpps),
       inSupply: inNetwork(b.collectorId) && b.offered === true,
       referenced: referencedCopies.has(b.id),
-    }))
+    })))
     .filter(Boolean);
 
   return {
     actor: { seat: "tp", partnerId: pid },
-    catalog: clone(list(state.catalog)),
+    /* THE LEGACY CATALOGUE GETS THE SAME READING (Phase 5 C3.3). In the
+       prototype's model a card's identity folds in its grade and condition —
+       `identityFrom` still does, which is written-down debt — so these rows
+       carry the same two fields a copy does and the same rule applies to them.
+       Giving them the reading is what lets both presenters stop parsing:
+       `gradingOf`'s label is identical to what the old client regex returned
+       in all three of its branches, so no screen changes what it says. */
+    catalog: list(state.catalog).map((c) => withGrading(clone(c))),
     collectors: list(state.collectors).filter((c) => inNetwork(c.id))   // Collector Network
       .map((c) => pick(c, COLLECTOR_FOR_PARTNER)),
     partners: clone(list(state.partners).filter((p) => p.id === pid)),
@@ -410,7 +453,7 @@ function projectForPartner(state, me) {
     preferences: list(state.preferences).filter((p) => inNetwork(p.collectorId))
       .map((p) => pick(p, PREFERENCE_FOR_PARTNER)),
     inventory: list(state.inventory).filter((i) => i.partnerId === pid)
-      .map((i) => ({ ...clone(i), status: D.inventoryCopyStatus(i.invId, allOpps) })),
+      .map((i) => withGrading({ ...clone(i), status: D.inventoryCopyStatus(i.invId, allOpps) })),
     collectorCopies,
     /* HOW SOMEBODY ORGANISES THEIR COLLECTION IS NOT A FACT ABOUT A TRADE
        (Phase 5 C3.1). A Trusted Partner receives no binder name, no binder id,

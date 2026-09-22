@@ -70,6 +70,7 @@ export default function ProductionApp({ state, onSignOut, onSaveProfile = null,
   onAddCopy = null, onBrowseCards = null,
   onAddGoal = null, onSetPriority = null, onRemoveGoal = null,
   onInvite = null, onRevokeInvite = null, onRefresh = null,
+  onSpecify = null,
   joined = null, onDismissJoined = null }) {
   const who = describeActor(state);
 
@@ -93,7 +94,7 @@ export default function ProductionApp({ state, onSignOut, onSaveProfile = null,
   if (who.seat === "collector") {
     return <CollectorShell state={state} onSignOut={onSignOut}
       onAddGoal={onAddGoal} onSetPriority={onSetPriority} onRemoveGoal={onRemoveGoal}
-      onBrowseCards={onBrowseCards}
+      onBrowseCards={onBrowseCards} onSpecify={onSpecify}
       joined={joined} onDismissJoined={onDismissJoined} />;
   }
 

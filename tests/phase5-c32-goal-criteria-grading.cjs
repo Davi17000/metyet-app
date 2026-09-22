@@ -273,27 +273,62 @@ describe("B. what a Collector is looking for", () => {
       "a round trip through both tiers rewrote nothing");
   });
 
-  test("a Goal with no criteria is a Goal, and stays one", async () => {
+  /* SUPERSEDED BY THE BATCH IT NAMED (Phase 5 C3.3).
+
+     What this protected: that C3.2 did not break the shipped product. Browse
+     was the Collector app's only way to create a Goal, its call sent
+     `{ canonicalCardId, tier }` and nothing else, and there was no grade
+     control anywhere — so requiring criteria would have made the primary action
+     fail for every user. C3.2 enforced only that criteria, WHEN GIVEN, are
+     sayable, and this test named C3.3 as the batch that would turn the
+     requirement on, so that whoever flipped it would see exactly what changed.
+
+     Why it is no longer correct: C3.3 ships the Card Specification panel, which
+     is the grade control this was waiting for. A canonical Goal states which
+     copy it wants.
+
+     What replaces it, and why it is stricter: the same three properties, each
+     asserted from the other side. A canonical Goal without criteria is REFUSED
+     rather than accepted-and-empty. Empty criteria are still the same as none —
+     which is now visible as a refusal rather than as a silent absence, so the
+     "not an answer shaped like one" rule is enforced instead of merely
+     observed. And absence is still never filled in: the demo path keeps
+     working, and a world holding Goals written before today is still valid. */
+  test("a canonical Goal states which copy it wants", async () => {
     const ctx = await world();
     const cards = await charizard(ctx);
-    /* THE LIVE PATH. Browse is the Collector app's first section and its
-       add-goal call sends `{ canonicalCardId, tier }` and nothing else — there
-       is no grade control until C3.3's Card Specification surface. Requiring
-       criteria here would make the shipped product's primary action fail for
-       every user, so the requirement lands in the batch that ships the means to
-       satisfy it. What is enforced from today is that criteria, WHEN GIVEN,
-       must be sayable. */
-    eq((await want(ctx.app, "casey", cards.firstEdition, "primary")).statusCode, 200,
-      "the live Browse add-goal path stopped working");
-    const g = await goalFor(ctx, cards.firstEdition);
-    assert(!("desired" in g),
-      "an unstated preference was written down as though somebody had stated it");
-    assert(validateWorld(await load(ctx)).ok, "and the world is valid without criteria");
+    eq((await want(ctx.app, "casey", cards.firstEdition, "primary", { desired: undefined }))
+      .json().error.refused, "criteria-required",
+    "a canonical Goal was created without saying which copy");
+    eq((await load(ctx)).goals.length, 0, "and nothing was written");
 
-    /* Empty criteria are the same as none — not an answer shaped like one. */
-    await want(ctx.app, "casey", cards.shadowless, "primary", { desired: {} });
+    /* Empty criteria are the same as none, and are refused the same way. */
+    eq((await want(ctx.app, "casey", cards.firstEdition, "primary", { desired: {} }))
+      .json().error.refused, "criteria-required",
+    "an empty object passed for a stated preference");
+
+    /* Stated, it is accepted and kept exactly as stated. */
+    eq((await want(ctx.app, "casey", cards.firstEdition, "primary",
+      { desired: { grade: "Raw", condition: "Near Mint" } })).statusCode, 200);
+    eq(json((await goalFor(ctx, cards.firstEdition)).desired),
+      json({ grade: "Raw", condition: "Near Mint" }));
+
+    /* THE DEMO PATH IS UNTOUCHED, deliberately. The prototype names cards the
+       legacy way, has three add-goal call sites and no grade control near any
+       of them; requiring criteria there would break it to enforce a rule about
+       a surface it does not have. */
+    const legacy = await direct(ctx, ACTOR.casey, "addGoal", { cardId: "legacy-1", tier: "primary" });
+    assert(legacy.ok === false ? legacy.refused !== "criteria-required" : true,
+      "the legacy path was made to require criteria");
+
+    /* And a Goal written before today, with none, is still valid. */
+    const before = await load(ctx);
+    await ctx.repository.saveWorld({ ...before, goals: [...before.goals,
+      { id: "g-old", collectorId: "c1", canonicalCardId: cards.shadowless, tier: "secondary",
+        note: "", since: "2030-01-01T00:00:00.000Z", createdAt: "2030-01-01T00:00:00.000Z" }] });
+    assert(validateWorld(await load(ctx)).ok, "a Goal without criteria became invalid");
     assert(!("desired" in (await goalFor(ctx, cards.shadowless))),
-      "an empty object became a stated preference");
+      "an unstated preference was filled in for somebody");
   });
 });
 
@@ -591,26 +626,52 @@ describe("E. what C3.2 did not touch", () => {
     eq(JSON.parse(second).state.goals.length, 0);
   });
 
-  test("the production door is exactly where C3.1 left it", async () => {
+  /* SUPERSEDED AND RESTATED (Phase 5 C3.3).
+
+     What this protected: that C3.2 solved grading coherence WITHOUT opening a
+     door — no `updateGoalCriteria` invented before an interaction needed one,
+     and `updateCollectorCopy` not exposed merely because grading was the
+     subject. A batch that widens the production surface to make its own work
+     easier is how a surface grows without anybody deciding to grow it.
+
+     Why it is no longer correct: C3.3 built the interaction. `updateGoalCriteria`
+     exists because the Card Specification panel edits criteria and the
+     alternative — removing and recreating the Goal — is impossible while a deal
+     is live and destroys `createdAt` when it is not. `updateCollectorCopy` is
+     exposed because that panel edits a copy, which is also the only way to
+     correct one written before C3.2 that contradicts itself.
+
+     What replaces it, and why it is stricter: the exact set is still pinned by
+     value and count, and C3.2's actual claim is now asserted where it belongs —
+     against C3.2's own commit, which added neither. */
+  test("the production door is exactly where C3.3 put it, and C3.2 moved it not at all", async () => {
     const ctx = await world();
     eq(json([...EXPOSED_COMMANDS].sort()), json([
       "updatePartnerProfile", "revokeCollectorInvitation",
       "addGoal", "updateGoalTier", "removeGoal",
       "addInventoryCopy",
       "addCollectorCopy", "setCollectorCopyOffered", "removeCollectorCopy",
-    ].sort()), "C3.2 broadened production exposure");
-    eq(EXPOSED_COMMANDS.length, 9);
+      "createBinder", "addBinderEntry", "removeBinderEntry",
+      "updateCollectorCopy", "updateGoalCriteria",
+    ].sort()), "the production surface is not what C3.3 declared");
+    eq(EXPOSED_COMMANDS.length, 14);
 
-    /* No `updateGoalCriteria` was added — C3.3 may reveal the right
-       interaction, and a command with no surface is not shipped. */
-    const C = require("../domain/metyet-commands.js");
-    assert(!C.COMMAND_NAMES.includes("updateGoalCriteria"),
-      "a criteria-editing command was added before anything needed it");
-    /* And `updateCollectorCopy` is still unexposed, as C2 left it. */
-    assert(C.COMMAND_NAMES.includes("updateCollectorCopy"));
-    assert(!EXPOSED_COMMANDS.includes("updateCollectorCopy"),
-      "updateCollectorCopy was exposed merely to solve grading");
-    for (const name of ["updateCollectorCopy", "createBinder", "addBinderEntry"]) {
+    /* C3.2 ADDED NEITHER, asserted against C3.2's own commit rather than
+       against the world as it is now. This is the claim that batch actually
+       made, and it stays checkable after later batches move on. */
+    const { execFileSync } = require("child_process");
+    const at = (rev, file) => execFileSync("git", ["show", `${rev}:${file}`],
+      { cwd: ROOT, encoding: "utf8" });
+    const c32 = at("2a5e988", "server/exposed-commands.js");
+    for (const name of ["updateGoalCriteria", "updateCollectorCopy", "createBinder"]) {
+      assert(!new RegExp(`"${name}"`).test(c32.split("EXPOSED_COMMANDS")[1] || ""),
+        `C3.2 exposed ${name}`);
+    }
+    assert(!/updateGoalCriteria/.test(at("2a5e988", "domain/metyet-commands.js")),
+      "C3.2 added a criteria-editing command before anything needed one");
+
+    /* And the two that still have no surface are still shut. */
+    for (const name of ["renameBinder", "setBinderArchived"]) {
       const res = await post(ctx.app, "casey", name, {});
       eq(res.json().error.refused, "command-unavailable", name);
     }

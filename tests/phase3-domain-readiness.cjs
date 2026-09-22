@@ -111,6 +111,11 @@ function everyCommand(store, rec) {
   step("updateGoalTier", { goal: s().goals.find((q) => q.id === g) });
   x(C1, "confirmGoal", { goalId: g });
   step("confirmGoal", { goal: s().goals.find((q) => q.id === g) });
+  /* C3.3. A legacy `cardId` Goal, so this also exercises the path where
+     criteria may be cleared back to unstated — the canonical path may not,
+     because a canonical Goal states which copy it wants. */
+  x(C1, "updateGoalCriteria", { goalId: g, desired: { grade: "Raw", condition: "Near Mint" } });
+  step("updateGoalCriteria", { goal: s().goals.find((q) => q.id === g) });
   x(C1, "removeGoal", { goalId: g });
 
   const inv = x(TP1, "addInventoryCopy", { copy: { cardId: "k1", ask: 1000, cost: 700, acquired: "2020-05-05",
@@ -325,11 +330,16 @@ describe("B. every minted id comes from the injected runtime", () => {
      implied. The pin is restated, not loosened: every name in the table must
      still be exercised by the script above, and the exact total is still
      asserted rather than compared loosely. */
-  test("all 48 commands ran", () => {
+  test("all 49 commands ran", () => {
     const { ran } = every();
     const missing = C.COMMAND_NAMES.filter((n) => !ran.has(n));
     eq(missing.join(","), "", "commands not exercised");
-    eq(C.COMMAND_NAMES.length, 48, "the command set");
+    /* 48 → 49 in C3.3: `updateGoalCriteria`, because the Card Specification
+       panel edits a Goal's desired copy and removing-and-recreating the Goal
+       would destroy `createdAt` and is refused outright while a deal is live.
+       Restated, not loosened — the exact total is still asserted, and the new
+       command is exercised by the script above like every other. */
+    eq(C.COMMAND_NAMES.length, 49, "the command set");
   });
 
   test("each new record's id is exactly what the runtime handed out, with the record's prefix", () => {

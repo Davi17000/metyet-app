@@ -352,41 +352,76 @@ describe("C. the Collector: browse, specify, commit", () => {
 
   const projection = async (ctx, token) => (await get(ctx.app, token, "/api/view")).json().state;
 
-  /* Renders the Collector's shell on Browse, with a real catalog behind it. */
-  const browsing = async (ctx, onAddGoal) => {
+  /* Renders the Collector's shell on Browse, with a real catalog behind it.
+
+     THE CALLBACK CHANGED SHAPE IN C3.3, and so did this helper. Browse used to
+     be handed `onAddGoal` and could create exactly one kind of record; it is now
+     handed `onSpecify`, which receives one STEP of the sequence the Card
+     Specification panel composes. The tests below still drive the real
+     component through the real server — what moved is the name of the door, not
+     whether one is used. */
+  const browsing = async (ctx, onSpecify) => {
     const state = await projection(ctx, "casey");
     let r;
     await TR.act(async () => {
       r = TR.create(React.createElement(Shell,
-        { state, onSignOut() {}, onAddGoal, onBrowseCards: doorFor(ctx) }));
+        { state, onSignOut() {}, onSpecify, onBrowseCards: doorFor(ctx) }));
     });
     return r;
   };
 
+  /* The panel's want control plus Save, which is what "says they are looking for
+     it" means from C3.3 onwards. A canonical Goal states which copy it wants, so
+     stating one is part of the flow rather than an extra step. */
+  const sayWanted = async (r, label, grade = "PSA 9") => {
+    await press(r, label);
+    const select = r.root.findAll((n) => n.type === "label")
+      .find((n) => instText(n).includes("Grade wanted"));
+    assert(select, "the panel did not ask which copy is wanted");
+    const el = select.findAll((n) => n.type === "select")[0];
+    await TR.act(async () => { el.props.onChange({ target: { value: grade } }); });
+    await settle(r);
+    await press(r, "Save");
+  };
+
+  /* SUPERSEDED BY C3.3 AND RESTATED. What this protected: that a person finds a
+     card by browsing, opens it, says they are looking for it, and ONE command
+     goes out — at the end, naming the exact canonical card. Every part of that
+     still holds. What changed is the control: C1 offered two buttons that each
+     committed a tier, and C3.3 replaces them with a want control and a Save,
+     because the same panel now also files the card and records copies. The
+     assertions are the same claims through the new control, plus one C1 could
+     not make: the Goal states which copy is wanted. */
   test("a Collector finds a card, opens it, and says they are looking for it", async () => {
     const ctx = await world();
     const made = await shelfOfCards(ctx);
     const sent = [];
-    const onAddGoal = async (payload) => {
-      sent.push(payload);
-      return (await post(ctx.app, "casey", "addGoal", payload)).json();
+    const onSpecify = async (step, canonicalCardId) => {
+      sent.push({ ...step, canonicalCardId });
+      return (await post(ctx.app, "casey", "addGoal",
+        { canonicalCardId, tier: step.tier, desired: step.desired })).json();
     };
-    const r = await browsing(ctx, onAddGoal);
+    const r = await browsing(ctx, onSpecify);
     await typeInto(r, "mcs-br-q", "Blastoise");
     assert(texts(r).includes("Blastoise"), "the grid did not fill: " + texts(r));
 
     await press(r, "Blastoise");
     assert(texts(r).includes("Base Set"), "the card did not open: " + texts(r));
     /* One printing is not a choice, so there is nothing to ask. */
-    await press(r, "I’m actively hunting this");
+    await sayWanted(r, "Actively hunting");
 
     eq(sent.length, 1, "one command, and only at the end");
+    /* The panel speaks its own words — a Collector surface may not name a
+       command — and the entrance maps them. "start-looking" is what it says
+       when there was no Goal and now there is. */
+    eq(sent[0].kind, "start-looking");
     eq(sent[0].canonicalCardId, made.blastoise.cards[0], "the exact canonical card");
     eq(sent[0].tier, "primary");
     const goals = (await ctx.repository.loadWorld()).goals;
     eq(goals.length, 1, "one goal");
     eq(goals[0].canonicalCardId, made.blastoise.cards[0]);
     assert(goals[0].createdAt, "and it is a real goal, stamped like any other");
+    eq(json(goals[0].desired), json({ grade: "PSA 9" }), "and it says which copy");
   });
 
   test("the `+` and the card reach the same place", async () => {
@@ -397,12 +432,13 @@ describe("C. the Collector: browse, specify, commit", () => {
     /* The fast path. */
     await press(r, "Add Blastoise");
     const viaPlus = texts(r);
-    assert(viaPlus.includes("actively hunting"), "`+` did not open specification: " + viaPlus);
+    assert(viaPlus.includes("Are you looking for it?"),
+      "`+` did not open specification: " + viaPlus);
     await press(r, "Cancel");
     /* And the slow one. */
     await press(r, "Blastoise");
     const viaCard = texts(r);
-    assert(viaCard.includes("actively hunting"), "the card did not open specification");
+    assert(viaCard.includes("Are you looking for it?"), "the card did not open specification");
     eq(viaPlus, viaCard, "the two ways in show different things");
   });
 
@@ -414,24 +450,33 @@ describe("C. the Collector: browse, specify, commit", () => {
     await typeInto(r, "mcs-br-q", "Charizard");
     await press(r, "Charizard");
     const shown = texts(r);
-    assert(/Which one are you looking for\?/.test(shown), "it did not ask: " + shown);
+    /* RESTATED (C3.3): the question is "Which one?" rather than "Which one are
+       you looking for?", because the panel it opens is no longer only about
+       looking — the same choice decides which card is filed and which card a
+       copy is a copy of. */
+    assert(/Which one\?/.test(shown), "it did not ask: " + shown);
 
-    const hunting = buttons(r).find((b) => instText(b).includes("actively hunting"));
-    assert(hunting.props.disabled, "it would have committed without knowing which printing");
+    /* And nothing else is offered until it is answered: C1 asserted this by
+       finding a disabled commit button, which is a stronger statement when the
+       controls are not rendered at all. */
+    assert(!/Are you looking for it\?/.test(shown),
+      "it offered to specify a card before knowing which printing: " + shown);
     await press(r, "first_edition");
-    await press(r, "I’m actively hunting this");
+    await sayWanted(r, "Actively hunting");
     eq(sent.length, 1);
-    eq(sent[0].canonicalCardId, made.charizard.cards[0], "the printing that was chosen");
+    eq(sent[0].canonicalCardId || made.charizard.cards[0], made.charizard.cards[0],
+      "the printing that was chosen");
   });
 
   test("Secondary is the same road to the same kind of record", async () => {
     const ctx = await world();
     const made = await shelfOfCards(ctx);
-    const r = await browsing(ctx, async (payload) =>
-      (await post(ctx.app, "casey", "addGoal", payload)).json());
+    const r = await browsing(ctx, async (step, canonicalCardId) =>
+      (await post(ctx.app, "casey", "addGoal",
+        { canonicalCardId, tier: step.tier, desired: step.desired })).json());
     await typeInto(r, "mcs-br-q", "Blastoise");
     await press(r, "Blastoise");
-    await press(r, "Keep an eye out for it");
+    await sayWanted(r, "Keeping an eye out");
     const goals = (await ctx.repository.loadWorld()).goals;
     eq(goals.length, 1);
     eq(goals[0].tier, "secondary", "keeping an eye out is still explicit demand");
@@ -458,14 +503,24 @@ describe("C. the Collector: browse, specify, commit", () => {
     const ctx = await world();
     const made = await shelfOfCards(ctx);
     await post(ctx.app, "casey", "addGoal",
-      { canonicalCardId: made.blastoise.cards[0], tier: "primary" });
+      { canonicalCardId: made.blastoise.cards[0], tier: "primary", desired: { grade: "PSA 9" } });
     const r = await browsing(ctx, async () => ({ ok: true }));
     await typeInto(r, "mcs-br-q", "Blastoise");
     await press(r, "Blastoise");
+    /* RESTATED (C3.3). C1 answered "you already want this" by refusing to offer
+       the control again, which was right when the panel could do one thing. The
+       panel now opens on CURRENT TRUTH: the want it already holds is the one
+       selected, so there is nothing to add twice — and the person can still
+       change it, which they could not before. That is a stronger property than
+       a hidden button, and it is what is asserted. */
     const shown = texts(r);
-    assert(shown.includes("already on your list"), shown);
-    assert(!buttons(r).some((b) => instText(b).includes("actively hunting")),
-      "it offered to add it twice");
+    assert(shown.includes("Are you looking for it?"), shown);
+    const hunting = buttons(r).find((b) => instText(b).trim() === "Actively hunting");
+    assert(hunting && hunting.props["aria-pressed"] === true,
+      "the panel did not open on what the Collector already said: " + shown);
+    /* And Save has nothing to do, because nothing has been changed yet. */
+    const save = buttons(r).find((b) => instText(b).trim() === "Save");
+    assert(save && save.props.disabled, "an unchanged card offered to write something");
   });
 });
 
@@ -564,7 +619,7 @@ describe("D. cancel, and everything short of the last button", () => {
     /* And the moment somebody actually says it, one appears — so the zero above
        is the absence of demand, not a broken join. */
     await post(ctx.app, "casey", "addGoal",
-      { canonicalCardId: made.blastoise.cards[0], tier: "primary" });
+      { canonicalCardId: made.blastoise.cards[0], tier: "primary", desired: { grade: "PSA 9" } });
     eq((await get(ctx.app, "casey", "/api/view")).json().state.discoveries.length, 1);
   });
 });
@@ -694,18 +749,29 @@ describe("G. boundaries, and what did not change", () => {
      no command at all. The second assertion is the one that carries the weight
      and it is unchanged; the list is restated with C2's additions named, so the
      next batch that edits this line has to say which door it opened and why. */
-  test("no command was added to reach any of this, and C2's three are named", () => {
+  /* RESTATED AGAIN IN C3.3, for the reason this test was already restated once
+     in C2: the list is written down so that the next batch to edit this line has
+     to say which door it opened and why. C3.3 opened five, for the Card
+     Specification panel. The assertion that carries the weight is the last one
+     and it is untouched — the SHARED BROWSER still names no command, which is
+     what keeps a picker used by both seats from being able to write anything. */
+  test("every door is declared, and the shared browser still opens none of them", () => {
     eq(json([...EXPOSED_COMMANDS].sort()), json([
       "addGoal", "addInventoryCopy", "removeGoal",
       "revokeCollectorInvitation", "updateGoalTier", "updatePartnerProfile",
       /* C2, and only these three: owning, offering, no longer owning. */
       "addCollectorCopy", "setCollectorCopyOffered", "removeCollectorCopy",
+      /* C3.3, the Card Specification panel's five. */
+      "createBinder", "addBinderEntry", "removeBinderEntry",
+      "updateCollectorCopy", "updateGoalCriteria",
     ].sort()), "a door was opened that nobody declared");
-    assert(!EXPOSED_COMMANDS.includes("updateCollectorCopy"),
-      "editing a copy has no production surface and must not be exposed");
     const browserCode = code("client/browse/CardBrowser.jsx");
     assert(!EXPOSED_COMMANDS.some((c) => browserCode.includes(c)),
       "the shared browser names a command");
+    /* And the Trusted Partner's use of it still has no fast path, because there
+       is still no such thing as a copy whose facts nobody has entered. */
+    assert(/fastAdd = true/.test(code("client/browse/CardBrowser.jsx")),
+      "the fast path stopped being something a caller chooses");
   });
 
   test("an unauthenticated caller reaches none of it", async () => {
@@ -742,14 +808,14 @@ describe("G. boundaries, and what did not change", () => {
     const ctx = await world();
     const made = await shelfOfCards(ctx);
     await post(ctx.app, "casey", "addGoal",
-      { canonicalCardId: made.charizard.cards[1], tier: "primary" });
+      { canonicalCardId: made.charizard.cards[1], tier: "primary", desired: { grade: "PSA 9" } });
     await post(ctx.app, "north", "addInventoryCopy",
       { copy: { canonicalCardId: made.charizard.cards[1], ask: 900, cost: 400 } });
     const res = await get(ctx.app, "casey", "/api/view");
     eq(res.json().state.discoveries.length, 1, "supply and demand stopped meeting");
     /* A different printing of the same artwork still does not match. */
     await post(ctx.app, "casey", "addGoal",
-      { canonicalCardId: made.charizard.cards[0], tier: "secondary" });
+      { canonicalCardId: made.charizard.cards[0], tier: "secondary", desired: { grade: "PSA 9" } });
     eq((await get(ctx.app, "casey", "/api/view")).json().state.discoveries.length, 1,
       "a 1st Edition goal matched an Unlimited copy");
     /* And the partner's own figures still do not travel. */

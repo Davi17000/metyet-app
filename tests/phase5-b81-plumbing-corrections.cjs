@@ -132,7 +132,7 @@ describe("A. the browser cannot mint card identity, by any route", () => {
       { cardId: "ctotallyinventedcardnowhe-0", tier: "primary" });
     eq(legacy.statusCode, 409, legacy.body);
     const canonical = await post(ctx.app, "casey", "addGoal",
-      { canonicalCardId: "i-made-this-up", tier: "primary" });
+      { canonicalCardId: "i-made-this-up", tier: "primary", desired: { grade: "PSA 9" } });
     eq(canonical.statusCode, 409, canonical.body);
     eq(canonical.json().error.refused, "card-unavailable", "the canonical guard is as it was");
     eq((await ctx.repository.loadWorld()).goals.length, 0, "no demand was invented");
@@ -164,7 +164,7 @@ describe("A. the browser cannot mint card identity, by any route", () => {
     const ctx = await world();
     const card = await charizard(ctx);
     /* The two seats' real work, end to end, through the door. */
-    const goal = await post(ctx.app, "casey", "addGoal", { canonicalCardId: card, tier: "primary" });
+    const goal = await post(ctx.app, "casey", "addGoal", { canonicalCardId: card, tier: "primary", desired: { grade: "PSA 9" } });
     eq(goal.statusCode, 200, goal.body);
     eq((await post(ctx.app, "casey", "updateGoalTier",
       { goalId: goal.json().value, tier: "secondary" })).statusCode, 200);
@@ -175,7 +175,7 @@ describe("A. the browser cannot mint card identity, by any route", () => {
     eq((await post(ctx.app, "casey", "removeGoal", { goalId: goal.json().value })).statusCode, 200);
     /* And a rule the door did not replace: the seat is still the command's. */
     const wrongSeat = await post(ctx.app, "north", "addGoal",
-      { canonicalCardId: card, tier: "primary" });
+      { canonicalCardId: card, tier: "primary", desired: { grade: "PSA 9" } });
     eq(wrongSeat.statusCode, 409);
     eq(wrongSeat.json().error.refused, "not-owner", "authorization is still the domain's");
   });
@@ -214,7 +214,7 @@ describe("B. a goal's birthday, and a lifecycle that leaves it alone", () => {
 
   const madeGoal = async (ctx, tier = "primary") => {
     const card = await charizard(ctx);
-    const res = await post(ctx.app, "casey", "addGoal", { canonicalCardId: card, tier });
+    const res = await post(ctx.app, "casey", "addGoal", { canonicalCardId: card, tier, desired: { grade: "PSA 9" } });
     eq(res.statusCode, 200, res.body);
     return res.json().value;
   };
@@ -265,9 +265,17 @@ describe("B. a goal's birthday, and a lifecycle that leaves it alone", () => {
     eq(mine.id, id);
     assert(mine.createdAt && theirs.createdAt, "a seat did not receive it");
     eq(mine.createdAt, theirs.createdAt, "and it is the same moment for both");
-    /* Nothing else about a Goal moved. */
+    /* Nothing else about a Goal moved.
+
+       RESTATED IN C3.3, and not loosened. `desired` is on the list because a
+       canonical Goal now states which copy it wants — C3.2 added the field and
+       C3.3 made it required on this path, so the seed above states one and it
+       travels to the partner exactly as far as the Goal does. This is still an
+       EXACT list rather than a subset check, so the next field to appear on a
+       Goal still has to be written down here by whoever adds it. */
     eq(json(Object.keys(theirs).sort()),
-      json(["canonicalCardId", "collectorId", "createdAt", "id", "note", "since", "tier"]),
+      json(["canonicalCardId", "collectorId", "createdAt", "desired", "id", "note",
+        "since", "tier"]),
       "a Goal grew or lost a field");
   });
 
@@ -296,7 +304,7 @@ describe("C. what happened, said once", () => {
   test("a command that succeeded is written down, with who and what", async () => {
     const ctx = await world();
     const card = await charizard(ctx);
-    const res = await post(ctx.app, "casey", "addGoal", { canonicalCardId: card, tier: "primary" });
+    const res = await post(ctx.app, "casey", "addGoal", { canonicalCardId: card, tier: "primary", desired: { grade: "PSA 9" } });
     eq(res.statusCode, 200, res.body);
 
     const lines = said(ctx.logger, "command");
@@ -322,8 +330,8 @@ describe("C. what happened, said once", () => {
     const ctx = await world();
     /* One of each kind of refusal: the door, the catalog guard, the domain. */
     await post(ctx.app, "casey", "resolveCardIdentity", { identity: INVENTED });
-    await post(ctx.app, "casey", "addGoal", { canonicalCardId: "nope", tier: "primary" });
-    await post(ctx.app, "north", "addGoal", { canonicalCardId: "nope", tier: "primary" });
+    await post(ctx.app, "casey", "addGoal", { canonicalCardId: "nope", tier: "primary", desired: { grade: "PSA 9" } });
+    await post(ctx.app, "north", "addGoal", { canonicalCardId: "nope", tier: "primary", desired: { grade: "PSA 9" } });
     eq(said(ctx.logger, "command").length, 0, "something that failed was logged as done");
     assert(said(ctx.logger, "command refused: command-unavailable").length === 1, "the door still says so");
     assert(said(ctx.logger, "command refused: card-unavailable").length >= 1, "and so does the catalog guard");
@@ -332,7 +340,7 @@ describe("C. what happened, said once", () => {
   test("a read says how much overlap the product had to show", async () => {
     const ctx = await world();
     const card = await charizard(ctx);
-    await post(ctx.app, "casey", "addGoal", { canonicalCardId: card, tier: "primary" });
+    await post(ctx.app, "casey", "addGoal", { canonicalCardId: card, tier: "primary", desired: { grade: "PSA 9" } });
     await get(ctx.app, "casey");
     eq(said(ctx.logger, "view").pop().fields.discoveries, 0, "nothing overlapped yet");
 
@@ -350,7 +358,7 @@ describe("C. what happened, said once", () => {
   test("the count is the authorized projection's, never the world's", async () => {
     const ctx = await world();
     const card = await charizard(ctx);
-    await post(ctx.app, "casey", "addGoal", { canonicalCardId: card, tier: "primary" });
+    await post(ctx.app, "casey", "addGoal", { canonicalCardId: card, tier: "primary", desired: { grade: "PSA 9" } });
     await post(ctx.app, "north", "addInventoryCopy", { copy: { canonicalCardId: card, ask: 900 } });
     /* End the relationship: the overlap in the WORLD is unchanged, and neither
        seat may see it any more. */
@@ -386,7 +394,7 @@ describe("D. what is deliberately not said", () => {
     const ctx = await world();
     const card = await charizard(ctx);
     await post(ctx.app, "casey", "addGoal",
-      { canonicalCardId: card, tier: "primary", note: "CASEY-PRIVATE-REASON" });
+      { canonicalCardId: card, tier: "primary", note: "CASEY-PRIVATE-REASON", desired: { grade: "PSA 9" } });
     await post(ctx.app, "north", "addInventoryCopy", { copy: { canonicalCardId: card, ask: 900,
       cost: 5551212, acquired: "2029-09-09", note: "NORTHLINE-PRIVATE-NOTE",
       photos: { front: "SECRET-PHOTO-URL", back: null } } });

@@ -163,11 +163,59 @@ const CSS = `
   border-radius:6px; padding:5px 10px; font-size:13px; }
 .mcs-br-page:disabled { color:var(--faint); }
 .mcs-br-pos { font-size:12px; color:var(--faint); }
-.mcs-spec { border:1px solid var(--t1); border-radius:10px; background:var(--t1-bg);
-  padding:12px; display:flex; flex-direction:column; gap:8px; }
 .mcs-spec-sub { margin:0; font-size:12px; color:var(--muted); }
 .mcs-spec-ask { margin:0; font-size:13px; font-weight:600; }
 .mcs-spec-net { margin:0; font-size:13px; color:var(--t1); }
+
+/* THE SPECIFICATION SHEET SITS OVER THE GRID (Phase 5 C3.3).
+
+   Out of flow, and that is the point rather than the style. Until C3.3 this
+   panel was rendered above the grid in ordinary flow, so opening it pushed
+   everything the person was looking at down the page while the window's scroll
+   position stayed where it was — the cards jumped on open and jumped back on
+   close. C3.3's panel is several times taller, so the same arrangement would
+   have shoved the grid most of a screen.
+
+   Fixed, the grid underneath does not move at all, which makes "come back to
+   exactly where you were" true by construction: there is nothing to save and
+   nothing to restore, and so no restoration code that could get it wrong.
+
+   A sheet from the bottom on a phone, where a thumb is; a panel down the side
+   on a wide screen, where the grid can stay visible beside it. */
+.mcs-spec-scrim { position:fixed; inset:0; z-index:30; display:flex; align-items:flex-end;
+  justify-content:center; background:rgba(11,25,34,.34); }
+.mcs-spec-panel { background:var(--panel); border-top:1px solid var(--line);
+  border-radius:14px 14px 0 0; width:100%; max-width:640px; max-height:88vh; overflow:auto;
+  padding:16px; display:flex; flex-direction:column; gap:16px; }
+.mcs-spec-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.mcs-spec-head strong { font-size:15px; }
+.mcs-spec-part { display:flex; flex-direction:column; gap:9px;
+  padding-top:14px; border-top:1px solid var(--line-soft); }
+.mcs-spec-part:first-of-type { border-top:0; padding-top:0; }
+.mcs-spec-binders, .mcs-spec-copies { list-style:none; margin:0; padding:0;
+  display:flex; flex-direction:column; gap:8px; }
+.mcs-spec-copies > li { border:1px solid var(--line); border-radius:9px; padding:11px;
+  display:flex; flex-direction:column; gap:8px; }
+.mcs-spec-copies > li.gone { background:var(--line-soft); }
+.mcs-spec-wants { display:flex; flex-wrap:wrap; gap:8px; margin:0; }
+.mcs-spec-new { display:flex; gap:8px; margin:0; }
+.mcs-spec-conflict { margin:0; padding:9px 11px; border-radius:6px; background:var(--amber-bg);
+  border:1px solid var(--amber-line); color:var(--amber); font-size:13px; }
+.mcs-check { display:flex; align-items:center; gap:9px; font-size:13.5px; }
+.mcs-check input { width:17px; height:17px; }
+.mcs-in { flex:1; min-width:0; border:1px solid var(--line); border-radius:6px; padding:9px 11px;
+  font:inherit; font-size:16px; background:#FFF; color:var(--text); }
+.mcs-field { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--muted); }
+.mcs-field select, .mcs-field input { padding:9px 11px; border:1px solid var(--line);
+  border-radius:6px; font:inherit; font-size:16px; background:#FFF; color:var(--text); }
+.mcs-linkish { border:0; background:none; padding:0; color:var(--t1); font-size:13px;
+  text-decoration:underline; }
+
+@media (min-width:860px) {
+  .mcs-spec-scrim { align-items:stretch; justify-content:flex-end; }
+  .mcs-spec-panel { border-radius:0; border-top:0; border-left:1px solid var(--line);
+    width:min(460px,100%); max-height:100vh; }
+}
 
 /* ---- the top of a phone ---- */
 .mcs-top { background:var(--panel); border-bottom:1px solid var(--line); padding:14px 16px;
@@ -294,7 +342,8 @@ const CSS = `
 `;
 
 export default function CollectorShell({ state, onSignOut, joined = null, onDismissJoined = null,
-  onAddGoal = null, onSetPriority = null, onRemoveGoal = null, onBrowseCards = null }) {
+  onAddGoal = null, onSetPriority = null, onRemoveGoal = null, onBrowseCards = null,
+  onSpecify = null }) {
   /* JUST ACCEPTED? OPEN ON THE THING THAT CHANGED (Phase 5 Batch 3A). A person
      who has this second finished joining a shop's network; the section that now
      holds that shop is what they came for. Everyone else opens where they
@@ -391,10 +440,15 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
           {/* Goals is the one section a person can change something from
               (Batch 7), so it is the one that receives callbacks. Every other
               section is handed the projection and nothing else. */}
+          {/* Goals is prioritisation — "how hard am I looking?" — and keeps its
+              own two callbacks. Browse is specification — "what copy, where
+              does it belong, what do I own?" — and takes ONE, because every
+              durable change it makes is a step in a sequence the panel
+              composes (Phase 5 C3.3). */}
           <View state={state} {...(meta.id === "goals"
             ? { onAddGoal, onSetPriority, onRemoveGoal, onBrowseCards }
             : meta.id === "browse"
-              ? { onAddGoal, onBrowseCards, session: browseSession, onSession: setBrowseSession }
+              ? { onSpecify, onBrowseCards, session: browseSession, onSession: setBrowseSession }
               : {})} />
         </main>
       </div>
