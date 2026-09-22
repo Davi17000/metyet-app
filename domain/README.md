@@ -440,6 +440,74 @@ every row promises all three. Nothing in production can create one. This is a
 consequence of removing the Goals tab, recorded here rather than discovered
 later.
 
+## The answer, not the tab (Phase 5 C3.5)
+
+C3.4 was right to remove Goals as a destination, and it had one consequence
+nobody looked at until afterwards: **`Goals.jsx` was the only file in the client
+that read `state.discoveries`**, and it went into `DEFERRED_SECTIONS` with the
+tab. The server kept computing the overlap, kept scoping it to accepted
+relationships and kept sending it — and no Collector could see any of it. A
+person could say "I am looking for this", their shop could read it, and the
+product said nothing back.
+
+**C3.5 restores the ANSWER, not the Goals tab.** Goals stays out of the
+navigation and `Goals.jsx` stays deferred. What came back is the fact a
+Collector was missing, and it came back where it belongs: under the shop.
+
+**Trusted Partners answers the Goal.** Each accepted partner now shows the cards
+that partner has *and this Collector already asked for* — "Northline has 2 cards
+you're looking for.", then the card's picture, name, set, number and how hard
+they said they were looking. A shop with nothing of yours says nothing at all,
+because "0 cards you're looking for" reads as a judgement on a shop that has
+done nothing wrong.
+
+**It is relationship-aware discovery, not marketplace browsing.** This is the
+distinction the old note in `TrustedPartners.jsx` was protecting, and it still
+holds: a Collector never browses a shop's stock. The screen shows only where a
+partner's supply meets a Goal the Collector stated themselves. Nothing is
+searched across shops, nothing is inferred from browsing, from binder membership
+or from what somebody owns, and nothing is scored. The projection carries the
+partner's whole available shelf; the screen is what narrows it to the question
+that was asked.
+
+**Discovery is still derived.** No record is written, no read position, no
+dismissal, no notification. File a card, own a card, archive a copy — the answer
+changes on the next authoritative refresh because the server recomputed it, not
+because anything was stored.
+
+**`goal.desired` is sourcing context for a partner, and nothing else.** C3.2
+wrote it, C3.3 gave a Collector the controls to state it, `GOAL_FOR_PARTNER` has
+carried it across the seat boundary ever since — and no partner screen rendered
+it, so the one person it was written for could not read it. Collector Network
+now says "Looking for: PSA 10" beside the goal. Two facts stay two facts:
+Primary/Secondary is **how hard** somebody is looking, `desired` is **which
+copy** would answer it, and they are separate sentences. The partner cannot edit
+it, and it still does not filter Discovery — a Goal wanting a PSA 10 still
+discovers a partner's Heavily Played raw copy, exactly as C3.2 said it must.
+
+**`desiredLine` decides nothing.** Its first version asked whether the grade was
+"Raw" so it could drop a stray condition, and C3.3's pin caught it — a presenter
+that works out what a grading pair MEANS is the second authority C3.3 removed.
+The fix was not to weaken the pin but to stop needing a rule: `desired` is
+already coherent when stored (`CardSpecification` drops a condition with no raw
+grade to belong to; `addGoal` and `updateGoalCriteria` refuse an incoherent
+pair), so the presenter joins what is there. A contradictory pre-C3.2 pair shows
+**both halves**, for the same reason `gradeConflictLine` does.
+
+**Opportunity stays deferred, deliberately.** There is no Ask, no Message, no
+offer and no disabled button pretending to be one. Knowing which shop has your
+card is the whole feature; what a person does next, they do the way they always
+have. `startOpportunity` also still needs an `invId`, and this screen
+deliberately does not print one — the server's handle on a physical copy is not
+a thing a person should learn to quote.
+
+**Nothing durable changed.** No new concept, no exposed command (still 16), no
+projection change, no migration; `0013_binders.sql` is still the newest. Both
+readers render data that was already projected and already authorized, and
+canonical names, sets, numbers and images still come from one batched
+`describe(ids)` at the catalog boundary rather than being copied into a
+discovery, a goal or a relationship.
+
 ## Five things to know before changing anything
 
 **Discovery is computed; Opportunity is persisted.** They share a word and are

@@ -55,7 +55,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import Qr from "../../qr/Qr.jsx";
 import { Panel, Record, Fact, Tag } from "../parts.jsx";
 import { rows, indexById, groupBy, text, day, plural, cardTitle, cardSetLine,
-  gradeLine, tierLabel, byRecency , demandLine } from "../present.js";
+  gradeLine, tierLabel, byRecency , demandLine, desiredLine } from "../present.js";
 
 /* The domain's word for why, in ours. A rule this build has not met is shown as
    itself rather than as the nearest one we know. */
@@ -568,6 +568,14 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
                         {/* The distinction said in words, because "Primary" is
                             the domain's name for it and not a sentence. */}
                         <span className="tps-sub-n">{demandLine(nameOf(c), g.tier)}</span>
+                        {/* WHICH COPY, kept as its own sentence (Phase 5 C3.5).
+                            The tier above says how hard they are looking; this
+                            says what would answer it. A goal that named no copy
+                            renders nothing at all rather than "any condition" —
+                            see `desiredLine`. */}
+                        {desiredLine(g.desired) ? (
+                          <span className="tps-sub-n">{desiredLine(g.desired)}</span>
+                        ) : null}
                         {text(g.note) ? <span className="tps-sub-n">{text(g.note)}</span> : null}
                       </li>
                     );

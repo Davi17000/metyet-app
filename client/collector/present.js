@@ -201,6 +201,28 @@ export const holdingLine = (who, copies) => {
     ? `${name} has ${n} of this card.`
     : `${name} has this card.`;
 };
+
+/* THE SAME FACT, SAID FROM THE SHOP'S SIDE (Phase 5 C3.5). `holdingLine` says
+   it under a card — "Northline has this card." — and that is the right shape
+   when the card is what you are looking at. On Trusted Partners the SHOP is
+   what you are looking at, so the sentence counts cards rather than copies and
+   is said once, above the list, instead of repeating the shop's name on every
+   row.
+
+   IT COUNTS CARDS YOU ASKED FOR, NOT STOCK. "3 cards" means three of this
+   Collector's own goals, which is why the number is safe to show here and a
+   count of the shop's copies would not be: one is a fact about what you said,
+   the other is a fact about their shelf. And a shop with none says nothing —
+   the caller renders this only when there is something to say, because "0
+   cards you're looking for" reads as a judgement on a shop that has done
+   nothing wrong. */
+export const hasWantedLine = (who, cards) => {
+  const name = text(who) || "A Trusted Partner";
+  const n = Number(cards);
+  return Number.isFinite(n) && n > 1
+    ? `${name} has ${n} cards you're looking for.`
+    : `${name} has a card you're looking for.`;
+};
 export const tierLabel = (tier) => {
   const raw = text(tier);
   if (!raw) return null;

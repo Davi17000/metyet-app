@@ -192,6 +192,51 @@ export const supplyLine = (who, tier, copies) => {
   return null;
 };
 
+/* WHICH COPY THEY WANT (Phase 5 C3.5).
+
+   The tier says HOW HARD somebody is looking. This says WHICH COPY would
+   answer it, and the two are deliberately separate sentences: a Collector
+   actively hunting a PSA 10 and one keeping an eye out for a PSA 10 are
+   different calls to make, and so are a Primary goal for a PSA 10 and a
+   Primary goal for a clean raw copy.
+
+   C3.2 wrote `desired`, C3.3 gave a Collector the controls to state it, and
+   `GOAL_FOR_PARTNER` has carried it across the seat boundary ever since. Until
+   now nothing on this side rendered it, so the person it was written for could
+   not read it. This is that reader and nothing more — it adds no projection
+   field and the partner cannot change it.
+
+   IT DECIDES NOTHING, AND THAT IS THE WHOLE DESIGN. The first version of this
+   function asked whether the grade was "Raw" so it could drop a condition
+   beside a graded want — and C3.3's pin caught it, correctly: a presenter that
+   works out what a grading pair MEANS is a second authority, which is exactly
+   what C3.3 removed by projecting `grading` for copies. `desired` is not a
+   copy and carries no projected reading, so the answer is not to re-derive one
+   here; it is to stop needing one.
+
+   SO IT JOINS WHAT IS THERE. `desired` is already coherent by the time it is
+   stored: `CardSpecification` drops a condition that has no raw grade to
+   belong to, and `addGoal` and `updateGoalCriteria` refuse a pair the domain
+   calls incoherent. What reaches this function is therefore what somebody
+   actually said, and saying it back — "PSA 10", "Raw · Near Mint", "Raw" —
+   needs no rule at all. A test pins the result against `gradingOf`, the
+   domain's own reading, so the two cannot drift apart.
+
+   AND A CONTRADICTORY HISTORICAL PAIR SHOWS BOTH HALVES, for the same reason
+   `gradeConflictLine` does: a record written before C3.2 that says both PSA 9
+   and Damaged does not say which half the person meant, and a presenter that
+   quietly showed one would be picking a side on their behalf. Both is honest;
+   either alone is a guess.
+
+   A GOAL THAT NAMED NO COPY RETURNS NULL, and the caller renders nothing. An
+   unspecified goal is a real thing a Collector may have — C3.2's criteria were
+   not required until C3.3 — and the honest answer is silence, not "any". */
+export const desiredLine = (desired) => {
+  const said = [text(desired && desired.grade), text(desired && desired.condition)]
+    .filter(Boolean);
+  return said.length ? `Looking for: ${said.join(" · ")}` : null;
+};
+
 export const tierLabel = (tier) => {
   const raw = text(tier);
   if (!raw) return null;
