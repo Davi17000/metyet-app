@@ -295,7 +295,7 @@ describe("C. nothing reorganises a Collector's binder but the Collector", () => 
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
     await file(ctx, ACTOR.casey, id, cards.firstEdition);
     const goalId = (await post(ctx.app, "casey", "addGoal",
-      { canonicalCardId: cards.firstEdition, tier: "secondary" })).json().value;
+      { canonicalCardId: cards.firstEdition, tier: "secondary", desired: { grade: "PSA 9" } })).json().value;
 
     eq((await post(ctx.app, "casey", "updateGoalTier", { goalId, tier: "primary" })).statusCode, 200);
 
@@ -311,7 +311,7 @@ describe("C. nothing reorganises a Collector's binder but the Collector", () => 
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
     await file(ctx, ACTOR.casey, id, cards.firstEdition);
     const goalId = (await post(ctx.app, "casey", "addGoal",
-      { canonicalCardId: cards.firstEdition, tier: "primary" })).json().value;
+      { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } })).json().value;
 
     /* The card turns up. */
     const copyId = (await own(ctx.app, "casey",
@@ -390,7 +390,7 @@ describe("C. nothing reorganises a Collector's binder but the Collector", () => 
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
     await file(ctx, ACTOR.casey, id, cards.firstEdition);
     const goalId = (await post(ctx.app, "casey", "addGoal",
-      { canonicalCardId: cards.firstEdition, tier: "primary" })).json().value;
+      { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } })).json().value;
     const copyId = (await own(ctx.app, "casey",
       { canonicalCardId: cards.firstEdition, offered: true, photos: PHOTOS })).json().value;
 
@@ -428,7 +428,7 @@ describe("C. nothing reorganises a Collector's binder but the Collector", () => 
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
     await file(ctx, ACTOR.casey, id, cards.firstEdition);
     const goalId = (await post(ctx.app, "casey", "addGoal",
-      { canonicalCardId: cards.firstEdition, tier: "primary" })).json().value;
+      { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } })).json().value;
     const copyId = (await own(ctx.app, "casey",
       { canonicalCardId: cards.firstEdition, offered: true, photos: PHOTOS })).json().value;
     const north = await run1(ctx, ACTOR.north, "setInterest", { binderId: copyId, on: true });
@@ -458,7 +458,7 @@ describe("D. what a Trusted Partner receives of a Collector's organisation", () 
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, SECRET_NAME);
     await file(ctx, ACTOR.casey, id, cards.firstEdition);
-    await post(ctx.app, "casey", "addGoal", { canonicalCardId: cards.firstEdition, tier: "primary" });
+    await post(ctx.app, "casey", "addGoal", { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } });
     await own(ctx.app, "casey", { canonicalCardId: cards.firstEdition, offered: true, photos: PHOTOS });
     return { cards, id };
   }
@@ -492,7 +492,7 @@ describe("D. what a Trusted Partner receives of a Collector's organisation", () 
       const id = await binder(ctx, ACTOR.casey, name);
       await file(ctx, ACTOR.casey, id, cards.firstEdition);
     }
-    await post(ctx.app, "casey", "addGoal", { canonicalCardId: cards.firstEdition, tier: "primary" });
+    await post(ctx.app, "casey", "addGoal", { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } });
     const state = (await get(ctx.app, "north", "/api/view")).json().state;
 
     assert(!json(state).includes(SECRET_NAME), "a binder name crossed");
@@ -571,10 +571,24 @@ describe("E. the commands exist, and production cannot reach them", () => {
     }
   });
 
-  test("and none of them is exposed to a browser", async () => {
+  /* SUPERSEDED AND RESTATED (Phase 5 C3.3).
+
+     What this protected: that C3.1 built a durable concept and shipped no way
+     to reach it — a command joins the production allow-list in the batch that
+     gives it a screen, not in the batch that writes it.
+
+     Why it is no longer correct for three of the five: C3.3 IS that batch for
+     them. The Card Specification panel files this card, unfiles it, and makes a
+     binder to file it in, and those three commands are what those controls
+     send.
+
+     What replaces it, and why it is stricter: the rule is unchanged and is now
+     asserted on the two that still have no surface — and, for the three that
+     do, this checks the thing that actually matters once a door is open, which
+     is that the seat and ownership rules behind it did not move with it. */
+  test("the two with no surface yet are still unreachable", async () => {
     const ctx = await world();
-    for (const name of ["createBinder", "renameBinder", "setBinderArchived",
-      "addBinderEntry", "removeBinderEntry"]) {
+    for (const name of ["renameBinder", "setBinderArchived"]) {
       assert(!EXPOSED_COMMANDS.includes(name), `${name} is on the production allow-list`);
       const res = await post(ctx.app, "casey", name, {});
       eq(res.statusCode, 409, `${name} over HTTP`);
@@ -582,20 +596,54 @@ describe("E. the commands exist, and production cannot reach them", () => {
     }
   });
 
-  test("C3.1 changed the exposed set not at all", () => {
+  test("and the three C3.3 opened kept every rule behind them", async () => {
+    const ctx = await world();
+    const cards = await charizard(ctx);
+    for (const name of ["createBinder", "addBinderEntry", "removeBinderEntry"]) {
+      assert(EXPOSED_COMMANDS.includes(name), `${name} was not opened by C3.3`);
+    }
+    /* A partner has no binders, and cannot make one. */
+    eq((await post(ctx.app, "north", "createBinder", { name: "Mine" })).json().error.refused,
+      "not-owner", "a Trusted Partner made a binder");
+    /* A binder needs a name. */
+    eq((await post(ctx.app, "casey", "createBinder", { name: "   " })).json().error.refused,
+      "name-required");
+    const mine = (await post(ctx.app, "casey", "createBinder", { name: "Mudkip Collection" })).json().value;
+    /* Another Collector's binder is not reachable by naming it. */
+    eq((await post(ctx.app, "dana", "addBinderEntry",
+      { binderId: mine, canonicalCardId: cards.firstEdition })).json().error.refused,
+    "not-owner", "another Collector filed a card in somebody else's binder");
+    eq((await post(ctx.app, "north", "removeBinderEntry",
+      { binderId: mine, canonicalCardId: cards.firstEdition })).json().error.refused, "not-owner");
+    /* And a card the catalog does not hold is refused at the door, by the
+       guard C3.1 wrote for exactly this moment and could not reach. */
+    eq((await post(ctx.app, "casey", "addBinderEntry",
+      { binderId: mine, canonicalCardId: "not-a-card" })).json().error.refused,
+    "card-unavailable", "the catalog guard did not run on an open door");
+  });
+
+  /* SUPERSEDED AND RESTATED, twice over, for the reason above. C3.1's claim was
+     that IT shipped no surface — which is still true of C3.1, and is now said
+     about C3.1's own commit rather than about the allow-list forever. What the
+     allow-list is pinned to is the set C3.3 declared. */
+  test("the exposed set is exactly what C3.3 declared", () => {
     eq(json([...EXPOSED_COMMANDS].sort()), json([
       "updatePartnerProfile", "revokeCollectorInvitation",
       "addGoal", "updateGoalTier", "removeGoal",
       "addInventoryCopy",
       "addCollectorCopy", "setCollectorCopyOffered", "removeCollectorCopy",
-    ].sort()), "the production surface moved in a batch that ships no surface");
-    eq(EXPOSED_COMMANDS.length, 9);
+      "createBinder", "addBinderEntry", "removeBinderEntry",
+      "updateCollectorCopy", "updateGoalCriteria",
+    ].sort()), "the production surface is not what C3.3 declared");
+    eq(EXPOSED_COMMANDS.length, 14);
   });
 
-  test("the client binds no binder command either", () => {
+  test("the client binds the three with a surface, and neither of the two without", () => {
     const client = read("client/commands.js");
-    for (const name of ["createBinder", "renameBinder", "setBinderArchived",
-      "addBinderEntry", "removeBinderEntry"]) {
+    for (const name of ["createBinder", "addBinderEntry", "removeBinderEntry"]) {
+      assert(client.includes(name), `client/commands.js does not bind ${name}`);
+    }
+    for (const name of ["renameBinder", "setBinderArchived"]) {
       assert(!client.includes(name), `client/commands.js names ${name}`);
     }
   });
@@ -777,7 +825,7 @@ describe("F. what is stored, and what the schema refuses", () => {
     const id = await binder(ctx, ACTOR.casey, SECRET_NAME);
     await file(ctx, ACTOR.casey, id, cards.firstEdition);
     /* Demand and supply that SHOULD discover each other. */
-    await post(ctx.app, "casey", "addGoal", { canonicalCardId: cards.firstEdition, tier: "primary" });
+    await post(ctx.app, "casey", "addGoal", { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } });
     await post(ctx.app, "north", "addInventoryCopy",
       { copy: { canonicalCardId: cards.firstEdition, ask: 9000 } });
     const mine = (await get(ctx.app, "casey", "/api/view")).json().state;

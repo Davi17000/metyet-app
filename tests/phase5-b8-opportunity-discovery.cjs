@@ -125,8 +125,12 @@ const post = (app, token, command, payload) => app.inject({ method: "POST", url:
 const get = (app, token, url) => app.inject({ method: "GET", url,
   headers: { authorization: `Bearer ${token}` } });
 
+/* A GOAL NOW STATES WHICH COPY IT WANTS (Phase 5 C3.3), so this seed says so.
+   Deliberately a graded value rather than Raw / Near Mint: that pair is the one
+   MetYet must never INFER, and a default sitting in a helper is how an
+   inference starts looking like a fact. Tests about criteria pass their own. */
 const want = (app, token, canonicalCardId, tier = "primary", extra = {}) =>
-  post(app, token, "addGoal", { canonicalCardId, tier, ...extra });
+  post(app, token, "addGoal", { canonicalCardId, tier, desired: { grade: "PSA 9" }, ...extra });
 const hold = (app, token, canonicalCardId, extra = {}) =>
   post(app, token, "addInventoryCopy", { copy: { canonicalCardId, ask: 900, ...extra } });
 

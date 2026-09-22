@@ -788,6 +788,15 @@ const REFUSE = {
      `not-found`, which is what the four separate half-checks used to answer and
      which told a caller nothing about what was wrong. See gradingProblem. */
   gradingIncoherent: "grading-incoherent",
+  /* A GOAL THAT NAMES A CANONICAL CARD SAYS WHICH COPY IT WANTS (Phase 5 C3.3).
+     Distinct from `grading-incoherent`, which answers a pair that cannot be
+     true: this answers a pair that was never stated. C3.2 deliberately left
+     criteria optional, because the only surface that could create a Goal sent
+     none and requiring them would have broken the shipped product's primary
+     action; C3.3 ships the control that states them, so the requirement lands
+     with the means to satisfy it. It is scoped to the canonical path — the
+     legacy `cardId` path is the prototype's and keeps its own answer. */
+  criteriaRequired: "criteria-required",
   invitationRequired: "invitation-required",
   alreadyRegistered: "already-registered",
   /* Redemption (Phase 5 Batch 3A). ONE WORD FOR SIX CAUSES, on purpose: an

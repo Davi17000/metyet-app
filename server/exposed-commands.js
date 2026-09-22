@@ -64,6 +64,30 @@ const EXPOSED_COMMANDS = Object.freeze([
   "addCollectorCopy",            // Collector → Your Cards, "I own this card"
   "setCollectorCopyOffered",     // Collector → Your Cards, offering ⇄ not offering
   "removeCollectorCopy",         // Collector → Your Cards, "I no longer own this"
+  /* THE CARD SPECIFICATION SURFACE (Phase 5 C3.3). Five, and each one is a
+     control on the panel a Collector opens from Browse — which is the rule this
+     list has always had: a command joins in the batch that ships a way to send
+     it, not in the batch that writes it.
+
+     `updateCollectorCopy` is the oldest debt here. C2 wrote it, tested it, and
+     deliberately left it closed with a note saying it would join "in the batch
+     that gives it a screen". This is that batch: the panel shows a copy's
+     grade, condition, certificate and reference value, and a screen that shows
+     them while refusing to change them would be a worse answer than not showing
+     them at all. It is also how a copy written before C3.2 — one that says both
+     PSA 9 and Damaged — gets corrected, which §13 of this batch requires and no
+     other command can do.
+
+     WHAT IS STILL CLOSED, and why: `renameBinder` and `setBinderArchived`.
+     C3.3 may create a Binder and change THIS card's membership of it, because
+     both are part of specifying the card in front of you. Managing binders as
+     objects — renaming, archiving, listing, opening one — is a surface C3.4
+     builds, and neither command has a control here. */
+  "createBinder",                // Collector → Card Specification, "New binder…"
+  "addBinderEntry",              // Collector → Card Specification, filing this card
+  "removeBinderEntry",           // Collector → Card Specification, unfiling it
+  "updateCollectorCopy",         // Collector → Card Specification, correcting a copy
+  "updateGoalCriteria",          // Collector → Card Specification, which copy is wanted
 ]);
 
 /* ONE ANSWER FOR TWO QUESTIONS, ON PURPOSE. A command that does not exist and a

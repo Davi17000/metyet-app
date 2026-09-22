@@ -142,8 +142,26 @@ export function addCollectorGoal(target) {
   if (!target || typeof target.execute !== "function") {
     throw new TypeError("addCollectorGoal: the production store is required");
   }
-  return ({ canonicalCardId, tier, note = null } = {}) =>
-    target.execute("addGoal", { canonicalCardId, tier, note });
+  /* `desired` JOINED IT IN C3.3, and a canonical Goal must carry it: which copy
+     somebody is after is part of saying they want the card, and the server
+     refuses `criteria-required` without it. Absent here means the caller stated
+     nothing, which the server will refuse — this binding does not invent one,
+     because a preference nobody expressed is not a preference. */
+  return ({ canonicalCardId, tier, note = null, desired = undefined } = {}) =>
+    target.execute("addGoal", { canonicalCardId, tier, note,
+      ...(desired === undefined ? {} : { desired }) });
+}
+
+/* WHICH COPY THEY ARE AFTER, CHANGED WITHOUT LOSING THE GOAL (C3.3). Separate
+   from the tier for the same reason offering is separate from owning: "I want a
+   PSA 9 rather than a raw one" and "I am hunting this harder now" are two
+   different things a person can say, and a single command would make correcting
+   one of them look like changing the other. */
+export function setGoalCriteria(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("setGoalCriteria: the production store is required");
+  }
+  return (goalId, desired) => target.execute("updateGoalCriteria", { goalId, desired });
 }
 
 /* CHANGING YOUR MIND ABOUT HOW HARD YOU ARE LOOKING. It changes what you mean,
@@ -233,6 +251,59 @@ export function removeOwnedCopy(target) {
     throw new TypeError("removeOwnedCopy: the production store is required");
   }
   return (copyId) => target.execute("removeCollectorCopy", { copyId });
+}
+
+/* CORRECTING WHAT A COPY IS (Phase 5 C3.3). C2 wrote this command and left it
+   unexposed with a note: it would join the product in the batch that gave it a
+   screen. This is that batch.
+
+   `offered` IS NOT IN THE PATCH, and the server refuses it there. Willingness
+   has its own command above, so that "I am not selling this" and "I was wrong
+   about the certificate" are never the same edit — and so that a person fixing
+   a typo cannot accidentally withdraw a card from their partners. Nor is the
+   card: a copy's identity is immutable, and a copy of a different card is a
+   different copy. */
+export function updateOwnedCopy(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("updateOwnedCopy: the production store is required");
+  }
+  return (copyId, patch) => target.execute("updateCollectorCopy", { copyId, patch });
+}
+
+/* ------------------------------------------------- BINDERS (Phase 5 C3.3)
+
+   WHERE A CARD BELONGS, WHICH IS NOT WHETHER IT IS WANTED OR OWNED. C3.1 built
+   the concept and deliberately shipped no way to reach it; these three are the
+   Card Specification panel's controls, and they are the whole of what that
+   panel needs: make a binder, put this card in one, take it out again.
+
+   THE TWO MEMBERSHIP COMMANDS ARE IDEMPOTENT at the domain, which is what makes
+   a second press of Commit safe after a partial one. `createBinder` is not —
+   it mints identity — so nothing here retries it on the caller's behalf.
+
+   RENAMING AND ARCHIVING ARE NOT HERE. They are binder management, they have no
+   control on this panel, and C3.4 is the batch that gives them one. */
+export function createBinder(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("createBinder: the production store is required");
+  }
+  return (name) => target.execute("createBinder", { name });
+}
+
+export function fileCardInBinder(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("fileCardInBinder: the production store is required");
+  }
+  return (binderId, canonicalCardId) =>
+    target.execute("addBinderEntry", { binderId, canonicalCardId });
+}
+
+export function unfileCardFromBinder(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("unfileCardFromBinder: the production store is required");
+  }
+  return (binderId, canonicalCardId) =>
+    target.execute("removeBinderEntry", { binderId, canonicalCardId });
 }
 
 /* Looking for a card to add. Three reads, no writes: the browse query, one
