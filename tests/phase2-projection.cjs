@@ -136,10 +136,27 @@ describe("A · Collector projection", () => {
   });
 
   test("5  strips TP inventory cost and private fields", () => {
-    const allowed = new Set([...FIELD_RULES.INVENTORY_FOR_COLLECTOR, "status"]);
+    /* `grading` JOINED `status` AS A DERIVED KEY (Phase 5 C3.3).
+       What this protected: that a Collector receives exactly the inventory
+       fields the allow-list names, plus the one derived answer the server owes
+       them, and nothing a partner keeps to themselves.
+       Why naming only `status` is no longer correct: grading is now read by the
+       server too, for the same reason status is — a rule implemented in the
+       browser is a second answer to it.
+       What replaces it, and why it is stricter: the derived key is named
+       explicitly, AND the reading inside it is checked to carry nothing the
+       allow-list dropped. A derived field is a new way for a private fact to
+       escape, so it is inspected rather than waved through. */
+    const allowed = new Set([...FIELD_RULES.INVENTORY_FOR_COLLECTOR, "status", "grading"]);
+    const READING_KEYS = new Set(["state", "grader", "grade", "condition", "label", "problem"]);
     for (const name of ["cA", "cAB", "cB"]) {
       for (const row of P[name].inventory) {
         for (const k of Object.keys(row)) assert(allowed.has(k), `${name} receives inventory field ${k}`);
+        if (row.grading) {
+          for (const k of Object.keys(row.grading)) {
+            assert(READING_KEYS.has(k), `${name} receives a grading reading carrying ${k}`);
+          }
+        }
       }
       const keys = keysDeep(P[name]);
       assert(!keys.has("cost") && !keys.has("acquired"), `${name} has a cost/acquired key somewhere`);
@@ -238,8 +255,18 @@ describe("B · Trusted Partner projection", () => {
       for (const n of [V.marketA, V.marketAB1, V.marketAB2, V.marketB, V.marketX]) {
         assert(!hasNumber(P[name], n), `${name} sees binder reference value ${n}`);
       }
-      const allowed = new Set([...FIELD_RULES.COLLECTOR_COPY_FOR_PARTNER, "status"]);
-      for (const b of P[name].collectorCopies) for (const k of Object.keys(b)) assert(allowed.has(k), `${name} binder field ${k}`);
+      /* `grading` joined `status` as a derived key — see test 5 for why, and
+         for the same inspection of what the reading itself carries. */
+      const allowed = new Set([...FIELD_RULES.COLLECTOR_COPY_FOR_PARTNER, "status", "grading"]);
+      const READING_KEYS = new Set(["state", "grader", "grade", "condition", "label", "problem"]);
+      for (const b of P[name].collectorCopies) {
+        for (const k of Object.keys(b)) assert(allowed.has(k), `${name} binder field ${k}`);
+        if (b.grading) {
+          for (const k of Object.keys(b.grading)) {
+            assert(READING_KEYS.has(k), `${name} receives a grading reading carrying ${k}`);
+          }
+        }
+      }
     }
     /* Network supply (§6) excludes copies another deal holds or traded; own deals keep theirs. */
     const statuses = (proj) => proj.collectorCopies.map((b) => b.id + ":" + b.status);

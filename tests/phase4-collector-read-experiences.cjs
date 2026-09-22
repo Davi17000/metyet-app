@@ -94,12 +94,21 @@ const EMPTY = Object.freeze({
   activity: [], photoRequests: [], copyReviews: [], counterparties: [], catalog: [],
 });
 
+/* A PROJECTED ROW CARRIES ITS GRADING READING (Phase 5 C3.3). The projection
+   computes `grading` from the domain's own `gradingRead` for every row that has
+   a grade or a condition — copies and the legacy catalogue alike — and the
+   presenters read it instead of parsing the string themselves. A fixture that
+   left it out would not be a projection, so these are built the way the server
+   builds them, with the domain's own function rather than a copy of it. */
+const D = require("../domain/metyet-domain.js");
+const projected = (row) => ({ ...row, grading: D.gradingRead(row) });
+
 const CATALOG = [
   { id: "k1", name: "Rayquaza Gold Star", set: "EX Deoxys", num: "107/107", year: 2005,
     grade: "PSA 9", edition: "Unlimited", print: "Holo", language: "English" },
   { id: "k2", name: "Blastoise", set: "Base Set", num: "2/102", year: 1999, grade: "PSA 8" },
   { id: "k3", name: "Umbreon", set: "Neo Discovery", num: "13/75", grade: "Raw", condition: "Near Mint" },
-];
+].map(projected);
 
 const FULL = Object.freeze({
   ...EMPTY,
@@ -110,12 +119,21 @@ const FULL = Object.freeze({
     { id: "g-blast", collectorId: ME, cardId: "k2", tier: "secondary", note: "BLASTOISE-NOTE",
       since: "2026-01-05" },
   ],
+  /* GRADE AND CONDITION ARE THE COPY'S (Batch 5), so these rows carry their
+     own — and deliberately NOT the same answer as the catalogue card they name,
+     which is what lets the test below prove which of the two the screen reads.
+     `b-umb` is a raw Near Mint copy of a card the catalogue also calls raw;
+     `b-blast` is a PSA 7 copy of a card the catalogue calls PSA 8, because two
+     copies of one printing at different grades are exactly the case the
+     canonical model exists to represent. */
   collectorCopies: [
     { offered: true, id: "b-umb", collectorId: ME, cardId: "k3", market: 2050, cert: "PSA 63118845",
+      grade: "Raw", condition: "Near Mint",
       addedAt: "2025-10-10", status: "available", photos: { front: "binder:k3:front", back: "binder:k3:back" } },
     { offered: true, id: "b-blast", collectorId: ME, cardId: "k2", market: 900, cert: "PSA 71204885",
+      grade: "PSA 7",
       addedAt: "2025-04-01", status: "traded", photos: { front: "binder:k2:front" } },
-  ],
+  ].map(projected),
   interests: [{ partnerId: P2, binderId: "b-umb", at: "2025-10-10" }],
   partners: [
     { id: P1, name: "Northline Cards", city: "Duluth, Minnesota", about: "NORTHLINE-ABOUT",
@@ -341,7 +359,20 @@ describe("B. Your Cards", () => {
     assert(umb.includes("PSA 63118845") && !umb.includes("PSA 71204885"), "certs crossed: " + umb);
     assert(umb.includes("$2,050") && !umb.includes("$900"), "reference values crossed: " + umb);
     assert(blast.includes("PSA 71204885") && blast.includes("$900"), blast);
-    assert(umb.includes("Raw · Near Mint"), "raw is the catalogue's answer: " + umb);
+    /* SUPERSEDED AND RESTATED (Phase 5 C3.3).
+       What this protected: that a copy's raw-versus-graded state is shown as
+       stated and not inferred.
+       Why "the catalogue's answer" is no longer correct: Batch 5 moved grade
+       and condition off card identity and onto the copy, and C2 gave a copy a
+       canonical card — which has no catalogue row here at all, so reading
+       grading from the catalogue showed a canonical copy nothing.
+       What replaces it, and why it is stricter: the copy and the card it names
+       are given DIFFERENT grades, and the screen must show the copy's. The old
+       form could not tell the two apart, because the fixture's copies had no
+       grading of their own. */
+    assert(umb.includes("Raw · Near Mint"), "the copy's own grading: " + umb);
+    assert(blast.includes("PSA 7") && !blast.includes("PSA 8"),
+      "the card's grade was shown where the copy's belongs: " + blast);
     assert(umb.includes("Front and back") && blast.includes("Front only"),
       "photos are described, not shown: " + umb + " | " + blast);
   });

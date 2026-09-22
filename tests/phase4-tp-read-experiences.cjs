@@ -391,18 +391,51 @@ describe("D. unknown values survive as themselves", () => {
     eq(PRESENT.statusLabel("impounded"), "impounded");
   });
 
-  test("raw and graded are the catalogue's answer, each shown as it stands", () => {
-    eq(PRESENT.gradeLine({ grade: "PSA 9" }), "PSA 9");
-    eq(PRESENT.gradeLine({ grade: "Raw", condition: "Near Mint" }), "Raw · Near Mint");
-    eq(PRESENT.gradeLine({ grade: "Raw" }), "Raw");
-    eq(PRESENT.gradeLine({ grade: null, condition: "Lightly Played" }), "Lightly Played");
-    eq(PRESENT.gradeLine({}), null, "nothing is invented for a card with neither");
-    eq(PRESENT.isGraded({ grade: "Raw", condition: "Near Mint" }), false);
-    eq(PRESENT.isGraded({ grade: "PSA 10" }), true);
+  /* SUPERSEDED AND RESTATED (Phase 5 C3.3).
+
+     What this protected: that raw and graded are shown exactly as the record
+     states them — nothing inferred from one to the other, and nothing invented
+     for a record carrying neither.
+
+     Why its original form is no longer correct: it asserted those answers
+     against a regex living in this presenter, and there were three such
+     regexes — one here, one in the Collector's presenter, one written out
+     inline in Inventory. Three implementations are three answers, and all
+     three quietly dropped the second half of a copy that said both `PSA 9` and
+     `Damaged`. The presenter no longer decides; the projection carries the
+     domain's own reading.
+
+     What replaces it, and why it is stricter: the same six cases, now asserted
+     against readings produced by the DOMAIN — so the vocabulary is pinned to
+     the authority rather than to a copy of it — plus two the old form could
+     not make: a row with no reading invents nothing, and a contradictory copy
+     is not shown as a clean grade. */
+  const D = require("../domain/metyet-domain.js");
+  const read = (facts) => ({ ...facts, grading: D.gradingRead(facts) });
+
+  test("raw and graded are the server's reading, each shown as it stands", () => {
+    eq(PRESENT.gradeLine(read({ grade: "PSA 9" })), "PSA 9");
+    eq(PRESENT.gradeLine(read({ grade: "Raw", condition: "Near Mint" })), "Raw · Near Mint");
+    eq(PRESENT.gradeLine(read({ grade: "Raw" })), "Raw");
+    eq(PRESENT.gradeLine(read({ grade: null, condition: "Lightly Played" })), "Lightly Played");
+    eq(PRESENT.gradeLine(read({})), null, "nothing is invented for a card with neither");
+    eq(PRESENT.isGraded(read({ grade: "Raw", condition: "Near Mint" })), false);
+    eq(PRESENT.isGraded(read({ grade: "PSA 10" })), true);
+
+    /* A row the server sent no reading for is not parsed here instead. */
+    eq(PRESENT.gradeLine({ grade: "PSA 9" }), null, "the presenter parsed a grade itself");
+    eq(PRESENT.isGraded({ grade: "PSA 9" }), false, "the presenter decided graded itself");
+    assert(!/\/\^raw\$\/i/.test(code("client/tp/present.js")),
+      "the presenter still carries its own raw-versus-graded rule");
+
+    /* And the contradiction this batch exists to stop hiding. */
+    const bad = read({ grade: "PSA 9", condition: "Damaged" });
+    eq(PRESENT.gradeProblem(bad), "graded-has-condition");
+    eq(PRESENT.gradeConflictLine(bad), "PSA 9 and Damaged", "one half was dropped");
 
     const state = { ...EMPTY,
-      catalog: [{ id: "g", name: "Graded One", grade: "PSA 10" },
-        { id: "r", name: "Raw One", grade: "Raw", condition: "Near Mint" }],
+      catalog: [read({ id: "g", name: "Graded One", grade: "PSA 10" }),
+        read({ id: "r", name: "Raw One", grade: "Raw", condition: "Near Mint" })],
       inventory: [{ invId: "i-g", cardId: "g", cert: "CERT-G", status: "available" },
         { invId: "i-r", cardId: "r", cert: "SER-R", status: "available" }] };
     const r = show(state, "Inventory");

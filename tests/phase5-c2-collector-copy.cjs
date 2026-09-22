@@ -694,8 +694,23 @@ describe("G. what a partner receives, and what they do not", () => {
       note: "bought at the show, do not sell under 9k" });
     const seen = (await get(ctx.app, "north", "/api/view")).json().state.collectorCopies;
     eq(seen.length, 1, "supply");
-    const allowed = new Set([...FIELD_RULES.COLLECTOR_COPY_FOR_PARTNER, "status"]);
+    /* `grading` JOINED `status` AS A DERIVED KEY (Phase 5 C3.3).
+       What this protected: that a partner receives exactly the copy fields the
+       allow-list names plus the server's derived answer, and nothing else —
+       above all not the Collector's own reference value or private note.
+       Why naming only `status` is no longer correct: what a copy's grade MEANS
+       is now decided by the server too, for the reason `status` already was.
+       What replaces it, and why it is stricter: the derived key is named, and
+       the reading inside it is checked against the same privacy rule — a
+       derived field is a new way for a private fact to travel, so it is opened
+       and inspected rather than allowed through on the strength of its name. */
+    const allowed = new Set([...FIELD_RULES.COLLECTOR_COPY_FOR_PARTNER, "status", "grading"]);
     for (const k of Object.keys(seen[0])) assert(allowed.has(k), `an unclassified field crossed: ${k}`);
+    eq(json(Object.keys(seen[0].grading).sort()),
+      json(["condition", "grade", "grader", "label", "problem", "state"]),
+      "the grading reading is not the shape the domain produces");
+    eq(seen[0].grading.label, "PSA 9", "the reading the partner is given");
+    eq(seen[0].grading.problem, null, "a sayable copy reported a problem");
     eq(seen[0].canonicalCardId, cards.firstEdition, "which card it is");
     eq(seen[0].grade, "PSA 9", "what the object is");
     eq(seen[0].offered, true, "and that it is on offer");

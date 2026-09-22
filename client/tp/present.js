@@ -85,22 +85,33 @@ export const cardSetLine = (card) => (card
   ? [text(card.set), text(card.num), card.year ? String(card.year) : null].filter(Boolean).join(" · ") || null
   : null);
 
-/* RAW vs GRADED, as the catalogue states it and not as we infer it. `grade`
-   carries either a grading label ("PSA 9") or the word "Raw"; `condition` is
-   the raw qualifier ("Near Mint") and is null for a graded copy. A card with
-   neither yields null, and nothing is shown. */
-export const gradeLine = (card) => {
-  if (!card) return null;
-  const grade = text(card.grade);
-  const condition = text(card.condition);
-  if (grade && /^raw$/i.test(grade)) return condition ? `Raw · ${condition}` : "Raw";
-  if (grade) return grade;
-  return condition || null;
+/* RAW vs GRADED — THE SERVER'S READING, CARRIED ON THE ROW (Phase 5 C3.3).
+
+   The twin of `client/collector/present.js`'s, and it used to be the twin in a
+   worse sense: the same regex, written out again here, deciding again what a
+   grading string means. The projection now carries `grading` from the domain's
+   own `gradingRead`, and both applications read it instead of re-deriving it.
+
+   This matters more on this side than on the other. A partner values a copy
+   from what the screen says about it, and a copy that said both `PSA 9` and
+   `Damaged` used to reach them as a clean "PSA 9". They would have been pricing
+   a card the record does not describe. */
+export const gradeLine = (row) => {
+  const reading = row && row.grading;
+  return reading && text(reading.label) ? reading.label : null;
 };
 
-export const isGraded = (card) => {
-  const grade = text(card && card.grade);
-  return Boolean(grade) && !/^raw$/i.test(grade);
+export const isGraded = (row) => Boolean(row && row.grading && row.grading.state === "graded");
+
+/* The domain's word for a pair that cannot both be true, or null. */
+export const gradeProblem = (row) => (row && row.grading ? row.grading.problem || null : null);
+
+/* Both halves of a contradiction, so it can be seen rather than resolved. */
+export const gradeConflictLine = (row) => {
+  const reading = row && row.grading;
+  if (!reading || !reading.problem) return null;
+  const said = [text(reading.label), text(reading.condition)].filter(Boolean);
+  return said.length === 2 ? `${said[0]} and ${said[1]}` : (said[0] || null);
 };
 
 /* The printing details, each shown only when the catalogue carried it. */

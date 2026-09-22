@@ -49,7 +49,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Panel, Record, Fact, Tag } from "../parts.jsx";
 import CardBrowser, { EMPTY_SESSION } from "../../browse/CardBrowser.jsx";
 import { rows, indexById, text, day, money, plural, cardTitle, cardSetLine,
-  gradeLine, isGraded, cardMarks, statusLabel, byRecency } from "../present.js";
+  gradeLine, isGraded, gradeConflictLine, cardMarks, statusLabel, byRecency } from "../present.js";
 import Profile from "./Profile.jsx";
 
 export default function Inventory({ state, onSaveProfile = null,
@@ -118,10 +118,18 @@ export default function Inventory({ state, onSaveProfile = null,
           ) : null}
           <button className="tps-edit" type="button" onClick={() => setViewing("shop")}>View shop</button>
         </>}
-      empty={live.length ? null
+      /* AND THE EMPTY SENTENCE STANDS ASIDE WHILE SOMEBODY IS ADDING (C3.3).
+         `Panel` renders its empty sentence INSTEAD of its children, so a
+         partner whose shelf was empty pressed "Add cards" and watched nothing
+         happen — the panel was mounted underneath a line saying there was
+         nothing here. Which was also the first copy they would ever add.
+
+         The sentence itself was out of date too: adding a copy has been part
+         of this release since C1. */
+      empty={live.length || adding ? null
         : (archived
           ? "Nothing on your shelf right now — every copy you've recorded is archived."
-          : "Nothing in your inventory yet. Adding a copy isn't part of this release.")}
+          : "Nothing in your inventory yet — “Add cards” puts the first copy on your shelf.")}
     >
       {adding ? (
         <AddCopy
@@ -136,11 +144,17 @@ export default function Inventory({ state, onSaveProfile = null,
         const known = copy.canonicalCardId ? described[copy.canonicalCardId] : null;
         const card = copy.canonicalCardId ? null : (catalog.get(copy.cardId) || null);
         /* Grade and condition belong to the COPY since Batch 5 — a PSA 9 and a
-           PSA 10 of one printing are one card and two copies. */
-        const grade = text(copy.grade) || (card ? gradeLine(card) : null);
-        const graded = Boolean(grade) && !/^raw$/i.test(grade);
-        const shown = graded ? grade
-          : (text(copy.condition) ? `${grade || "Raw"} · ${copy.condition}` : grade);
+           PSA 10 of one printing are one card and two copies.
+
+           AND WHAT THEY MEAN IS THE SERVER'S ANSWER (Phase 5 C3.3). This was a
+           third implementation of the grading rule, written out inline with its
+           own `/^raw$/i` — and like the other two it read a copy saying both
+           `PSA 9` and `Damaged` as a clean "PSA 9". The projection carries the
+           domain's reading now; a copy with no reading of its own falls back to
+           its legacy catalogue row, which carries one too. */
+        const graded = isGraded(copy) || (!copy.grading && isGraded(card));
+        const shown = gradeLine(copy) || gradeLine(card);
+        const conflict = gradeConflictLine(copy);
         return (
           <Record
             key={copy.invId}
@@ -156,6 +170,9 @@ export default function Inventory({ state, onSaveProfile = null,
             tags={
               <>
                 <Tag>{shown}</Tag>
+                {/* A copy that disagrees with itself says so, rather than
+                    being priced as the half that happens to read first. */}
+                {conflict ? <Tag tone="unknown">{`Says ${conflict}`}</Tag> : null}
                 <Tag tone={copy.status === "available" ? null : "strong"}>{statusLabel(copy.status)}</Tag>
               </>
             }
@@ -216,7 +233,17 @@ export default function Inventory({ state, onSaveProfile = null,
    to a copy whose facts nobody has entered yet.
 
    CANCEL STILL CREATES NOTHING, and neither does browsing: this panel asks the
-   catalogue questions and writes nothing until "Add this copy". */
+   catalogue questions and writes nothing until "Add this copy".
+
+   AND IT NOW ASKS THE ONE GRADING RULE BEFORE THE SERVER DOES (Phase 5 C3.3).
+   C3.2 made "a raw card says what state it is in" authoritative in the domain,
+   which was right — and left this screen able to send a copy the domain would
+   refuse: Grade "Raw" with Condition still on "Not stated" was two clicks away,
+   and came back as "check the details" without saying which. The condition is
+   now required whenever Raw is chosen, changing the grade drops a condition
+   that no longer applies, and the refusal — if it still arrives — names the
+   field. None of that moves the decision: the domain refuses the same payload
+   it always would, and this is the screen agreeing with it out loud. */
 function AddCopy({ browse, onAdd, onDone }) {
   const [session, setSession] = useState(EMPTY_SESSION);
   const [looking, setLooking] = useState(false);
@@ -226,6 +253,19 @@ function AddCopy({ browse, onAdd, onDone }) {
   const [problem, setProblem] = useState(null);
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setFacts((f) => ({ ...f, [k]: v }));
+  /* CHANGING THE GRADE DROPS A CONDITION THAT NO LONGER APPLIES (Phase 5 C3.3).
+     A partner who picks Raw, chooses Heavily Played, then changes their mind to
+     PSA 9 has not said the card is heavily played — they have said it is a
+     PSA 9. Keeping the old answer hidden in state would leave the screen
+     disagreeing with itself even though the payload happens not to send it. */
+  const setGrade = (value) => setFacts((f) => ({ ...f, grade: value,
+    condition: value === "Raw" ? f.condition : "" }));
+
+  /* THE ONE RULE, ASKED BEFORE THE REQUEST (Phase 5 C3.3). The domain decides
+     this and refuses a copy that breaks it; the screen asks the same question
+     first so a partner is told which control to fix instead of being told no
+     after the round trip. It is a courtesy, never the authority. */
+  const rawNeedsCondition = facts.grade === "Raw" && !facts.condition;
 
   const open = async (row) => {
     setProblem(null); setLooking(true);
@@ -242,7 +282,7 @@ function AddCopy({ browse, onAdd, onDone }) {
   };
 
   const save = async () => {
-    if (!chosen || saving) return;
+    if (!chosen || saving || rawNeedsCondition) return;
     setSaving(true); setProblem(null);
     try {
       const answer = await onAdd({
@@ -258,7 +298,16 @@ function AddCopy({ browse, onAdd, onDone }) {
           ? "That version is no longer one MetYet can add. Choose another."
           : answer.refused === "invalid-amount"
             ? "An amount has to be a number, and not a negative one."
-            : "MetYet would not accept that copy. Check the details and try again.");
+            /* THE REFUSAL NAMES THE FIELD (Phase 5 C3.3). C3.2 made one rule
+               authoritative for grading and this screen kept answering it with
+               "check the details", which tells a partner nothing about WHICH
+               detail. The domain is still the authority — this is the same
+               refusal, said in the words of the control that caused it. */
+            : answer.refused === "grading-incoherent"
+              ? (facts.grade === "Raw"
+                ? "A raw copy needs a condition. Choose one."
+                : "A graded copy already carries its assessment, so it cannot also have a raw condition.")
+              : "MetYet would not accept that copy. Check the details and try again.");
         setSaving(false);
         return;
       }
@@ -317,16 +366,26 @@ function AddCopy({ browse, onAdd, onDone }) {
             <>
               <label className="tps-field">
                 <span>Grade</span>
-                <select value={facts.grade} onChange={(e) => set("grade", e.target.value)}>
+                <select value={facts.grade} onChange={(e) => setGrade(e.target.value)}>
                   <option value="">Not stated</option>
                   {GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
                 </select>
               </label>
+              {/* RAW IS HALF A SENTENCE UNTIL THE CONDITION IS SAID (C3.3).
+                  "Not stated" is a real answer for a copy nobody has described,
+                  which is why it stays on the Grade control — but it is not an
+                  answer once somebody has said the card is raw, so it is not
+                  offered here and the copy cannot be added without one. */}
               {facts.grade === "Raw" ? (
                 <label className="tps-field">
                   <span>Condition</span>
                   <select value={facts.condition} onChange={(e) => set("condition", e.target.value)}>
-                    <option value="">Not stated</option>
+                    {/* A PROMPT, NOT AN ANSWER. It is `disabled`, so it can be
+                        read but not chosen: "Not stated" is a real answer for a
+                        copy nobody has described and stays on the Grade
+                        control, but it is not one once somebody has said the
+                        card is raw. */}
+                    <option value="" disabled>Choose a condition</option>
                     {CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </label>
@@ -334,7 +393,11 @@ function AddCopy({ browse, onAdd, onDone }) {
               {field("Certificate", "cert", { inputMode: "numeric" })}
               {field("Ask", "ask", { inputMode: "decimal" })}
               {field("What it cost you", "cost", { inputMode: "decimal" })}
-              <button className="tps-edit" type="button" disabled={saving} onClick={save}>
+              {rawNeedsCondition ? (
+                <p className="tps-dim">A raw copy needs a condition before it can go on the shelf.</p>
+              ) : null}
+              <button className="tps-edit" type="button" disabled={saving || rawNeedsCondition}
+                onClick={save}>
                 {saving ? "Adding…" : "Add this copy"}
               </button>
             </>
