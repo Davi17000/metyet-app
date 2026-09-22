@@ -922,6 +922,24 @@ const canonicalWorld = (over = {}) => ({
   collectorCopies: [], binders: [], binderEntries: [], interests: [], opportunities: [], conversations: [],
   photoRequests: [], copyReviews: [], ...over,
 });
+/* SUPERSEDED AND RESTATED (Phase 5 C3.4b). These tests press "Goals" to read
+   the discovery sentence off the goal list. C3.4b removed the top-level Goals
+   entry — a binder expresses coherence, a goal expresses priority — and moved
+   the section into the shell's DEFERRED_SECTIONS rather than deleting it, so
+   there is no button to press. The section itself is untouched, and so is
+   everything these tests assert about what it renders, so they render it
+   exactly as the shell does: the shell's own declaration of the view and of the
+   props that view is given. Reading both out of the shell rather than importing
+   Goals.jsx directly is the stricter form — if the shell ever handed Goals a
+   different set of props, this would render with the different set too. */
+const SHELL_MOD = load("client/collector/CollectorShell.jsx");
+const goalsView = () => {
+  const all = [...(SHELL_MOD.SECTIONS || []), ...(SHELL_MOD.DEFERRED_SECTIONS || [])];
+  const meta = all.find((s) => s.id === "goals");
+  assert(meta, "the Collector shell no longer declares a Goals view at all");
+  return meta.view;
+};
+
 const describer = () => ({
   search: async () => ({ contexts: [] }),
   read: async () => ({ context: null, cards: [] }),
@@ -937,12 +955,9 @@ describe("H. what each person actually reads", () => {
     eq(state.discoveries.length, 1, "the projection carried one");
     let r;
     await TR.act(async () => {
-      r = TR.create(React.createElement(CollectorShellUI,
-        { state, onSignOut() {}, onBrowseCards: describer() }));
+      r = TR.create(React.createElement(goalsView(),
+        { state, onBrowseCards: describer() }));
     });
-    /* C1 made Browse the Collector's first section, so the goal list — which
-       is what these assertions are about — is one press away. */
-    TR.act(() => { clickText(r, "Goals"); });
     await TR.act(async () => {});
     const said = texts(r);
     assert(said.includes("Northline has this card."),
@@ -957,12 +972,9 @@ describe("H. what each person actually reads", () => {
     const state = projectForActor(world, { collectorId: "c1" });
     let r;
     await TR.act(async () => {
-      r = TR.create(React.createElement(CollectorShellUI,
-        { state, onSignOut() {}, onBrowseCards: describer() }));
+      r = TR.create(React.createElement(goalsView(),
+        { state, onBrowseCards: describer() }));
     });
-    /* C1 made Browse the Collector's first section, so the goal list — which
-       is what these assertions are about — is one press away. */
-    TR.act(() => { clickText(r, "Goals"); });
     await TR.act(async () => {});
     const said = texts(r);
     assert(said.includes("Northline has 2 of this card."), said.slice(0, 400));
@@ -1041,12 +1053,9 @@ describe("H. what each person actually reads", () => {
     eq(state.discoveries.length, 1, "the overlap is still true — nothing is committed yet");
     let r;
     await TR.act(async () => {
-      r = TR.create(React.createElement(CollectorShellUI,
-        { state, onSignOut() {}, onBrowseCards: describer() }));
+      r = TR.create(React.createElement(goalsView(),
+        { state, onBrowseCards: describer() }));
     });
-    /* C1 made Browse the Collector's first section, so the goal list — which
-       is what these assertions are about — is one press away. */
-    TR.act(() => { clickText(r, "Goals"); });
     await TR.act(async () => {});
     const said = texts(r);
     assert(!said.includes("Northline has this card."),

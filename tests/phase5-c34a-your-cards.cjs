@@ -522,22 +522,47 @@ describe("F. reachable at last, and what that did not change", () => {
 
   const SHELL_MOD = build("client/collector/CollectorShell.jsx");
 
-  test("Your Cards is in the navigation, and nothing is waiting behind it", () => {
-    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "browse,goals,my-cards,partners");
-    eq(SHELL_MOD.DEFERRED_SECTIONS.length, 0, "something is deferred again");
+  /* SUPERSEDED AND RESTATED BY C3.4b, the second half of this same batch.
+
+     What it protected: that Your Cards reached the navigation and that nothing
+     was left waiting behind a deferred flag once it did.
+
+     Why it is no longer correct: C3.4b replaced the top-level Goals entry with
+     Binder, because a Binder expresses coherence and a Goal expresses priority,
+     and priority belongs inside the card experiences rather than beside them.
+     Goals.jsx was not deleted — it moved into DEFERRED_SECTIONS, so the view
+     still renders where composed experiences reach it.
+
+     What replaces it, and why it is stricter: the navigation is pinned to the
+     exact four production sections in order, Your Cards keeps every claim it
+     had, and DEFERRED_SECTIONS is pinned by name rather than only by length —
+     so a section cannot be quietly parked there. */
+  test("Your Cards is in the navigation, and only Goals waits behind it", () => {
+    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "browse,binder,my-cards,partners");
+    eq(SHELL_MOD.DEFERRED_SECTIONS.map((s) => s.id).join(","), "goals",
+      "something else is deferred");
     const mine = SHELL_MOD.SECTIONS.find((s) => s.id === "my-cards");
     eq(mine.label, "Your Cards");
     eq(mine.count, "collectorCopies", "it counts something other than its own collection");
   });
 
-  test("C3.4a opened no door and added no command", async () => {
-    const ctx = await world();
-    eq(EXPOSED_COMMANDS.length, 14, "C3.4a changed the production surface");
-    assert(!EXPOSED_COMMANDS.includes("renameBinder"), "a binder door opened in the Your Cards batch");
-    assert(!EXPOSED_COMMANDS.includes("setBinderArchived"));
-    for (const name of ["renameBinder", "setBinderArchived"]) {
-      eq((await post(ctx.app, "casey", name, {})).json().error.refused, "command-unavailable", name);
-    }
+  /* SUPERSEDED AND RESTATED BY C3.4b. C3.4a's claim was that IT opened no door
+     — still true of C3.4a, and now asserted against C3.4a's own commit rather
+     than against the allow-list forever. C3.4b opened the two binder-lifecycle
+     doors deliberately, in the half of the batch that built the screen. The
+     restatement is stricter: it holds the recovery seam itself to its promise,
+     which a live reading of EXPOSED_COMMANDS could never do once C3.4b landed. */
+  test("C3.4a opened no door and added no command", () => {
+    const { execFileSync } = require("child_process");
+    const at = execFileSync("git", ["show", "00dee91:server/exposed-commands.js"],
+      { cwd: ROOT, encoding: "utf8" });
+    /* Only the list literal: everything after `]);` is ordinary code, and a
+       `typeof x === "string"` would otherwise count as a command. */
+    const after = at.split("EXPOSED_COMMANDS")[1] || "";
+    const names = after.slice(0, after.indexOf("]);")).match(/"[a-zA-Z]+"/g) || [];
+    eq(names.length, 14, "C3.4a changed the production surface");
+    assert(!names.includes('"renameBinder"'), "a binder door opened in the Your Cards batch");
+    assert(!names.includes('"setBinderArchived"'));
     assert(!C.COMMAND_NAMES.includes("saveCardSpecification"), "an aggregate command appeared");
   });
 

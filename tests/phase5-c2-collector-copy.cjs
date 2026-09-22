@@ -782,8 +782,10 @@ describe("H. the doors this batch opened, and no others", () => {
       /* C3.3 — the Card Specification panel's five. */
       "createBinder", "addBinderEntry", "removeBinderEntry",
       "updateCollectorCopy", "updateGoalCriteria",
+      /* C3.4b — managing a binder as an object, now that there is a screen. */
+      "renameBinder", "setBinderArchived",
     ].sort()), "the production surface is not what this batch declared");
-    eq(EXPOSED_COMMANDS.length, 14, "and nothing arrived unnamed");
+    eq(EXPOSED_COMMANDS.length, 16, "and nothing arrived unnamed");
   });
 
   test("every exposed name is a real command, and the client sends exactly these", () => {
@@ -1046,9 +1048,26 @@ describe("I. everything else, exactly as it was", () => {
      two new ones are added — no Binder command is exposed to production, and
      C2's own migrations create no Binder table. The old file-name check
      degenerated into "nobody named a file Binder"; naming the door is better. */
-  test("C2 shipped no Binder surface, and C3.1 still ships none", () => {
-    const files = fs.readdirSync(path.join(ROOT, "client", "collector", "sections"));
-    assert(!files.some((f) => /Binder/i.test(f)), "a Binder section appeared: " + files.join(","));
+  /* SUPERSEDED AND RESTATED (Phase 5 C3.4b).
+
+     What this protected: that no Binder surface existed, so the Binder
+     commands C2 and C3.1 wrote could not be reached from a browser.
+
+     Why it is no longer correct: C3.4b ships `sections/Binder.jsx` and puts
+     Binder in the Collector's navigation, on purpose. "No file is named
+     Binder" and "no Binder is in the navigation" are C2's and C3.1's facts,
+     not the product's.
+
+     What replaces it, and why it is stricter: those facts are now asserted
+     against C2's OWN commit, where they are permanently true and where no
+     later batch can erase them by shipping the surface the roadmap always
+     intended. A live reading could only ever be deleted; a reading of
+     `4095a95` cannot. */
+  test("C2 itself shipped no Binder surface", () => {
+    const { execFileSync } = require("child_process");
+    const git = (...a) => execFileSync("git", a, { cwd: ROOT, encoding: "utf8" });
+    const at2 = git("ls-tree", "--name-only", "4095a95", "client/collector/sections/");
+    assert(!/Binder/i.test(at2), "C2 shipped a Binder section: " + at2);
 
     /* C2's OWN migrations create no binder table. 0013 does, and is C3.1's. */
     for (const m of ["0011_collector_copies.sql", "0012_collector_copy_offered_backfill.sql"]) {
@@ -1070,25 +1089,48 @@ describe("I. everything else, exactly as it was", () => {
        surface actually is. C3.3 lets a person say where the card in front of
        them belongs; managing binders AS OBJECTS — renaming one, putting one
        away — is C3.4's surface and stays shut. Naming which two are still
-       closed is a sharper statement than "all of them are". */
+       closed is a sharper statement than "all of them are".
+
+       SUPERSEDED AGAIN AND RESTATED (Phase 5 C3.4b). C3.4b built that surface:
+       a Binder library where one is renamed in place and put away or brought
+       back. `STILL_C34` is therefore empty — the batch it named has arrived
+       and opened both. What replaces the pin is not weaker: the Binder command
+       TABLE is still pinned exactly, so a sixth Binder command cannot appear
+       unnamed; and `markBinderReviewed` — excluded from the table above because
+       it is the legacy "a partner opened this Collector's cards" command and
+       has nothing to do with a Binder but its name — is now asserted shut here
+       by name, which the old wording never did. */
     const table = C.COMMAND_NAMES.filter((n) => /binder/i.test(n) && n !== "markBinderReviewed");
     assert(table.length > 0, "the Binder commands vanished");
     const OPENED_BY_C33 = ["createBinder", "addBinderEntry", "removeBinderEntry"];
-    const STILL_C34 = ["renameBinder", "setBinderArchived"];
-    eq(json(table.slice().sort()), json([...OPENED_BY_C33, ...STILL_C34].sort()),
+    const OPENED_BY_C34 = ["renameBinder", "setBinderArchived"];
+    const STILL_C34 = [];
+    eq(json(table.slice().sort()), json([...OPENED_BY_C33, ...OPENED_BY_C34, ...STILL_C34].sort()),
       "a Binder command arrived or left without being named here");
-    for (const name of STILL_C34) {
-      assert(!EXPOSED_COMMANDS.includes(name), `${name} is exposed before C3.4 builds its surface`);
+    eq(STILL_C34.length, 0, "C3.4 arrived; nothing is waiting for it");
+    for (const name of [...OPENED_BY_C33, ...OPENED_BY_C34]) {
+      assert(EXPOSED_COMMANDS.includes(name), `${name} lost its surface`);
     }
+    assert(!EXPOSED_COMMANDS.includes("markBinderReviewed"),
+      "markBinderReviewed is exposed; it is not a Binder command");
 
-    /* Read the NAVIGATION itself, not its file's text: a comment explaining what
-       a Binder will be is not a Binder in the navigation, and a regex over the
-       source cannot tell those apart. */
-    const shell = loadModule("client/collector/CollectorShell.jsx");
-    const labels = shell.SECTIONS.map((x) => x.id + "/" + x.label).join(", ");
-    assert(!/binder/i.test(labels), "a Binder entered the Collector's navigation: " + labels);
-    assert(!/binder/i.test(shell.DEFERRED_SECTIONS.map((x) => x.id + "/" + x.label).join(", ")),
-      "a Binder is waiting in the wings under that name");
+    /* Read the NAVIGATION itself, not its file's text: C2's shell says "Trade
+       Binder" in prose, describing the idea the product was moving away from,
+       and a regex over the whole source cannot tell that apart from a
+       destination. So the two frozen section lists are cut out of C2's own
+       source and read on their own. */
+    const shellAt2 = git("show", "4095a95:client/collector/CollectorShell.jsx");
+    const listsAt2 = ["SECTIONS = Object.freeze([", "DEFERRED_SECTIONS = Object.freeze(["]
+      .map((start) => {
+        const from = shellAt2.indexOf(start);
+        assert(from >= 0, `C2's shell has no ${start}`);
+        const body = shellAt2.slice(from + start.length);
+        return body.slice(0, body.indexOf("]);"));
+      });
+    for (const list of listsAt2) {
+      assert(!/binder/i.test(list.replace(/\/\*[\s\S]*?\*\//g, "")),
+        "C2's navigation held a Binder");
+    }
   });
 });
 

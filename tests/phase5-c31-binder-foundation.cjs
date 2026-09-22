@@ -585,15 +585,24 @@ describe("E. the commands exist, and production cannot reach them", () => {
      What replaces it, and why it is stricter: the rule is unchanged and is now
      asserted on the two that still have no surface — and, for the three that
      do, this checks the thing that actually matters once a door is open, which
-     is that the seat and ownership rules behind it did not move with it. */
-  test("the two with no surface yet are still unreachable", async () => {
+     is that the seat and ownership rules behind it did not move with it.
+
+     SUPERSEDED AGAIN AND RESTATED (Phase 5 C3.4b). C3.4b is the batch that
+     gives the last two a screen: a Binder library renames one in place and puts
+     one away. So none of the five is unreachable any more, and the rule that
+     produced this test now has one Binder-named command left to bite on —
+     `markBinderReviewed`, which is not a Binder command at all. That is what
+     this asserts, and it is stricter than the wording it replaces: it pins
+     `markBinderReviewed` closed by NAME rather than leaving it to a list of
+     everything C3.1 happened not to expose. */
+  test("the one that is not a Binder command is still unreachable", async () => {
     const ctx = await world();
-    for (const name of ["renameBinder", "setBinderArchived"]) {
-      assert(!EXPOSED_COMMANDS.includes(name), `${name} is on the production allow-list`);
-      const res = await post(ctx.app, "casey", name, {});
-      eq(res.statusCode, 409, `${name} over HTTP`);
-      eq(res.json().error.refused, "command-unavailable", `${name} over HTTP`);
-    }
+    assert(C.COMMAND_NAMES.includes("markBinderReviewed"), "the command vanished");
+    assert(!EXPOSED_COMMANDS.includes("markBinderReviewed"),
+      "markBinderReviewed is on the production allow-list");
+    const res = await post(ctx.app, "casey", "markBinderReviewed", {});
+    eq(res.statusCode, 409, "markBinderReviewed over HTTP");
+    eq(res.json().error.refused, "command-unavailable", "markBinderReviewed over HTTP");
   });
 
   test("and the three C3.3 opened kept every rule behind them", async () => {
@@ -622,11 +631,15 @@ describe("E. the commands exist, and production cannot reach them", () => {
     "card-unavailable", "the catalog guard did not run on an open door");
   });
 
-  /* SUPERSEDED AND RESTATED, twice over, for the reason above. C3.1's claim was
-     that IT shipped no surface — which is still true of C3.1, and is now said
-     about C3.1's own commit rather than about the allow-list forever. What the
-     allow-list is pinned to is the set C3.3 declared. */
-  test("the exposed set is exactly what C3.3 declared", () => {
+  /* SUPERSEDED AND RESTATED, three times over now, for the reason above. C3.1's
+     claim was that IT shipped no surface — which is still true of C3.1, and is
+     now said about C3.1's own commit rather than about the allow-list forever.
+     What the allow-list is pinned to is the set C3.4 declared: C3.3's fourteen
+     plus the two binder-lifecycle commands, which C3.4 opened because it built
+     the screen that needs them. The restatement is stricter than what it
+     replaces, not weaker: the set is still pinned by value AND by count, so
+     swapping one name for another cannot pass. */
+  test("the exposed set is exactly what C3.4 declared", () => {
     eq(json([...EXPOSED_COMMANDS].sort()), json([
       "updatePartnerProfile", "revokeCollectorInvitation",
       "addGoal", "updateGoalTier", "removeGoal",
@@ -634,18 +647,26 @@ describe("E. the commands exist, and production cannot reach them", () => {
       "addCollectorCopy", "setCollectorCopyOffered", "removeCollectorCopy",
       "createBinder", "addBinderEntry", "removeBinderEntry",
       "updateCollectorCopy", "updateGoalCriteria",
-    ].sort()), "the production surface is not what C3.3 declared");
-    eq(EXPOSED_COMMANDS.length, 14);
+      "renameBinder", "setBinderArchived",
+    ].sort()), "the production surface is not what C3.4 declared");
+    eq(EXPOSED_COMMANDS.length, 16);
   });
 
-  test("the client binds the three with a surface, and neither of the two without", () => {
+  /* SUPERSEDED AND RESTATED. The claim was that the client bound the three
+     commands C3.1's foundation gave a surface and neither of the two it did
+     not. It is no longer correct because C3.4 built the Binder screen, so
+     rename and archive have a surface too and the client binds all five. What
+     replaces it is stricter, because it no longer merely counts on absence: it
+     names the command that STILL has no surface — markBinderReviewed, the
+     legacy partner-read command — and holds the client to not binding it. */
+  test("the client binds the five with a surface, and not the one without", () => {
     const client = read("client/commands.js");
-    for (const name of ["createBinder", "addBinderEntry", "removeBinderEntry"]) {
+    for (const name of ["createBinder", "addBinderEntry", "removeBinderEntry",
+      "renameBinder", "setBinderArchived"]) {
       assert(client.includes(name), `client/commands.js does not bind ${name}`);
     }
-    for (const name of ["renameBinder", "setBinderArchived"]) {
-      assert(!client.includes(name), `client/commands.js names ${name}`);
-    }
+    assert(!client.includes("markBinderReviewed"),
+      "client/commands.js names markBinderReviewed");
   });
 
   test("addBinderEntry is on the catalog guard's list, ready for the batch that opens the door", () => {

@@ -88,6 +88,25 @@ const EXPOSED_COMMANDS = Object.freeze([
   "removeBinderEntry",           // Collector → Card Specification, unfiling it
   "updateCollectorCopy",         // Collector → Card Specification, correcting a copy
   "updateGoalCriteria",          // Collector → Card Specification, which copy is wanted
+  /* MANAGING A BINDER AS AN OBJECT (Phase 5 C3.4). C3.1 wrote these two and
+     C3.3 deliberately left them shut, because C3.3 let a person say where the
+     card IN FRONT OF THEM belongs and nothing more — renaming a binder or
+     putting one away are things you do to the binder itself, and there was no
+     screen for that. C3.4 builds it, so they arrive with the controls that send
+     them: rename in place, "Put away", and "Bring back".
+
+     RESTORE NEEDS NO THIRD COMMAND. `setBinderArchived(id, false)` is the
+     restore, which is why C3.1 chose a reversible `set` over a one-way
+     `archiveBinder` — see its note in metyet-commands.js.
+
+     AND STILL NOTHING ELSE. There is no delete command in the domain to expose;
+     a Collector who wants a binder gone can empty it and put it away, and
+     whether the product should ever truly delete one is a decision pilot
+     evidence has not been asked for. `markBinderReviewed` is not here either:
+     it is the legacy "a partner opened this Collector's cards" command and has
+     nothing to do with a Binder but its name (domain/README.md). */
+  "renameBinder",                // Collector → Binder, renaming one in place
+  "setBinderArchived",           // Collector → Binder, "Put away" ⇄ "Bring back"
 ]);
 
 /* ONE ANSWER FOR TWO QUESTIONS, ON PURPOSE. A command that does not exist and a

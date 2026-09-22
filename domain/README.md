@@ -334,6 +334,112 @@ writes is a new shape; `0013_binders.sql` is still the newest.
 warning under Binders above. A rename is a migration plus every reader of the
 trade model, which is not this batch wearing a smaller name.
 
+## Coherence and priority are two different questions (Phase 5 C3.4)
+
+C3.4 gives binders a place and, in the same move, takes Goals out of the
+Collector's navigation. Production navigation is now
+**Browse · Binder · Your Cards · Trusted Partners**.
+
+**Binders express coherence. Goals express priority.** "This card belongs with
+my Mudkips" and "I am actively hunting this card" are two different statements
+about one card, and both stay durable and independent: a Goal needs no binder,
+filing creates no Goal, unfiling removes none, removing a Goal unfiles nothing,
+and one card can sit in several binders while having exactly one Goal. What
+changed is that they no longer need two destinations. "These are my Mudkips,
+and these two I am still looking for" is one thought, so Primary/Secondary is
+read *inside* a binder and inside a card's own experiences rather than beside
+them. `Goals.jsx` was not deleted — it moved into `DEFERRED_SECTIONS`, the
+declared place a built view waits, which is now the second time that list has
+been used and the first time in this direction.
+
+**"Not in a binder yet" is derived presentation, not a Binder.** Removing the
+Goals tab must not hide a Goal, so the Goals whose canonical card is in no
+ACTIVE binder are listed at the bottom of the Binder library, recomputed on
+every render from the binders and entries the server sent. There is no record,
+no synthetic binder and no persisted membership: file one and it leaves on the
+next authoritative refresh, take a card out of its last active binder and it
+comes back, stop looking and it is simply gone. A Goal whose only binders are
+put away counts as unfiled, because the question the list answers is about the
+binders a person is actually using.
+
+**Put away, not deleted.** `setBinderArchived(id, false)` is the restore — there
+is no third command and no delete, because the domain has none. Archiving keeps
+everything: the binder's entries survive, and the Goals and copies of those
+cards are not touched. Archived binders are hidden behind one quiet control
+rather than moved to a second screen.
+
+**A binder shows a card's identity and its priority, and nothing about copies.**
+Picture, name, set, collector number, and Primary/Secondary when a Goal exists.
+No owned-copy count, no offered count, no status line — the checkpoint proposed
+`"Actively hunting · own 2 · 1 offered"` and the product correction rejected it.
+Ownership and availability are facts about a shelf, and Your Cards is the shelf;
+a count of either here would turn curation into inventory one number at a time.
+
+**Your Cards is card-first presentation over exact CollectorCopies.** The canonical
+card is a heading with its catalogue picture, name, set and number; the physical
+copies are the records beneath it, each with its own grading, certificate,
+reference value and `offered`. Nothing is ever aggregated to the heading — two
+copies of one card are two objects and a single grade would describe neither.
+Titles come from one batched `describe(ids)`, never the legacy catalogue, which
+is what had kept the screen deferred for four batches.
+
+**Trade and Sell stay derived from `offered === true`.** The only new filter is
+"Offered only" over exact copies. There is no persisted Trade Binder, no Buy or
+Sell surface, and no view record.
+
+**Card Specification is the shared specification capability and was not
+refactored.** It is reusable from Browse, Your Cards, a binder and the unfiled
+list with no change, because one canonical `describe` row satisfies both `card`
+and `context` and `onCommit(step, canonicalCardId)` was already
+surface-agnostic. The one addition is `preselectBinder`, an initial ANSWER —
+tickable off, never a record, and ignored for a binder that is put away.
+
+**Binder organisation is private, whole.** No partner receives a binder id,
+name, membership, count or archive fact, not even a derived hint; the
+collections are present and empty in every other seat, because a projection
+that changed shape would itself leak which seat it was. Membership is not
+demand: filing a card creates no discovery, no interest and no activity.
+
+**Canonical metadata is described, never mirrored.** Every name, set, number and
+image on these screens comes from one batched catalogue `describe(ids)` for the
+ids already on screen. Nothing canonical is copied into the transactional world.
+
+**Adding cards to a binder is transient context, not a mode.** `Add cards`
+carries `{binderId, name}` in the shell beside the existing session state, Browse
+says quietly which binder is being filled, the panel preselects it, and pressing
+Binder while filling returns to that binder's detail. Nothing is written by
+carrying it, one press ends it, and there is no `collectors.prefs`, no persisted
+default and no scroll-restoration machinery.
+
+**Why these two commands are now production-exposed** (14 → 16 in
+`server/exposed-commands.js`): the same rule as always — a command joins in the
+batch that ships a way to send it.
+
+| Command | The control |
+|---|---|
+| `renameBinder` | "Rename", inline in the library |
+| `setBinderArchived` | "Put away" and "Bring back" |
+
+`markBinderReviewed` stays **closed** and is not a Binder command at all: it is
+the legacy "a partner opened this Collector's cards" command and shares nothing
+with a Binder but its name.
+
+**No migration, and no new durable concept.** `0013_binders.sql` is still the
+newest. C3.4 creates no persisted Trade Binder, synthetic Unfiled Binder,
+snapshot, aggregate, draft, bookmark, pending queue, persisted default or Intent
+enum.
+
+**The `binder_id` naming collision is still untouched.** `binder_entries.binder_id`
+means a Binder and `interests.binder_id` means a collector copy — see the warning
+under Binders above. C3.4 documents it again rather than migrating it.
+
+**A Goal that names no canonical card reaches no surface.** A pre-C2 Goal names
+`cardId` and nothing canonical, so it cannot be described, filed or specified,
+and it is deliberately not listed under "Not in a binder yet" — a list whose
+every row promises all three. Nothing in production can create one. This is a
+consequence of removing the Goals tab, recorded here rather than discovered
+later.
+
 ## Five things to know before changing anything
 
 **Discovery is computed; Opportunity is persisted.** They share a word and are

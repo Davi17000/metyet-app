@@ -61,7 +61,7 @@ import { rows, text } from "../present.js";
 const AVAILABLE = "available";
 
 export default function Browse({ state, session, onSession, onSpecify = null,
-  onBrowseCards = null }) {
+  onBrowseCards = null, fillingBinder = null, onDoneFilling = null }) {
   const [context, setContext] = useState(null);      // the card context being specified
   const [chosen, setChosen] = useState(null);        // the exact canonical card
   const [problem, setProblem] = useState(null);
@@ -110,6 +110,21 @@ export default function Browse({ state, session, onSession, onSpecify = null,
 
   return (
     <Panel title="Browse" note={null}>
+      {/* WHICH BINDER IS BEING FILLED, QUIETLY (Phase 5 C3.4). Somebody arrived
+          here from a binder and is adding cards to it; the panel will tick that
+          binder for them, and they can untick it. It is a note about where they
+          came from, not a mode: browsing is unchanged, nothing is written by
+          carrying it, and dismissing it is the end of it. */}
+      {fillingBinder ? (
+        <p className="mcs-filling" role="status">
+          <span>Adding to <strong>{text(fillingBinder.name) || "a binder"}</strong></span>
+          {onDoneFilling ? (
+            <button className="mcs-linkish" type="button" onClick={onDoneFilling}>
+              Stop adding to it
+            </button>
+          ) : null}
+        </p>
+      ) : null}
       {/* THE GRID IS FIRST AND IS NEVER UNMOUNTED. The specification sheet is
           its sibling and is rendered AFTER it, out of flow, so opening one
           moves nothing behind it. That ordering is the whole of Browse
@@ -168,6 +183,7 @@ export default function Browse({ state, session, onSession, onSpecify = null,
               context={context}
               state={state}
               holders={holders}
+              preselectBinder={fillingBinder ? fillingBinder.binderId : null}
               onCommit={onSpecify}
               onClose={close}
             />

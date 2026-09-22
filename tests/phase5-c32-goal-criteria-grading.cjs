@@ -643,8 +643,12 @@ describe("E. what C3.2 did not touch", () => {
 
      What replaces it, and why it is stricter: the exact set is still pinned by
      value and count, and C3.2's actual claim is now asserted where it belongs —
-     against C3.2's own commit, which added neither. */
-  test("the production door is exactly where C3.3 put it, and C3.2 moved it not at all", async () => {
+     against C3.2's own commit, which added neither.
+
+     RESTATED AGAIN BY C3.4, which opened `renameBinder` and `setBinderArchived`
+     for the Binder screen. Only the pinned set moved; C3.2's own claim below,
+     asserted against C3.2's own commit, is untouched and still holds. */
+  test("the production door is exactly where C3.4 put it, and C3.2 moved it not at all", async () => {
     const ctx = await world();
     eq(json([...EXPOSED_COMMANDS].sort()), json([
       "updatePartnerProfile", "revokeCollectorInvitation",
@@ -653,8 +657,9 @@ describe("E. what C3.2 did not touch", () => {
       "addCollectorCopy", "setCollectorCopyOffered", "removeCollectorCopy",
       "createBinder", "addBinderEntry", "removeBinderEntry",
       "updateCollectorCopy", "updateGoalCriteria",
-    ].sort()), "the production surface is not what C3.3 declared");
-    eq(EXPOSED_COMMANDS.length, 14);
+      "renameBinder", "setBinderArchived",
+    ].sort()), "the production surface is not what C3.4 declared");
+    eq(EXPOSED_COMMANDS.length, 16);
 
     /* C3.2 ADDED NEITHER, asserted against C3.2's own commit rather than
        against the world as it is now. This is the claim that batch actually
@@ -670,11 +675,12 @@ describe("E. what C3.2 did not touch", () => {
     assert(!/updateGoalCriteria/.test(at("2a5e988", "domain/metyet-commands.js")),
       "C3.2 added a criteria-editing command before anything needed one");
 
-    /* And the two that still have no surface are still shut. */
-    for (const name of ["renameBinder", "setBinderArchived"]) {
-      const res = await post(ctx.app, "casey", name, {});
-      eq(res.json().error.refused, "command-unavailable", name);
-    }
+    /* And the one Binder-named command that is not a Binder command — the
+       legacy "a partner opened this Collector's cards" one — is still shut.
+       C3.4b opened the other two with the screen that sends them; this is the
+       one no batch has given a surface, and C3.2 did not either. */
+    const res = await post(ctx.app, "casey", "markBinderReviewed", {});
+    eq(res.json().error.refused, "command-unavailable", "markBinderReviewed");
   });
 
   test("Binder, offering and Interest behaviour are all as C3.1 left them", async () => {

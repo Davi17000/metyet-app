@@ -67,11 +67,19 @@ const P1 = "p-north";
 const P2 = "p-second";
 /* C1 put Browse at the front: it is where a Collector finds a card, and
    saying "I am looking for this" now happens while browsing. */
-/* RESTATED IN C3.4. Your Cards was built in C2 and deferred through four
-   batches; C3.4 fixed its canonical naming and moved it into the product.
-   The list is the product's own order and words, and it is stated here once
-   so every assertion below reads the same one. */
-const NAV = ["Browse", "Goals", "Your Cards", "Trusted Partners"];
+/* RESTATED IN C3.4, twice in one batch. Your Cards was built in C2 and deferred
+   through four batches; C3.4a fixed its canonical naming and moved it into the
+   product. C3.4b added Binder and took GOALS OUT — not because a Goal stopped
+   mattering, but because a binder expresses coherence and a Goal expresses
+   priority, and those are two things to know about one card rather than two
+   places to go. A Goal is still an independent durable fact, set and changed
+   from the Card Specification panel, and read where the card is; the Goals with
+   no active binder are listed inside Binder so that losing the tab hides none
+   of them.
+
+   The list is the product's own order and words, and it is stated here once so
+   every assertion below reads the same one. */
+const NAV = ["Browse", "Binder", "Your Cards", "Trusted Partners"];
 
 /* ---------------------------------------------------- the real projection */
 
@@ -334,13 +342,14 @@ describe("A. Goals — and the one place coordination appears", () => {
       "a section appeared that the product does not offer");
     onEverySection(r, (shown) =>
       assert(!/opportunit/i.test(shown), "the word appears as a product: " + shown));
-    eq(SHELL_MOD.SECTIONS.map((x) => x.id).join(","), "browse,goals,my-cards,partners");
+    eq(SHELL_MOD.SECTIONS.map((x) => x.id).join(","), "browse,binder,my-cards,partners");
     /* Restated in Batch 8.1, renamed in C2: Your Cards is declared deferred rather
        than offered, and "no Opportunities product" is unaffected by it. */
-    /* RESTATED IN C3.4: Your Cards moved into the product, so nothing is
-       deferred. The list stays as the declared place a not-ready section
-       waits — see the shell. */
-    eq(SHELL_MOD.DEFERRED_SECTIONS.map((x) => x.id).join(","), "");
+    /* RESTATED IN C3.4: Your Cards moved into the product and Goals moved out
+       of it. Goals is DEFERRED rather than deleted — the screen is kept, and a
+       Goal is still set and changed from Card Specification and read where the
+       card is; what went is the destination. */
+    eq(SHELL_MOD.DEFERRED_SECTIONS.map((x) => x.id).join(","), "goals");
   });
 });
 
@@ -663,11 +672,18 @@ describe("F. nothing acts, nothing mutates, nothing forbidden is imported", () =
        that offer nothing, and Browse's own controls are named rather than
        counted away. The property is unchanged: a section handed no callbacks
        offers no way to change anything. */
+    /* RESTATED IN C3.4b: the sections that offer nothing of their own are now
+       Trusted Partners alone — Binder offers creating and managing binders, and
+       Your Cards offers a filter, both of which are controls this surface
+       deliberately has. Goals is asserted separately below, rendered the way
+       the shell would render it, because it is deferred rather than gone. */
     const r = show(FULL);
-    for (const s of ["Goals", "Trusted Partners"]) {
+    for (const s of ["Trusted Partners"]) {
       clickText(r, s);
       eq(buttons(r).map(instText).length, NAV.length + 1, "an extra control appeared in " + s);
     }
+    /* A deferred Goals, handed no callbacks, still offers nothing to press. */
+    eq(buttons(show(FULL, "Goals")).length, 0, "a deferred section offered a control");
     clickText(r, "Browse");
     const browsing = buttons(r).map(instText).map((l) => l.trim());
     /* A nav button carries its count ("2 Goals"), so it is matched by the label

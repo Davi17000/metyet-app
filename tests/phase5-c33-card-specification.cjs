@@ -616,6 +616,20 @@ describe("C. a Goal says which copy is wanted, and can change its mind", () => {
    The five doors C3.3 opened, and the rules that did not move with them. */
 describe("D. the production door, and what is still shut", () => {
 
+  /* SUPERSEDED AND RESTATED BY C3.4.
+
+     What it protected: that C3.3 opened five doors and exactly five, so a
+     command could not reach a browser without a batch deciding to let it.
+
+     Why it is no longer correct: C3.4 built the Binder screen, and a screen
+     that can put a binder away and bring it back needs `setBinderArchived`;
+     one that can correct a binder's name needs `renameBinder`. Fourteen is
+     C3.3's number, not the allow-list's forever.
+
+     What replaces it, and why it is stricter: the same pin by value AND by
+     count at sixteen, and C3.3's own claim — that IT opened five — is now
+     asserted against C3.3's own commit below, where later batches cannot
+     silently erase it. */
   test("the exact allow-list, by value and by count", () => {
     eq(json([...EXPOSED_COMMANDS].sort()), json([
       "updatePartnerProfile", "revokeCollectorInvitation",
@@ -624,17 +638,55 @@ describe("D. the production door, and what is still shut", () => {
       "addCollectorCopy", "setCollectorCopyOffered", "removeCollectorCopy",
       "createBinder", "addBinderEntry", "removeBinderEntry",
       "updateCollectorCopy", "updateGoalCriteria",
-    ].sort()), "the production surface is not what C3.3 declared");
-    eq(EXPOSED_COMMANDS.length, 14);
+      "renameBinder", "setBinderArchived",
+    ].sort()), "the production surface is not what C3.4 declared");
+    eq(EXPOSED_COMMANDS.length, 16);
     for (const name of EXPOSED_COMMANDS) {
       assert(C.COMMAND_NAMES.includes(name), `${name} is not a command`);
     }
   });
 
-  test("binder management is still C3.4's, and the lifecycle is still shut", async () => {
+  /* C3.3's OWN CLAIM, moved here when C3.4 superseded the count above. C3.3
+     opened five doors and exactly five; that is a fact about C3.3's commit and
+     stays true however far the allow-list travels afterwards. Asserted against
+     the merge C3.3 shipped, so no later batch can quietly rewrite what C3.3
+     did. */
+  test("C3.3 itself opened five doors and exactly five", () => {
+    const { execFileSync } = require("child_process");
+    const at = execFileSync("git", ["show", "8c61ec8:server/exposed-commands.js"],
+      { cwd: ROOT, encoding: "utf8" });
+    /* Only the list literal: everything after `]);` is ordinary code, and a
+       `typeof x === "string"` would otherwise count as a command. */
+    const after = at.split("EXPOSED_COMMANDS")[1] || "";
+    const names = after.slice(0, after.indexOf("]);")).match(/"[a-zA-Z]+"/g) || [];
+    eq(names.length, 14, "C3.3 did not ship fourteen");
+    for (const name of ["updateCollectorCopy", "updateGoalCriteria"]) {
+      assert(names.includes(`"${name}"`), `C3.3 did not open ${name}`);
+    }
+    for (const name of ["renameBinder", "setBinderArchived", "markBinderReviewed"]) {
+      assert(!names.includes(`"${name}"`), `C3.3 opened ${name}`);
+    }
+  });
+
+  /* SUPERSEDED AND RESTATED BY C3.4.
+
+     What it protected: that the binder lifecycle and the deal lifecycle were
+     both still shut, so C3.3 could not be read as having opened either.
+
+     Why it is no longer correct for the binder half: C3.4 built the screen that
+     manages a binder as an object, and opened `renameBinder` and
+     `setBinderArchived` with it. The deal half has not moved at all.
+
+     What replaces it, and why it is stricter: the deal lifecycle stays pinned
+     exactly as it was, and `markBinderReviewed` — the one binder-named command
+     C3.4 deliberately left shut, because it is the legacy "a partner opened
+     this Collector's cards" command and has nothing to do with a Binder but its
+     name — is named here explicitly rather than swept up in a list, so closing
+     the Binder screen's doors cannot be mistaken for closing it too. */
+  test("the deal lifecycle is still shut, and so is markBinderReviewed", async () => {
     const ctx = await world();
-    for (const name of ["renameBinder", "setBinderArchived", "startOpportunity",
-      "proposePrice", "acceptDeal", "resolveCardIdentity", "setInterest", "markBinderReviewed"]) {
+    for (const name of ["startOpportunity", "proposePrice", "acceptDeal",
+      "resolveCardIdentity", "setInterest", "markBinderReviewed"]) {
       assert(!EXPOSED_COMMANDS.includes(name), `${name} is exposed`);
       eq((await post(ctx.app, "casey", name, {})).json().error.refused, "command-unavailable", name);
     }
