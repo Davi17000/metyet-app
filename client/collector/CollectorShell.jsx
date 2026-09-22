@@ -78,38 +78,38 @@ export const SECTIONS = Object.freeze([
   { id: "goals", label: "Goals", count: "goals", view: Goals,
     title: "Goals",
     sub: "What you're looking for, and what your Trusted Partners work from" },
+  /* WHAT YOU OWN, REACHABLE AT LAST (Phase 5 C3.4). Deferred since Batch 8.1
+     for reasons that were true at the time and stopped being true one at a
+     time: the command existed but demanded a legacy card (fixed by C2), then
+     there was no control to record a copy (fixed by C3.3), and then the screen
+     itself named canonical cards wrongly — every production copy read "a card
+     that isn't in your catalogue", which is why C3.3 declined to promote it and
+     left the debt written down. C3.4 fixes the screen and moves it up. */
+  { id: "my-cards", label: "Your Cards", count: "collectorCopies", view: MyCards,
+    title: "Your Cards",
+    sub: "What you own, and what you're offering" },
   { id: "partners", label: "Trusted Partners", count: "partners", view: TrustedPartners,
     title: "Trusted Partners",
     sub: "The shops you deal with" },
 ]);
 
-/* BUILT, AND NOT YET REACHABLE — AND THE REASON CHANGED IN C2.
+/* BUILT AND NOT YET REACHABLE — AND, AS OF C3.4, NOTHING IS.
 
-   Batch 8.1 deferred this section because it was IMPOSSIBLE: the only command
-   that wrote a Collector's copy demanded a row in the legacy catalogue, and
-   production's legacy catalogue is empty and is meant to stay that way. Every
-   Collector had a tab that promised something, opened, and could never hold
-   anything — a worse answer than not offering it.
+   Batch 8.1 created this list for Your Cards, which was impossible then: the
+   only command that wrote a Collector's copy demanded a row in the legacy
+   catalogue, and production's is empty by design. C2 gave a copy a canonical
+   card, C3.3 gave a person a way to record one, and C3.4 fixed the screen's own
+   canonical naming and moved it into SECTIONS.
 
-   That is fixed. A copy now names a canonical card (migration 0011), the three
-   commands behind this screen are written, tested and exposed to production
-   (server/exposed-commands.js), and the projection gives the owner their own
-   cards whole. What is missing is the other half of the screen: the control
-   that RECORDS a card you own, which belongs beside the card in Browse where
-   you are already looking at it. C2 built the concept; the batch that adds that
-   control moves this entry up into SECTIONS, and does nothing else here.
+   THE LIST STAYS, EMPTY, ON PURPOSE. It is the declared place a built-but-not
+   -ready section waits, and having one is what kept Your Cards live and correct
+   through four batches instead of being deleted and rebuilt. Deleting the list
+   because it happens to be empty would throw away the convention along with its
+   only current occupant.
 
-   The count is `collectorCopies`, the collection's canonical name since C2.
-   Keeping the entry live and correct — rather than deleting it and rebuilding
-   it later — is what made this batch's rename fail loudly instead of quietly.
-
-   A person cannot reach it: it is not in the navigation, and `section` is only
-   ever set from a SECTIONS id. */
-export const DEFERRED_SECTIONS = Object.freeze([
-  { id: "my-cards", label: "Your Cards", count: "collectorCopies", view: MyCards,
-    title: "Your Cards",
-    sub: "What you own, and what you're offering" },
-]);
+   A person cannot reach anything listed here: `section` is only ever set from
+   a SECTIONS id. */
+export const DEFERRED_SECTIONS = Object.freeze([]);
 
 const CSS = `
 .mcs { --bg:#F7F9FA; --panel:#FFF; --line:#DFE4EA; --line-soft:#EDF0F4; --text:#131922;
@@ -210,6 +210,19 @@ const CSS = `
   border-radius:6px; font:inherit; font-size:16px; background:#FFF; color:var(--text); }
 .mcs-linkish { border:0; background:none; padding:0; color:var(--t1); font-size:13px;
   text-decoration:underline; }
+
+/* ---- your cards: the card, then the copies of it (Phase 5 C3.4) ---- */
+.mcs-filter { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  margin:0; padding:12px 16px; border-bottom:1px solid var(--line-soft); }
+.mcs-group { border-bottom:1px solid var(--line); }
+.mcs-group:last-child { border-bottom:0; }
+.mcs-group-head { display:flex; gap:12px; align-items:flex-start; padding:14px 16px 4px; }
+.mcs-group-art { flex:0 0 52px; width:52px; aspect-ratio:5/7; display:flex; align-items:center;
+  justify-content:center; background:var(--line-soft); border-radius:5px; overflow:hidden; }
+.mcs-group-art img { width:100%; height:100%; object-fit:contain; }
+.mcs-group-plate { font-size:10px; color:var(--muted); text-align:center; padding:4px; }
+.mcs-group .mcs-rec { padding-left:16px; padding-right:16px; }
+.mcs-group .mcs-rec:last-child { border-bottom:0; }
 
 @media (min-width:860px) {
   .mcs-spec-scrim { align-items:stretch; justify-content:flex-end; }
@@ -449,7 +462,12 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
             ? { onAddGoal, onSetPriority, onRemoveGoal, onBrowseCards }
             : meta.id === "browse"
               ? { onSpecify, onBrowseCards, session: browseSession, onSession: setBrowseSession }
-              : {})} />
+              : meta.id === "my-cards"
+                /* Your Cards asks the catalog what its canonical cards are
+                   called, and opens the same specification panel Browse does
+                   (Phase 5 C3.4). Two props, both already bound above. */
+                ? { onSpecify, onBrowseCards }
+                : {})} />
         </main>
       </div>
     </div>

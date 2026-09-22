@@ -67,7 +67,11 @@ const P1 = "p-north";
 const P2 = "p-second";
 /* C1 put Browse at the front: it is where a Collector finds a card, and
    saying "I am looking for this" now happens while browsing. */
-const NAV = ["Browse", "Goals", "Trusted Partners"];
+/* RESTATED IN C3.4. Your Cards was built in C2 and deferred through four
+   batches; C3.4 fixed its canonical naming and moved it into the product.
+   The list is the product's own order and words, and it is stated here once
+   so every assertion below reads the same one. */
+const NAV = ["Browse", "Goals", "Your Cards", "Trusted Partners"];
 
 /* ---------------------------------------------------- the real projection */
 
@@ -330,10 +334,13 @@ describe("A. Goals — and the one place coordination appears", () => {
       "a section appeared that the product does not offer");
     onEverySection(r, (shown) =>
       assert(!/opportunit/i.test(shown), "the word appears as a product: " + shown));
-    eq(SHELL_MOD.SECTIONS.map((x) => x.id).join(","), "browse,goals,partners");
+    eq(SHELL_MOD.SECTIONS.map((x) => x.id).join(","), "browse,goals,my-cards,partners");
     /* Restated in Batch 8.1, renamed in C2: Your Cards is declared deferred rather
        than offered, and "no Opportunities product" is unaffected by it. */
-    eq(SHELL_MOD.DEFERRED_SECTIONS.map((x) => x.id).join(","), "my-cards");
+    /* RESTATED IN C3.4: Your Cards moved into the product, so nothing is
+       deferred. The list stays as the declared place a not-ready section
+       waits — see the shell. */
+    eq(SHELL_MOD.DEFERRED_SECTIONS.map((x) => x.id).join(","), "");
   });
 });
 
@@ -404,10 +411,35 @@ describe("B. Your Cards", () => {
       "interest attached to the wrong copy: " + blast);
   });
 
-  test("no card search, no catalogue browse, no imagery", () => {
+  /* SUPERSEDED AND RESTATED (Phase 5 C3.4).
+
+     What this protected, in two halves: that the Collector's read surfaces run
+     no card search of their own, and that they show no imagery — because at the
+     time there was no image the product could honestly show. A Collector's
+     `photos` are REFERENCES like `binder:t15:front`, not URLs, and rendering
+     one would have produced a broken image where a fact should be.
+
+     Why the second half is no longer correct: C1 gave the catalog real artwork
+     and C3.4 shows it. `describe(ids)` returns `imageSmall`, which is the
+     CATALOGUE's picture of a card — a different thing from a photograph of
+     somebody's copy, and the only kind of image this surface may show.
+
+     What replaces it, and why it is stricter: the search half is unchanged, and
+     the imagery half now says the thing that actually matters — a Collector's
+     own `photos` are still never rendered as an image anywhere, and are still
+     described in words. The old form could only forbid the tag; this forbids
+     the mistake. */
+  test("no card search of its own, and a Collector's own photos are never shown", () => {
     const bare = COLLECTOR_FILES.map(code).join("\n");
-    assert(!/<img|background-image|src=\{|searchCards|catalogSearch|pokemon/i.test(bare),
-      "an image or a catalogue search appeared");
+    assert(!/searchCards|catalogSearch|pokemon/i.test(bare),
+      "a catalogue search appeared");
+    /* Every `src` on this surface comes from a catalogue description. */
+    const sources = bare.match(/src=\{[^}]*\}/g) || [];
+    sources.forEach((src) => assert(/image[A-Z]/.test(src),
+      `an image is sourced from something other than a catalogue description: ${src}`));
+    /* And a copy's own photographs are still words, never a picture. */
+    assert(!/src=\{[^}]*photos/.test(bare), "a Collector's own photo was rendered as an image");
+    assert(/photoNote/.test(bare), "photographs stopped being described in words");
   });
 });
 

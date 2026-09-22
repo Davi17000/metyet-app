@@ -76,7 +76,11 @@ const PARTNER = "p-9k2m";
 
 /* C1 put Browse at the front: it is where a Collector finds a card, and
    saying "I am looking for this" now happens while browsing. */
-const NAV = ["Browse", "Goals", "Trusted Partners"];
+/* RESTATED IN C3.4. Your Cards was built in C2 and deferred through four
+   batches; C3.4 fixed its canonical naming and moved it into the product.
+   The list is the product's own order and words, and it is stated here once
+   so every assertion below reads the same one. */
+const NAV = ["Browse", "Goals", "Your Cards", "Trusted Partners"];
 const TP_NAV = ["Collector Network", "Inventory", "Opportunities"];
 
 /* ---------------------------------------------------- the real projection */
@@ -336,19 +340,43 @@ describe("C. the shell: its sections, and counts that are row counts", () => {
     const labels = buttons(r).map(instText).filter((s) => NAV.some((n) => s.includes(n)));
     eq(labels.length, NAV.length, "no section more, none fewer: " + labels.join(" | "));
     NAV.forEach((n, i) => assert(labels[i].includes(n), `section ${i} is not ${n}`));
-    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "browse,goals,partners");
-    /* Built, kept, and deliberately not offered. */
-    eq(SHELL_MOD.DEFERRED_SECTIONS.map((s) => s.id).join(","), "my-cards");
-    assert(!buttons(r).some((b) => instText(b).includes("Your Cards")),
-      "a Collector can reach a section that can never have anything in it");
+    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "browse,goals,my-cards,partners");
+    /* SUPERSEDED AND RESTATED (Phase 5 C3.4).
+       What this protected: that a section which could never hold anything was
+       declared deferred rather than shown — Your Cards promised a Collector
+       something the product could not yet give them.
+       Why it is no longer correct: it can hold something now. C2 gave a copy a
+       canonical card, C3.3 gave a person a way to record one, and C3.4 fixed
+       the screen's own canonical naming, which was the last reason it was not
+       offered.
+       What replaces it, and why it is stricter: the deferral LIST survives,
+       empty, because it is the declared place a not-ready section waits — and
+       the assertion is now that nothing is waiting there AND that every id in
+       it, if one ever returns, is absent from the navigation. The old form
+       could only say one specific id was missing. */
+    eq(SHELL_MOD.DEFERRED_SECTIONS.map((s) => s.id).join(","), "");
+    const shown = buttons(r).map(instText).join(" | ");
+    for (const s of SHELL_MOD.DEFERRED_SECTIONS) {
+      assert(!shown.includes(s.label), `a deferred section is reachable: ${s.label}`);
+    }
     /* And the prototype agrees about the labels that CAME from it. Browse is
        C1's own and the prototype has no equivalent — it never had a gallery —
        so the provenance check is made of the sections it did give us, and
        Browse is held to being named here instead. */
+    /* RESTATED IN C3.4. Two labels are now the production product's own rather
+       than inherited: Browse is C1's (the prototype never had a gallery) and
+       "Your Cards" is C2's, which deliberately RENAMED the prototype's "Trade
+       Binder" because owning and offering had stopped being one fact. So the
+       provenance check is made of the labels that genuinely came from the
+       prototype, and the two that did not are held to being absent from it —
+       which is the stronger half, since a label drifting back would mean the
+       rename had quietly come undone. */
     const proto = src("collector/MetYetCollector.jsx");
-    NAV.filter((n) => n !== "Browse")
+    const OWN = ["Browse", "Your Cards"];
+    NAV.filter((n) => !OWN.includes(n))
       .forEach((n) => assert(proto.includes(`label: "${n}"`), `the prototype does not call it ${n}`));
-    assert(!proto.includes('label: "Browse"'), "the prototype grew a Browse of its own");
+    OWN.forEach((n) => assert(!proto.includes(`label: "${n}"`),
+      `the prototype grew a ${n} of its own`));
   });
 
   test("each count is the number of rows in one projected collection", () => {
@@ -358,16 +386,19 @@ describe("C. the shell: its sections, and counts that are row counts", () => {
        counted it is no longer offered. */
     assert(/2 Goals/.test(shown), "goals: " + shown);
     assert(/3 Trusted Partners/.test(shown), "partners: " + shown);
-    assert(!/Your Cards/.test(shown), "the deferred section is counted: " + shown);
+    /* RESTATED IN C3.4: Your Cards is offered now, and its count is its own
+       collection's — `collectorCopies` — which is exactly what this test is
+       for. FULL holds one copy. */
+    assert(/1 Your Cards/.test(shown), "your cards: " + shown);
     /* RESTATED IN C1. Browse counts NOTHING, and that is the point: the
        catalogue is not a collection of this Collector's, so a number beside it
        would be a fact about MetYet wearing the clothes of a fact about them.
        Every section that DOES carry a count still sources it from its own
        collection, which is what this test has always been for. */
     const counted = SHELL_MOD.SECTIONS.filter((s) => s.count);
-    eq(counted.map((s) => s.count).join(","), "goals,partners",
+    eq(counted.map((s) => s.count).join(","), "goals,collectorCopies,partners",
       "a count is sourced from something other than its own collection");
-    eq(counted.map((s) => s.id).join(","), "goals,partners", "a section grew a count");
+    eq(counted.map((s) => s.id).join(","), "goals,my-cards,partners", "a section grew a count");
     /* Read from the section list rather than the rendered text, where "Browse"
        and the next section's count sit side by side and any regex would be
        reading one as the other. */

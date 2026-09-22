@@ -463,12 +463,30 @@ describe("E. Your Cards is not a place a Collector can go", () => {
     }).outputFiles[0].text;
     const mod = { exports: {} };
     new Function("module", "exports", "require", shell)(mod, mod.exports, require);
-    /* C1 put Browse in front of Goals. Your Cards is still not in
-       this list, which is what this test is about. */
-    eq(mod.exports.SECTIONS.map((s) => s.id).join(","), "browse,goals,partners");
-    eq(mod.exports.DEFERRED_SECTIONS.map((s) => s.id).join(","), "my-cards");
-    assert(typeof mod.exports.DEFERRED_SECTIONS[0].view === "function",
-      "the section component was deleted rather than deferred");
+    /* SUPERSEDED AND RESTATED (Phase 5 C3.4).
+
+       What this protected: that Batch 8.1 DEFERRED Your Cards rather than
+       deleting it — the entry, and its component, stayed live and correct in a
+       declared waiting place instead of being removed and rebuilt later.
+
+       Why it is no longer correct: the waiting is over. The reasons expired one
+       at a time — C2 gave a copy a canonical card, C3.3 gave a person a way to
+       record one, C3.4 fixed the screen's own canonical naming — and C3.4 moved
+       the entry up.
+
+       What replaces it, and why it is stricter: the property this test is
+       really about is that deferring never quietly became deleting, and that is
+       now provable in the strongest possible way — the section is in the
+       product, with the same component file Batch 8.1 declined to delete. The
+       deferral list survives, empty, so the convention is still there for the
+       next section that needs it. */
+    eq(mod.exports.SECTIONS.map((s) => s.id).join(","), "browse,goals,my-cards,partners");
+    eq(mod.exports.DEFERRED_SECTIONS.map((s) => s.id).join(","), "",
+      "something is waiting again — say so here");
+    const promoted = mod.exports.SECTIONS.find((s) => s.id === "my-cards");
+    assert(promoted && typeof promoted.view === "function",
+      "the section component was deleted rather than promoted");
+    eq(promoted.count, "collectorCopies", "it counts something other than its own collection");
   });
 
   test("the domain, the table and the projection are untouched", () => {
