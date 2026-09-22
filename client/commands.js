@@ -306,6 +306,29 @@ export function unfileCardFromBinder(target) {
     target.execute("removeBinderEntry", { binderId, canonicalCardId });
 }
 
+/* MANAGING THE BINDER ITSELF (Phase 5 C3.4). The two above are about a card's
+   place in a binder; these are about the binder. C3.3 had no screen for them
+   and so did not bind them — the rule this file has always followed.
+
+   PUTTING ONE AWAY IS REVERSIBLE, AND THAT IS WHY IT IS A `set`. The same
+   binding restores it, with `false`, so "bring it back" is not a second
+   concept with a second chance to disagree. It touches the binder's archive
+   state and nothing else: not its name, not its cards, and not a single Goal
+   or copy of the cards inside it. */
+export function renameBinder(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("renameBinder: the production store is required");
+  }
+  return (binderId, name) => target.execute("renameBinder", { binderId, name });
+}
+
+export function setBinderArchived(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("setBinderArchived: the production store is required");
+  }
+  return (binderId, archived) => target.execute("setBinderArchived", { binderId, archived });
+}
+
 /* Looking for a card to add. Three reads, no writes: the browse query, one
    context with the printings a person may choose between, and the description
    of cards a screen already holds ids for. A surface that can find a card can

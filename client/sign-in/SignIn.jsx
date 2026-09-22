@@ -49,6 +49,7 @@ import { savePartnerProfile, openCollectorInvitation, revokeCollectorInvitation,
   browseCards, addCollectorGoal, setGoalPriority, removeCollectorGoal,
   setGoalCriteria, addOwnedCopy, updateOwnedCopy, setCopyOffered, removeOwnedCopy,
   createBinder, fileCardInBinder, unfileCardFromBinder,
+  renameBinder, setBinderArchived,
   refreshView } from "../commands.js";
 
 /* Identity is read in exactly one place — client/actor.js — and re-exported
@@ -240,6 +241,13 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
   const onInvite = useMemo(() => (store ? openCollectorInvitation(store) : null), [store]);
   const onRevokeInvite = useMemo(() => (store ? revokeCollectorInvitation(store) : null), [store]);
   const onRefresh = useMemo(() => (store ? refreshView(store) : null), [store]);
+  /* MANAGING A BINDER ITSELF (Phase 5 C3.4). Three functions, bound the same
+     way as everything else: the Binder screen receives them and never the
+     store. Creating one is already bound above for the specification panel and
+     is handed to both. */
+  const onCreateBinder = useMemo(() => (store ? createBinder(store) : null), [store]);
+  const onRenameBinder = useMemo(() => (store ? renameBinder(store) : null), [store]);
+  const onArchiveBinder = useMemo(() => (store ? setBinderArchived(store) : null), [store]);
   /* Phase 5 Batch 3A. Not a command — there is no command to name, because the
      person calling it has no seat yet. Bound here anyway, for the same reason
      as the rest: the screen gets a function, never the store. */
@@ -628,6 +636,7 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
   return React.createElement(ProductionApp,
     { state: projection, onSignOut: signOut, onSaveProfile, onInvite, onRevokeInvite, onRefresh,
       onAddCopy, onBrowseCards, onAddGoal, onSetPriority, onRemoveGoal, onSpecify,
+      onCreateBinder, onRenameBinder, onArchiveBinder,
       /* Phase 5 Batch 3A. Who they just joined, so the shell can greet them by
          it once. It is read from the server's own reply, it is cleared the
          moment they do anything else, and it grants nothing. */

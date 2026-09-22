@@ -202,9 +202,23 @@ export function initialAnswers(state, canonicalCardId) {
 }
 
 export default function CardSpecification({ card, context = null, state,
-  onCommit, onClose, holders = 0 }) {
+  onCommit, onClose, holders = 0, preselectBinder = null }) {
   const canonicalCardId = card && card.canonicalCardId;
-  const [answers, setAnswers] = useState(() => initialAnswers(state, canonicalCardId));
+  /* A BINDER TICKED BECAUSE OF WHERE SOMEBODY CAME FROM (Phase 5 C3.4). Adding
+     cards to a binder opens this with that binder already chosen — which is an
+     ANSWER, not a fact: it is a tick in the list the person can undo, it writes
+     nothing until Save, and Cancel forgets it like every other answer here.
+     Only a binder that exists and is theirs can be preselected, because the
+     tick has to correspond to a real checkbox. */
+  const [answers, setAnswers] = useState(() => {
+    const start = initialAnswers(state, canonicalCardId);
+    const real = preselectBinder
+      && rows(state && state.binders).some((b) => b.id === preselectBinder && !b.archivedAt);
+    if (!real) return start;
+    const binders = new Set(start.binders);
+    binders.add(preselectBinder);
+    return { ...start, binders };
+  });
   const [newBinderName, setNewBinderName] = useState("");
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState(null);

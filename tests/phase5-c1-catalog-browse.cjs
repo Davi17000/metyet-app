@@ -755,6 +755,10 @@ describe("G. boundaries, and what did not change", () => {
      Specification panel. The assertion that carries the weight is the last one
      and it is untouched — the SHARED BROWSER still names no command, which is
      what keeps a picker used by both seats from being able to write anything. */
+  /* RESTATED AGAIN IN C3.4b, for the same reason a third time. C3.4b opened two,
+     for the Binder library — the screen that manages a binder as an object, and
+     therefore the batch that owes them a control. The assertion that carries the
+     weight is still the last one and is still untouched. */
   test("every door is declared, and the shared browser still opens none of them", () => {
     eq(json([...EXPOSED_COMMANDS].sort()), json([
       "addGoal", "addInventoryCopy", "removeGoal",
@@ -764,6 +768,9 @@ describe("G. boundaries, and what did not change", () => {
       /* C3.3, the Card Specification panel's five. */
       "createBinder", "addBinderEntry", "removeBinderEntry",
       "updateCollectorCopy", "updateGoalCriteria",
+      /* C3.4b, the Binder library's two: rename one in place, put one away and
+         bring it back. Deleting one is still nobody's door. */
+      "renameBinder", "setBinderArchived",
     ].sort()), "a door was opened that nobody declared");
     const browserCode = code("client/browse/CardBrowser.jsx");
     assert(!EXPOSED_COMMANDS.some((c) => browserCode.includes(c)),

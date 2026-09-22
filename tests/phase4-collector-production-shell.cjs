@@ -76,7 +76,19 @@ const PARTNER = "p-9k2m";
 
 /* C1 put Browse at the front: it is where a Collector finds a card, and
    saying "I am looking for this" now happens while browsing. */
-const NAV = ["Browse", "Goals", "Trusted Partners"];
+/* RESTATED IN C3.4, twice in one batch. Your Cards was built in C2 and deferred
+   through four batches; C3.4a fixed its canonical naming and moved it into the
+   product. C3.4b added Binder and took GOALS OUT — not because a Goal stopped
+   mattering, but because a binder expresses coherence and a Goal expresses
+   priority, and those are two things to know about one card rather than two
+   places to go. A Goal is still an independent durable fact, set and changed
+   from the Card Specification panel, and read where the card is; the Goals with
+   no active binder are listed inside Binder so that losing the tab hides none
+   of them.
+
+   The list is the product's own order and words, and it is stated here once so
+   every assertion below reads the same one. */
+const NAV = ["Browse", "Binder", "Your Cards", "Trusted Partners"];
 const TP_NAV = ["Collector Network", "Inventory", "Opportunities"];
 
 /* ---------------------------------------------------- the real projection */
@@ -112,6 +124,11 @@ const FULL = Object.freeze({
   goals: [{ id: "g1", collectorId: COLLECTOR, cardId: "k1", tier: "primary" },
     { id: "g2", collectorId: COLLECTOR, cardId: "k2", tier: "secondary" }],
   collectorCopies: [{ offered: true, id: "b1", collectorId: COLLECTOR, cardId: "k3", status: "available" }],
+  /* C3.4 made Binder a destination, so the fixture has one — otherwise the
+     count test below would be asserting that zero is zero. */
+  binders: [{ id: "bd1", collectorId: COLLECTOR, name: "Mudkip Collection",
+    createdAt: "2030-01-01T00:00:00.000Z", archivedAt: null }],
+  binderEntries: [{ binderId: "bd1", canonicalCardId: "cc-1", addedAt: "2030-01-01T00:00:00.000Z" }],
   partners: [{ id: PARTNER, name: "Northline Cards", city: "Duluth, Minnesota" },
     { id: "p-2", name: "Second Shop" }, { id: "p-3", name: "Third Shop" }],
   relationships: [{ partnerId: PARTNER, collectorId: COLLECTOR, status: "accepted", at: "2025-09-03" }],
@@ -336,19 +353,58 @@ describe("C. the shell: its sections, and counts that are row counts", () => {
     const labels = buttons(r).map(instText).filter((s) => NAV.some((n) => s.includes(n)));
     eq(labels.length, NAV.length, "no section more, none fewer: " + labels.join(" | "));
     NAV.forEach((n, i) => assert(labels[i].includes(n), `section ${i} is not ${n}`));
-    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "browse,goals,partners");
-    /* Built, kept, and deliberately not offered. */
-    eq(SHELL_MOD.DEFERRED_SECTIONS.map((s) => s.id).join(","), "my-cards");
-    assert(!buttons(r).some((b) => instText(b).includes("Your Cards")),
-      "a Collector can reach a section that can never have anything in it");
+    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "browse,binder,my-cards,partners");
+    /* SUPERSEDED AND RESTATED (Phase 5 C3.4).
+       What this protected: that a section which could never hold anything was
+       declared deferred rather than shown — Your Cards promised a Collector
+       something the product could not yet give them.
+       Why it is no longer correct: it can hold something now. C2 gave a copy a
+       canonical card, C3.3 gave a person a way to record one, and C3.4 fixed
+       the screen's own canonical naming, which was the last reason it was not
+       offered.
+       What replaces it, and why it is stricter: the deferral LIST survives,
+       empty, because it is the declared place a not-ready section waits — and
+       the assertion is now that nothing is waiting there AND that every id in
+       it, if one ever returns, is absent from the navigation. The old form
+       could only say one specific id was missing.
+
+       SUPERSEDED AGAIN AND RESTATED (Phase 5 C3.4b). Emptiness was C3.4a's
+       fact, not the shell's rule. C3.4b took Goals out of the top level —
+       binders express coherence, goals express priority, and a Goal is read
+       where the card is, not beside it — and put Goals.jsx in the deferral list
+       rather than orphaning it, because that list is exactly the declared place
+       a built-but-not-navigated view lives. The rule this line exists for is
+       unchanged and the assertion below is the one that enforces it: whatever
+       is deferred is UNREACHABLE from the navigation. Pinning the list by id
+       keeps it from growing unnoticed. */
+    eq(SHELL_MOD.DEFERRED_SECTIONS.map((s) => s.id).join(","), "goals");
+    const shown = buttons(r).map(instText).join(" | ");
+    for (const s of SHELL_MOD.DEFERRED_SECTIONS) {
+      assert(!shown.includes(s.label), `a deferred section is reachable: ${s.label}`);
+    }
     /* And the prototype agrees about the labels that CAME from it. Browse is
        C1's own and the prototype has no equivalent — it never had a gallery —
        so the provenance check is made of the sections it did give us, and
        Browse is held to being named here instead. */
+    /* RESTATED IN C3.4. Two labels are now the production product's own rather
+       than inherited: Browse is C1's (the prototype never had a gallery) and
+       "Your Cards" is C2's, which deliberately RENAMED the prototype's "Trade
+       Binder" because owning and offering had stopped being one fact. So the
+       provenance check is made of the labels that genuinely came from the
+       prototype, and the two that did not are held to being absent from it —
+       which is the stronger half, since a label drifting back would mean the
+       rename had quietly come undone. */
     const proto = src("collector/MetYetCollector.jsx");
-    NAV.filter((n) => n !== "Browse")
+    /* RESTATED AGAIN IN C3.4b: "Binder" joins the labels this product owns. The
+       prototype's own "Trade Binder" was a Collector's tradeable cards, which
+       C2 renamed to Your Cards precisely BECAUSE it was never a binder — so the
+       word arriving here now means the opposite thing, and its absence from the
+       prototype is the proof that the rename held. */
+    const OWN = ["Browse", "Binder", "Your Cards"];
+    NAV.filter((n) => !OWN.includes(n))
       .forEach((n) => assert(proto.includes(`label: "${n}"`), `the prototype does not call it ${n}`));
-    assert(!proto.includes('label: "Browse"'), "the prototype grew a Browse of its own");
+    OWN.forEach((n) => assert(!proto.includes(`label: "${n}"`),
+      `the prototype grew a ${n} of its own`));
   });
 
   test("each count is the number of rows in one projected collection", () => {
@@ -356,18 +412,23 @@ describe("C. the shell: its sections, and counts that are row counts", () => {
     /* 2 goals, 3 partners — counted, not derived. The binder copy in FULL is
        still there and is still not counted anywhere, because the section that
        counted it is no longer offered. */
-    assert(/2 Goals/.test(shown), "goals: " + shown);
+    /* RESTATED IN C3.4b: Goals is no longer a destination, so the count that
+       follows a collection is Binder's. FULL holds one binder. */
+    assert(/1 Binder/.test(shown), "binders: " + shown);
     assert(/3 Trusted Partners/.test(shown), "partners: " + shown);
-    assert(!/Your Cards/.test(shown), "the deferred section is counted: " + shown);
+    /* RESTATED IN C3.4: Your Cards is offered now, and its count is its own
+       collection's — `collectorCopies` — which is exactly what this test is
+       for. FULL holds one copy. */
+    assert(/1 Your Cards/.test(shown), "your cards: " + shown);
     /* RESTATED IN C1. Browse counts NOTHING, and that is the point: the
        catalogue is not a collection of this Collector's, so a number beside it
        would be a fact about MetYet wearing the clothes of a fact about them.
        Every section that DOES carry a count still sources it from its own
        collection, which is what this test has always been for. */
     const counted = SHELL_MOD.SECTIONS.filter((s) => s.count);
-    eq(counted.map((s) => s.count).join(","), "goals,partners",
+    eq(counted.map((s) => s.count).join(","), "binders,collectorCopies,partners",
       "a count is sourced from something other than its own collection");
-    eq(counted.map((s) => s.id).join(","), "goals,partners", "a section grew a count");
+    eq(counted.map((s) => s.id).join(","), "binder,my-cards,partners", "a section grew a count");
     /* Read from the section list rather than the rendered text, where "Browse"
        and the next section's count sit side by side and any regex would be
        reading one as the other. */
@@ -377,11 +438,15 @@ describe("C. the shell: its sections, and counts that are row counts", () => {
 
   test("a count follows the collection, not the order or the first row", () => {
     const shuffled = { ...FULL,
-      goals: [...FULL.goals].reverse(),
+      binders: [...FULL.binders].reverse(),
       partners: [...FULL.partners].reverse() };
     eq(flat(show(shuffled)).includes("3 Trusted Partners"), true);
     eq(flat(show({ ...FULL, partners: [] })).includes("0 Trusted Partners"), true);
-    eq(flat(show({ ...FULL, goals: [] })).includes("0 Goals"), true);
+    /* RESTATED IN C3.4b: the counted sections are Binder, Your Cards and
+       Trusted Partners, so the "count follows its own collection" property is
+       asserted through one of those rather than through Goals. */
+    eq(flat(show({ ...FULL, binders: [] })).includes("0 Binder"), true);
+    eq(flat(show({ ...FULL, collectorCopies: [] })).includes("0 Your Cards"), true);
   });
 
   test("nothing is counted that would need a rule to count", () => {
@@ -412,9 +477,15 @@ describe("C. the shell: its sections, and counts that are row counts", () => {
   test("an empty account gets the shell and a sentence, never a crash or a sample", () => {
     const r = show(EMPTY);
     assert(looksLikeCollectorShell(r), "an empty account lost its navigation");
-    clickText(r, "Goals");
-    assert(/haven't set any goals yet/.test(flat(r)), flat(r));
-    assert(/haven't recorded any cards yet/.test(flat(show(EMPTY, "Your Cards"))), "the deferred section");
+    /* RESTATED IN C3.4b. Goals is no longer a destination, so the empty
+       sentences asserted here are the ones a person can actually reach. Both
+       are stronger than the old pair: Your Cards is no longer "the deferred
+       section" but a real one, and Binder's empty state is the first thing
+       every pilot Collector sees, because nothing creates a binder for them. */
+    clickText(r, "Binder");
+    assert(/haven't made a binder yet/.test(flat(r)), flat(r));
+    clickText(r, "Your Cards");
+    assert(/haven't recorded any cards yet/.test(flat(r)), flat(r));
     clickText(r, "Trusted Partners");
     assert(/no Trusted Partners yet/.test(flat(r)), flat(r));
     const all = flat(r);
@@ -542,7 +613,7 @@ describe("E. navigation, session and loading", () => {
     eq(apiCalls(), 1, "one read, on arrival");
 
     clickText(r, "Trusted Partners"); await flush(r);
-    clickText(r, "Goals"); await flush(r);
+    clickText(r, "Binder"); await flush(r);
 
     eq(apiCalls(), 1, "moving around asked the server again");
     eq(JSON.stringify(store.get()), before, "navigation changed the projection");

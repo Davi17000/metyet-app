@@ -241,7 +241,14 @@ describe("A. the seat decides, and only the seat", () => {
     /* Restated in Batch 8.1: the Trade Binder left the Collector's navigation
        until a Collector can put a card in one. What this asserts is unchanged —
        a Collector gets the Collector app, whole. */
-    ["Goals", "Trusted Partners"].forEach((label) => {
+    /* Restated again in Phase 5 C3.4b: Binder came back, now that a Collector
+       CAN put a card in one, and Goals left the top level in the same move —
+       binders express coherence, goals express priority, and priority is read
+       inside a card experience rather than beside it. What this asserts is
+       still unchanged: a Collector gets the Collector app, whole. The labels
+       named here are two the Collector app has and the TP workspace does not,
+       which is the whole job of this line. */
+    ["Binder", "Trusted Partners"].forEach((label) => {
       assert(hasButton(r, label), `the Collector app is missing ${label}: ` + shown);
     });
     assert(!/Collector Network|Inventory/.test(shown), "a TP section leaked into it: " + shown);

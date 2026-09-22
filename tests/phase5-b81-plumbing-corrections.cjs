@@ -463,12 +463,44 @@ describe("E. Your Cards is not a place a Collector can go", () => {
     }).outputFiles[0].text;
     const mod = { exports: {} };
     new Function("module", "exports", "require", shell)(mod, mod.exports, require);
-    /* C1 put Browse in front of Goals. Your Cards is still not in
-       this list, which is what this test is about. */
-    eq(mod.exports.SECTIONS.map((s) => s.id).join(","), "browse,goals,partners");
-    eq(mod.exports.DEFERRED_SECTIONS.map((s) => s.id).join(","), "my-cards");
-    assert(typeof mod.exports.DEFERRED_SECTIONS[0].view === "function",
-      "the section component was deleted rather than deferred");
+    /* SUPERSEDED AND RESTATED (Phase 5 C3.4).
+
+       What this protected: that Batch 8.1 DEFERRED Your Cards rather than
+       deleting it — the entry, and its component, stayed live and correct in a
+       declared waiting place instead of being removed and rebuilt later.
+
+       Why it is no longer correct: the waiting is over. The reasons expired one
+       at a time — C2 gave a copy a canonical card, C3.3 gave a person a way to
+       record one, C3.4 fixed the screen's own canonical naming — and C3.4 moved
+       the entry up.
+
+       What replaces it, and why it is stricter: the property this test is
+       really about is that deferring never quietly became deleting, and that is
+       now provable in the strongest possible way — the section is in the
+       product, with the same component file Batch 8.1 declined to delete. The
+       deferral list survives, empty, so the convention is still there for the
+       next section that needs it.
+
+       SUPERSEDED AGAIN AND RESTATED (Phase 5 C3.4b). The next section that
+       needed it arrived immediately: C3.4b took Goals out of the top level,
+       because a binder expresses coherence and a goal expresses priority, which
+       belongs inside a card experience rather than beside it — and it put Goals
+       in the same declared waiting place instead of deleting `Goals.jsx`. So
+       the list is not empty, and the convention has now been used in BOTH
+       directions, which is the proof it is a real place and not a one-off.
+       The claim is unchanged and is asserted the same way: every id in the list
+       still has a live component, and Your Cards is still promoted. */
+    eq(mod.exports.SECTIONS.map((s) => s.id).join(","), "browse,binder,my-cards,partners");
+    eq(mod.exports.DEFERRED_SECTIONS.map((s) => s.id).join(","), "goals",
+      "something else is waiting — say so here");
+    for (const waiting of mod.exports.DEFERRED_SECTIONS) {
+      assert(typeof waiting.view === "function",
+        `the deferred section ${waiting.id} has no component: deferring became deleting`);
+    }
+    const promoted = mod.exports.SECTIONS.find((s) => s.id === "my-cards");
+    assert(promoted && typeof promoted.view === "function",
+      "the section component was deleted rather than promoted");
+    eq(promoted.count, "collectorCopies", "it counts something other than its own collection");
   });
 
   test("the domain, the table and the projection are untouched", () => {

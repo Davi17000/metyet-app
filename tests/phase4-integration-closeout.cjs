@@ -66,7 +66,12 @@ const H = require("./helpers/command-server.cjs");
 const TP_NAV = ["Collector Network", "Inventory", "Opportunities"];
 /* Restated in Batch 8.1: the Trade Binder left the Collector's navigation
    until the batch that lets anybody put a card in one. */
-const CO_NAV = ["Browse", "Goals", "Trusted Partners"];
+/* Restated in Phase 5 C3.4b: that batch arrived, so Binder is a destination —
+   and Goals stopped being one, because a binder expresses coherence and a goal
+   expresses priority, which is read where the card is rather than beside it.
+   This list is what the routing tests below use to recognise the Collector app,
+   so it is the navigation as the product now ships it. */
+const CO_NAV = ["Browse", "Binder", "Your Cards", "Trusted Partners"];
 
 /* ------------------------------------------------------------- rendering */
 
@@ -231,8 +236,29 @@ describe("B. projection -> seat routing -> the seat's own shell", () => {
       /* C1 made Browse the Collector's first section; their goal is one press
          away, and the point of this test is that the real server's projection
          reaches the real Collector app. */
-      clickText(r, "Goals");
-      assert(flat(r).includes("CASEY-WANTS-CHARIZARD"), "their own goal: " + flat(r));
+      /* SUPERSEDED AND RESTATED (Phase 5 C3.4b).
+
+         What it protected: that a Collector's own Goal, as the real server
+         projects it, arrives in the real Collector app — proved by pressing
+         Goals and reading the goal's own note off the screen.
+
+         Why it is no longer correct: there is no Goals press. C3.4b removed the
+         top-level Goals entry. This fixture's goal is also a LEGACY one — it
+         names `cardId: "k1"` and no canonical card — so it reaches no canonical
+         surface by design, and dressing it up as one would be fiction.
+
+         What replaces it, and why it is stricter: the claim was always about
+         the seam, not the tab, so it is asserted at the seam — the goal is in
+         the projection the real server sent to this real client, with its own
+         note and its own tier, which the old form never checked. And the app is
+         still driven, by pressing a section that exists, so the seam is proved
+         through a real render rather than only through the store. */
+      const mine = store.get().goals;
+      eq(mine.length, 1, "their own goal did not reach them");
+      eq(mine[0].note, "CASEY-WANTS-CHARIZARD", "their own goal: " + JSON.stringify(mine[0]));
+      eq(mine[0].tier, "primary", "their own goal's priority did not survive the seam");
+      clickText(r, "Binder");
+      assert(flat(r).includes("Binder"), "Binder did not render: " + flat(r));
       /* Restated in Batch 8.1. Their own binder copy still reaches them from
          the real server — that is a projection property and it is unchanged.
          What is gone is the tab that showed it, because nothing in production

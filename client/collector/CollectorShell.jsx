@@ -59,6 +59,7 @@ import { describeActor } from "../actor.js";
 import { rows } from "./present.js";
 import { EMPTY_SESSION } from "../browse/CardBrowser.jsx";
 import Browse from "./sections/Browse.jsx";
+import Binder from "./sections/Binder.jsx";
 import Goals from "./sections/Goals.jsx";
 import MyCards from "./sections/MyCards.jsx";
 import TrustedPartners from "./sections/TrustedPartners.jsx";
@@ -75,40 +76,70 @@ export const SECTIONS = Object.freeze([
   { id: "browse", label: "Browse", count: null, view: Browse,
     title: "Browse",
     sub: "Find a card by Pokémon, by set, or by who drew it" },
-  { id: "goals", label: "Goals", count: "goals", view: Goals,
-    title: "Goals",
-    sub: "What you're looking for, and what your Trusted Partners work from" },
+  /* WHERE A CARD BELONGS (Phase 5 C3.4). Second, because after finding a card
+     the next thing a person does with it is decide where it goes.
+
+     AND WHY GOALS IS NO LONGER A TAB. Binders express coherence and Goals
+     express priority, and those are two things to know about one card rather
+     than two places to go. A Goal is still an independent durable fact — it
+     needs no binder, survives one being emptied, and is set and changed from
+     the Card Specification panel exactly as before — but it is read WHERE THE
+     CARD IS. `Goals.jsx` is kept and still renders; it simply is not a
+     destination of its own, and the Goals that belong to no active binder are
+     listed inside Binder so that removing the tab hides nothing.
+
+     The count is `binders` — how many groupings they have made, which is a
+     fact about them rather than about MetYet. */
+  { id: "binder", label: "Binder", count: "binders", view: Binder,
+    title: "Binder",
+    sub: "Where your cards belong, and what you're still looking for" },
+  /* WHAT YOU OWN, REACHABLE AT LAST (Phase 5 C3.4). Deferred since Batch 8.1
+     for reasons that were true at the time and stopped being true one at a
+     time: the command existed but demanded a legacy card (fixed by C2), then
+     there was no control to record a copy (fixed by C3.3), and then the screen
+     itself named canonical cards wrongly — every production copy read "a card
+     that isn't in your catalogue", which is why C3.3 declined to promote it and
+     left the debt written down. C3.4 fixes the screen and moves it up. */
+  { id: "my-cards", label: "Your Cards", count: "collectorCopies", view: MyCards,
+    title: "Your Cards",
+    sub: "What you own, and what you're offering" },
   { id: "partners", label: "Trusted Partners", count: "partners", view: TrustedPartners,
     title: "Trusted Partners",
     sub: "The shops you deal with" },
 ]);
 
-/* BUILT, AND NOT YET REACHABLE — AND THE REASON CHANGED IN C2.
+/* BUILT AND NOT YET REACHABLE — AND, AS OF C3.4, NOTHING IS.
 
-   Batch 8.1 deferred this section because it was IMPOSSIBLE: the only command
-   that wrote a Collector's copy demanded a row in the legacy catalogue, and
-   production's legacy catalogue is empty and is meant to stay that way. Every
-   Collector had a tab that promised something, opened, and could never hold
-   anything — a worse answer than not offering it.
+   Batch 8.1 created this list for Your Cards, which was impossible then: the
+   only command that wrote a Collector's copy demanded a row in the legacy
+   catalogue, and production's is empty by design. C2 gave a copy a canonical
+   card, C3.3 gave a person a way to record one, and C3.4 fixed the screen's own
+   canonical naming and moved it into SECTIONS.
 
-   That is fixed. A copy now names a canonical card (migration 0011), the three
-   commands behind this screen are written, tested and exposed to production
-   (server/exposed-commands.js), and the projection gives the owner their own
-   cards whole. What is missing is the other half of the screen: the control
-   that RECORDS a card you own, which belongs beside the card in Browse where
-   you are already looking at it. C2 built the concept; the batch that adds that
-   control moves this entry up into SECTIONS, and does nothing else here.
+   THE LIST STAYS, EMPTY, ON PURPOSE. It is the declared place a built-but-not
+   -ready section waits, and having one is what kept Your Cards live and correct
+   through four batches instead of being deleted and rebuilt. Deleting the list
+   because it happens to be empty would throw away the convention along with its
+   only current occupant.
 
-   The count is `collectorCopies`, the collection's canonical name since C2.
-   Keeping the entry live and correct — rather than deleting it and rebuilding
-   it later — is what made this batch's rename fail loudly instead of quietly.
-
-   A person cannot reach it: it is not in the navigation, and `section` is only
-   ever set from a SECTIONS id. */
+   A person cannot reach anything listed here: `section` is only ever set from
+   a SECTIONS id. */
 export const DEFERRED_SECTIONS = Object.freeze([
-  { id: "my-cards", label: "Your Cards", count: "collectorCopies", view: MyCards,
-    title: "Your Cards",
-    sub: "What you own, and what you're offering" },
+  /* GOALS, WHICH IS NOT GONE (Phase 5 C3.4b). The tab went; the screen did not.
+     A Goal is still an independent durable fact — it needs no binder, survives
+     one being emptied, and is set and changed from the Card Specification panel
+     exactly as before. What changed is that priority is read WHERE THE CARD IS:
+     inside a binder, and, for the Goals that are in no active binder, in
+     Binder's own "Not in a binder yet" list, so that losing the tab hides none
+     of them.
+
+     It is kept here rather than deleted for the reason this list exists: a
+     screen that may be wanted again is deferred, not removed and rebuilt. If a
+     later batch decides prioritisation deserves its own destination after all,
+     it moves one entry. */
+  { id: "goals", label: "Goals", count: "goals", view: Goals,
+    title: "Goals",
+    sub: "What you're looking for, and what your Trusted Partners work from" },
 ]);
 
 const CSS = `
@@ -210,6 +241,30 @@ const CSS = `
   border-radius:6px; font:inherit; font-size:16px; background:#FFF; color:var(--text); }
 .mcs-linkish { border:0; background:none; padding:0; color:var(--t1); font-size:13px;
   text-decoration:underline; }
+
+/* ---- your cards: the card, then the copies of it (Phase 5 C3.4) ---- */
+.mcs-filter { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  margin:0; padding:12px 16px; border-bottom:1px solid var(--line-soft); }
+.mcs-group { border-bottom:1px solid var(--line); }
+.mcs-group:last-child { border-bottom:0; }
+.mcs-group-head { display:flex; gap:12px; align-items:flex-start; padding:14px 16px 4px; }
+.mcs-group-art { flex:0 0 52px; width:52px; aspect-ratio:5/7; display:flex; align-items:center;
+  justify-content:center; background:var(--line-soft); border-radius:5px; overflow:hidden; }
+.mcs-group-art img { width:100%; height:100%; object-fit:contain; }
+.mcs-group-plate { font-size:10px; color:var(--muted); text-align:center; padding:4px; }
+.mcs-group .mcs-rec { padding-left:16px; padding-right:16px; }
+.mcs-group .mcs-rec:last-child { border-bottom:0; }
+
+/* ---- binder: the library, and one binder's cards (Phase 5 C3.4) ---- */
+.mcs-binder { border-bottom:1px solid var(--line-soft); }
+.mcs-binder:last-child { border-bottom:0; }
+.mcs-binder-head { display:flex; gap:12px; align-items:center; padding:12px 16px; }
+.mcs-binder-open { flex:1; min-width:0; text-align:left; border:0; background:none; padding:0;
+  display:flex; flex-direction:column; gap:2px; }
+.mcs-binder-do { display:flex; gap:12px; flex-wrap:wrap; }
+.mcs-filling { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0 0 10px;
+  padding:9px 12px; border-radius:8px; background:var(--t1-bg); color:var(--t1);
+  border:1px solid #CBE0E2; font-size:13px; }
 
 @media (min-width:860px) {
   .mcs-spec-scrim { align-items:stretch; justify-content:flex-end; }
@@ -343,7 +398,8 @@ const CSS = `
 
 export default function CollectorShell({ state, onSignOut, joined = null, onDismissJoined = null,
   onAddGoal = null, onSetPriority = null, onRemoveGoal = null, onBrowseCards = null,
-  onSpecify = null }) {
+  onSpecify = null, onCreateBinder = null, onRenameBinder = null,
+  onArchiveBinder = null }) {
   /* JUST ACCEPTED? OPEN ON THE THING THAT CHANGED (Phase 5 Batch 3A). A person
      who has this second finished joining a shop's network; the section that now
      holds that shop is what they came for. Everyone else opens where they
@@ -355,6 +411,18 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
      is open, the page and the rows — and nothing durable: it is gone when the
      tab is closed, which is exactly what a browsing session should be. */
   const [browseSession, setBrowseSession] = useState(EMPTY_SESSION);
+  /* WHICH BINDER IS BEING FILLED, IF ONE IS (Phase 5 C3.4). "Add cards" in a
+     binder sends a person to Browse, and this is the note they carry: a binder
+     id and its name, held here for the same reason the browsing session is —
+     above the section, so it survives the trip, and in memory, so it is gone
+     when the tab closes.
+
+     IT IS NOT A PREFERENCE AND IT IS NOT STORED. Nothing persists it, and in
+     particular it is not `collectors.prefs`, which a Trusted Partner receives.
+     All it does is tick a checkbox in the specification panel, which the
+     Collector can untick; Save still writes only the difference, and Cancel
+     still writes nothing. */
+  const [fillingBinder, setFillingBinder] = useState(null);
 
   const who = describeActor(state);
   /* Row counts of collections the SERVER scoped to this Collector. Nothing
@@ -448,8 +516,18 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
           <View state={state} {...(meta.id === "goals"
             ? { onAddGoal, onSetPriority, onRemoveGoal, onBrowseCards }
             : meta.id === "browse"
-              ? { onSpecify, onBrowseCards, session: browseSession, onSession: setBrowseSession }
-              : {})} />
+              ? { onSpecify, onBrowseCards, session: browseSession, onSession: setBrowseSession,
+                fillingBinder, onDoneFilling: () => setFillingBinder(null) }
+              : meta.id === "my-cards"
+                /* Your Cards asks the catalog what its canonical cards are
+                   called, and opens the same specification panel Browse does
+                   (Phase 5 C3.4). Two props, both already bound above. */
+                ? { onSpecify, onBrowseCards }
+                : meta.id === "binder"
+                  ? { onSpecify, onBrowseCards, onCreateBinder, onRenameBinder,
+                    onArchiveBinder, fillingBinder,
+                    onAddCards: (into) => { setFillingBinder(into); setSection("browse"); } }
+                  : {})} />
         </main>
       </div>
     </div>
