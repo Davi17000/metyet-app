@@ -371,7 +371,18 @@ const CSS = `
   border-top:1px dashed var(--line-soft); display:flex; flex-direction:column; gap:8px; }
 .mcs-sub li { display:flex; gap:8px; flex-wrap:wrap; align-items:baseline; }
 .mcs-sub-t { font-size:13.5px; }
+.mcs-sub-s { font-size:12.5px; color:var(--faint); }
 .mcs-sub-f { display:flex; gap:6px 16px; flex-wrap:wrap; align-items:baseline; }
+
+/* ---- what a shop has that you asked for (Phase 5 C3.5) ---- */
+.mcs-has-line { margin:11px 0 0; padding-top:10px; font-size:13.5px; color:var(--t1);
+  border-top:1px dashed var(--line-soft); }
+.mcs-has { margin-top:8px; padding-top:0; border-top:0; gap:10px; }
+.mcs-has li { align-items:center; }
+.mcs-has-art { flex:0 0 34px; width:34px; aspect-ratio:5/7; display:flex;
+  align-items:center; justify-content:center; overflow:hidden; border-radius:3px;
+  background:var(--line-soft); }
+.mcs-has-art img { width:100%; height:100%; object-fit:contain; }
 
 /* ---- the tab bar, at the bottom, where a thumb is ---- */
 .mcs-nav { position:fixed; left:0; right:0; bottom:0; display:flex; z-index:10;
@@ -527,7 +538,13 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
                   ? { onSpecify, onBrowseCards, onCreateBinder, onRenameBinder,
                     onArchiveBinder, fillingBinder,
                     onAddCards: (into) => { setFillingBinder(into); setSection("browse"); } }
-                  : {})} />
+                  : meta.id === "partners"
+                    /* Trusted Partners asks the catalog what the cards a shop
+                       has for you are called, and takes nothing else (Phase 5
+                       C3.5). ONE read prop and no command: this screen answers
+                       a question and offers no way to act on the answer. */
+                    ? { onBrowseCards }
+                    : {})} />
         </main>
       </div>
     </div>
