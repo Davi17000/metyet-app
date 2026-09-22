@@ -208,11 +208,12 @@ what copy of it you want (see above).
 Criteria are **optional**, and that is a compatibility rule rather than a gap:
 
 - Every Goal written before C3.2 has no `desired`, and so does every Goal added
-  from Browse, which has no grade control until C3.3's Card Specification
+  from Browse, which had no grade control until C3.3's Card Specification
   surface. **Unspecified means the Collector has not said** — it is not
   `{ grade: null }`, and it is certainly not Raw / Near Mint. Requiring criteria
-  before the control exists would break the shipped app's primary action;
-  C3.3 ships the control and turns the requirement on.
+  before the control existed would have broken the shipped app's primary action.
+  **C3.3 shipped the control and turned the requirement on** for the canonical
+  path only; Goals written before it stay valid and are never filled in.
 - Copies written before C3.2 may carry a contradictory pair, because the door
   was open. They **load**, they are **not auto-repaired** (the record does not
   say which half was meant), and `D.gradingRead` reports the contradiction via
@@ -221,6 +222,117 @@ Criteria are **optional**, and that is a compatibility rule rather than a gap:
   coherent — which is one patch away.
 
 `desired` lives in the Goal's `attrs`, so C3.2 needed **no migration**.
+
+## Saying it all about one card: Card Specification (Phase 5 C3.3)
+
+A Collector presses a card in Browse and a sheet opens over the grid asking
+three questions: which binders it belongs in, whether and how hard they want it
+and which copy, and what copies they own and offer. One button writes.
+
+**It composes; it does not aggregate.** There is no `saveCardSpecification`
+command, no new record and no new table. The panel
+(`client/collector/CardSpecification.jsx`) holds the person's ANSWERS, the
+projection holds the truth, and Save sends the DIFFERENCE as a sequence of
+commands that already existed. The only thing C3.3 adds to the domain is one
+command (`updateGoalCriteria`) and the order the others run in.
+
+**There is no persisted Intent.** Primary, Secondary, "I have it" and
+"I'd trade it" are useful labels and are *not* mutually exclusive states. The
+durable model stays two independent dimensions:
+
+```
+Want:  Not looking | Secondary | Primary      one Goal per Collector per card
+Own:   zero or more CollectorCopies           each with its own grading and `offered`
+```
+
+A person can hunt a card Primarily, own three, offer one, and file it in two
+binders at once. That is an ordinary collection, not an edge case, and an enum
+would have to pick one of those and be wrong about somebody on their first day.
+
+**Desired criteria are editable context on the one Goal.** `updateGoalCriteria`
+exists because remove-and-recreate is not a workaround here: `removeGoal`
+refuses while a deal is live — so the one moment being precise about the copy
+matters would be the one moment it was impossible — and a recreate destroys
+`createdAt`, `since`, `confirmedAt` and `secondarySince`. It changes `desired`
+and nothing else, and it is deliberately **not** blocked by an active
+Opportunity, because nothing derives from criteria.
+
+**Criteria still do not filter Discovery.** A Goal wanting a PSA 10 still
+discovers a partner's Heavily Played raw copy, and the reverse. Discovery is
+exact canonical-card overlap and reads no grading at all — asserted against the
+source. Criteria are context for a human deciding whether to start a
+conversation, never a rule for a machine deciding whether they may.
+
+**Binder organisation stays private and independent.** Filing a card says
+nothing about wanting or owning it, membership survives both, and no partner
+receives a binder id, name, membership or count — not even a derived hint.
+Filing a card creates no discovery, no activity and no interest.
+
+**Nothing is written until Save.** Opening, ticking, choosing, typing, adding a
+copy and Cancel all write nothing. No draft, no bookmark, no queue.
+
+**A partial commit is allowed, because the underlying facts are independent.**
+The sequence stops at the first refusal; what stood, stood. A half-applied
+commit leaves several true statements, not a corrupt record — so cross-concept
+atomicity is not required and no orchestration command was invented to fake it.
+The message names both halves and never claims success.
+
+**Retry is diff-based, which is what makes it safe.** Every successful command
+returns a fresh authoritative projection. Because the panel commits the
+*difference* between that projection and the controls, recomputing it drops
+whatever already succeeded — so pressing Save again sends only what is left.
+That matters because `createBinder` and `addCollectorCopy` both mint identity
+and can never be resent blind: a duplicate physical copy is a legitimate thing
+to own, so nothing downstream could tell an accidental resend from a real
+second copy. The order exists for the same reason — organisation first because
+it is the most reversible, new copies last because they are the least.
+
+**Browse stays mounted and the sheet is out of flow.** The panel used to render
+*above* the grid in normal flow, so opening it pushed everything down the page
+while the window's scroll position stayed put. It is `position: fixed` now and
+rendered *after* the grid, so nothing moves behind it — which makes "come back
+to exactly where you were" true by construction. **No scroll-restoration
+machinery was built, and none should be**: there is nothing to restore.
+
+**Why these five commands are now production-exposed** (9 → 14 in
+`server/exposed-commands.js`): each is a control on this panel, which is the
+rule that list has always had — a command joins in the batch that ships a way to
+send it.
+
+| Command | The control |
+|---|---|
+| `createBinder` | "New binder…", inline, because every pilot Collector has zero binders and an empty list with no way to act is the impossible screen C2 refused to ship |
+| `addBinderEntry` / `removeBinderEntry` | the binder checkboxes |
+| `updateCollectorCopy` | editing a copy's grade, condition, certificate or value — C2 wrote it and said it would join "in the batch that gives it a screen"; it is also the only way to correct a copy written before C3.2 that contradicts itself |
+| `updateGoalCriteria` | the grade-wanted control |
+
+`renameBinder` and `setBinderArchived` stay **closed**: C3.3 lets a person say
+where the card in front of them belongs; managing binders as objects is C3.4.
+
+**A Collector surface may not name a command.** The panel speaks its own
+vocabulary — `file`, `how-hard`, `record-copy` — and `client/sign-in/SignIn.jsx`
+maps those to commands at the boundary that already holds every other binding.
+The panel also does not decide whether a deal is active: it offers "Not looking"
+always, and `removeGoal`'s `goal-locked` refusal explains itself. Both of those
+are rules the Phase 4 boundary tests caught being broken, not ones anybody
+remembered.
+
+**C3.4 owns what is deliberately missing**: Binder list and detail surfaces,
+rename and archive, the Your Cards screen (still in `DEFERRED_SECTIONS`: C3.3
+fixed its grading, which had been read from the legacy catalogue since Batch 5
+moved grade onto the copy, but its TITLE is still resolved that way and a
+canonical copy therefore reads "a card that isn't in your catalogue"), and the
+derived Trade Binder view. `offered === true` remains a
+derived view and is never a persisted special Binder.
+
+**No migration.** `desired` lives in a Goal's `attrs` and nothing else C3.3
+writes is a new shape; `0013_binders.sql` is still the newest.
+
+**The `binder_id` naming collision is untouched.** C3.3 writes
+`binder_entries.binder_id` (which means a Binder) and reads `interests.binder_id`
+(which means a collector copy) in the same batch, and renamed neither — see the
+warning under Binders above. A rename is a migration plus every reader of the
+trade model, which is not this batch wearing a smaller name.
 
 ## Five things to know before changing anything
 
