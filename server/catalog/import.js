@@ -49,6 +49,10 @@
    ========================================================================== */
 
 const { createTranslator, applyTranslation, QUARANTINE, REJECTED } = require("./translation.js");
+/* For one thing only: de-duplicating expansion codes the way the write will,
+   which is by the domain's natural key. The runner still translates nothing and
+   decides no identity — this is the same function `putExpansion` keys by. */
+const CI = require("../../domain/card-identity.js");
 
 const DEFAULT_BATCH_SIZE = 500;
 
@@ -94,6 +98,11 @@ async function importCatalog({ catalog, db, provider, vocabulary, records,
     quarantineReasons: {},
     rejectionReasons: {},
     ignored: {},
+    /* Which releases this run touches, which of them the catalog already holds,
+       and which it would open (Phase 5 C6.1). Filled in BOTH modes, because it
+       comes from a read rather than a write — which is the whole reason it is
+       useful in a dry run. */
+    expansions: { known: false, touched: [], existing: [], opening: [] },
     /* Only ever filled on a real run: a dry run cannot know what a write would
        have created without doing it. */
     created: null,
@@ -125,6 +134,68 @@ async function importCatalog({ catalog, db, provider, vocabulary, records,
   summary.quarantineReasons = quarantineCounts.byReason;
   summary.rejectionReasons = rejectionCounts.byReason;
   summary.ignored = ignoredCounts.byReason;
+
+  /* THE RELEASES THIS RUN WOULD OPEN, NAMED BEFORE IT OPENS THEM (Phase 5 C6.1).
+
+     An expansion code is the one value in a vocabulary that MetYet cannot check
+     against anything: a variant's dimensions are judged by the domain at
+     startup, but a code is whatever the operator declares it to be, and it has
+     to be, because a genuinely new release has to be declarable. So `evo` and
+     `evvo` are equally valid, and typing the second where you meant the first
+     mints a second canonical expansion with cards in it while the run reports
+     success. That was measured, not imagined.
+
+     WHAT IS AUTHORITATIVE HERE, AND WHAT IS NOT. Nothing in this system knows
+     which codes an operator INTENDED — there is no master set list, and adding
+     one would be a second source of truth about somebody else's catalog. What
+     is knowable, exactly, is which codes this run would CREATE: the codes its
+     mappable records resolve to, minus the ones the catalog already holds. One
+     read-only lookup answers it.
+
+     SO THIS REPORTS AND REFUSES NOTHING. A new release is a normal thing to
+     import and must stay a single step. What changes is that the operator is
+     told, in the dry run, that they are about to open two releases when they
+     meant one — which is the moment the typo is cheap. A list of names is a
+     different kind of check from a count: `2` reads as correct to somebody who
+     has not counted, and `FOSSIL, FOSSSIL` does not. */
+  /* DE-DUPLICATED THE WAY THE WRITE WILL, which is by the domain's natural key
+     rather than by the spelling. `FOSSIL` and `fossil` are one release to
+     `putExpansion`, so counting them as two would have promised the operator
+     two new releases and then created one. */
+  const touchedByKey = new Map();
+  for (const t of translated) {
+    if (!t.ok || !t.record || !t.record.expansion) continue;
+    const { game, code } = t.record.expansion;
+    if (!code) continue;
+    const key = CI.expansionNaturalKey({ game, code });
+    if (!touchedByKey.has(key)) touchedByKey.set(key, code);
+  }
+  const touched = [...touchedByKey.values()].sort();
+  /* A READ, AND ONLY ADVISORY. If the catalog cannot answer — it is down, or a
+     caller handed in something that does not offer the lookup — the honest
+     report is that this run does not know, NOT that nothing exists. The first
+     version left the answer empty in both cases, which made a silent catalog
+     claim every release was new: a positive false statement wearing the clothes
+     of graceful degradation.
+
+     AND IT DOES NOT BECOME A RUN FAULT. Nothing has been written at this point
+     and nothing depends on the answer; C4's contract is that a run returns a
+     summary naming what happened, and a failed advisory read must not be the
+     one thing that throws out of it. The first real write will report a genuine
+     database fault properly, in the shape that was built for it. */
+  let known = null;
+  if (touched.length && typeof catalog.knownExpansionCodes === "function") {
+    try { known = await catalog.knownExpansionCodes(touched); }
+    catch (error) { known = null; }
+  }
+  summary.expansions = known === null
+    ? { known: false, touched, existing: [], opening: [] }
+    : (() => {
+      const held = new Set(known);
+      return { known: true, touched,
+        existing: touched.filter((code) => held.has(code)),
+        opening: touched.filter((code) => !held.has(code)) };
+    })();
 
   if (dryRun) {
     summary.status = statusOf(summary);

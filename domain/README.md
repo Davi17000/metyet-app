@@ -676,6 +676,60 @@ the door; and it answered "who has it" where every named answer in the product
 answers "who has something you asked for". The named answer lives on the Trusted
 Partners screen, and that is the one worth having.
 
+## Two ingestion safety rules, learned the hard way (Phase 5 C6.1)
+
+Both of these were found by probing the C4 runner rather than reading it, and
+both are written down because the reasoning is not obvious from the code alone.
+
+**An unkeyable row is rejected before anything can try to store it, and the gate
+order is the rule.** `source_mappings` is unique on
+`(provider, provider_card_id, provider_variant_key)`, so a record with no
+provider card id cannot be queued — there is no identity to remember it by.
+C4 wrote that rejection and placed it *after* the check for a missing collector
+number or card name, which meant it only ever fired for a record that was
+otherwise complete. A record missing the card id **and** a number or a name — the
+ordinary shape of a broken row in a bulk export — was quarantined instead, and
+`recordSourceMapping` threw on the way in, inside the batch transaction. The
+batch rolled back and the runner returned, so **one malformed row failed the
+whole import and wrote nothing**, taking every good record with it. Measured at
+601 records before the fix: 600 mappable, 0 written.
+
+So the ordering is load-bearing, not stylistic: *a row that cannot be durably
+keyed is classified before any path can attempt to persist it.* Nothing is
+fabricated to make it keyable — a synthetic `provider_card_id` would be a
+durable lie about somebody else's data — no repository method is reached for it,
+and it is counted and named in the summary rather than stored. And it is not an
+operational error: a malformed row is a data-quality fact, and a run that meets
+one completes at exit 3 with the good records landed.
+
+**An expansion code is the one vocabulary value nothing can check, so the run
+names the releases it is about to open.** A variant's dimensions are judged by
+the domain when the translator is built; an expansion code is whatever the
+operator declares, and it has to be, because a genuinely new release must be
+declarable in one step. So `FOSSIL` and `FOSSSIL` are equally valid and typing
+the second mints a second canonical release with cards in it while the run
+reports success.
+
+There is no authoritative answer to "did they mean this?" — no master set list
+exists, and inventing one would be a second source of truth about somebody
+else's catalogue. What *is* exactly knowable is which codes a run would create:
+the codes its mappable records resolve to, minus the ones the catalogue already
+holds, by one read-only lookup. So the runner reports `touched`, `existing` and
+`opening`, in the dry run as well as the real one, and **refuses nothing**. A
+list of names is a different kind of check from a count: `2` reads as correct to
+somebody who has not counted, and `FOSSIL, FOSSSIL` does not.
+
+Two things about that lookup are worth keeping right, because the first version
+got both wrong. It compares by the **natural key**, which is case-folded, and
+returns the caller's own spelling — the first version looked rows up by the key
+and then filtered against the stored `code` column, so a catalogue holding
+`base1`, asked about `Base1`, answered "no" while the write went on to reuse the
+existing row and rename it. A safety line that reassures in exactly the dangerous
+case is worse than no line. And a lookup that cannot answer — a catalogue that is
+down, or a caller that does not offer it — reports that it **does not know**,
+never that nothing exists, because the second is a positive false claim wearing
+the clothes of graceful degradation.
+
 ## Five things to know before changing anything
 
 **Discovery is computed; Opportunity is persisted.** They share a word and are

@@ -222,23 +222,41 @@ function createTranslator({ provider, vocabulary } = {}) {
           `a source record must be an object, and this one is ${source === null ? "null" : typeof source}`);
       }
 
-      /* A record MetYet cannot even file: no card id, no number, no name. There
-         is nothing here to be uncertain ABOUT. */
-      if (!text(source.collectorNumber) || !text(source.cardName)) {
-        return refuse(source, QUARANTINE.incomplete,
-          "a source record needs a provider card id, a collector number and a card name");
-      }
+      /* WHAT CANNOT EVEN WAIT IN THE QUEUE, ASKED FIRST (Phase 5 C4, ordered
+         correctly in C6.1). The provider's card id is what the mapping table is
+         KEYED by, so a record without one cannot be remembered at all —
+         `recordSourceMapping` refuses it, correctly, and that refusal arrives
+         as a thrown TypeError from inside a quarantine write, which is the one
+         place a quarantine must never fail.
 
-      /* AND THE HALF OF THAT WHICH CANNOT WAIT IN THE QUEUE (Phase 5 C4). The
-         three fields above are all required, but they are not equal: the
-         provider's card id is what the mapping table is KEYED by, so a record
-         without one cannot be remembered at all. `recordSourceMapping` refuses
-         it — correctly — and before C4 that refusal arrived as a thrown
-         TypeError from inside a quarantine write, which is the one place a
-         quarantine must never fail. It is a run-level rejection now. */
+         C4 WROTE THIS GATE AND PUT IT SECOND, which meant it only ever fired
+         for a record that was otherwise complete. A record missing the card id
+         AND a number or a name — the ordinary shape of a broken row in a bulk
+         export — matched the incomplete test above it, went to quarantine, and
+         threw on the way in. The throw is inside the batch transaction, so the
+         batch rolled back and the runner returned: one malformed row failed the
+         whole import and wrote nothing, taking every good record with it. C4's
+         own test for this gate supplied a number and a name, so the defect sat
+         directly underneath the test that was meant to catch it.
+
+         ASKED FIRST, THE ORDER IS THE RULE: a row that cannot be durably keyed
+         is rejected before any path can try to persist it. Nothing is
+         fabricated to make it keyable, no repository method is reached for it,
+         and it is counted rather than stored. */
       if (!text(source.providerCardId)) {
         return reject(REJECTED.unkeyable,
           "a source record has no provider card id, so no mapping can be keyed to it");
+      }
+
+      /* AND THEN THE REST OF WHAT MetYet CANNOT FILE. A record that HAS a card
+         id but no number or no name can be remembered — the queue is keyed by
+         the id, which is present — so this is a quarantine, which is what a
+         queue is for. The detail no longer claims to be about the card id:
+         that question was settled above, and saying otherwise sent an operator
+         looking for a field that was there. */
+      if (!text(source.collectorNumber) || !text(source.cardName)) {
+        return refuse(source, QUARANTINE.incomplete,
+          "a source record needs a collector number and a card name");
       }
 
       /* THE ADAPTER'S OWN REFUSAL, honoured first. An adapter that knows it is
