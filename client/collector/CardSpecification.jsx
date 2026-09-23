@@ -202,7 +202,7 @@ export function initialAnswers(state, canonicalCardId) {
 }
 
 export default function CardSpecification({ card, context = null, state,
-  onCommit, onClose, holders = 0, preselectBinder = null }) {
+  onCommit, onClose, preselectBinder = null }) {
   const canonicalCardId = card && card.canonicalCardId;
   /* A BINDER TICKED BECAUSE OF WHERE SOMEBODY CAME FROM (Phase 5 C3.4). Adding
      cards to a binder opens this with that binder already chosen — which is an
@@ -223,6 +223,21 @@ export default function CardSpecification({ card, context = null, state,
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState(null);
   const [done, setDone] = useState(null);
+  /* One sentence after a new goal is saved, and nothing else ever sets it
+     (Phase 5 C5). Presentation only: it is gone when the panel closes. */
+  const [saved, setSaved] = useState(null);
+  /* THE PANEL STOPS TAKING ANSWERS ONCE IT HAS SAID SOMETHING LANDED.
+     Before C5 a successful commit closed the panel, so this state did not
+     exist. With a confirmation held open, leaving the controls live would have
+     let somebody tick another binder or add a copy after the sentence, press
+     "Done", and lose it silently — the panel would close without a second
+     commit and nothing would say so. Frozen, the sentence is the end of the
+     interaction, which is what it reads as. */
+  const locked = saving || !!saved;
+  /* How many shops this Collector deals with, from the projection they already
+     received. Used for one thing — deciding which of two true sentences to say
+     above — and it names nobody. */
+  const partnerCount = rows(state && state.partners).length;
   const [nextKey, setNextKey] = useState(1);
 
   const binders = rows(state && state.binders).filter((b) => !b.archivedAt);
@@ -285,7 +300,7 @@ export default function CardSpecification({ card, context = null, state,
 
   const commit = async () => {
     if (saving || localProblem) return;
-    setSaving(true); setProblem(null); setDone(null);
+    setSaving(true); setProblem(null); setDone(null); setSaved(null);
     /* The difference, recomputed from whatever the server last said — which on
        a second press is the state the first press left behind. */
     const { steps } = planFrom(state, canonicalCardId, answers);
@@ -304,6 +319,30 @@ export default function CardSpecification({ card, context = null, state,
           return;
         }
         finished.push(step);
+      }
+      /* SAYING WHERE A NEW GOAL WENT (Phase 5 C5). Everything else this panel
+         does is visible the moment it closes — a binder gains a card, Your
+         Cards gains a copy, a tier changes in front of you. A GOAL is the one
+         durable thing whose point is somebody ELSE seeing it, and until now the
+         panel closed on it in silence: a person said what they were hunting and
+         was told nothing about where it had gone.
+
+         So one sentence, on the one step that earns it, using a fact this panel
+         already holds. It is not a confirmation screen: the panel is already
+         open, the row of buttons it replaces is the same row, and nothing is
+         stored, queued or announced. It does not name a shop and it does not
+         claim anybody has looked — only that the goal is now something the
+         Collector's Trusted Partners can see, which is what the projection
+         does. When there is no partner yet it says the true version of that
+         instead, because "your Trusted Partners can see it" is a promise to
+         nobody when the network is empty. */
+      if (finished.some((s) => s.kind === "start-looking")) {
+        setSaved(
+          partnerCount > 0
+            ? "Saved. Your Trusted Partners can see this goal, so they know to look out for it."
+            : "Saved. When you join a shop's Collector Network, they'll see what you're looking for.");
+        setSaving(false);
+        return;
       }
       onClose();
     } catch (error) {
@@ -331,8 +370,12 @@ export default function CardSpecification({ card, context = null, state,
                   .filter(Boolean).join(" · ") || null].filter(Boolean).join(" · ")}
             </p>
           </div>
+          {/* CLOSING IS ALWAYS ALLOWED, except mid-request. Every other control
+              freezes once something has been saved; this one must not, or a
+              confirmation would be a panel a person cannot leave from the top.
+              It says "Done" then, because there is nothing left to cancel. */}
           <button className="mcs-go quiet" type="button" onClick={onClose} disabled={saving}>
-            Cancel
+            {saved ? "Done" : "Cancel"}
           </button>
         </div>
 
@@ -345,7 +388,7 @@ export default function CardSpecification({ card, context = null, state,
                 <li key={b.id}>
                   <label className="mcs-check">
                     <input type="checkbox" checked={answers.binders.has(b.id)}
-                      disabled={saving} onChange={() => toggleBinder(b.id)} />
+                      disabled={locked} onChange={() => toggleBinder(b.id)} />
                     <span>{text(b.name) || "A binder"}</span>
                   </label>
                 </li>
@@ -369,9 +412,9 @@ export default function CardSpecification({ card, context = null, state,
           )}
           <p className="mcs-spec-new">
             <input className="mcs-in" value={newBinderName} placeholder="New binder…"
-              aria-label="New binder name" disabled={saving}
+              aria-label="New binder name" disabled={locked}
               onChange={(e) => setNewBinderName(e.target.value)} />
-            <button className="mcs-go quiet" type="button" disabled={saving || !newBinderName.trim()}
+            <button className="mcs-go quiet" type="button" disabled={locked || !newBinderName.trim()}
               onClick={addBinder}>Add binder</button>
           </p>
         </section>
@@ -384,7 +427,7 @@ export default function CardSpecification({ card, context = null, state,
               <button key={w.id} type="button"
                 className={`mcs-go${answers.want === w.id ? "" : " quiet"}`}
                 aria-pressed={answers.want === w.id}
-                disabled={saving}
+                disabled={locked}
                 onClick={() => patch({ want: w.id })}>{w.label}</button>
             ))}
           </p>
@@ -398,7 +441,7 @@ export default function CardSpecification({ card, context = null, state,
               </p>
               <label className="mcs-field">
                 <span>Grade wanted</span>
-                <select value={answers.desired.grade} disabled={saving}
+                <select value={answers.desired.grade} disabled={locked}
                   onChange={(e) => patch({ desired: { grade: e.target.value,
                     condition: isRaw(e.target.value) ? answers.desired.condition : "" } })}>
                   <option value="" disabled>Choose a grade</option>
@@ -408,7 +451,7 @@ export default function CardSpecification({ card, context = null, state,
               {isRaw(answers.desired.grade) ? (
                 <label className="mcs-field">
                   <span>Condition wanted</span>
-                  <select value={answers.desired.condition} disabled={saving}
+                  <select value={answers.desired.condition} disabled={locked}
                     onChange={(e) => patch({ desired: { ...answers.desired, condition: e.target.value } })}>
                     <option value="" disabled>Choose a condition</option>
                     {CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -418,12 +461,27 @@ export default function CardSpecification({ card, context = null, state,
             </>
           ) : null}
 
-          {holders ? (
-            <p className="mcs-spec-net">
-              {holders === 1 ? "1 of your Trusted Partners has this."
-                : `${holders} of your Trusted Partners have this.`}
-            </p>
-          ) : null}
+          {/* WHAT IS DELIBERATELY NOT HERE (Phase 5 C5): a count of how many of
+              your Trusted Partners have this card.
+
+              It said "2 of your Trusted Partners have this" and named neither.
+              Three things were wrong with it. It was anonymous on a screen
+              whose whole argument is that MetYet answers with names — the
+              Trusted Partners section says "Northline has a card you're looking
+              for", and a bare number beside it is a weaker answer to a question
+              nobody asked. It appeared only when this panel was opened from
+              Browse, because that is the only caller that passed the count, so
+              the same card told a person two different things depending on the
+              door they came through. And it answered "who has it" while every
+              other named answer in the product answers "who has something you
+              asked for", which needs a Goal — so the two could disagree without
+              either being wrong.
+
+              Nothing depended on it: it was presentation, computed in Browse
+              from rows the server had already sent, and no command, step or
+              stored fact ever read it. Specifying a card is saying which copy
+              you want and how hard you are looking; who happens to hold one is
+              a different question, answered properly elsewhere. */}
         </section>
 
         {/* --------------------------------------------------------- OWN */}
@@ -440,7 +498,7 @@ export default function CardSpecification({ card, context = null, state,
                       <p className="mcs-dim">
                         This copy will be removed when you save.
                         {" "}
-                        <button className="mcs-linkish" type="button" disabled={saving}
+                        <button className="mcs-linkish" type="button" disabled={locked}
                           onClick={() => setCopy(key, { removed: false })}>Keep it</button>
                       </p>
                     ) : (
@@ -460,7 +518,7 @@ export default function CardSpecification({ card, context = null, state,
                         ) : null}
                         <label className="mcs-field">
                           <span>Grade</span>
-                          <select value={draft.grade} disabled={saving}
+                          <select value={draft.grade} disabled={locked}
                             onChange={(e) => setCopy(key, { grade: e.target.value,
                               condition: isRaw(e.target.value) ? draft.condition : "" })}>
                             <option value="">Not stated</option>
@@ -470,7 +528,7 @@ export default function CardSpecification({ card, context = null, state,
                         {isRaw(draft.grade) ? (
                           <label className="mcs-field">
                             <span>Condition</span>
-                            <select value={draft.condition} disabled={saving}
+                            <select value={draft.condition} disabled={locked}
                               onChange={(e) => setCopy(key, { condition: e.target.value })}>
                               <option value="" disabled>Choose a condition</option>
                               {CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -479,12 +537,12 @@ export default function CardSpecification({ card, context = null, state,
                         ) : null}
                         <label className="mcs-field">
                           <span>Certificate</span>
-                          <input value={draft.cert} inputMode="numeric" disabled={saving}
+                          <input value={draft.cert} inputMode="numeric" disabled={locked}
                             onChange={(e) => setCopy(key, { cert: e.target.value })} />
                         </label>
                         <label className="mcs-field">
                           <span>Your reference value</span>
-                          <input value={draft.market} inputMode="decimal" disabled={saving}
+                          <input value={draft.market} inputMode="decimal" disabled={locked}
                             onChange={(e) => setCopy(key, { market: e.target.value })} />
                         </label>
                         {/* OWNING IS THE ROW; OFFERING IS THIS BOX. A new copy
@@ -492,13 +550,13 @@ export default function CardSpecification({ card, context = null, state,
                             with a card is a decision, and a decision nobody
                             made is not one to assume. */}
                         <label className="mcs-check">
-                          <input type="checkbox" checked={draft.offered} disabled={saving}
+                          <input type="checkbox" checked={draft.offered} disabled={locked}
                             onChange={(e) => setCopy(key, { offered: e.target.checked })} />
                           <span>I&rsquo;d trade or sell this one</span>
                         </label>
                         {draft.id ? (
                           <p>
-                            <button className="mcs-linkish" type="button" disabled={saving}
+                            <button className="mcs-linkish" type="button" disabled={locked}
                               onClick={() => setCopy(key, { removed: true })}>
                               I no longer own this
                             </button>
@@ -514,7 +572,7 @@ export default function CardSpecification({ card, context = null, state,
             <p className="mcs-dim">You haven&rsquo;t recorded a copy of this card.</p>
           )}
           <p>
-            <button className="mcs-go quiet" type="button" disabled={saving} onClick={addCopy}>
+            <button className="mcs-go quiet" type="button" disabled={locked} onClick={addCopy}>
               I own one of these
             </button>
           </p>
@@ -522,15 +580,22 @@ export default function CardSpecification({ card, context = null, state,
 
         {problem ? <p className="mcs-add-problem" role="alert">{problem}</p> : null}
         {!problem && localProblem ? <p className="mcs-dim">{localProblem}</p> : null}
+        {saved ? <p className="mcs-spec-saved" role="status">{saved}</p> : null}
 
         <p className="mcs-goal-do">
-          <button className="mcs-go" type="button" disabled={saving || !!localProblem || !shown}
-            onClick={commit}>
-            {saving ? "Saving…" : "Save"}
-          </button>
-          <button className="mcs-go quiet" type="button" onClick={onClose} disabled={saving}>
-            Cancel
-          </button>
+          {saved ? (
+            <button className="mcs-go" type="button" onClick={onClose}>Done</button>
+          ) : (
+            <>
+              <button className="mcs-go" type="button" disabled={locked || !!localProblem || !shown}
+                onClick={commit}>
+                {saving ? "Saving…" : "Save"}
+              </button>
+              <button className="mcs-go quiet" type="button" onClick={onClose} disabled={locked}>
+                Cancel
+              </button>
+            </>
+          )}
         </p>
       </div>
     </div>

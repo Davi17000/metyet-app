@@ -648,8 +648,15 @@ describe("E. the commands exist, and production cannot reach them", () => {
       "createBinder", "addBinderEntry", "removeBinderEntry",
       "updateCollectorCopy", "updateGoalCriteria",
       "renameBinder", "setBinderArchived",
+      /* AND THE TWO C5 ADDED (Phase 5 C5). `updateInventoryCopy` and
+         `removeInventoryCopy` were written and tested in Batch 6 and shipped
+         without a screen; C5 gives them one, so a shop can correct a typo and
+         take a sold copy off its shelf. They are listed here because this pin
+         reads the LIVE allow-list — it is a statement about the product's
+         surface today, not a fossil of the batch that wrote it. */
+      "updateInventoryCopy", "removeInventoryCopy",
     ].sort()), "the production surface is not what C3.4 declared");
-    eq(EXPOSED_COMMANDS.length, 16);
+    eq(EXPOSED_COMMANDS.length, 18);
   });
 
   /* SUPERSEDED AND RESTATED. The claim was that the client bound the three

@@ -748,20 +748,36 @@ describe("F. the boundaries hold", () => {
       "createBinder", "addBinderEntry", "removeBinderEntry",
       "updateCollectorCopy", "updateGoalCriteria",
       "renameBinder", "setBinderArchived",
+      /* AND THE TWO C5 ADDED (Phase 5 C5). `updateInventoryCopy` and
+         `removeInventoryCopy` were written and tested in Batch 6 and shipped
+         without a screen; C5 gives them one, so a shop can correct a typo and
+         take a sold copy off its shelf. They are listed here because this pin
+         reads the LIVE allow-list — it is a statement about the product's
+         surface today, not a fossil of the batch that wrote it. */
+      "updateInventoryCopy", "removeInventoryCopy",
     ].sort()), "C3.5 changed the production surface");
-    eq(EXPOSED_COMMANDS.length, 16);
+    eq(EXPOSED_COMMANDS.length, 18);
     eq(C.COMMAND_NAMES.length, 49, "a command was added or removed");
   });
 
   test("C3.5 opened no door — the whole file is what it was", () => {
     /* Not the name set: the FILE. A batch that renders two things already on
        the wire has no business editing the door at all, so the strongest
-       statement is byte equality with the commit this branch started from —
-       which also catches a comment quietly promising a future exposure. */
+       statement is byte equality — which also catches a comment quietly
+       promising a future exposure.
+
+       BOTH ENDS ARE NAMED SINCE C5. This compared the file on disk against
+       C3.5's branch point, which was a true statement about C3.5 only while no
+       later batch was allowed to open a door. C5 is a batch that is: it gives
+       the two Batch 6 inventory commands a screen. So the comparison now runs
+       from C3.5's branch point to C3.5's own merge. It says exactly what it
+       always said, it is no longer hostage to somebody else's correct work,
+       and it would still fail if C3.5 itself were rewritten. */
     const { execFileSync } = require("child_process");
-    eq(execFileSync("git", ["show", "aef60e4:server/exposed-commands.js"],
-      { cwd: ROOT, encoding: "utf8" }), read("server/exposed-commands.js"),
-    "the production door moved in a batch that renders two things");
+    const at = (ref) => execFileSync("git", ["show", `${ref}:server/exposed-commands.js`],
+      { cwd: ROOT, encoding: "utf8" });
+    eq(at("aef60e4"), at("97fdba3"),
+      "the production door moved in a batch that renders two things");
   });
 
   test("the deal lifecycle is still shut, and so is everything C3.5 might have wanted", async () => {

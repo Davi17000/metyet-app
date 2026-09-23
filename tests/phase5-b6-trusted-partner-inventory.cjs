@@ -95,21 +95,23 @@ const get = (app, token, url) => app.inject({ method: "GET", url,
   headers: { authorization: `Bearer ${token}` } });
 const addCopy = (app, token, copy) => post(app, token, "addInventoryCopy", { copy });
 
-/* PAST THE DOOR (Phase 5 Batch 8.1). Adding a copy is a command the product
-   offers; correcting one, archiving one and photographing one are Batch 6
-   domain work that no screen sends yet, and `POST /api/commands` no longer
-   offers commands no screen sends. The rules below are Batch 6's and are
-   unchanged — they are simply asked where the route asks them, through the
-   same transaction, the same lock and the same validateWorld. Each is also
-   proved shut at the boundary, which Batch 6 could not assert at all. */
+/* PAST THE DOOR (Phase 5 Batch 8.1, narrowed by C5). Batch 6 wrote four
+   commands and the product offered one, so three of these rules could only be
+   asked of the domain directly — `POST /api/commands` refused the other three
+   before they reached it.
+
+   C5 GAVE TWO OF THEM A SCREEN. `updateInventoryCopy` and `removeInventoryCopy`
+   are on the production allow-list now, and the tests below that used to prove
+   them shut ask the same questions over HTTP instead. Nothing about the rules
+   changed: the seat check, the ownership check and the identity rule are Batch
+   6's, unedited, and the suite that covers the rest of the production path is
+   tests/phase5-c5-tp-inventory-correction.cjs.
+
+   `addCopyPhotos` and `reviewCopy` are still domain-only, and `direct` is still
+   how this suite reaches them. */
 const ACTOR = { north: { partnerId: "p1" }, second: { partnerId: "p2" } };
 const direct = (ctx, actor, command, payload) =>
   executeCommand(ctx.repository, { actor, command, payload, runtime: ctx.runtime });
-const closedOverHttp = async (ctx, token, command, payload = {}) => {
-  const res = await post(ctx.app, token, command, payload);
-  eq(res.statusCode, 409, `${command} over HTTP`);
-  eq(res.json().error.refused, "command-unavailable", `${command} over HTTP`);
-};
 
 /* ============================================================== A */
 describe("A. whose copy this is, and who decided", () => {
@@ -149,10 +151,18 @@ describe("A. whose copy this is, and who decided", () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const invId = (await addCopy(ctx.app, "north", { canonicalCardId: cards.unlimited })).json().value;
-    await closedOverHttp(ctx, "second", "updateInventoryCopy", { invId, patch: { ask: 1 } });
+    /* THE DOOR OPENED IN C5 AND THE RULE DID NOT MOVE. Batch 6 could only ask
+       this of the domain, because `POST /api/commands` refused both commands
+       outright; C5 gives them a screen, so the question is now asked where a
+       browser actually asks it. `not-owner` is still the answer, and it is
+       still the domain's — see tests/phase5-c5-tp-inventory-correction.cjs for
+       the rest of the production-path authorization. */
+    const over = await post(ctx.app, "second", "updateInventoryCopy", { invId, patch: { ask: 1 } });
+    eq(over.statusCode, 409, over.body);
+    eq(over.json().error.refused, "not-owner", "somebody else's shelf is not theirs to edit");
     const res = await direct(ctx, ACTOR.second, "updateInventoryCopy", { invId, patch: { ask: 1 } });
     eq(res.ok, false);
-    eq(res.refused, "not-owner", "somebody else's shelf is not theirs to edit");
+    eq(res.refused, "not-owner", "and the domain says the same thing directly");
     const gone = await direct(ctx, ACTOR.second, "removeInventoryCopy", { invId });
     eq(gone.refused, "not-owner", "nor theirs to archive");
   });
@@ -291,7 +301,7 @@ describe("C. what is true about this physical card", () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const invId = (await addCopy(ctx.app, "north", { canonicalCardId: cards.unlimited })).json().value;
-    await closedOverHttp(ctx, "north", "updateInventoryCopy", { invId, patch: {} });
+    /* Exposed since C5; the identity rule below is Batch 6's and is unchanged. */
     for (const patch of [{ canonicalCardId: cards.firstEdition }, { cardId: "legacy" }, { partnerId: "p2" }]) {
       const res = await direct(ctx, ACTOR.north, "updateInventoryCopy", { invId, patch });
       eq(res.refused, "identity-immutable", JSON.stringify(patch));

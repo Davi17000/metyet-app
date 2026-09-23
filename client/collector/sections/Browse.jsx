@@ -46,10 +46,14 @@
    move at all. Nothing is captured and nothing is restored, because nothing is
    ever lost: there is no scroll-restoration code here, and there should not be.
 
-   WHAT A COLLECTOR IS TOLD ABOUT THEIR NETWORK comes from their own projection
-   and nowhere else: the copies their Trusted Partners have, which the server
-   already decided they may see. It is counted here, never stored, and it names
-   nobody — how many partners, not which.
+   AND BROWSE TELLS A COLLECTOR NOTHING ABOUT THEIR NETWORK (Phase 5 C5). It
+   used to count how many of their Trusted Partners held the chosen card and
+   hand that number to the specification panel, anonymously — which was a weaker
+   answer than the named one the Trusted Partners section already gives, and was
+   shown only to people who arrived here rather than from a binder. Both the
+   count and the line it fed are gone. What is left is the catalogue and the
+   Collector's own marks on it: cards they have already asked for, and cards
+   they already own.
    ========================================================================== */
 
 import React, { useState } from "react";
@@ -57,8 +61,6 @@ import CardBrowser from "../../browse/CardBrowser.jsx";
 import { Panel } from "../parts.jsx";
 import CardSpecification from "../CardSpecification.jsx";
 import { rows, text } from "../present.js";
-
-const AVAILABLE = "available";
 
 export default function Browse({ state, session, onSession, onSpecify = null,
   onBrowseCards = null, fillingBinder = null, onDoneFilling = null }) {
@@ -76,17 +78,10 @@ export default function Browse({ state, session, onSession, onSpecify = null,
   const owned = new Set(rows(state && state.collectorCopies)
     .map((b) => b.canonicalCardId).filter(Boolean));
 
-  /* WHO IN THEIR NETWORK HAS IT. `inventory` in a Collector's projection is
-     their Trusted Partners' current supply — the server scoped it — so this is
-     a count of rows they were already sent, by partner, never by copy. */
-  const holdersOf = (canonicalCardId) => {
-    const who = new Set();
-    for (const copy of rows(state && state.inventory)) {
-      if (copy.canonicalCardId === canonicalCardId && copy.archived !== true
-        && copy.status === AVAILABLE && copy.partnerId) who.add(copy.partnerId);
-    }
-    return who.size;
-  };
+  /* THE HOLDER COUNT USED TO BE DERIVED HERE and handed to the specification
+     panel (Phase 5 C5 removed it; the panel's own comment says why). Browse
+     reads the catalogue and writes nothing, and it no longer computes anything
+     about a Collector's network either. */
 
   const close = () => { setContext(null); setChosen(null); setProblem(null); };
 
@@ -106,7 +101,6 @@ export default function Browse({ state, session, onSession, onSpecify = null,
   };
 
   const versions = rows(context && context.cards);
-  const holders = chosen ? holdersOf(chosen.canonicalCardId) : 0;
 
   return (
     <Panel title="Browse" note={null}>
@@ -182,7 +176,6 @@ export default function Browse({ state, session, onSession, onSpecify = null,
               card={chosen}
               context={context}
               state={state}
-              holders={holders}
               preselectBinder={fillingBinder ? fillingBinder.binderId : null}
               onCommit={onSpecify}
               onClose={close}

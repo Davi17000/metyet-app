@@ -26,8 +26,9 @@
    and nowhere else.
 
    WHAT EACH IS HANDED. The projection, sign-out, and — for the Trusted Partner
-   only — `onSaveProfile`, the narrow callback Phase 5 Batch 1 introduced. It is
-   a function of one argument, built outside every product surface
+   only — the callbacks that let a shop keep its own shelf true: `onSaveProfile`
+   from Phase 5 Batch 1, and `onEditCopy` / `onRetireCopy` from C5. Each is a
+   function built outside every product surface
    (client/commands.js) and passed straight through: this file does not create
    it, does not name the command behind it, and does not call it. A Collector is
    not handed it, because editing a Trusted Partner's shop is not a thing a
@@ -67,7 +68,7 @@ function Plain({ lead, onSignOut }) {
 }
 
 export default function ProductionApp({ state, onSignOut, onSaveProfile = null,
-  onAddCopy = null, onBrowseCards = null,
+  onAddCopy = null, onEditCopy = null, onRetireCopy = null, onBrowseCards = null,
   onAddGoal = null, onSetPriority = null, onRemoveGoal = null,
   onInvite = null, onRevokeInvite = null, onRefresh = null,
   onSpecify = null, onCreateBinder = null, onRenameBinder = null, onArchiveBinder = null,
@@ -87,7 +88,8 @@ export default function ProductionApp({ state, onSignOut, onSaveProfile = null,
 
   if (who.seat === "tp") {
     return <TrustedPartnerShell state={state} onSignOut={onSignOut} onSaveProfile={onSaveProfile}
-      onAddCopy={onAddCopy} onBrowseCards={onBrowseCards}
+      onAddCopy={onAddCopy} onEditCopy={onEditCopy} onRetireCopy={onRetireCopy}
+      onBrowseCards={onBrowseCards}
       onInvite={onInvite} onRevokeInvite={onRevokeInvite} onRefresh={onRefresh} />;
   }
 

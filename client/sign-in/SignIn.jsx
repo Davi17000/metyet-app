@@ -46,6 +46,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import ProductionApp from "../production-app.jsx";
 import { savePartnerProfile, openCollectorInvitation, revokeCollectorInvitation,
   acceptCollectorInvitation, describeCollectorInvitation, addInventoryCopy,
+  correctInventoryCopy, retireInventoryCopy,
   browseCards, addCollectorGoal, setGoalPriority, removeCollectorGoal,
   setGoalCriteria, addOwnedCopy, updateOwnedCopy, setCopyOffered, removeOwnedCopy,
   createBinder, fileCardInBinder, unfileCardFromBinder,
@@ -187,6 +188,11 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
      the same way as everything else: the shell receives functions, never a
      store, so a screen that can add a copy can do that and nothing more. */
   const onAddCopy = useMemo(() => (store ? addInventoryCopy(store) : null), [store]);
+  /* Correcting and retiring a copy (Phase 5 C5). Bound the same way as
+     everything else, and separately from each other, because "I was wrong about
+     this copy" and "I no longer have it" are two sentences the shop says. */
+  const onEditCopy = useMemo(() => (store ? correctInventoryCopy(store) : null), [store]);
+  const onRetireCopy = useMemo(() => (store ? retireInventoryCopy(store) : null), [store]);
   const onBrowseCards = useMemo(() => (store ? browseCards(store) : null), [store]);
   /* Saying what you are looking for, and how hard (Batch 7). Bound the same way
      as everything else: the shell receives functions, never a store. */
@@ -577,7 +583,13 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
   }
 
   if (phase === STATES.loading) {
-    return shell(React.createElement("div", { style: S.muted }, "Signed in. Loading your shop…"));
+    /* ROLE-NEUTRAL, BECAUSE THIS RUNS BEFORE THE SEAT IS KNOWN (Phase 5 C5).
+       It said "Loading your shop…" to everybody, and a Collector does not have
+       one — it was the last thing they read before the app appeared. The seat
+       arrives with the projection this very step is fetching, so the honest fix
+       is a sentence that is true for either, not a branch on an answer nobody
+       has yet. */
+    return shell(React.createElement("div", { style: S.muted }, "Signed in. One moment…"));
   }
 
   /* THE CONFIRM SCREEN — SIGNED IN, HOLDING A CODE, NOT YET IN ANY NETWORK.
@@ -603,12 +615,36 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
       React.createElement("div", { style: S.lead },
         invitedBy ? `Join ${invitedBy}'s Collector Network?`
           : "You're signed in. One thing to confirm."),
+      /* WHAT THIS SENTENCE PROMISES HAS TO BE WHAT THE SERVER DOES (Phase 5 C5).
+         It used to say a shop would see "the cards in your Trade Binder", which
+         was wrong twice: the Trade Binder stopped existing in C2, when owning a
+         card and offering it became two separate facts — and a partner has never
+         received a Collector's cards merely for being owned. What crosses is
+         `inSupply: inNetwork(collectorId) && offered === true`, in
+         domain/metyet-projection.js, plus the Goals of Collectors in their
+         network. Binders cross not at all, by an explicit empty in the same
+         file.
+
+         So the sentence now names the three, in the order a person meets them,
+         and introduces no noun the product does not use on screen. It is the
+         last thing somebody reads before consenting, which is why it is the one
+         string in this file with a test of its own.
+
+         AND IT NO LONGER SAYS "NOTHING ELSE ABOUT YOU IS SHARED", which the
+         first C5 draft did and which the projection contradicts:
+         `COLLECTOR_FOR_PARTNER` carries a Collector's name, short name, city
+         and preference tags to everybody in their network. No command this
+         product exposes can set the last three, so the sentence was true of the
+         product and false of the code — which is the wrong side of the line for
+         a disclosure. It names the one of the four a person would expect and
+         drops the absolute. */
       React.createElement("div", { style: S.note },
         invitedBy
           ? `Accepting adds you to ${invitedBy}'s Collector Network. From then on they can see the `
           : "Accepting adds you to a shop's Collector Network. From then on they can see the ",
-        "goals you set and the cards in your Trade Binder, so they know what to look out ",
-        "for. Nothing else about you is shared, and nothing is shared with any other shop."),
+        "goals you set, so they know what to look out for, and any of your cards you choose ",
+        "to offer for trade or sale — along with your name. Cards you own but haven't offered ",
+        "stay private, and so do your binders. Nothing is shared with any other shop."),
       React.createElement("button", { style: S.button, type: "button",
         disabled: accepting, onClick: acceptInvitation },
         accepting ? "Joining…" : "Accept invitation"),
@@ -635,7 +671,8 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
      one bound callback that saves a Trusted Partner's own profile. */
   return React.createElement(ProductionApp,
     { state: projection, onSignOut: signOut, onSaveProfile, onInvite, onRevokeInvite, onRefresh,
-      onAddCopy, onBrowseCards, onAddGoal, onSetPriority, onRemoveGoal, onSpecify,
+      onAddCopy, onEditCopy, onRetireCopy,
+      onBrowseCards, onAddGoal, onSetPriority, onRemoveGoal, onSpecify,
       onCreateBinder, onRenameBinder, onArchiveBinder,
       /* Phase 5 Batch 3A. Who they just joined, so the shell can greet them by
          it once. It is read from the server's own reply, it is cleared the

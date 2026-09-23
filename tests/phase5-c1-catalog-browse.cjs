@@ -483,7 +483,20 @@ describe("C. the Collector: browse, specify, commit", () => {
     eq(goals[0].canonicalCardId, made.blastoise.cards[0]);
   });
 
-  test("a Collector is told how many of their partners have it — and who is never named", async () => {
+  test("Browse tells a Collector nothing about who holds the card — not even a number", async () => {
+    /* C1 SHIPPED A COUNT HERE AND C5 REMOVED IT, so this test now asserts the
+       absence its own original assertion would have forbidden. Three things
+       were wrong with "1 of your Trusted Partners has this": it was anonymous
+       on a screen whose argument is that MetYet answers with names; it appeared
+       only when the panel was opened from Browse, so the same card told a
+       person different things depending on the door; and it answered "who has
+       it" while every named answer in the product answers "who has something
+       you asked for", which needs a Goal. The named answer lives on the Trusted
+       Partners screen and is tested there.
+
+       WHAT C1 WAS REALLY PROVING SURVIVES INTACT, and is the second half of
+       this test: a partner's ask, cost and certificate do not reach a Collector
+       through this screen. That was always the load-bearing half. */
     const ctx = await world();
     const made = await shelfOfCards(ctx);
     /* Northline is theirs; Second is not. Both stock the card. */
@@ -493,7 +506,7 @@ describe("C. the Collector: browse, specify, commit", () => {
     await typeInto(r, "mcs-br-q", "Blastoise");
     await press(r, "Blastoise");
     const shown = texts(r);
-    assert(shown.includes("1 of your Trusted Partners has this."), "the count: " + shown);
+    assert(!/of your Trusted Partners ha[sv]e? this/.test(shown), "the count came back: " + shown);
     assert(!shown.includes("Northline"), "the partner was named");
     assert(!shown.includes("900") && !shown.includes("400") && !shown.includes("TP-CERT-1"),
       "a partner's own figures reached the Collector: " + shown);
@@ -771,6 +784,9 @@ describe("G. boundaries, and what did not change", () => {
       /* C3.4b, the Binder library's two: rename one in place, put one away and
          bring it back. Deleting one is still nobody's door. */
       "renameBinder", "setBinderArchived",
+      /* C5, the shop's two: correct a copy's facts, and take a copy off the
+         shelf. Both were written in Batch 6 and shipped without a screen. */
+      "updateInventoryCopy", "removeInventoryCopy",
     ].sort()), "a door was opened that nobody declared");
     const browserCode = code("client/browse/CardBrowser.jsx");
     assert(!EXPOSED_COMMANDS.some((c) => browserCode.includes(c)),

@@ -784,8 +784,15 @@ describe("H. the doors this batch opened, and no others", () => {
       "updateCollectorCopy", "updateGoalCriteria",
       /* C3.4b — managing a binder as an object, now that there is a screen. */
       "renameBinder", "setBinderArchived",
+      /* AND THE TWO C5 ADDED (Phase 5 C5). `updateInventoryCopy` and
+         `removeInventoryCopy` were written and tested in Batch 6 and shipped
+         without a screen; C5 gives them one, so a shop can correct a typo and
+         take a sold copy off its shelf. They are listed here because this pin
+         reads the LIVE allow-list — it is a statement about the product's
+         surface today, not a fossil of the batch that wrote it. */
+      "updateInventoryCopy", "removeInventoryCopy",
     ].sort()), "the production surface is not what this batch declared");
-    eq(EXPOSED_COMMANDS.length, 16, "and nothing arrived unnamed");
+    eq(EXPOSED_COMMANDS.length, 18, "and nothing arrived unnamed");
   });
 
   test("every exposed name is a real command, and the client sends exactly these", () => {

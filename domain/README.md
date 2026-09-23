@@ -602,6 +602,80 @@ pinned by a test so it is a known property rather than a surprise.
 **A live provider adapter is still a separate batch, and still permission-dependent.**
 Nothing in C4 chooses one.
 
+## The shop can fix its own shelf (Phase 5 C5)
+
+**A Trusted Partner may now correct and retire their own inventory, from the
+product.** `updateInventoryCopy` and `removeInventoryCopy` were written,
+seat-checked and tested in Batch 6, and shipped without a screen — so a shop's
+inventory was write-once. C5 gives them one, and the allow-list goes from
+sixteen to eighteen (`server/exposed-commands.js`).
+
+**Why this was a blocker and not a rough edge.** A copy leaves live supply only
+by being archived, or by its derived status ceasing to be `available`. That
+status comes entirely from opportunities (`domain/metyet-projection.js`), and
+the whole deal lifecycle is deliberately shut. So a production inventory row
+could never be anything but available, `archived` could not be set by anything a
+person could reach, and there is no command anywhere in the domain that ends a
+relationship. A card sold over the counter therefore went on telling a Collector
+that a shop they trust has it, indefinitely — and the only lever that stopped
+the wrong answer was the *Collector* giving up their own Goal. The injured party
+withdrawing their want is not a correction mechanism.
+
+**Remove means archive, and it always did.** `removeInventoryCopy` sets
+`archived: true` and keeps the row. Nothing in MetYet hard-deletes a copy, here
+or anywhere, and C5 did not add the first thing that does. What ends is the
+claim to have the card; the record of having had it stays, with its certificate,
+its cost and its dates. The screen says "Remove from inventory" because that is
+the shop's sentence — `archived` is the database's, and a person should not have
+to learn it.
+
+**Correction and removal reach Discovery immediately, because Discovery is not
+stored.** Archiving a copy drops it from `isSupply`
+(`domain/metyet-discovery.js`) on the next read, on both seats at once: the
+Collector stops being told that shop has their card, and the shop's own "Ready
+to coordinate" row disappears with it. Removing one of two matching copies
+leaves the overlap standing with its count down by one; removing the last one
+ends the overlap. Correcting a copy changes no count — correcting is not
+removing.
+
+**No transaction semantics were introduced.** No reservation, no new inventory
+status, no hold, no undo, no reason code. A shop that retires a copy by accident
+adds it again, which is the same physical act they performed the first time.
+There is no un-archive command in the domain and C5 did not write one: half a
+restore would have been worse than the honest absence.
+
+**The correction form covers exactly what the add form can state** — grade,
+condition, certificate, ask, cost. `updateInventoryCopy` will also accept
+`note`, `acquired` and `photos`, and none of those has a control anywhere in the
+product; giving them an edit-only one would mean inventing a workflow in the
+batch whose whole point is that a shop can fix what it already typed. Left out
+means untouched: a patch carries only the keys it names, so a correction leaves
+a copy's note, photographs and acquisition date exactly as they were.
+
+**One subtlety that cost a defect.** A copy may legitimately hold a condition
+with no grade — `{ grade: null, condition: "Near Mint" }` passes
+`gradingProblem`, renders on the shelf, and crosses to related Collectors. The
+form shows a condition control only for a raw copy, so a payload that always
+sent `condition` was asserting an absence it had never asked about, and a Save
+that changed nothing else deleted the one fact the copy had. The key is now
+omitted whenever the grade is unstated. The general rule: **a form may only
+speak for the fields it actually showed.**
+
+**What a partner sees of a Collector, said correctly.** The consent sentence and
+the post-join banner both used to promise "the cards in your Trade Binder" — a
+concept C2 removed, and wrong about the scope besides. What crosses is the Goals
+of Collectors in that partner's network, the copies those Collectors have
+explicitly marked `offered`, and their name. Binders cross not at all
+(`binders: []`, an explicit empty). Cards owned but not offered stay private.
+
+**The anonymous holder count is gone from Card Specification.** It said "*N* of
+your Trusted Partners have this" and named none of them, on a screen whose whole
+argument is that MetYet answers with names; it rendered only when the panel was
+opened from Browse, so one card told a person two different things depending on
+the door; and it answered "who has it" where every named answer in the product
+answers "who has something you asked for". The named answer lives on the Trusted
+Partners screen, and that is the one worth having.
+
 ## Five things to know before changing anything
 
 **Discovery is computed; Opportunity is persisted.** They share a word and are
