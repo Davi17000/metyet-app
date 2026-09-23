@@ -576,13 +576,22 @@ describe("F. authority cannot be claimed by a request", () => {
       { command: "updateGoalTier", payload: { goalId: "g2", tier: "secondary" } });
     eq(exposed.statusCode, 409, "an offered command still reaches its own rule");
     eq(exposed.json().error.refused, "not-owner");
+    /* AND SINCE C5, A SECOND ONE IS ASKED AT THE DOOR. `updateInventoryCopy`
+       joined the allow-list when the shop got a screen for it, so a Collector
+       naming a partner's copy is now refused by the domain's own rule where a
+       browser actually asks — not by the door. The rule and the answer are
+       identical; only the place the question is asked has moved. */
+    const alsoExposed = await send(app, SUBJECTS.casey,
+      { command: "updateInventoryCopy", payload: { invId: "i1", patch: { ask: 1 } } });
+    eq(alsoExposed.statusCode, 409, "an offered command still reaches its own rule");
+    eq(alsoExposed.json().error.refused, "not-owner");
     const cases = [
-      [ACTORS.casey, SUBJECTS.casey, "updateInventoryCopy", { invId: "i1", patch: { ask: 1 } }, "not-owner"],
-      [ACTORS.dana, SUBJECTS.dana, "startOpportunity", { goalId: "g1", invId: "i1", amount: 900 }, "not-owner"],
-      [ACTORS.second, SUBJECTS.second, "markBinderReviewed", { collectorId: "c2" }, "no-relationship"],
+      [ACTORS.casey, SUBJECTS.casey, "updateInventoryCopy", { invId: "i1", patch: { ask: 1 } }, "not-owner", true],
+      [ACTORS.dana, SUBJECTS.dana, "startOpportunity", { goalId: "g1", invId: "i1", amount: 900 }, "not-owner", false],
+      [ACTORS.second, SUBJECTS.second, "markBinderReviewed", { collectorId: "c2" }, "no-relationship", false],
     ];
-    for (const [actor, subject, command, payload, refused] of cases) {
-      await closedOverHttp(app, subject, command, payload);
+    for (const [actor, subject, command, payload, refused, offered] of cases) {
+      if (!offered) await closedOverHttp(app, subject, command, payload);
       const res = await direct(repository, actor, command, payload);
       eq(res.ok, false, command);
       eq(res.refused, refused, command);

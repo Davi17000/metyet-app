@@ -196,7 +196,6 @@ const CSS = `
 .mcs-br-pos { font-size:12px; color:var(--faint); }
 .mcs-spec-sub { margin:0; font-size:12px; color:var(--muted); }
 .mcs-spec-ask { margin:0; font-size:13px; font-weight:600; }
-.mcs-spec-net { margin:0; font-size:13px; color:var(--t1); }
 
 /* THE SPECIFICATION SHEET SITS OVER THE GRID (Phase 5 C3.3).
 
@@ -230,6 +229,10 @@ const CSS = `
 .mcs-spec-copies > li.gone { background:var(--line-soft); }
 .mcs-spec-wants { display:flex; flex-wrap:wrap; gap:8px; margin:0; }
 .mcs-spec-new { display:flex; gap:8px; margin:0; }
+/* One line after a new goal is saved (Phase 5 C5). The teal the product uses
+   when it is telling somebody something went right. */
+.mcs-spec-saved { margin:0; padding:9px 11px; border-radius:6px; background:var(--t1-bg);
+  border:1px solid #CBE0E2; color:var(--t1); font-size:13px; }
 .mcs-spec-conflict { margin:0; padding:9px 11px; border-radius:6px; background:var(--amber-bg);
   border:1px solid var(--amber-line); color:var(--amber); font-size:13px; }
 .mcs-check { display:flex; align-items:center; gap:9px; font-size:13.5px; }
@@ -469,10 +472,17 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
           from the entrance, which read it out of the server's own reply; this
           file decides nothing about it and it grants nothing. Dismissing it is
           the end of it — there is no second copy anywhere. */}
+      {/* THE SAME PROMISE AS THE CONSENT SENTENCE, KEPT THE SAME (Phase 5 C5).
+          This banner and the paragraph somebody read before accepting are two
+          halves of one disclosure, and they had drifted together: both named a
+          "Trade Binder", which C2 removed, and both implied that owning a card
+          was enough to share it. What a partner actually receives is this
+          Collector's Goals and the copies they have marked as offered — never a
+          binder, and never a card kept back. */}
       {joined ? (
         <div className="mcs-joined" role="status">
           <span>You've joined <strong>{joined}</strong>'s Collector Network. They can see the
-            goals you set and the cards in your Trade Binder.</span>
+            goals you set, and any cards you choose to offer.</span>
           {onDismissJoined ? (
             <button className="mcs-joined-x" type="button" onClick={onDismissJoined}>Got it</button>
           ) : null}

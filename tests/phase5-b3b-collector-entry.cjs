@@ -374,8 +374,19 @@ describe("B. what a URL cannot say", () => {
       assert(/Northline/.test(shown), "the shop was not named: " + shown);
       /* And it still names what accepting DOES, which is the part that needs
          consent and is the reason this screen exists at all. */
-      assert(/goals you set and the cards in your Trade Binder/.test(shown),
-        "the screen stopped saying what accepting shares: " + shown);
+      /* WHAT IT MUST SAY, NOT HOW IT SAYS IT (corrected in Phase 5 C5). This
+         used to pin the sentence word for word — "goals you set and the cards
+         in your Trade Binder" — and so it froze a disclosure that had been
+         wrong since C2: the Trade Binder stopped existing when owning and
+         offering became two facts, and a partner has never received a
+         Collector's cards merely for being owned. A pin on exact copy cannot
+         tell a rewrite from a regression, so this one now asks for the three
+         things the projection actually does, and forbids the noun by name. */
+      assert(/goals you set/.test(shown), "the screen does not say Goals are shared: " + shown);
+      assert(/choose to offer/.test(shown), "it does not say offering is the Collector's choice: " + shown);
+      assert(/stay private/.test(shown), "it does not say what stays private: " + shown);
+      assert(/binders/i.test(shown), "it does not mention binders: " + shown);
+      assert(!/Trade Binder/i.test(shown), "the stale disclosure came back: " + shown);
     } finally { await close(); }
   });
 });

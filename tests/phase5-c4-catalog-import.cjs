@@ -933,7 +933,10 @@ describe("G. the boundaries hold", () => {
 
   test("there is no HTTP way in, and the allow-list did not move", async () => {
     const ctx = await world();
-    eq(EXPOSED_COMMANDS.length, 16, "C4 changed the production surface");
+    /* Eighteen since C5 gave the two Batch 6 inventory commands a screen. What
+       this test is about is unchanged and is asserted below by NAME: no catalog
+       command is reachable, and no route writes the schema. */
+    eq(EXPOSED_COMMANDS.length, 18, "the production surface is not the size C5 left it");
     for (const name of ["catalogImport", "importCatalog", "putCanonicalCard",
       "putCardContext", "putExpansion", "recordSourceMapping", "resolveCardIdentity"]) {
       assert(!EXPOSED_COMMANDS.includes(name), `${name} is exposed`);
@@ -946,11 +949,23 @@ describe("G. the boundaries hold", () => {
     assert(!/importCatalog|catalog\/import/.test(app), "the server reaches the runner");
   });
 
-  test("the exposed set is byte-identical to the batch this branch started from", () => {
+  test("C4 left the exposed set byte-identical to the batch it started from", () => {
+    /* WHAT THIS PIN IS ABOUT, AND WHY IT NO LONGER READS THE WORKING TREE.
+       C4's claim was about C4: a batch that adds an OPERATOR command has no
+       business touching the production door, and the strongest way to say so is
+       byte equality. It compared the file on disk against 97fdba3, which was
+       true for exactly as long as no later batch was allowed to open a door —
+       and C5 is a batch that is, deliberately, allowed to open two.
+
+       So the comparison now names both ends: C4's branch point and C4's merge.
+       It says the same thing it always said, it can never again be broken by
+       somebody else's correct work, and it would still fail if C4 itself were
+       rewritten to have moved the door. */
     const { execFileSync } = require("child_process");
-    eq(execFileSync("git", ["show", "97fdba3:server/exposed-commands.js"],
-      { cwd: ROOT, encoding: "utf8" }), read("server/exposed-commands.js"),
-    "the production door moved in a batch that adds an operator command");
+    const at = (ref) => execFileSync("git", ["show", `${ref}:server/exposed-commands.js`],
+      { cwd: ROOT, encoding: "utf8" });
+    eq(at("97fdba3"), at("dc2fd25"),
+      "the production door moved in a batch that adds an operator command");
   });
 
   test("no migration, and 0013_binders.sql is still the newest", () => {

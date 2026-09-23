@@ -202,6 +202,39 @@ export function addInventoryCopy(target) {
       ask, cost, acquired, cert, note } });
 }
 
+/* CORRECTING AND RETIRING A COPY (Phase 5 C5). Batch 6 wrote both commands and
+   bound neither, by the rule this file has always followed: a command joins in
+   the batch that ships a way to send it. C5 ships the screen.
+
+   TWO BINDINGS BECAUSE THEY ARE TWO SENTENCES. "I was wrong about this copy"
+   and "I no longer have this copy" are different claims with different
+   consequences, and a single command would make correcting a certificate look
+   like taking a card off the shelf. It is the same separation `updateOwnedCopy`
+   and `removeOwnedCopy` have on the Collector's side.
+
+   THE PATCH CANNOT CARRY IDENTITY. `cardId`, `canonicalCardId`, `invId` and
+   `partnerId` are refused inside it by the domain (`identity-immutable`), so a
+   screen correcting a price can never re-point a copy at a different card —
+   which would change what somebody's discovery meant after the fact. There is
+   no owner field either, for the reason every other binding here has none. */
+export function correctInventoryCopy(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("correctInventoryCopy: the production store is required");
+  }
+  return (invId, patch) => target.execute("updateInventoryCopy", { invId, patch });
+}
+
+/* RETIRING ONE ARCHIVES IT. The domain sets `archived` and keeps the row, so
+   what this sends is "stop offering this", never "forget this happened". The
+   screen's wording says the same thing, and neither this file nor that one has
+   a way to ask for a deletion, because the domain has no such command. */
+export function retireInventoryCopy(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("retireInventoryCopy: the production store is required");
+  }
+  return (invId) => target.execute("removeInventoryCopy", { invId });
+}
+
 /* ------------------------------------- A COLLECTOR'S OWN CARDS (Phase 5 C2)
 
    OWNING AND OFFERING ARE TWO SENTENCES, SO THEY ARE TWO BINDINGS.

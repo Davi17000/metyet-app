@@ -783,8 +783,19 @@ describe("G. the Collector's journey", () => {
          copy — Batch 3D gave it a headline that names the inviting shop, and
          this test was never about the wording. */
       assert(clickable(r, "Accept invitation"), "the confirm screen did not appear: " + confirm);
-      assert(/goals you set and the cards in your Trade Binder/.test(confirm),
-        "the screen does not say what accepting discloses: " + confirm);
+      /* WHAT IT MUST SAY, NOT HOW IT SAYS IT (corrected in Phase 5 C5). This
+         used to pin the sentence word for word — "goals you set and the cards
+         in your Trade Binder" — and so it froze a disclosure that had been
+         wrong since C2: the Trade Binder stopped existing when owning and
+         offering became two facts, and a partner has never received a
+         Collector's cards merely for being owned. A pin on exact copy cannot
+         tell a rewrite from a regression, so this one now asks for the three
+         things the projection actually does, and forbids the noun by name. */
+      assert(/goals you set/.test(confirm), "the screen does not say Goals are shared: " + confirm);
+      assert(/choose to offer/.test(confirm), "it does not say offering is the Collector's choice: " + confirm);
+      assert(/stay private/.test(confirm), "it does not say what stays private: " + confirm);
+      assert(/binders/i.test(confirm), "it does not mention binders: " + confirm);
+      assert(!/Trade Binder/i.test(confirm), "the stale disclosure came back: " + confirm);
       assert(clickable(r, "Not now"), "there is no way to decline");
       eq(newCollectors(await ctx.world()).length, 0, "arriving created somebody");
 

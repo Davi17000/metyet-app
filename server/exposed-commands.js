@@ -1,11 +1,16 @@
 /* ============================================================================
    WHAT THE PRODUCT CURRENTLY OFFERS (Phase 5 Batch 8.1)
 
-   The domain holds forty-eight commands. The product offers nine. Until now the
-   difference between those two numbers was a fact about the client — the
-   nine were the ones `client/commands.js` happened to bind — and a fact about the
-   client is not a boundary. Anybody who could send one request could send any
-   of the forty-eight.
+   The domain holds forty-nine commands. The product offers eighteen. Until this
+   file existed the difference between those two numbers was a fact about the
+   client — the offered ones were whatever `client/commands.js` happened to bind
+   — and a fact about the client is not a boundary. Anybody who could send one
+   request could send any of them.
+
+   (Batch 8.1 wrote "forty-eight" and "nine", which were the numbers that day.
+   They drifted as batches shipped, and a header nobody can trust is worse than
+   one that is merely old, so C5 corrected them. The list below is the answer;
+   these two sentences are only the summary.)
 
    Mostly that was harmless, because every command still checks its own seat and
    its own ownership and nothing here changes that. One of them was not.
@@ -107,6 +112,26 @@ const EXPOSED_COMMANDS = Object.freeze([
      nothing to do with a Binder but its name (domain/README.md). */
   "renameBinder",                // Collector → Binder, renaming one in place
   "setBinderArchived",           // Collector → Binder, "Put away" ⇄ "Bring back"
+  /* A SHOP CAN FIX ITS OWN SHELF (Phase 5 C5). Batch 6 wrote both of these,
+     tested both, and shipped neither — `addInventoryCopy` got a screen and
+     these did not, so a Trusted Partner's inventory was write-once.
+
+     THAT WAS NOT A COSMETIC GAP, which is why it is the one product batch
+     between C4 and a pilot. A copy leaves live supply only by being archived
+     or by its derived status ceasing to be `available`, and that status comes
+     entirely from opportunities — none of which can exist, because the whole
+     deal lifecycle is deliberately absent from this list. So a copy sold over
+     the counter stayed available for ever, and went on telling a Collector
+     that a shop they trust has a card it no longer has. There was no
+     partner-side lever and no operator one: the only thing that stopped the
+     wrong answer was the Collector giving up their own Goal.
+
+     REMOVE ARCHIVES, IT DOES NOT DELETE. `removeInventoryCopy` sets
+     `archived`, so what leaves is the claim to have the card, not the record
+     of having had it. Nothing in MetYet hard-deletes a copy and this batch did
+     not add the first thing that does. */
+  "updateInventoryCopy",         // TP → Inventory, correcting a copy's facts
+  "removeInventoryCopy",         // TP → Inventory, "Remove from inventory"
 ]);
 
 /* ONE ANSWER FOR TWO QUESTIONS, ON PURPOSE. A command that does not exist and a

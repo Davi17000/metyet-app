@@ -264,6 +264,10 @@ const CSS = `
 .tps-add-versions { display:flex; flex-direction:column; gap:6px; font-size:12px; color:var(--faint); }
 .tps-add-problem { margin:0; padding:9px 10px; border-radius:5px; background:#FBEDEC;
   border:1px solid #EBD9B4; color:#98302C; font-size:13px; }
+/* The controls that keep a shelf true, under the copy they act on (Phase 5 C5).
+   A row of small buttons rather than a toolbar: there are two of them, they
+   belong to one record, and a shop reads them after the facts they change. */
+.tps-rec-do { display:flex; flex-wrap:wrap; gap:8px; margin:11px 0 0; }
 .tps-fields { display:flex; flex-wrap:wrap; gap:14px 18px; padding:15px 16px; }
 .tps-field { display:flex; flex-direction:column; gap:4px; flex:1 1 220px; min-width:0; }
 .tps-field.wide { flex-basis:100%; }
@@ -304,7 +308,7 @@ const CSS = `
 
 export default function TrustedPartnerShell({ state, onSignOut, onSaveProfile = null,
   onInvite = null, onRevokeInvite = null, onRefresh = null,
-  onAddCopy = null, onBrowseCards = null }) {
+  onAddCopy = null, onEditCopy = null, onRetireCopy = null, onBrowseCards = null }) {
   const [section, setSection] = useState(SECTIONS[0].id);
 
   const who = describeActor(state);
@@ -325,7 +329,8 @@ export default function TrustedPartnerShell({ state, onSignOut, onSaveProfile = 
      name of is not something a Trusted Partner can go and look on the shelf
      for. It is a way to ASK WHAT A CARD IS CALLED — not a way to write, and
      the section is handed no command, exactly as before. */
-  const extra = meta.id === "inventory" ? { onSaveProfile, onAddCopy, onBrowseCards }
+  const extra = meta.id === "inventory"
+    ? { onSaveProfile, onAddCopy, onEditCopy, onRetireCopy, onBrowseCards }
     : meta.id === "collectors" ? { onInvite, onRevokeInvite, onRefresh, onBrowseCards }
       : meta.id === "opportunities" ? { onBrowseCards }
         : null;

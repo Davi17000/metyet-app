@@ -952,24 +952,49 @@ describe("F. the two new doors", () => {
       "createBinder", "addBinderEntry", "removeBinderEntry",
       "updateCollectorCopy", "updateGoalCriteria",
       "renameBinder", "setBinderArchived",
+      /* AND THE TWO C5 ADDED (Phase 5 C5). `updateInventoryCopy` and
+         `removeInventoryCopy` were written and tested in Batch 6 and shipped
+         without a screen; C5 gives them one, so a shop can correct a typo and
+         take a sold copy off its shelf. They are listed here because this pin
+         reads the LIVE allow-list — it is a statement about the product's
+         surface today, not a fossil of the batch that wrote it. */
+      "updateInventoryCopy", "removeInventoryCopy",
     ].sort()), "the production surface is not what C3.4 declared");
-    eq(EXPOSED_COMMANDS.length, 16);
+    eq(EXPOSED_COMMANDS.length, 18);
     for (const name of EXPOSED_COMMANDS) {
       assert(C.COMMAND_NAMES.includes(name), `${name} is not a command`);
     }
   });
 
   test("the two are exactly what C3.4b added, and nothing else moved", () => {
+    /* MEASURED BETWEEN C3.4b's OWN TWO ENDS (narrowed in Phase 5 C5). This used
+       to compare C3.4b's branch point against the LIVE list, which measured
+       "what C3.4b added" correctly only until the next batch added anything.
+       C5 adds two, so the comparison now runs branch point to merge and states
+       the same fact permanently. What C5 opened is pinned in its own suite. */
     const { execFileSync } = require("child_process");
-    const at = execFileSync("git", ["show", "8c61ec8:server/exposed-commands.js"],
-      { cwd: ROOT, encoding: "utf8" });
-    const after = at.split("EXPOSED_COMMANDS")[1] || "";
-    const before = (after.slice(0, after.indexOf("]);")).match(/"[a-zA-Z]+"/g) || [])
-      .map((s) => s.slice(1, -1));
-    const added = EXPOSED_COMMANDS.filter((n) => !before.includes(n));
-    const lost = before.filter((n) => !EXPOSED_COMMANDS.includes(n));
+    const names = (ref) => {
+      const file = execFileSync("git", ["show", `${ref}:server/exposed-commands.js`],
+        { cwd: ROOT, encoding: "utf8" });
+      const after = file.split("EXPOSED_COMMANDS")[1] || "";
+      return (after.slice(0, after.indexOf("]);")).match(/"[a-zA-Z]+"/g) || [])
+        .map((s) => s.slice(1, -1));
+    };
+    const before = names("8c61ec8");
+    const mine = names("aef60e4");
+    const added = mine.filter((n) => !before.includes(n));
+    const lost = before.filter((n) => !mine.includes(n));
     eq(json(added.sort()), json(["renameBinder", "setBinderArchived"]), "something else opened");
     eq(json(lost), json([]), "a door C3.3 opened was closed");
+    /* AND THE LIVE GUARD STAYS LIVE. Comparing two frozen refs states a fact
+       about C3.4b permanently, but on its own it would stop noticing if a later
+       batch CLOSED one of the doors C3.3 or C3.4b opened — which is half of what
+       this test was for. So the "lost" check is asked again, of today's list. */
+    const closedSince = before.filter((n) => !EXPOSED_COMMANDS.includes(n));
+    eq(json(closedSince), json([]), "a door open at C3.3 has since been closed");
+    for (const name of ["renameBinder", "setBinderArchived"]) {
+      assert(EXPOSED_COMMANDS.includes(name), `${name} was closed again`);
+    }
   });
 
   test("markBinderReviewed is still shut, and is still not a Binder command", async () => {
