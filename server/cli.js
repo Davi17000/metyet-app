@@ -427,6 +427,27 @@ function reportImport(summary, say) {
   say(`rejected:    ${summary.rejected}${reasons(summary.rejectionReasons)}`);
   const ignored = reasons(summary.ignored);
   if (ignored) say(`ignored:     ${ignored}`);
+  /* THE RELEASES THIS RUN OPENS, BY NAME (Phase 5 C6.1). An expansion code is
+     whatever the operator's vocabulary says it is — nothing can check it, and
+     nothing should, because a new release has to be declarable. So the run says
+     which codes it is about to create, and a typo appears as a name nobody
+     meant beside the one they did. Named rather than counted on purpose: "2"
+     reads as correct to somebody who has not counted. */
+  const releases = summary.expansions;
+  if (releases && releases.known && releases.opening.length) {
+    const n = releases.opening.length;
+    say(`opening:     ${releases.opening.join(", ")}`);
+    /* TENSE MATTERS HERE. The list is computed before any write, so on a dry
+       run these are releases about to be created and on a completed run they
+       are releases this run created. Saying "not in the catalog yet" in both
+       places read as stale on the second. */
+    say(`             ${n === 1 ? "one release" : `${n} releases`} the catalog did not `
+      + `have${summary.mode === "dry-run" ? " — check this is what you meant"
+        : "; check this is what you meant before importing more"}`);
+  }
+  if (releases && releases.known && releases.existing.length) {
+    say(`adding to:   ${releases.existing.join(", ")}`);
+  }
   if (summary.created) {
     say(`expansions:  new ${summary.created.expansions}  reused ${summary.reused.expansions}`);
     say(`contexts:    new ${summary.created.contexts}  reused ${summary.reused.contexts}`);

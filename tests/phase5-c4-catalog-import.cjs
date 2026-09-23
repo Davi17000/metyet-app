@@ -987,13 +987,28 @@ describe("G. the boundaries hold", () => {
       "caller input reaches require()");
     /* The only paths read are the two flags, and nothing derives a path from a
        record's contents: the runner never reaches the filesystem or the shell
-       at all, and its one `require` is a module literal at the top. */
+       at all, and every `require` it has is a static module literal at the top.
+
+       C4 PINNED THAT AS AN EXACT LIST OF ONE, which was true of C4 and is a
+       snapshot rather than the property. C6.1 gave the runner a second static
+       import — `domain/card-identity.js`, so that it de-duplicates expansion
+       codes by the same natural key `putExpansion` writes by, rather than
+       re-implementing the folding rule and becoming a second answer to it. So
+       the rule is now asserted as what it always meant: every require is a
+       literal, none is built from anything a caller supplied, and the modules
+       are named so a third one has to be added here on purpose. */
     const runner = code("server/catalog/import.js");
     assert(!/readFile|writeFile|readdir|exec|spawn|child_process/.test(runner),
       "the runner touches the filesystem or the shell");
     const requires = runner.match(/require\([^)]*\)/g) || [];
-    eq(json(requires), json(['require("./translation.js")']),
-      "the runner requires something other than its own boundary: " + json(requires));
+    for (const r of requires) {
+      assert(/^require\("[^"]+"\)$/.test(r), "a require is not a static module literal: " + r);
+    }
+    eq(json(requires.slice().sort()), json([
+      'require("../../domain/card-identity.js")',
+      'require("./translation.js")',
+    ]), "the runner requires something other than its boundary and the domain's identity: "
+      + json(requires));
   });
 
   test("no provider, no network, no SDK", () => {

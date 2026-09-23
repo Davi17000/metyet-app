@@ -488,6 +488,40 @@ function createCatalogRepository(db, { newId } = {}) {
       return rows.length ? cardRow(rows[0]) : null;
     },
 
+    /* WHICH OF THESE RELEASES THIS CATALOG ALREADY HOLDS (Phase 5 C6.1).
+       Read-only, and the only reason it exists: an import can tell an operator
+       which expansion codes a run would CREATE before it creates any of them.
+
+       Keyed by MetYet's own natural key, because that is what `putExpansion`
+       keys by — asking any other way would be asking a different question from
+       the one the write will answer. It takes MetYet codes and returns MetYet
+       codes; no provider id, set name or vocabulary reaches it.
+
+       It is a lookup, not a policy. Nothing here decides whether a code SHOULD
+       exist — the catalog has no opinion about that and neither should this. */
+    async knownExpansionCodes(codes, { game = "pokemon" } = {}) {
+      const wanted = [...new Set((Array.isArray(codes) ? codes : [])
+        .map((c) => text(c)).filter(Boolean))];
+      if (!wanted.length) return [];
+      /* ASKED AND ANSWERED IN THE SAME CURRENCY — the natural key, which is
+         case-folded (`domain/card-identity.js`). The first version looked rows
+         up by key and then filtered the answer against the `code` COLUMN, which
+         `putExpansion` never rewrites. So a catalog holding `base1`, asked about
+         `Base1`, answered "no" — and the import then reused the existing row
+         anyway, because the WRITE keys by the same folded key. The preflight
+         said "a release not in the catalog yet, check this is what you meant"
+         about a run that was in fact about to file Base Set 2's cards under
+         Base Set and rename it. A safety line that reassures in exactly the
+         dangerous case is worse than no line, which is why this is keyed
+         throughout and returns the CALLER's spelling of what it found. */
+      const byKey = new Map();
+      for (const code of wanted) byKey.set(CI.expansionNaturalKey({ game, code }), code);
+      const rows = await read(
+        "select natural_key from metyet_catalog.expansions where natural_key = any($1)",
+        [[...byKey.keys()]]);
+      return rows.map((r) => byKey.get(r.natural_key)).filter(Boolean);
+    },
+
     async readExpansion(expansionId) {
       const rows = await read(`select expansion_id, game, code, natural_key, name, series,
         release_date, printed_total from metyet_catalog.expansions where expansion_id = $1`,
