@@ -16,6 +16,7 @@
     "partner:invite": "node server/cli.js invite-partner",
     "partner:invitations": "node server/cli.js invitations",
     "partner:revoke": "node server/cli.js revoke-invitation",
+    "catalog:import": "node server/cli.js catalog-import",
     "auth:check": "node server/cli.js auth-check",
     "auth:sign-in": "node server/cli.js sign-in",
     "partner:register": "node server/cli.js register-partner",

@@ -18,6 +18,9 @@
        sign-in --email=… [--out=<path>]   get one real access token, to check with
        register-partner [--url=…]         accept an invitation, against a running server
        view [--url=…]                     what this sign-in can see, as itself
+       catalog-import --provider=… --vocabulary=<path> --records=<path>
+                                  [--dry-run] [--limit=<n>]
+                                  load approved card data through the translation boundary
 
    Every one of these is a decision someone makes on purpose. None of them runs
    by itself: the server never migrates at startup (a rolling restart would
@@ -42,6 +45,10 @@ const { linkActorAccount, listActors } = require("./provisioning.js");
 const { checkAuth } = require("./auth-check.js");
 const { signIn } = require("./auth-signin.js");
 const { registerPartner, view } = require("./partner-register.js");
+const fs = require("fs");
+const { createCatalogRepository } = require("../persistence/catalog-repository.js");
+const { systemRuntime } = require("../domain/metyet-runtime.js");
+const { importCatalog, exitCodeFor, EXIT } = require("./catalog/import.js");
 
 const USAGE = `MetYet operator commands
 
@@ -60,11 +67,18 @@ const USAGE = `MetYet operator commands
   node server/cli.js sign-in --email=<address> [--out=<path for the access token>]
   node server/cli.js register-partner [--url=<server>] [--token-file=<path>]
   node server/cli.js view [--url=<server>] [--token-file=<path>]
+  node server/cli.js catalog-import --provider=<name> --vocabulary=<path> --records=<path> [--dry-run] [--limit=<n>]
 
 The database is read from DATABASE_URL (and DATABASE_SSL, DATABASE_CA_CERT or
 DATABASE_CA_CERT_FILE, DATABASE_POOL_MAX); auth-check and sign-in read SUPABASE_URL and
 SUPABASE_PUBLISHABLE_KEY instead and need no database. register-partner and view need
 neither: they talk to a RUNNING server over HTTP, reading the bearer from a file.
+
+catalog-import reads two JSON files an operator supplies: a vocabulary MetYet owns, and
+source records some approved provider produced. It talks to no provider, opens no socket
+and takes no credential — the records are already on disk when it runs. It exits 3 when it
+completed but quarantined or rejected something, which is not a failure and is not a clean
+success either.
 
 Nothing here starts a server. auth-check and sign-in contact the identity provider — to
 ask it a question, and to ask it to email one person a code — and neither changes anything
@@ -320,6 +334,116 @@ const OPERATIONS = {
     say("issue a new one.");
     return 0;
   },
+
+  /* ------------------------------------------------- THE CATALOG (Phase 5 C4)
+
+     An operator decision, made on purpose, exactly like `migrate`. There is no
+     HTTP route to this and there must never be: a browser cannot mint card
+     identity, and a thirty-thousand-record import is not a request.
+
+     TWO FILES, AND THEY ARE DIFFERENT KINDS OF THING. The vocabulary is a
+     declaration MetYet owns — a mapping table somebody reviewed — and the
+     records are somebody else's data. Conflating them is how a provider's
+     words end up deciding MetYet's, so they arrive as two paths and are read
+     separately.
+
+     PARSED, NEVER REQUIRED. `JSON.parse` on a string this file read, never
+     `require()` on a path an operator passed: `require` on caller input is
+     arbitrary code execution wearing a configuration flag. And nothing in
+     either file is ever used AS a path — record contents name cards, not
+     files.
+
+     NO CREDENTIAL FLAG, and there is nothing here that would want one. When an
+     adapter eventually needs a key it reads it from the environment like every
+     other secret in this codebase; argv is visible in `ps` and lands in shell
+     history. */
+  async "catalog-import"({ db }, flags, say) {
+    const provider = typeof flags.provider === "string" ? flags.provider.trim() : "";
+    if (!provider) { say("catalog-import needs --provider=<name>"); return EXIT.invalid; }
+    if (typeof flags.vocabulary !== "string" || !flags.vocabulary) {
+      say("catalog-import needs --vocabulary=<path to a JSON mapping table>");
+      return EXIT.invalid;
+    }
+    if (typeof flags.records !== "string" || !flags.records) {
+      say("catalog-import needs --records=<path to a JSON array of source records>");
+      return EXIT.invalid;
+    }
+    let limit = null;
+    if (flags.limit !== undefined) {
+      limit = Number(flags.limit);
+      if (!Number.isInteger(limit) || limit <= 0) {
+        say("--limit must be a positive whole number");
+        return EXIT.invalid;
+      }
+    }
+    const dryRun = flags["dry-run"] === true || flags["dry-run"] === "true";
+
+    /* READ AND PARSE BOTH BEFORE ANYTHING IS WRITTEN. A truncated file, a JSON
+       object where an array belongs, a vocabulary with a word the domain does
+       not know — each is an operator's mistake and each should cost nothing. */
+    let vocabulary;
+    let records;
+    try {
+      vocabulary = JSON.parse(fs.readFileSync(flags.vocabulary, "utf8"));
+    } catch (error) {
+      say(`vocabulary:  could not be read as JSON — ${safeMessage(error)}`);
+      return EXIT.failure;
+    }
+    try {
+      records = JSON.parse(fs.readFileSync(flags.records, "utf8"));
+    } catch (error) {
+      say(`records:     could not be read as JSON — ${safeMessage(error)}`);
+      return EXIT.failure;
+    }
+    if (!Array.isArray(records)) {
+      say("records:     the file must hold a JSON array of source records");
+      return EXIT.failure;
+    }
+
+    const catalog = createCatalogRepository(db, { newId: systemRuntime().newId });
+    let summary;
+    try {
+      summary = await importCatalog({ catalog, db, provider, vocabulary, records,
+        dryRun, limit });
+    } catch (error) {
+      say(`failed:      ${safeMessage(error)}`);
+      return EXIT.failure;
+    }
+
+    reportImport(summary, say);
+    return exitCodeFor(summary);
+  },
+};
+
+/* The run, in the aligned shape every other operator command uses. No record
+   is printed and no payload: a summary says how many and why, and the queue
+   itself is in the database for anybody who needs the detail. */
+function reportImport(summary, say) {
+  say(`provider:    ${summary.provider}`);
+  say(`mode:        ${summary.mode}${summary.mode === "dry-run" ? "  (nothing was written)" : ""}`);
+  say(`records:     ${summary.read} read${summary.processed === summary.read ? "" : `, ${summary.processed} processed (--limit)`}`);
+  say(`mappable:    ${summary.mappable}`);
+  say(`quarantined: ${summary.quarantined}${reasons(summary.quarantineReasons)}`);
+  say(`rejected:    ${summary.rejected}${reasons(summary.rejectionReasons)}`);
+  const ignored = reasons(summary.ignored);
+  if (ignored) say(`ignored:     ${ignored}`);
+  if (summary.created) {
+    say(`expansions:  new ${summary.created.expansions}  reused ${summary.reused.expansions}`);
+    say(`contexts:    new ${summary.created.contexts}  reused ${summary.reused.contexts}`);
+    say(`cards:       new ${summary.created.cards}  reused ${summary.reused.cards}`);
+    say(`mappings:    ${summary.created.mappings} written`);
+  }
+  if (summary.failedBatch) {
+    const f = summary.failedBatch;
+    say(`failed at:   records ${f.from}-${f.to} (${f.size} in that batch) — ${f.message}`);
+    say("That batch rolled back whole. Nothing after it was attempted. Run it again.");
+  }
+  say(`status:      ${summary.status}`);
+}
+
+const reasons = (counts) => {
+  const pairs = Object.entries(counts || {});
+  return pairs.length ? `  (${pairs.map(([k, n]) => `${k}: ${n}`).join(", ")})` : "";
 };
 
 /* `database` is injected by the tests; production opens one from the
