@@ -317,13 +317,25 @@ describe("F. What the collector sees", () => {
     eq(v(st).photoState(copyOf(st, "shot")), "ready", "and the copy is ready to offer on");
   });
 
-  test("the actual front photo replaces the stock image as the primary", () => {
+  test("the Collector's own photo is the only image the card ever shows", () => {
+    /* This used to read "the actual front photo replaces the STOCK image as the
+       primary", and asserted the two-source chain `actual || artUrl(...)`. There
+       is no stock image any more (Phase 5 C7.1 amendment): the second source was
+       a catalogue provider's CDN, fetched live from a file that is published to
+       demo.metyet.io, and it is gone with nothing in its place.
+
+       So the claim is simpler and stronger than it was — the photograph of THIS
+       copy is the only picture that can appear, which is the thing the original
+       test cared about ("never a question of which picture is the physical
+       card"). Sliced to the whole component rather than a byte count, because a
+       fixed 900-character window breaks the moment somebody writes a comment. */
     const src = readSrc("collector/MetYetCollector.jsx");
-    const art = src.slice(src.indexOf("function Art("), src.indexOf("function Art(") + 900);
+    const art = src.slice(src.indexOf("function Art("), src.indexOf("const initials"));
+    assert(art.length > 100, "the Art component moved or vanished");
     assert(/copy\.photos\.front && copy\.photos\.back/.test(art),
-      "only a complete pair is used as the primary image");
-    assert(/const src = actual \|\| artUrl/.test(art),
-      "actual photo first, stock image as the fallback");
+      "only a complete pair is used as the image");
+    assert(!/\|\|\s*artUrl|artUrl\(/.test(art), "a second image source came back");
+    assert(!/https?:\/\//.test(art), "the artwork path constructs a URL");
   });
 
   test("the collector UI offers the right action for each state", () => {

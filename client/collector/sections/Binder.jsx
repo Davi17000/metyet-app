@@ -44,6 +44,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { Panel, Tag } from "../parts.jsx";
+import CardArt from "../../card-art.jsx";
 import CardSpecification from "../CardSpecification.jsx";
 import { rows, text, plural, tierIntent, tierLabel, byRecency } from "../present.js";
 
@@ -307,11 +308,8 @@ function CardRow({ known, goal, canonicalCardId, onOpen }) {
   return (
     <article className="mcs-group">
       <div className="mcs-group-head">
-        <span className="mcs-group-art">
-          {known && known.imageSmall
-            ? <img src={known.imageSmall} alt="" loading="lazy" />
-            : null}
-        </span>
+        <CardArt src={known && known.imageSmall} name={known && known.cardName}
+          wrap="mcs-group-art" plate="mcs-art-plate" decorative />
         <div className="mcs-rec-id">
           <div className="mcs-rec-t">{title}</div>
           {sub ? <div className="mcs-rec-s">{sub}</div> : null}

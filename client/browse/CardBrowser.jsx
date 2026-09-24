@@ -44,6 +44,7 @@
    ========================================================================== */
 
 import React, { useCallback, useEffect, useState } from "react";
+import CardArt from "../card-art.jsx";
 
 const rows = (v) => (Array.isArray(v) ? v : []);
 const text = (v) => (typeof v === "string" ? v.trim() : "");
@@ -218,11 +219,8 @@ export default function CardBrowser({ browse, prefix = "mcs", session, onSession
                 className={`${p("br-cell")}${chosenId === row.cardContextId ? " on" : ""}`}>
                 <button type="button" className={p("br-card")} disabled={busy}
                   onClick={() => onChoose(row)}>
-                  <span className={p("br-art")}>
-                    {row.imageSmall
-                      ? <img src={row.imageSmall} alt="" loading="lazy" />
-                      : <span className={p("br-plate")}>{row.cardName}</span>}
-                  </span>
+                  <CardArt src={row.imageSmall} name={row.cardName}
+                    wrap={p("br-art")} plate={p("br-plate")} />
                   <span className={p("br-name")}>{row.cardName}</span>
                   <span className={p("br-sub")}>
                     {[row.expansionName, row.collectorNumber ? `#${row.collectorNumber}` : null]

@@ -1048,12 +1048,17 @@ describe("H. nothing else moved", () => {
     }
   });
 
-  test("pokemon_cards.json is untouched and unreferenced by anything C5 wrote", async () => {
+  test("nothing C5 wrote reaches a bundled card dataset", async () => {
+    /* C5's claim was that correcting a copy on the shelf needs no catalog dump.
+       It asserted that against `pokemon_cards.json` by name and additionally
+       asserted the file still existed — which pinned the file rather than the
+       property. C7.1 removed the file (unread by anything, no verified licence
+       basis), so the claim is now stated as what it meant. */
     for (const rel of ["client/tp/sections/Inventory.jsx", "client/commands.js",
       "client/collector/CardSpecification.jsx", "server/exposed-commands.js"]) {
-      assert(!read(rel).includes("pokemon_cards"), `${rel} references it`);
+      assert(!/pokemon_cards|cards\.json/i.test(read(rel)), `${rel} reaches a bundled dataset`);
     }
-    assert(fs.existsSync(path.join(ROOT, "pokemon_cards.json")), "it was deleted");
+    assert(!fs.existsSync(path.join(ROOT, "pokemon_cards.json")), "it came back");
   });
 
   test("no dependency was added", async () => {

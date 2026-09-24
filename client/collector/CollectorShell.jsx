@@ -254,7 +254,21 @@ const CSS = `
 .mcs-group-art { flex:0 0 52px; width:52px; aspect-ratio:5/7; display:flex; align-items:center;
   justify-content:center; background:var(--line-soft); border-radius:5px; overflow:hidden; }
 .mcs-group-art img { width:100%; height:100%; object-fit:contain; }
-.mcs-group-plate { font-size:10px; color:var(--muted); text-align:center; padding:4px; }
+/* THE TILE WITH NO PICTURE IN IT (Phase 5 C7.1). One class for every art tile
+   in the collector, whatever its size, because what it says is the same thing
+   in all of them: which card this is. It wraps rather than truncates, so a long
+   name reflows inside a 34px tile instead of spilling out of it —
+   the tile keeps its 5/7 box either way, so nothing on the row moves when a
+   picture is absent or fails. */
+.mcs-art-plate { font-size:10px; line-height:1.15; color:var(--muted); text-align:center;
+  padding:4px; overflow:hidden; overflow-wrap:anywhere;
+  /* TRUNCATE AT THE BOTTOM, NOT AT BOTH ENDS. The plate is centred inside the
+     tile, so a name too long for the box would otherwise be clipped top AND
+     bottom — half a line of letters at each end, which reads worse than the
+     empty tile it replaced. The clamp cuts whole lines off the end and marks
+     the cut, which at least stays readable. */
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; }
+.mcs-has-art .mcs-art-plate { font-size:8px; padding:2px; -webkit-line-clamp:4; }
 .mcs-group .mcs-rec { padding-left:16px; padding-right:16px; }
 .mcs-group .mcs-rec:last-child { border-bottom:0; }
 

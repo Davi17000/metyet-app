@@ -70,12 +70,6 @@ const cardLine = (c) => [c.set, c.num && c.num !== "—" ? `#${c.num}` : null].f
 const cardFull = (c) => [c.name, c.set, c.num !== "—" ? c.num : null, c.print,
   c.edition, c.language, gradeLine(c)].filter(Boolean).join(" · ");
 
-const artUrl = (id) => {
-  if (!id) return null;
-  const i = id.lastIndexOf("-");
-  return `https://images.pokemontcg.io/${id.slice(0, i)}/${id.slice(i + 1)}_hires.png`;
-};
-
 /* What the collector must actually DO next, derived from canonical opportunity
    state. A stage name is context, not an instruction: "Select Trade" tells you
    where the deal is, "Choose trade cards" tells you what to do. Every label here
@@ -1316,17 +1310,25 @@ const CSS = `
    carries the card's name, so a screen never degrades into blank plates. */
 function Art({ card, size = "lg", copy }) {
   const [failed, setFailed] = useState(false);
-  /* ONE IMAGE-SOURCE RULE: the actual front photo of THIS copy if it exists,
-     otherwise the stock/reference artwork, otherwise the identity plate. Once
-     actual photos exist the stock image stops being shown here, so there is
-     never a question of which picture is the physical card. */
-  const actual = copy && copy.photos && copy.photos.front && copy.photos.back
+  /* ONE IMAGE-SOURCE RULE: the front photo of THIS copy if the Collector has
+     taken one, otherwise the identity plate. There used to be a third source
+     between them — a stock picture built into a catalogue provider's CDN from
+     `card.csvId` — and it is gone (Phase 5 C7.1 amendment). This file is
+     published: the GitHub Pages workflow builds it to demo.metyet.io on every
+     push to `main`, so that line made a live request to a provider whose usage
+     basis MetYet has not established, for every visitor. Nothing replaced it,
+     because swapping in a different provider's CDN would answer nothing.
+
+     A Collector's own photograph is not that, and stays: it is MetYet's own
+     data, about this exact physical copy, and it was always the preferred
+     source anyway — so there was never a question of which picture is the
+     physical card, and there still isn't. */
+  const src = copy && copy.photos && copy.photos.front && copy.photos.back
     ? copy.photos.front : null;
-  const src = actual || artUrl(card.csvId);
-  /* Artwork is the point of a collecting product, so it gets real images. But it
-     is never the card's identity: if the image is slow, blocked or missing the
-     plate still says which card this is, at the same dimensions, so a grid never
-     collapses into blank boxes and nothing shifts when it does load. */
+  /* Artwork is never the card's identity: with no picture, or a photo that is
+     slow or blocked, the plate still says which card this is, at the same
+     dimensions, so a grid never collapses into blank boxes and nothing shifts
+     when a photo does load. */
   if (!src || failed) {
     return (
       <div className={"art " + size + " ph"} role="img" aria-label={cardFull(card)} title={cardFull(card)}>

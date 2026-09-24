@@ -1109,82 +1109,28 @@ const T = {
 };
 
 /* ============================================================================
-   CANONICAL POKÉMON CARD CATALOG — read-only, generated, never mutated
+   WHY THIS DEMO SHOWS NO CARD ARTWORK (Phase 5 C7.1 amendment)
 
-   Derived from Cards_Normalized-Table_1.csv (32,598 printed cards). Source of truth
-   for PRINTED-CARD identity and stock imagery only. MetYet remains authoritative for
-   every physical-copy fact: grade, condition, certification, cost, listing price,
-   photos, goals, opportunities, deal terms.
+   Until now this file carried a frozen table of ~50 card-art URL pairs pointing
+   at a third-party catalogue CDN, and `CardImage` fetched from it. That was
+   fine while this was a private prototype. It is not a private prototype: the
+   GitHub Pages workflow publishes this file, built, to demo.metyet.io on every
+   push to `main` — so the demo made live requests to a provider whose usage
+   basis MetYet has not established, on every page view, for every visitor.
 
-   Structurally separate from inventory by construction — frozen, module-scope, never
-   held in component state, and no code path writes to it. Adding inventory cannot
-   change it. (The prototype renders as one file with no bundler, so this lives here
-   rather than in its own module; the read-only boundary is what matters.)
+   The table is gone and nothing replaced it. Not another CDN, not downloaded
+   images, not base64: substituting one unestablished provider for another
+   answers nothing, and a demo is not worth a rights claim MetYet cannot make.
 
-   Mapping ran offline against the printed-card rule — name + set + set position +
-   print — with printed_total and release year as deterministic tiebreaks for cards
-   reprinted at the same number in a later set. 57 of 84 prototype records resolved,
-   0 ambiguous, 0 name/year mismatches. Unresolved records carry no csvId and render
-   the fallback rather than a guessed image. Keyed on the CSV's own card_id.
+   NOTHING ELSE HAD TO CHANGE, which is the whole reason this was cheap.
+   `CardImage` already reserved the card's dimensions and drew an identity plate
+   whenever artwork was missing, slow or blocked — that path is now simply the
+   only path. Every card still says its name, set, number and grade at the sizes
+   that have room, at the same size it always did, and nothing on any screen
+   moves. `csvId` stays on the seed records: it is the canonical printed-card
+   reference those records carry, and it was only ever READ by the artwork
+   lookup, not created for it.
    ============================================================================ */
-const CATALOG_IMAGES = Object.freeze({
-  "base1-1": ["https://images.pokemontcg.io/base1/1.png", "https://images.pokemontcg.io/base1/1_hires.png"],
-  "base1-10": ["https://images.pokemontcg.io/base1/10.png", "https://images.pokemontcg.io/base1/10_hires.png"],
-  "base1-12": ["https://images.pokemontcg.io/base1/12.png", "https://images.pokemontcg.io/base1/12_hires.png"],
-  "base1-13": ["https://images.pokemontcg.io/base1/13.png", "https://images.pokemontcg.io/base1/13_hires.png"],
-  "base1-15": ["https://images.pokemontcg.io/base1/15.png", "https://images.pokemontcg.io/base1/15_hires.png"],
-  "base1-16": ["https://images.pokemontcg.io/base1/16.png", "https://images.pokemontcg.io/base1/16_hires.png"],
-  "base1-2": ["https://images.pokemontcg.io/base1/2.png", "https://images.pokemontcg.io/base1/2_hires.png"],
-  "base1-20": ["https://images.pokemontcg.io/base1/20.png", "https://images.pokemontcg.io/base1/20_hires.png"],
-  "base1-3": ["https://images.pokemontcg.io/base1/3.png", "https://images.pokemontcg.io/base1/3_hires.png"],
-  "base1-34": ["https://images.pokemontcg.io/base1/34.png", "https://images.pokemontcg.io/base1/34_hires.png"],
-  "base1-4": ["https://images.pokemontcg.io/base1/4.png", "https://images.pokemontcg.io/base1/4_hires.png"],
-  "base1-58": ["https://images.pokemontcg.io/base1/58.png", "https://images.pokemontcg.io/base1/58_hires.png"],
-  "base1-6": ["https://images.pokemontcg.io/base1/6.png", "https://images.pokemontcg.io/base1/6_hires.png"],
-  "base1-7": ["https://images.pokemontcg.io/base1/7.png", "https://images.pokemontcg.io/base1/7_hires.png"],
-  "base1-8": ["https://images.pokemontcg.io/base1/8.png", "https://images.pokemontcg.io/base1/8_hires.png"],
-  "base2-10": ["https://images.pokemontcg.io/base2/10.png", "https://images.pokemontcg.io/base2/10_hires.png"],
-  "base2-12": ["https://images.pokemontcg.io/base2/12.png", "https://images.pokemontcg.io/base2/12_hires.png"],
-  "base2-3": ["https://images.pokemontcg.io/base2/3.png", "https://images.pokemontcg.io/base2/3_hires.png"],
-  "base2-4": ["https://images.pokemontcg.io/base2/4.png", "https://images.pokemontcg.io/base2/4_hires.png"],
-  "base5-3": ["https://images.pokemontcg.io/base5/3.png", "https://images.pokemontcg.io/base5/3_hires.png"],
-  "base5-4": ["https://images.pokemontcg.io/base5/4.png", "https://images.pokemontcg.io/base5/4_hires.png"],
-  "base5-5": ["https://images.pokemontcg.io/base5/5.png", "https://images.pokemontcg.io/base5/5_hires.png"],
-  "base5-83": ["https://images.pokemontcg.io/base5/83.png", "https://images.pokemontcg.io/base5/83_hires.png"],
-  "bw3-101": ["https://images.pokemontcg.io/bw3/101.png", "https://images.pokemontcg.io/bw3/101_hires.png"],
-  "bw7-134": ["https://images.pokemontcg.io/bw7/134.png", "https://images.pokemontcg.io/bw7/134_hires.png"],
-  "ecard3-146": ["https://images.pokemontcg.io/ecard3/146.png", "https://images.pokemontcg.io/ecard3/146_hires.png"],
-  "ex6-105": ["https://images.pokemontcg.io/ex6/105.png", "https://images.pokemontcg.io/ex6/105_hires.png"],
-  "gym2-2": ["https://images.pokemontcg.io/gym2/2.png", "https://images.pokemontcg.io/gym2/2_hires.png"],
-  "neo1-17": ["https://images.pokemontcg.io/neo1/17.png", "https://images.pokemontcg.io/neo1/17_hires.png"],
-  "neo1-5": ["https://images.pokemontcg.io/neo1/5.png", "https://images.pokemontcg.io/neo1/5_hires.png"],
-  "neo1-9": ["https://images.pokemontcg.io/neo1/9.png", "https://images.pokemontcg.io/neo1/9_hires.png"],
-  "neo2-20": ["https://images.pokemontcg.io/neo2/20.png", "https://images.pokemontcg.io/neo2/20_hires.png"],
-  "neo2-32": ["https://images.pokemontcg.io/neo2/32.png", "https://images.pokemontcg.io/neo2/32_hires.png"],
-  "neo3-65": ["https://images.pokemontcg.io/neo3/65.png", "https://images.pokemontcg.io/neo3/65_hires.png"],
-  "neo3-66": ["https://images.pokemontcg.io/neo3/66.png", "https://images.pokemontcg.io/neo3/66_hires.png"],
-  "neo4-107": ["https://images.pokemontcg.io/neo4/107.png", "https://images.pokemontcg.io/neo4/107_hires.png"],
-  "neo4-109": ["https://images.pokemontcg.io/neo4/109.png", "https://images.pokemontcg.io/neo4/109_hires.png"],
-  "sm5-148": ["https://images.pokemontcg.io/sm5/148.png", "https://images.pokemontcg.io/sm5/148_hires.png"],
-  "sm5-151": ["https://images.pokemontcg.io/sm5/151.png", "https://images.pokemontcg.io/sm5/151_hires.png"],
-  "sv2-254": ["https://images.pokemontcg.io/sv2/254.png", "https://images.pokemontcg.io/sv2/254_hires.png"],
-  "swsh1-169": ["https://images.pokemontcg.io/swsh1/169.png", "https://images.pokemontcg.io/swsh1/169_hires.png"],
-  "swsh11-186": ["https://images.pokemontcg.io/swsh11/186.png", "https://images.pokemontcg.io/swsh11/186_hires.png"],
-  "swsh12-186": ["https://images.pokemontcg.io/swsh12/186.png", "https://images.pokemontcg.io/swsh12/186_hires.png"],
-  "swsh2-189": ["https://images.pokemontcg.io/swsh2/189.png", "https://images.pokemontcg.io/swsh2/189_hires.png"],
-  "swsh35-74": ["https://images.pokemontcg.io/swsh35/74.png", "https://images.pokemontcg.io/swsh35/74_hires.png"],
-  "swsh4-188": ["https://images.pokemontcg.io/swsh4/188.png", "https://images.pokemontcg.io/swsh4/188_hires.png"],
-  "swsh7-189": ["https://images.pokemontcg.io/swsh7/189.png", "https://images.pokemontcg.io/swsh7/189_hires.png"],
-  "swsh7-194": ["https://images.pokemontcg.io/swsh7/194.png", "https://images.pokemontcg.io/swsh7/194_hires.png"],
-  "swsh7-212": ["https://images.pokemontcg.io/swsh7/212.png", "https://images.pokemontcg.io/swsh7/212_hires.png"],
-  "swsh7-215": ["https://images.pokemontcg.io/swsh7/215.png", "https://images.pokemontcg.io/swsh7/215_hires.png"],
-  "swsh7-218": ["https://images.pokemontcg.io/swsh7/218.png", "https://images.pokemontcg.io/swsh7/218_hires.png"],
-  "swsh9-154": ["https://images.pokemontcg.io/swsh9/154.png", "https://images.pokemontcg.io/swsh9/154_hires.png"],
-});
-
-/* [small, large] for a canonical card id, or null. Never guesses, never falls back
-   to a visually similar printing. */
-const catalogImage = (csvId) => (csvId && CATALOG_IMAGES[csvId]) || null;
 
 const CARDS_SEED = [
   // --- owned ---
@@ -3877,7 +3823,6 @@ const NextStep = ({ owner }) => {
    thumbnail stays at 34 because Deal Summary and the Collector Profile share it. */
 const CARD_IMAGE_SIZES = { thumbnail: 34, triage: 52, browse: 54, feature: 124, shelf: 180, hero: 168 };
 // list contexts keep the small asset; only surfaces where the card is the subject load hi-res
-const CARD_IMAGE_SMALL_ASSET = ["thumbnail", "triage"];
 
 /* The collector's own photograph of this copy. The prototype stores a token rather
    than a file, so the token is rendered as a labelled plate at whatever size the
@@ -4084,39 +4029,31 @@ function NegotiationParty({ c, label }) {
 }
 
 function CardImage({ card: c, size = "thumbnail", className = "" }) {
-  const art = catalogImage(c && c.csvId);
-  const [failed, setFailed] = useState(false);
   const w = CARD_IMAGE_SIZES[size] || CARD_IMAGE_SIZES.thumbnail;
-  // dimensions are always reserved so a missing or slow image shifts nothing
+  // dimensions are reserved exactly as they always were, so nothing on any screen moved
   const box = { width: w, height: Math.round(w / 0.716) };   // standard card ratio
-  if (!c || !art || failed) {
-    /* Artwork is a convenience, never the card's identity. When it is missing, slow or
-       blocked, the plate still says WHICH card this is, so a grid never degrades into
-       blank boxes. Dimensions are the same as the image, so nothing shifts if the
-       artwork later loads. */
-    const roomy = w >= CARD_IMAGE_SIZES.browse;      // below this only a name fits
-    return (
-      <span className={"cimg empty " + size + " " + className} style={box}
-        role="img"
-        aria-label={c ? `${c.name} — ${c.set} ${c.num}` : "Card image unavailable"}
-        title={c ? cardShort(c) : "Card image unavailable"}>
-        {c && (
-          <span className="cimg-ph">
-            <span className="cimg-ph-n">{c.name}</span>
-            {roomy && c.set && <span className="cimg-ph-s">{c.set}</span>}
-            {roomy && c.num && c.num !== "—" && <span className="cimg-ph-s">#{c.num}</span>}
-            {roomy && <span className="cimg-ph-g">{isRaw(c) ? "Raw" : c.grade}</span>}
-          </span>
-        )}
-      </span>
-    );
-  }
-  // small asset for list contexts, hi-res only where the card is the subject
-  const src = CARD_IMAGE_SMALL_ASSET.includes(size) ? art[0] : art[1];
+  /* THE PLATE IS NOW THE ONLY PATH (Phase 5 C7.1 amendment). It was already the
+     path for a card whose artwork was missing, slow or blocked, and it was
+     already written to carry the card's identity rather than apologise for the
+     absent picture — so removing the provider's images cost this component one
+     branch and no behaviour. The plate says WHICH card this is; the `roomy`
+     rule below is why a 34px tile shows a name and a 180px one shows the set,
+     the number and the grade as well. */
+  const roomy = w >= CARD_IMAGE_SIZES.browse;      // below this only a name fits
   return (
-    <img className={"cimg " + className} style={box} src={src}
-      loading="lazy" decoding="async" onError={() => setFailed(true)}
-      alt={`${c.name} — ${c.set} ${c.num}`} />
+    <span className={"cimg empty " + size + " " + className} style={box}
+      role="img"
+      aria-label={c ? `${c.name} — ${c.set} ${c.num}` : "Card image unavailable"}
+      title={c ? cardShort(c) : "Card image unavailable"}>
+      {c && (
+        <span className="cimg-ph">
+          <span className="cimg-ph-n">{c.name}</span>
+          {roomy && c.set && <span className="cimg-ph-s">{c.set}</span>}
+          {roomy && c.num && c.num !== "—" && <span className="cimg-ph-s">#{c.num}</span>}
+          {roomy && <span className="cimg-ph-g">{isRaw(c) ? "Raw" : c.grade}</span>}
+        </span>
+      )}
+    </span>
   );
 }
 

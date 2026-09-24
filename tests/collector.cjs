@@ -570,7 +570,22 @@ describe("Concepts are not collapsed together", () => {
    This exists because artwork silently vanished during the shared-state
    migration: the seed renamed the field to csvId while Art still read card.img,
    and every card fell through to the identity placeholder. Nothing failed,
-   because nothing asserted that images actually render. These do.
+   because nothing asserted that images actually render.
+
+   WHAT CHANGED, AND WHY THESE NO LONGER DEMAND A REMOTE IMAGE (Phase 5 C7.1
+   amendment). This file is PUBLISHED: the GitHub Pages workflow builds it to
+   demo.metyet.io on every push to `main`. The stock artwork it used to render
+   came from a catalogue provider's CDN, constructed at runtime from `csvId`, so
+   every visitor's browser made live requests to a provider whose usage basis
+   MetYet has not established. That source is gone and nothing replaced it.
+
+   So the tests that demanded `https://images.` now demand what they were
+   actually for: every card resolves to SOMETHING that names it, no card is ever
+   blank, containers keep their size, and — the new one — nothing in this file
+   builds a remote image URL at all. The original failure mode they were written
+   against (a renamed field silently emptying every card) is still caught, and
+   caught better, because the plate is now the only path and it is asserted to
+   carry the card's identity everywhere it appears.
    ========================================================================= */
 describe("Card artwork renders and degrades safely", () => {
   const imgs = (r) => r.root.findAllByType("img")
@@ -581,49 +596,97 @@ describe("Card artwork renders and degrades safely", () => {
     r.root.findAllByType("img").forEach((i) => i.props.onError && i.props.onError());
   });
 
-  test("1. seeded goal cards render real images", () => {
+  test("1. every seeded goal card resolves to something that names it", () => {
     const r = mk();
     const goals = allGoals(r);
     assert(goals.length > 0, "goals render");
-    /* The canonical catalog contains some cards with no artwork reference; those
-       correctly use the identity plate. Every card resolves to one or the other. */
     eq(imgs(r).length + plates(r).length, goals.length,
-      "every goal resolves to artwork or an identity plate");
-    assert(imgs(r).length > 0, "and real images do render");
-    imgs(r).forEach((i) => assert(/^https:\/\/images\./.test(i.props.src),
-      "a real artwork URL: " + i.props.src));
+      "every goal resolves to an image or an identity plate");
+    /* This is the assertion that catches the original defect. It used to be
+       "images render"; the stronger form is that no card is ever left with
+       neither a picture nor a name — which is true whether or not artwork
+       exists, and would still have failed the day the seed rename emptied it. */
+    plates(r).forEach((p) => assert(txt(p).trim().length > 0,
+      "a goal card resolved to an empty plate"));
   });
 
-  test("1. the binder and partner surfaces render artwork too", () => {
+  test("1. the binder and partner surfaces resolve every card too", () => {
     const r = mk();
     nav(r, "Trade Binder");
     assert(imgs(r).length + plates(r).length >= cls(r, "bnd-c").length,
       "every binder card resolves to artwork or a plate");
     nav(r, "Trusted Partners");
-    assert(imgs(r).length > 0, "partner stock strips show artwork");
+    assert(imgs(r).length + plates(r).length > 0, "partner stock strips show cards");
+    plates(r).forEach((p) => assert(txt(p).trim().length > 0, "an empty plate on a shelf"));
   });
 
-  test("2. URLs derive from the canonical csvId, and every seeded card has one", () => {
-    const { buildCanonicalSeed } = require("../dist/MetYet.cjs");
-const SEED = buildCanonicalSeed();
-    const withArt = SEED.catalog.filter((c) => c.csvId);
-    assert(withArt.length > 0, "the canonical catalog carries csvId references");
-    assert(!SEED.catalog.some((c) => "img" in c), "and no obsolete img field");
+  test("1. no card image anywhere in the demo is a remote URL", () => {
+    /* The property the published site must hold, asserted against what is
+       RENDERED. A first draft of this test looped over the images on three
+       screens — which, now that no screen renders stock artwork, is a loop over
+       an empty set: it asserted nothing and passed for it. It also swallowed a
+       failed `nav` in a try/catch, so a renamed tab would have skipped every
+       screen and still passed.
+
+       Fixed by driving to the one place images DO still render — a partner's
+       shelf, where the pictures are photographs of the physical copies — so the
+       loop has something in it, and by counting what was examined. A
+       Collector's own photo is MetYet's own data, not a remote reference; the
+       seed's are `copy:<id>:front`. */
     const r = mk();
-    /* The Charizard goal must resolve to the catalog's csvId for that card. */
-    imgs(r).forEach((i) => {
-      const m = /images\.pokemontcg\.io\/([^/]+)\/([^_]+)_/.exec(i.props.src);
-      assert(m, "url shape: " + i.props.src);
-      assert(SEED.catalog.some((c) => c.csvId === m[1] + "-" + m[2]),
-        "every rendered url traces to a canonical csvId: " + i.props.src);
+    let examined = 0;
+    const sweep = (where) => {
+      for (const i of r.root.findAllByType("img")) {
+        const src = String(i.props.src || "");
+        examined += 1;
+        assert(!/^https?:|^\/\//i.test(src), `${where} renders a remote image: ${src}`);
+        assert(!/pokemontcg|tcgdex|scrydex/i.test(src), `${where} renders provider art: ${src}`);
+      }
+    };
+    for (const screen of ["Goals", "Trade Binder", "Trusted Partners"]) {
+      const tab = cls(r, "nav-i").find((b) => txt(b).includes(screen));
+      assert(tab, "the demo lost its " + screen + " tab");
+      click(tab);
+      sweep(screen);
+    }
+    nav(r, "Trusted Partners");
+    openPartner(r, 0);
+    sweep("a partner's shelf");
+    assert(examined > 0, "no image was examined anywhere, so this asserted nothing");
+  });
+
+  test("2. every catalog card carries the name its plate falls back to", () => {
+    /* This used to assert that every rendered URL traced back to a canonical
+       `csvId`. With no artwork there are no URLs to trace, and a first draft
+       replaced it with "csvId still exists" — which pins a field nothing reads,
+       and pinning a thing rather than a property is the habit this whole batch
+       exists to break. `csvId` stays in the seed and is deliberately NOT
+       required here; it is recorded as debt instead.
+
+       What matters now is the fallback's raw material: the plate can only name
+       a card if the card has a name. */
+    const { buildCanonicalSeed } = require("../dist/MetYet.cjs");
+    const SEED = buildCanonicalSeed();
+    assert(!SEED.catalog.some((c) => "img" in c), "an obsolete img field returned");
+    assert(SEED.catalog.length > 0, "the catalog is empty");
+    SEED.catalog.forEach((c) => {
+      assert(c.name && String(c.name).trim(), c.id + " has no name for its plate");
+      if (c.csvId) assert(/^[a-z0-9]+-[a-z0-9]+$/i.test(c.csvId),
+        c.name + " has a malformed csvId: " + c.csvId);
     });
   });
 
   test("3. a failed image falls back to the identity plate, never blank", () => {
+    /* Driven from a partner's shelf, which is where the remaining images are:
+       photographs of the exact physical copies on that shelf, which are
+       MetYet's own data. No screen renders stock catalogue artwork any more,
+       which is the point of the amendment rather than a gap in this test. */
     const r = mk();
+    nav(r, "Trusted Partners");
+    openPartner(r, 0);
     const before = imgs(r).length;
     const platesBefore = plates(r).length;
-    assert(before > 0, "images first");
+    assert(before > 0, "the photographs of the copies on the shelf did not render");
     failAll(r);
     eq(imgs(r).length, 0, "the images are gone");
     eq(plates(r).length, before + platesBefore, "and every one became an identity plate");
@@ -671,11 +734,17 @@ const SEED = buildCanonicalSeed();
     assert(cls(r, "goal-n").length === before, "identities still render beside the plate");
   });
 
-  test("6. the obsolete card.img field cannot return to the artwork path", () => {
+  test("6. neither the obsolete field nor a provider URL can return to the artwork path", () => {
     const src = readSrc("collector/MetYetCollector.jsx");
     const art = src.slice(src.indexOf("function Art("), src.indexOf("const initials"));
-    assert(/artUrl\(card\.csvId\)/.test(art), "artwork reads the canonical field");
+    assert(/copy\.photos\.front/.test(art), "artwork no longer reads the Collector's own photo");
     assert(!/card\.img\b/.test(art), "and never the obsolete one");
+    /* AND NOTHING BUILDS A URL. This is a published file; a helper that
+       constructs a catalogue CDN address from a card id is what the amendment
+       removed, and it must not come back under any provider's name. */
+    assert(!/https?:\/\//.test(art), "the artwork path constructs a URL: " + art.slice(0, 200));
+    assert(!/pokemontcg|tcgdex|scrydex/i.test(src),
+      "the Collector names a card-art provider");
     /* Guard the whole component, not just Art — the field was reintroduced by a
        seed rename last time, not by editing Art. */
     assert(!/\bcard\.img\b/.test(src), "card.img appears nowhere in the Collector");
@@ -692,6 +761,7 @@ const SEED = buildCanonicalSeed();
       const c = SEED.catalog.find((x) => x.id === id);
       assert(c, "catalog has " + id);
       if (c.csvId) assert(/-/.test(c.csvId), c.name + " has a resolvable csvId");
+      assert(c.name && String(c.name).trim(), c.id + " has no name to fall back to");
     });
   });
 });

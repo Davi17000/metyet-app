@@ -70,6 +70,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { Panel, Record, Fact, Tag } from "../parts.jsx";
+import CardArt from "../../card-art.jsx";
 import CardSpecification from "../CardSpecification.jsx";
 import { rows, indexById, groupBy, text, day, money, plural, cardTitle, cardSetLine,
   gradeLine, isGraded, gradeConflictLine, cardMarks, statusLabel, photoNote,
@@ -208,16 +209,17 @@ export default function MyCards({ state, onBrowseCards = null, onSpecify = null 
         return (
           <article className="mcs-group" key={group.groupId}>
             <div className="mcs-group-head">
-              {/* THE CATALOGUE'S PICTURE OF THE CARD, where there is one. A card
-                  with none keeps the same empty tile rather than repeating its
-                  own name beside the name: Browse draws the name in its plates
-                  because in a grid the plate IS the identification, and here the
-                  title is already an inch away. */}
-              <span className="mcs-group-art">
-                {known && known.imageSmall
-                  ? <img src={known.imageSmall} alt="" loading="lazy" />
-                  : null}
-              </span>
+              {/* THE CATALOGUE'S PICTURE OF THE CARD, where there is one.
+                  C3.4 left an EMPTY tile where there was none, reasoning that
+                  the title is already an inch away so a name in the tile only
+                  repeats it. C7.1 kept the empty tile for a card MetYet cannot
+                  yet NAME, and fills it with the name where it has one —
+                  because that is also the case where the picture merely failed
+                  to load, which the old tile could not tell you. Hidden from
+                  assistive tech (`decorative`), since the title beside it has
+                  already said the same word. */}
+              <CardArt src={known && known.imageSmall} name={known && known.cardName}
+                wrap="mcs-group-art" plate="mcs-art-plate" decorative />
               <div className="mcs-rec-id">
                 <div className="mcs-rec-t">{title}</div>
                 {sub ? <div className="mcs-rec-s">{sub}</div> : null}
