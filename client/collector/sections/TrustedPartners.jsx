@@ -56,6 +56,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { Panel, Record, Fact, Tag } from "../parts.jsx";
+import CardArt from "../../card-art.jsx";
 import { rows, text, day, plural, byRecency, groupBy, tierIntent, tierLabel,
   hasWantedLine } from "../present.js";
 
@@ -184,11 +185,8 @@ function WantedCard({ found, known }) {
     : null;
   return (
     <li>
-      <span className="mcs-has-art">
-        {known && known.imageSmall
-          ? <img src={known.imageSmall} alt="" loading="lazy" />
-          : null}
-      </span>
+      <CardArt src={known && known.imageSmall} name={known && known.cardName}
+        wrap="mcs-has-art" plate="mcs-art-plate" decorative />
       <span className="mcs-sub-t">{title}</span>
       {sub ? <span className="mcs-sub-s">{sub}</span> : null}
       {found.tier ? (

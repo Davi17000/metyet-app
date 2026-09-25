@@ -268,17 +268,36 @@ describe("8. The shell holds no domain logic", () => {
       "it does not appear anywhere on the TP experience");
   });
 
-  test("Collector artwork still resolves from canonical csvId", () => {
+  test("the Collector experience renders no remote card artwork", () => {
+    /* This asserted that every rendered image traced back to a catalogue
+       provider's CDN. That dependency is gone (Phase 5 C7.1 amendment): this
+       experience is PUBLISHED to demo.metyet.io, so a stock picture fetched
+       from a provider whose usage basis MetYet has not established was a live
+       request on every visitor's page view. Nothing replaced it.
+
+       What is asserted instead is the property that made the old test worth
+       having: no card is left unidentifiable. Any image that DOES render is
+       MetYet's own — a photograph of a physical copy — and is never remote. */
     const r = mk();
     enter(r, "collector");
-    const imgs = r.root.findAllByType("img").filter((i) => /\bart\b/.test(String(i.props.className || "")));
-    assert(imgs.length > 0, "real artwork renders");
+    const imgs = r.root.findAllByType("img");
+    /* Stated so the loop below cannot pass by being empty: with the stock
+       artwork gone this entry screen renders plates and no images, and if that
+       ever changes the loop is what checks the new images. */
+    eq(imgs.length, 0, "the Collector entry screen renders images again: "
+      + JSON.stringify(imgs.map((i) => i.props.src)));
     imgs.forEach((i) => {
-      const m = /images\.pokemontcg\.io\/([^/]+)\/([^_]+)_/.exec(i.props.src);
-      assert(m, "canonical url: " + i.props.src);
-      assert(state(r).catalog.some((c) => c.csvId === m[1] + "-" + m[2]),
-        "traceable to a canonical csvId");
+      const src = String(i.props.src || "");
+      assert(!/^https?:|^\/\//i.test(src), "a remote image is rendered: " + src);
+      assert(!/pokemontcg|tcgdex|scrydex/i.test(src), "provider artwork is rendered: " + src);
     });
+    const plates = r.root.findAll((n) => typeof n.type === "string"
+      && String(n.props.className || "").split(/\s+/).includes("ph"));
+    assert(plates.length > 0, "no card resolved to a plate either");
+    const txtOf = (n) => { const o = []; const w = (x) => { for (const c of x.children || []) {
+      if (typeof c === "string" || typeof c === "number") o.push(String(c)); else w(c); } };
+      w(n); return o.join(""); };
+    plates.forEach((p) => assert(txtOf(p).trim().length > 0, "an identity plate is blank"));
   });
 });
 

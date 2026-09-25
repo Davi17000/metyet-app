@@ -148,19 +148,30 @@ describe("Opportunities drilldown — card image sizing", () => {
     return r;
   };
   const table = (r) => byClass(r, "tbl")[0];
-  const imgsIn = (node) => node.findAll((n) => n.type === "img"
-    && /\bcimg\b/.test(String(n.props.className || "")));
-  const widths = (node) => [...new Set(imgsIn(node).map((i) => i.props.style.width))].sort((a, b) => a - b);
+  /* WHAT THESE MEASURE, AFTER THE ARTWORK WENT (Phase 5 C7.1 amendment).
+     These tests are about SIZING DISCIPLINE — that the drilldown uses its own
+     triage preset, that the card ratio is never distorted, that the preset does
+     not leak into other surfaces. They measured it on the `<img>` because that
+     is what `CardImage` used to render. It now always renders the identity
+     plate, which reserves exactly the same box, so the property is unchanged
+     and the element it lives on is not. Matching `cimg` on either covers both,
+     and would go on working if artwork ever returned. */
+  const artIn = (node) => node.findAll((n) => typeof n.type === "string"
+    && /\bcimg\b/.test(String(n.props.className || ""))
+    && n.props.style && typeof n.props.style.width === "number");
+  const widths = (node) => [...new Set(artIn(node).map((i) => i.props.style.width))].sort((a, b) => a - b);
 
   test("rows use the dedicated triage preset, not the shared thumbnail", () => {
     const r = drilldown();
     const w = widths(table(r));
-    eq(w.join(","), "52", "every drilldown image is the triage size");
+    eq(w.join(","), "52", "every drilldown card tile is the triage size");
   });
 
   test("the natural card aspect ratio is preserved", () => {
     const r = drilldown();
-    imgsIn(table(r)).forEach((i) => {
+    const tiles = artIn(table(r));
+    assert(tiles.length > 0, "no card tiles rendered, so this asserts nothing");
+    tiles.forEach((i) => {
       const { width, height } = i.props.style;
       eq(height, Math.round(width / 0.716), "standard card ratio, never cropped or distorted");
       assert(height >= 70 && height <= 77, "height lands in the intended band: " + height);
@@ -169,7 +180,9 @@ describe("Opportunities drilldown — card image sizing", () => {
 
   test("the image stays modest — recognisable, not a gallery", () => {
     const r = drilldown();
-    imgsIn(table(r)).forEach((i) => assert(i.props.style.width <= 60, "no larger than ~60px"));
+    const tiles = artIn(table(r));
+    assert(tiles.length > 0, "no card tiles rendered, so this asserts nothing");
+    tiles.forEach((i) => assert(i.props.style.width <= 60, "no larger than ~60px"));
   });
 
   test("card identity still sits beside the image, not below it", () => {
@@ -177,8 +190,8 @@ describe("Opportunities drilldown — card image sizing", () => {
     const row = table(r).findAllByType("tr")[1];
     const cell = row.findAllByType("td")[1];
     const holder = byClassIn(cell, "cimg-row")[0];
-    assert(holder, "the image and name share one inline holder");
-    eq(imgsIn(holder).length, 1, "the image");
+    assert(holder, "the card tile and name share one inline holder");
+    eq(artIn(holder).length, 1, "the card tile");
     assert(holder.findAllByType("button").length >= 1, "and the identity link, in the same span");
   });
 

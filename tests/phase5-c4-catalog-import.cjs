@@ -929,7 +929,33 @@ describe("F. the operator's door", () => {
 
 /* ============================================================== G
    The boundaries hold. */
+/* THE TWO ENDS OF C4, IN ONE PLACE (Phase 5 C7.1). Three assertions below ask
+   what C4 changed. They are questions about a fixed stretch of history, so they
+   name a fixed stretch of history: C4's branch point and C4's merge. Neither end
+   is `HEAD`, deliberately — see the migration pin for what a moving end cost. */
+const C4 = Object.freeze({
+  from: "97fdba3",   // Merge pull request #70 — C3.5, the batch C4 branched from
+  to: "dc2fd25",     // Merge pull request #71 — C4 itself
+});
+
 describe("G. the boundaries hold", () => {
+
+  test("a claim about what C4 changed is asked of C4, not of today", () => {
+    /* The pin on the pins. Every assertion in this file that reaches for git
+       history must name both ends, because one that ends at `HEAD` is answering
+       a different question AND cannot fail during the batch that breaks it. */
+    const suite = fs.readFileSync(__filename, "utf8");
+    const diffs = suite.match(/"diff",\s*"--name-only",[^\]]*\]/g) || [];
+    assert(diffs.length >= 2, "the history assertions vanished: " + diffs.length);
+    for (const d of diffs) {
+      assert(!/\bHEAD\b/.test(d), "a history assertion ends at HEAD: " + d);
+      assert(/C4\.from,\s*C4\.to/.test(d), "a history assertion names its own range: " + d);
+    }
+    const { execFileSync } = require("child_process");
+    const at = (ref) => execFileSync("git", ["rev-list", "-1", ref], { cwd: ROOT, encoding: "utf8" }).trim();
+    assert(at(C4.to).startsWith("dc2fd25"), "C4's merge moved");
+    assert(at(C4.from).startsWith("97fdba3"), "C4's branch point moved");
+  });
 
   test("there is no HTTP way in, and the allow-list did not move", async () => {
     const ctx = await world();
@@ -964,17 +990,32 @@ describe("G. the boundaries hold", () => {
     const { execFileSync } = require("child_process");
     const at = (ref) => execFileSync("git", ["show", `${ref}:server/exposed-commands.js`],
       { cwd: ROOT, encoding: "utf8" });
-    eq(at("97fdba3"), at("dc2fd25"),
+    eq(at(C4.from), at(C4.to),
       "the production door moved in a batch that adds an operator command");
   });
 
   test("no migration, and 0013_binders.sql is still the newest", () => {
     const migrations = fs.readdirSync(path.join(ROOT, "persistence", "migrations")).sort();
     eq(migrations[migrations.length - 1], "0013_binders.sql", migrations.join(","));
+    /* WHY THIS NAMES BOTH ENDS, AND WHAT IT COST TO LEARN (Phase 5 C7.1).
+       C4's claim is about C4: a batch that adds an ingestion runner with its own
+       tables already migrated has no business changing persistence. The
+       assertion used to compare C4's branch point against `HEAD`, which says
+       something quite different — "persistence has not changed since C4" — and
+       that is not C4's claim to make, because a later batch is allowed to change
+       persistence. C6.1 did, correctly, and this went red.
+
+       Worse than going red: it went GREEN when it should not have. The subject
+       is git history, not the working tree, so while C6.1's change was still
+       uncommitted `HEAD` was C6.1's parent and the range was empty. The
+       assertion could only become false AFTER the last verify that could have
+       caught it. A history assertion with a moving end cannot see the commit
+       that is about to break it, so both ends are fixed commits now — C4's
+       branch point and C4's merge — and the pin means what it always meant. */
     const { execFileSync } = require("child_process");
-    const changed = execFileSync("git", ["diff", "--name-only", "97fdba3", "HEAD", "--",
+    const changed = execFileSync("git", ["diff", "--name-only", C4.from, C4.to, "--",
       "persistence/"], { cwd: ROOT, encoding: "utf8" }).trim();
-    eq(changed, "", "persistence changed: " + changed);
+    eq(changed, "", "C4 changed persistence: " + changed);
   });
 
   test("the vocabulary is parsed, never executed, and a record names no file", () => {
@@ -1026,16 +1067,41 @@ describe("G. the boundaries hold", () => {
       "a provider or HTTP dependency was added: " + deps.join(","));
   });
 
-  test("ingestion does not reference pokemon_cards.json, and the file is untouched", () => {
+  test("ingestion reaches no bundled card dataset, and C4 touched none", () => {
+    /* WHAT THIS PIN IS FOR, AND WHY IT NO LONGER NAMES ONE FILE (Phase 5 C7.1).
+       C4's claim was that the runner gets its records from the operator's file
+       and from nowhere else — in particular not from `pokemon_cards.json`, the
+       32,599-record PokémonTCG-derived dump that had sat in the repository
+       unread since a single "Add files via upload" commit. The pin asserted that
+       C4 did not touch it and that it still existed, which protected the file
+       rather than the property, and would have had to be edited by any batch
+       that legitimately removed it. C7.1 is that batch: nothing read the file,
+       no build path bundled it, and the repository has no verified licence basis
+       for it, so it is gone.
+
+       The property survives it and is stronger stated generally: no ingestion
+       file reaches a bundled dataset, and there is no bundled card dataset in
+       the repository for a later one to reach for. */
     for (const rel of ["server/catalog/import.js", "server/catalog/translation.js",
       "server/cli.js", "persistence/catalog-repository.js"]) {
-      assert(!/pokemon_cards\.json/.test(read(rel)), `${rel} names pokemon_cards.json`);
+      const body = read(rel);
+      assert(!/pokemon_cards|cards\.json|catalog\.json/i.test(body),
+        `${rel} names a bundled card dataset`);
     }
     const { execFileSync } = require("child_process");
-    const changed = execFileSync("git", ["diff", "--name-only", "97fdba3", "HEAD"],
+    const changed = execFileSync("git", ["diff", "--name-only", C4.from, C4.to],
       { cwd: ROOT, encoding: "utf8" });
-    assert(!/pokemon_cards\.json/.test(changed), "pokemon_cards.json was changed");
-    assert(fs.existsSync(path.join(ROOT, "pokemon_cards.json")), "it was deleted");
+    assert(!/pokemon_cards\.json/.test(changed), "C4 changed pokemon_cards.json");
+    /* And nothing put one back, under that name or any other. Asserted by SHAPE
+       rather than by a list of permitted filenames, which would need editing
+       every time a tool adds a config: a card dataset is a JSON ARRAY of
+       records, and every JSON file that belongs at the root — the two manifests,
+       the three tsconfigs — is an object. */
+    const arrays = fs.readdirSync(ROOT).filter((f) => f.endsWith(".json")).filter((f) => {
+      try { return Array.isArray(JSON.parse(read(f))); } catch (error) { return false; }
+    });
+    eq(json(arrays), json([]), "a dataset reappeared at the repository root: " + arrays.join(","));
+    assert(!fs.existsSync(path.join(ROOT, "pokemon_cards.json")), "pokemon_cards.json came back");
   });
 
   test("`unmappable` is diagnostic text and reaches no card", async () => {
