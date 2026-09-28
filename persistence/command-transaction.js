@@ -87,4 +87,83 @@ async function executeCommand(repository, { actor, command, payload, runtime, al
   }
 }
 
-module.exports = { executeCommand };
+/* ============================================================================
+   SEVERAL COMMANDS, ONE COMMIT (Phase 5 C8)
+
+   One HTTP request is one command is one transaction, and that is right: a
+   request is one person doing one thing. An operator importing four hundred
+   inventory rows from a file is not that. Run those as four hundred
+   transactions and a database fault at row two hundred leaves a shop with half
+   a shelf and no record of which half — so the fold lives here, beside the
+   single-command version, using the same lock, the same validation and the same
+   domain.
+
+   IT IS THE SAME WRITE PATH, DELIBERATELY. Every row goes through `C.execute`
+   with the same actor and the same command a person clicking Save goes through;
+   nothing here relaxes a check, skips `validateWorld`, or writes a row itself.
+   The only difference is where the commit is. A second inventory write path is
+   exactly what this exists to avoid.
+
+   ALL OR NOTHING, AND A REFUSAL IS A FAULT. If any command refuses, the whole
+   batch rolls back and the refusal is reported with the index that produced it.
+   A half-applied file is not a smaller success; it is a shelf nobody can
+   reconcile against the file it came from.
+
+   ONE VERSION BUMP. The world is loaded once, folded through every command, and
+   validated once at the end — so `expectedVersion` is checked against the
+   version the batch read, and a concurrent writer loses the race rather than
+   interleaving with it. */
+async function executeCommands(repository, { actor, commands, runtime } = {}) {
+  if (!RT.isRuntime(runtime) || runtime.mode !== RT.MODES.authoritative) {
+    throw new PersistenceError(CODES.runtimeNotAuthoritative,
+      "executeCommands requires an authoritative runtime (systemRuntime); the prototype runtime trusts caller times and ids.");
+  }
+  const batch = Array.isArray(commands) ? commands : [];
+  if (!batch.length) throw new TypeError("executeCommands: at least one command is required");
+
+  let refusal = null;
+  try {
+    return await repository.withTransaction(async (tx) => {
+      await repository.lockWorld(tx);
+      const version = await repository.readVersion(tx);
+      let state = await repository.loadWorld(tx);
+      const values = [];
+      for (let at = 0; at < batch.length; at += 1) {
+        const { command, payload } = batch[at] || {};
+        const result = C.execute(state, actor, command, payload, runtime);
+        if (!result.ok) {
+          refusal = { ok: false, refused: result.refused, at, version };
+          throw ROLLBACK;
+        }
+        state = result.state;
+        values.push(result.value);
+      }
+      /* ONCE, AT THE END, AND HERE IS THE HONEST REASON (Phase 5 C8, corrected
+         after review). A first draft said "every intermediate state was produced
+         by a command that already validated its own change" — which is false:
+         `C.execute` never calls `validateWorld`, and the only per-command
+         validation MetYet has is the one in `executeCommand` directly above.
+
+         The real reason is narrower and true: only the FINAL state is persisted,
+         and a command that refuses rolls the whole batch back, so an intermediate
+         state is never durable and never observed. What must be valid is what is
+         written. A batch that could produce a valid end state through an invalid
+         middle one is a batch whose commands disagree about an invariant, and
+         that is a domain question rather than something this loop can rescue. */
+      const check = validateWorld(state);
+      if (!check.ok) {
+        throw new PersistenceError(CODES.invalidNextWorld,
+          `a batch of ${batch.length} commands produced an invalid world, so nothing was saved: `
+          + summarise(check.errors),
+          { details: { count: batch.length, errors: check.errors } });
+      }
+      const saved = await repository.saveWorld(state, tx, { expectedVersion: version });
+      return { ok: true, values, version: saved.version, world: state, changes: saved.changes };
+    });
+  } catch (error) {
+    if (error === ROLLBACK) return refusal;
+    throw error;
+  }
+}
+
+module.exports = { executeCommand, executeCommands };
