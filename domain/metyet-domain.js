@@ -704,18 +704,82 @@ const INVARIANTS = {
 
      A partner is not committed merely because somebody has offered — several
      collectors may be talking to them about the same card at once, and that is
-     healthy. They become committed when the PRICE IS SETTLED, because that is
-     the point at which they have told one collector what the card costs them
-     and cannot honestly tell another the same thing.
+     healthy.
 
-     Settled price is `agreedPrice != null`, which is the existing canonical
-     marker for Agree on Price being done; no new field is introduced. The lock
-     is per PHYSICAL COPY, so a partner may commit different copies to different
-     collectors at the same time. It releases when the deal ends, since an ended
-     deal no longer holds anything. */
+     WHERE THIS BOUNDARY USED TO BE, AND WHY IT MOVED (Option B). It used to be
+     `agreedPrice != null`: settling a market value committed the copy. That
+     read a valuation as a promise. Agreeing what a card is WORTH is a shared
+     fact about the card, and two collectors can hold it at once without either
+     of them being owed anything — which is the whole of "agreement about
+     information is not agreement to transact". So the boundary is now the one
+     moment both parties say yes to the assembled deal: `finalAgreementGiven`.
+
+     THE LOCK IS PER PHYSICAL COPY, so a partner may commit different copies to
+     different collectors at once, and it releases when the deal ends, because
+     an ended deal holds nothing.
+
+     WHAT THIS IS NOT. It is not the mutation guard. `copyInLiveDeal` below is
+     deliberately wider and still keys on a settled price — see its comment. */
   copyCommittedTo: (invId, opps, exceptOppId) => (invId == null ? null
     : (opps || []).find((o) => o.invId === invId && o.id !== exceptOppId
+      && isActive(o) && finalAgreementGiven(o)) || null),
+
+  /* THE PARTNER'S OTHER BOUNDARY — WIDER, AND FOR A DIFFERENT PURPOSE.
+
+     Two questions look alike and are not the same:
+
+       "may another collector still pursue this copy?"   availability
+       "may the partner still CHANGE this copy?"         mutation safety
+
+     Availability moved to final agreement. Mutation safety must not, and this
+     predicate exists so that moving one did not silently move the other. From
+     the moment a market value is settled, a collector is reasoning about THIS
+     physical card — assembling a trade package against its certificate, pricing
+     around its grade. Letting the partner re-certify it or archive it out from
+     under that is a different kind of harm from letting somebody else pursue
+     it, and the older, wider window is the right one for it.
+
+     So: `updateInventoryCopy` and `removeInventoryCopy` ask this; nothing about
+     who may pursue the copy does. */
+  copyInLiveDeal: (invId, opps) => (invId == null ? null
+    : (opps || []).find((o) => o.invId === invId
       && isActive(o) && o.agreedPrice != null) || null),
+
+  /* PENDING — THE ONE AVAILABILITY FACT A PARTNER CHOOSES (Option B).
+
+     Everything else about a copy's availability is derived from what has
+     happened to it. This is derived from what the partner DECIDED: they are
+     working toward a transaction on this exact card and would rather not start
+     another conversation about it. It names the opportunity, because "pending"
+     with nobody attached cannot tell the collector on the other side of that
+     deal that it is pending for THEM.
+
+     STALE BY CONSTRUCTION, AND THAT IS THE POINT. The field may outlive the
+     opportunity it names — a cancelled deal leaves it dangling. Rather than
+     sweep, this asks whether the named opportunity is still active, so a
+     forgotten `pendingFor` reads as available on its own. There is nothing to
+     clean up and nothing that can rot.
+
+     VIEWER-RELATIVE FOR FREE. `opps` is whatever the caller is asking about:
+     hand it one collector's own opportunities and a copy pending for somebody
+     else's deal simply is not pending to them. That is how the projection tells
+     "pending for your deal" from "unavailable" without a second rule. */
+  copyPendingFor: (invId, inventory, opps) => {
+    if (invId == null) return null;
+    const copy = (inventory || []).find((i) => i.invId === invId);
+    /* An archived copy is nobody's to be pending FOR. Without this the derived
+       status contradicted the command layer outright: a copy pended before any
+       price was settled is still archivable (removeInventoryCopy keys on
+       copyInLiveDeal), and both seats were then shown "Pending" — "Pending for
+       your deal" to the collector — for a copy every command answers
+       copy-unavailable about. Falling through leaves it `available` here, which
+       the projection renders `unavailable` via inSupply, as it did before. */
+    if (!copy || copy.archived) return null;
+    const oppId = typeof copy.pendingFor === "string" ? copy.pendingFor : null;
+    if (!oppId) return null;
+    const held = (opps || []).find((o) => o.id === oppId && o.invId === invId && isActive(o));
+    return held ? held.id : null;
+  },
   /* WHEN A PHYSICAL COPY CAN BE EVALUATED. A stock image identifies the CARD;
      actual front and back photos identify the SPECIFIC PHYSICAL COPY, and what
      a copy is worth depends on the condition of that copy — so a copy is ready
@@ -775,6 +839,11 @@ const REFUSE = {
   copyReserved: "copy-reserved",
   copyInUse: "copy-in-use",
   copySold: "copy-sold",
+  /* THE PARTNER IS WORKING ON THIS ONE (Option B). Distinct from
+     `copy-committed`, which says two parties have agreed a deal, and from
+     `copy-sold`, which says the card is gone: this says a person decided, and a
+     person can undecide. A surface may say so without naming the other deal. */
+  copyPending: "copy-pending",
   reasonRequired: "reason-required",
   planIncomplete: "plan-incomplete",
   nothingToAccept: "nothing-to-accept",
@@ -1238,11 +1307,38 @@ const currentCashFigure = (o) => {
   return calculatedBalance(o);
 };
 
-/* PHYSICAL-COPY STATUS — derived from the opportunities, never stored (§6). */
-const inventoryCopyStatus = (invId, opps) => {
+/* PHYSICAL-COPY STATUS — derived from the opportunities and the one fact the
+   partner sets, never stored as a status of its own (§6).
+
+   FOUR ANSWERS, IN THIS ORDER, AND THE ORDER IS THE MEANING:
+
+     sold       the card is gone. Nothing outranks it and nothing reverses it.
+     committed  both parties said yes to the assembled deal (finalAgreementGiven).
+     pending    the partner decided they are working on it (INVARIANTS.copyPendingFor).
+     available  everything else — INCLUDING an agreed market value.
+
+   THE LAST LINE IS THE CHANGE (Option B). Settling what a card is worth used to
+   make it `committed`, which meant agreeing a fact took the card away from
+   everybody else without anyone deciding to. Now it does not: a copy stays
+   available through inspection, photographs, valuation, trade selection and
+   trade valuation, and leaves only when the partner says so or when both
+   parties commit to the deal.
+
+   `committed` OUTRANKS `pending`, and an adversarial pass is why. The other way
+   round, a copy pending for deal X and promised in deal X read as `pending` —
+   and the Collector's label for that word is "Pending for your deal", which
+   understates a card that is already theirs. Worse, before `setCopyPending`
+   learned to refuse a promised copy, the LOSING deal could be marked pending
+   and its Collector told the card was being held for them. A promise is the
+   stronger fact and it is what gets said.
+
+   `inventory` IS REQUIRED FOR `pending` and for nothing else. A caller that
+   cannot supply it still gets sold / committed / available correctly. */
+const inventoryCopyStatus = (invId, opps, inventory) => {
   const mine = (opps || []).filter((o) => o.invId != null && o.invId === invId);
   if (mine.some(isCompleted)) return "sold";
-  if (mine.some((o) => isActive(o) && o.agreedPrice != null)) return "committed";
+  if (mine.some((o) => isActive(o) && finalAgreementGiven(o))) return "committed";
+  if (INVARIANTS.copyPendingFor(invId, inventory, opps)) return "pending";
   return "available";
 };
 const soldInventoryIds = (opps) => new Set((opps || [])

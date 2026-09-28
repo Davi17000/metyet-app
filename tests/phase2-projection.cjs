@@ -168,9 +168,17 @@ describe("A · Collector projection", () => {
     /* Supply is bounded by the relationship and by availability (§6). */
     const statuses = (proj) => proj.inventory.map((i) => i.invId + ":" + i.status);
     sameSet(statuses(P.cA), ["iA1:sold", "iA2:available"], "cA inventory: Alpha's supply; iA1 by its own deal");
-    sameSet(statuses(P.cB), ["iB1:committed"], "cB inventory: its own deal; iB3 is held by another collector's deal");
-    sameSet(statuses(P.cAB), ["iA2:available", "iA5:sold", "iB3:committed"],
-      "cAB inventory: supply plus own deals; iB1 (a Review Card copy held by cB's deal) is not");
+    /* OPTION B WIDENED WHAT A COLLECTOR SEES, ON PURPOSE. A settled market
+       value no longer takes a card off the shelf, so a copy another collector
+       is negotiating over is still ordinary supply from a shop you deal with —
+       which is the point: agreeing what a card is worth is not a claim on it.
+       Beta is related to Bravo, so iB3 is Beta's supply now. What Beta still
+       cannot see is anything ABOUT the other deal: no opportunity, no
+       collector, no figure. */
+    sameSet(statuses(P.cB), ["iB1:available", "iB3:available"],
+      "cB inventory: its own deal's copy, and Bravo's other copy as plain supply");
+    sameSet(statuses(P.cAB), ["iA2:available", "iA5:sold", "iB1:available", "iB3:available"],
+      "cAB inventory: supply plus own deals; Bravo's copies are supply again");
     eq(P.cX.inventory.length, 0, "cX has no supply");
     assert(!tokens(P.cA).has("iA3"), "archived copy offered as supply");
     assert(!tokens(P.cAB).has("iA1"), "another collector's sold copy offered as supply");
@@ -481,7 +489,10 @@ describe("E · Adversarial scans — who can see each marker, id and private val
     [ids.invA]: ["pA"], [ids.invB]: ["pB"], [ids.invC]: ["pC"], [ids.invX]: ["pC", "cX"],
     iA1: ["pA", "cA"], iA2: ["pA", "cA", "cAB"], iA3: ["pA"], iA5: ["pA", "cAB"],
     /* iB1 reaches cAB only as the id inside cAB's own Review Card record. */
-    iB1: ["pB", "cAB", "cB"], iB3: ["pB", "cAB"], iC1: ["pC"],
+    /* iB3 reaches cB from Option B onward: Bravo's copy is available supply
+       again while another collector merely negotiates over it, and Beta is in
+       Bravo's network. The ID is a card on a shelf, not a fact about a deal. */
+    iB1: ["pB", "cAB", "cB"], iB3: ["pB", "cAB", "cB"], iC1: ["pC"],
     /* bAB1: Beta's own interest record still names it. */
     bA: ["cA", "pA"], bAB1: ["cAB", "pA", "pB"], bAB2: ["cAB", "pB"], bB: ["cB", "pB"], bX: ["cX"],
     gA: ["cA", "pA"], gAB: ["cAB", "pA", "pB"], gAB2: ["cAB", "pA", "pB"], gB: ["cB", "pB"], gX: ["cX"],
@@ -702,7 +713,12 @@ describe("G2 · A shared record names a counterparty; it never adds network or s
   test("an active deal with an ex-partner keeps the deal's copy and nothing else", () => {
     const s = withRelationship(S, "pB", "cB", "ended");
     const cB = projectForActor(s, ACTORS.cB), pB = projectForActor(s, ACTORS.pB);
-    sameSet(cB.inventory.map((i) => i.invId + ":" + i.status), ["iB1:committed"], "cB inventory");
+    /* `unavailable` rather than `committed` since Option B: the copy is not
+       committed to anything — a market value was agreed and that claims
+       nothing — but Beta has left Bravo's network, so it reaches them only as
+       the copy their own live deal names. The property this test exists for is
+       unchanged: the deal's copy, and nothing else of Bravo's. */
+    sameSet(cB.inventory.map((i) => i.invId + ":" + i.status), ["iB1:unavailable"], "cB inventory");
     eq(cB.partners.length, 0); eq(json(cB.counterparties), json([{ id: "pB", name: "Beta Breaks" }]));
     assert(opp(cB, ids.oB) && opp(pB, ids.oB), "active deal lost");
     assert(!pB.collectors.some((c) => c.id === "cB"));
@@ -769,13 +785,37 @@ describe("G3 · No copy status derives from a deal the viewer is not in", () => 
   });
 
   test("the same holds for inventory: another Collector's deal is invisible in a Collector's supply", () => {
+    /* WHERE CASEY'S VIEW CHANGES, AND WHY IT MOVED (Option B).
+
+       It used to change at "agreed": settling a market value took iA5 off the
+       shelf, so every later stage looked the same to Casey. It does not any
+       more — a valuation is a shared fact, not a claim — so iA5 stays ordinary
+       supply all the way through Select Trade and Value Trade, and leaves only
+       when Alpha and Beta actually promise it to each other.
+
+       The property this test exists for is unchanged and is asserted below:
+       Casey learns nothing ABOUT the deal at any stage. What she sees is a card
+       on a shelf appearing and disappearing, which is what availability is. */
     const casey = Object.fromEntries(Object.keys(snaps).map((label) => [label, json(project(label, "cA"))]));
-    eq(casey.offered, casey.beforeOffer, "cA while cAB's offer on iA5 is unanswered");
-    for (const label of ["reserved", "committed", "valued", "deal", "fulfillment", "traded"]) {
-      eq(casey[label], casey.agreed, `cA's whole projection at "${label}" differs from "agreed"`);
+    const stillSupply = ["offered", "agreed", "reserved", "committed", "valued", "deal"];
+    const notSupply = ["fulfillment", "traded"];
+    for (const label of stillSupply) {
+      eq(casey[label], casey.beforeOffer, `cA's projection at "${label}" differs from before the offer`);
+      eq(project(label, "cA").inventory.find((i) => i.invId === "iA5").status, "available",
+        `iA5 should still be supply at "${label}"`);
     }
-    eq(project("offered", "cA").inventory.find((i) => i.invId === "iA5").status, "available");
-    assert(!project("agreed", "cA").inventory.some((i) => i.invId === "iA5"), "a copy committed to cAB is offered to cA");
+    for (const label of notSupply) {
+      eq(casey[label], casey.fulfillment, `cA's projection at "${label}" differs from "fulfillment"`);
+      assert(!project(label, "cA").inventory.some((i) => i.invId === "iA5"),
+        `a copy promised to cAB is still offered to cA at "${label}"`);
+    }
+    /* And the thing that vanished tells her nothing: no opportunity, no
+       collector, no figure crossed with it. */
+    for (const label of [...stillSupply, ...notSupply]) {
+      const v = project(label, "cA");
+      eq(v.opportunities.filter((o) => o.collectorId !== "cA").length, 0, `${label}: another deal leaked`);
+      assert(!tokens(v).has("cAB"), `${label}: the other collector was named`);
+    }
     for (const who of ["pC", "cB", "cX"]) {
       const views = Object.keys(snaps).map((label) => json(project(label, who)));
       for (const v of views) eq(v, views[0], `${who} projection moved with a deal it has no part in`);

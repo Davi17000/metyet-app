@@ -983,7 +983,11 @@ describe("H. nothing else moved", () => {
   });
 
   test("the domain's command table did not grow", async () => {
-    eq([...COMMAND_NAMES].length, 49, "C5 wrote a command instead of shipping two that existed");
+    /* 49 → 50 in Option B, which is the batch that DID need a new command:
+       voluntary Pending is a decision, and a decision leaves no trace to derive
+       from. C5's own point stands — it shipped two commands that already
+       existed rather than writing more. */
+    eq([...COMMAND_NAMES].length, 50, "C5 wrote a command instead of shipping two that existed");
   });
 
   test("no new route, and the catalogue import is still unreachable", async () => {

@@ -1315,7 +1315,11 @@ describe("H. the navigation", () => {
   test("no new durable concept: 0013_binders.sql is still the newest migration", () => {
     const migrations = fs.readdirSync(path.join(ROOT, "persistence", "migrations")).sort();
     eq(migrations[migrations.length - 1], "0013_binders.sql", migrations.join(","));
-    eq(C.COMMAND_NAMES.length, 49, "a command was added or removed");
+    /* 49 → 50 in Option B (`setCopyPending`). C3.4b's real claim is the line
+       above — no new MIGRATION — and it survived Option B intact: that batch
+       added a durable field to an inventory copy and still needed no
+       migration, because unmapped facts live in `attrs`. */
+    eq(C.COMMAND_NAMES.length, 50, "a command was added or removed");
   });
 
   test("compatibility: a historical Goal with no criteria is still manageable", async () => {

@@ -471,7 +471,11 @@ describe("D. what stops an overlap, and what must never be erased", () => {
     eq((await found(ctx, "casey")).length, 0, "and the collector is not still being told about it");
   });
 
-  test("a copy committed to one deal stops being supply for everyone else", async () => {
+  /* OPTION B MOVED WHEN A COPY STOPS BEING SUPPLY. A settled market value is a
+     shared fact about a card, so it no longer takes the card away from anybody;
+     a promise does, and so does the partner deciding to hold it. Both boundaries
+     are exercised below. */
+  test("a copy promised to one deal stops being supply for everyone else", async () => {
     const ctx = await world();
     const made = await cards(ctx);
     const invId = idOf(await hold(ctx.app, "north", made.unlimited));
@@ -481,8 +485,21 @@ describe("D. what stops an overlap, and what must never be erased", () => {
 
     const oppId = await acted(ctx, ACTOR.casey, "startOpportunity", { goalId, invId, amount: 800 });
     await acted(ctx, ACTOR.north, "acceptPrice", { oppId });
+    eq((await found(ctx, "dana")).length, 1,
+      "a settled price claims nothing, so Dana's overlap stands");
+
+    /* The partner deciding they are working on it does take it away. */
+    await acted(ctx, ACTOR.north, "setCopyPending", { invId, oppId });
+    eq((await found(ctx, "dana")).length, 0, "a copy the shop is working on is not offered elsewhere");
+    await acted(ctx, ACTOR.north, "setCopyPending", { invId, oppId: null });
+    eq((await found(ctx, "dana")).length, 1, "and comes back when they release it");
+
+    /* And so does the promise itself. */
+    await acted(ctx, ACTOR.casey, "proposeTradeSelection", { oppId, binderIds: [] });
+    await acted(ctx, ACTOR.north, "acceptDeal", { oppId });
+    await acted(ctx, ACTOR.casey, "acceptDeal", { oppId });
     eq((await found(ctx, "dana")).length, 0,
-      "a copy with a settled price is spoken for, and is not offered to somebody else");
+      "a copy promised to somebody is not offered to somebody else");
   });
 
   test("one collector's deal does not take away another's legitimate overlap", async () => {
@@ -497,6 +514,15 @@ describe("D. what stops an overlap, and what must never be erased", () => {
       { goalId, invId: first, amount: 800 });
     await acted(ctx, ACTOR.north, "acceptPrice", { oppId });
 
+    /* Both copies are still free: agreeing a value on one claims neither. */
+    const valued = await found(ctx, "dana");
+    eq(valued.length, 1, "Northline has two, so Dana has an overlap");
+    eq(json(valued[0].invIds.slice().sort()), json([first, second].sort()),
+      "and both copies are genuinely available");
+
+    await acted(ctx, ACTOR.casey, "proposeTradeSelection", { oppId, binderIds: [] });
+    await acted(ctx, ACTOR.north, "acceptDeal", { oppId });
+    await acted(ctx, ACTOR.casey, "acceptDeal", { oppId });
     const theirs = await found(ctx, "dana");
     eq(theirs.length, 1, "Northline still has one, so Dana still has an overlap");
     eq(json(theirs[0].invIds), json([second]), "and it is the copy that is actually free");

@@ -156,8 +156,13 @@ export const isKnownStage = (stage) =>
   Object.prototype.hasOwnProperty.call(STAGE_LABEL, text(stage) || "");
 
 /* A binder copy's status is the server's answer, carried on the row. */
+/* WHAT A COLLECTOR IS TOLD ABOUT A CARD THE SHOP IS WORKING ON (Option B).
+   `pending` reaches a Collector only for a copy in THEIR OWN deal — the
+   projection derives it from their own opportunities, so somebody else's
+   pending copy arrives as `unavailable` and never names the deal behind it. */
 export const STATUS_LABEL = Object.freeze({
   available: "Available",
+  pending: "Pending for your deal",
   reserved: "Reserved",
   committed: "Committed",
   traded: "Traded",

@@ -144,8 +144,14 @@ export const isKnownStage = (stage) =>
   Object.prototype.hasOwnProperty.call(STAGE_LABEL, text(stage) || "");
 
 /* The same principle for a copy's status, which is also the server's answer. */
+/* `pending` IS THE ONE A PARTNER CHOOSES (Option B). Every other word here
+   describes something that happened to a copy; this one describes something
+   the shop decided — they are working toward a deal on this exact card and
+   would rather not start another conversation about it. It is released the
+   same way it was set. */
 export const STATUS_LABEL = Object.freeze({
   available: "Available",
+  pending: "Pending",
   committed: "Committed",
   reserved: "Reserved",
   sold: "Sold",

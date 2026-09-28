@@ -757,7 +757,9 @@ describe("F. the boundaries hold", () => {
       "updateInventoryCopy", "removeInventoryCopy",
     ].sort()), "C3.5 changed the production surface");
     eq(EXPOSED_COMMANDS.length, 18);
-    eq(C.COMMAND_NAMES.length, 49, "a command was added or removed");
+    /* 49 → 50 in Option B (`setCopyPending`). What this line guards is the
+       door above, which has not moved: the new command is not exposed. */
+    eq(C.COMMAND_NAMES.length, 50, "a command was added or removed");
   });
 
   test("C3.5 opened no door — the whole file is what it was", () => {
@@ -805,14 +807,21 @@ describe("F. the boundaries hold", () => {
 
   test("the projection did not change: C3.5 renders what was already sent", () => {
     const { execFileSync } = require("child_process");
-    const at = (rev) => execFileSync("git", ["show", `${rev}:domain/metyet-projection.js`],
+    const at = (rev, rel) => execFileSync("git", ["show", `${rev}:${rel}`],
       { cwd: ROOT, encoding: "utf8" });
-    eq(at("aef60e4"), read("domain/metyet-projection.js"),
-      "the projection changed in a batch that promised not to touch it");
-    /* And the discovery derivation is untouched too. */
-    eq(execFileSync("git", ["show", "aef60e4:domain/metyet-discovery.js"],
-      { cwd: ROOT, encoding: "utf8" }), read("domain/metyet-discovery.js"),
-    "the discovery rule changed");
+    /* BOTH ENDS ARE NAMED, AND THAT IS THE FIX (the C7.1 lesson).
+       This read `at("aef60e4")` against the WORKING TREE, which asks "has the
+       projection changed since C3.5's base" — true on the day C3.5 merged and
+       false for every later batch that touches the file, whatever C3.5 did.
+       Option B is the first batch to touch it, and the pin went red for a
+       change C3.5 knows nothing about. What C3.5 actually claims is that IT
+       changed neither file, and that is a statement about two commits: its own
+       base and its own head. It is now asked that way, and it is true for
+       ever. */
+    const C35 = Object.freeze({ from: "aef60e4", to: "97fdba3" });   // base · merge of PR #70
+    for (const rel of ["domain/metyet-projection.js", "domain/metyet-discovery.js"]) {
+      eq(at(C35.from, rel), at(C35.to, rel), `C3.5 changed ${rel}`);
+    }
   });
 
   test("a binder is still the Collector's alone", async () => {

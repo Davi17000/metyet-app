@@ -565,12 +565,15 @@ describe("Inventory ownership is scoped, not assumed", () => {
     /* PHASE 1: a runtime copy's owner is set at the command boundary from the
        acting partner — the component cannot name another owner. */
     const cmd = require("fs").readFileSync(require("path").join(__dirname, "..", "domain", "metyet-commands.js"), "utf8");
-    /* The window widened in Batch 6: the command gained the canonical-card
-       reference and the grade/condition checks, which pushed the ownership line
-       past the old 700 characters. What is being asserted is unchanged — a
-       runtime copy's owner comes from the acting partner and from nowhere a
-       caller can reach. */
-    const add = cmd.slice(cmd.indexOf("addInventoryCopy(state"), cmd.indexOf("addInventoryCopy(state") + 1600);
+    /* THE WINDOW IS NOW THE FUNCTION, NOT A BYTE COUNT. It was 700 characters,
+       then 1600, and each time a comment was added inside the command the pin
+       went red for a reason that had nothing to do with what it asserts. A
+       range that any sentence can break is a pin that has to be re-tuned rather
+       than trusted, so this reads from the command to the next one. What is
+       being asserted is unchanged — a runtime copy's owner comes from the
+       acting partner and from nowhere a caller can reach. */
+    const from = cmd.indexOf("addInventoryCopy(state");
+    const add = cmd.slice(from, cmd.indexOf("updateInventoryCopy(state", from));
     assert(/partnerId: a\.partnerId/.test(add), "runtime copies are owned too");
   });
 });
@@ -1124,7 +1127,11 @@ describe("Progressive deal receipt", () => {
   test("10. the stage comes only from the canonical opportunity", () => {
     const src = require("fs").readFileSync(
       require("path").join(__dirname, "..", "domain", "metyet-domain.js"), "utf8");
-    const fn = src.slice(src.indexOf("function receiptForOpportunity"));
+    /* OPTION B: bounded at the function's real extent. Unbounded, this ran to the
+       end of the file and read every later declaration and comment as if it were
+       receipt code. */
+    const fn = src.slice(src.indexOf("function receiptForOpportunity"),
+      src.indexOf("CONVERSATIONS"));
     assert(/RECEIPT_STAGES\.indexOf\(o\.stage\)/.test(fn), "read from o.stage");
     assert(!/goal\.|receiptStage|receiptStatus/.test(fn), "never from a goal or a stored status");
   });
@@ -1137,7 +1144,8 @@ describe("Progressive deal receipt", () => {
     });
     const src = require("fs").readFileSync(
       require("path").join(__dirname, "..", "domain", "metyet-domain.js"), "utf8");
-    const fn = src.slice(src.indexOf("function receiptForOpportunity"));
+    const fn = src.slice(src.indexOf("function receiptForOpportunity"),
+      src.indexOf("CONVERSATIONS"));   // OPTION B: see 10 — bounded, not to end of file
     assert(!/\bset[A-Z]|\.push\(|store\.set/.test(fn), "the projection mutates nothing");
   });
 

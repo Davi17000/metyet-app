@@ -278,6 +278,15 @@ function validateWorld(state) {
     if (!blank(i.archived) && typeof i.archived !== "boolean") {
       report("field.invalid", `${path}.archived`, `${who}.archived must be true or false.`);
     }
+    /* OPTION B: pendingFor is deliberately allowed to go STALE — it names an
+       opportunity that may since have ended, and copyPendingFor derives
+       Available from that without a sweep. So this checks the shape only, never
+       that the opportunity is live. A bootstrap or import carrying a number, or
+       a partner's id by mistake, would otherwise be stored unremarked. */
+    if (!blank(i.pendingFor) && !isId(i.pendingFor)) {
+      report("field.invalid", `${path}.pendingFor`,
+        `${who}.pendingFor must be an opportunity id or blank.`);
+    }
   }
   for (const [b, path] of C.collectorCopies) {
     const who = `CollectorCopy "${b.id}"`;
@@ -463,7 +472,14 @@ function validateWorld(state) {
         report("ref.identity-mismatch", `${path}.invId`,
           `${who} names a canonical card, but copy "${o.invId}" names a catalogue card; the two are not comparable.`);
       }
-      if (active && o.agreedPrice != null) hold(holders.committed, o.invId, o.id);
+      /* OPTION B: a settled VALUE is not a promise, so it no longer holds the
+         copy here either. This predicate must stay identical to
+         INVARIANTS.copyCommittedTo — it was left on `agreedPrice != null` when
+         that moved, which made the batch's own headline story unstorable: two
+         collectors agreeing a value on one copy is legal in the domain and was
+         rejected here, so the second acceptPrice raised invalidNextWorld
+         instead of simply succeeding. */
+      if (active && D.finalAgreementGiven(o)) hold(holders.committed, o.invId, o.id);
       if (D.isCompleted(o)) hold(holders.sold, o.invId, o.id);
     }
 
