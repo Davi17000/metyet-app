@@ -522,6 +522,107 @@ function createCatalogRepository(db, { newId } = {}) {
       return rows.map((r) => byKey.get(r.natural_key)).filter(Boolean);
     },
 
+    /* ---------------------------------------- WHICH CARD IS THIS? (Phase 5 C8)
+
+       The question an inventory row asks, and the one the catalog could not be
+       asked until now. `findCardContexts` is a BROWSE: it matches a card name by
+       substring, has no collector-number filter at all, pages at a hundred, and
+       answers with contexts rather than printings. That is right for a person
+       typing "zard" and wrong for a spreadsheet row that means one exact card.
+
+       KEYED THE WAY THE WRITE KEYS, for the same reason `knownExpansionCodes`
+       is. An importer that matched on the `card_name` COLUMN would disagree with
+       `putCardContext` about capitalisation, because the key folds the name and
+       the column does not. So this asks by `cardContextNaturalKey` — the
+       catalog's own identity, asked a new question, not a second answer to an
+       old one.
+
+       IT RETURNS EVERY CANDIDATE AND CHOOSES NOTHING. The discriminator is part
+       of the context key and a caller reading a CSV does not have one, so more
+       than one context can match a release, a number and a name. That is a real
+       ambiguity in the source and resolving it silently — taking the first, or
+       preferring the one with fewer printings — would be inventing certainty the
+       row does not carry. So both come back and the caller must decide it cannot
+       proceed. Same for the printings underneath: all the ACTIVE ones, in the
+       catalog's own order, filtered by nobody here.
+
+       A WITHDRAWN PRINTING IS NOT A CANDIDATE. `status = 'active'` matches
+       `readCardContext` and `findSelectableCanonicalCard`, which is what
+       `addInventoryCopy` will check anyway — offering one here would be
+       offering a card the write is about to refuse. */
+    async findCardIdentity({ game = "pokemon", expansionCode, collectorNumber, cardName } = {}) {
+      const code = text(expansionCode);
+      const number = text(collectorNumber);
+      const name = text(cardName);
+      if (!code || !number || !name) return { expansion: null, contexts: [] };
+
+      /* An unknown game is a caller's mistake, and `expansionNaturalKey` throws
+         on one. Caught here so this read keeps its own contract — an empty
+         answer — rather than throwing out of a caller that is asking a question,
+         not making a claim. */
+      let expansionKey;
+      try { expansionKey = CI.expansionNaturalKey({ game, code }); }
+      catch (error) { return { expansion: null, contexts: [] }; }
+      const expansions = await read(
+        `select expansion_id, game, code, natural_key, name, series, release_date, printed_total
+         from metyet_catalog.expansions where natural_key = $1`, [expansionKey]);
+      if (!expansions.length) {
+        /* WHAT A CALLER ALMOST ALWAYS HAS INSTEAD (Phase 5 C8). A shop's file
+           says "Base Set", not "BASE1", and "no such release" is a true but
+           unhelpful answer when the catalog holds that release under its name.
+           So a miss on the code looks once by name and hands back what it found,
+           as a SUGGESTION and never as a match — resolving it here would be this
+           read choosing a release on a caller's behalf. */
+        const named = await read(
+          `select code, name from metyet_catalog.expansions
+           where lower(name) = $1 or lower(code) = $1 limit 5`, [code.toLowerCase()]);
+        return { expansion: null, contexts: [],
+          couldMean: named.map((r) => ({ code: r.code, name: r.name })) };
+      }
+      const expansion = expansionRow(expansions[0]);
+
+      /* Every discriminator the catalog holds for this release, number and name.
+         Built as keys rather than as a `where` on three columns so that the
+         folding rule lives in one place — the domain — and this cannot drift
+         from it. The empty discriminator is the ordinary case; the rest exist
+         only where a release genuinely reuses a number and a name. */
+      const rows = await read(
+        `select card_context_id, natural_key, expansion_id, collector_number, card_name,
+                discriminator, artist, rarity, supertype, subtypes, pokedex_numbers
+         from metyet_catalog.card_contexts
+         where expansion_id = $1 and collector_number = $2 and lower(card_name) = $3
+         order by discriminator`,
+        [expansion.expansionId, number, name.toLowerCase()]);
+
+      const contexts = [];
+      for (const r of rows) {
+        /* Asked and answered in the same currency: the row must be the one the
+           key names, or the folding rule has drifted and this read is lying. */
+        const key = CI.cardContextNaturalKey({
+          game, expansionId: r.expansion_id, collectorNumber: r.collector_number,
+          cardName: r.card_name, discriminator: r.discriminator,
+        });
+        /* A ROW WHOSE KEY DOES NOT MATCH ITS OWN COLUMNS IS A LYING READ, and
+           the first draft answered a lying read by dropping the row and saying
+           nothing — which could turn a genuine ambiguity into a confident single
+           match. Unreachable for anything `putCardContext` wrote, and if the
+           folding rule ever changes it becomes reachable for every old row at
+           once. So it throws: a caller that cannot be answered correctly must
+           not be answered at all. */
+        if (key !== r.natural_key) {
+          throw new Error(`catalog: card context ${r.card_context_id} does not match its own `
+            + `natural key, so identity cannot be resolved against it`);
+        }
+        const cards = await read(
+          `select ${CARD_COLUMNS} from metyet_catalog.canonical_cards
+           where card_context_id = $1 and status = 'active'
+           order by print_run, finish, language, stamp, print_variation`,
+          [r.card_context_id]);
+        contexts.push({ context: contextRow(r), cards: cards.map(cardRow) });
+      }
+      return { expansion, contexts };
+    },
+
     async readExpansion(expansionId) {
       const rows = await read(`select expansion_id, game, code, natural_key, name, series,
         release_date, printed_total from metyet_catalog.expansions where expansion_id = $1`,

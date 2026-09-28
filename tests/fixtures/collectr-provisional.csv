@@ -1,0 +1,23 @@
+Item ID,Card Name,Set Code,Card Number,Language,Edition,Foil,Quantity,Grader,Grade,Condition,Cert Number,Listed Price,Purchase Price,Collection,Market Value,Last Updated,Image URL,Notes
+CLR-0001,Charizard,BASE1,4,English,Unlimited,Holo,1,PSA,9,,70551201,"4,200.00","3,276.00",Vintage Holos,4150.00,2026-09-01,https://example.test/a.png,pulled 1999
+CLR-0002,Blastoise,BASE1,2,English,Unlimited,Holo,1,,,NM,,620,505,Vintage Holos,610.00,2026-09-01,,
+CLR-0003,Alakazam,BASE1,1,English,1st Ed,Holo,2,PSA,8,,,$900,720,Vintage Holos,880.00,2026-09-02,,two of these
+CLR-0004,Machamp,BASE1,8,English,Shadowless,Holo,1,,,LP,,240,,Vintage Holos,235.00,2026-09-02,,
+CLR-0005,Charizard,BASE1,4,English,,Holo,1,,,NM,,3100,,Vintage Holos,3050.00,2026-09-03,,edition not recorded
+CLR-0006,Mudkip,BASE1,63,English,Unlimited,Normal,1,,,NM,,15,,Bulk,14.00,2026-09-03,,
+CLR-0007,Pikachu,NOSUCHSET,58,English,Unlimited,Normal,1,,,NM,,1450,,Vintage,1400.00,2026-09-03,,
+CLR-0008,Notacard,BASE1,999,English,Unlimited,Holo,1,,,NM,,10,,Bulk,9.00,2026-09-04,,
+CLR-0009,,BASE1,15,English,Unlimited,Holo,1,,,NM,,780,,Vintage Holos,770.00,2026-09-04,,name missing
+CLR-0010,Venusaur,BASE1,,English,Unlimited,Holo,1,,,NM,,780,,Vintage Holos,770.00,2026-09-04,,number missing
+CLR-0011,Venusaur,BASE1,15,English,Unlimited,Holo,1,BGS,9.5,,0012345,780,,Vintage Holos,770.00,2026-09-05,,BGS cannot be held
+CLR-0012,Venusaur,BASE1,15,English,Unlimited,Rainbow Secret,1,,,NM,,780,,Vintage Holos,770.00,2026-09-05,,unknown foil word
+CLR-0013,Venusaur,BASE1,15,English,Unlimited,Holo,1,,,NM,,"nine hundred",,Vintage Holos,770.00,2026-09-05,,price is words
+CLR-0014,Venusaur,BASE1,15,English,Unlimited,Holo,0,,,NM,,780,,Vintage Holos,770.00,2026-09-06,,quantity zero
+CLR-0015,Venusaur,BASE1,15,English,Unlimited,Holo,1,PSA,9,NM,70551203,780,,Vintage Holos,770.00,2026-09-06,,graded AND a condition
+CLR-0016,Venusaur,BASE1,15,English,Unlimited,Holo,1,,,=SUM(A1:A9),,780,,Vintage Holos,770.00,2026-09-06,,formula in a cell
+CLR-0017,"Farfetch'd, Lost",BASE1,27,English,Unlimited,Normal,1,,,NM,,30,,Bulk,28.00,2026-09-07,,"comma, and an apostrophe"
+CLR-0018,Mudkip,BASE1,63,English,Unlimited,Normal,3,,,NM,,15,,Bulk,14.00,2026-09-07,,three copies
+CLR-0019,Mudkip,BASE1,63,Klingon,Unlimited,Normal,1,,,NM,,15,,Bulk,14.00,2026-09-07,,unknown language
+CLR-0020,Blastoise,BASE1,2,English,Unlimited,Holo,1,,,Mint Condition,,620,,Vintage Holos,610.00,2026-09-08,,unknown condition word
+CLR-0021,Machamp,BASE1,8,English,Shadowless,Holo,2,PSA,9,,70551204,240,,Vintage Holos,235.00,2026-09-08,,"two copies, one cert number"
+CLR-0022,Mudkip,BASE1,63,English,Unlimited,Normal,1,,,NM,70551205,15,,Bulk,14.00,2026-09-08,,a cert on a raw card

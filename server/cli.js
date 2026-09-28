@@ -49,6 +49,8 @@ const fs = require("fs");
 const { createCatalogRepository } = require("../persistence/catalog-repository.js");
 const { systemRuntime } = require("../domain/metyet-runtime.js");
 const { importCatalog, exitCodeFor, EXIT } = require("./catalog/import.js");
+const { plan: planInventory, apply: applyInventory, createMapper } = require("./inventory/import.js");
+const { templateNames, readTemplate } = require("./inventory/templates.js");
 
 const USAGE = `MetYet operator commands
 
@@ -68,6 +70,9 @@ const USAGE = `MetYet operator commands
   node server/cli.js register-partner [--url=<server>] [--token-file=<path>]
   node server/cli.js view [--url=<server>] [--token-file=<path>]
   node server/cli.js catalog-import --provider=<name> --vocabulary=<path> --records=<path> [--dry-run] [--limit=<n>]
+  node server/cli.js inventory-templates
+  node server/cli.js inventory-columns --csv=<path> [--template=<name>] [--mapping=<path>]
+  node server/cli.js inventory-import --partner=<id> --csv=<path> [--template=<name>] [--mapping=<path>] [--approve] [--limit=<n>]
 
 The database is read from DATABASE_URL (and DATABASE_SSL, DATABASE_CA_CERT or
 DATABASE_CA_CERT_FILE, DATABASE_POOL_MAX); auth-check and sign-in read SUPABASE_URL and
@@ -79,6 +84,14 @@ source records some approved provider produced. It talks to no provider, opens n
 and takes no credential — the records are already on disk when it runs. It exits 3 when it
 completed but quarantined or rejected something, which is not a failure and is not a clean
 success either.
+
+inventory-import takes a Trusted Partner's own inventory CSV and a mapping that says what
+its columns mean, and reports which rows resolve to a card MetYet's catalog already holds.
+Without --approve it writes nothing at all: preview and import are two invocations, not a
+flag, because a flag is one typo away from a shelf nobody agreed to. The partner comes from
+--partner and never from the file. It exits 3 when it previewed or imported but could not
+resolve every row, which is not a failure — with a thin catalog it is the expected answer
+and the useful evidence.
 
 Nothing here starts a server. auth-check and sign-in contact the identity provider — to
 ask it a question, and to ask it to email one person a code — and neither changes anything
@@ -175,7 +188,12 @@ function parseFlags(argv) {
 /* Commands that talk to the identity provider rather than the database, and so
    must not demand DATABASE_URL to run: an operator configuring Supabase has not
    necessarily configured Postgres yet, and should not have to. */
-const WITHOUT_DATABASE = new Set(["auth-check", "sign-in", "register-partner", "view"]);
+/* `inventory-templates` and `inventory-columns` are here because neither can
+   reach a card or a shelf: the first prints configuration, the second reads one
+   file's headers. A verb that cannot write should not be handed a database to
+   write with, and running them needs no DATABASE_URL at all. */
+const WITHOUT_DATABASE = new Set(["auth-check", "sign-in", "register-partner", "view",
+  "inventory-templates", "inventory-columns"]);
 
 /* The operator operations. Named so it is never confused with the domain's
    command layer: nothing here authors canonical state. */
@@ -413,7 +431,224 @@ const OPERATIONS = {
     reportImport(summary, say);
     return exitCodeFor(summary);
   },
+
+  /* ------------------------------ THE SHOP'S OWN FILE (Phase 5 C8)
+
+     A Trusted Partner already has their inventory somewhere. These three verbs
+     are how MetYet does the translating instead of asking them to rewrite it.
+
+     THREE VERBS BECAUSE THERE ARE THREE QUESTIONS, and separating them is what
+     makes a mistake hard. `inventory-templates` says what shapes MetYet knows.
+     `inventory-columns` says what a particular file's headers came out as under
+     a particular mapping, and touches no card and no shelf. `inventory-import`
+     resolves every row against the catalog and reports it — and writes only when
+     told to in a separate word.
+
+     WHY --approve AND NOT --dry-run. `catalog-import` defaults to writing and
+     takes `--dry-run` to hold back, which is right for a file MetYet produced
+     from a vocabulary MetYet owns. This file is somebody else's and the mapping
+     is a guess until a person has read a preview, so the default is the safe one
+     and the dangerous one has to be asked for. A run without `--approve` is
+     handed no repository at all, so it could not write if it wanted to. */
+  async "inventory-templates"(context, flags, say) {
+    for (const name of templateNames()) {
+      const t = readTemplate(name);
+      say(`${name}${t.provisional ? "  (PROVISIONAL)" : ""}`);
+      say(`  name:      ${t.name}`);
+      if (t.note) say(`  note:      ${t.note}`);
+      const mapped = Object.entries(t.columns).filter(([, h]) => h);
+      say(`  columns:   ${mapped.length} mapped, `
+        + `${Object.entries(t.columns).filter(([, h]) => !h).length} declared absent`);
+      if ((t.ignore || []).length) say(`  ignores:   ${t.ignore.join(", ")}`);
+    }
+    return EXIT.clean;
+  },
+
+  async "inventory-columns"(context, flags, say) {
+    const made = buildMapper(flags, say);
+    if (!made.mapper) return made.exit;
+    const csv = readTextFile(flags.csv, "csv", say);
+    if (csv.error) return csv.error;
+    const { parseCsv } = require("./inventory/mapping.js");
+    const { headers, rows } = parseCsv(csv.text);
+    const columns = made.mapper.columnsFor(headers);
+    say(`template:    ${made.mapper.template.name}`
+      + `${made.mapper.template.provisional ? "  (PROVISIONAL — not an authoritative schema)" : ""}`);
+    say(`rows:        ${rows.length}`);
+    reportColumns(columns, say);
+    /* An unmapped header is not a failure and not a success: it is a file MetYet
+       has not been told how to read, and somebody has to decide. */
+    return columns.unread.length || columns.missing.length || columns.duplicated.length
+      ? EXIT.quarantine : EXIT.clean;
+  },
+
+  async "inventory-import"({ db, repository }, flags, say) {
+    const partnerId = typeof flags.partner === "string" ? flags.partner.trim() : "";
+    if (!partnerId) { say("inventory-import needs --partner=<trusted partner id>"); return EXIT.invalid; }
+    const made = buildMapper(flags, say);
+    if (!made.mapper) return made.exit;
+    const csv = readTextFile(flags.csv, "csv", say);
+    if (csv.error) return csv.error;
+    let limit = null;
+    if (flags.limit !== undefined) {
+      limit = Number(flags.limit);
+      if (!Number.isInteger(limit) || limit <= 0) { say("--limit must be a positive whole number"); return EXIT.invalid; }
+    }
+    const approve = flags.approve === true || flags.approve === "true";
+
+    const catalog = createCatalogRepository(db, { newId: systemRuntime().newId });
+    let made2;
+    try {
+      /* The world is read once, to say what the shelf already holds — which is
+         how a re-run is visible BEFORE it happens, given that an inventory copy
+         has no natural key and re-running genuinely duplicates. */
+      const world = await repository.loadWorld();
+      made2 = await planInventory({ csv: csv.text, mapper: made.mapper, catalog,
+        partnerId, world, limit });
+    } catch (error) {
+      say(`failed:      ${safeMessage(error)}`);
+      return EXIT.failure;
+    }
+
+    reportPlan(made2, say);
+    if (!approve) {
+      say(`mode:        preview  (nothing was written; add --approve to import)`);
+      return exitCodeForPlan(made2);
+    }
+    if (!made2.importable.length) {
+      say(`mode:        approved, but no row resolved — nothing to write`);
+      return exitCodeForPlan(made2);
+    }
+    let result;
+    try {
+      result = await applyInventory({ plan: made2, repository,
+        runtime: systemRuntime(), partnerId });
+    } catch (error) {
+      say(`failed:      ${safeMessage(error)}  (one transaction — nothing was written)`);
+      return EXIT.failure;
+    }
+    if (result.refused) {
+      say(`refused:     ${result.refused.reason}`
+        + `${result.refused.line ? ` at line ${result.refused.line}` : ""}`
+        + `  (one transaction — nothing was written)`);
+      return EXIT.failure;
+    }
+    say(`mode:        imported`);
+    say(`written:     ${result.written} cop${result.written === 1 ? "y" : "ies"}`
+      + `  (world version ${result.version})`);
+    return exitCodeForPlan(made2);
+  },
 };
+
+/* A mapping is either a template MetYet has written down or a JSON file for a
+   shape nobody has yet. Never both, because then one of them is being ignored. */
+function buildMapper(flags, say) {
+  const named = typeof flags.template === "string" ? flags.template.trim() : "";
+  const path = typeof flags.mapping === "string" ? flags.mapping.trim() : "";
+  if (named && path) {
+    say("give either --template=<name> or --mapping=<path>, not both");
+    return { exit: EXIT.invalid };
+  }
+  if (!named && !path) {
+    say(`give --template=<name> (${templateNames().join(", ")}) or --mapping=<path to a JSON mapping>`);
+    return { exit: EXIT.invalid };
+  }
+  let template;
+  if (named) {
+    template = readTemplate(named);
+    if (!template) {
+      say(`no template called "${named}" — known: ${templateNames().join(", ")}`);
+      return { exit: EXIT.invalid };
+    }
+  } else {
+    /* PARSED, NEVER REQUIRED, exactly as catalog-import reads its vocabulary:
+       `require` on a path an operator passed is arbitrary code execution wearing
+       a configuration flag. */
+    const file = readTextFile(path, "mapping", say);
+    if (file.error) return { exit: file.error };
+    try { template = JSON.parse(file.text); } catch (error) {
+      say(`mapping:     could not be read as JSON — ${safeMessage(error)}`);
+      return { exit: EXIT.failure };
+    }
+  }
+  try {
+    return { mapper: createMapper({ template }) };
+  } catch (error) {
+    say(`mapping:     ${safeMessage(error)}`);
+    return { exit: EXIT.invalid };
+  }
+}
+
+function readTextFile(path, label, say) {
+  if (typeof path !== "string" || !path.trim()) {
+    say(`inventory commands need --${label}=<path>`);
+    return { error: EXIT.invalid };
+  }
+  try { return { text: fs.readFileSync(path.trim(), "utf8") }; } catch (error) {
+    say(`${label}:${" ".repeat(Math.max(1, 12 - label.length - 1))}could not be read — ${safeMessage(error)}`);
+    return { error: EXIT.failure };
+  }
+}
+
+function reportColumns(columns, say) {
+  say(`mapped:      ${columns.mapped.length}`);
+  for (const { header, field } of columns.mapped) say(`  ${header}  ->  ${field}`);
+  if (columns.ignored.length) say(`ignored:     ${columns.ignored.join(", ")}`);
+  /* Labelled `unread`, not the other word. C4 pinned that this file prints no
+     counter under that label, because C4 had one that nothing could compute
+     honestly. This is a list of headers rather than a transition count — but the
+     pin is right that the label is taken, so the label changes. */
+  if (columns.unread.length) say(`unread:      ${columns.unread.join(", ")}  (nothing reads these)`);
+  if (columns.duplicated.length) {
+    say(`duplicated:  ${columns.duplicated.map((d) => `${d.header} x${d.count}`).join(", ")}`
+      + `  (one column per field — map the file's columns explicitly)`);
+  }
+  if (columns.missing.length) {
+    say(`missing:     ${columns.missing.map((m) => `${m.header} (${m.field})`).join(", ")}`
+      + `  (the mapping expects these and the file has none)`);
+  }
+}
+
+/* A count, a reason, and — for the rows that did NOT import — the detail that
+   says why, which does quote what the cell said and sometimes the card's name.
+   That is deliberate and it is the difference between a report an operator can
+   act on and a number they have to go hunting behind. It is bounded: the
+   IMPORTED rows are never listed, so a successful run prints no card names, no
+   prices and no certs, and the rejected list is capped. An earlier draft of this
+   comment claimed no card name or price is ever printed, which was false of the
+   line directly beneath it. */
+function reportPlan(made, say) {
+  say(`template:    ${made.template.name}`
+    + `${made.template.provisional ? "  (PROVISIONAL — not an authoritative schema)" : ""}`);
+  say(`partner:     ${made.partnerId}`);
+  reportColumns(made.columns, say);
+  say(`rows:        ${made.counts.rows}${made.skipped ? `, ${made.skipped} not read (--limit)` : ""}`);
+  say(`importable:  ${made.counts.importable} row${made.counts.importable === 1 ? "" : "s"}`
+    + ` -> ${made.counts.copies} cop${made.counts.copies === 1 ? "y" : "ies"}`);
+  say(`unresolved:  ${made.counts.unresolved}`);
+  say(`ambiguous:   ${made.counts.ambiguous}`);
+  say(`invalid:     ${made.counts.invalid}`);
+  const why = Object.entries(made.counts.reasons).sort((a, b) => b[1] - a[1])
+    .map(([reason, n]) => `${reason} x${n}`).join(", ");
+  if (why) say(`reasons:     ${why}`);
+  /* THE LINES, SO A PERSON CAN LOOK. Capped, because a report is not a file. */
+  const shown = made.rejected.slice(0, 20);
+  for (const row of shown) say(`  line ${row.line}: ${row.klass} — ${row.reason}: ${row.detail}`);
+  if (made.rejected.length > shown.length) {
+    say(`  ... and ${made.rejected.length - shown.length} more`);
+  }
+  /* A re-run duplicates, because an inventory copy has no natural key. Said
+     before the write, not after. */
+  const dup = made.importable.filter((r) => r.alreadyOnShelf > 0);
+  if (dup.length) {
+    say(`already held: ${dup.length} of these cards are on this shelf already`
+      + `  (importing adds MORE copies; there is no de-duplication)`);
+  }
+}
+
+const exitCodeForPlan = (made) =>
+  (made.counts.unresolved || made.counts.ambiguous || made.counts.invalid
+    || made.columns.unread.length || made.columns.duplicated.length) ? EXIT.quarantine : EXIT.clean;
 
 /* The run, in the aligned shape every other operator command uses. No record
    is printed and no payload: a summary says how many and why, and the queue
