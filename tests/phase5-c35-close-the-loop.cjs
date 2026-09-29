@@ -772,8 +772,16 @@ describe("F. the boundaries hold", () => {
          Listed here because this pin reads the LIVE allow-list: it states the
          product's surface today, not a fossil of the batch that wrote it. */
       "reviewCopy", "endReview", "requestPhotos",
+      /* AND THE ONE PHOTO FULFILMENT ADDED. `addCopyPhotos` is the only command
+         that closes a photo request; the qualification batch shipped Request
+         Photos without it, so a Collector could ask and no shop could answer.
+         It is refused unless the caller's own seat is the Trusted Partner that
+         OWNS the copy, it fills empty faces without being able to rewrite
+         evidence in a live deal, and it changes no price, availability or
+         Pending. Listed here because this pin reads the LIVE allow-list. */
+      "addCopyPhotos",
     ].sort()), "C3.5 changed the production surface");
-    eq(EXPOSED_COMMANDS.length, 21);
+    eq(EXPOSED_COMMANDS.length, 22);
     /* 49 → 50 in Option B (`setCopyPending`). What this line guards is the
        door above, which has not moved: the new command is not exposed. */
     eq(C.COMMAND_NAMES.length, 50, "a command was added or removed");

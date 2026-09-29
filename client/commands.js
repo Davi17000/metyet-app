@@ -433,3 +433,30 @@ export function requestCopyPhotos(target) {
   }
   return (invId) => target.execute("requestPhotos", { invId });
 }
+
+/* --------------------------------- PHOTO FULFILMENT (this batch)
+
+   THE OTHER HALF OF REQUEST PHOTOS. A Collector can ask a Trusted Partner to
+   show them a physical copy; this is the shop answering. It is the only command
+   that closes a photo request, and it belongs to the shop that owns the card —
+   the server checks that, not this file.
+
+   ADD MEANS FILL, NOT REPLACE. The domain merges by slot: a face this call does
+   not mention is left exactly as it was, and a face that already holds evidence
+   cannot be rewritten while the copy is in a live deal. So the caller sends
+   only the faces it is supplying, and sending none is a legitimate way to say
+   "what is already there is the answer".
+
+   A PHOTOGRAPH IS A REFERENCE. MetYet stores a string per face and has no
+   upload path anywhere in the product; inventing one is a different project
+   from closing this loop. */
+export function provideCopyPhotos(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("provideCopyPhotos: the production store is required");
+  }
+  return (invId, faces) => target.execute("addCopyPhotos", {
+    invId,
+    ...(faces && faces.front !== undefined ? { front: faces.front } : {}),
+    ...(faces && faces.back !== undefined ? { back: faces.back } : {}),
+  });
+}

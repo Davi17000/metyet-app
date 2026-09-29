@@ -636,13 +636,18 @@ describe("F. The screen, and the door it sends through", () => {
 /* ============================================= G. what did not move */
 describe("G. The boundary", () => {
   test("[39] the allow-list grew by exactly the three with a surface", () => {
-    eq(EXPOSED_COMMANDS.length, 21, "the production surface is not the size this batch declared");
+    /* RE-PINNED by photo fulfilment, which added the fourth: `addCopyPhotos`,
+       the only command that closes a photo request. This batch's own three are
+       still asserted below, and the transaction set is still shut. */
+    eq(EXPOSED_COMMANDS.length, 22, "the production surface is not the size this batch declared");
+    assert(EXPOSED_COMMANDS.includes("addCopyPhotos"),
+      "the shop lost its way to answer a request");
     for (const open of ["reviewCopy", "endReview", "requestPhotos"]) {
       assert(EXPOSED_COMMANDS.includes(open), `${open} has a control but no door`);
     }
     for (const shut of ["startOpportunity", "proposePrice", "acceptPrice", "acceptMarketValue",
       "acceptDeal", "proposeTradeSelection", "setCopyPending", "cancelOpportunity",
-      "proposeFulfillment", "confirmHandoff", "sendMessage", "setInterest", "addCopyPhotos"]) {
+      "proposeFulfillment", "confirmHandoff", "sendMessage", "setInterest"]) {
       assert(!EXPOSED_COMMANDS.includes(shut), `${shut} was exposed`);
     }
     eq(new Set(EXPOSED_COMMANDS).size, EXPOSED_COMMANDS.length, "a command is listed twice");
@@ -959,8 +964,11 @@ describe("I. Over HTTP, against the real server", () => {
 
   test("[57] the transaction is still unreachable from a browser", async () => {
     const { app } = await served();
+    /* `addCopyPhotos` is reachable since photo fulfilment; it is exercised as a
+       Trusted Partner in that batch's own suite. What must stay unreachable
+       from any browser is the transaction. */
     for (const shut of ["startOpportunity", "proposePrice", "acceptPrice", "acceptDeal",
-      "setCopyPending", "proposeTradeSelection", "confirmHandoff", "addCopyPhotos",
+      "setCopyPending", "proposeTradeSelection", "confirmHandoff",
       "sendMessage", "setInterest"]) {
       const res = await send(app, "casey", shut, {});
       eq(res.statusCode, 409, `${shut} reached the domain`);

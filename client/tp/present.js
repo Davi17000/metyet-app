@@ -119,6 +119,16 @@ export const cardMarks = (card) => (card
   ? [text(card.edition), text(card.print), text(card.language)].filter(Boolean)
   : []);
 
+/* WHAT EVIDENCE A COPY ALREADY CARRIES. The same sentence the Collector reads
+   about the same copy (see the Collector's `present.js`), so a shop and the
+   person waiting on them are never told two different things about one card. */
+export const photoNote = (photos) => {
+  if (!photos || typeof photos !== "object") return null;
+  const has = ["front", "back"].filter((side) => text(photos[side]));
+  if (!has.length) return null;
+  return has.length === 2 ? "Front and back" : (has[0] === "front" ? "Front only" : "Back only");
+};
+
 /* ---------------------------------------------------------------- LABELS */
 
 /* Canonical stage ids with the product's own words. Presentation for a value

@@ -210,6 +210,17 @@ const copyEditProtected = (state, invId) =>
    so a copy with no evidence at all read as fully photographed and the Collector
    was refused the chance to ask for any. */
 const photoRef = (v) => (typeof v === "string" && v !== "" ? v : null);
+/* WHAT A SHOP MAY SAY ABOUT A FACE. A reference, or `null` to say there is
+   none. Anything else is input nobody can store, and the answer to that is a
+   refusal — NOT a coercion. An adversarial run caught the coercion: it turned
+   `front: {}` from "junk masquerading as evidence" into "junk deleting
+   evidence", erasing a real photograph on a success. The length bound is here
+   because this is a newly exposed door and a reference is an address, not a
+   payload; `updateInventoryCopy` still has none, which is written down as debt
+   rather than fixed inconsistently in one place. */
+const FACE_MAX = 2048;
+const unusableFace = (v) => v !== undefined && v !== null
+  && !(typeof v === "string" && v !== "" && v.length <= FACE_MAX);
 const photographs = (value) => ({ front: photoRef(value && value.front),
   back: photoRef(value && value.back) });
 
@@ -754,8 +765,21 @@ const COMMANDS = {
   addCopyPhotos(state, a, { invId, front, back }, ctx) {
     const at = ctx.at;
     const copy = list(state.inventory).find((i) => i.invId === invId);
-    if (!copy) return refuse(R.notFound);
-    if (a.seat !== "tp" || copy.partnerId !== a.partnerId) return refuse(R.notOwner);
+    /* ONE ANSWER FOR "NOT A COPY OF YOURS", whether it belongs to another shop
+       or to nobody. The missing-copy check used to come FIRST and answer
+       `not-found`, so a shop could tell an id that exists somewhere from one
+       that exists nowhere — harmless while this command had no surface, and a
+       real leak the moment it got one. */
+    if (a.seat !== "tp") return refuse(R.notOwner);
+    if (!copy || copy.partnerId !== a.partnerId) return refuse(R.notOwner);
+    /* A CARD THE SHOP HAS TAKEN OFF ITS SHELF IS NOT ONE IT CAN ANSWER ABOUT.
+       `reviewCopy`, `requestPhotos`, `updateInventoryCopy` and
+       `removeInventoryCopy` all refuse an archived copy and this did not, so a
+       shop could mark every outstanding request FULFILLED on a card it had
+       withdrawn — and the requester, for whom an archived copy is not visible
+       at all, would never see the evidence the record now claims arrived. The
+       request staying open is the honest outcome. */
+    if (copy.archived) return refuse(R.copyUnavailable);
     /* THIS COMMAND IS NAMED "ADD" AND WAS NOT ONE. It merges by slot, so
        `front` given for a copy that already has a front REPLACES it, and
        `front: null` erases it — and until now it carried no deal guard at all,
@@ -765,10 +789,34 @@ const COMMANDS = {
        rewrites what was agreed. It now asks exactly what `updateInventoryCopy`
        asks, so fulfilling a Collector's photo request still works — that always
        fills an empty slot — while rewriting or erasing one does not. */
-    const photos = { front: front !== undefined ? front : (copy.photos || {}).front,
-      back: back !== undefined ? back : (copy.photos || {}).back };
-    if (protectedCopyEdit(state, invId, copy, {}, photos)) return refuse(R.copyCommitted);
-    const complete = D.INVARIANTS.copyPhotographed(photos);
+    /* WHAT IS SUPPLIED IS CHECKED; WHAT IS STORED IS LEFT ALONE.
+
+       Three separate jobs, and an adversarial run proved that doing them with
+       one expression gets two of them wrong.
+
+       CHECKED: a face this call names must be a reference or an explicit null.
+       Junk is refused outright, because the alternative — quietly coercing it —
+       erases whatever was there.
+
+       LEFT ALONE: a face this call does not name is carried across EXACTLY as
+       stored, junk included. Normalising the merged value silently deleted a
+       legacy non-string photograph while filling the other face, and that is
+       destroying data to tidy a field.
+
+       AND JUDGED SEPARATELY: whether the copy now counts as photographed, and
+       whether the guard sees a rewrite, are both asked of the NORMALISED view.
+       So a legacy junk face never closes a Collector's request by pretending to
+       be evidence, and never freezes the copy by reading as a rewrite of
+       itself — which is what it did before, leaving a request that could not be
+       answered at all. */
+    if (unusableFace(front) || unusableFace(back)) return refuse(R.photoUnusable);
+    const photos = {
+      front: front !== undefined ? front : (copy.photos || {}).front,
+      back: back !== undefined ? back : (copy.photos || {}).back,
+    };
+    if (protectedCopyEdit(state, invId, { ...copy, photos: photographs(copy.photos) },
+      {}, photographs(photos))) return refuse(R.copyCommitted);
+    const complete = D.INVARIANTS.copyPhotographed(photographs(photos));
     return done({ ...state,
       inventory: list(state.inventory).map((i) => (i.invId === invId ? { ...i, photos } : i)),
       photoRequests: list(state.photoRequests).map((r) => (r.invId === invId && !r.fulfilledAt

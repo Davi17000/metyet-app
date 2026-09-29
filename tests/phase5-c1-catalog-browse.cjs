@@ -796,6 +796,14 @@ describe("G. boundaries, and what did not change", () => {
          Listed here because this pin reads the LIVE allow-list: it states the
          product's surface today, not a fossil of the batch that wrote it. */
       "reviewCopy", "endReview", "requestPhotos",
+      /* AND THE ONE PHOTO FULFILMENT ADDED. `addCopyPhotos` is the only command
+         that closes a photo request; the qualification batch shipped Request
+         Photos without it, so a Collector could ask and no shop could answer.
+         It is refused unless the caller's own seat is the Trusted Partner that
+         OWNS the copy, it fills empty faces without being able to rewrite
+         evidence in a live deal, and it changes no price, availability or
+         Pending. Listed here because this pin reads the LIVE allow-list. */
+      "addCopyPhotos",
     ].sort()), "a door was opened that nobody declared");
     const browserCode = code("client/browse/CardBrowser.jsx");
     assert(!EXPOSED_COMMANDS.some((c) => browserCode.includes(c)),

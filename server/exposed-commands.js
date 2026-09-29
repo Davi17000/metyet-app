@@ -163,6 +163,22 @@ const EXPOSED_COMMANDS = Object.freeze([
      request made today is real, durable and correctly shown as outstanding,
      and the partner has no production door to answer it through yet. Exposing
      a command no screen can send would not fix that; the screen would. */
+  /* ------------------------------------ PHOTO FULFILMENT (this batch)
+
+     THE SHOP'S HALF OF REQUEST PHOTOS, and the reason the qualification batch
+     left a loop half open: `addCopyPhotos` is the only command that closes a
+     photo request, and it shipped without a surface, so a Collector could ask
+     and nobody could answer. This is that surface's door.
+
+     It is refused unless the caller's own seat is the Trusted Partner that OWNS
+     the copy — not a related one, not any other shop, never a Collector. It
+     fills empty faces and cannot rewrite or erase evidence inside a live deal,
+     because it asks the same mutation guard `updateInventoryCopy` asks. It
+     changes no price, no availability, no Pending, and creates no Opportunity:
+     the only things it touches are the copy's photographs and the
+     `fulfilledAt` of requests already outstanding against that copy. */
+  "addCopyPhotos",               // TP → Inventory, "Add requested photos"
+
   "reviewCopy",                  // Collector → Deal Flow, "Inspect"
   "endReview",                   // Collector → Deal Flow, "Done inspecting"
   "requestPhotos",               // Collector → Deal Flow, "Request photos"
