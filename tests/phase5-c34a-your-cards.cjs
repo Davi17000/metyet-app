@@ -238,7 +238,11 @@ describe("A. a card you own is called what the catalog calls it", () => {
       r = TR.create(React.createElement(SHELL,
         { state, onSignOut() {}, onBrowseCards: door, ...extra }));
     });
-    await press(r, "Your Cards");
+    /* TWO PRESSES (binders batch): Binders opens on the binder library, because
+       a tab called Binders should show binders, and the collection views are
+       one chip away. The shelf this suite is about is "All Cards". */
+    await press(r, "Binders");
+    await press(r, extra.view || "All Cards");
     return { r, calls, state };
   };
 
@@ -286,7 +290,8 @@ describe("A. a card you own is called what the catalog calls it", () => {
           find: async () => ({ contexts: [], total: 0 }), read: async () => null,
           expansions: async () => ({ expansions: [] }), artists: async () => ({ artists: [] }) } }));
     });
-    await press(r, "Your Cards");
+    await press(r, "Binders");
+    await press(r, "All Cards");
     const shown = texts(r);
     assert(/PSA 77/.test(shown), "the copy vanished with its caption: " + shown);
     assert(/PSA 9/.test(shown), "the copy's own grading vanished too: " + shown);
@@ -304,7 +309,8 @@ describe("B. the card is a heading; the copies are the records", () => {
     await TR.act(async () => {
       r = TR.create(React.createElement(SHELL, { state, onSignOut() {}, onBrowseCards: door }));
     });
-    await press(r, "Your Cards");
+    await press(r, "Binders");
+    await press(r, "All Cards");
     return r;
   };
 
@@ -313,7 +319,10 @@ describe("B. the card is a heading; the copies are the records", () => {
     await cards(ctx);
     const r = await showing(ctx);
     const shown = texts(r);
-    assert(/haven't recorded any cards yet/.test(shown), shown);
+    /* RE-PINNED: All Cards is wider than the old shelf, so its empty sentence
+       names the three ways a card gains meaning rather than only owning. The
+       owning-versus-offering claim moved to Trade/Sell, where it is true. */
+    assert(/Nothing has meaning yet/.test(shown), shown);
     assert(!/Offered only/.test(shown), "a filter was offered for an empty shelf");
   });
 
@@ -355,7 +364,7 @@ describe("B. the card is a heading; the copies are the records", () => {
     assert(!/PSA|Raw|Damaged/.test(head), "the heading carries a grading: " + head);
     /* And it does not source grading from the catalogue either. */
     assert(!/gradeLine\(known\)|gradeLine\(legacy\)|isGraded\(known\)/
-      .test(code("client/collector/sections/MyCards.jsx")),
+      .test(code("client/collector/sections/Collection.jsx")),
     "the shelf reads a copy's grading from a card description");
   });
 
@@ -383,7 +392,8 @@ describe("C. what you are offering is a filter, not a place", () => {
     await TR.act(async () => {
       r = TR.create(React.createElement(SHELL, { state, onSignOut() {}, onBrowseCards: door }));
     });
-    await press(r, "Your Cards");
+    await press(r, "Binders");
+    await press(r, "All Cards");
     return r;
   };
 
@@ -394,17 +404,24 @@ describe("C. what you are offering is a filter, not a place", () => {
     await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "Raw", condition: "Damaged", cert: "NO-1" });
     await own(ctx.app, "casey", { canonicalCardId: made.firstEdition, grade: "PSA 8", cert: "NO-2" });
 
+    /* RE-PINNED (binders batch). "Offered only" was a toggle on one screen;
+       Trade/Sell is one of four collection views, and you leave it by choosing
+       another rather than by pressing it twice. What it protects is unchanged
+       and is asserted in both directions below: the view shows exactly the
+       copies being offered, and nothing is lost by looking at it. */
     const r = await showing(ctx);
     assert(/YES-1/.test(texts(r)) && /NO-1/.test(texts(r)) && /NO-2/.test(texts(r)), "all three show first");
-    await press(r, "Offered only");
+    await press(r, "Trade/Sell");
     const filtered = texts(r);
     assert(/YES-1/.test(filtered), "the offered copy went missing: " + filtered);
     assert(!/NO-1/.test(filtered), "an unoffered copy of the same card survived the filter");
     assert(!/NO-2/.test(filtered), "an unoffered copy of another card survived the filter");
     assert(!/Charizard/.test(filtered), "a card with nothing offered kept its heading");
-    /* And it is a filter: pressing it again brings them back. */
-    await press(r, "Offered only");
-    assert(/NO-1/.test(texts(r)), "the filter was not reversible");
+    /* And nothing was lost: All Cards still has all three. */
+    await press(r, "All Cards");
+    const back = texts(r);
+    assert(/YES-1/.test(back) && /NO-1/.test(back) && /NO-2/.test(back),
+      "going back to All Cards lost a copy: " + back);
   });
 
   test("it writes nothing, and no Trade Binder exists anywhere", async () => {
@@ -413,7 +430,7 @@ describe("C. what you are offering is a filter, not a place", () => {
     await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "PSA 9", offered: true });
     const before = json(await load(ctx));
     const r = await showing(ctx);
-    await press(r, "Offered only");
+    await press(r, "Trade/Sell");
     eq(json(await load(ctx)), before, "filtering wrote something");
     const w = await load(ctx);
     assert(!("tradeBinders" in w) && !("tradeBinder" in w), "a Trade Binder was persisted");
@@ -438,7 +455,8 @@ describe("D. wanting a card you own is ordinary, and both are shown", () => {
     await TR.act(async () => {
       r = TR.create(React.createElement(SHELL, { state, onSignOut() {}, onBrowseCards: door }));
     });
-    await press(r, "Your Cards");
+    await press(r, "Binders");
+    await press(r, "All Cards");
     const shown = texts(r);
     assert(/HAVE-1/.test(shown), "the copy: " + shown);
     assert(/Actively hunting/.test(shown),
@@ -462,7 +480,8 @@ describe("E. the same specification capability, opened from the shelf", () => {
       r = TR.create(React.createElement(SHELL,
         { state, onSignOut() {}, onBrowseCards: door, onSpecify }));
     });
-    await press(r, "Your Cards");
+    await press(r, "Binders");
+    await press(r, "All Cards");
     return r;
   };
 
@@ -489,7 +508,7 @@ describe("E. the same specification capability, opened from the shelf", () => {
   });
 
   test("it is the one panel, handed the one callback — no second save grammar", () => {
-    const shelfCode = code("client/collector/sections/MyCards.jsx");
+    const shelfCode = code("client/collector/sections/Collection.jsx");
     assert(/CardSpecification/.test(shelfCode), "the shelf does not use the shared panel");
     /* A Collector surface may not name a command: it calls what it was handed. */
     for (const name of EXPOSED_COMMANDS) {
@@ -537,13 +556,31 @@ describe("F. reachable at last, and what that did not change", () => {
      exact four production sections in order, Your Cards keeps every claim it
      had, and DEFERRED_SECTIONS is pinned by name rather than only by length —
      so a section cannot be quietly parked there. */
-  test("Your Cards is in the navigation, and only Goals waits behind it", () => {
-    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "browse,binder,my-cards,partners,deal-flow");
+  test("Your Cards is no longer a destination, and its screen was not deleted", () => {
+    /* RE-PINNED (binders batch), AND THIS IS THE TEST THE BATCH IS ABOUT.
+
+       C3.4a promoted Your Cards out of DEFERRED_SECTIONS because a person could
+       finally use it. The true-match batch kept it as a temporary fifth tab
+       while Binders could not yet answer "what do I own" or "what am I
+       offering". Binders answers both now, as derived views, so the scaffold
+       comes down — and the screen goes with it only as a TAB. The component is
+       `sections/Collection.jsx`, composed by Binders once per view, which is
+       exactly the move C2 made when Trade Binder became Your Cards: one
+       concept, one file, a third name, nothing deleted. */
+    const ids = SHELL_MOD.SECTIONS.map((s) => s.id);
+    eq(ids.join(","), "browse,binder,partners,deal-flow", "the navigation is not the four");
+    assert(!ids.includes("my-cards"), "Your Cards is still a destination");
     eq(SHELL_MOD.DEFERRED_SECTIONS.map((s) => s.id).join(","), "goals",
-      "something else is deferred");
-    const mine = SHELL_MOD.SECTIONS.find((s) => s.id === "my-cards");
-    eq(mine.label, "Your Cards");
-    eq(mine.count, "collectorCopies", "it counts something other than its own collection");
+      "removing a tab must not quietly park it in the deferred list either");
+    const fs = require("fs");
+    const path = require("path");
+    assert(fs.existsSync(path.join(__dirname, "..", "client", "collector", "sections", "Collection.jsx")),
+      "the screen was deleted rather than composed");
+    assert(!fs.existsSync(path.join(__dirname, "..", "client", "collector", "sections", "MyCards.jsx")),
+      "the old name is still there too — one concept, one file");
+    const binder = fs.readFileSync(path.join(__dirname, "..", "client", "collector",
+      "sections", "Binder.jsx"), "utf8");
+    assert(/from "\.\/Collection\.jsx"/.test(binder), "Binders does not compose it");
   });
 
   /* SUPERSEDED AND RESTATED BY C3.4b. C3.4a's claim was that IT opened no door
@@ -579,7 +616,8 @@ describe("F. reachable at last, and what that did not change", () => {
       r = TR.create(React.createElement(SHELL_MOD.default,
         { state, onSignOut() {}, onBrowseCards: door }));
     });
-    await press(r, "Your Cards");
+    await press(r, "Binders");
+    await press(r, "All Cards");
     eq(json(await load(ctx)), before, "looking at your own cards wrote something");
     /* No Goal, so no overlap — looking at a card you own is not wanting it. */
     eq((await view(ctx.app, "casey")).discoveries.length, 0);

@@ -844,7 +844,7 @@ describe("G. what the product says", () => {
     /* COMMENTS ARE EXEMPT AND THAT IS THE POINT. C5 left several explaining why
        the name went; what must never come back is a sentence a person reads. */
     for (const rel of ["client/sign-in/SignIn.jsx", "client/collector/CollectorShell.jsx",
-      "client/collector/sections/MyCards.jsx", "client/collector/sections/TrustedPartners.jsx",
+      "client/collector/sections/Collection.jsx", "client/collector/sections/TrustedPartners.jsx",
       "client/collector/CardSpecification.jsx", "client/collector/sections/Binder.jsx"]) {
       assert(!/Trade Binder/i.test(code(rel)), `${rel} still shows "Trade Binder" to a person`);
     }

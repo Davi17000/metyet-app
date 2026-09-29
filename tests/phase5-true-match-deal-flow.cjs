@@ -486,8 +486,12 @@ describe("E. The surface shows the copies, and only those", () => {
     assert(ids.includes("deal-flow"), "Deal Flow is not a destination");
     const entry = SHELL.SECTIONS.find((s) => s.id === "deal-flow");
     eq(entry.label, "Deal Flow", "and it says so");
-    /* [32] and nothing useful was taken away to make room for it. */
-    for (const kept of ["browse", "binder", "my-cards", "partners"]) {
+    /* [32] and nothing useful was taken away to make room for it. `my-cards`
+       left the list a batch later, when Binders absorbed its views — its job
+       moved rather than disappearing, which is asserted in that batch's own
+       suite. What this line protects is that DEAL FLOW did not displace
+       anything, and the three destinations it arrived beside are still here. */
+    for (const kept of ["browse", "binder", "partners"]) {
       assert(ids.includes(kept), `${kept} was removed to make room`);
     }
   });

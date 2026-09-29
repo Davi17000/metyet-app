@@ -334,7 +334,11 @@ describe("A. the library", () => {
     ];
     await ctx.repository.saveWorld(stored);
     const { r } = await screen(ctx);
-    const said = texts(r);
+    /* Read from AFTER the view chips: the row says "My Binders · All Cards · …"
+       above the library, and an indexOf over the whole screen would find a chip
+       before it found a binder. */
+    const whole = texts(r);
+    const said = whole.slice(whole.indexOf("Your binders"));
     const order = ["Third", "Second", "First"].map((n) => said.indexOf(n));
     assert(order.every((i) => i >= 0), said);
     assert(order[0] < order[1] && order[1] < order[2], "not newest first: " + said);
@@ -345,7 +349,8 @@ describe("A. the library", () => {
     await makeBinder(ctx.app, "casey", "First");
     await makeBinder(ctx.app, "casey", "Second");
     const { r } = await screen(ctx);
-    const said = texts(r);
+    const whole = texts(r);
+    const said = whole.slice(whole.indexOf("Your binders"));
     assert(said.indexOf("First") < said.indexOf("Second"),
       "the same-day order is not the server's: " + said);
   });
@@ -1235,12 +1240,12 @@ describe("G. privacy", () => {
    Four sections, and what did not move. */
 describe("H. the navigation", () => {
 
-  test("production navigation is Browse · Binder · Your Cards · Trusted Partners · Deal Flow", () => {
+  test("production navigation is Browse · Binders · Trusted Partners · Deal Flow", () => {
     /* Deal Flow joined in the true-match batch. Your Cards stays until Binders
        can hold its cross-Binder views, so five tabs now and four later. */
-    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "browse,binder,my-cards,partners,deal-flow");
+    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "browse,binder,partners,deal-flow");
     eq(SHELL_MOD.SECTIONS.map((s) => s.label).join(" · "),
-      "Browse · Binder · Your Cards · Trusted Partners · Deal Flow");
+      "Browse · Binders · Trusted Partners · Deal Flow");
     const binder = SHELL_MOD.SECTIONS.find((s) => s.id === "binder");
     eq(binder.count, "binders", "Binder counts something other than binders");
     assert(typeof binder.view === "function", "Binder has no view");

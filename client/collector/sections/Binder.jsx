@@ -16,8 +16,11 @@
    Priority belongs here because a Goal refines a coherent binder: "these are my
    Mudkips, and these two I am still looking for" is one thought. Ownership and
    availability do not: how many copies you have and which you would part with
-   is a fact about your shelf, and Your Cards is the shelf. A count of either
-   here would turn curation into inventory one number at a time.
+   is a fact about your shelf, and the collection views above are the shelf. A
+   count of either here would turn curation into inventory one number at a time.
+   That is why selecting a view REPLACES the library rather than stacking above
+   it: the two answer different questions and one screen holding both would put
+   ownership telemetry on the binder library by the back door.
 
    NOT IN A BINDER YET IS DERIVED, AND IS NOT A BINDER. Removing the Goals tab
    must not hide a Goal, so the Goals that are in no ACTIVE binder are listed at
@@ -43,9 +46,11 @@
    ========================================================================== */
 
 import React, { useEffect, useMemo, useState } from "react";
+import { useCardDescriptions } from "../card-descriptions.js";
 import { Panel, Tag } from "../parts.jsx";
 import CardArt from "../../card-art.jsx";
 import CardSpecification from "../CardSpecification.jsx";
+import Collection, { COLLECTION_VIEWS } from "./Collection.jsx";
 import { rows, text, plural, tierIntent, tierLabel, byRecency } from "../present.js";
 
 export default function Binder({ state, onBrowseCards = null, onSpecify = null,
@@ -63,6 +68,11 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
      filled, it is the binder this section opens on. It is not restoration and
      there is nothing stored — stop filling, and this is null again. */
   const [open, setOpen] = useState(fillingBinder ? fillingBinder.binderId : null);
+  /* WHICH COLLECTION VIEW IS SHOWING, AND WHAT IS TYPED IN THE BOX. Both are
+     this section's own transient state: no command, no durable fact, and
+     nothing the server is told. Clearing the box restores the view exactly. */
+  const [collectionView, setCollectionView] = useState("binders");
+  const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [newName, setNewName] = useState("");
   const [renaming, setRenaming] = useState(null);  // { id, name }
@@ -74,12 +84,18 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
     [binders]);
   const archived = useMemo(() => byRecency(binders.filter((b) => b.archivedAt), "archivedAt"),
     [binders]);
-  const countOf = (binderId) => entries.filter((e) => e.binderId === binderId).length;
-
-  /* THE CARDS IN AN ACTIVE BINDER. A Goal for one of them is context, not a
-     second list. */
-  const goalFor = new Map();
-  for (const g of goals) if (g.canonicalCardId) goalFor.set(g.canonicalCardId, g);
+  /* ONE COUNT, ONE DERIVATION. This used to count raw rows while `Collection`
+     counted the cards it could actually name and de-duplicated them, so the
+     library could say "3 cards" over a binder that then opened showing one.
+     Two live derivations of one fact are two answers to it; this asks the
+     question `Collection` asks — how many distinct cards are filed here. */
+  const cardsIn = (binderId) => new Set(entries
+    .filter((e) => e.binderId === binderId)
+    .map((e) => (e.canonicalCardId != null && e.canonicalCardId !== ""
+      ? String(e.canonicalCardId)
+      : e.cardId != null && e.cardId !== "" ? `legacy:${e.cardId}` : null))
+    .filter(Boolean));
+  const countOf = (binderId) => cardsIn(binderId).size;
 
   /* DERIVED, EVERY RENDER. The Goals whose card is in no ACTIVE binder — see
      the header for why archived membership does not count. */
@@ -91,31 +107,18 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
     .filter((g) => g.canonicalCardId && !filedSomewhereActive.has(g.canonicalCardId));
 
   const looking = open ? binders.find((b) => b.id === open) || null : null;
-  const openEntries = looking
-    ? entries.filter((e) => e.binderId === looking.id).map((e) => e.canonicalCardId)
-    : [];
 
   /* ONE REQUEST FOR THE IDS ON SCREEN, the way Goals has asked since Batch 7:
      never one per row, never the legacy catalogue. */
-  const shownIds = useMemo(() => [...new Set([
-    ...openEntries,
-    ...unfiled.map((g) => g.canonicalCardId),
-  ])], [openEntries.join(","), unfiled.map((g) => g.canonicalCardId).join(",")]);
-  const [described, setDescribed] = useState({});
-  useEffect(() => {
-    if (!onBrowseCards || !shownIds.length) return undefined;
-    let current = true;
-    (async () => {
-      try {
-        const answer = await onBrowseCards.describe(shownIds);
-        if (!current) return;
-        const next = {};
-        for (const card of rows(answer && answer.cards)) next[card.canonicalCardId] = card;
-        setDescribed((held) => ({ ...held, ...next }));
-      } catch (error) { /* a binder without captions is still a binder */ }
-    })();
-    return () => { current = false; };
-  }, [shownIds.join(","), onBrowseCards]);
+  /* ONLY THE UNFILED GOALS NOW. The cards inside a binder, and the cards in a
+     collection view, are described by `Collection` itself — asking for them
+     here as well would be two requests for one screen. This list is the one
+     thing this file still renders on its own. */
+  const shownIds = useMemo(() => [...new Set(unfiled.map((g) => g.canonicalCardId))],
+    [unfiled.map((g) => g.canonicalCardId).join(",")]);
+  const cards = useCardDescriptions(onBrowseCards);
+  const { described, describe } = cards;
+  useEffect(() => { describe(shownIds); }, [shownIds.join(","), describe]);
 
   const run = async (fn, what) => {
     if (busy) return;
@@ -147,6 +150,47 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
     setRenaming(null);
   };
 
+  /* THE VIEW SELECTOR AND THE SEARCH BOX, shared by both branches below so the
+     two cannot drift apart. Selecting a collection view closes any open binder,
+     because they answer different questions and showing both at once would be
+     asking the person which one they are looking at. */
+  const chooseView = (id) => { setCollectionView(id); setOpen(null); setQuery(""); };
+  const searchable = Boolean(looking) || collectionView !== "binders";
+  const chrome = (
+    <>
+      <p className="mcs-views" role="group" aria-label="Collection views">
+        {COLLECTION_VIEWS.map((v) => (
+          <button key={v.id} type="button"
+            className={`mcs-view${(looking ? v.id === "binders" : collectionView === v.id)
+              ? "" : " quiet"}`}
+            aria-pressed={looking ? v.id === "binders" : collectionView === v.id}
+            onClick={() => chooseView(v.id)}>
+            {v.label}
+          </button>
+        ))}
+      </p>
+      {/* SEARCHES WHAT IS ALREADY YOURS, NOT THE CATALOGUE. It filters the view
+          on screen using descriptions that view already holds. Finding a card
+          MetYet has but you have said nothing about is Browse's job.
+
+          ONLY WHERE IT FILTERS SOMETHING. The library — your binders, by name —
+          is not a list of cards and this box never filtered it; rendering it
+          there offered a search that silently did nothing to what was on
+          screen. It appears with a collection view, and inside an opened binder
+          where it searches that binder's cards. */}
+      {searchable ? (
+      <p className="mcs-find">
+        <input className="mcs-in" type="search" value={query}
+          placeholder="Search your cards…" aria-label="Search your cards"
+          onChange={(e) => setQuery(e.target.value)} />
+        {text(query) ? (
+          <button className="mcs-linkish" type="button" onClick={() => setQuery("")}>Clear</button>
+        ) : null}
+      </p>
+      ) : null}
+    </>
+  );
+
   /* ---------------------------------------------------------- A BINDER */
   if (looking) {
     return (
@@ -157,29 +201,19 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
               onCommit={onSpecify} onClose={() => setSpecifying(null)} />
           </div>
         ) : null}
-        <Panel
-          title={text(looking.name) || "A binder"}
-          note={openEntries.length ? plural(openEntries.length, "card", "cards") : null}
-          empty={openEntries.length ? null
-            : "Nothing in this binder yet. A binder is where a card belongs — it doesn't mean "
-              + "you want it or own it."}
-        >
-          {openEntries.map((canonicalCardId) => {
-            const known = described[canonicalCardId];
-            const goal = goalFor.get(canonicalCardId);
-            return (
-              <CardRow key={canonicalCardId} known={known} goal={goal}
-                canonicalCardId={canonicalCardId}
-                onOpen={onSpecify && known ? () => setSpecifying(known) : null} />
-            );
-          })}
-        </Panel>
+        <p className="mcs-binder-name">{text(looking.name) || "A binder"}</p>
+        {chrome}
+        {/* ONE COMPONENT FOR EVERY LIST OF CARDS, so a binder's cards and a
+            collection view are read the same way and the copies a person owns
+            appear in both. */}
+        <Collection state={state} view={{ kind: "binder", binderId: looking.id }}
+          query={query} onBrowseCards={onBrowseCards} onSpecify={onSpecify} descriptions={cards} />
         <p className="mcs-goal-do">
           <button className="mcs-go" type="button" disabled={busy}
             onClick={() => onAddCards && onAddCards({ binderId: looking.id, name: looking.name })}>
             Add cards
           </button>
-          <button className="mcs-go quiet" type="button" onClick={() => setOpen(null)}>
+          <button className="mcs-go quiet" type="button" onClick={() => { setOpen(null); setQuery(""); }}>
             All binders
           </button>
         </p>
@@ -197,6 +231,14 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
         </div>
       ) : null}
 
+      {chrome}
+      {collectionView !== "binders" ? (
+        <Collection state={state} view={{ kind: collectionView }} query={query}
+          onBrowseCards={onBrowseCards} onSpecify={onSpecify} descriptions={cards} />
+      ) : null}
+
+      {collectionView !== "binders" ? null : (
+      <>
       <Panel
         title="Your binders"
         note={active.length ? plural(active.length, "binder", "binders") : null}
@@ -218,7 +260,7 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
               </p>
             ) : (
               <div className="mcs-binder-head">
-                <button className="mcs-binder-open" type="button" onClick={() => setOpen(b.id)}>
+                <button className="mcs-binder-open" type="button" onClick={() => { setOpen(b.id); setQuery(""); }}>
                   <span className="mcs-rec-t">{text(b.name) || "A binder"}</span>
                   <span className="mcs-rec-s">{plural(countOf(b.id), "card", "cards")}</span>
                 </button>
@@ -263,7 +305,7 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
           {archived.map((b) => (
             <article className="mcs-binder" key={b.id}>
               <div className="mcs-binder-head">
-                <button className="mcs-binder-open" type="button" onClick={() => setOpen(b.id)}>
+                <button className="mcs-binder-open" type="button" onClick={() => { setOpen(b.id); setQuery(""); }}>
                   <span className="mcs-rec-t">{text(b.name) || "A binder"}</span>
                   <span className="mcs-rec-s">{plural(countOf(b.id), "card", "cards")}</span>
                 </button>
@@ -292,6 +334,8 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
           })}
         </Panel>
       ) : null}
+      </>
+      )}
     </>
   );
 }

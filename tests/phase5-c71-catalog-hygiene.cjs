@@ -51,7 +51,7 @@ const CardArt = build("client/card-art.jsx").default;
    `src/MetYet.jsx` is the prototype and is NOT this. */
 const SURFACES = [
   ["client/browse/CardBrowser.jsx", 'br-art', 'br-plate'],
-  ["client/collector/sections/MyCards.jsx", 'mcs-group-art', 'mcs-art-plate'],
+  ["client/collector/sections/Collection.jsx", 'mcs-group-art', 'mcs-art-plate'],
   ["client/collector/sections/TrustedPartners.jsx", 'mcs-has-art', 'mcs-art-plate'],
   ["client/collector/sections/Binder.jsx", 'mcs-group-art', 'mcs-art-plate'],
 ];

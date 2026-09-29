@@ -399,7 +399,7 @@ describe("B. what a grade means is the server's answer, carried on the row", () 
 
   test("neither presenter decides grading any more", () => {
     for (const rel of ["client/collector/present.js", "client/tp/present.js",
-      "client/tp/sections/Inventory.jsx", "client/collector/sections/MyCards.jsx"]) {
+      "client/tp/sections/Inventory.jsx", "client/collector/sections/Collection.jsx"]) {
       assert(!/\/\^raw\$\/i/.test(code(rel)), `${rel} still carries its own raw-versus-graded rule`);
     }
     /* Asserted as behaviour as well as absence: a row with no reading is not
