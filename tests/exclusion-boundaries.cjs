@@ -59,6 +59,17 @@ const goalFor = (st, who, cardId) =>
 const offer = (st, { goalId, who, partnerId, invId, cardId, amount }) =>
   st.actions.startOpportunity({ goalId, collectorId: who, partnerId, cardId,
     invId, listedPrice: 4200, amount: amount || 3700, at: AT });
+/* OPTION B MOVED THE PARTNER'S BOUNDARY. Settling a market value is a shared
+   fact about a card, not a promise about it, so the properties this suite
+   protects — one card promised once, a blocked deal untouched, release on
+   ending — are pinned at the moment the two of them say yes to the assembled
+   deal. `committed` below still reads the same predicate; what changed is when
+   it becomes true. */
+const toFinal = (st, oppId) => {
+  st.actions.proposeTradeSelection({ oppId, binderIds: [], at: AT });
+  st.actions.dealAgree({ oppId, by: "tp", at: AT });
+  st.actions.dealAgree({ oppId, by: "collector", at: AT });
+};
 const committed = (st, invId) => D.INVARIANTS.copyCommittedTo(invId, st.get().opportunities);
 
 describe("A. Reviewing reserves nothing", () => {
@@ -184,16 +195,28 @@ describe("C. The partner commits by settling a price, per copy", () => {
     eq(committed(st, "inv-1"), null, "and has committed to neither");
   });
 
-  test("settling the price commits the copy to that deal", () => {
+  test("settling the price does NOT commit the copy", () => {
     const st = world();
     const g = goalFor(st, "casey", "k1");
     const oid = offer(st, { goalId: g, who: "casey", partnerId: "nl", invId: "inv-1", cardId: "k1" });
     eq(st.actions.agreePrice({ oppId: oid, amount: 3700, by: "tp", at: AT }), oid, "price settled");
+    eq(committed(st, "inv-1"), null,
+      "they agree what it is worth; nobody has been promised anything");
+    eq(D.inventoryCopyStatus("inv-1", st.get().opportunities, st.get().inventory), "available",
+      "and the card is still on the table");
+  });
+
+  test("final agreement commits the copy to that deal", () => {
+    const st = world();
+    const g = goalFor(st, "casey", "k1");
+    const oid = offer(st, { goalId: g, who: "casey", partnerId: "nl", invId: "inv-1", cardId: "k1" });
+    st.actions.agreePrice({ oppId: oid, amount: 3700, by: "tp", at: AT });
+    toFinal(st, oid);
     const c = committed(st, "inv-1");
     assert(c, "the copy is now committed");
     eq(c.id, oid, "to that deal");
-    eq(st.get().opportunities.find((o) => o.id === oid).agreedPrice, 3700,
-      "using the existing agreed-price marker, not a new field");
+    assert(D.finalAgreementGiven(st.get().opportunities.find((o) => o.id === oid)),
+      "using the existing final-agreement marker, not a new field");
   });
 
   test("a competing deal can no longer settle the same copy", () => {
@@ -204,10 +227,14 @@ describe("C. The partner commits by settling a price, per copy", () => {
     const b = offer(st, { goalId: gj, who: "jordan", partnerId: "nl",
       invId: "inv-1", cardId: "k1", amount: 3800 });
     st.actions.agreePrice({ oppId: a, amount: 3700, by: "tp", at: AT });
+    eq(st.actions.agreePrice({ oppId: b, amount: 3800, by: "tp", at: AT }), b,
+      "the second settlement is fine — two people may value one card");
 
-    const blocked = st.actions.agreePrice({ oppId: b, amount: 3800, by: "tp", at: AT });
-    eq(blocked.refused, D.REFUSE.copyCommitted, "the second settlement is refused");
-    eq(st.get().opportunities.find((o) => o.id === b).agreedPrice, null,
+    st.actions.proposeTradeSelection({ oppId: b, binderIds: [], at: AT });
+    toFinal(st, a);
+    const blocked = st.actions.dealAgree({ oppId: b, by: "tp", at: AT });
+    eq(blocked.refused, D.REFUSE.copyCommitted, "the second PROMISE is refused");
+    assert(!D.finalAgreementGiven(st.get().opportunities.find((o) => o.id === b)),
       "and nothing was written to it");
   });
 
@@ -219,8 +246,11 @@ describe("C. The partner commits by settling a price, per copy", () => {
     const b = offer(st, { goalId: gj, who: "jordan", partnerId: "nl",
       invId: "inv-1", cardId: "k1", amount: 3800 });
     st.actions.agreePrice({ oppId: a, amount: 3700, by: "tp", at: AT });
+    st.actions.agreePrice({ oppId: b, amount: 3800, by: "tp", at: AT });
+    st.actions.proposeTradeSelection({ oppId: b, binderIds: [], at: AT });
+    toFinal(st, a);
 
-    const refusal = JSON.stringify(st.actions.agreePrice({ oppId: b, amount: 3800, by: "tp", at: AT }));
+    const refusal = JSON.stringify(st.actions.dealAgree({ oppId: b, by: "tp", at: AT }));
     assert(!/casey/i.test(refusal), "no collector identity");
     assert(!/3700/.test(refusal), "and no competing amount");
     eq(JSON.parse(refusal).refused, "copy-committed", "only that the copy is spoken for");
@@ -249,11 +279,18 @@ describe("C. The partner commits by settling a price, per copy", () => {
     const gc = goalFor(st, "casey", "k1");
     const a = offer(st, { goalId: gc, who: "casey", partnerId: "nl", invId: "inv-1", cardId: "k1" });
     st.actions.agreePrice({ oppId: a, amount: 3700, by: "tp", at: AT });
+    toFinal(st, a);
 
     const gt = goalFor(st, "taylor", "k1");
     const late = offer(st, { goalId: gt, who: "taylor", partnerId: "nl",
       invId: "inv-1", cardId: "k1", amount: 4000 });
-    eq(late.refused, D.REFUSE.copyCommitted, "the copy is spoken for");
+    /* RE-PINNED by the integrity/privacy cleanup: a competing collector is told
+       the copy is not available to them, never which of pending, promised or
+       sold it is. That it refuses is the property; the word is deliberately the
+       same one all three states now give. */
+    eq(late.refused, D.REFUSE.copyUnavailable, "the copy is spoken for");
+    eq(D.inventoryCopyStatus("inv-1", st.get().opportunities, st.get().inventory),
+      "committed", "while the domain still knows it is committed, not merely gone");
   });
 
   test("commitment is per copy — the partner may commit others freely", () => {
@@ -269,6 +306,8 @@ describe("C. The partner commits by settling a price, per copy", () => {
     assert(typeof b === "string", "a different copy is unaffected");
     eq(st.actions.agreePrice({ oppId: b, amount: 800, by: "tp", at: AT }), b,
       "and may be committed at the same time");
+    toFinal(st, a);
+    toFinal(st, b);
     assert(committed(st, "inv-1") && committed(st, "inv-3"), "both copies are committed");
     assert(committed(st, "inv-1").id !== committed(st, "inv-3").id, "to different deals");
   });
@@ -277,8 +316,10 @@ describe("C. The partner commits by settling a price, per copy", () => {
     /* PHASE 1: accepting a price is the acceptPrice command. */
     const store = readSrc("domain/metyet-commands.js");
     const fn = store.slice(store.indexOf("acceptPrice(state"), store.indexOf("proposeTradeSelection(state"));
-    assert(/copyCommittedTo\(o\.invId/.test(fn), "it checks the copy, not the goal");
-    assert(/R\.copyCommitted/.test(fn), "and refuses");
+    assert(/copyBlockedFor\(state, o\b/.test(fn), "it checks the copy, not the goal");
+    const helper = store.slice(store.indexOf("function copyBlockedFor"), store.indexOf("function oppGate"));
+    assert(/copyCommittedTo\(/.test(helper) && /R\.copyCommitted/.test(helper),
+      "through the domain's own predicate, and refuses");
     /* The collector app routes its accept through it rather than patching. */
     const ui = readSrc("collector/MetYetCollector.jsx");
     assert(/exec\("acceptPrice", \{ oppId: id \}\)/.test(ui),
@@ -292,9 +333,14 @@ describe("D. Release, and what does not release", () => {
     const gc = goalFor(st, "casey", "k1");
     const a = offer(st, { goalId: gc, who: "casey", partnerId: "nl", invId: "inv-1", cardId: "k1" });
     st.actions.agreePrice({ oppId: a, amount: 3700, by: "tp", at: AT });
+    toFinal(st, a);
     assert(committed(st, "inv-1"), "committed");
 
-    st.actions.endOpportunity(a, "collector", AT);
+    /* Backing out of a PROMISE needs a reason — an invariant that predates
+       Option B and that moving the boundary has now made reachable here. */
+    eq(st.actions.endOpportunity(a, "collector", AT).refused, D.REFUSE.reasonRequired,
+      "and cannot be walked away from silently");
+    st.actions.endOpportunity(a, "collector", AT, "changed my mind");
     eq(committed(st, "inv-1"), null, "an ended deal holds nothing");
   });
 
@@ -306,11 +352,14 @@ describe("D. Release, and what does not release", () => {
     const b = offer(st, { goalId: gj, who: "jordan", partnerId: "nl",
       invId: "inv-1", cardId: "k1", amount: 3800 });
     st.actions.agreePrice({ oppId: a, amount: 3700, by: "tp", at: AT });
-    eq(st.actions.agreePrice({ oppId: b, amount: 3800, by: "tp", at: AT }).refused,
+    st.actions.agreePrice({ oppId: b, amount: 3800, by: "tp", at: AT });
+    st.actions.proposeTradeSelection({ oppId: b, binderIds: [], at: AT });
+    toFinal(st, a);
+    eq(st.actions.dealAgree({ oppId: b, by: "tp", at: AT }).refused,
       D.REFUSE.copyCommitted, "blocked while Casey holds it");
 
-    st.actions.endOpportunity(a, "collector", AT);
-    eq(st.actions.agreePrice({ oppId: b, amount: 3800, by: "tp", at: AT }), b,
+    st.actions.endOpportunity(a, "collector", AT, "changed my mind");
+    eq(st.actions.dealAgree({ oppId: b, by: "tp", at: AT }), b,
       "and free once Casey lets go");
   });
 

@@ -328,7 +328,11 @@ describe("E. The partner's counter mirrors it, and commits nothing", () => {
     assert(/disabled=\{!validAmount\(amt\)\}/.test(seat), "and only when valid");
   });
 
-  test("commitment still begins only at price finalisation", () => {
+  /* OPTION B RENAMED WHAT THIS PROVES. Settling a value is still the only way
+     a price becomes agreed; it is no longer the moment the card is claimed.
+     The turn rule underneath — the seat that agrees is the one ANSWERING the
+     standing figure — is unchanged, and is what this test is really for. */
+  test("agreeing a value is the collector's move, and claims nothing", () => {
     const st = world();
     const { o } = opened(st);
     /* PHASE 1: the partner's counter is the proposePrice command, and the seat
@@ -339,7 +343,10 @@ describe("E. The partner's counter mirrors it, and commits nothing", () => {
     eq(st.actions.agreePrice({ oppId: o, amount: 3700, by: "tp", at: AT }).refused, D.REFUSE.notYourTurn,
       "the partner cannot accept its own counter");
     eq(st.actions.agreePrice({ oppId: o, amount: 3700, by: "collector", at: AT }), o, "on agreement");
-    assert(D.INVARIANTS.copyCommittedTo("inv-1", st.get().opportunities), "the copy is committed");
+    eq(D.INVARIANTS.copyCommittedTo("inv-1", st.get().opportunities), null,
+      "and the copy is still nobody's — a valuation is not a promise");
+    eq(D.inventoryCopyStatus("inv-1", st.get().opportunities, st.get().inventory), "available",
+      "so it stays available to the rest of the network");
   });
 });
 

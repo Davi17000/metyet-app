@@ -190,6 +190,13 @@ function everyCommand(store, rec) {
   step("proposePrice", { opp: opp(o) });
   x(C1, "acceptPrice", { oppId: o });
   step("acceptPrice", { opp: opp(o) });
+  /* THE ONE AVAILABILITY FACT A PARTNER CHOOSES (Option B). Set and released
+     here so the script exercises both directions, and so the recorded shape
+     shows a copy carrying `pendingFor` and then not. */
+  x(TP1, "setCopyPending", { invId: "i1", oppId: o });
+  step("setCopyPending", { copy: s().inventory.find((i) => i.invId === "i1") });
+  x(TP1, "setCopyPending", { invId: "i1", oppId: null });
+  step("releaseCopyPending", { copy: s().inventory.find((i) => i.invId === "i1") });
   x(C1, "proposeTradeSelection", { oppId: o, binderIds: ["b1"] });
   step("proposeTradeSelection", { opp: opp(o) });
   x(TP1, "reviewTradeCard", { oppId: o, decision: "accepted" });
@@ -337,9 +344,13 @@ describe("B. every minted id comes from the injected runtime", () => {
     /* 48 → 49 in C3.3: `updateGoalCriteria`, because the Card Specification
        panel edits a Goal's desired copy and removing-and-recreating the Goal
        would destroy `createdAt` and is refused outright while a deal is live.
+       49 → 50 in Option B: `setCopyPending`, because a partner deciding they
+       are working on one exact card is a fact nothing else in the system could
+       express — every other availability answer is derived from what HAPPENED
+       to a copy, and this one is derived from what somebody chose.
        Restated, not loosened — the exact total is still asserted, and the new
        command is exercised by the script above like every other. */
-    eq(C.COMMAND_NAMES.length, 49, "the command set");
+    eq(C.COMMAND_NAMES.length, 50, "the command set");
   });
 
   test("each new record's id is exactly what the runtime handed out, with the record's prefix", () => {
@@ -934,9 +945,17 @@ describe("K. validateWorld rejects malformed worlds, naming what to fix", () => 
     const live = w.opportunities.find((o) => o.id === ids().w);
     w.opportunities.push({ ...clone(live), id: "o-dup" });
     expectError(w, "invariant.one-negotiation-per-goal", "opportunities", ["g1", ids().w, "o-dup"]);
+    /* OPTION B: copy-committed-once moved off `agreedPrice != null` and onto
+       final agreement, in step with INVARIANTS.copyCommittedTo. Two AGREED
+       VALUES on one copy is now a legal world — it is the batch's whole point —
+       so the twins must both carry a promise for this to be the defect it is
+       named after. */
     const w2 = base();
     const agreed = w2.opportunities.find((o) => o.id === ids().w);
-    w2.opportunities.push({ ...clone(agreed), id: "o-twin", goalId: "g2", collectorId: "c2", trade: { submitted: false, cards: [] } });
+    const promise = { ...(agreed.deal || {}), tpAgreed: true, collectorAgreed: true };
+    agreed.deal = promise;
+    w2.opportunities.push({ ...clone(agreed), id: "o-twin", goalId: "g2", collectorId: "c2",
+      deal: { ...promise }, trade: { submitted: false, cards: [] } });
     expectError(w2, "invariant.copy-committed-once", "opportunities", ["i2"]);
     const w3 = base();
     const sold = w3.opportunities.find((o) => o.id === ids().o);

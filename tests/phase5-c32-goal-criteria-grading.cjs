@@ -555,33 +555,54 @@ describe("D. what the product may not invent", () => {
 /* ============================================================== E */
 describe("E. what C3.2 did not touch", () => {
 
-  test("Goal F — a Raw/NM Goal still discovers a partner's PSA 8 of the same card", async () => {
+  test("Goal F — RE-PINNED: a Raw/NM Goal no longer discovers a PSA 8", async () => {
+    /* THIS TEST ASSERTED THE OPPOSITE, AND THE REVERSAL IS THE BATCH.
+
+       C3.2 settled that criteria were context: a Goal for a Raw / Near Mint
+       card surfaced a partner's PSA 8 of it, on the reading that a person might
+       still want to hear. The true-match batch reversed it. A Collector who
+       picked "Raw / Near Mint" from a closed list picked it; answering with a
+       PSA 8 is the product inventing a preference nobody expressed.
+
+       What did NOT change, and is still asserted below: exact canonical
+       identity, and the absence of any band, floor or "or better". */
     const ctx = await world();
     const cards = await charizard(ctx);
     await want(ctx.app, "casey", cards.firstEdition, "primary",
       { desired: { grade: "Raw", condition: "Near Mint" } });
     await stock(ctx.app, "north", { canonicalCardId: cards.firstEdition, grade: "PSA 8", ask: 9000 });
 
-    const mine = (await get(ctx.app, "casey", "/api/view")).json().state;
-    eq(mine.discoveries.length, 1, "desired criteria became a filter");
-    eq(mine.discoveries[0].canonicalCardId, cards.firstEdition);
+    eq((await get(ctx.app, "casey", "/api/view")).json().state.discoveries.length, 0,
+      "a PSA 8 is not an answer to a Raw / Near Mint question");
 
-    /* And the reverse flavour: a PSA 10 want against a Raw copy on the shelf. */
+    /* The reverse flavour, equally excluded: a PSA 10 want, a Raw copy. */
     await want(ctx.app, "casey", cards.shadowless, "primary", { desired: { grade: "PSA 10" } });
     await stock(ctx.app, "north",
       { canonicalCardId: cards.shadowless, grade: "Raw", condition: "Heavily Played", ask: 20 });
-    eq((await get(ctx.app, "casey", "/api/view")).json().state.discoveries.length, 2,
-      "a far-from-ideal copy stopped surfacing");
+    eq((await get(ctx.app, "casey", "/api/view")).json().state.discoveries.length, 0,
+      "and a Raw copy is not an answer to a PSA 10 question");
+
+    /* Now supply that IS what was asked for, so the test proves exclusion
+       rather than merely proving that nothing ever matches. */
+    await stock(ctx.app, "north",
+      { canonicalCardId: cards.firstEdition, grade: "Raw", condition: "Near Mint", ask: 9000 });
+    const mine = (await get(ctx.app, "casey", "/api/view")).json().state;
+    eq(mine.discoveries.length, 1, "the copy she actually described is an answer");
+    eq(mine.discoveries[0].canonicalCardId, cards.firstEdition);
 
     /* A DIFFERENT CARD still does not discover — the exact-canonical rule is
        what this must not have loosened either. */
     await stock(ctx.app, "north", { canonicalCardId: cards.reverse, ask: 5 });
-    eq((await get(ctx.app, "casey", "/api/view")).json().state.discoveries.length, 2,
+    eq((await get(ctx.app, "casey", "/api/view")).json().state.discoveries.length, 1,
       "a different printing started discovering");
 
-    const discovery = read("domain/metyet-discovery.js");
-    assert(!/grade|condition|desired/i.test(discovery.replace(/\/\*[\s\S]*?\*\//g, "")),
-      "the discovery module started reading grading");
+    /* And criteria reached the matching through the DOMAIN's one predicate,
+       not through a second rule grown inside the discovery module. */
+    const discovery = read("domain/metyet-discovery.js").replace(/\/\*[\s\S]*?\*\//g, "");
+    assert(/meetsGoalCriteria/.test(discovery),
+      "discovery stopped asking the domain's criteria predicate");
+    assert(!/GRADED_VALUES|CONDITION_VALUES|PSA/.test(discovery),
+      "the discovery module grew a grading vocabulary of its own");
   });
 
   test("Goal G — criteria and tier changes leave Binder membership alone", async () => {

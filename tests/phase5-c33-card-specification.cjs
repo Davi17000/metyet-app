@@ -399,7 +399,7 @@ describe("B. what a grade means is the server's answer, carried on the row", () 
 
   test("neither presenter decides grading any more", () => {
     for (const rel of ["client/collector/present.js", "client/tp/present.js",
-      "client/tp/sections/Inventory.jsx", "client/collector/sections/MyCards.jsx"]) {
+      "client/tp/sections/Inventory.jsx", "client/collector/sections/Collection.jsx"]) {
       assert(!/\/\^raw\$\/i/.test(code(rel)), `${rel} still carries its own raw-versus-graded rule`);
     }
     /* Asserted as behaviour as well as absence: a row with no reading is not
@@ -511,7 +511,10 @@ describe("C. a Goal says which copy is wanted, and can change its mind", () => {
   test("criteria can be corrected while a deal is under way — the case that decided the command", async () => {
     const ctx = await world();
     const made = await cards(ctx);
-    await want(ctx.app, "casey", made.firstEdition, "primary", { desired: { grade: "PSA 8" } });
+    /* The Goal states what the shop has, so the deal can open — since the
+       true-match batch the criteria gate `startOpportunity` too, and this test
+       is about CORRECTING criteria mid-deal, not about matching. */
+    await want(ctx.app, "casey", made.firstEdition, "primary", { desired: { grade: "PSA 9" } });
     const goalId = (await load(ctx)).goals[0].id;
     const invId = (await stock(ctx.app, "north",
       { canonicalCardId: made.firstEdition, grade: "PSA 9", ask: 900 })).json().value;
@@ -534,32 +537,39 @@ describe("C. a Goal says which copy is wanted, and can change its mind", () => {
     eq((await load(ctx)).opportunities[0].goalId, goalId);
   });
 
-  test("criteria are context, not a filter: Discovery does not read them", async () => {
+  test("RE-PINNED: criteria ARE a filter, and Discovery reads them", async () => {
+    /* C3.3 pinned the opposite — criteria were context a person weighed, so a
+       PSA 10 want surfaced a Heavily Played Raw copy. The true-match batch
+       reversed it: a stated criterion is a criterion. C3.3's real subject, the
+       specification panel writing four independent facts, is untouched. */
     const ctx = await world();
     const made = await cards(ctx);
-    /* Wanting a pristine graded copy. */
     await want(ctx.app, "casey", made.firstEdition, "primary", { desired: { grade: "PSA 10" } });
-    /* A partner has a heavily played raw one. */
     await stock(ctx.app, "north",
       { canonicalCardId: made.firstEdition, grade: "Raw", condition: "Heavily Played", ask: 40 });
-    const mine = await view(ctx.app, "casey");
-    eq(mine.discoveries.length, 1,
-      "a copy that does not match the stated preference was filtered out of Discovery");
+    eq((await view(ctx.app, "casey")).discoveries.length, 0,
+      "a copy that does not match the stated criteria is not an answer");
     /* And the other way round. */
     const ctx2 = await world();
     const made2 = await cards(ctx2);
     await want(ctx2.app, "casey", made2.firstEdition, "secondary",
       { desired: { grade: "Raw", condition: "Near Mint" } });
     await stock(ctx2.app, "north", { canonicalCardId: made2.firstEdition, grade: "PSA 8", ask: 5000 });
-    eq((await view(ctx2.app, "casey")).discoveries.length, 1);
+    eq((await view(ctx2.app, "casey")).discoveries.length, 0);
+    /* Supply that IS what was asked for still overlaps, so this proves
+       exclusion rather than proving nothing ever matches. */
+    await stock(ctx2.app, "north",
+      { canonicalCardId: made2.firstEdition, grade: "Raw", condition: "Near Mint", ask: 5000 });
+    eq((await view(ctx2.app, "casey")).discoveries.length, 1,
+      "the copy she described is still an answer");
     /* A different printing still discovers nothing — the exact rule is intact. */
     const ctx3 = await world();
     const made3 = await cards(ctx3);
     await want(ctx3.app, "casey", made3.firstEdition, "primary", { desired: { grade: "PSA 9" } });
     await stock(ctx3.app, "north", { canonicalCardId: made3.unlimited, grade: "PSA 9", ask: 900 });
     eq((await view(ctx3.app, "casey")).discoveries.length, 0, "the exact-card rule was loosened");
-    assert(!/desired|grade|condition/.test(code("domain/metyet-discovery.js")),
-      "Discovery reads grading");
+    assert(/meetsGoalCriteria/.test(code("domain/metyet-discovery.js")),
+      "Discovery stopped asking the domain's criteria predicate");
   });
 
   /* THE GOALS SCREEN STAYS LIGHTWEIGHT (§3.1). Prioritisation is "how hard am I

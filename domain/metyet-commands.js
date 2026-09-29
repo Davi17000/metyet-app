@@ -88,6 +88,137 @@ const hint = (value) => {
   return clean ? clean.slice(0, HINT_MAX) : null;
 };
 
+/* CAN THIS OPPORTUNITY STILL TALK ABOUT THIS PHYSICAL CARD? (Option B, Item 0)
+
+   Deliberately NOT `status !== "available" → refuse`. Availability is a fact
+   about the card and this is a question about one conversation, and the two
+   differ in exactly the cases that matter: a card that is pending for YOUR
+   deal, or committed to YOUR deal, is unavailable to the world and perfectly
+   fine for you to keep working on. A flat availability check would stop the
+   winning deal along with the losing ones.
+
+   So this asks, for one opportunity: is the card gone, or is somebody else's
+   claim on it standing in the way of mine?
+
+     archived / sold          -> copy-unavailable   the card is not there
+     pending for another deal -> copy-pending       the partner is working on it
+     committed to another     -> copy-committed     two people agreed a deal
+     anything else            -> null               carry on
+
+   Returns a refusal reason, or null. It names no ids: a collector learns that
+   the shop is working on this card with somebody, never who.
+
+   AND NAMING NO IDS WAS NOT ENOUGH. Three distinct answers are themselves the
+   disclosure: a collector who may send a command may send it repeatedly, and
+   pending / committed / unavailable read back as a rival negotiation's stage,
+   polled as often as they like. The projection had held this line from the
+   start — a copy held by somebody else's deal reads `unavailable` throughout —
+   and the command layer quietly undid it. So the distinctions stay in the
+   DOMAIN, where they are three different things, and are shaped on the way out
+   to the seat asking. See `publicCopyRefusal`. */
+function copyBlockedFor(state, o, a) {
+  const invId = o && o.invId;
+  if (invId == null) return null;
+  const copy = list(state.inventory).find((i) => i.invId === invId);
+  if (!copy || copy.archived) return shapeCopyRefusal(R.copyUnavailable, copy, a);
+  if (D.soldInventoryIds(state.opportunities).has(invId)) return shapeCopyRefusal(R.copyUnavailable, copy, a);
+  const pendingFor = D.INVARIANTS.copyPendingFor(invId, state.inventory, state.opportunities);
+  if (pendingFor && pendingFor !== o.id) return shapeCopyRefusal(R.copyPending, copy, a);
+  if (D.INVARIANTS.copyCommittedTo(invId, state.opportunities, o.id)) return shapeCopyRefusal(R.copyCommitted, copy, a);
+  return null;
+}
+
+/* WHAT A REFUSAL ABOUT SOMEBODY ELSE'S CARD MAY SAY, AND TO WHOM.
+   One public answer for everyone who does not own the card:
+
+     copy-unavailable    this copy is not available for you to progress.
+
+   That is the whole of what a collector needs. Whether the shop has pencilled
+   it in for another conversation, shaken hands on one, or already handed the
+   card over changes nothing they can do about it, and each of those answers
+   would be a fact about a person they are not owed.
+
+   THE PARTNER WHO OWNS THE CARD KEEPS THE TRUTH, because it is theirs and
+   because they act on it: "you already promised this" (cancel that deal first)
+   and "you already pencilled it in" (release it, then re-mark) are different
+   instructions, and `setCopyPending` exists to be answered precisely. Nothing
+   is disclosed to them that is not already on their own inventory row, which
+   carries the derived status and `pendingFor` outright.
+
+   THE COLLECTOR WHOSE OWN DEAL HOLDS THE CARD loses nothing here, and this is
+   worth stating because it looks like the risky case and is not: `copyBlockedFor`
+   exempts their own opportunity, so they never receive any of these three
+   reasons about the copy they control. What they are told — not-your-turn,
+   wrong-stage, terminal — comes from the turn and stage rules, and their status
+   comes from their own projected row. Verified by probe across all four states
+   before this was written. */
+const shapeCopyRefusal = (reason, copy, a) =>
+  (a && a.seat === "tp" && copy && copy.partnerId === a.partnerId ? reason : R.copyUnavailable);
+
+/* WHEN THE PARTNER MAY STILL RESTATE WHAT THE CARD IS.
+
+   The protected window is `copyInLiveDeal` OR sold — the same two halves the
+   certificate lock already used, and deliberately NOT the availability
+   boundary. Option B separated those on purpose: "may somebody else pursue
+   this?" moved to final agreement, "may the partner still CHANGE this?" did
+   not. From the moment a value is settled somebody is reasoning about this
+   exact slab; after completion somebody owns it and the record is what they
+   bought.
+
+   PROTECTED: cert, grade, condition — the facts that say what the object IS.
+   NOT PROTECTED: ask, cost, acquired, note — the shop's own bookkeeping.
+
+   PHOTOGRAPHS ARE THE INTERESTING ONE, because a Collector can ASK for them and
+   fulfilling that request is a good thing to allow. The architecture settles it
+   without needing a new subsystem, once you read what a photo actually is here:
+   `copyPhotographed` is `front && back`, so a copy has exactly two named slots,
+   not a growing collection — and `requestPhotos` returns early once both are
+   filled, so a photo request can only ever EXIST for an empty slot. Fulfilling
+   one therefore always means filling an empty slot, and never means changing a
+   filled one. That is the whole distinction, and it is already in the code:
+
+     empty -> a photograph      evidence arriving.      allowed
+     a photograph -> another    evidence rewritten.     refused
+     a photograph -> empty      evidence withdrawn.     refused
+
+   So the Collector who asked to see the back of the card still gets it, in the
+   winning deal or any other, and nobody can quietly restage the picture the
+   deal was agreed on. */
+const PROTECTED_COPY_FACTS = ["cert", "grade", "condition"];
+const copyEditProtected = (state, invId) =>
+  !!(D.INVARIANTS.copyInLiveDeal(invId, state.opportunities)
+    || D.soldInventoryIds(state.opportunities).has(invId));
+
+/* THE GUARD IS GIVEN THE PHOTOGRAPHS THAT WILL EXIST AFTERWARDS, NOT THE PATCH.
+
+   The first version of this read the patch slot by slot and treated a slot the
+   patch did not mention as "unchanged". `updateInventoryCopy` does not merge —
+   it assigns `photos` wholesale — so a slot the patch did not mention is
+   DELETED. Guard and write disagreed about what a patch means, and the gap was
+   the whole protection: `{photos: {}}` mentioned no slot, so the guard saw no
+   rewrite, and the write emptied both. Then refilling them was the
+   deliberately-allowed empty-slot case. Two calls, on the exposed command, and
+   the photographs on a sold card were somebody else's.
+
+   So each caller now computes the photographs its own write will produce and
+   hands those over. There is no way to describe an edit the guard will not see,
+   because it is no longer reading a description. */
+const photoSlot = (photos, slot) => {
+  const v = photos && typeof photos === "object" ? photos[slot] : undefined;
+  return v === undefined || v === null || v === "" ? null : v;
+};
+const photographsRewritten = (before, after) => ["front", "back"].some((slot) => {
+  const had = photoSlot(before, slot);
+  return had !== null && photoSlot(after, slot) !== had;
+});
+function protectedCopyEdit(state, invId, copy, facts, nextPhotos) {
+  if (!copyEditProtected(state, invId)) return false;
+  const p = facts || {};
+  for (const k of PROTECTED_COPY_FACTS) if (k in p && p[k] !== copy[k]) return true;
+  if (nextPhotos !== undefined && photographsRewritten(copy.photos, nextPhotos)) return true;
+  return false;
+}
+
 /* Standard gate for a command on an existing opportunity: it must exist, the
    actor must be a participant, and it must still be active. */
 function oppGate(state, a, oppId) {
@@ -287,10 +418,16 @@ const COMMANDS = {
        demand disappear and come back as new, which is a lie about what
        happened.
 
-     SO IT IS NOT BLOCKED BY AN ACTIVE OPPORTUNITY. Nothing derives from
-     `desired`: Discovery reads none of it (asserted against the source since
-     C3.2), no status depends on it, and no deal references it. It is context a
-     person is allowed to correct, not deal identity.
+     SO IT IS NOT BLOCKED BY AN ACTIVE OPPORTUNITY — though the reason has
+     narrowed and the old one is no longer true. It used to be that nothing
+     derived from `desired` at all. Since the true-match batch, Discovery and
+     `startOpportunity` both read it, so correcting criteria mid-deal DOES
+     change which copies are offered, and can leave a live deal on a copy the
+     Collector's own Deal Flow no longer lists. That is still not a reason to
+     refuse: the criteria are hers, correcting them is the honest act, and the
+     deal she opened remains hers to finish or to cancel. What this command must
+     never do is rewrite a deal in progress, and it does not — it changes what
+     she is LOOKING for, never what she has already agreed.
 
      IT CHANGES ONE FIELD. Not the tier, not the card, not a timestamp — those
      each have their own command, or belong to nobody. */
@@ -353,7 +490,13 @@ const COMMANDS = {
     const g = list(state.goals).find((x) => x.id === goalId);
     if (!g) return refuse(R.notFound);
     if (a.seat !== "collector" || g.collectorId !== a.collectorId) return refuse(R.notOwner);
-    if (D.goalLocked(goalId, state.opportunities)) return refuse(R.goalLocked);
+    /* NOT `goalLocked`, WHICH THIS BATCH RELEASED. A negotiation that can never
+       conclude stops holding the Goal for demotion and for pursuing the card
+       elsewhere — but it still NAMES the Goal, and `validateWorld` requires an
+       active Opportunity's Goal to exist. Deleting it here would hand the
+       persistence layer a world it refuses. Cancelling the dead deal is the way
+       through, and it is one command away. */
+    if (D.goalNamedByActive(goalId, state.opportunities)) return refuse(R.goalLocked);
     return done({ ...state, goals: list(state.goals).filter((x) => x.id !== goalId) }, true);
   },
 
@@ -393,7 +536,12 @@ const COMMANDS = {
     for (const k of ["ask", "cost"]) {
       if (copy[k] != null && !(validMoney(Number(copy[k])) && Number(copy[k]) >= 0)) return refuse(R.invalidAmount);
     }
-    const { invId: askedId, addedAt: askedAt, updatedAt, ...facts } = copy;
+    /* `pendingFor` IS NOT A FACT ABOUT A NEW CARD (Option B). This spread is
+       deliberately open — a shop's own description of a copy is theirs — but
+       availability is not a description, and a copy nobody has ever dealt over
+       cannot honestly be pending for a deal. It has one door, `setCopyPending`,
+       and this is the other place that door could have been walked around. */
+    const { invId: askedId, addedAt: askedAt, updatedAt, pendingFor: notYours, ...facts } = copy;
     const invId = ctx.id("inv" + (canonical || copy.cardId) + "-", askedId);
     if (list(state.inventory).some((i) => i.invId === invId)) return refuse(R.copyInUse);
     const row = { photos: { front: null, back: null }, archived: false, ...facts, invId,
@@ -408,6 +556,9 @@ const COMMANDS = {
     const copy = list(state.inventory).find((i) => i.invId === invId);
     if (!copy) return refuse(R.notFound);
     if (a.seat !== "tp" || copy.partnerId !== a.partnerId) return refuse(R.notOwner);
+    /* A patch that is not an object used to reach `"cardId" in p` and throw a
+       TypeError — a 500 on an exposed command where a refusal was meant. */
+    if (patch != null && (typeof patch !== "object" || Array.isArray(patch))) return refuse(R.notFound);
     const p = patch || {};
     /* WHICH CARD THIS IS, AND WHOSE IT IS, ARE NOT EDITS. `canonicalCardId`
        joined the list in Batch 6 for the same reason `cardId` was always on it:
@@ -416,11 +567,44 @@ const COMMANDS = {
     if ("cardId" in p || "canonicalCardId" in p || "invId" in p || "partnerId" in p) {
       return refuse(R.identityImmutable);
     }
-    const status = D.inventoryCopyStatus(invId, state.opportunities);
-    if ("cert" in p && p.cert !== copy.cert && status !== "available") return refuse(R.copyCommitted);
+    /* THE CERTIFICATE LOCK KEEPS THE OLDER, WIDER WINDOW (Option B, Item 2).
+       It deliberately does NOT follow the availability boundary to final
+       agreement. From the moment a market value is settled a Collector is
+       reasoning about this exact slab — pricing a trade package against its
+       certificate — and re-certifying it underneath them is a different harm
+       from letting somebody else pursue it. `copyInLiveDeal` is that wider
+       window, and its comment in the domain says why it is separate.
+
+       AND SOLD IS THE OTHER HALF OF IT. The old guard asked
+       `status !== "available"`, which covered a sold copy as well as a live
+       deal; an adversarial pass caught that keying on `copyInLiveDeal` alone
+       had quietly let a partner re-certify a card they had already handed over,
+       rewriting the record of what somebody bought. Both halves, explicitly. */
+    /* AND THE LOCK WAS NEVER ONLY ABOUT THE CERTIFICATE. The reason written
+       above — a Collector is pricing a trade package against this exact slab —
+       is a reason about what the object is UNDERSTOOD TO BE, and the
+       certificate is only one of the facts carrying that. `copyInLiveDeal`'s
+       own comment says "pricing around its grade" in as many words, and grade
+       reaches further than cert does: it feeds the Discovery search text, the
+       card specification's resolution, and the copy's printed label. Condition
+       does the same for a Raw copy. Leaving those two editable meant a partner
+       could agree a deal on a PSA 9 and quietly restate it as Damaged, which is
+       the same harm the cert lock exists to prevent, by an easier route.
+
+       WHAT IS DELIBERATELY NOT HERE: `ask`, `cost`, `acquired` and `note`.
+       Those are the shop's own operational metadata. None of them changes what
+       the physical object IS, and freezing a price the partner may still want
+       to correct would be a cost with no integrity behind it. */
+    /* `photos` is ASSIGNED, not merged (see `clean` below), so the photographs
+       after this write are exactly what the patch carries — or the existing
+       ones when it does not mention them at all. */
+    if (protectedCopyEdit(state, invId, copy, p,
+      "photos" in p ? p.photos : undefined)) return refuse(R.copyCommitted);
     /* Grade and condition are here because a raw copy that comes back from a
        grader is the same physical card with a new fact about it — not a new
-       copy, and certainly not a new CARD (Phase 5 Batch 6). */
+       copy, and certainly not a new CARD (Phase 5 Batch 6). Whether that
+       restatement is ALLOWED NOW is the guard above; this list is only about
+       which fields the command understands at all. */
     const allowed = ["ask", "cost", "acquired", "cert", "note", "photos", "grade", "condition"];
     const clean = {};
     for (const k of allowed) if (k in p) clean[k] = p[k];
@@ -441,9 +625,88 @@ const COMMANDS = {
     const copy = list(state.inventory).find((i) => i.invId === invId);
     if (!copy) return refuse(R.notFound);
     if (a.seat !== "tp" || copy.partnerId !== a.partnerId) return refuse(R.notOwner);
-    if (D.inventoryCopyStatus(invId, state.opportunities) === "committed") return refuse(R.copyCommitted);
+    /* AND SO DOES THE ARCHIVE GUARD, for the same reason: a partner must not be
+       able to take a card off the shelf while somebody is mid-deal over it, and
+       "mid-deal" starts at the settled value rather than at final agreement.
+
+       A SOLD COPY IS THE EXCEPTION, and was before this batch too: once the
+       card has been handed over, taking it off the shelf is tidying up. Without
+       this line a losing deal that still holds an agreed value would pin a card
+       the shop no longer owns to its inventory for ever. */
+    if (!D.soldInventoryIds(state.opportunities).has(invId)
+      && D.INVARIANTS.copyInLiveDeal(invId, state.opportunities)) return refuse(R.copyCommitted);
     return done({ ...state, inventory: list(state.inventory).map((i) => (i.invId === invId
       ? { ...i, archived: true } : i)) }, invId);
+  },
+
+  /* ------------------------------------------------------- pending a copy */
+  /* THE PARTNER SAYS "I'M WORKING ON THIS ONE" (Option B, Item 1).
+
+     The only availability fact in MetYet that somebody DECIDES. Everything else
+     — sold, committed, available — is derived from what has happened; this is
+     derived from what a partner chose, and they can unchoose it.
+
+     IT NAMES THE DEAL, AND THAT IS THE WHOLE DESIGN. A bare "pending" flag
+     could not tell the Collector on the other side of that deal that it is
+     pending for THEM, which is the one thing worth saying. So the field holds
+     an opportunity id and the checks below make sure it is a real one: the
+     partner's own, on this exact copy, still running.
+
+     ONE COMMAND BOTH WAYS. `oppId: null` releases. Two commands would be two
+     places for the rule to live, and `setCollectorCopyOffered` and
+     `setBinderArchived` already establish the shape for an owner-controlled
+     two-way setter.
+
+     NOT A HOLD, A QUEUE, OR A TIMER. Nothing expires it, nothing renews it,
+     nothing is promised by it, and releasing it costs nobody anything. It
+     stops new pursuits; it erases no work that already exists.
+
+     AND NOT REACHABLE THROUGH `updateInventoryCopy`. That command's allow-list
+     is the shop's own description of its card — price, grade, certificate,
+     notes. Availability is a different kind of statement and gets a different
+     door, which is also where an external inventory system's authority would
+     one day have to be checked. */
+  setCopyPending(state, a, { invId, oppId }, ctx) {
+    const at = ctx.at;
+    const copy = list(state.inventory).find((i) => i.invId === invId);
+    if (!copy) return refuse(R.notFound);
+    if (a.seat !== "tp" || copy.partnerId !== a.partnerId) return refuse(R.notOwner);
+    const set = (value) => done({ ...state, inventory: list(state.inventory).map((i) => (i.invId === invId
+      ? { ...i, pendingFor: value, ...(at ? { updatedAt: at } : {}) } : i)) }, invId);
+    /* RELEASING IS ALWAYS ALLOWED, and it is asked FIRST. It was asked after
+       the archived check, which meant archiving a pending copy stranded the
+       note on it with no command left that could clear it — a partner taking
+       their own mark off their own card cannot harm anybody, whatever else is
+       true of the card. */
+    if (oppId === null || oppId === undefined) {
+      return copy.pendingFor == null ? done(state, invId) : set(null);
+    }
+    /* AND ANYTHING THAT IS NOT AN ID IS A MISTAKE, NOT A RELEASE. This read
+       `typeof oppId === "string" && oppId ? oppId : null`, which collapsed a
+       number, an object or a boolean into the release branch — so a malformed
+       call un-reserved the shop's card and reported success. Only `null` means
+       release. */
+    if (typeof oppId !== "string" || !oppId) return refuse(R.notFound);
+    const wanted = oppId;
+    if (copy.archived) return refuse(R.copyUnavailable);
+    if (D.soldInventoryIds(state.opportunities).has(invId)) return refuse(R.copyUnavailable);
+    /* AND NOT ONCE THE CARD HAS BEEN PROMISED TO SOMEBODY. Without this a
+       partner could mark the copy pending for the deal that LOST it, and the
+       losing Collector's screen would read "Pending for your deal" about a card
+       already promised to somebody else — the one sentence in this feature that
+       must never be a lie. */
+    if (D.INVARIANTS.copyCommittedTo(invId, state.opportunities, wanted)) return refuse(R.copyCommitted);
+    /* Somebody else's deal already holds it. Said with the same word a
+       Collector would hear, because the partner is in the same position: this
+       copy is spoken for by a conversation that is not this one. */
+    const held = D.INVARIANTS.copyPendingFor(invId, state.inventory, state.opportunities);
+    if (held && held !== wanted) return refuse(R.copyPending);
+    const o = oppById(state, wanted);
+    if (!o) return refuse(R.notFound);
+    if (o.partnerId !== a.partnerId) return refuse(R.notParticipant);
+    if (o.invId !== invId) return refuse(R.identityMismatch);
+    if (!D.isActive(o)) return refuse(R.terminal);
+    return copy.pendingFor === wanted ? done(state, invId) : set(wanted);
   },
 
   addCopyPhotos(state, a, { invId, front, back }, ctx) {
@@ -451,8 +714,18 @@ const COMMANDS = {
     const copy = list(state.inventory).find((i) => i.invId === invId);
     if (!copy) return refuse(R.notFound);
     if (a.seat !== "tp" || copy.partnerId !== a.partnerId) return refuse(R.notOwner);
+    /* THIS COMMAND IS NAMED "ADD" AND WAS NOT ONE. It merges by slot, so
+       `front` given for a copy that already has a front REPLACES it, and
+       `front: null` erases it — and until now it carried no deal guard at all,
+       not even the certificate lock's. It was the easier of the two doors onto
+       the same harm: the photographs are the only evidence of a copy's
+       condition, and restaging them under a live deal, or after handover,
+       rewrites what was agreed. It now asks exactly what `updateInventoryCopy`
+       asks, so fulfilling a Collector's photo request still works — that always
+       fills an empty slot — while rewriting or erasing one does not. */
     const photos = { front: front !== undefined ? front : (copy.photos || {}).front,
       back: back !== undefined ? back : (copy.photos || {}).back };
+    if (protectedCopyEdit(state, invId, copy, {}, photos)) return refuse(R.copyCommitted);
     const complete = D.INVARIANTS.copyPhotographed(photos);
     return done({ ...state,
       inventory: list(state.inventory).map((i) => (i.invId === invId ? { ...i, photos } : i)),
@@ -912,8 +1185,13 @@ const COMMANDS = {
     const at = ctx.at;
     if (a.seat !== "collector") return refuse(R.notOwner);
     const copy = list(state.inventory).find((i) => i.invId === invId);
-    if (!copy || copy.archived || D.soldInventoryIds(state.opportunities).has(invId)) return refuse(R.copyUnavailable);
+    if (!copy) return refuse(R.copyUnavailable);
+    /* RELATIONSHIP FIRST, for the reason spelled out in `startOpportunity`: a
+       collector with no connection to this shop should not be able to read a
+       copy's state out of an id, and answering `copy-unavailable` for a sold
+       card before asking whether they know the shop at all did exactly that. */
     if (!isRelated(state, copy.partnerId, a.collectorId)) return refuse(R.noRelationship);
+    if (copy.archived || D.soldInventoryIds(state.opportunities).has(invId)) return refuse(R.copyUnavailable);
     const open = list(state.copyReviews).find((r) => r.collectorId === a.collectorId && r.invId === invId && !r.endedAt);
     if (open) return done(state, open.id);
     const id = ctx.id("rv");
@@ -934,8 +1212,15 @@ const COMMANDS = {
     const at = ctx.at;
     if (a.seat !== "collector") return refuse(R.notOwner);
     const copy = list(state.inventory).find((i) => i.invId === invId);
-    if (!copy || copy.archived) return refuse(R.copyUnavailable);
+    if (!copy) return refuse(R.copyUnavailable);
     if (!isRelated(state, copy.partnerId, a.collectorId)) return refuse(R.noRelationship);
+    if (copy.archived) return refuse(R.copyUnavailable);
+    /* ASKING FOR PHOTOGRAPHS OF A CARD THAT IS GONE (Option B, Item 0).
+       `reviewCopy` has always refused a sold copy and this did not, which meant
+       a Collector could ask a partner to photograph a card they no longer own.
+       The two commands exist for one purpose — looking properly at a copy — and
+       they now answer the same way. */
+    if (D.soldInventoryIds(state.opportunities).has(invId)) return refuse(R.copyUnavailable);
     if (D.INVARIANTS.copyPhotographed(copy.photos)) return done(state, null);
     if (list(state.photoRequests).some((r) => r.collectorId === a.collectorId && r.invId === invId && !r.fulfilledAt)) {
       return done(state, null);
@@ -975,10 +1260,13 @@ const COMMANDS = {
     if (!D.INVARIANTS.goalIsPursued(goalId, state.goals)) return refuse(R.notPrimary);
     if (!D.INVARIANTS.oneNegotiationPerGoal(goalId, state.opportunities)) return refuse(R.alreadyNegotiating);
     const copy = list(state.inventory).find((i) => i.invId === invId);
-    if (!copy || copy.archived) return refuse(R.copyUnavailable);
-    const status = D.inventoryCopyStatus(invId, state.opportunities);
-    if (status === "sold") return refuse(R.copyUnavailable);
-    if (status === "committed") return refuse(R.copyCommitted);
+    /* An id that names nothing cannot be checked against a relationship, so it
+       answers here; everything that depends on the copy's STATE — archived
+       included — waits until the two questions below have been asked. This line
+       used to carry `copy.archived` too, which meant a collector with no
+       connection to the shop watched a copy flip to unavailable the moment the
+       partner tidied it off the shelf. */
+    if (!copy) return refuse(R.copyUnavailable);
     const wanted = typeof g.canonicalCardId === "string" && g.canonicalCardId;
     const held = typeof copy.canonicalCardId === "string" && copy.canonicalCardId;
     if (wanted || held) {
@@ -987,6 +1275,35 @@ const COMMANDS = {
       return refuse(R.identityMismatch);
     }
     if (!isRelated(state, copy.partnerId, a.collectorId)) return refuse(R.noRelationship);
+    /* THE SAME QUESTION DISCOVERY ASKS, ASKED BY THE SAME FUNCTION. A Collector
+       must not be able to reach past a surface that correctly declined to offer
+       them this copy; and a pair Discovery DOES offer must never be refused
+       here. One predicate, two callers, so the two cannot drift apart. */
+    if (!D.meetsGoalCriteria(g.desired, copy)) return refuse(R.criteriaMismatch);
+    /* WHICH COPIES A NEW PURSUIT MAY BEGIN ON (Option B), AND HOW LITTLE IT MAY
+       SAY ABOUT WHY NOT. Every answer but `available` refuses, in one word.
+
+       This used to refuse in three different words, on the reasoning that a
+       Collector told "the shop is working on this one" and a Collector told
+       "it's sold" are owed different next moves. They would be — but the
+       sentence is about somebody else's negotiation, and it was readable by
+       anyone: a new pursuit needs no prior connection to the card, so these
+       three answers were a public oracle on a rival deal's stage, pollable with
+       one goal and an id. A collector opening a pursuit needs to know the copy
+       is not one they can pursue. That is all of it.
+
+       AND THE ORDER MATTERS AS MUCH AS THE WORD. This gate used to run before
+       the card-identity and relationship checks above, so a collector with no
+       relationship to the shop, holding a goal for an entirely different card,
+       still read any copy's exact lifecycle stage out of an arbitrary invId.
+       Asking "is this even your shop, and even your card?" first means a
+       stranger never reaches the availability answer at all.
+
+       An agreed market value is not among the reasons, and did not become one:
+       two people may still both find out what a card is worth. */
+    if (copy.archived) return refuse(R.copyUnavailable);
+    const status = D.inventoryCopyStatus(invId, state.opportunities, state.inventory);
+    if (status !== "available") return refuse(R.copyUnavailable);
     if (!(validMoney(amount) && amount > 0)) return refuse(R.invalidAmount);
     const partner = list(state.partners).find((p) => p.id === copy.partnerId) || {};
     const id = ctx.id("o");
@@ -1008,6 +1325,13 @@ const COMMANDS = {
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
     if (o.stage !== "agree-price") return refuse(R.wrongStage);
+    /* THE CARD HAS TO STILL BE THERE (Option B, Item 0). Until now two people
+       could go on proposing figures for a card that had been sold and handed
+       over weeks earlier, because only ACCEPTING a price was checked. A price
+       is a statement about a thing; when the thing is gone the statement is
+       not merely unenforceable, it is untrue. */
+    const blocked = copyBlockedFor(state, o, a);
+    if (blocked) return refuse(blocked);
     if (!turnFor(a, o, "price", "offer")) return refuse(R.notYourTurn);
     if (!(validMoney(amount) && amount > 0)) return refuse(R.invalidAmount);
     const type = (o.priceThread || []).length ? "counter" : "offer";
@@ -1023,15 +1347,17 @@ const COMMANDS = {
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
     if (o.stage !== "agree-price") return refuse(R.wrongStage);
+    /* THE CARD HAS TO STILL BE PURSUABLE BY THIS DEAL — and, since Option B,
+       that no longer means "nobody else has agreed a value on it". Two
+       collectors may both agree what this card is worth; neither is owed it.
+       What stops this acceptance is the card being gone, the partner having
+       marked it pending for somebody else, or somebody else having reached a
+       final agreement on it. Same question `proposePrice` asks, same answers. */
+    const blocked = copyBlockedFor(state, o, a);
+    if (blocked) return refuse(blocked);
     const last = D.lastEntry(o.priceThread);
     if (!last || last.by === a.seat) return refuse(R.notYourTurn);
     if (!turnFor(a, o, "price")) return refuse(R.notYourTurn);
-    if (o.invId != null) {
-      const copy = list(state.inventory).find((i) => i.invId === o.invId);
-      if (!copy || copy.archived) return refuse(R.copyUnavailable);
-      if (D.INVARIANTS.copyCommittedTo(o.invId, state.opportunities, o.id)) return refuse(R.copyCommitted);
-      if (D.soldInventoryIds(state.opportunities).has(o.invId)) return refuse(R.copyUnavailable);
-    }
     return done(withOpp(state, oppId, (x) => stamp({ ...x, agreedPrice: last.amount, stage: "select-trade",
       /* No trade-or-cash intent is recorded by agreeing a price; the
          collector's package (or cash-only choice) records it. */
@@ -1071,6 +1397,15 @@ const COMMANDS = {
     if (refused) return refuse(refused);
     if (o.stage !== "select-trade") return refuse(R.wrongStage);
     if (o.trade && o.trade.submitted) return refuse(R.alreadySubmitted);
+    /* AND THE CARD HAS TO STILL BE THERE. This one matters more than the price
+       guards: submitting a package RESERVES the Collector's own copies, so a
+       dead deal on a card that has been sold or promised elsewhere would
+       consume their property — a copy they could then neither withdraw nor
+       offer to anybody else until they noticed and cancelled. Before Option B
+       this was unreachable, because a losing deal could never get past
+       `acceptPrice`; moving the boundary is what opened it. */
+    const gone = copyBlockedFor(state, o, a);
+    if (gone) return refuse(gone);
     if (!turnFor(a, o, "choose-trade")) return refuse(R.notYourTurn);
     const ids = list(binderIds);
     if (new Set(ids).size !== ids.length) return refuse(R.copyInUse);
@@ -1111,6 +1446,14 @@ const COMMANDS = {
     const verdict = decision === "accepted" || decision === "accept" ? "accepted"
       : decision === "rejected" || decision === "reject" ? "rejected" : null;
     if (!verdict) return refuse(R.notFound);
+    /* Only ACCEPTING builds the package further; rejecting a row RELEASES the
+       collector's copy, which is the same shape as withdrawTradeCard and is
+       left open for the same reason. Guarding before the verdict was read shut
+       the partner out of closing down a deal they already know is dead. */
+    if (verdict === "accepted") {
+      const gone = copyBlockedFor(state, o, a);
+      if (gone) return refuse(gone);
+    }
     const rows = D.TRADE.liveTradeRows(o).filter((c) => c.inclusion === "proposed");
     const target = tradeCardId ? rows.filter((c) => c.id === tradeCardId) : rows;
     if (!target.length) return refuse(R.nothingToAccept);
@@ -1151,6 +1494,13 @@ const COMMANDS = {
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
     if (o.stage !== "deal") return refuse(R.wrongStage);
+    /* The FINAL cash figure is the strongest statement either side makes about
+       this copy, so it is the last place that should still be reachable once
+       the copy is gone. proposePrice's reason applies with more force here: a
+       price is a statement about a thing, and when the thing is promised away
+       the statement is not merely unenforceable, it is untrue. */
+    const gone = copyBlockedFor(state, o, a);
+    if (gone) return refuse(gone);
     if (!turnFor(a, o, "final")) return refuse(R.notYourTurn);
     if (!validMoney(amount)) return refuse(R.invalidAmount);
     const deal = { ...D.emptyDeal(), ...(o.deal || {}), adjThread: (o.deal && o.deal.adjThread) || [] };
@@ -1171,6 +1521,23 @@ const COMMANDS = {
     if (refused) return refuse(refused);
     if (o.stage !== "deal") return refuse(R.wrongStage);
     if (!turnFor(a, o, "final")) return refuse(R.notYourTurn);
+    /* THE ONE PLACE A PHYSICAL CARD CAN BE PROMISED TWICE (Option B, Item 2).
+
+       This used to be safe by accident. Agreeing a market value committed the
+       copy, so a second deal could never reach this stage, and nothing below
+       this line re-checked the card — not fulfilment, not the handoff. A
+       read-only pass proved it by seeding the state the old gate made
+       unreachable: two agreed deals on one copy both ran to completion with
+       every command allowed.
+
+       Moving the boundary to final agreement makes that state reachable, so the
+       guard has to move with it. This is now the commitment boundary in the
+       literal sense: past it, one collector has been promised this exact card,
+       and the promise is what the refusal protects. Pending for THIS deal is
+       fine — that is the partner holding it for the person they are about to
+       promise it to. */
+    const blocked = copyBlockedFor(state, o, a);
+    if (blocked) return refuse(blocked);
     const d = { ...D.emptyDeal(), ...(o.deal || {}), adjThread: (o.deal && o.deal.adjThread) || [] };
     if (a.seat === "tp") {
       return done(withOpp(state, oppId, (x) => stamp({ ...x, deal: { ...d, tpAgreed: true } }, at)), oppId);
@@ -1262,6 +1629,12 @@ function valueStep(state, a, { oppId, tradeCardId, amount, percent }, ctx, phase
   const { o, refused } = oppGate(state, a, oppId);
   if (refused) return refuse(refused);
   if (o.stage !== "value-trade") return refuse(R.wrongStage);
+  /* NO NEW ECONOMIC STATEMENTS ABOUT A CARD THAT IS GONE. The same argument
+     `proposePrice` makes: valuing a trade card is valuing it AGAINST the
+     partner's copy, and when that copy has been sold or promised to somebody
+     else the number means nothing. */
+  const gone = copyBlockedFor(state, o, a);
+  if (gone) return refuse(gone);
   const row = (o.trade && o.trade.cards || []).find((c) => c.id === tradeCardId);
   if (!row || row.inclusion !== "accepted" || row.withdrawn) return refuse(R.notFound);
   if (!turnFor(a, o, "value") || D.cardOwner(row) !== a.seat) return refuse(R.notYourTurn);
@@ -1294,6 +1667,8 @@ COMMANDS.chooseCashOnly = (state, a, { oppId }, ctx) => {
   const { o, refused } = oppGate(state, a, oppId);
   if (refused) return refuse(refused);
   if (o.stage !== "select-trade") return refuse(R.wrongStage);
+  const gone = copyBlockedFor(state, o, a);
+  if (gone) return refuse(gone);
   if (D.TRADE.liveTradeRows(o).length > 0) return refuse(R.tradeCardsSelected);
   if (!turnFor(a, o, "choose-trade", "trade-reviewed")) return refuse(R.notYourTurn);
   return done(withOpp(state, oppId, (x) => stamp({ ...x, stage: "deal",

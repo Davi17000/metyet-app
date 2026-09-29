@@ -101,13 +101,70 @@ const isNegotiating = (o) => isActive(o) && STAGE_IX[o.stage] >= STAGE_IX["agree
    Never stored. Seeking / Negotiating / Satisfied describe what the
    opportunities actually say, so they cannot drift from reality, and ending a
    negotiation returns a goal to Seeking with no mutation at all. */
+/* A NEGOTIATION THAT CAN NEVER CONCLUDE IS NOT THE ONE NEGOTIATION.
+
+   One live negotiation per Goal is a real rule and this does not loosen it. But
+   the rule assumes a negotiation can end — a person finishes it, or walks away
+   from it, and the Goal is free again. A deal whose physical copy has gone to
+   somebody else can do neither: every economic command refuses, so it sits at
+   `agree-price` for ever, and the Collector cannot demote the Goal, delete it,
+   or pursue the same card at a DIFFERENT shop, because the lock is still held
+   by a deal that lost. Nothing ever told them it had lost.
+
+   So the lock is read from what is still possible rather than from what is
+   still open. A copy promised to another deal, or already handed over, cannot
+   be transacted — and both facts are derivable from the opportunities alone,
+   which is why this needs no inventory, no new field, no lifecycle state and no
+   sweep. The record is untouched: still active, still `agree-price`, still
+   `declined: false`, still exactly what happened. It is history that has
+   stopped being a claim on the future, and it derives that way every time it is
+   read — the same self-healing shape Option B used for a stale `pendingFor`.
+
+   THE WINNER IS NOT RELEASED: `copyCommittedTo` excludes the opportunity being
+   asked about, so the deal that holds the commitment still holds its Goal. */
+const transactionallyLost = (o, opps) => {
+  const invId = o && o.invId;
+  if (invId == null) return false;
+  if (soldInventoryIds(opps || []).has(invId)) return true;
+  /* EVER PROMISED, NOT CURRENTLY PROMISED — and the difference is the whole
+     correctness of this predicate.
+
+     `copyCommittedTo` asks whether a commitment is standing RIGHT NOW, because
+     its question is "may somebody else pursue this?". Asking it here made the
+     release non-monotonic: the rival could cancel after final agreement, the
+     losing deal would un-lose, and a Goal that had legitimately opened a
+     replacement in the meantime then held TWO live negotiations — a state the
+     commands produced and `validateWorld` refuses, which is a 500 rather than
+     a refusal, and which no further command could clear.
+
+     Final agreement is never un-given: cancelling writes an ending and rewrites
+     no term, so `finalAgreementGiven` stays true on a cancelled deal for ever.
+     Keying on that makes losing permanent, which is what losing is. The copy
+     coming back onto the shelf is a new opportunity for anybody who wants it —
+     including this Collector, who may open a fresh pursuit — and not a reason
+     to resurrect a conversation that was already superseded. */
+  return (opps || []).some((other) => other && other.invId === invId
+    && other.id !== o.id && finalAgreementGiven(other));
+};
+
+/* AND A REFERENTIAL CONSTRAINT, WHICH IS NOT THE SAME AS A LOCK. Releasing the
+   negotiation lock lets a Collector demote the Goal and pursue the card
+   elsewhere. It must NOT let them DELETE the Goal, because an active
+   Opportunity names it and `validateWorld` requires that name to resolve —
+   deleting would produce an unstorable world, the exact shape this batch set
+   out to avoid one predicate over. The honest way out of a dead deal is to
+   cancel it, which stays available and is what makes the Goal deletable. */
+const goalNamedByActive = (goalId, opps) =>
+  (opps || []).some((o) => o && o.goalId === goalId && isActive(o));
+
 const activeOppForGoal = (goalId, opps) =>
-  opps.find((o) => o.goalId === goalId && isNegotiating(o)) || null;
+  (opps || []).find((o) => o.goalId === goalId && isNegotiating(o)
+    && !transactionallyLost(o, opps)) || null;
 
 const goalState = (goalId, opps) => {
-  const mine = opps.filter((o) => o.goalId === goalId);
+  const mine = (opps || []).filter((o) => o.goalId === goalId);
   if (mine.some(isCompleted)) return "satisfied";
-  if (mine.some(isNegotiating)) return "negotiating";
+  if (mine.some((o) => isNegotiating(o) && !transactionallyLost(o, opps))) return "negotiating";
   return "seeking";
 };
 
@@ -704,18 +761,82 @@ const INVARIANTS = {
 
      A partner is not committed merely because somebody has offered — several
      collectors may be talking to them about the same card at once, and that is
-     healthy. They become committed when the PRICE IS SETTLED, because that is
-     the point at which they have told one collector what the card costs them
-     and cannot honestly tell another the same thing.
+     healthy.
 
-     Settled price is `agreedPrice != null`, which is the existing canonical
-     marker for Agree on Price being done; no new field is introduced. The lock
-     is per PHYSICAL COPY, so a partner may commit different copies to different
-     collectors at the same time. It releases when the deal ends, since an ended
-     deal no longer holds anything. */
+     WHERE THIS BOUNDARY USED TO BE, AND WHY IT MOVED (Option B). It used to be
+     `agreedPrice != null`: settling a market value committed the copy. That
+     read a valuation as a promise. Agreeing what a card is WORTH is a shared
+     fact about the card, and two collectors can hold it at once without either
+     of them being owed anything — which is the whole of "agreement about
+     information is not agreement to transact". So the boundary is now the one
+     moment both parties say yes to the assembled deal: `finalAgreementGiven`.
+
+     THE LOCK IS PER PHYSICAL COPY, so a partner may commit different copies to
+     different collectors at once, and it releases when the deal ends, because
+     an ended deal holds nothing.
+
+     WHAT THIS IS NOT. It is not the mutation guard. `copyInLiveDeal` below is
+     deliberately wider and still keys on a settled price — see its comment. */
   copyCommittedTo: (invId, opps, exceptOppId) => (invId == null ? null
     : (opps || []).find((o) => o.invId === invId && o.id !== exceptOppId
+      && isActive(o) && finalAgreementGiven(o)) || null),
+
+  /* THE PARTNER'S OTHER BOUNDARY — WIDER, AND FOR A DIFFERENT PURPOSE.
+
+     Two questions look alike and are not the same:
+
+       "may another collector still pursue this copy?"   availability
+       "may the partner still CHANGE this copy?"         mutation safety
+
+     Availability moved to final agreement. Mutation safety must not, and this
+     predicate exists so that moving one did not silently move the other. From
+     the moment a market value is settled, a collector is reasoning about THIS
+     physical card — assembling a trade package against its certificate, pricing
+     around its grade. Letting the partner re-certify it or archive it out from
+     under that is a different kind of harm from letting somebody else pursue
+     it, and the older, wider window is the right one for it.
+
+     So: `updateInventoryCopy` and `removeInventoryCopy` ask this; nothing about
+     who may pursue the copy does. */
+  copyInLiveDeal: (invId, opps) => (invId == null ? null
+    : (opps || []).find((o) => o.invId === invId
       && isActive(o) && o.agreedPrice != null) || null),
+
+  /* PENDING — THE ONE AVAILABILITY FACT A PARTNER CHOOSES (Option B).
+
+     Everything else about a copy's availability is derived from what has
+     happened to it. This is derived from what the partner DECIDED: they are
+     working toward a transaction on this exact card and would rather not start
+     another conversation about it. It names the opportunity, because "pending"
+     with nobody attached cannot tell the collector on the other side of that
+     deal that it is pending for THEM.
+
+     STALE BY CONSTRUCTION, AND THAT IS THE POINT. The field may outlive the
+     opportunity it names — a cancelled deal leaves it dangling. Rather than
+     sweep, this asks whether the named opportunity is still active, so a
+     forgotten `pendingFor` reads as available on its own. There is nothing to
+     clean up and nothing that can rot.
+
+     VIEWER-RELATIVE FOR FREE. `opps` is whatever the caller is asking about:
+     hand it one collector's own opportunities and a copy pending for somebody
+     else's deal simply is not pending to them. That is how the projection tells
+     "pending for your deal" from "unavailable" without a second rule. */
+  copyPendingFor: (invId, inventory, opps) => {
+    if (invId == null) return null;
+    const copy = (inventory || []).find((i) => i.invId === invId);
+    /* An archived copy is nobody's to be pending FOR. Without this the derived
+       status contradicted the command layer outright: a copy pended before any
+       price was settled is still archivable (removeInventoryCopy keys on
+       copyInLiveDeal), and both seats were then shown "Pending" — "Pending for
+       your deal" to the collector — for a copy every command answers
+       copy-unavailable about. Falling through leaves it `available` here, which
+       the projection renders `unavailable` via inSupply, as it did before. */
+    if (!copy || copy.archived) return null;
+    const oppId = typeof copy.pendingFor === "string" ? copy.pendingFor : null;
+    if (!oppId) return null;
+    const held = (opps || []).find((o) => o.id === oppId && o.invId === invId && isActive(o));
+    return held ? held.id : null;
+  },
   /* WHEN A PHYSICAL COPY CAN BE EVALUATED. A stock image identifies the CARD;
      actual front and back photos identify the SPECIFIC PHYSICAL COPY, and what
      a copy is worth depends on the condition of that copy — so a copy is ready
@@ -772,9 +893,21 @@ const REFUSE = {
   goalLocked: "goal-locked",
   duplicateGoal: "duplicate-goal",
   identityMismatch: "identity-mismatch",
+  /* The copy is this card, and it is available — but it is not the one this
+     Goal asked for. Distinct from identity-mismatch on purpose: the same card
+     in a grade the Collector did not ask for is a different answer from the
+     wrong card, and only the first is worth telling them about. It discloses
+     nothing private: both halves are the Collector's own criteria and the
+     copy's own publicly projected facts. */
+  criteriaMismatch: "criteria-mismatch",
   copyReserved: "copy-reserved",
   copyInUse: "copy-in-use",
   copySold: "copy-sold",
+  /* THE PARTNER IS WORKING ON THIS ONE (Option B). Distinct from
+     `copy-committed`, which says two parties have agreed a deal, and from
+     `copy-sold`, which says the card is gone: this says a person decided, and a
+     person can undecide. A surface may say so without naming the other deal. */
+  copyPending: "copy-pending",
   reasonRequired: "reason-required",
   planIncomplete: "plan-incomplete",
   nothingToAccept: "nothing-to-accept",
@@ -949,6 +1082,59 @@ const gradingRead = (copy) => {
   const problem = gradingProblem(copy);
   if (!problem) return { ...base, problem: null };
   return { ...base, problem, condition: stated(copy && copy.condition) || base.condition };
+};
+
+/* DOES THIS PHYSICAL COPY SATISFY WHAT THE COLLECTOR ACTUALLY SAID?
+
+   One rule, and it is deliberately the narrowest one that can be stated:
+
+     a criterion the Collector STATED     the copy must match it exactly
+     a criterion they did NOT state       imposes nothing
+
+   THIS REVERSES A PRIOR DECISION, AND THE REASON IS WORTH KEEPING. Criteria
+   used to be context only — a Goal for a Raw card surfaced a PSA 8, on the
+   reading that a person might still want to hear about it. That reading makes
+   MetYet guess. A Collector who chose "Raw / Near Mint" from a closed list
+   chose it; presenting a PSA 8 as an answer to it is the product inventing a
+   preference nobody expressed. Criteria now constrain Discovery because they
+   are criteria the Collector explicitly selected.
+
+   WHAT THIS IS NOT, AND MUST NEVER QUIETLY BECOME. There is no band, no floor,
+   no "or better", no ordering. `GRADED_VALUES` and `CONDITION_VALUES` are read
+   with `includes` everywhere in this repository and never with an index
+   comparison — the vocabularies are a closed set of names, not a scale. A
+   Collector wanting PSA 9 is not assumed to accept PSA 10, because nobody asked
+   them and a higher number is not obviously better to somebody completing a set
+   at a grade. Ranges, multiple acceptable values and ranked preferences are a
+   preference LANGUAGE; if the pilot shows people want one, it gets designed,
+   not inferred here.
+
+   UNSTATED IS UNRESTRICTED, WHICH IS NOT THE SAME AS MATCHING NOTHING. A Goal
+   that names a grade and no condition restricts grade alone. A Goal that names
+   neither restricts nothing and behaves exactly as it did before this batch.
+   Absence is absence — the one thing this file already refuses to read as a
+   statement. (A legacy `cardId` Goal that DOES state criteria is constrained
+   like any other at the command boundary, though Discovery never reaches it:
+   `isDemand` has required a canonical card since B8.)
+
+   One consequence falls out of the existing grading rule rather than out of
+   this one: a Goal stating only a condition will not match a COHERENT PSA copy,
+   because `gradingProblem` forbids a graded copy from carrying a condition at
+   all, so its condition is blank and blank is not "Near Mint". That is the
+   existing vocabulary being coherent, not a rule added here.
+
+   A ROW WRITTEN BEFORE C3.2 CAN STILL CARRY BOTH, and such a copy DOES match a
+   condition-only Goal. That is deliberate rather than overlooked: those rows
+   cannot be repaired — "PSA 9 / Damaged" does not say which half the person
+   meant — and reading past the condition they actually recorded would be this
+   file guessing, which is the thing it exists to refuse. The copy renders with
+   its conflict note, so the contradiction is shown rather than hidden. */
+const meetsGoalCriteria = (desired, copy) => {
+  const wantGrade = stated(desired && desired.grade);
+  const wantCondition = stated(desired && desired.condition);
+  if (wantGrade && stated(copy && copy.grade) !== wantGrade) return false;
+  if (wantCondition && stated(copy && copy.condition) !== wantCondition) return false;
+  return true;
 };
 
 /* Free-text search over the canonical catalog. Every term must appear somewhere
@@ -1238,11 +1424,38 @@ const currentCashFigure = (o) => {
   return calculatedBalance(o);
 };
 
-/* PHYSICAL-COPY STATUS — derived from the opportunities, never stored (§6). */
-const inventoryCopyStatus = (invId, opps) => {
+/* PHYSICAL-COPY STATUS — derived from the opportunities and the one fact the
+   partner sets, never stored as a status of its own (§6).
+
+   FOUR ANSWERS, IN THIS ORDER, AND THE ORDER IS THE MEANING:
+
+     sold       the card is gone. Nothing outranks it and nothing reverses it.
+     committed  both parties said yes to the assembled deal (finalAgreementGiven).
+     pending    the partner decided they are working on it (INVARIANTS.copyPendingFor).
+     available  everything else — INCLUDING an agreed market value.
+
+   THE LAST LINE IS THE CHANGE (Option B). Settling what a card is worth used to
+   make it `committed`, which meant agreeing a fact took the card away from
+   everybody else without anyone deciding to. Now it does not: a copy stays
+   available through inspection, photographs, valuation, trade selection and
+   trade valuation, and leaves only when the partner says so or when both
+   parties commit to the deal.
+
+   `committed` OUTRANKS `pending`, and an adversarial pass is why. The other way
+   round, a copy pending for deal X and promised in deal X read as `pending` —
+   and the Collector's label for that word is "Pending for your deal", which
+   understates a card that is already theirs. Worse, before `setCopyPending`
+   learned to refuse a promised copy, the LOSING deal could be marked pending
+   and its Collector told the card was being held for them. A promise is the
+   stronger fact and it is what gets said.
+
+   `inventory` IS REQUIRED FOR `pending` and for nothing else. A caller that
+   cannot supply it still gets sold / committed / available correctly. */
+const inventoryCopyStatus = (invId, opps, inventory) => {
   const mine = (opps || []).filter((o) => o.invId != null && o.invId === invId);
   if (mine.some(isCompleted)) return "sold";
-  if (mine.some((o) => isActive(o) && o.agreedPrice != null)) return "committed";
+  if (mine.some((o) => isActive(o) && finalAgreementGiven(o))) return "committed";
+  if (INVARIANTS.copyPendingFor(invId, inventory, opps)) return "pending";
   return "available";
 };
 const soldInventoryIds = (opps) => new Set((opps || [])
@@ -1314,6 +1527,9 @@ module.exports.cancelledAfterAgreement = cancelledAfterAgreement;
 module.exports.currentCashFigure = currentCashFigure;
 module.exports.inventoryCopyStatus = inventoryCopyStatus;
 module.exports.soldInventoryIds = soldInventoryIds;
+module.exports.meetsGoalCriteria = meetsGoalCriteria;
+module.exports.transactionallyLost = transactionallyLost;
+module.exports.goalNamedByActive = goalNamedByActive;
 module.exports.collectorCopyStatus = collectorCopyStatus;
 module.exports.binderRowState = binderRowState;
 module.exports.goalLocked = goalLocked;

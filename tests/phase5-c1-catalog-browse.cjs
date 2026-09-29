@@ -620,7 +620,7 @@ describe("D. cancel, and everything short of the last button", () => {
     const made = await shelfOfCards(ctx);
     /* A partner has the card. Nobody has said they want it. */
     await post(ctx.app, "north", "addInventoryCopy",
-      { copy: { canonicalCardId: made.blastoise.cards[0], ask: 900 } });
+      { copy: { canonicalCardId: made.blastoise.cards[0], ask: 900, grade: "PSA 9" } });
     for (const q of ["query=Blastoise", "pokedex=9", "artist=Ken%20Sugimori"]) {
       await browse(ctx, "casey", q);
     }
@@ -833,7 +833,7 @@ describe("G. boundaries, and what did not change", () => {
     await post(ctx.app, "casey", "addGoal",
       { canonicalCardId: made.charizard.cards[1], tier: "primary", desired: { grade: "PSA 9" } });
     await post(ctx.app, "north", "addInventoryCopy",
-      { copy: { canonicalCardId: made.charizard.cards[1], ask: 900, cost: 400 } });
+      { copy: { canonicalCardId: made.charizard.cards[1], ask: 900, cost: 400, grade: "PSA 9" } });
     const res = await get(ctx.app, "casey", "/api/view");
     eq(res.json().state.discoveries.length, 1, "supply and demand stopped meeting");
     /* A different printing of the same artwork still does not match. */

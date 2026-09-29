@@ -1024,7 +1024,10 @@ describe("G. whose shelf this is", () => {
   test("there is no HTTP way in, and the production door did not move", async () => {
     const { EXPOSED_COMMANDS } = require("../server/exposed-commands.js");
     eq(EXPOSED_COMMANDS.length, 18, "C8 opened a production command: " + EXPOSED_COMMANDS.join(","));
-    eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 49,
+    /* 49 → 50 in Option B (`setCopyPending`). C8's claim is unchanged: C8 added
+       no domain command, and the door it is really guarding — the allow-list
+       above — has not moved either. */
+    eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 50,
       "C8 added a domain command");
     const app = code("server/app.js");
     assert(!/inventory-import|inventoryImport|\/api\/inventory|csv/i.test(app),

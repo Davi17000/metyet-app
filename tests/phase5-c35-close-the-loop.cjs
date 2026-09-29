@@ -120,7 +120,11 @@ const view = async (app, token) => (await get(app, token, "/api/view")).json().s
 const load = (ctx) => ctx.repository.loadWorld();
 const want = (app, token, canonicalCardId, tier = "primary", desired = { grade: "PSA 9" }) =>
   post(app, token, "addGoal", { canonicalCardId, tier, desired });
-const stock = (app, token, copy) => post(app, token, "addInventoryCopy", { copy });
+/* Supply states the grade this suite's Goals ask for. Since the true-match
+   batch a Goal's stated criteria constrain Discovery; every test here is about
+   something else, so demand and supply are made to agree deliberately. */
+const stock = (app, token, copy) => post(app, token, "addInventoryCopy",
+  { copy: (copy && (copy.grade || copy.condition)) ? copy : { grade: "PSA 9", ...copy } });
 
 /* ---------------------------------------------------------------- RENDERING */
 const build = (rel) => {
@@ -713,25 +717,29 @@ describe("E. still two facts", () => {
       "the note and the criteria share a line: " + json(lines));
   });
 
-  test("criteria change nothing about which cards overlap", async () => {
+  test("RE-PINNED: criteria decide which copies overlap, and changing them changes it", async () => {
+    /* THIS ASSERTED THE OPPOSITE. C3.2 said criteria were context for a person
+       and never a rule for a machine, so a PSA 10 want discovered a Raw copy.
+       The true-match batch reversed that: a criterion the Collector stated is
+       a criterion, and answering past it is the product guessing. What C3.5
+       settled and this still pins is that the SURFACE renders criteria and
+       promotes nothing — only the overlap underneath it moved. */
     const ctx = await world();
     const made = await cards(ctx);
-    /* A Collector wanting a PSA 10 still discovers a raw copy, and the reverse.
-       C3.2 said criteria are context for a person, never a rule for a machine;
-       C3.5 renders them and does not promote them. */
     await want(ctx.app, "casey", made.firstEdition, "primary", { grade: "PSA 10" });
     await stock(ctx.app, "north",
       { canonicalCardId: made.firstEdition, grade: "Raw", condition: "Heavily Played", ask: 90 });
-    const mine = await shops(ctx);
-    eq(mine.state.discoveries.length, 1, "criteria filtered the overlap");
-    assert(texts(mine.r).includes("Northline has a card you're looking for."), texts(mine.r));
+    eq((await view(ctx.app, "casey")).discoveries.length, 0,
+      "a Raw copy is not an answer to a PSA 10 question");
 
+    /* Correcting the criteria to what the shop actually has creates the
+       overlap — the same fact from the other side. */
     const goalId = (await load(ctx)).goals[0].id;
-    const before = json((await view(ctx.app, "casey")).discoveries);
     await post(ctx.app, "casey", "updateGoalCriteria",
-      { goalId, desired: { grade: "Raw", condition: "Near Mint" } });
-    eq(json((await view(ctx.app, "casey")).discoveries), before,
-      "changing the criteria changed the overlap");
+      { goalId, desired: { grade: "Raw", condition: "Heavily Played" } });
+    const mine = await shops(ctx);
+    eq(mine.state.discoveries.length, 1, "changing the criteria changed the overlap");
+    assert(texts(mine.r).includes("Northline has a card you're looking for."), texts(mine.r));
   });
 });
 
@@ -757,7 +765,9 @@ describe("F. the boundaries hold", () => {
       "updateInventoryCopy", "removeInventoryCopy",
     ].sort()), "C3.5 changed the production surface");
     eq(EXPOSED_COMMANDS.length, 18);
-    eq(C.COMMAND_NAMES.length, 49, "a command was added or removed");
+    /* 49 → 50 in Option B (`setCopyPending`). What this line guards is the
+       door above, which has not moved: the new command is not exposed. */
+    eq(C.COMMAND_NAMES.length, 50, "a command was added or removed");
   });
 
   test("C3.5 opened no door — the whole file is what it was", () => {
@@ -805,14 +815,21 @@ describe("F. the boundaries hold", () => {
 
   test("the projection did not change: C3.5 renders what was already sent", () => {
     const { execFileSync } = require("child_process");
-    const at = (rev) => execFileSync("git", ["show", `${rev}:domain/metyet-projection.js`],
+    const at = (rev, rel) => execFileSync("git", ["show", `${rev}:${rel}`],
       { cwd: ROOT, encoding: "utf8" });
-    eq(at("aef60e4"), read("domain/metyet-projection.js"),
-      "the projection changed in a batch that promised not to touch it");
-    /* And the discovery derivation is untouched too. */
-    eq(execFileSync("git", ["show", "aef60e4:domain/metyet-discovery.js"],
-      { cwd: ROOT, encoding: "utf8" }), read("domain/metyet-discovery.js"),
-    "the discovery rule changed");
+    /* BOTH ENDS ARE NAMED, AND THAT IS THE FIX (the C7.1 lesson).
+       This read `at("aef60e4")` against the WORKING TREE, which asks "has the
+       projection changed since C3.5's base" — true on the day C3.5 merged and
+       false for every later batch that touches the file, whatever C3.5 did.
+       Option B is the first batch to touch it, and the pin went red for a
+       change C3.5 knows nothing about. What C3.5 actually claims is that IT
+       changed neither file, and that is a statement about two commits: its own
+       base and its own head. It is now asked that way, and it is true for
+       ever. */
+    const C35 = Object.freeze({ from: "aef60e4", to: "97fdba3" });   // base · merge of PR #70
+    for (const rel of ["domain/metyet-projection.js", "domain/metyet-discovery.js"]) {
+      eq(at(C35.from, rel), at(C35.to, rel), `C3.5 changed ${rel}`);
+    }
   });
 
   test("a binder is still the Collector's alone", async () => {
@@ -836,9 +853,9 @@ describe("F. the boundaries hold", () => {
   });
 
   test("navigation is exactly what C3.4 left, on both seats", () => {
-    eq(COLLECTOR_SHELL.SECTIONS.map((s) => s.id).join(","), "browse,binder,my-cards,partners");
+    eq(COLLECTOR_SHELL.SECTIONS.map((s) => s.id).join(","), "browse,binder,partners,deal-flow");
     eq(COLLECTOR_SHELL.SECTIONS.map((s) => s.label).join(" · "),
-      "Browse · Binder · Your Cards · Trusted Partners");
+      "Browse · Binders · Trusted Partners · Deal Flow");
     eq(COLLECTOR_SHELL.DEFERRED_SECTIONS.map((s) => s.id).join(","), "goals",
       "the deferral list moved");
     /* Goals is still not a destination, and Goals.jsx is still not deleted —

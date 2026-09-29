@@ -440,7 +440,7 @@ describe("D. Interest does not reserve a copy, and a held copy takes no new Inte
      negotiation commands so the status under test is the real derivation. */
   async function reserved(ctx, cards) {
     const invId = (await post(ctx.app, "north", "addInventoryCopy",
-      { copy: { canonicalCardId: cards.firstEdition, ask: 9000 } })).json().value;
+      { copy: { canonicalCardId: cards.firstEdition, ask: 9000, grade: "PSA 9" } })).json().value;
     const goalId = (await post(ctx.app, "casey", "addGoal",
       { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } })).json().value;
     const copyId = (await own(ctx.app, "casey", { canonicalCardId: cards.shadowless,
@@ -499,7 +499,7 @@ describe("D. Interest does not reserve a copy, and a held copy takes no new Inte
 
     /* Then the copy goes into a deal. */
     const invId = (await post(ctx.app, "north", "addInventoryCopy",
-      { copy: { canonicalCardId: cards.firstEdition, ask: 9000 } })).json().value;
+      { copy: { canonicalCardId: cards.firstEdition, ask: 9000, grade: "PSA 9" } })).json().value;
     const goalId = (await post(ctx.app, "casey", "addGoal",
       { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } })).json().value;
     const oppId = (await direct(ctx, ACTOR.casey, "startOpportunity", { goalId, invId, amount: 9000 })).value;

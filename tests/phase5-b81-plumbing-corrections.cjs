@@ -319,7 +319,7 @@ describe("C. what happened, said once", () => {
   test("a Trusted Partner's command says the partner, not a collector", async () => {
     const ctx = await world();
     const card = await charizard(ctx);
-    await post(ctx.app, "north", "addInventoryCopy", { copy: { canonicalCardId: card, ask: 900 } });
+    await post(ctx.app, "north", "addInventoryCopy", { copy: { canonicalCardId: card, ask: 900, grade: "PSA 9" } });
     const { fields } = said(ctx.logger, "command")[0];
     eq(fields.seat, "tp");
     eq(fields.partnerId, "p1");
@@ -344,7 +344,7 @@ describe("C. what happened, said once", () => {
     await get(ctx.app, "casey");
     eq(said(ctx.logger, "view").pop().fields.discoveries, 0, "nothing overlapped yet");
 
-    await post(ctx.app, "north", "addInventoryCopy", { copy: { canonicalCardId: card, ask: 900 } });
+    await post(ctx.app, "north", "addInventoryCopy", { copy: { canonicalCardId: card, ask: 900, grade: "PSA 9" } });
     for (const token of ["casey", "north"]) {
       const res = await get(ctx.app, token);
       eq(res.statusCode, 200);
@@ -359,7 +359,7 @@ describe("C. what happened, said once", () => {
     const ctx = await world();
     const card = await charizard(ctx);
     await post(ctx.app, "casey", "addGoal", { canonicalCardId: card, tier: "primary", desired: { grade: "PSA 9" } });
-    await post(ctx.app, "north", "addInventoryCopy", { copy: { canonicalCardId: card, ask: 900 } });
+    await post(ctx.app, "north", "addInventoryCopy", { copy: { canonicalCardId: card, ask: 900, grade: "PSA 9" } });
     /* End the relationship: the overlap in the WORLD is unchanged, and neither
        seat may see it any more. */
     const state = await ctx.repository.loadWorld();
@@ -490,17 +490,29 @@ describe("E. Your Cards is not a place a Collector can go", () => {
        directions, which is the proof it is a real place and not a one-off.
        The claim is unchanged and is asserted the same way: every id in the list
        still has a live component, and Your Cards is still promoted. */
-    eq(mod.exports.SECTIONS.map((s) => s.id).join(","), "browse,binder,my-cards,partners");
+    eq(mod.exports.SECTIONS.map((s) => s.id).join(","), "browse,binder,partners,deal-flow");
     eq(mod.exports.DEFERRED_SECTIONS.map((s) => s.id).join(","), "goals",
       "something else is waiting — say so here");
     for (const waiting of mod.exports.DEFERRED_SECTIONS) {
       assert(typeof waiting.view === "function",
         `the deferred section ${waiting.id} has no component: deferring became deleting`);
     }
-    const promoted = mod.exports.SECTIONS.find((s) => s.id === "my-cards");
-    assert(promoted && typeof promoted.view === "function",
-      "the section component was deleted rather than promoted");
-    eq(promoted.count, "collectorCopies", "it counts something other than its own collection");
+    /* RE-PINNED (binders batch). Your Cards was promoted by C3.4a and is no
+       longer a destination at all: Binders holds its views. What this assertion
+       has always been about — deferring or absorbing a section must not quietly
+       become DELETING it — is asserted on the component instead of on the tab,
+       which is where the thing it protects actually lives now. */
+    const fs2 = require("fs");
+    const collection = path.join(ROOT, "client", "collector", "sections", "Collection.jsx");
+    assert(fs2.existsSync(collection), "the section component was deleted rather than composed");
+    const binderSrc = fs2.readFileSync(
+      path.join(ROOT, "client", "collector", "sections", "Binder.jsx"), "utf8");
+    assert(/from "\.\/Collection\.jsx"/.test(binderSrc),
+      "nothing composes it, so it is a dead file rather than a moved job");
+    /* Its count went with its tab. The counted sections are asserted in the
+       shell's own suite; what belongs here is that the component survived. */
+    eq(mod.exports.SECTIONS.find((x) => x.id === "binder").count, "binders",
+      "Binders counts something other than its own collection");
   });
 
   test("the domain, the table and the projection are untouched", () => {
@@ -509,12 +521,13 @@ describe("E. Your Cards is not a place a Collector can go", () => {
       assert(commands.includes(`${name}(state, a,`), `${name} was removed`);
     }
     assert(FIELD_RULES.COLLECTOR_COPY_FOR_PARTNER.length > 0, "the binder projection rule was removed");
-    /* The file is MyCards.jsx since C2 — the section was renamed, not deleted,
-       which is what this assertion has always been about: deferring a section
-       must not quietly become removing it. */
-    assert(fs.existsSync(path.join(ROOT, "client", "collector", "sections", "MyCards.jsx")),
+    /* Trade Binder in C2, then MyCards, and Collection.jsx since this batch —
+       renamed twice and deleted neither time, which is what this assertion has
+       always been about: deferring or absorbing a section must not quietly
+       become removing it. */
+    assert(fs.existsSync(path.join(ROOT, "client", "collector", "sections", "Collection.jsx")),
       "the section file was deleted");
-    assert(!fs.existsSync(path.join(ROOT, "client", "collector", "sections", "TradeBinder.jsx")),
+    assert(!fs.existsSync(path.join(ROOT, "client", "collector", "sections", "MyCards.jsx")),
       "the old name is still there too — one concept, one file");
   });
 

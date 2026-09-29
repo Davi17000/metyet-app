@@ -378,7 +378,7 @@ describe("B. rerun is recovery", () => {
     await post(ctx.app, "casey", "addCollectorCopy",
       { copy: { canonicalCardId: zard, grade: "PSA 9" } });
     await post(ctx.app, "north", "addInventoryCopy",
-      { copy: { canonicalCardId: zard, ask: 900 } });
+      { copy: { canonicalCardId: zard, ask: 900, grade: "PSA 9" } });
 
     const before = await view(ctx.app, "casey");
     const partnerBefore = await view(ctx.app, "north");
@@ -1210,7 +1210,7 @@ describe("H. and then it works", () => {
     const [zard] = await cardIds(ctx);
     await post(ctx.app, "casey", "addGoal",
       { canonicalCardId: zard, tier: "primary", desired: { grade: "PSA 9" } });
-    await post(ctx.app, "north", "addInventoryCopy", { copy: { canonicalCardId: zard, ask: 900 } });
+    await post(ctx.app, "north", "addInventoryCopy", { copy: { canonicalCardId: zard, ask: 900, grade: "PSA 9" } });
 
     const mine = await view(ctx.app, "casey");
     eq(mine.discoveries.length, 1, "the overlap did not derive");

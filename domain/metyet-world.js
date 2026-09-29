@@ -278,6 +278,15 @@ function validateWorld(state) {
     if (!blank(i.archived) && typeof i.archived !== "boolean") {
       report("field.invalid", `${path}.archived`, `${who}.archived must be true or false.`);
     }
+    /* OPTION B: pendingFor is deliberately allowed to go STALE — it names an
+       opportunity that may since have ended, and copyPendingFor derives
+       Available from that without a sweep. So this checks the shape only, never
+       that the opportunity is live. A bootstrap or import carrying a number, or
+       a partner's id by mistake, would otherwise be stored unremarked. */
+    if (!blank(i.pendingFor) && !isId(i.pendingFor)) {
+      report("field.invalid", `${path}.pendingFor`,
+        `${who}.pendingFor must be an opportunity id or blank.`);
+    }
   }
   for (const [b, path] of C.collectorCopies) {
     const who = `CollectorCopy "${b.id}"`;
@@ -405,6 +414,7 @@ function validateWorld(state) {
   const holders = { goal: new Map(), committed: new Map(), sold: new Map() };
   const hold = (map, key, oppId) => map.set(key, [...(map.get(key) || []), oppId]);
 
+  const allOpportunities = C.opportunities.map(([o]) => o);
   for (const [o, path] of C.opportunities) {
     const who = `Opportunity "${o.id}"`;
     ref(collectors, o.collectorId, `${path}.collectorId`, "collector", who);
@@ -436,7 +446,17 @@ function validateWorld(state) {
     if (goal && goal.collectorId !== o.collectorId) {
       ownerMismatch(`${path}.goalId`, `${who} belongs to collector "${o.collectorId}", but Goal "${o.goalId}" belongs to "${goal.collectorId}".`);
     }
-    if (active && isId(o.goalId)) hold(holders.goal, o.goalId, o.id);
+    /* ONE LIVE NEGOTIATION PER GOAL — read the way the domain now reads it.
+       `activeOppForGoal` stopped counting a negotiation whose copy has gone to
+       another deal or been sold, because such a deal can never conclude and was
+       stranding the Goal for ever. That means a Goal may legitimately hold a
+       lost record AND a new live one, so this must ask the same question or the
+       world the commands produce would be unstorable — the Option B lesson,
+       where exactly this predicate was left behind and turned a legal state
+       into a 500. */
+    if (active && isId(o.goalId) && !D.transactionallyLost(o, allOpportunities)) {
+      hold(holders.goal, o.goalId, o.id);
+    }
 
     /* EXACT INVENTORY COPY, when bound: the partner's own copy of this card.
        Copies are archived, never deleted, so the reference outlives the deal. */
@@ -463,7 +483,14 @@ function validateWorld(state) {
         report("ref.identity-mismatch", `${path}.invId`,
           `${who} names a canonical card, but copy "${o.invId}" names a catalogue card; the two are not comparable.`);
       }
-      if (active && o.agreedPrice != null) hold(holders.committed, o.invId, o.id);
+      /* OPTION B: a settled VALUE is not a promise, so it no longer holds the
+         copy here either. This predicate must stay identical to
+         INVARIANTS.copyCommittedTo — it was left on `agreedPrice != null` when
+         that moved, which made the batch's own headline story unstorable: two
+         collectors agreeing a value on one copy is legal in the domain and was
+         rejected here, so the second acceptPrice raised invalidNextWorld
+         instead of simply succeeding. */
+      if (active && D.finalAgreementGiven(o)) hold(holders.committed, o.invId, o.id);
       if (D.isCompleted(o)) hold(holders.sold, o.invId, o.id);
     }
 

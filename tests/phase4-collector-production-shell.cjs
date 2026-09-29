@@ -88,7 +88,17 @@ const PARTNER = "p-9k2m";
 
    The list is the product's own order and words, and it is stated here once so
    every assertion below reads the same one. */
-const NAV = ["Browse", "Binder", "Your Cards", "Trusted Partners"];
+/* Deal Flow joined the navigation in the true-match batch — the first screen
+   that ANSWERS rather than records. Your Cards stays until Binders can hold its
+   cross-Binder views, so the shape is five tabs for now and four later. */
+/* FOUR DESTINATIONS (binders batch). Your Cards was scaffolding: the true-match
+   batch kept it as a temporary fifth tab because Binders could not yet answer
+   "what do I own" or "what am I offering", and deleting a working screen to
+   make a navigation diagram true early would have taken a real job out of the
+   product. Binders now holds those as derived views, so the scaffold comes
+   down. The screen was not deleted either — `sections/Collection.jsx` is the
+   component Binders composes. */
+const NAV = ["Browse", "Binders", "Trusted Partners", "Deal Flow"];
 const TP_NAV = ["Collector Network", "Inventory", "Opportunities"];
 
 /* ---------------------------------------------------- the real projection */
@@ -353,7 +363,7 @@ describe("C. the shell: its sections, and counts that are row counts", () => {
     const labels = buttons(r).map(instText).filter((s) => NAV.some((n) => s.includes(n)));
     eq(labels.length, NAV.length, "no section more, none fewer: " + labels.join(" | "));
     NAV.forEach((n, i) => assert(labels[i].includes(n), `section ${i} is not ${n}`));
-    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "browse,binder,my-cards,partners");
+    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "browse,binder,partners,deal-flow");
     /* SUPERSEDED AND RESTATED (Phase 5 C3.4).
        What this protected: that a section which could never hold anything was
        declared deferred rather than shown — Your Cards promised a Collector
@@ -400,7 +410,22 @@ describe("C. the shell: its sections, and counts that are row counts", () => {
        C2 renamed to Your Cards precisely BECAUSE it was never a binder — so the
        word arriving here now means the opposite thing, and its absence from the
        prototype is the proof that the rename held. */
-    const OWN = ["Browse", "Binder", "Your Cards"];
+    /* AND "DEAL FLOW" IS THE PRODUCT'S OWN TOO (true-match batch). The
+       prototype has no such screen: it showed a Collector their opportunities,
+       which is a record of deals already begun. This is the question before
+       that one — which copy, at which shop, matches what you asked for — and
+       the name arrives here first. Held to being absent from the prototype for
+       the same reason as the other two: if it ever appears there, the two
+       products have started meaning different things by one phrase. */
+    /* "Binders" is this product's own too, now plural: the prototype's "Binder"
+       was a Collector's tradeable cards, which C2 renamed to Your Cards
+       precisely because it was never a binder, and this batch made the word
+       mean the whole collection. Your Cards leaves the list with its tab —
+       the file lives on as Collection.jsx and is asserted below. */
+    const OWN = ["Browse", "Binders", "Deal Flow"];
+    OWN.filter((n) => n !== "Browse")
+      .forEach((n) => assert(!proto.includes(`label: "${n}"`),
+        `the prototype grew a "${n}" label, so the name now means two things`));
     NAV.filter((n) => !OWN.includes(n))
       .forEach((n) => assert(proto.includes(`label: "${n}"`), `the prototype does not call it ${n}`));
     OWN.forEach((n) => assert(!proto.includes(`label: "${n}"`),
@@ -419,16 +444,19 @@ describe("C. the shell: its sections, and counts that are row counts", () => {
     /* RESTATED IN C3.4: Your Cards is offered now, and its count is its own
        collection's — `collectorCopies` — which is exactly what this test is
        for. FULL holds one copy. */
-    assert(/1 Your Cards/.test(shown), "your cards: " + shown);
+    /* Your Cards' count went with its tab. What it protected — a count is a row
+       count of ONE named collection — is asserted through the two that remain,
+       and through the section table below, which is the stronger half. */
+    assert(/1 Binders/.test(shown), "binders: " + shown);
     /* RESTATED IN C1. Browse counts NOTHING, and that is the point: the
        catalogue is not a collection of this Collector's, so a number beside it
        would be a fact about MetYet wearing the clothes of a fact about them.
        Every section that DOES carry a count still sources it from its own
        collection, which is what this test has always been for. */
     const counted = SHELL_MOD.SECTIONS.filter((s) => s.count);
-    eq(counted.map((s) => s.count).join(","), "binders,collectorCopies,partners",
+    eq(counted.map((s) => s.count).join(","), "binders,partners",
       "a count is sourced from something other than its own collection");
-    eq(counted.map((s) => s.id).join(","), "binder,my-cards,partners", "a section grew a count");
+    eq(counted.map((s) => s.id).join(","), "binder,partners", "a section grew a count");
     /* Read from the section list rather than the rendered text, where "Browse"
        and the next section's count sit side by side and any regex would be
        reading one as the other. */
@@ -442,11 +470,11 @@ describe("C. the shell: its sections, and counts that are row counts", () => {
       partners: [...FULL.partners].reverse() };
     eq(flat(show(shuffled)).includes("3 Trusted Partners"), true);
     eq(flat(show({ ...FULL, partners: [] })).includes("0 Trusted Partners"), true);
-    /* RESTATED IN C3.4b: the counted sections are Binder, Your Cards and
+    /* RESTATED AGAIN (binders batch): the counted sections are now Binders and
        Trusted Partners, so the "count follows its own collection" property is
-       asserted through one of those rather than through Goals. */
+       asserted through those two. Removing a tab removed its count; it did not
+       change what a count means. */
     eq(flat(show({ ...FULL, binders: [] })).includes("0 Binder"), true);
-    eq(flat(show({ ...FULL, collectorCopies: [] })).includes("0 Your Cards"), true);
   });
 
   test("nothing is counted that would need a rule to count", () => {
@@ -482,10 +510,12 @@ describe("C. the shell: its sections, and counts that are row counts", () => {
        are stronger than the old pair: Your Cards is no longer "the deferred
        section" but a real one, and Binder's empty state is the first thing
        every pilot Collector sees, because nothing creates a binder for them. */
-    clickText(r, "Binder");
+    /* Both empty sentences now live on one screen, because both jobs do. */
+    clickText(r, "Binders");
     assert(/haven't made a binder yet/.test(flat(r)), flat(r));
-    clickText(r, "Your Cards");
-    assert(/haven't recorded any cards yet/.test(flat(r)), flat(r));
+    /* And the collection view one press away has its own honest sentence. */
+    clickText(r, "All Cards");
+    assert(/Nothing has meaning yet/.test(flat(r)), flat(r));
     clickText(r, "Trusted Partners");
     assert(/no Trusted Partners yet/.test(flat(r)), flat(r));
     const all = flat(r);
@@ -609,13 +639,30 @@ describe("E. navigation, session and loading", () => {
   test("changing section changes presentation and nothing else", async () => {
     const { r, store, calls } = await signedIn();
     const before = JSON.stringify(store.get());
+    /* TWO ASSERTIONS, AND THE BROAD ONE IS THE POINT.
+
+       This counts EVERY call the Collector app makes. An earlier pass of the
+       Binders batch narrowed it to `/api/view` alone, on the reasoning that a
+       catalogue lookup is not a read of the world — true, and beside the point.
+       The narrowing was not needed: the broad count still held. What it did was
+       remove the only assertion bounding total network chatter on navigation,
+       in the same change that multiplied that chatter from one request to one
+       per chip press. A test that is loosened to fit the code it is meant to
+       bound has stopped being a test, so the broad count is back and the
+       precise one sits underneath it. */
     const apiCalls = () => calls.filter((c) => c.url.startsWith(APP)).length;
-    eq(apiCalls(), 1, "one read, on arrival");
+    const worldReads = () => calls.filter((c) => c.url.startsWith(APP)
+      && c.url.includes("/api/view")).length;
+    eq(apiCalls(), 1, "one call, on arrival");
+    eq(worldReads(), 1, "one read, on arrival");
 
     clickText(r, "Trusted Partners"); await flush(r);
-    clickText(r, "Binder"); await flush(r);
+    clickText(r, "Binders"); await flush(r);
 
     eq(apiCalls(), 1, "moving around asked the server again");
+    eq(worldReads(), 1, "moving around asked the server for the world again");
+    assert(calls.every((c) => !c.url.includes("/api/commands")),
+      "moving around sent a command");
     eq(JSON.stringify(store.get()), before, "navigation changed the projection");
     eq(JSON.stringify(ACTOR.describeActor(store.get())),
       JSON.stringify(ACTOR.describeActor(JSON.parse(before))), "navigation changed the actor");

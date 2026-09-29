@@ -79,7 +79,12 @@ const P2 = "p-second";
 
    The list is the product's own order and words, and it is stated here once so
    every assertion below reads the same one. */
-const NAV = ["Browse", "Binder", "Your Cards", "Trusted Partners"];
+/* Deal Flow joined the navigation in the true-match batch — the first screen
+   that ANSWERS rather than records. Your Cards stays until Binders can hold its
+   cross-Binder views, so the shape is five tabs for now and four later. */
+/* FOUR DESTINATIONS (binders batch). Your Cards was scaffolding: its jobs moved
+   into Binders as derived views, and the screen lives on as Collection.jsx. */
+const NAV = ["Browse", "Binders", "Trusted Partners", "Deal Flow"];
 
 /* ---------------------------------------------------- the real projection */
 
@@ -212,6 +217,14 @@ const show = (state, section = null) => {
   if (section) clickText(r, section);
   return r;
 };
+/* WHAT YOUR CARDS USED TO BE IS TWO PRESSES NOW (binders batch): the tab, then
+   the collection view. Binders opens on the binder library, because a tab
+   called Binders should show binders; the cards are one chip away. */
+const showCollection = (state, view = "All Cards") => {
+  const r = show(state, "Binders");
+  clickText(r, view);
+  return r;
+};
 /* THE SECTION'S OWN TEXT, without the shell around it (C1). The navigation is
    on screen in every section, so an assertion about what a SECTION says has to
    be made of the section — otherwise a nav label is read as the section's own
@@ -342,7 +355,7 @@ describe("A. Goals — and the one place coordination appears", () => {
       "a section appeared that the product does not offer");
     onEverySection(r, (shown) =>
       assert(!/opportunit/i.test(shown), "the word appears as a product: " + shown));
-    eq(SHELL_MOD.SECTIONS.map((x) => x.id).join(","), "browse,binder,my-cards,partners");
+    eq(SHELL_MOD.SECTIONS.map((x) => x.id).join(","), "browse,binder,partners,deal-flow");
     /* Restated in Batch 8.1, renamed in C2: Your Cards is declared deferred rather
        than offered, and "no Opportunities product" is unaffected by it. */
     /* RESTATED IN C3.4: Your Cards moved into the product and Goals moved out
@@ -356,20 +369,29 @@ describe("A. Goals — and the one place coordination appears", () => {
 /* ============================================================== B */
 describe("B. Your Cards", () => {
   test("an empty shelf is a sentence, and offers nothing unbuilt", () => {
-    const shown = flat(show(EMPTY, "Your Cards"));
-    assert(/haven't recorded any cards yet/.test(shown), shown);
-    /* RESTATED IN C2. It used to require the sentence to say what the binder was
-       FOR — "what you can offer in a trade" — because owning and offering were
-       the same act. They are two acts now, so the empty state has to say both:
-       a card here is one you own, and offering it is a separate choice. That is
-       a stricter requirement than the old one, not a looser one. */
-    assert(/a card here is one you own/i.test(shown), "it does not say what a card here is");
-    assert(/offering one is a separate choice/i.test(shown), "it does not say offering is separate");
-    assert(!/error|failed|unavailable/i.test(shown), "empty reads as broken: " + shown);
+    /* RESTATED AGAIN (binders batch), AND SPLIT ACROSS THE TWO VIEWS THAT NOW
+       MAKE THE CLAIM. C2's requirement was that an empty shelf say both things:
+       a card here is one you own, and offering it is a separate choice. All
+       Cards is wider than the old shelf — a card can mean something because it
+       is filed, wanted OR owned — so it says those three, and the
+       owning-versus-offering sentence moved to the view that is actually about
+       offering. Both halves are still asserted, which is why this is not a
+       loosening: the claim did not go, it went where it is true. */
+    const all = flat(showCollection(EMPTY));
+    assert(/Nothing has meaning yet/.test(all), all);
+    assert(/file it/i.test(all) && /want it/i.test(all) && /own/i.test(all),
+      "All Cards does not say the three ways a card gains meaning: " + all);
+    assert(!/error|failed|unavailable/i.test(all), "empty reads as broken: " + all);
+
+    const trade = flat(showCollection(EMPTY, "Trade/Sell"));
+    assert(/not offering any of your cards/i.test(trade), trade);
+    assert(/separate choice from owning it/i.test(trade),
+      "Trade/Sell does not say offering is separate from owning: " + trade);
+    assert(!/error|failed|unavailable/i.test(trade), "empty reads as broken: " + trade);
   });
 
   test("each copy renders from its own row, with its own cert and value", () => {
-    const r = show(FULL, "Your Cards");
+    const r = showCollection(FULL);
     const umb = recordWith(r, "Umbreon");
     const blast = recordWith(r, "Blastoise");
     assert(umb.includes("PSA 63118845") && !umb.includes("PSA 71204885"), "certs crossed: " + umb);
@@ -396,7 +418,7 @@ describe("B. Your Cards", () => {
   test("status is the server's answer, not one worked out here", () => {
     /* `b-blast` is TRADED while no opportunity in the projection references it.
        A client that re-derived the rule would call it available. */
-    const r = show(FULL, "Your Cards");
+    const r = showCollection(FULL);
     assert(recordWith(r, "PSA 71204885").includes("Traded"), "the server's status was overruled");
     const bare = COLLECTOR_FILES.map(code).join("\n");
     assert(/copy\.status/.test(bare), "the status is read from the row");
@@ -406,13 +428,13 @@ describe("B. Your Cards", () => {
 
   test("an unfamiliar status survives as itself", () => {
     const odd = { ...FULL, collectorCopies: [{ offered: true, id: "b-x", collectorId: ME, cardId: "k3", status: "impounded" }] };
-    const shown = flat(show(odd, "Your Cards"));
+    const shown = flat(showCollection(odd));
     assert(shown.includes("impounded"), "the status vanished: " + shown);
     assert(!/Available|Reserved|Committed|Traded/.test(shown), "it was rounded: " + shown);
   });
 
   test("interest attaches by binderId, and names no partner it cannot", () => {
-    const r = show(FULL, "Your Cards");
+    const r = showCollection(FULL);
     const umb = recordWith(r, "PSA 63118845");
     assert(umb.includes("Second Shop"), "the interested partner, by partnerId: " + umb);
     const blast = recordWith(r, "PSA 71204885");
@@ -503,6 +525,14 @@ describe("C. Trusted Partners", () => {
   test("a partner's stock is not rendered — this is a network, not a shop window", () => {
     const withStock = { ...FULL, inventory: [
       { invId: "i1", partnerId: P1, cardId: "k1", ask: 4200, status: "available", cert: "STOCK-CERT" }] };
+    /* DEAL FLOW IS DELIBERATELY NOT IN THIS LIST (true-match batch). The other
+       three answer questions that are not about a specific copy, so a copy's
+       facts appearing in them would be a shop window leaking in. Deal Flow's
+       whole question IS a specific copy — "which of your shops has the card you
+       asked for, and which one is it" — and it is still the narrower shape this
+       rule protects: only copies matching a Goal the Collector themselves
+       stated, never a shop's shelf, never a card they did not ask for, and
+       nothing scored, sorted by price or recommended. */
     for (const section of ["Trusted Partners", "Goals", "Browse"]) {
       const shown = flat(show(withStock, section));
       assert(!shown.includes("STOCK-CERT") && !shown.includes("$4,200") && !shown.includes("4200"),
@@ -526,14 +556,27 @@ describe("C. Trusted Partners", () => {
        `photos` and `market` are deliberately not on this list: those are facts
        about a Collector's OWN binder copy, which their own screen may show and
        always could. */
+    /* RE-PINNED, AND NARROWED RATHER THAN DROPPED. `ask` and `invId` moved off
+       this list when Deal Flow arrived, because the screen that answers "which
+       copy" cannot do it without naming one and saying what it costs. What the
+       rule always protected — that a Collector never reads the SHOP'S OWN
+       books — is unchanged and is now carried by `cost` and `acquired` alone,
+       which is what a shop paid and when it bought: those never cross, and the
+       projection strips them before they could. The scope narrows too: every
+       file EXCEPT Deal Flow is still held to the whole original list. */
+    const exceptDealFlow = COLLECTOR_FILES
+      .filter((f) => !/DealFlow\.jsx$/.test(f)).map(code).join("\n");
     for (const field of ["ask", "cost", "acquired", "invId"]) {
-      assert(!new RegExp(`\\.${field}\\b|\\["${field}"\\]`).test(bare),
-        `the Collector surface reads a copy's ${field}`);
+      assert(!new RegExp(`\\.${field}\\b|\\["${field}"\\]`).test(exceptDealFlow),
+        `a Collector surface other than Deal Flow reads a copy's ${field}`);
     }
-    /* And inventory is counted, never listed: no screen turns those rows into
-       anything a person reads one by one. */
-    assert(!/inventory\)[\s.]*\.?(map|forEach|slice)|inventory\.map/.test(bare),
-      "the Collector surface renders inventory rows");
+    for (const field of ["cost", "acquired"]) {
+      assert(!new RegExp(`\\.${field}\\b|\\["${field}"\\]`).test(bare),
+        `the Collector surface reads the shop's own books: ${field}`);
+    }
+    /* And outside Deal Flow, inventory is counted and never listed. */
+    assert(!/inventory\)[\s.]*\.?(map|forEach|slice)|inventory\.map/.test(exceptDealFlow),
+      "a Collector surface other than Deal Flow renders inventory rows");
   });
 });
 
@@ -551,13 +594,13 @@ describe("D. joins are by explicit id, and a missing one yields nothing", () => 
   test("a binder copy whose card is missing renders without borrowing one", () => {
     const state = { ...FULL, collectorCopies: [
       { offered: true, id: "b-x", collectorId: ME, cardId: "nope", cert: "LONE-CERT", status: "available" }] };
-    const rec = recordWith(show(state, "Your Cards"), "LONE-CERT");
+    const rec = recordWith(showCollection(state), "LONE-CERT");
     CATALOG.forEach((c) => assert(!rec.includes(c.name), `it borrowed "${c.name}": ` + rec));
   });
 
   test("an interest naming a partner who is not there names nobody", () => {
     const state = { ...FULL, interests: [{ partnerId: "p-stranger", binderId: "b-umb", at: "2025-01-01" }] };
-    const rec = recordWith(show(state, "Your Cards"), "PSA 63118845");
+    const rec = recordWith(showCollection(state), "PSA 63118845");
     assert(!rec.includes("Northline Cards") && !rec.includes("Second Shop"),
       "the first partner was substituted: " + rec);
     assert(!/Interested/.test(rec), "an interest line was drawn with nobody in it: " + rec);
@@ -599,8 +642,15 @@ describe("D. joins are by explicit id, and a missing one yields nothing", () => 
   test("the whole real projection renders in every section", () => {
     const r = show(REAL);
     assert(flat(r).includes("Casey Lin"));
-    for (const s of NAV) { clickText(r, s); assert(flat(r).length > 0, `${s} rendered nothing`); }
-    assert(!/\[object Object\]|undefined|NaN/.test(flat(r)), "something leaked");
+    for (const s of NAV) {
+      clickText(r, s);
+      assert(flat(r).length > 0, `${s} rendered nothing`);
+      assert(!/\[object Object\]|undefined|NaN/.test(flat(r)), `something leaked in ${s}`);
+    }
+    /* Named explicitly rather than read off whichever section the loop happened
+       to leave open — that was true only while Trusted Partners was last, and
+       Deal Flow joining the navigation quietly changed what this asserted. */
+    clickText(r, "Trusted Partners");
     assert(flat(r).includes("Northline Cards"), "the real partners: " + flat(r).slice(0, 200));
   });
 });

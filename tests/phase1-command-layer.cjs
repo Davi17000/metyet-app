@@ -348,12 +348,24 @@ describe("E. TP InventoryCopy commitment", () => {
     const s = world();
     const a = ok(s.execute(C1, "startOpportunity", { goalId: "g1", invId: "i1", amount: 900 }));
     const b = ok(s.execute(C2, "startOpportunity", { goalId: "g2", invId: "i1", amount: 950 }), "competing offer allowed");
-    eq(D.inventoryCopyStatus("i1", s.get().opportunities), "available");
+    eq(D.inventoryCopyStatus("i1", s.get().opportunities, s.get().inventory), "available");
     ok(s.execute(TP1, "acceptPrice", { oppId: a }));
-    eq(D.inventoryCopyStatus("i1", s.get().opportunities), "committed");
-    const r = s.execute(TP1, "acceptPrice", { oppId: b });
+    /* OPTION B: a settled value is a shared fact, not a claim on the card. */
+    eq(D.inventoryCopyStatus("i1", s.get().opportunities, s.get().inventory), "available",
+      "agreeing what it is worth leaves it available");
+    ok(s.execute(TP1, "acceptPrice", { oppId: b }), "and the other deal may agree too");
+    /* The promise is what claims it. */
+    ok(s.execute(C1, "proposeTradeSelection", { oppId: a, binderIds: [] }));
+    ok(s.execute(C2, "proposeTradeSelection", { oppId: b, binderIds: [] }), "both assemble");
+    ok(s.execute(TP1, "acceptDeal", { oppId: a }));
+    ok(s.execute(C1, "acceptDeal", { oppId: a }));
+    eq(D.inventoryCopyStatus("i1", s.get().opportunities, s.get().inventory), "committed");
+    const r = s.execute(TP1, "acceptDeal", { oppId: b });
     no(r, R.copyCommitted, "second commitment refused");
     eq(Object.keys(r).sort().join(","), "ok,refused", "the refusal carries no deal, collector or price");
+    /* AND THE MUTATION GUARDS KEPT THE OLDER, WIDER WINDOW. Both of these were
+       already refused back when only a price had been settled — moving the
+       availability boundary must not have unlocked them. */
     no(s.execute(TP1, "removeInventoryCopy", { invId: "i1" }), R.copyCommitted, "cannot archive a committed copy");
     no(s.execute(TP1, "updateInventoryCopy", { invId: "i1", patch: { cert: "PSA 999" } }), R.copyCommitted, "cert locked");
     no(s.execute(TP1, "updateInventoryCopy", { invId: "i1", patch: { cardId: "k4" } }), R.identityImmutable, "identity locked");
@@ -362,9 +374,9 @@ describe("E. TP InventoryCopy commitment", () => {
   test("cancellation releases the copy; completion makes it Sold", () => {
     const x = at("value-trade");
     ok(x.s.execute(C1, "cancelOpportunity", { oppId: x.id }));
-    eq(D.inventoryCopyStatus("i1", x.s.get().opportunities), "available", "released");
+    eq(D.inventoryCopyStatus("i1", x.s.get().opportunities, x.s.get().inventory), "available", "released");
     const y = at("completed");
-    eq(D.inventoryCopyStatus("i1", y.s.get().opportunities), "sold");
+    eq(D.inventoryCopyStatus("i1", y.s.get().opportunities, y.s.get().inventory), "sold");
     no(y.s.execute(C2, "startOpportunity", { goalId: "g2", invId: "i1", amount: 900 }), R.copyUnavailable, "sold is not supply");
     const supply = collectorView(y.s.get(), "c2").partnersWith("k1").map((x2) => x2.inv.invId);
     assert(!supply.includes("i1"), "a sold copy is not listed as supply");
@@ -553,15 +565,31 @@ describe("G. seeded randomized invariant checks", () => {
             const { viewedAt, ...rest } = x; terminalSnaps.set(x.id, JSON.stringify(rest));
           }
         }
-        /* one active negotiation per goal */
+        /* ONE LIVE NEGOTIATION PER GOAL — re-pinned at the predicate the domain
+           now uses. `isNegotiating` alone is no longer the whole question: a
+           negotiation whose copy has been promised to another deal or sold can
+           never conclude, so it stops holding its Goal and the Collector may
+           legitimately open a new one elsewhere. The rule did not loosen — a
+           Goal still has at most one negotiation that could actually finish. */
         const perGoal = {};
-        now.opportunities.filter(D.isNegotiating).forEach((x) => { perGoal[x.goalId] = (perGoal[x.goalId] || 0) + 1; });
-        Object.values(perGoal).forEach((n) => assert(n <= 1, `step ${step}: two active deals on one goal`));
-        /* no InventoryCopy committed twice */
+        now.opportunities
+          .filter((x) => D.isNegotiating(x) && !D.transactionallyLost(x, now.opportunities))
+          .forEach((x) => { perGoal[x.goalId] = (perGoal[x.goalId] || 0) + 1; });
+        Object.values(perGoal).forEach((n) => assert(n <= 1, `step ${step}: two live deals on one goal`));
+        /* NO InventoryCopy PROMISED TWICE (Option B). This used to count
+           settled prices, because settling used to be the commitment. It is
+           not: two collectors may both agree what one card is worth. What no
+           amount of random command sequences may produce is one physical copy
+           that two live deals have both been promised — or that two deals have
+           both completed. */
         const inv = {};
-        now.opportunities.filter((x) => D.isActive(x) && x.agreedPrice != null)
+        now.opportunities.filter((x) => D.isActive(x) && D.finalAgreementGiven(x))
           .forEach((x) => { inv[x.invId] = (inv[x.invId] || 0) + 1; });
-        Object.values(inv).forEach((n) => assert(n <= 1, `step ${step}: an InventoryCopy committed twice`));
+        Object.values(inv).forEach((n) => assert(n <= 1, `step ${step}: an InventoryCopy promised twice`));
+        const sold = {};
+        now.opportunities.filter((x) => x.stage === "completed" && x.invId != null)
+          .forEach((x) => { sold[x.invId] = (sold[x.invId] || 0) + 1; });
+        Object.values(sold).forEach((n) => assert(n <= 1, `step ${step}: an InventoryCopy sold twice`));
         /* no BinderCopy reserved/committed in two active packages */
         const held = {};
         now.opportunities.filter(D.isActive).forEach((x) => ((x.trade && x.trade.cards) || []).forEach((row) => {

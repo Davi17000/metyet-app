@@ -8,7 +8,10 @@
    for anything to get here: this file imports no store, no session, no api
    client, no domain and no `fetch`. Hand it a projection and it renders.
 
-   THREE THINGS, WHICH ARE THE PRODUCT.
+   THREE THINGS, WHICH ARE THE PRODUCT — CONCEPTS, NOT TABS. Each of these has
+   been a destination at some point and none of them has to be one: Goals is
+   read where the card is, and what you own is a set of views inside Binders.
+   The navigation below is four tabs and this list is not it.
 
      Goals            what you want. The only transaction workflow in MetYet:
                       a deal is a goal being worked, not a separate thing.
@@ -61,7 +64,8 @@ import { EMPTY_SESSION } from "../browse/CardBrowser.jsx";
 import Browse from "./sections/Browse.jsx";
 import Binder from "./sections/Binder.jsx";
 import Goals from "./sections/Goals.jsx";
-import MyCards from "./sections/MyCards.jsx";
+import DealFlow from "./sections/DealFlow.jsx";
+
 import TrustedPartners from "./sections/TrustedPartners.jsx";
 
 /* What the Collector can actually open, in the product's own order and words.
@@ -90,22 +94,53 @@ export const SECTIONS = Object.freeze([
 
      The count is `binders` — how many groupings they have made, which is a
      fact about them rather than about MetYet. */
-  { id: "binder", label: "Binder", count: "binders", view: Binder,
-    title: "Binder",
-    sub: "Where your cards belong, and what you're still looking for" },
-  /* WHAT YOU OWN, REACHABLE AT LAST (Phase 5 C3.4). Deferred since Batch 8.1
-     for reasons that were true at the time and stopped being true one at a
-     time: the command existed but demanded a legacy card (fixed by C2), then
-     there was no control to record a copy (fixed by C3.3), and then the screen
-     itself named canonical cards wrongly — every production copy read "a card
-     that isn't in your catalogue", which is why C3.3 declined to promote it and
-     left the debt written down. C3.4 fixes the screen and moves it up. */
-  { id: "my-cards", label: "Your Cards", count: "collectorCopies", view: MyCards,
-    title: "Your Cards",
-    sub: "What you own, and what you're offering" },
+  /* AND YOUR CARDS IS NO LONGER BESIDE IT (this batch). Your Cards was
+     scaffolding: the true-match batch kept it as a temporary fifth tab because
+     Binders could not yet answer "what do I own" or "what am I offering", and
+     deleting a working screen to make a navigation diagram true early would
+     have removed a real job from the product. Binders now holds those views —
+     All Cards, Primary Goals, Secondary Goals, Trade/Sell — derived on every
+     render from the binders, goals and copies the server already sent. The
+     screen itself was not deleted either: it is `sections/Collection.jsx`, the
+     component Binders composes once per view, which is the same move C2 made
+     when Trade Binder became Your Cards. One concept, one file, a third name.
+
+     The count is `binders` — how many groupings they have made, which is a fact
+     about them rather than about MetYet. It deliberately does not count the
+     collection: "how organised am I" and "how much do I have" are different
+     questions, and the views say their own numbers. */
+  { id: "binder", label: "Binders", count: "binders", view: Binder,
+    title: "Binders",
+    sub: "Your collection, and where each card belongs" },
   { id: "partners", label: "Trusted Partners", count: "partners", view: TrustedPartners,
     title: "Trusted Partners",
     sub: "The shops you deal with" },
+  /* WHAT YOUR SHOPS ACTUALLY HAVE (true-match batch). Last, because it is the
+     end of the sentence the other four begin: find a card, say what you want,
+     know who you deal with — and then, here, which of them has the thing you
+     described. It is the first screen that answers rather than records.
+
+     IT COUNTS NOTHING, FOR THE REASON BROWSE COUNTS NOTHING. Every counted tab
+     numbers a collection of the person's OWN things — their binders, their
+     cards, their shops. What waits here is neither theirs nor one collection:
+     `discoveries` is keyed by (goal, partner), so its length is a number of
+     overlaps rather than of copies, and putting it on the tab would disagree
+     with the copies the screen itself counts. The panel says "3 copies that
+     match", which is the number a person actually wants, in a unit they can
+     read. This also keeps the shell's existing rule intact: a tab number is a
+     row count of one collection and never something the shell reasoned its way
+     to.
+
+     AND IT IS FOUR TABS. Browse, Binders, Trusted Partners, Deal Flow — the
+     approved navigation, now actually true. Deal Flow arrived while Your Cards
+     was still a tab of its own, because deleting Your Cards before Binders
+     could hold what it did would have taken away the only way to see what you
+     own to make a navigation diagram true early. Binders can hold it now: the
+     cross-Binder views are real, Your Cards is a component they compose, and
+     the fifth tab is gone rather than deferred. */
+  { id: "deal-flow", label: "Deal Flow", count: null, view: DealFlow,
+    title: "Deal Flow",
+    sub: "Which of your shops has the card you asked for" },
 ]);
 
 /* BUILT AND NOT YET REACHABLE — AND, AS OF C3.4, NOTHING IS.
@@ -271,6 +306,45 @@ const CSS = `
 .mcs-has-art .mcs-art-plate { font-size:8px; padding:2px; -webkit-line-clamp:4; }
 .mcs-group .mcs-rec { padding-left:16px; padding-right:16px; }
 .mcs-group .mcs-rec:last-child { border-bottom:0; }
+
+/* ---- the collection views and the search box (binders batch) ----
+
+   A row of plain buttons, not tabs inside tabs: they change which cards the
+   list underneath is about, and the pressed one says so through aria-pressed
+   rather than through colour alone. The search box is a real search input
+   at 16px so iOS does not zoom when it takes focus, the same as every other
+   text input in this shell. */
+.mcs-views { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 10px; padding:0 16px; }
+.mcs-view { appearance:none; border:1px solid var(--line); background:var(--panel);
+  color:var(--text); font:inherit; font-size:12.5px; font-weight:600; padding:6px 11px;
+  border-radius:999px; cursor:pointer; }
+.mcs-view[aria-pressed="true"] { background:var(--t1-bg); border-color:#CBE0E2; color:var(--t1); }
+.mcs-view.quiet { color:var(--muted); font-weight:500; }
+.mcs-find { display:flex; gap:8px; align-items:center; margin:0 0 12px; padding:0 16px; }
+.mcs-find .mcs-in { flex:1 1 auto; min-width:0; }
+.mcs-binder-name { margin:0 0 10px; padding:0 16px; font-family:'Archivo', system-ui, sans-serif;
+  font-size:16px; font-weight:700; color:var(--text); }
+
+/* ---- deal flow: the copies your shops have (true-match batch) ----
+
+   ARTWORK-FORWARD AT THE GOAL, PLAIN AT THE COPY. The card is the thing a
+   person recognises, so it keeps the same 5/7 tile every other collector
+   surface uses; a physical copy is a row of facts and gets no picture of its
+   own, because a photograph of THIS slab is what Request Photos is for and that
+   is not this batch. Each copy reads as one line on a phone and stays one line
+   on a desktop — grade first, because it is what the Collector asked about. */
+.mcs-df-copies { list-style:none; margin:0; padding:0 16px 14px; display:flex;
+  flex-direction:column; gap:6px; }
+.mcs-df-copy { display:flex; flex-wrap:wrap; gap:4px 10px; align-items:baseline;
+  padding:8px 10px; background:var(--line-soft); border-radius:7px; }
+.mcs-df-shop { font-weight:600; font-size:12.5px; color:var(--text); }
+.mcs-df-facts { display:flex; flex-wrap:wrap; gap:4px 10px; align-items:baseline;
+  min-width:0; font-size:12px; color:var(--muted); }
+.mcs-df-grade { color:var(--t1); font-weight:600; }
+.mcs-df-ask { margin-left:auto; color:var(--text); font-variant-numeric:tabular-nums; }
+.mcs-df-note { flex-basis:100%; font-size:11.5px; color:var(--amber); }
+.mcs-df-none { margin:0; padding:2px 16px 14px; font-size:12.5px; color:var(--muted); }
+.mcs-rec-facts { display:flex; flex-wrap:wrap; gap:4px 14px; margin-top:8px; }
 
 /* ---- binder: the library, and one binder's cards (Phase 5 C3.4) ---- */
 .mcs-binder { border-bottom:1px solid var(--line-soft); }
@@ -553,12 +627,7 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
             : meta.id === "browse"
               ? { onSpecify, onBrowseCards, session: browseSession, onSession: setBrowseSession,
                 fillingBinder, onDoneFilling: () => setFillingBinder(null) }
-              : meta.id === "my-cards"
-                /* Your Cards asks the catalog what its canonical cards are
-                   called, and opens the same specification panel Browse does
-                   (Phase 5 C3.4). Two props, both already bound above. */
-                ? { onSpecify, onBrowseCards }
-                : meta.id === "binder"
+              : meta.id === "binder"
                   ? { onSpecify, onBrowseCards, onCreateBinder, onRenameBinder,
                     onArchiveBinder, fillingBinder,
                     onAddCards: (into) => { setFillingBinder(into); setSection("browse"); } }
@@ -568,7 +637,17 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
                        C3.5). ONE read prop and no command: this screen answers
                        a question and offers no way to act on the answer. */
                     ? { onBrowseCards }
-                    : {})} />
+                    : meta.id === "deal-flow"
+                      /* THE SAME ONE PROP, FOR THE SAME REASON. Deal Flow reads
+                         the overlap the server already derived and the copies
+                         already in the projection, and names the catalogue's
+                         cards. It is handed no command — not a disabled one,
+                         not a stubbed one — because Inspect, Request Photos and
+                         Agree Market Value are real domain commands that are
+                         deliberately not exposed yet, and a control that cannot
+                         work is a promise the product has not kept. */
+                      ? { onBrowseCards }
+                      : {})} />
         </main>
       </div>
     </div>

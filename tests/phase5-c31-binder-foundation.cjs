@@ -855,7 +855,7 @@ describe("F. what is stored, and what the schema refuses", () => {
     /* Demand and supply that SHOULD discover each other. */
     await post(ctx.app, "casey", "addGoal", { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } });
     await post(ctx.app, "north", "addInventoryCopy",
-      { copy: { canonicalCardId: cards.firstEdition, ask: 9000 } });
+      { copy: { canonicalCardId: cards.firstEdition, ask: 9000, grade: "PSA 9" } });
     const mine = (await get(ctx.app, "casey", "/api/view")).json().state;
     eq(mine.discoveries.length, 1, "the overlap still computes");
 

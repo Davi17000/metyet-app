@@ -148,8 +148,16 @@ const correct = (app, token, invId, patch) => post(app, token, "updateInventoryC
 const retire = (app, token, invId) => post(app, token, "removeInventoryCopy", { invId });
 const refusal = (res) => (res.statusCode === 200 ? null : res.json().error.refused);
 
+/* Supply carries the grade this suite's Goals ask for. Since the true-match
+   batch a Goal's stated criteria constrain Discovery, and every test here is
+   about something else — corrections, counts, archiving — so demand and supply
+   are made to agree deliberately. */
 const stock = async (ctx, token, copy) => {
-  const res = await addCopy(ctx.app, token, copy);
+  /* Only when the copy says nothing about its grading at all — a copy that
+     states Raw, or a condition, is saying something and must not be overridden
+     into an incoherent pair. */
+  const said = copy && (copy.grade || copy.condition);
+  const res = await addCopy(ctx.app, token, said ? copy : { grade: "PSA 9", ...copy });
   eq(res.statusCode, 200, res.body);
   return res.json().value;
 };
@@ -534,25 +542,48 @@ describe("E. more than one copy", () => {
     await wants(ctx, "casey", cards.unlimited);
     const first = await stock(ctx, "north", { canonicalCardId: cards.unlimited, ask: 4200 });
     await stock(ctx, "north", { canonicalCardId: cards.unlimited, ask: 4400 });
-    await correct(ctx.app, "north", first, { ask: 100, grade: "PSA 10" });
+    /* The correction keeps the grade the Goal asked for. It used to also send
+       `grade: "PSA 10"`, which was harmless when criteria were inert and is
+       now a different edit entirely — see the test below. */
+    await correct(ctx.app, "north", first, { ask: 100 });
     const found = (await view(ctx.app, "casey")).discoveries;
     eq(found.length, 1, "still one overlap");
     eq(found[0].copies, 2, "still two copies — correcting a copy is not removing it");
   });
 
-  test("criteria still do not filter the answer, and C5 did not change that", async () => {
+  test("but correcting a copy OUT of the criteria does drop it from the answer", async () => {
+    /* The other half, and the reason the test above had to change. A shop that
+       re-grades a card has changed what the card IS; a Collector who asked for
+       a PSA 9 is no longer being shown it, and that is the batch working. */
     const ctx = await world();
     const cards = await charizard(ctx);
-    /* The Goal asks for a PSA 9; the shop's copy is heavily played and raw. It
-       is the same card, so the overlap stands and a person decides. Pinned here
-       because a batch about correcting grades is exactly the batch where
-       somebody might be tempted to make the grade matter. */
+    await wants(ctx, "casey", cards.unlimited);
+    const first = await stock(ctx, "north", { canonicalCardId: cards.unlimited, ask: 4200 });
+    await stock(ctx, "north", { canonicalCardId: cards.unlimited, ask: 4400 });
+    eq((await view(ctx.app, "casey")).discoveries[0].copies, 2, "two to begin with");
+    await correct(ctx.app, "north", first, { grade: "PSA 10" });
+    const found = (await view(ctx.app, "casey")).discoveries;
+    eq(found.length, 1, "the shop is still an answer");
+    eq(found[0].copies, 1, "but only for the copy that is still what she asked for");
+  });
+
+  test("criteria DO filter the answer now, and a correction can end an overlap", async () => {
+    /* RE-PINNED, DELIBERATELY. This asserted the opposite: a PSA 9 Goal saw a
+       Raw / Heavily Played copy, because criteria were context and a person
+       decided. That made the product answer a question nobody asked. Criteria
+       the Collector explicitly selected now constrain Discovery, so the same
+       world produces no overlap at all — and a correction that moves a copy
+       INTO the criteria creates one. */
+    const ctx = await world();
+    const cards = await charizard(ctx);
     await wants(ctx, "casey", cards.unlimited);
     const invId = await stock(ctx, "north",
       { canonicalCardId: cards.unlimited, grade: "Raw", condition: "Heavily Played" });
-    eq((await view(ctx.app, "casey")).discoveries.length, 1, "the overlap is about the card");
-    await correct(ctx.app, "north", invId, { grade: "Raw", condition: "Damaged" });
-    eq((await view(ctx.app, "casey")).discoveries.length, 1, "and correcting the grade does not end it");
+    eq((await view(ctx.app, "casey")).discoveries.length, 0,
+      "the same card in a grade she did not ask for is not an answer");
+    await correct(ctx.app, "north", invId, { grade: "PSA 9", condition: null });
+    eq((await view(ctx.app, "casey")).discoveries.length, 1,
+      "and correcting it into what she asked for makes it one");
   });
 });
 
@@ -813,7 +844,7 @@ describe("G. what the product says", () => {
     /* COMMENTS ARE EXEMPT AND THAT IS THE POINT. C5 left several explaining why
        the name went; what must never come back is a sentence a person reads. */
     for (const rel of ["client/sign-in/SignIn.jsx", "client/collector/CollectorShell.jsx",
-      "client/collector/sections/MyCards.jsx", "client/collector/sections/TrustedPartners.jsx",
+      "client/collector/sections/Collection.jsx", "client/collector/sections/TrustedPartners.jsx",
       "client/collector/CardSpecification.jsx", "client/collector/sections/Binder.jsx"]) {
       assert(!/Trade Binder/i.test(code(rel)), `${rel} still shows "Trade Binder" to a person`);
     }
@@ -983,7 +1014,11 @@ describe("H. nothing else moved", () => {
   });
 
   test("the domain's command table did not grow", async () => {
-    eq([...COMMAND_NAMES].length, 49, "C5 wrote a command instead of shipping two that existed");
+    /* 49 → 50 in Option B, which is the batch that DID need a new command:
+       voluntary Pending is a decision, and a decision leaves no trace to derive
+       from. C5's own point stands — it shipped two commands that already
+       existed rather than writing more. */
+    eq([...COMMAND_NAMES].length, 50, "C5 wrote a command instead of shipping two that existed");
   });
 
   test("no new route, and the catalogue import is still unreachable", async () => {

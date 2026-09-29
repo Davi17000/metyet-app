@@ -51,7 +51,7 @@ const CardArt = build("client/card-art.jsx").default;
    `src/MetYet.jsx` is the prototype and is NOT this. */
 const SURFACES = [
   ["client/browse/CardBrowser.jsx", 'br-art', 'br-plate'],
-  ["client/collector/sections/MyCards.jsx", 'mcs-group-art', 'mcs-art-plate'],
+  ["client/collector/sections/Collection.jsx", 'mcs-group-art', 'mcs-art-plate'],
   ["client/collector/sections/TrustedPartners.jsx", 'mcs-has-art', 'mcs-art-plate'],
   ["client/collector/sections/Binder.jsx", 'mcs-group-art', 'mcs-art-plate'],
 ];
@@ -497,7 +497,10 @@ describe("D. all four deployed surfaces use it", () => {
   test("the door, the command table and the schema are where C7.1 found them", () => {
     const { EXPOSED_COMMANDS } = require("../server/exposed-commands.js");
     eq(EXPOSED_COMMANDS.length, 18, "the production door moved");
-    eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 49,
+    /* 49 → 50 in Option B (`setCopyPending`). C7.1's claim is the door above,
+       which has not moved: the new command is written, tested and deliberately
+       not exposed, exactly as the deal lifecycle still is. */
+    eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 50,
       "the domain's command table moved");
   });
 });

@@ -461,8 +461,11 @@ describe("D. leaving your hands is not changing your mind", () => {
 /* A Collector's copy inside a live trade package, built the long way — through
    the real negotiation commands, so the locks under test are the real ones. */
 async function reservedCopy(ctx, cards) {
+  /* The copy states the grade the Goal asks for: since the true-match batch a
+     Goal's stated criteria constrain both Discovery and startOpportunity, and
+     this fixture exists to build a real trade package, not to test criteria. */
   const invId = (await post(ctx.app, "north", "addInventoryCopy",
-    { copy: { canonicalCardId: cards.firstEdition, ask: 9000 } })).json().value;
+    { copy: { canonicalCardId: cards.firstEdition, ask: 9000, grade: "PSA 9" } })).json().value;
   const goalId = (await post(ctx.app, "casey", "addGoal",
     { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } })).json().value;
   const copyId = (await own(ctx.app, "casey", { canonicalCardId: cards.shadowless,
@@ -504,7 +507,7 @@ describe("E. photographs, where the requirement went", () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const invId = (await post(ctx.app, "north", "addInventoryCopy",
-      { copy: { canonicalCardId: cards.firstEdition, ask: 9000 } })).json().value;
+      { copy: { canonicalCardId: cards.firstEdition, ask: 9000, grade: "PSA 9" } })).json().value;
     const goalId = (await post(ctx.app, "casey", "addGoal",
       { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } })).json().value;
     const copyId = (await own(ctx.app, "casey", { canonicalCardId: cards.shadowless,
@@ -525,7 +528,7 @@ describe("E. photographs, where the requirement went", () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const invId = (await post(ctx.app, "north", "addInventoryCopy",
-      { copy: { canonicalCardId: cards.firstEdition, ask: 9000 } })).json().value;
+      { copy: { canonicalCardId: cards.firstEdition, ask: 9000, grade: "PSA 9" } })).json().value;
     const goalId = (await post(ctx.app, "casey", "addGoal",
       { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } })).json().value;
     const copyId = (await own(ctx.app, "casey", { canonicalCardId: cards.shadowless,
@@ -914,8 +917,10 @@ describe("I. everything else, exactly as it was", () => {
     const cards = await charizard(ctx);
     const goalId = (await post(ctx.app, "casey", "addGoal",
       { canonicalCardId: cards.firstEdition, tier: "secondary", desired: { grade: "PSA 9" } })).json().value;
+    /* The copy is the grade the Goal asks for, so the only thing standing in
+       the way is the tier — which is what this test is about. */
     const invId = (await post(ctx.app, "north", "addInventoryCopy",
-      { copy: { canonicalCardId: cards.firstEdition, ask: 9000 } })).json().value;
+      { copy: { canonicalCardId: cards.firstEdition, ask: 9000, grade: "PSA 9" } })).json().value;
     eq((await direct(ctx, ACTOR.casey, "startOpportunity", { goalId, invId, amount: 9000 })).refused,
       D.REFUSE.notPrimary, "a deal cannot begin against a watchlist entry");
     assert(!(await post(ctx.app, "casey", "updateGoalTier", { goalId, tier: "primary" })).json().error,
@@ -956,10 +961,10 @@ describe("I. everything else, exactly as it was", () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     await post(ctx.app, "casey", "addGoal", { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } });
-    await post(ctx.app, "north", "addInventoryCopy", { copy: { canonicalCardId: cards.shadowless, ask: 1 } });
+    await post(ctx.app, "north", "addInventoryCopy", { copy: { canonicalCardId: cards.shadowless, ask: 1, grade: "PSA 9" } });
     eq((await get(ctx.app, "casey", "/api/view")).json().state.discoveries.length, 0,
       "a different printing is a different card");
-    await post(ctx.app, "north", "addInventoryCopy", { copy: { canonicalCardId: cards.firstEdition, ask: 9000 } });
+    await post(ctx.app, "north", "addInventoryCopy", { copy: { canonicalCardId: cards.firstEdition, ask: 9000, grade: "PSA 9" } });
     const found = (await get(ctx.app, "casey", "/api/view")).json().state.discoveries;
     eq(found.length, 1, "the exact card is an overlap");
     eq(found[0].canonicalCardId, cards.firstEdition);

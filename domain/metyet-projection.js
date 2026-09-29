@@ -159,7 +159,7 @@ const INVITATION_FOR_INVITEE = ["id", "partnerId", "collectorId", "at", "accepte
    PSA 8 on their shelf is worth mentioning. It travels exactly as far as the
    Goal does and no further — no new seat, no new record, no new rule.
 
-   It is CONTEXT, not a filter: Discovery reads none of it. */
+   Since the true-match batch Discovery DOES read it. */
 const GOAL_FOR_PARTNER = ["id", "collectorId", "cardId", "canonicalCardId", "tier",
   "note", "since", "createdAt", "confirmedAt", "secondarySince", "desired"];
 const PREFERENCE_FOR_PARTNER = ["collectorId", "tags"];
@@ -335,8 +335,12 @@ function projectForCollector(state, me) {
   const referencedInv = new Set(opportunities.map((o) => o.invId).filter((x) => x != null));
   const inventory = list(state.inventory)
     .map((i) => withGrading(copyForViewer(pick(i, INVENTORY_FOR_COLLECTOR), {
-      own: D.inventoryCopyStatus(i.invId, opportunities),
-      world: D.inventoryCopyStatus(i.invId, allOpps),
+      /* `own` asks the question of THIS collector's own deals, so a copy
+         pending for somebody else's is simply not pending to them — which is
+         how "Pending for your deal" and a bare "unavailable" come out of one
+         rule rather than two (Option B). */
+      own: D.inventoryCopyStatus(i.invId, opportunities, state.inventory),
+      world: D.inventoryCopyStatus(i.invId, allOpps, state.inventory),
       inSupply: related(i.partnerId) && !i.archived,
       referenced: referencedInv.has(i.invId),
     })))
@@ -453,7 +457,7 @@ function projectForPartner(state, me) {
     preferences: list(state.preferences).filter((p) => inNetwork(p.collectorId))
       .map((p) => pick(p, PREFERENCE_FOR_PARTNER)),
     inventory: list(state.inventory).filter((i) => i.partnerId === pid)
-      .map((i) => withGrading({ ...clone(i), status: D.inventoryCopyStatus(i.invId, allOpps) })),
+      .map((i) => withGrading({ ...clone(i), status: D.inventoryCopyStatus(i.invId, allOpps, state.inventory) })),
     collectorCopies,
     /* HOW SOMEBODY ORGANISES THEIR COLLECTION IS NOT A FACT ABOUT A TRADE
        (Phase 5 C3.1). A Trusted Partner receives no binder name, no binder id,
