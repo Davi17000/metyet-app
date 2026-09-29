@@ -232,13 +232,19 @@ describe("C. Pending is the one availability fact a partner chooses", () => {
     eq(d.copies, 1, "and the count says so");
   });
 
-  test("[10] a pending copy refuses a new pursuit, in its own words", () => {
+  test("[10] a pending copy refuses a new pursuit, without saying why", () => {
+    /* RE-PINNED by the integrity/privacy cleanup. This used to require the
+       refusal to be `copy-pending` "in its own words". The word was the leak:
+       a new pursuit needs no connection to the card, so three distinct answers
+       were a public oracle on a rival deal's stage. The DOMAIN still knows —
+       asserted below — and a collector is told one thing. */
     const st = world();
     const a = valued(st, A, "gA", "i1", 27);
     x(st, TP, "setCopyPending", { invId: "i1", oppId: a, at: AT });
     const r = x(st, B, "startOpportunity", { goalId: "gB", invId: "i1", amount: 28, at: AT });
-    nov(r, D.REFUSE.copyPending, "not sold, not committed — pending");
+    nov(r, D.REFUSE.copyUnavailable, "not available to Jordan, and that is all he learns");
     eq(Object.keys(r).sort().join(","), "ok,refused", "and it names nobody");
+    eq(status(st), "pending", "while the domain still knows exactly what it is");
   });
 
   test("[11] the deal it is pending FOR carries on untouched", () => {
@@ -392,8 +398,11 @@ describe("D. A promise is what a card cannot carry twice", () => {
   test("a promised copy still refuses a new pursuit", () => {
     const st = world();
     promised(st, A, valued(st, A, "gA", "i1", 27));
+    /* RE-PINNED: same collapse as [10]. What matters here is that it refuses;
+       that it refuses in the SAME word as pending and sold is the point. */
     nov(x(st, B, "startOpportunity", { goalId: "gB", invId: "i1", amount: 28, at: AT }),
-      D.REFUSE.copyCommitted, "somebody has been promised this one");
+      D.REFUSE.copyUnavailable, "somebody has been promised this one");
+    eq(status(st), "committed", "though the domain has not forgotten which it is");
   });
 
   test("pending for THIS deal never blocks its own promise", () => {
@@ -695,7 +704,7 @@ describe("H. The boundary is only moved where every holder of it moved", () => {
     promised(st, A, valued(st, A, "gA", "i1", 26));
     eq(status(st), "committed", "the copy is Casey's now");
     nov(x(st, B, "proposeFinalBalance", { oppId: b, amount: 25, at: AT }),
-      D.REFUSE.copyCommitted, "so no final figure may be put on it");
+      D.REFUSE.copyUnavailable, "so no final figure may be put on it");
     const o = st.get().opportunities.find((z) => z.id === b);
     eq(((o.deal || {}).adjThread || []).length, 0, "and nothing was written to the thread");
   });

@@ -104,7 +104,7 @@ describe("A. There is exactly one way to settle a price", () => {
      still the property; it is just that "once" is now a named function. */
   test("the invariant lives with the action, once", () => {
     const fn = COMMANDS.slice(COMMANDS.indexOf("acceptPrice(state"), COMMANDS.indexOf("proposeTradeSelection(state"));
-    assert(/copyBlockedFor\(state, o\)/.test(fn), "it checks the physical copy");
+    assert(/copyBlockedFor\(state, o\b/.test(fn), "it checks the physical copy");
     const helper = COMMANDS.slice(COMMANDS.indexOf("function copyBlockedFor"), COMMANDS.indexOf("function oppGate"));
     assert(/copyCommittedTo\(/.test(helper), "through the domain's own predicate");
     assert(/R\.copyCommitted/.test(helper), "and refuses");
@@ -363,7 +363,10 @@ describe("E. Before, after, and afterwards again", () => {
     st.actions.agreePrice({ oppId: a, amount: 3700, by: "tp", at: AT });
     toFinalAgreement(st, a);
     const late = offer(st, goalFor(st, "jordan", "k1"), "jordan", "inv-1", "k1", 4000);
-    eq(late.refused, D.REFUSE.copyCommitted, "there is nothing left to negotiate over");
+    /* RE-PINNED: see exclusion-boundaries. One word to a competing collector. */
+    eq(late.refused, D.REFUSE.copyUnavailable, "there is nothing left to negotiate over");
+    eq(D.inventoryCopyStatus("inv-1", st.get().opportunities, st.get().inventory),
+      "committed", "though the domain has not flattened the state itself");
   });
 
   test("reviewing that copy is still allowed after it is committed", () => {

@@ -571,7 +571,13 @@ describe("D. nothing that already worked works differently", () => {
        batch. What must stay true is narrower and more important: a command
        REFERENCES a card, it never reaches the catalog to make one. So no
        command may import the catalog's repository or its identity rules. */
-    const commands = read("domain/metyet-commands.js");
+    /* READ AS CODE, NOT AS PROSE. This asks whether a command REACHES the
+       catalog, which is a question about imports — but it was asked of the raw
+       file, so a comment that merely mentioned the card-identity module by name
+       failed it. Comments are stripped first, the same way the Option B suite's
+       no-generic-lock guard does it, so the guard means what it says. */
+    const commands = read("domain/metyet-commands.js")
+      .replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     assert(!/card-identity|catalog-repository|metyet_catalog/.test(commands),
       "a command reached the catalog rather than merely naming a card");
   });

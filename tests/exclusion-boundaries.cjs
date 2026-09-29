@@ -284,7 +284,13 @@ describe("C. The partner commits by settling a price, per copy", () => {
     const gt = goalFor(st, "taylor", "k1");
     const late = offer(st, { goalId: gt, who: "taylor", partnerId: "nl",
       invId: "inv-1", cardId: "k1", amount: 4000 });
-    eq(late.refused, D.REFUSE.copyCommitted, "the copy is spoken for");
+    /* RE-PINNED by the integrity/privacy cleanup: a competing collector is told
+       the copy is not available to them, never which of pending, promised or
+       sold it is. That it refuses is the property; the word is deliberately the
+       same one all three states now give. */
+    eq(late.refused, D.REFUSE.copyUnavailable, "the copy is spoken for");
+    eq(D.inventoryCopyStatus("inv-1", st.get().opportunities, st.get().inventory),
+      "committed", "while the domain still knows it is committed, not merely gone");
   });
 
   test("commitment is per copy — the partner may commit others freely", () => {
@@ -310,7 +316,7 @@ describe("C. The partner commits by settling a price, per copy", () => {
     /* PHASE 1: accepting a price is the acceptPrice command. */
     const store = readSrc("domain/metyet-commands.js");
     const fn = store.slice(store.indexOf("acceptPrice(state"), store.indexOf("proposeTradeSelection(state"));
-    assert(/copyBlockedFor\(state, o\)/.test(fn), "it checks the copy, not the goal");
+    assert(/copyBlockedFor\(state, o\b/.test(fn), "it checks the copy, not the goal");
     const helper = store.slice(store.indexOf("function copyBlockedFor"), store.indexOf("function oppGate"));
     assert(/copyCommittedTo\(/.test(helper) && /R\.copyCommitted/.test(helper),
       "through the domain's own predicate, and refuses");
