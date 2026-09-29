@@ -72,6 +72,7 @@ export default function ProductionApp({ state, onSignOut, onSaveProfile = null,
   onAddGoal = null, onSetPriority = null, onRemoveGoal = null,
   onInvite = null, onRevokeInvite = null, onRefresh = null,
   onSpecify = null, onCreateBinder = null, onRenameBinder = null, onArchiveBinder = null,
+  onInspect = null, onEndInspection = null, onRequestPhotos = null,
   joined = null, onDismissJoined = null }) {
   const who = describeActor(state);
 
@@ -97,6 +98,8 @@ export default function ProductionApp({ state, onSignOut, onSaveProfile = null,
     return <CollectorShell state={state} onSignOut={onSignOut}
       onAddGoal={onAddGoal} onSetPriority={onSetPriority} onRemoveGoal={onRemoveGoal}
       onBrowseCards={onBrowseCards} onSpecify={onSpecify}
+      onInspect={onInspect} onEndInspection={onEndInspection}
+      onRequestPhotos={onRequestPhotos}
       onCreateBinder={onCreateBinder} onRenameBinder={onRenameBinder}
       onArchiveBinder={onArchiveBinder}
       joined={joined} onDismissJoined={onDismissJoined} />;

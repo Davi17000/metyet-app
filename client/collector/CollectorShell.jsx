@@ -343,6 +343,13 @@ const CSS = `
 .mcs-df-grade { color:var(--t1); font-weight:600; }
 .mcs-df-ask { margin-left:auto; color:var(--text); font-variant-numeric:tabular-nums; }
 .mcs-df-note { flex-basis:100%; font-size:11.5px; color:var(--amber); }
+/* QUALIFICATION CONTROLS, ON THEIR OWN LINE UNDER THE COPY THEY ACT ON. The
+   facts above read left to right; these wrap to a full row so a press is never
+   next to a number it might be mistaken for. */
+.mcs-df-do { flex-basis:100%; display:flex; flex-wrap:wrap; gap:8px;
+  align-items:center; margin-top:6px; }
+.mcs-df-state { font-size:11.5px; color:var(--dim); }
+.mcs-df-trouble { font-size:11.5px; color:var(--amber); }
 .mcs-df-none { margin:0; padding:2px 16px 14px; font-size:12.5px; color:var(--muted); }
 .mcs-rec-facts { display:flex; flex-wrap:wrap; gap:4px 14px; margin-top:8px; }
 
@@ -501,6 +508,7 @@ const CSS = `
 export default function CollectorShell({ state, onSignOut, joined = null, onDismissJoined = null,
   onAddGoal = null, onSetPriority = null, onRemoveGoal = null, onBrowseCards = null,
   onSpecify = null, onCreateBinder = null, onRenameBinder = null,
+  onInspect = null, onEndInspection = null, onRequestPhotos = null,
   onArchiveBinder = null }) {
   /* JUST ACCEPTED? OPEN ON THE THING THAT CHANGED (Phase 5 Batch 3A). A person
      who has this second finished joining a shop's network; the section that now
@@ -638,15 +646,15 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
                        a question and offers no way to act on the answer. */
                     ? { onBrowseCards }
                     : meta.id === "deal-flow"
-                      /* THE SAME ONE PROP, FOR THE SAME REASON. Deal Flow reads
-                         the overlap the server already derived and the copies
-                         already in the projection, and names the catalogue's
-                         cards. It is handed no command — not a disabled one,
-                         not a stubbed one — because Inspect, Request Photos and
-                         Agree Market Value are real domain commands that are
-                         deliberately not exposed yet, and a control that cannot
-                         work is a promise the product has not kept. */
-                      ? { onBrowseCards }
+                      /* AND THE QUALIFICATION COMMANDS (this batch). Deal Flow
+                         was handed no command while Inspect and Request Photos
+                         were unexposed, because a control that cannot work is a
+                         promise the product has not kept. They work now, so it
+                         gets exactly those three and no more: Agree Market
+                         Value, Pending and everything downstream of them are
+                         still real domain commands with no surface, and this
+                         screen still stops at the line before a transaction. */
+                      ? { onBrowseCards, onInspect, onEndInspection, onRequestPhotos }
                       : {})} />
         </main>
       </div>

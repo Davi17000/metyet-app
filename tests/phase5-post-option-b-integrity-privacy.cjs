@@ -413,48 +413,74 @@ describe("B. What a collector may learn about somebody else's deal", () => {
     eq(new Set(Object.values(answers)).size, 3, "three states, three answers, to the one who owns it");
   });
 
-  test("[B-OPEN] inspection still separates SOLD, and this is left open deliberately", () => {
-    /* THE ONE PRIVACY EDGE THIS BATCH DID NOT CLOSE, pinned so it is a decision
-       and not a drift. `reviewCopy` and `requestPhotos` do not consult the
-       availability question at all: pending and committed pass, sold refuses.
-       For a collector who is not in the controlling deal that is a
-       success-vs-refusal oracle on the most valuable bit there is — the moment
-       a rival deal completed.
+  test("[B-CLOSED] inspection answers one way for every closed copy", () => {
+    /* RE-PINNED, AND THIS IS THE DECISION THE OLD TEST ASKED FOR.
 
-       Every way of closing it contradicts something already agreed:
+       It pinned an oracle rather than a rule: `reviewCopy` and `requestPhotos`
+       consulted no availability question, so pending and committed passed while
+       sold refused, and for a collector outside the controlling deal that
+       difference reported the moment a rival's deal completed. It recorded that
+       nothing reachable turned on it BECAUSE neither command was exposed, and
+       asked for a decision rather than a guess. The qualification batch exposes
+       both, which is exactly the act that removes that bound, so the decision
+       could not be deferred again.
 
-         refuse pending/committed too   Option B says Pending "stops new
-                                        pursuits but erases no existing work",
-                                        and its invariant [1] says inspecting
-                                        and asking for photographs reserve
-                                        nothing. This would make Pending govern
-                                        inspection, which is a redesign of it.
-         allow sold through             Option B Item 0 closed exactly this:
-                                        requestPhotos had to stop accepting a
-                                        card the shop no longer owns.
-         participant-aware inspection   still blocks a bystander on pending and
-                                        committed, so it carries the first
-                                        objection unchanged.
+       IT WEIGHED PARTICIPANT-AWARE INSPECTION AND OBJECTED: it "still blocks a
+       bystander on pending and committed", which would "make Pending govern
+       inspection, which is a redesign of it". The objection does not survive
+       reading Option B's own sentence. Pending "stops new pursuits but erases no
+       existing work" — and stopping a bystander from STARTING to inspect is
+       stopping a new pursuit, which is the first half of that sentence, while
+       the second half is honoured exactly: the review row survives, the copy
+       stays on the screen of whoever was already looking, and `endReview` still
+       works. Nothing existing is erased.
 
-       Neither command is on the production surface (`exposed-commands.js`), so
-       nothing reachable today turns on it. Recorded in the hand-back for a
-       decision rather than guessed at here. */
+       Option B invariant [1] — inspecting and asking for photographs reserve
+       nothing — is also untouched, and [B-RESERVE] below still proves it: any
+       number of collectors may qualify on an AVAILABLE copy at once, none
+       blocks another, and none of it confers priority. Governing who may begin
+       is not the same as granting the beginner a claim.
+
+       What is asserted now is the absence of the oracle: every closed state
+       answers identically, so a bystander learns "not available" and nothing
+       about whose deal, how far along, or whether it finished. */
     const seen = {};
     for (const name of ["available", "pending", "committed", "sold"]) {
       const { st } = situation(name);
       seen[name] = code(x(st, B, "reviewCopy", { invId: "i1", at: AT }));
     }
-    eq(seen.pending, "OK", "pending: a bystander may still look");
-    eq(seen.committed, "OK", "committed: and still may");
-    eq(seen.sold, D.REFUSE.copyUnavailable, "sold: but not once it is gone");
-    assert(seen.sold !== seen.committed, "which is the open oracle, stated plainly");
-    const fs = require("fs");
-    const path = require("path");
-    const exposed = fs.readFileSync(path.join(__dirname, "..", "server", "exposed-commands.js"), "utf8");
-    for (const cmd of ["reviewCopy", "requestPhotos"]) {
-      assert(!new RegExp(`"${cmd}"`).test(exposed),
-        `${cmd} is still off the production surface, which is what bounds this`);
+    eq(seen.available, "OK", "available: a bystander may look");
+    for (const name of ["pending", "committed", "sold"]) {
+      eq(seen[name], D.REFUSE.copyUnavailable, `${name}: the door is closed`);
     }
+    eq(seen.pending, seen.sold, "pending and sold are indistinguishable");
+    eq(seen.committed, seen.sold, "committed and sold are indistinguishable");
+
+    /* And the same for asking to be shown the card. */
+    const asked = {};
+    for (const name of ["available", "pending", "committed", "sold"]) {
+      const { st } = situation(name);
+      asked[name] = code(x(st, B, "requestPhotos", { invId: "i1", at: AT }));
+    }
+    eq(asked.available, "OK", "available: a bystander may ask");
+    eq(asked.pending, asked.sold, "pending and sold are indistinguishable");
+    eq(asked.committed, asked.sold, "committed and sold are indistinguishable");
+  });
+
+  test("[B-HOLDER] the collector whose own deal closed the copy is not locked out", () => {
+    /* The other half, and an adversarial run put it here: closing the door on
+       `committed` without naming an exception locked the WINNER out of the card
+       they had just been promised — the copy is committed BECAUSE of their deal,
+       and they were refused permission to ask the shop for a photograph of it.
+       Sold is nobody's door, because the card is gone. */
+    for (const name of ["pending", "committed"]) {
+      const { st } = situation(name);
+      eq(code(x(st, A, "requestPhotos", { invId: "i1", at: AT })), "OK",
+        `${name}: the holder may still ask about their own card`);
+    }
+    const { st } = situation("sold");
+    eq(code(x(st, A, "requestPhotos", { invId: "i1", at: AT })), D.REFUSE.copyUnavailable,
+      "sold: not even the buyer, because the card is gone");
   });
 
   test("[B12] the domain itself was not flattened", () => {

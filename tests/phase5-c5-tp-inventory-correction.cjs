@@ -174,8 +174,8 @@ const rowOf = async (ctx, invId) =>
 /* ============================================================== A */
 describe("A. the door opened by exactly two", () => {
 
-  test("the allow-list went from sixteen to eighteen, and gained these two", async () => {
-    eq(EXPOSED_COMMANDS.length, 18, "the production surface is not the size C5 intended");
+  test("the allow-list, and the two C5 itself added", async () => {
+    eq(EXPOSED_COMMANDS.length, 21, "the production surface is not the size C5 intended");
     for (const name of ["updateInventoryCopy", "removeInventoryCopy"]) {
       assert(EXPOSED_COMMANDS.includes(name), `${name} is not offered`);
     }
@@ -192,9 +192,13 @@ describe("A. the door opened by exactly two", () => {
     /* The deal lifecycle, the legacy catalogue writer, and the two inventory
        commands C5 did NOT ship. Each is a real command and each is refused
        identically to one that does not exist. */
+    /* `reviewCopy` left this loop when the qualification batch gave it a surface.
+       `addCopyPhotos` stays, and its staying is a gap rather than a decision:
+       it is the only command that FULFILS a photo request, it belongs to the
+       Trusted Partner, and the partner has no screen for it yet. */
     for (const name of ["startOpportunity", "proposePrice", "acceptPrice", "acceptDeal",
       "confirmHandoff", "cancelOpportunity", "sendMessage", "reachOut", "setInterest",
-      "resolveCardIdentity", "addCopyPhotos", "reviewCopy", "inviteCollector"]) {
+      "resolveCardIdentity", "addCopyPhotos", "inviteCollector"]) {
       assert(COMMAND_NAMES.has ? COMMAND_NAMES.has(name) : [...COMMAND_NAMES].includes(name),
         `${name} is not a command, so this test is asserting nothing`);
       assert(!EXPOSED_COMMANDS.includes(name), `${name} is exposed`);
@@ -219,9 +223,14 @@ describe("A. the door opened by exactly two", () => {
     eq(before.length, 16, "the baseline was not sixteen");
     const added = EXPOSED_COMMANDS.filter((n) => !before.includes(n));
     const lost = before.filter((n) => !EXPOSED_COMMANDS.includes(n));
-    eq(json(added.sort()), json(["removeInventoryCopy", "updateInventoryCopy"]),
-      "C5 opened a door it did not declare");
-    eq(json(lost), json([]), "C5 closed a door somebody else opened");
+    /* C5's own two, plus the three the qualification batch added on top. The
+       test still measures the delta against the file as dc2fd25 actually had
+       it, so a fourth door opening anywhere still fails here — which is the
+       whole reason it reads git rather than a literal. */
+    eq(json(added.sort()), json(["endReview", "removeInventoryCopy", "requestPhotos",
+      "reviewCopy", "updateInventoryCopy"]),
+      "a door was opened that no batch declared");
+    eq(json(lost), json([]), "a door somebody else opened was closed");
   });
 });
 

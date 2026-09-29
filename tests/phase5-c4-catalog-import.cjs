@@ -959,10 +959,11 @@ describe("G. the boundaries hold", () => {
 
   test("there is no HTTP way in, and the allow-list did not move", async () => {
     const ctx = await world();
-    /* Eighteen since C5 gave the two Batch 6 inventory commands a screen. What
+    /* Twenty-one: C5 gave the two Batch 6 inventory commands a screen and the
+       qualification batch gave Inspect and Request Photos one. What
        this test is about is unchanged and is asserted below by NAME: no catalog
        command is reachable, and no route writes the schema. */
-    eq(EXPOSED_COMMANDS.length, 18, "the production surface is not the size C5 left it");
+    eq(EXPOSED_COMMANDS.length, 21, "the production surface is not the size C5 left it");
     for (const name of ["catalogImport", "importCatalog", "putCanonicalCard",
       "putCardContext", "putExpansion", "recordSourceMapping", "resolveCardIdentity"]) {
       assert(!EXPOSED_COMMANDS.includes(name), `${name} is exposed`);

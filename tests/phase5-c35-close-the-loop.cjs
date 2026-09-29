@@ -747,7 +747,7 @@ describe("E. still two facts", () => {
    The boundaries hold. */
 describe("F. the boundaries hold", () => {
 
-  test("the allow-list is still exactly sixteen, by value and by count", () => {
+  test("the exact allow-list, by value and by count", () => {
     eq(json([...EXPOSED_COMMANDS].sort()), json([
       "updatePartnerProfile", "revokeCollectorInvitation",
       "addGoal", "updateGoalTier", "removeGoal",
@@ -763,8 +763,17 @@ describe("F. the boundaries hold", () => {
          reads the LIVE allow-list — it is a statement about the product's
          surface today, not a fossil of the batch that wrote it. */
       "updateInventoryCopy", "removeInventoryCopy",
+      /* AND THE THREE THE QUALIFICATION BATCH ADDED. `reviewCopy`, `endReview`
+         and `requestPhotos` existed in the domain from the beginning and had no
+         surface; Deal Flow is that surface. None of them creates an Opportunity,
+         settles a value, reserves or commits, and since that batch none may be
+         started on a copy that is pending, promised or sold — with one answer
+         for all three, so the refusal reports nothing about anyone else's deal.
+         Listed here because this pin reads the LIVE allow-list: it states the
+         product's surface today, not a fossil of the batch that wrote it. */
+      "reviewCopy", "endReview", "requestPhotos",
     ].sort()), "C3.5 changed the production surface");
-    eq(EXPOSED_COMMANDS.length, 18);
+    eq(EXPOSED_COMMANDS.length, 21);
     /* 49 → 50 in Option B (`setCopyPending`). What this line guards is the
        door above, which has not moved: the new command is not exposed. */
     eq(C.COMMAND_NAMES.length, 50, "a command was added or removed");
@@ -792,8 +801,11 @@ describe("F. the boundaries hold", () => {
 
   test("the deal lifecycle is still shut, and so is everything C3.5 might have wanted", async () => {
     const ctx = await world();
-    for (const name of ["startOpportunity", "proposePrice", "acceptPrice", "acceptDeal",
-      "setInterest", "sendMessage", "reachOut", "requestPhotos", "markBinderReviewed"]) {
+    /* `reviewCopy`, `endReview` and `requestPhotos` left this list when the
+         qualification batch gave them a surface in Deal Flow. What must stay shut
+         is the TRANSACTION, and it is still shut. */
+      for (const name of ["startOpportunity", "proposePrice", "acceptPrice", "acceptDeal",
+      "setInterest", "sendMessage", "reachOut", "markBinderReviewed"]) {
       assert(!EXPOSED_COMMANDS.includes(name), `${name} is exposed`);
       eq((await post(ctx.app, "casey", name, {})).json().error.refused,
         "command-unavailable", name);

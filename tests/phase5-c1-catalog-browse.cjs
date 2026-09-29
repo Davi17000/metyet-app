@@ -787,6 +787,15 @@ describe("G. boundaries, and what did not change", () => {
       /* C5, the shop's two: correct a copy's facts, and take a copy off the
          shelf. Both were written in Batch 6 and shipped without a screen. */
       "updateInventoryCopy", "removeInventoryCopy",
+      /* AND THE THREE THE QUALIFICATION BATCH ADDED. `reviewCopy`, `endReview`
+         and `requestPhotos` existed in the domain from the beginning and had no
+         surface; Deal Flow is that surface. None of them creates an Opportunity,
+         settles a value, reserves or commits, and since that batch none may be
+         started on a copy that is pending, promised or sold — with one answer
+         for all three, so the refusal reports nothing about anyone else's deal.
+         Listed here because this pin reads the LIVE allow-list: it states the
+         product's surface today, not a fossil of the batch that wrote it. */
+      "reviewCopy", "endReview", "requestPhotos",
     ].sort()), "a door was opened that nobody declared");
     const browserCode = code("client/browse/CardBrowser.jsx");
     assert(!EXPOSED_COMMANDS.some((c) => browserCode.includes(c)),
