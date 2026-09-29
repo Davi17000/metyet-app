@@ -203,6 +203,16 @@ const copyEditProtected = (state, invId) =>
    So each caller now computes the photographs its own write will produce and
    hands those over. There is no way to describe an edit the guard will not see,
    because it is no longer reading a description. */
+/* A PHOTOGRAPH REFERENCE IS A STRING. `photoSlot` below answers "does this slot
+   hold something", which the guard compares; this answers the narrower question
+   "is what it holds a usable reference", and it is what NORMALISATION stores. An
+   adversarial run found `{ front: {}, back: {} }` satisfying `copyPhotographed`,
+   so a copy with no evidence at all read as fully photographed and the Collector
+   was refused the chance to ask for any. */
+const photoRef = (v) => (typeof v === "string" && v !== "" ? v : null);
+const photographs = (value) => ({ front: photoRef(value && value.front),
+  back: photoRef(value && value.back) });
+
 const photoSlot = (photos, slot) => {
   const v = photos && typeof photos === "object" ? photos[slot] : undefined;
   return v === undefined || v === null || v === "" ? null : v;
@@ -544,7 +554,12 @@ const COMMANDS = {
     const { invId: askedId, addedAt: askedAt, updatedAt, pendingFor: notYours, ...facts } = copy;
     const invId = ctx.id("inv" + (canonical || copy.cardId) + "-", askedId);
     if (list(state.inventory).some((i) => i.invId === invId)) return refuse(R.copyInUse);
-    const row = { photos: { front: null, back: null }, archived: false, ...facts, invId,
+    /* NORMALISED ON THE WAY IN, for the reason `updateInventoryCopy` gives: a
+       copy created with a photographs field of any other shape is a copy every
+       later reader has to cope with, and one created with `{front:{},back:{}}`
+       read as fully photographed while holding no evidence at all. */
+    const born = { ...facts, photos: photographs(facts && facts.photos) };
+    const row = { archived: false, ...born, invId,
       partnerId: a.partnerId, ...(ctx.time(askedAt) ? { addedAt: ctx.time(askedAt) } : {}) };
     return done({ ...state, inventory: [...list(state.inventory), row] }, invId);
   },
@@ -598,8 +613,14 @@ const COMMANDS = {
     /* `photos` is ASSIGNED, not merged (see `clean` below), so the photographs
        after this write are exactly what the patch carries — or the existing
        ones when it does not mention them at all. */
-    if (protectedCopyEdit(state, invId, copy, p,
-      "photos" in p ? p.photos : undefined)) return refuse(R.copyCommitted);
+    /* NORMALISED FIRST, SO THE GUARD IS HANDED WHAT THE WRITE WILL PRODUCE.
+       That is the whole contract of `protectedCopyEdit` (see its comment), and
+       computing the final photographs after asking the guard about the raw patch
+       would be the same shape of mistake the guard was written to fix. */
+    const nextPhotos = "photos" in p
+      ? photographs(p.photos && typeof p.photos === "object" ? p.photos : null)
+      : undefined;
+    if (protectedCopyEdit(state, invId, copy, p, nextPhotos)) return refuse(R.copyCommitted);
     /* Grade and condition are here because a raw copy that comes back from a
        grader is the same physical card with a new fact about it — not a new
        copy, and certainly not a new CARD (Phase 5 Batch 6). Whether that
@@ -608,6 +629,27 @@ const COMMANDS = {
     const allowed = ["ask", "cost", "acquired", "cert", "note", "photos", "grade", "condition"];
     const clean = {};
     for (const k of allowed) if (k in p) clean[k] = p[k];
+    /* PHOTOGRAPHS ARE STORED IN THE ONLY SHAPE THE GUARD CAN READ.
+
+       An adversarial run found the protection defeatable in two legal steps.
+       Nothing checked the SHAPE of this field, so a partner could write
+       `photos: "gotcha"` (or a number, or an array) while the copy was still
+       available — allowed, because photo edits are legal then — and from that
+       moment `photoSlot` read every slot of a non-object as `null`. The guard's
+       whole question is "did a slot that HELD something stop holding it", so a
+       copy whose photos were a string looked permanently empty to it: once the
+       copy entered a live deal, fresh evidence could be written over the old
+       freely, which is exactly the rewrite the guard exists to refuse.
+
+       Normalising here means the field is always `{ front, back }` with string
+       or null in each slot afterwards, so the guard is never blind and a caller
+       sending a well-formed patch is unaffected.
+
+       IT IS NOT THE ONLY DOOR, and an adversarial run corrected an earlier
+       version of this comment that said it was. `addInventoryCopy` also writes
+       this field, spreads the caller's facts over its default, and is on the
+       production allow-list; it normalises too, just below. */
+    if (nextPhotos !== undefined) clean.photos = nextPhotos;
     for (const k of ["ask", "cost"]) {
       if (clean[k] != null && !(validMoney(Number(clean[k])) && Number(clean[k]) >= 0)) return refuse(R.invalidAmount);
     }
@@ -1191,9 +1233,27 @@ const COMMANDS = {
        copy's state out of an id, and answering `copy-unavailable` for a sold
        card before asking whether they know the shop at all did exactly that. */
     if (!isRelated(state, copy.partnerId, a.collectorId)) return refuse(R.noRelationship);
-    if (copy.archived || D.soldInventoryIds(state.opportunities).has(invId)) return refuse(R.copyUnavailable);
-    const open = list(state.copyReviews).find((r) => r.collectorId === a.collectorId && r.invId === invId && !r.endedAt);
+    if (copy.archived) return refuse(R.copyUnavailable);
+    /* THE DOOR. A copy that is pending for, or promised to, somebody else's deal
+       is closed to a collector who has not already started looking at it — and
+       it is closed with the SAME answer a sold copy gives. That sameness is the
+       point: this check used to refuse only `sold`, so the difference between
+       "refused" and "allowed" told a rival exactly when another collector's deal
+       reached final agreement. One answer for every closed state, and the reason
+       stays where it belongs, which is with the two people in the deal. */
+    /* ALREADY IN THE ROOM, AND ASKED FIRST. An open review is answered with
+       itself, so a collector mid-inspection is never told their own copy is
+       unavailable — and `reviewCopy` stays idempotent, which is what makes a
+       retry safe after a press whose answer was lost. An adversarial run caught
+       this check sitting BELOW the door, doing the opposite of what the comment
+       beside it claimed. */
+    const open = list(state.copyReviews)
+      .find((r) => r.collectorId === a.collectorId && r.invId === invId && !r.endedAt);
     if (open) return done(state, open.id);
+    if (!D.openToNewQualification(invId, state.opportunities, state.inventory)
+      && !D.holdingCopy(invId, a.collectorId, state.opportunities, state.inventory)) {
+      return refuse(R.copyUnavailable);
+    }
     const id = ctx.id("rv");
     return done({ ...state, copyReviews: [...list(state.copyReviews),
       { id, collectorId: a.collectorId, partnerId: copy.partnerId, invId, at, endedAt: null }] }, id);
@@ -1220,11 +1280,27 @@ const COMMANDS = {
        a Collector could ask a partner to photograph a card they no longer own.
        The two commands exist for one purpose — looking properly at a copy — and
        they now answer the same way. */
-    if (D.soldInventoryIds(state.opportunities).has(invId)) return refuse(R.copyUnavailable);
-    if (D.INVARIANTS.copyPhotographed(copy.photos)) return done(state, null);
-    if (list(state.photoRequests).some((r) => r.collectorId === a.collectorId && r.invId === invId && !r.fulfilledAt)) {
-      return done(state, null);
+    /* THE SAME DOOR, AND THE SAME ANSWER (see `reviewCopy`). An open request of
+       their own answers first, so somebody who already asked is never told the
+       copy is unavailable; anyone else is refused identically whether the copy
+       is pending, promised or gone.
+
+       ASKING FOR EVIDENCE IS ITS OWN INTERACTION. An open REVIEW does not open
+       this door. A collector inspecting a copy that then closes may finish
+       looking and may end their review, but putting a NEW job on the partner's
+       shelf for a card that is already promised to somebody else is starting
+       something, not completing it — and the narrow reading is the one that
+       keeps "retains only the access necessary" honest. */
+    const asked = list(state.photoRequests)
+      .some((r) => r.collectorId === a.collectorId && r.invId === invId && !r.fulfilledAt);
+    if (asked) return done(state, null);
+    if (!D.openToNewQualification(invId, state.opportunities, state.inventory)
+      && !D.holdingCopy(invId, a.collectorId, state.opportunities, state.inventory)) {
+      return refuse(R.copyUnavailable);
     }
+    /* AFTER the door, so a bystander cannot tell a closed photographed copy
+       (nothing to ask for) from a closed unphotographed one. */
+    if (D.INVARIANTS.copyPhotographed(copy.photos)) return done(state, null);
     const id = ctx.id("pr");
     const reviewing = list(state.copyReviews).some((r) => r.collectorId === a.collectorId && r.invId === invId && !r.endedAt);
     return done({ ...state,

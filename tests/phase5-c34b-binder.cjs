@@ -948,7 +948,7 @@ describe("E. add cards", () => {
    The two doors this batch opened, and every rule behind them. */
 describe("F. the two new doors", () => {
 
-  test("the allow-list is sixteen, by value and by count", () => {
+  test("the exact allow-list, by value and by count", () => {
     eq(json([...EXPOSED_COMMANDS].sort()), json([
       "updatePartnerProfile", "revokeCollectorInvitation",
       "addGoal", "updateGoalTier", "removeGoal",
@@ -964,8 +964,17 @@ describe("F. the two new doors", () => {
          reads the LIVE allow-list — it is a statement about the product's
          surface today, not a fossil of the batch that wrote it. */
       "updateInventoryCopy", "removeInventoryCopy",
+      /* AND THE THREE THE QUALIFICATION BATCH ADDED. `reviewCopy`, `endReview`
+         and `requestPhotos` existed in the domain from the beginning and had no
+         surface; Deal Flow is that surface. None of them creates an Opportunity,
+         settles a value, reserves or commits, and since that batch none may be
+         started on a copy that is pending, promised or sold — with one answer
+         for all three, so the refusal reports nothing about anyone else's deal.
+         Listed here because this pin reads the LIVE allow-list: it states the
+         product's surface today, not a fossil of the batch that wrote it. */
+      "reviewCopy", "endReview", "requestPhotos",
     ].sort()), "the production surface is not what C3.4 declared");
-    eq(EXPOSED_COMMANDS.length, 18);
+    eq(EXPOSED_COMMANDS.length, 21);
     for (const name of EXPOSED_COMMANDS) {
       assert(C.COMMAND_NAMES.includes(name), `${name} is not a command`);
     }

@@ -794,8 +794,17 @@ describe("H. the doors this batch opened, and no others", () => {
          reads the LIVE allow-list — it is a statement about the product's
          surface today, not a fossil of the batch that wrote it. */
       "updateInventoryCopy", "removeInventoryCopy",
+      /* AND THE THREE THE QUALIFICATION BATCH ADDED. `reviewCopy`, `endReview`
+         and `requestPhotos` existed in the domain from the beginning and had no
+         surface; Deal Flow is that surface. None of them creates an Opportunity,
+         settles a value, reserves or commits, and since that batch none may be
+         started on a copy that is pending, promised or sold — with one answer
+         for all three, so the refusal reports nothing about anyone else's deal.
+         Listed here because this pin reads the LIVE allow-list: it states the
+         product's surface today, not a fossil of the batch that wrote it. */
+      "reviewCopy", "endReview", "requestPhotos",
     ].sort()), "the production surface is not what this batch declared");
-    eq(EXPOSED_COMMANDS.length, 18, "and nothing arrived unnamed");
+    eq(EXPOSED_COMMANDS.length, 21, "and nothing arrived unnamed");
   });
 
   test("every exposed name is a real command, and the client sends exactly these", () => {

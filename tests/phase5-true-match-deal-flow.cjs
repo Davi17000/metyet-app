@@ -644,10 +644,14 @@ describe("E. The surface shows the copies, and only those", () => {
 /* ============================================ F. what must not have moved */
 describe("F. The boundary this batch did not cross", () => {
   test("[33] the production allow-list is unchanged", () => {
-    eq(EXPOSED_COMMANDS.length, 18, "a command was exposed by this batch");
-    for (const closed of ["reviewCopy", "endReview", "requestPhotos", "startOpportunity",
+    eq(EXPOSED_COMMANDS.length, 21, "a command was exposed by this batch");
+    /* THE TRANSACTION IS WHAT MUST STAY CLOSED. `reviewCopy`, `endReview` and
+       `requestPhotos` left this loop when the qualification batch gave them a
+       surface in Deal Flow; they qualify a copy and settle nothing. Everything
+       that prices, reserves or advances a deal is still unreachable. */
+    for (const closed of ["startOpportunity",
       "proposePrice", "acceptPrice", "cancelOpportunity", "setCopyPending", "acceptDeal",
-      "proposeTradeSelection", "confirmHandoff"]) {
+      "proposeTradeSelection", "confirmHandoff", "addCopyPhotos"]) {
       assert(!EXPOSED_COMMANDS.includes(closed), `${closed} was exposed`);
     }
   });

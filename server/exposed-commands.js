@@ -132,6 +132,40 @@ const EXPOSED_COMMANDS = Object.freeze([
      not add the first thing that does. */
   "updateInventoryCopy",         // TP → Inventory, correcting a copy's facts
   "removeInventoryCopy",         // TP → Inventory, "Remove from inventory"
+
+  /* ------------------------------------------- QUALIFICATION (this batch)
+
+     LOOKING PROPERLY AT ONE PHYSICAL COPY, AND ASKING TO BE SHOWN IT. Deal
+     Flow has been able to say "this exact copy, at this shop, matches what you
+     asked for" since the True Match batch, and could do nothing with the
+     answer. These three are the whole of doing something with it, and none of
+     them is a step toward a transaction.
+
+     WHY THESE THREE AND NOT A FOURTH. `reviewCopy` opens the look and
+     `endReview` closes it; a Collector who cannot close one is a Collector
+     whose Goal stays pinned to the first copy they ever opened, which is a
+     known bug in the prototype and not one worth shipping again.
+     `requestPhotos` is the evidence ask. Nothing else in the qualification
+     area needs a surface for the Collector to do the job, so nothing else
+     joins.
+
+     WHAT THEY CANNOT DO, PROVEN IN THE DOMAIN AND NOT HERE. None creates an
+     Opportunity, settles a value, reserves, commits, or advances any deal;
+     each is refused outright unless the caller's own seat is a Collector in an
+     accepted relationship with the shop that owns the copy; and since this
+     batch, none may be started on a copy that is pending, promised or sold to
+     anybody — which is the same answer in all three cases, so exposing them
+     tells a rival nothing about somebody else's deal.
+
+     `addCopyPhotos` IS DELIBERATELY NOT HERE, AND THAT LEAVES A GAP. It is the
+     only command that fulfils a request, and it is a Trusted Partner action
+     with no Trusted Partner surface — building one is the next batch. So a
+     request made today is real, durable and correctly shown as outstanding,
+     and the partner has no production door to answer it through yet. Exposing
+     a command no screen can send would not fix that; the screen would. */
+  "reviewCopy",                  // Collector → Deal Flow, "Inspect"
+  "endReview",                   // Collector → Deal Flow, "Done inspecting"
+  "requestPhotos",               // Collector → Deal Flow, "Request photos"
 ]);
 
 /* ONE ANSWER FOR TWO QUESTIONS, ON PURPOSE. A command that does not exist and a

@@ -1461,6 +1461,100 @@ const inventoryCopyStatus = (invId, opps, inventory) => {
 const soldInventoryIds = (opps) => new Set((opps || [])
   .filter((o) => isCompleted(o) && o.invId != null).map((o) => o.invId));
 
+/* ============================================================================
+   QUALIFICATION: WHO MAY LOOK, AND WHO MAY KEEP LOOKING
+
+   PENDING CLOSES THE DOOR; IT DOES NOT THROW OUT THE PEOPLE ALREADY IN THE ROOM.
+
+   Two questions, and keeping them apart is the whole of it:
+
+     openToNewQualification   may somebody who has done nothing with this copy
+                              START looking at it?
+     qualifyingOn             is this collector ALREADY looking at it?
+
+   Before this batch the product answered the first question wrong in one
+   direction and the second wrong in the other. `reviewCopy` and `requestPhotos`
+   refused only a SOLD copy, so a copy that was pending for, or already promised
+   to, somebody else's deal accepted a new entrant — and because `sold` refused
+   while `committed` did not, the difference between the two answers told a rival
+   the exact moment another collector's deal completed. Meanwhile the projection
+   dropped the copy entirely the moment it stopped being available, so a
+   collector who was legitimately mid-inspection lost the card off their screen
+   and kept a review row pointing at nothing.
+
+   NEITHER ANSWER IS A NEW FACT. `openToNewQualification` is `inventoryCopyStatus`
+   — the Option B authority, unchanged — asked with one word. `qualifyingOn` is
+   the review and photo-request rows that have existed since the beginning, read
+   the way `collector-view.js` has always read them. Nothing durable was added:
+   no `participant`, no `authorizedViewer`, no access list. If these two
+   predicates disagree with the rest of the product, the rest of the product is
+   what is right, because they are derived from it.
+
+   AN OPEN INTERACTION, NOT A HISTORY. Participation is an OPEN review or an
+   OPEN photo request. A review that was ended, or a request that was fulfilled
+   and whose review is over, is not a standing claim on the copy: qualification
+   that legitimately finished stops keeping the door propped. This is what makes
+   "retains only the access necessary" true rather than "retains access forever".
+
+   WHAT PARTICIPATION IS NOT. It is not a reservation, a priority claim, an
+   exclusivity, or any kind of head start. Any number of collectors may qualify
+   on one copy at once, none of them blocks another, and none of it survives a
+   deal. It buys exactly one thing: the copy does not vanish mid-sentence.
+
+   THE COLLECTOR WHOSE OWN DEAL HOLDS THE CARD IS THE FIRST PARTICIPANT, and an
+   adversarial run is why this is written down. Closing the door on `committed`
+   without saying so locked the winner out of their own card: the copy was
+   `committed` precisely BECAUSE of their deal, and they were then refused
+   permission to ask the partner for a photograph of the card they had just been
+   promised. An active opportunity of one's own is engagement with that copy by
+   any reading, so it counts here.
+
+   IT DOES NOT SURVIVE THE RELATIONSHIP. Participation is read alongside a live
+   relationship, never instead of one. An ended relationship already takes a
+   partner's whole supply off the Collector's screen, and a review left open
+   across that ending must not be a keyhole back into it. The caller passes
+   `related`, and a copy whose partner is no longer trusted is not qualifying
+   for anybody. */
+const qualifyingOn = (invId, collectorId, facts) => {
+  if (invId == null || collectorId == null) return false;
+  const f = facts || {};
+  const mine = (r) => r && r.invId === invId && r.collectorId === collectorId;
+  return (f.copyReviews || []).some((r) => mine(r) && !r.endedAt)
+    || (f.photoRequests || []).some((r) => mine(r) && !r.fulfilledAt)
+    || (f.opportunities || []).some((o) => mine(o) && isActive(o));
+};
+const openToNewQualification = (invId, opps, inventory) =>
+  inventoryCopyStatus(invId, opps, inventory) === "available";
+
+/* THE ONE SEAT A CLOSED COPY STAYS OPEN TO: the Collector whose own deal is the
+   reason it closed — the deal that actually HOLDS it, which is the one named by
+   `copyCommittedTo` or by the partner's `pendingFor`, never merely a deal that
+   happens to name the copy and has not formally ended. An adversarial run is why
+   that distinction is spelled out: a rival whose negotiation had already lost
+   the card still read as "active", and asking only for an active deal let the
+   loser back through the door of a copy that had been sold out from under them.
+   Everybody else — including somebody with an open
+   review — is answered identically whatever the copy's state, so no command can
+   be used to ask whether a rival's deal is pending, promised or finished. What
+   an existing reviewer keeps is what the projection gives them: the card still
+   on screen, marked plainly unavailable, and `endReview` to close their own
+   sentence. That is "understand and complete"; re-opening is starting again. */
+const holdingCopy = (invId, collectorId, opps, inventory) => {
+  if (invId == null || collectorId == null) return false;
+  const all = opps || [];
+  /* SOLD HOLDS NOTHING. A completed deal is not a door anybody is standing in;
+     the card is gone and the answer is the same for every seat. */
+  if (soldInventoryIds(all).has(invId)) return false;
+  const committed = INVARIANTS.copyCommittedTo(invId, all);
+  if (committed) return committed.collectorId === collectorId;
+  const pendingId = INVARIANTS.copyPendingFor(invId, inventory, all);
+  if (pendingId) {
+    const held = all.find((o) => o.id === pendingId);
+    return !!held && held.collectorId === collectorId;
+  }
+  return false;
+};
+
 /* Which rows of an opportunity hold an exact BinderCopy, and how. */
 const binderRowState = (o, row) => {
   if (!row || row.withdrawn) return null;
@@ -1526,6 +1620,9 @@ module.exports.finalAgreementGiven = finalAgreementGiven;
 module.exports.cancelledAfterAgreement = cancelledAfterAgreement;
 module.exports.currentCashFigure = currentCashFigure;
 module.exports.inventoryCopyStatus = inventoryCopyStatus;
+module.exports.qualifyingOn = qualifyingOn;
+module.exports.openToNewQualification = openToNewQualification;
+module.exports.holdingCopy = holdingCopy;
 module.exports.soldInventoryIds = soldInventoryIds;
 module.exports.meetsGoalCriteria = meetsGoalCriteria;
 module.exports.transactionallyLost = transactionallyLost;

@@ -50,6 +50,7 @@ import { savePartnerProfile, openCollectorInvitation, revokeCollectorInvitation,
   browseCards, addCollectorGoal, setGoalPriority, removeCollectorGoal,
   setGoalCriteria, addOwnedCopy, updateOwnedCopy, setCopyOffered, removeOwnedCopy,
   createBinder, fileCardInBinder, unfileCardFromBinder,
+  inspectCopy, endInspection, requestCopyPhotos,
   renameBinder, setBinderArchived,
   refreshView } from "../commands.js";
 
@@ -252,6 +253,12 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
      store. Creating one is already bound above for the specification panel and
      is handed to both. */
   const onCreateBinder = useMemo(() => (store ? createBinder(store) : null), [store]);
+  /* QUALIFICATION (this batch): look at one physical copy, stop looking, ask to
+     be shown it. Built the same way as every other command — bound to the
+     production store, naming no actor, so who is asking stays the server's. */
+  const onInspect = useMemo(() => (store ? inspectCopy(store) : null), [store]);
+  const onEndInspection = useMemo(() => (store ? endInspection(store) : null), [store]);
+  const onRequestPhotos = useMemo(() => (store ? requestCopyPhotos(store) : null), [store]);
   const onRenameBinder = useMemo(() => (store ? renameBinder(store) : null), [store]);
   const onArchiveBinder = useMemo(() => (store ? setBinderArchived(store) : null), [store]);
   /* Phase 5 Batch 3A. Not a command — there is no command to name, because the
@@ -674,6 +681,7 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
       onAddCopy, onEditCopy, onRetireCopy,
       onBrowseCards, onAddGoal, onSetPriority, onRemoveGoal, onSpecify,
       onCreateBinder, onRenameBinder, onArchiveBinder,
+      onInspect, onEndInspection, onRequestPhotos,
       /* Phase 5 Batch 3A. Who they just joined, so the shell can greet them by
          it once. It is read from the server's own reply, it is cleared the
          moment they do anything else, and it grants nothing. */

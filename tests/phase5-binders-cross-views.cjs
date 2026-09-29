@@ -470,9 +470,14 @@ describe("E. Four facts, still four", () => {
 /* ============================== F. the boundary this batch did not cross */
 describe("F. What did not move", () => {
   test("[39] the production allow-list is unchanged", () => {
-    eq(EXPOSED_COMMANDS.length, 18, "a command was exposed by this batch");
-    for (const closed of ["reviewCopy", "requestPhotos", "startOpportunity",
-      "acceptPrice", "setCopyPending", "cancelOpportunity"]) {
+    /* THE TRANSACTION IS WHAT MUST STAY CLOSED, and it is. `reviewCopy`,
+       `endReview` and `requestPhotos` left this loop when the qualification
+       batch gave them a surface; everything that settles a value, reserves a
+       card or advances a deal is still unreachable. */
+    eq(EXPOSED_COMMANDS.length, 21, "a command was exposed that no batch declared");
+    for (const closed of ["startOpportunity", "proposePrice", "acceptPrice",
+      "acceptMarketValue", "acceptDeal", "setCopyPending", "cancelOpportunity",
+      "proposeFulfillment", "confirmHandoff", "addCopyPhotos"]) {
       assert(!EXPOSED_COMMANDS.includes(closed), `${closed} was exposed`);
     }
   });
@@ -484,12 +489,20 @@ describe("F. What did not move", () => {
       "a migration for a derived view appeared: " + migrations.join(", "));
   });
 
-  test("[38] Deal Flow is still read-only", () => {
+  test("[38] Deal Flow stops at qualification", () => {
+    /* RE-PINNED. Deal Flow was read-only because Inspect and Request Photos had
+       no production surface, and a disabled control would have been a promise
+       the product had not kept. It has exactly those two now — and the line it
+       stops at has not moved: no price, no Market Value, no Pending, no offer,
+       no message. What this asserts is that line, not the absence of buttons. */
     const src = code("client/collector/sections/DealFlow.jsx");
-    for (const cmd of ["reviewCopy", "requestPhotos", "startOpportunity", "acceptPrice"]) {
+    for (const cmd of ["startOpportunity", "proposePrice", "acceptPrice",
+      "acceptMarketValue", "acceptDeal", "setCopyPending", "proposeFulfillment"]) {
       assert(!src.includes(cmd), `Deal Flow names ${cmd}`);
     }
-    assert(!/<button/.test(src), "Deal Flow grew a control");
+    /* And it reaches the server only through props the shell hands it. */
+    assert(!/execute\s*\(|fetch\s*\(/.test(src),
+      "Deal Flow talks to the server directly");
   });
 
   test("the collection reaches no partner, deal or private data", async () => {

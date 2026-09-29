@@ -330,9 +330,48 @@ function projectForCollector(state, me) {
 
   /* Inventory: the current supply of Trusted Partners, and the exact copies this
      collector's own deals name — each with a status from their own deals only.
-     A photo request or Review Card names a copy but adds none: it shows only
-     while the copy is otherwise visible. */
+
+     AND THE COPIES THEY ARE ALREADY QUALIFYING ON (this batch). The rule used to
+     be that "a photo request or Review Card names a copy but adds none: it shows
+     only while the copy is otherwise visible". That was written when nothing
+     could act on a review, and it had a consequence nobody wanted once Inspect
+     became real: a collector partway through looking at a copy lost the card off
+     their screen the moment anyone else's deal took it, while their own open
+     review row survived and pointed at a card that was no longer there.
+
+     Pending closes the door; it does not throw out the people already in the
+     room. An OPEN review or an OPEN photo request keeps the copy on the screen
+     of the collector who holds it — and only them — so they can finish the
+     sentence they started. It keeps nothing else: `copyForViewer` gives it the
+     flat `unavailable`, never `pending`, `committed` or `sold`, so what they
+     learn is that they can stop waiting, not what happened or to whom.
+
+     IT IS NOT A CLAIM ON THE COPY. Any number of collectors may hold one open
+     at once and none of them blocks another. It ends when they end it: close the
+     review and, once no open request remains either, the copy leaves exactly as
+     it did before. */
   const referencedInv = new Set(opportunities.map((o) => o.invId).filter((x) => x != null));
+  /* AND ONLY WHILE THE SHOP IS STILL TRUSTED. An ended relationship takes that
+     partner's whole supply off this screen, and an adversarial run caught this
+     rule reopening it: a review left open across the ending put the ex-partner's
+     copy back in front of the Collector as inventory. Qualification is something
+     you do with a Trusted Partner, so it ends when that does. */
+  for (const i of list(state.inventory)) {
+    /* ARCHIVED IS A FOURTH STATE AND MUST NOT BE READABLE. An adversarial run
+       found this rule keeping an archived copy on screen with `archived: true`
+       on the row, which distinguished "the shop pulled it off the shelf" from
+       "somebody's deal has it" — exactly the difference the flat `unavailable`
+       exists to hide. A copy the shop has withdrawn is gone for everybody. */
+    if (i.archived) continue;
+    if (!related(i.partnerId)) continue;
+    /* ONE DEFINITION OF PARTICIPATION, asked of the domain rather than restated
+       here. `opportunities` is deliberately not passed: a copy named by this
+       Collector's own deal is already in `referencedInv` above, and asking twice
+       would be the second answer this predicate exists to prevent. */
+    if (D.qualifyingOn(i.invId, cid, { copyReviews, photoRequests })) {
+      referencedInv.add(i.invId);
+    }
+  }
   const inventory = list(state.inventory)
     .map((i) => withGrading(copyForViewer(pick(i, INVENTORY_FOR_COLLECTOR), {
       /* `own` asks the question of THIS collector's own deals, so a copy

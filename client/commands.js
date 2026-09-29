@@ -391,3 +391,45 @@ export function refreshView(target) {
   }
   return () => target.load();
 }
+
+/* ------------------------------------------ QUALIFICATION (this batch)
+
+   LOOKING PROPERLY AT ONE PHYSICAL COPY. Deal Flow can say "this exact copy, at
+   this shop, is the card you asked for"; these are what a Collector may then do
+   about it, and the list is deliberately short. Inspect it, stop inspecting it,
+   ask to be shown it.
+
+   EACH NAMES A PHYSICAL COPY, NEVER A CARD. Two copies of one card at one shop
+   are two different objects with two different certificates, and the whole
+   value of qualification is that it is about the one in front of you. The
+   payload is an `invId` for that reason.
+
+   THE ACTOR IS NOT IN THE PAYLOAD. Who is asking is the session's business and
+   the server's; nothing here names a collector, and nothing here could name a
+   different one. The same is true of the shop: the server reads the owning
+   partner off the copy rather than believing a browser about it.
+
+   `reviewCopy` AND `requestPhotos` ARE IDEMPOTENT at the domain — a second
+   press returns the same review, or does nothing when a request is already
+   open — so a retry after a half-finished press is safe. `endReview` names the
+   review it closes, which is what `reviewCopy` returned. */
+export function inspectCopy(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("inspectCopy: the production store is required");
+  }
+  return (invId) => target.execute("reviewCopy", { invId });
+}
+
+export function endInspection(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("endInspection: the production store is required");
+  }
+  return (reviewId) => target.execute("endReview", { reviewId });
+}
+
+export function requestCopyPhotos(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("requestCopyPhotos: the production store is required");
+  }
+  return (invId) => target.execute("requestPhotos", { invId });
+}
