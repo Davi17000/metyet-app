@@ -414,6 +414,7 @@ function validateWorld(state) {
   const holders = { goal: new Map(), committed: new Map(), sold: new Map() };
   const hold = (map, key, oppId) => map.set(key, [...(map.get(key) || []), oppId]);
 
+  const allOpportunities = C.opportunities.map(([o]) => o);
   for (const [o, path] of C.opportunities) {
     const who = `Opportunity "${o.id}"`;
     ref(collectors, o.collectorId, `${path}.collectorId`, "collector", who);
@@ -445,7 +446,17 @@ function validateWorld(state) {
     if (goal && goal.collectorId !== o.collectorId) {
       ownerMismatch(`${path}.goalId`, `${who} belongs to collector "${o.collectorId}", but Goal "${o.goalId}" belongs to "${goal.collectorId}".`);
     }
-    if (active && isId(o.goalId)) hold(holders.goal, o.goalId, o.id);
+    /* ONE LIVE NEGOTIATION PER GOAL — read the way the domain now reads it.
+       `activeOppForGoal` stopped counting a negotiation whose copy has gone to
+       another deal or been sold, because such a deal can never conclude and was
+       stranding the Goal for ever. That means a Goal may legitimately hold a
+       lost record AND a new live one, so this must ask the same question or the
+       world the commands produce would be unstorable — the Option B lesson,
+       where exactly this predicate was left behind and turned a legal state
+       into a 500. */
+    if (active && isId(o.goalId) && !D.transactionallyLost(o, allOpportunities)) {
+      hold(holders.goal, o.goalId, o.id);
+    }
 
     /* EXACT INVENTORY COPY, when bound: the partner's own copy of this card.
        Copies are archived, never deleted, so the reference outlives the deal. */

@@ -88,7 +88,10 @@ const PARTNER = "p-9k2m";
 
    The list is the product's own order and words, and it is stated here once so
    every assertion below reads the same one. */
-const NAV = ["Browse", "Binder", "Your Cards", "Trusted Partners"];
+/* Deal Flow joined the navigation in the true-match batch — the first screen
+   that ANSWERS rather than records. Your Cards stays until Binders can hold its
+   cross-Binder views, so the shape is five tabs for now and four later. */
+const NAV = ["Browse", "Binder", "Your Cards", "Trusted Partners", "Deal Flow"];
 const TP_NAV = ["Collector Network", "Inventory", "Opportunities"];
 
 /* ---------------------------------------------------- the real projection */
@@ -353,7 +356,7 @@ describe("C. the shell: its sections, and counts that are row counts", () => {
     const labels = buttons(r).map(instText).filter((s) => NAV.some((n) => s.includes(n)));
     eq(labels.length, NAV.length, "no section more, none fewer: " + labels.join(" | "));
     NAV.forEach((n, i) => assert(labels[i].includes(n), `section ${i} is not ${n}`));
-    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "browse,binder,my-cards,partners");
+    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "browse,binder,my-cards,partners,deal-flow");
     /* SUPERSEDED AND RESTATED (Phase 5 C3.4).
        What this protected: that a section which could never hold anything was
        declared deferred rather than shown — Your Cards promised a Collector
@@ -400,7 +403,17 @@ describe("C. the shell: its sections, and counts that are row counts", () => {
        C2 renamed to Your Cards precisely BECAUSE it was never a binder — so the
        word arriving here now means the opposite thing, and its absence from the
        prototype is the proof that the rename held. */
-    const OWN = ["Browse", "Binder", "Your Cards"];
+    /* AND "DEAL FLOW" IS THE PRODUCT'S OWN TOO (true-match batch). The
+       prototype has no such screen: it showed a Collector their opportunities,
+       which is a record of deals already begun. This is the question before
+       that one — which copy, at which shop, matches what you asked for — and
+       the name arrives here first. Held to being absent from the prototype for
+       the same reason as the other two: if it ever appears there, the two
+       products have started meaning different things by one phrase. */
+    const OWN = ["Browse", "Binder", "Your Cards", "Deal Flow"];
+    OWN.filter((n) => n !== "Browse")
+      .forEach((n) => assert(!proto.includes(`label: "${n}"`),
+        `the prototype grew a "${n}" label, so the name now means two things`));
     NAV.filter((n) => !OWN.includes(n))
       .forEach((n) => assert(proto.includes(`label: "${n}"`), `the prototype does not call it ${n}`));
     OWN.forEach((n) => assert(!proto.includes(`label: "${n}"`),

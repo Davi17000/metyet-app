@@ -319,7 +319,7 @@ describe("C. what happened, said once", () => {
   test("a Trusted Partner's command says the partner, not a collector", async () => {
     const ctx = await world();
     const card = await charizard(ctx);
-    await post(ctx.app, "north", "addInventoryCopy", { copy: { canonicalCardId: card, ask: 900 } });
+    await post(ctx.app, "north", "addInventoryCopy", { copy: { canonicalCardId: card, ask: 900, grade: "PSA 9" } });
     const { fields } = said(ctx.logger, "command")[0];
     eq(fields.seat, "tp");
     eq(fields.partnerId, "p1");
@@ -344,7 +344,7 @@ describe("C. what happened, said once", () => {
     await get(ctx.app, "casey");
     eq(said(ctx.logger, "view").pop().fields.discoveries, 0, "nothing overlapped yet");
 
-    await post(ctx.app, "north", "addInventoryCopy", { copy: { canonicalCardId: card, ask: 900 } });
+    await post(ctx.app, "north", "addInventoryCopy", { copy: { canonicalCardId: card, ask: 900, grade: "PSA 9" } });
     for (const token of ["casey", "north"]) {
       const res = await get(ctx.app, token);
       eq(res.statusCode, 200);
@@ -359,7 +359,7 @@ describe("C. what happened, said once", () => {
     const ctx = await world();
     const card = await charizard(ctx);
     await post(ctx.app, "casey", "addGoal", { canonicalCardId: card, tier: "primary", desired: { grade: "PSA 9" } });
-    await post(ctx.app, "north", "addInventoryCopy", { copy: { canonicalCardId: card, ask: 900 } });
+    await post(ctx.app, "north", "addInventoryCopy", { copy: { canonicalCardId: card, ask: 900, grade: "PSA 9" } });
     /* End the relationship: the overlap in the WORLD is unchanged, and neither
        seat may see it any more. */
     const state = await ctx.repository.loadWorld();
@@ -490,7 +490,7 @@ describe("E. Your Cards is not a place a Collector can go", () => {
        directions, which is the proof it is a real place and not a one-off.
        The claim is unchanged and is asserted the same way: every id in the list
        still has a live component, and Your Cards is still promoted. */
-    eq(mod.exports.SECTIONS.map((s) => s.id).join(","), "browse,binder,my-cards,partners");
+    eq(mod.exports.SECTIONS.map((s) => s.id).join(","), "browse,binder,my-cards,partners,deal-flow");
     eq(mod.exports.DEFERRED_SECTIONS.map((s) => s.id).join(","), "goals",
       "something else is waiting — say so here");
     for (const waiting of mod.exports.DEFERRED_SECTIONS) {

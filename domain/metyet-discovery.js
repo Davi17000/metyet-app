@@ -9,9 +9,19 @@
      + an available Trusted Partner Copy
      + an accepted relationship between those two people
      + the same exact canonical card
+     + every acquisition criterion the Collector actually stated
      = something both of them should know
 
    Every clause is load-bearing. None of them is a heuristic.
+
+   THE LAST CLAUSE ARRIVED LATE AND REVERSED A DECISION. Criteria used to be
+   context that Discovery read past, so a Goal for a Raw card surfaced a PSA 8.
+   That made the product guess: a Collector who picked "Raw / Near Mint" from a
+   closed list picked it, and answering with something else is MetYet inventing
+   a preference. A criterion the Collector STATED must now be satisfied exactly;
+   a criterion they did not state restricts nothing. There is no band, no floor
+   and no "or better" — see `meetsGoalCriteria` in the domain for why an ordered
+   vocabulary is still not a scale.
 
    ---------------------------------------------------------------------------
    WHY THIS IS COMPUTED AND NOT STORED.
@@ -102,6 +112,8 @@
    urgency, or invents a third kind of wanting.
    ========================================================================== */
 
+const D = require("./metyet-domain.js");
+
 const list = (xs) => (Array.isArray(xs) ? xs : []);
 const isId = (v) => typeof v === "string" && v.length > 0;
 
@@ -119,8 +131,10 @@ const accepted = (relationships, partnerId, collectorId) => list(relationships)
    arrives on the projected row already derived from the opportunities, and is
    "committed" once a price is settled and "sold" once a deal completes. Both of
    those are copies `startOpportunity` would refuse, so neither is offered here
-   as though it could be bought. Nothing about grade or condition is consulted:
-   those are facts about the copy, not about whether it exists to be had. */
+   as though it could be bought. Grade and condition are not consulted HERE:
+   whether a copy exists to be had is a different question from whether it is
+   the one this Collector asked for, and the second question is asked once, per
+   Goal, at the join below. */
 const AVAILABLE = "available";
 const isSupply = (copy) => !!copy && copy.archived !== true
   && copy.status === AVAILABLE && isId(copy.canonicalCardId) && isId(copy.partnerId)
@@ -159,6 +173,10 @@ function discoveriesIn(view) {
     if (!copies) continue;
     for (const copy of copies) {
       if (!accepted(view.relationships, copy.partnerId, goal.collectorId)) continue;
+      /* The one question this batch added: is this the copy they ASKED for?
+         Asked per (goal, copy) rather than per goal, because one partner may
+         hold three copies of a card and only one of them be the right one. */
+      if (!D.meetsGoalCriteria(goal.desired, copy)) continue;
       const key = discoveryKey(goal.id, copy.partnerId);
       const held = found.get(key);
       if (held) { held.invIds.push(copy.invId); continue; }

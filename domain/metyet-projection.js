@@ -159,7 +159,7 @@ const INVITATION_FOR_INVITEE = ["id", "partnerId", "collectorId", "at", "accepte
    PSA 8 on their shelf is worth mentioning. It travels exactly as far as the
    Goal does and no further — no new seat, no new record, no new rule.
 
-   It is CONTEXT, not a filter: Discovery reads none of it. */
+   Since the true-match batch Discovery DOES read it. */
 const GOAL_FOR_PARTNER = ["id", "collectorId", "cardId", "canonicalCardId", "tier",
   "note", "since", "createdAt", "confirmedAt", "secondarySince", "desired"];
 const PREFERENCE_FOR_PARTNER = ["collectorId", "tags"];

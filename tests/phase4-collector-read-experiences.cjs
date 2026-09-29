@@ -79,7 +79,10 @@ const P2 = "p-second";
 
    The list is the product's own order and words, and it is stated here once so
    every assertion below reads the same one. */
-const NAV = ["Browse", "Binder", "Your Cards", "Trusted Partners"];
+/* Deal Flow joined the navigation in the true-match batch — the first screen
+   that ANSWERS rather than records. Your Cards stays until Binders can hold its
+   cross-Binder views, so the shape is five tabs for now and four later. */
+const NAV = ["Browse", "Binder", "Your Cards", "Trusted Partners", "Deal Flow"];
 
 /* ---------------------------------------------------- the real projection */
 
@@ -342,7 +345,7 @@ describe("A. Goals — and the one place coordination appears", () => {
       "a section appeared that the product does not offer");
     onEverySection(r, (shown) =>
       assert(!/opportunit/i.test(shown), "the word appears as a product: " + shown));
-    eq(SHELL_MOD.SECTIONS.map((x) => x.id).join(","), "browse,binder,my-cards,partners");
+    eq(SHELL_MOD.SECTIONS.map((x) => x.id).join(","), "browse,binder,my-cards,partners,deal-flow");
     /* Restated in Batch 8.1, renamed in C2: Your Cards is declared deferred rather
        than offered, and "no Opportunities product" is unaffected by it. */
     /* RESTATED IN C3.4: Your Cards moved into the product and Goals moved out
@@ -503,6 +506,14 @@ describe("C. Trusted Partners", () => {
   test("a partner's stock is not rendered — this is a network, not a shop window", () => {
     const withStock = { ...FULL, inventory: [
       { invId: "i1", partnerId: P1, cardId: "k1", ask: 4200, status: "available", cert: "STOCK-CERT" }] };
+    /* DEAL FLOW IS DELIBERATELY NOT IN THIS LIST (true-match batch). The other
+       three answer questions that are not about a specific copy, so a copy's
+       facts appearing in them would be a shop window leaking in. Deal Flow's
+       whole question IS a specific copy — "which of your shops has the card you
+       asked for, and which one is it" — and it is still the narrower shape this
+       rule protects: only copies matching a Goal the Collector themselves
+       stated, never a shop's shelf, never a card they did not ask for, and
+       nothing scored, sorted by price or recommended. */
     for (const section of ["Trusted Partners", "Goals", "Browse"]) {
       const shown = flat(show(withStock, section));
       assert(!shown.includes("STOCK-CERT") && !shown.includes("$4,200") && !shown.includes("4200"),
@@ -526,14 +537,27 @@ describe("C. Trusted Partners", () => {
        `photos` and `market` are deliberately not on this list: those are facts
        about a Collector's OWN binder copy, which their own screen may show and
        always could. */
+    /* RE-PINNED, AND NARROWED RATHER THAN DROPPED. `ask` and `invId` moved off
+       this list when Deal Flow arrived, because the screen that answers "which
+       copy" cannot do it without naming one and saying what it costs. What the
+       rule always protected — that a Collector never reads the SHOP'S OWN
+       books — is unchanged and is now carried by `cost` and `acquired` alone,
+       which is what a shop paid and when it bought: those never cross, and the
+       projection strips them before they could. The scope narrows too: every
+       file EXCEPT Deal Flow is still held to the whole original list. */
+    const exceptDealFlow = COLLECTOR_FILES
+      .filter((f) => !/DealFlow\.jsx$/.test(f)).map(code).join("\n");
     for (const field of ["ask", "cost", "acquired", "invId"]) {
-      assert(!new RegExp(`\\.${field}\\b|\\["${field}"\\]`).test(bare),
-        `the Collector surface reads a copy's ${field}`);
+      assert(!new RegExp(`\\.${field}\\b|\\["${field}"\\]`).test(exceptDealFlow),
+        `a Collector surface other than Deal Flow reads a copy's ${field}`);
     }
-    /* And inventory is counted, never listed: no screen turns those rows into
-       anything a person reads one by one. */
-    assert(!/inventory\)[\s.]*\.?(map|forEach|slice)|inventory\.map/.test(bare),
-      "the Collector surface renders inventory rows");
+    for (const field of ["cost", "acquired"]) {
+      assert(!new RegExp(`\\.${field}\\b|\\["${field}"\\]`).test(bare),
+        `the Collector surface reads the shop's own books: ${field}`);
+    }
+    /* And outside Deal Flow, inventory is counted and never listed. */
+    assert(!/inventory\)[\s.]*\.?(map|forEach|slice)|inventory\.map/.test(exceptDealFlow),
+      "a Collector surface other than Deal Flow renders inventory rows");
   });
 });
 
@@ -599,8 +623,15 @@ describe("D. joins are by explicit id, and a missing one yields nothing", () => 
   test("the whole real projection renders in every section", () => {
     const r = show(REAL);
     assert(flat(r).includes("Casey Lin"));
-    for (const s of NAV) { clickText(r, s); assert(flat(r).length > 0, `${s} rendered nothing`); }
-    assert(!/\[object Object\]|undefined|NaN/.test(flat(r)), "something leaked");
+    for (const s of NAV) {
+      clickText(r, s);
+      assert(flat(r).length > 0, `${s} rendered nothing`);
+      assert(!/\[object Object\]|undefined|NaN/.test(flat(r)), `something leaked in ${s}`);
+    }
+    /* Named explicitly rather than read off whichever section the loop happened
+       to leave open — that was true only while Trusted Partners was last, and
+       Deal Flow joining the navigation quietly changed what this asserted. */
+    clickText(r, "Trusted Partners");
     assert(flat(r).includes("Northline Cards"), "the real partners: " + flat(r).slice(0, 200));
   });
 });

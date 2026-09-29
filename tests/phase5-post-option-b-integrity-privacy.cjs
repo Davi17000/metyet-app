@@ -143,8 +143,17 @@ describe("A. What a partner may still restate about a card in a live deal", () =
   });
 
   test("[A3] the condition cannot be rewritten inside the protected window", () => {
-    const st = world({ inventory: [{ invId: "i1", partnerId: "nl", canonicalCardId: "cc-x",
-      ask: 30, grade: "Raw", condition: "Near Mint", cert: null, photos: PH }] });
+    /* The Goal is restated to match the Raw copy this test needs — since the
+       true-match batch a Goal's criteria constrain startOpportunity, and this
+       test is about protecting `condition`, not about matching. */
+    const st = world({
+      goals: [{ id: "gA", collectorId: "casey", canonicalCardId: "cc-x", tier: "primary",
+        desired: { grade: "Raw", condition: "Near Mint" } },
+        { id: "gB", collectorId: "jordan", canonicalCardId: "cc-x", tier: "primary", desired: { grade: "PSA 9" } },
+        { id: "gR", collectorId: "riley", canonicalCardId: "cc-x", tier: "primary", desired: { grade: "PSA 9" } }],
+      inventory: [{ invId: "i1", partnerId: "nl", canonicalCardId: "cc-x",
+        ask: 30, grade: "Raw", condition: "Near Mint", cert: null, photos: PH },
+        { invId: "i2", partnerId: "nl", canonicalCardId: "cc-x", ask: 32, grade: "PSA 9", cert: "C2", photos: PH }] });
     valued(st, A, "gA", 26);
     nov(x(st, TP, "updateInventoryCopy", { invId: "i1", patch: { condition: "Damaged" }, at: AT }),
       D.REFUSE.copyCommitted, "a Raw copy's condition is what it is being priced on");

@@ -490,7 +490,15 @@ describe("Opportunity references its Goal", () => {
        layer enforces it, keyed on goalId, for every caller. */
     const dom = require("fs").readFileSync(require("path").join(__dirname, "..", "domain", "metyet-domain.js"), "utf8");
     const cmd = require("fs").readFileSync(require("path").join(__dirname, "..", "domain", "metyet-commands.js"), "utf8");
-    assert(/opps\.find\(\(o\) => o\.goalId === goalId && isNegotiating\(o\)\)/.test(dom), "the invariant keys on goalId");
+    /* TRUE-MATCH BATCH: the predicate gained a second clause — a negotiation
+       whose copy has gone to another deal or been sold can never conclude, so
+       it stops holding its Goal. What this assertion is protecting is unchanged
+       and is the reason it exists: the invariant keys on the GOAL ID, never on
+       a (collector, card) pair. Matched loosely enough to survive a clause and
+       strictly enough to still catch a re-keying. */
+    assert(/o\.goalId === goalId && isNegotiating\(o\)/.test(dom), "the invariant keys on goalId");
+    assert(/!transactionallyLost\(o, opps\)/.test(dom),
+      "and a negotiation that can never conclude no longer holds the goal");
     assert(/D\.INVARIANTS\.oneNegotiationPerGoal\(goalId, state\.opportunities\)/.test(cmd),
       "and the command boundary applies it");
   });

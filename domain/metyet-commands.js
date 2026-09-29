@@ -418,10 +418,16 @@ const COMMANDS = {
        demand disappear and come back as new, which is a lie about what
        happened.
 
-     SO IT IS NOT BLOCKED BY AN ACTIVE OPPORTUNITY. Nothing derives from
-     `desired`: Discovery reads none of it (asserted against the source since
-     C3.2), no status depends on it, and no deal references it. It is context a
-     person is allowed to correct, not deal identity.
+     SO IT IS NOT BLOCKED BY AN ACTIVE OPPORTUNITY — though the reason has
+     narrowed and the old one is no longer true. It used to be that nothing
+     derived from `desired` at all. Since the true-match batch, Discovery and
+     `startOpportunity` both read it, so correcting criteria mid-deal DOES
+     change which copies are offered, and can leave a live deal on a copy the
+     Collector's own Deal Flow no longer lists. That is still not a reason to
+     refuse: the criteria are hers, correcting them is the honest act, and the
+     deal she opened remains hers to finish or to cancel. What this command must
+     never do is rewrite a deal in progress, and it does not — it changes what
+     she is LOOKING for, never what she has already agreed.
 
      IT CHANGES ONE FIELD. Not the tier, not the card, not a timestamp — those
      each have their own command, or belong to nobody. */
@@ -484,7 +490,13 @@ const COMMANDS = {
     const g = list(state.goals).find((x) => x.id === goalId);
     if (!g) return refuse(R.notFound);
     if (a.seat !== "collector" || g.collectorId !== a.collectorId) return refuse(R.notOwner);
-    if (D.goalLocked(goalId, state.opportunities)) return refuse(R.goalLocked);
+    /* NOT `goalLocked`, WHICH THIS BATCH RELEASED. A negotiation that can never
+       conclude stops holding the Goal for demotion and for pursuing the card
+       elsewhere — but it still NAMES the Goal, and `validateWorld` requires an
+       active Opportunity's Goal to exist. Deleting it here would hand the
+       persistence layer a world it refuses. Cancelling the dead deal is the way
+       through, and it is one command away. */
+    if (D.goalNamedByActive(goalId, state.opportunities)) return refuse(R.goalLocked);
     return done({ ...state, goals: list(state.goals).filter((x) => x.id !== goalId) }, true);
   },
 
@@ -1263,6 +1275,11 @@ const COMMANDS = {
       return refuse(R.identityMismatch);
     }
     if (!isRelated(state, copy.partnerId, a.collectorId)) return refuse(R.noRelationship);
+    /* THE SAME QUESTION DISCOVERY ASKS, ASKED BY THE SAME FUNCTION. A Collector
+       must not be able to reach past a surface that correctly declined to offer
+       them this copy; and a pair Discovery DOES offer must never be refused
+       here. One predicate, two callers, so the two cannot drift apart. */
+    if (!D.meetsGoalCriteria(g.desired, copy)) return refuse(R.criteriaMismatch);
     /* WHICH COPIES A NEW PURSUIT MAY BEGIN ON (Option B), AND HOW LITTLE IT MAY
        SAY ABOUT WHY NOT. Every answer but `available` refuses, in one word.
 

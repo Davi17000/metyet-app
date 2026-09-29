@@ -565,10 +565,17 @@ describe("G. seeded randomized invariant checks", () => {
             const { viewedAt, ...rest } = x; terminalSnaps.set(x.id, JSON.stringify(rest));
           }
         }
-        /* one active negotiation per goal */
+        /* ONE LIVE NEGOTIATION PER GOAL — re-pinned at the predicate the domain
+           now uses. `isNegotiating` alone is no longer the whole question: a
+           negotiation whose copy has been promised to another deal or sold can
+           never conclude, so it stops holding its Goal and the Collector may
+           legitimately open a new one elsewhere. The rule did not loosen — a
+           Goal still has at most one negotiation that could actually finish. */
         const perGoal = {};
-        now.opportunities.filter(D.isNegotiating).forEach((x) => { perGoal[x.goalId] = (perGoal[x.goalId] || 0) + 1; });
-        Object.values(perGoal).forEach((n) => assert(n <= 1, `step ${step}: two active deals on one goal`));
+        now.opportunities
+          .filter((x) => D.isNegotiating(x) && !D.transactionallyLost(x, now.opportunities))
+          .forEach((x) => { perGoal[x.goalId] = (perGoal[x.goalId] || 0) + 1; });
+        Object.values(perGoal).forEach((n) => assert(n <= 1, `step ${step}: two live deals on one goal`));
         /* NO InventoryCopy PROMISED TWICE (Option B). This used to count
            settled prices, because settling used to be the commitment. It is
            not: two collectors may both agree what one card is worth. What no

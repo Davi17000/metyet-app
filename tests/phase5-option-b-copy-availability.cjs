@@ -210,7 +210,10 @@ describe("C. Pending is the one availability fact a partner chooses", () => {
        batch, so A needs a second goal to hold a second deal. */
     const st = world({ goals: [
       { id: "gA", collectorId: "casey", canonicalCardId: "cc-x", tier: "primary", desired: { grade: "PSA 9" } },
-      { id: "gA2", collectorId: "casey", canonicalCardId: "cc-x", tier: "primary", desired: { grade: "PSA 10" } },
+      /* gA2 asks for what i2 actually is: since the true-match batch a Goal's
+         stated criteria constrain startOpportunity, and this test is about
+         which DEAL may be named, not about criteria. */
+      { id: "gA2", collectorId: "casey", canonicalCardId: "cc-x", tier: "primary", desired: { grade: "PSA 9" } },
       { id: "gB", collectorId: "jordan", canonicalCardId: "cc-x", tier: "primary", desired: { grade: "PSA 9" } }] });
     const a = valued(st, A, "gA", "i1", 27);
     const other = valued(st, A, "gA2", "i2", 31);
@@ -378,8 +381,15 @@ describe("D. A promise is what a card cannot carry twice", () => {
     nov(x(st, TP, "acceptPrice", { oppId: b, at: AT }), D.REFUSE.copyUnavailable, "nothing accepted");
     nov(x(st, B, "reviewCopy", { invId: "i1", at: AT }), D.REFUSE.copyUnavailable, "no review");
     nov(x(st, B, "requestPhotos", { invId: "i1", at: AT }), D.REFUSE.copyUnavailable, "no photographs");
+    /* RE-PINNED by the true-match batch. This used to answer
+       `already-negotiating`: B's dead conversation still held their Goal, so
+       the refusal was about the Goal rather than about the card. That lock is
+       now released once the copy is gone — which is the point — so B reaches
+       the availability gate and is told the honest thing instead. */
     nov(x(st, B, "startOpportunity", { goalId: "gB", invId: "i1", amount: 30, at: AT }),
-      D.REFUSE.alreadyNegotiating, "and B already has the one conversation they are allowed");
+      D.REFUSE.copyUnavailable, "and the card itself is what is gone");
+    eq(D.goalState("gB", st.get().opportunities), "seeking",
+      "B's goal is free again, rather than held by a deal that lost");
   });
 
   test("[3][19] the losing conversation is kept, not rewritten or deleted", () => {

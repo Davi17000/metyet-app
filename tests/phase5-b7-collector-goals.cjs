@@ -607,7 +607,7 @@ describe("G. everything that already worked", () => {
      collision with a copy's facts that the naming exists to prevent); the
      discovery module still reads no grading at all, so criteria are preference
      and not a filter; and the vocabulary did not widen. */
-  test("desired criteria are preference, not a band and not a filter", () => {
+  test("desired criteria are a filter and still not a band", () => {
     const commands = code("domain/metyet-commands.js");
     const body = commands.slice(commands.indexOf("addGoal(state"),
       commands.indexOf("updateGoalTier(state"));
@@ -626,11 +626,21 @@ describe("G. everything that already worked", () => {
       assert(!BAND.test(code(rel)), `${rel} invented a grade band`);
     }
 
-    /* And criteria never reach the matching. Discovery is exact canonical card
-       and nothing else, which is what keeps a PSA 8 on a partner's shelf
-       surfacing for somebody who wants the card Raw. */
-    assert(!/grade|condition|desired/i.test(code("domain/metyet-discovery.js")),
-      "the discovery module started reading grading");
+    /* RE-PINNED. This asserted that criteria never reach the matching — that a
+       PSA 8 on a shelf surfaced for somebody who wanted the card Raw. The
+       true-match batch reversed it: criteria the Collector STATED now
+       constrain Discovery, because answering past them is the product guessing.
+
+       The band rule above did NOT change and is the half that matters most
+       here: constraining by an exact stated value is not a threshold, and
+       Discovery must ask the domain's one predicate rather than growing a
+       grading vocabulary of its own. */
+    const discovery = code("domain/metyet-discovery.js");
+    assert(/meetsGoalCriteria/.test(discovery),
+      "discovery stopped asking the domain's criteria predicate");
+    assert(!BAND.test(discovery), "the discovery module invented a grade band");
+    assert(!/GRADED_VALUES|CONDITION_VALUES|PSA/.test(discovery),
+      "the discovery module grew a grading vocabulary of its own");
 
     /* No new grader and no new range came with it. */
     const D2 = require("../domain/metyet-domain.js");

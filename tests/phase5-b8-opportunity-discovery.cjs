@@ -131,8 +131,13 @@ const get = (app, token, url) => app.inject({ method: "GET", url,
    inference starts looking like a fact. Tests about criteria pass their own. */
 const want = (app, token, canonicalCardId, tier = "primary", extra = {}) =>
   post(app, token, "addGoal", { canonicalCardId, tier, desired: { grade: "PSA 9" }, ...extra });
+/* The copy carries the grade the goals in this suite ask for, because as of the
+   true-match batch a Goal's stated criteria constrain Discovery. Every test
+   below is about WHICH overlaps exist and who hears about them — grouping,
+   ordering, privacy, idempotence — so supply and demand are deliberately made
+   to agree, and the criteria rule itself is pinned in its own suite. */
 const hold = (app, token, canonicalCardId, extra = {}) =>
-  post(app, token, "addInventoryCopy", { copy: { canonicalCardId, ask: 900, ...extra } });
+  post(app, token, "addInventoryCopy", { copy: { canonicalCardId, ask: 900, grade: "PSA 9", ...extra } });
 
 const view = async (ctx, token) => {
   const res = await get(ctx.app, token, "/api/view");

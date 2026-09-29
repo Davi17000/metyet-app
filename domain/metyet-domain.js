@@ -101,13 +101,70 @@ const isNegotiating = (o) => isActive(o) && STAGE_IX[o.stage] >= STAGE_IX["agree
    Never stored. Seeking / Negotiating / Satisfied describe what the
    opportunities actually say, so they cannot drift from reality, and ending a
    negotiation returns a goal to Seeking with no mutation at all. */
+/* A NEGOTIATION THAT CAN NEVER CONCLUDE IS NOT THE ONE NEGOTIATION.
+
+   One live negotiation per Goal is a real rule and this does not loosen it. But
+   the rule assumes a negotiation can end — a person finishes it, or walks away
+   from it, and the Goal is free again. A deal whose physical copy has gone to
+   somebody else can do neither: every economic command refuses, so it sits at
+   `agree-price` for ever, and the Collector cannot demote the Goal, delete it,
+   or pursue the same card at a DIFFERENT shop, because the lock is still held
+   by a deal that lost. Nothing ever told them it had lost.
+
+   So the lock is read from what is still possible rather than from what is
+   still open. A copy promised to another deal, or already handed over, cannot
+   be transacted — and both facts are derivable from the opportunities alone,
+   which is why this needs no inventory, no new field, no lifecycle state and no
+   sweep. The record is untouched: still active, still `agree-price`, still
+   `declined: false`, still exactly what happened. It is history that has
+   stopped being a claim on the future, and it derives that way every time it is
+   read — the same self-healing shape Option B used for a stale `pendingFor`.
+
+   THE WINNER IS NOT RELEASED: `copyCommittedTo` excludes the opportunity being
+   asked about, so the deal that holds the commitment still holds its Goal. */
+const transactionallyLost = (o, opps) => {
+  const invId = o && o.invId;
+  if (invId == null) return false;
+  if (soldInventoryIds(opps || []).has(invId)) return true;
+  /* EVER PROMISED, NOT CURRENTLY PROMISED — and the difference is the whole
+     correctness of this predicate.
+
+     `copyCommittedTo` asks whether a commitment is standing RIGHT NOW, because
+     its question is "may somebody else pursue this?". Asking it here made the
+     release non-monotonic: the rival could cancel after final agreement, the
+     losing deal would un-lose, and a Goal that had legitimately opened a
+     replacement in the meantime then held TWO live negotiations — a state the
+     commands produced and `validateWorld` refuses, which is a 500 rather than
+     a refusal, and which no further command could clear.
+
+     Final agreement is never un-given: cancelling writes an ending and rewrites
+     no term, so `finalAgreementGiven` stays true on a cancelled deal for ever.
+     Keying on that makes losing permanent, which is what losing is. The copy
+     coming back onto the shelf is a new opportunity for anybody who wants it —
+     including this Collector, who may open a fresh pursuit — and not a reason
+     to resurrect a conversation that was already superseded. */
+  return (opps || []).some((other) => other && other.invId === invId
+    && other.id !== o.id && finalAgreementGiven(other));
+};
+
+/* AND A REFERENTIAL CONSTRAINT, WHICH IS NOT THE SAME AS A LOCK. Releasing the
+   negotiation lock lets a Collector demote the Goal and pursue the card
+   elsewhere. It must NOT let them DELETE the Goal, because an active
+   Opportunity names it and `validateWorld` requires that name to resolve —
+   deleting would produce an unstorable world, the exact shape this batch set
+   out to avoid one predicate over. The honest way out of a dead deal is to
+   cancel it, which stays available and is what makes the Goal deletable. */
+const goalNamedByActive = (goalId, opps) =>
+  (opps || []).some((o) => o && o.goalId === goalId && isActive(o));
+
 const activeOppForGoal = (goalId, opps) =>
-  opps.find((o) => o.goalId === goalId && isNegotiating(o)) || null;
+  (opps || []).find((o) => o.goalId === goalId && isNegotiating(o)
+    && !transactionallyLost(o, opps)) || null;
 
 const goalState = (goalId, opps) => {
-  const mine = opps.filter((o) => o.goalId === goalId);
+  const mine = (opps || []).filter((o) => o.goalId === goalId);
   if (mine.some(isCompleted)) return "satisfied";
-  if (mine.some(isNegotiating)) return "negotiating";
+  if (mine.some((o) => isNegotiating(o) && !transactionallyLost(o, opps))) return "negotiating";
   return "seeking";
 };
 
@@ -836,6 +893,13 @@ const REFUSE = {
   goalLocked: "goal-locked",
   duplicateGoal: "duplicate-goal",
   identityMismatch: "identity-mismatch",
+  /* The copy is this card, and it is available — but it is not the one this
+     Goal asked for. Distinct from identity-mismatch on purpose: the same card
+     in a grade the Collector did not ask for is a different answer from the
+     wrong card, and only the first is worth telling them about. It discloses
+     nothing private: both halves are the Collector's own criteria and the
+     copy's own publicly projected facts. */
+  criteriaMismatch: "criteria-mismatch",
   copyReserved: "copy-reserved",
   copyInUse: "copy-in-use",
   copySold: "copy-sold",
@@ -1018,6 +1082,59 @@ const gradingRead = (copy) => {
   const problem = gradingProblem(copy);
   if (!problem) return { ...base, problem: null };
   return { ...base, problem, condition: stated(copy && copy.condition) || base.condition };
+};
+
+/* DOES THIS PHYSICAL COPY SATISFY WHAT THE COLLECTOR ACTUALLY SAID?
+
+   One rule, and it is deliberately the narrowest one that can be stated:
+
+     a criterion the Collector STATED     the copy must match it exactly
+     a criterion they did NOT state       imposes nothing
+
+   THIS REVERSES A PRIOR DECISION, AND THE REASON IS WORTH KEEPING. Criteria
+   used to be context only — a Goal for a Raw card surfaced a PSA 8, on the
+   reading that a person might still want to hear about it. That reading makes
+   MetYet guess. A Collector who chose "Raw / Near Mint" from a closed list
+   chose it; presenting a PSA 8 as an answer to it is the product inventing a
+   preference nobody expressed. Criteria now constrain Discovery because they
+   are criteria the Collector explicitly selected.
+
+   WHAT THIS IS NOT, AND MUST NEVER QUIETLY BECOME. There is no band, no floor,
+   no "or better", no ordering. `GRADED_VALUES` and `CONDITION_VALUES` are read
+   with `includes` everywhere in this repository and never with an index
+   comparison — the vocabularies are a closed set of names, not a scale. A
+   Collector wanting PSA 9 is not assumed to accept PSA 10, because nobody asked
+   them and a higher number is not obviously better to somebody completing a set
+   at a grade. Ranges, multiple acceptable values and ranked preferences are a
+   preference LANGUAGE; if the pilot shows people want one, it gets designed,
+   not inferred here.
+
+   UNSTATED IS UNRESTRICTED, WHICH IS NOT THE SAME AS MATCHING NOTHING. A Goal
+   that names a grade and no condition restricts grade alone. A Goal that names
+   neither restricts nothing and behaves exactly as it did before this batch.
+   Absence is absence — the one thing this file already refuses to read as a
+   statement. (A legacy `cardId` Goal that DOES state criteria is constrained
+   like any other at the command boundary, though Discovery never reaches it:
+   `isDemand` has required a canonical card since B8.)
+
+   One consequence falls out of the existing grading rule rather than out of
+   this one: a Goal stating only a condition will not match a COHERENT PSA copy,
+   because `gradingProblem` forbids a graded copy from carrying a condition at
+   all, so its condition is blank and blank is not "Near Mint". That is the
+   existing vocabulary being coherent, not a rule added here.
+
+   A ROW WRITTEN BEFORE C3.2 CAN STILL CARRY BOTH, and such a copy DOES match a
+   condition-only Goal. That is deliberate rather than overlooked: those rows
+   cannot be repaired — "PSA 9 / Damaged" does not say which half the person
+   meant — and reading past the condition they actually recorded would be this
+   file guessing, which is the thing it exists to refuse. The copy renders with
+   its conflict note, so the contradiction is shown rather than hidden. */
+const meetsGoalCriteria = (desired, copy) => {
+  const wantGrade = stated(desired && desired.grade);
+  const wantCondition = stated(desired && desired.condition);
+  if (wantGrade && stated(copy && copy.grade) !== wantGrade) return false;
+  if (wantCondition && stated(copy && copy.condition) !== wantCondition) return false;
+  return true;
 };
 
 /* Free-text search over the canonical catalog. Every term must appear somewhere
@@ -1410,6 +1527,9 @@ module.exports.cancelledAfterAgreement = cancelledAfterAgreement;
 module.exports.currentCashFigure = currentCashFigure;
 module.exports.inventoryCopyStatus = inventoryCopyStatus;
 module.exports.soldInventoryIds = soldInventoryIds;
+module.exports.meetsGoalCriteria = meetsGoalCriteria;
+module.exports.transactionallyLost = transactionallyLost;
+module.exports.goalNamedByActive = goalNamedByActive;
 module.exports.collectorCopyStatus = collectorCopyStatus;
 module.exports.binderRowState = binderRowState;
 module.exports.goalLocked = goalLocked;

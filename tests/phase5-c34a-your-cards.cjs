@@ -538,7 +538,7 @@ describe("F. reachable at last, and what that did not change", () => {
      had, and DEFERRED_SECTIONS is pinned by name rather than only by length —
      so a section cannot be quietly parked there. */
   test("Your Cards is in the navigation, and only Goals waits behind it", () => {
-    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "browse,binder,my-cards,partners");
+    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "browse,binder,my-cards,partners,deal-flow");
     eq(SHELL_MOD.DEFERRED_SECTIONS.map((s) => s.id).join(","), "goals",
       "something else is deferred");
     const mine = SHELL_MOD.SECTIONS.find((s) => s.id === "my-cards");

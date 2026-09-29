@@ -61,6 +61,7 @@ import { EMPTY_SESSION } from "../browse/CardBrowser.jsx";
 import Browse from "./sections/Browse.jsx";
 import Binder from "./sections/Binder.jsx";
 import Goals from "./sections/Goals.jsx";
+import DealFlow from "./sections/DealFlow.jsx";
 import MyCards from "./sections/MyCards.jsx";
 import TrustedPartners from "./sections/TrustedPartners.jsx";
 
@@ -106,6 +107,32 @@ export const SECTIONS = Object.freeze([
   { id: "partners", label: "Trusted Partners", count: "partners", view: TrustedPartners,
     title: "Trusted Partners",
     sub: "The shops you deal with" },
+  /* WHAT YOUR SHOPS ACTUALLY HAVE (true-match batch). Last, because it is the
+     end of the sentence the other four begin: find a card, say what you want,
+     know who you deal with — and then, here, which of them has the thing you
+     described. It is the first screen that answers rather than records.
+
+     IT COUNTS NOTHING, FOR THE REASON BROWSE COUNTS NOTHING. Every counted tab
+     numbers a collection of the person's OWN things — their binders, their
+     cards, their shops. What waits here is neither theirs nor one collection:
+     `discoveries` is keyed by (goal, partner), so its length is a number of
+     overlaps rather than of copies, and putting it on the tab would disagree
+     with the copies the screen itself counts. The panel says "3 copies that
+     match", which is the number a person actually wants, in a unit they can
+     read. This also keeps the shell's existing rule intact: a tab number is a
+     row count of one collection and never something the shell reasoned its way
+     to.
+
+     AND IT IS FIVE TABS, NOT FOUR. The approved navigation is Browse, Binders,
+     Trusted Partners, Deal Flow — with Your Cards folded into Binders as one of
+     its cross-Binder views. Those views do not exist yet and building them is
+     the Binder redesign, which is a batch of its own. Deleting Your Cards now
+     would take away the only way to see what you own to make a navigation
+     diagram true early. So it stays, and this arrives beside it; the fifth tab
+     is the temporary shape and goes when Binders can hold it. */
+  { id: "deal-flow", label: "Deal Flow", count: null, view: DealFlow,
+    title: "Deal Flow",
+    sub: "Which of your shops has the card you asked for" },
 ]);
 
 /* BUILT AND NOT YET REACHABLE — AND, AS OF C3.4, NOTHING IS.
@@ -271,6 +298,27 @@ const CSS = `
 .mcs-has-art .mcs-art-plate { font-size:8px; padding:2px; -webkit-line-clamp:4; }
 .mcs-group .mcs-rec { padding-left:16px; padding-right:16px; }
 .mcs-group .mcs-rec:last-child { border-bottom:0; }
+
+/* ---- deal flow: the copies your shops have (true-match batch) ----
+
+   ARTWORK-FORWARD AT THE GOAL, PLAIN AT THE COPY. The card is the thing a
+   person recognises, so it keeps the same 5/7 tile every other collector
+   surface uses; a physical copy is a row of facts and gets no picture of its
+   own, because a photograph of THIS slab is what Request Photos is for and that
+   is not this batch. Each copy reads as one line on a phone and stays one line
+   on a desktop — grade first, because it is what the Collector asked about. */
+.mcs-df-copies { list-style:none; margin:0; padding:0 16px 14px; display:flex;
+  flex-direction:column; gap:6px; }
+.mcs-df-copy { display:flex; flex-wrap:wrap; gap:4px 10px; align-items:baseline;
+  padding:8px 10px; background:var(--line-soft); border-radius:7px; }
+.mcs-df-shop { font-weight:600; font-size:12.5px; color:var(--text); }
+.mcs-df-facts { display:flex; flex-wrap:wrap; gap:4px 10px; align-items:baseline;
+  min-width:0; font-size:12px; color:var(--muted); }
+.mcs-df-grade { color:var(--t1); font-weight:600; }
+.mcs-df-ask { margin-left:auto; color:var(--text); font-variant-numeric:tabular-nums; }
+.mcs-df-note { flex-basis:100%; font-size:11.5px; color:var(--amber); }
+.mcs-df-none { margin:0; padding:2px 16px 14px; font-size:12.5px; color:var(--muted); }
+.mcs-rec-facts { display:flex; flex-wrap:wrap; gap:4px 14px; margin-top:8px; }
 
 /* ---- binder: the library, and one binder's cards (Phase 5 C3.4) ---- */
 .mcs-binder { border-bottom:1px solid var(--line-soft); }
@@ -568,7 +616,17 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
                        C3.5). ONE read prop and no command: this screen answers
                        a question and offers no way to act on the answer. */
                     ? { onBrowseCards }
-                    : {})} />
+                    : meta.id === "deal-flow"
+                      /* THE SAME ONE PROP, FOR THE SAME REASON. Deal Flow reads
+                         the overlap the server already derived and the copies
+                         already in the projection, and names the catalogue's
+                         cards. It is handed no command — not a disabled one,
+                         not a stubbed one — because Inspect, Request Photos and
+                         Agree Market Value are real domain commands that are
+                         deliberately not exposed yet, and a control that cannot
+                         work is a promise the product has not kept. */
+                      ? { onBrowseCards }
+                      : {})} />
         </main>
       </div>
     </div>

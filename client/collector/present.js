@@ -182,6 +182,19 @@ export const TIER_LABEL = Object.freeze({ primary: "Primary", secondary: "Second
    back. Both are explicit demand — the difference is how hard somebody is
    looking, not whether they are. Neither is a preference, a filter or a guess,
    and there is deliberately no third thing between them. */
+/* WHAT A COLLECTOR ASKED FOR, IN THEIR OWN WORDS.
+
+   Read straight off `goal.desired`, which is a bare `{grade, condition}` — NOT
+   through `gradeLine`, which reads the derived `grading` the server attaches to
+   COPIES and which a Goal never carries. The first version of Deal Flow made
+   exactly that mistake and told every Collector they had asked for "any grade
+   or condition" on the one screen built to prove that criteria now matter. */
+export const criteriaLine = (desired) => {
+  const said = [text(desired && desired.grade), text(desired && desired.condition)]
+    .filter(Boolean);
+  return said.length ? said.join(" · ") : null;
+};
+
 export const TIER_INTENT = Object.freeze({
   primary: "Actively hunting",
   secondary: "Keeping an eye out",
