@@ -266,10 +266,15 @@ export function addOwnedCopy(target) {
   if (!target || typeof target.execute !== "function") {
     throw new TypeError("addOwnedCopy: the production store is required");
   }
+  /* THE FIELD LIST IS THE COMMAND'S SURFACE, so a disposition left off it is a
+     statement the person made and MetYet threw away in silence. `keeping`
+     travels here for that reason: the panel offers "I'm keeping this one" on a
+     copy being recorded for the first time, and without this the copy would be
+     stored having said nothing and the person would have to say it twice. */
   return ({ canonicalCardId, grade = null, condition = null, market = null,
-    cert = null, note = null, offered = false } = {}) =>
+    cert = null, note = null, offered = false, keeping = false } = {}) =>
     target.execute("addCollectorCopy", { copy: { canonicalCardId, grade, condition,
-      market, cert, note, offered } });
+      market, cert, note, offered, keeping } });
 }
 
 export function setCopyOffered(target) {
@@ -277,6 +282,18 @@ export function setCopyOffered(target) {
     throw new TypeError("setCopyOffered: the production store is required");
   }
   return (copyId, offered) => target.execute("setCollectorCopyOffered", { copyId, offered });
+}
+
+/* PERSONAL COLLECTION — "I'm keeping this one." The sibling of `setCopyOffered`
+   and deliberately its own function for the same reason: a copy's disposition is
+   a decision with consequences for who can see it, not a field on a form. The
+   domain clears the other statement when this one is made, so the caller sends
+   one thing and gets one outcome. */
+export function setCopyKept(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("setCopyKept: the production store is required");
+  }
+  return (copyId, keeping) => target.execute("setCollectorCopyKept", { copyId, keeping });
 }
 
 export function removeOwnedCopy(target) {

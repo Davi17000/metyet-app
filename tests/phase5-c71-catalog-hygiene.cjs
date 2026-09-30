@@ -496,11 +496,12 @@ describe("D. all four deployed surfaces use it", () => {
 
   test("the door, the command table and the schema are where C7.1 found them", () => {
     const { EXPOSED_COMMANDS } = require("../server/exposed-commands.js");
-    eq(EXPOSED_COMMANDS.length, 22, "the production door moved");
-    /* 49 → 50 in Option B (`setCopyPending`). C7.1's claim is the door above,
-       which has not moved: the new command is written, tested and deliberately
-       not exposed, exactly as the deal lifecycle still is. */
-    eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 50,
+    eq(EXPOSED_COMMANDS.length, 23, "the production door moved");
+    /* 49 → 50 in Option B (`setCopyPending`), and → 51 in the four-state batch
+       (`setCollectorCopyKept`). C7.1's claim is the door above, which has not
+       moved for either: the first is written, tested and deliberately unexposed,
+       and the second is a Collector's own statement about their own copy. */
+    eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 51,
       "the domain's command table moved");
   });
 });

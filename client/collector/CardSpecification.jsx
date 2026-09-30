@@ -84,7 +84,10 @@ const asDraft = (copy) => ({
   condition: text(copy.condition) || "",
   cert: text(copy.cert) || "",
   market: copy.market == null ? "" : String(copy.market),
-  offered: copy.offered === true,
+  /* THREE ANSWERS, NOT A TICKBOX. "I would part with this", "I am keeping
+     this", and nothing said — which is what every copy recorded before PC
+     existed honestly is, and what a new copy starts as. */
+  disposition: copy.offered === true ? "offered" : copy.keeping === true ? "keeping" : "unstated",
   removed: false,
   /* Carried so the row can show what the server says about it without this
      file working any of it out. */
@@ -92,8 +95,16 @@ const asDraft = (copy) => ({
   grading: copy.grading,
 });
 
+/* THE THREE THINGS A PERSON CAN MEAN ABOUT ONE COPY THEY OWN. "Nothing yet" is
+   a real answer and the default, not a prompt to be cleared. */
+const DISPOSITIONS = Object.freeze([
+  { id: "offered", label: "I'd trade or sell this one" },
+  { id: "keeping", label: "I'm keeping this one" },
+  { id: "unstated", label: "Haven't decided" },
+]);
+
 const BLANK_COPY = { id: null, grade: "", condition: "", cert: "", market: "",
-  offered: false, removed: false, status: null, grading: null };
+  disposition: "unstated", removed: false, status: null, grading: null };
 
 /* WHAT THE PERSON WOULD BE CHANGING, against what the server currently says.
    Pure, and computed fresh every time Commit is pressed — including the second
@@ -110,19 +121,11 @@ export function planFrom(state, canonicalCardId, answers) {
 
   const steps = [];
 
-  /* 1–3. ORGANISATION FIRST, because it is the most reversible thing here and
-     the least entangled: filing a card changes nothing about wanting or owning
-     it, so a failure later leaves a person with a correctly filed card rather
-     than with half a decision. */
+  /* 1. THE CONTAINERS, which say nothing about any card and so cannot fail for
+     want of a state. */
   for (const name of answers.newBinders) steps.push({ kind: "make-binder", name });
-  for (const id of answers.binders) {
-    if (!filedNow.has(id)) steps.push({ kind: "file", binderId: id });
-  }
-  for (const id of filedNow) {
-    if (!answers.binders.has(id)) steps.push({ kind: "unfile", binderId: id });
-  }
 
-  /* 4–7. DEMAND. Criteria before tier, so that a Goal a partner is already
+  /* 2–5. DEMAND. Criteria before tier, so that a Goal a partner is already
      working from becomes MORE precise before it becomes more urgent. */
   const stated = (answers.desired.grade || answers.desired.condition)
     ? { grade: answers.desired.grade || null,
@@ -138,19 +141,19 @@ export function planFrom(state, canonicalCardId, answers) {
       steps.push({ kind: "how-hard", goalId: goal.id, tier: answers.want });
     }
   }
-  if (goal && answers.want === "none") steps.push({ kind: "stop-looking", goalId: goal.id });
+
   if (!goal && answers.want !== "none") {
     steps.push({ kind: "start-looking", tier: answers.want, desired: stated });
   }
 
-  /* 8–11. OWNERSHIP LAST, and new copies last of all. A duplicate physical copy
+  /* 6–9. OWNERSHIP. A duplicate physical copy
      is a legitimate thing to own, so nothing downstream can tell an accidental
      second send from a real second copy — which means creating one must be the
      step with the least behind it if the sequence stops. */
   for (const draft of answers.copies) {
     const before = draft.id ? byId.get(draft.id) : null;
     if (draft.id && !before) continue;                 // already gone; nothing to do
-    if (draft.removed) { if (before) steps.push({ kind: "forget-copy", copyId: draft.id }); continue; }
+    if (draft.removed) continue;                       // removals are last; see below
     if (!draft.id) continue;                           // a new copy: handled below
     const patch = {};
     const facts = { grade: draft.grade || null, condition: isRaw(draft.grade) ? (draft.condition || null) : null,
@@ -160,8 +163,21 @@ export function planFrom(state, canonicalCardId, answers) {
       if (json(v) !== json(was)) patch[k] = v;
     }
     if (Object.keys(patch).length) steps.push({ kind: "correct-copy", copyId: draft.id, patch });
-    if (before.offered !== draft.offered) {
-      steps.push({ kind: "offering", copyId: draft.id, offered: draft.offered });
+    /* A CHANGE OF DISPOSITION IS ONE OF TWO STATEMENTS, and going back to
+       saying nothing is withdrawing whichever one was made. The two commands
+       clear each other in the domain, so a swap is one step and not two. */
+    const was = before.offered === true ? "offered"
+      : before.keeping === true ? "keeping" : "unstated";
+    if (was !== draft.disposition) {
+      if (draft.disposition === "offered") {
+        steps.push({ kind: "offering", copyId: draft.id, offered: true });
+      } else if (draft.disposition === "keeping") {
+        steps.push({ kind: "keeping", copyId: draft.id, keeping: true });
+      } else if (was === "offered") {
+        steps.push({ kind: "offering", copyId: draft.id, offered: false });
+      } else {
+        steps.push({ kind: "keeping", copyId: draft.id, keeping: false });
+      }
     }
   }
   for (const draft of answers.copies) {
@@ -171,8 +187,44 @@ export function planFrom(state, canonicalCardId, answers) {
       condition: isRaw(draft.grade) ? (draft.condition || null) : null,
       cert: draft.cert || null,
       market: draft.market === "" ? null : Number(draft.market),
-      offered: draft.offered === true,
+      offered: draft.disposition === "offered",
+      keeping: draft.disposition === "keeping",
     }, draftKey: draft.key });
+  }
+
+  /* 10–11. FILING LAST, AND THIS ORDER IS LOAD-BEARING.
+
+     Filing used to come first, on the reasoning that organisation is the most
+     reversible thing on this panel. That reasoning stopped being true when the
+     domain learned that a card nobody has said anything about cannot be filed:
+     an adversarial read of this plan found that the commonest flow in the whole
+     product — find a card in Browse, tick a binder, say you want it, Save —
+     would have been refused at its second step, because the Goal that makes the
+     filing legal had not been written yet.
+
+     So state is established first and membership follows it. Unfiling comes
+     after filing for the same reason it always did (a binder swap should not
+     pass through a moment of belonging nowhere), and removals come last of all,
+     so a sequence that stops leaves a person with MORE said about their card
+     than they started with rather than less. */
+  for (const id of answers.binders) {
+    if (!filedNow.has(id)) steps.push({ kind: "file", binderId: id });
+  }
+  for (const id of filedNow) {
+    if (!answers.binders.has(id)) steps.push({ kind: "unfile", binderId: id });
+  }
+
+  /* 12. AND TAKING THINGS AWAY, AFTER EVERYTHING ELSE. Removing the last thing
+     a person had said about a card is the one step that can leave a filed card
+     with no state behind it, so it happens when nothing else is waiting on it.
+     What the domain should then do about the membership is a product decision
+     that has not been made — see the hand-back — so nothing here removes a
+     membership on somebody's behalf. */
+  if (goal && answers.want === "none") steps.push({ kind: "stop-looking", goalId: goal.id });
+  for (const draft of answers.copies) {
+    if (draft.removed && draft.id && byId.get(draft.id)) {
+      steps.push({ kind: "forget-copy", copyId: draft.id });
+    }
   }
 
   return { steps, goal, copiesNow, myBinders, filedNow };
@@ -294,6 +346,22 @@ export default function CardSpecification({ card, context = null, state,
       if (draft.market !== "" && !(Number(draft.market) >= 0)) {
         return "A reference value has to be a number, and not a negative one.";
       }
+    }
+    /* FILING NEEDS SOMETHING TO BE COHERENT ABOUT, AND THE PANEL HAS TO SAY SO
+       BEFORE IT SENDS. A card the Collector has said nothing about cannot be
+       filed, and the domain refuses it — but without this the Save button looks
+       live, fires, and comes back with an error on the one screen whose entire
+       job is filing ("Add cards to this binder" opens here with a binder
+       already ticked). The sentence names the two things that would make it
+       legal rather than reporting a rule.
+
+       ASKED OF THE ANSWERS, so it describes the state this save WOULD leave
+       behind: a Goal being removed in the same press does not count, and a copy
+       being recorded in it does. */
+    if (plan.steps.some((s) => s.kind === "file")
+      && answers.want === "none" && !answers.copies.some((d) => !d.removed)) {
+      return "A binder holds cards you're looking for or copies you own. "
+        + "Say you want this card, or record a copy, and it can go in a binder.";
     }
     return null;
   })();
@@ -545,15 +613,24 @@ export default function CardSpecification({ card, context = null, state,
                           <input value={draft.market} inputMode="decimal" disabled={locked}
                             onChange={(e) => setCopy(key, { market: e.target.value })} />
                         </label>
-                        {/* OWNING IS THE ROW; OFFERING IS THIS BOX. A new copy
-                            starts unoffered whatever the others say: parting
-                            with a card is a decision, and a decision nobody
-                            made is not one to assume. */}
-                        <label className="mcs-check">
-                          <input type="checkbox" checked={draft.offered} disabled={locked}
-                            onChange={(e) => setCopy(key, { offered: e.target.checked })} />
-                          <span>I&rsquo;d trade or sell this one</span>
-                        </label>
+                        {/* OWNING IS THE ROW; WHAT YOU MEAN TO DO WITH IT IS
+                            THIS. Three answers and one of them is silence: a
+                            new copy says nothing whatever the others say,
+                            because parting with a card and committing to keep
+                            one are both decisions, and a decision nobody made
+                            is not one to assume. Per COPY, so two copies of one
+                            card can truthfully disagree. */}
+                        <p className="mcs-disp" role="group"
+                          aria-label="What you mean to do with this copy">
+                          {DISPOSITIONS.map((d) => (
+                            <button key={d.id} type="button" disabled={locked}
+                              className={`mcs-go${draft.disposition === d.id ? "" : " quiet"}`}
+                              aria-pressed={draft.disposition === d.id}
+                              onClick={() => setCopy(key, { disposition: d.id })}>
+                              {d.label}
+                            </button>
+                          ))}
+                        </p>
                         {draft.id ? (
                           <p>
                             <button className="mcs-linkish" type="button" disabled={locked}
@@ -616,6 +693,7 @@ const NAMES = {
   "start-looking": "the goal was saved",
   "correct-copy": "a copy was corrected",
   "offering": "what you're offering was saved",
+  "keeping": "what you're keeping was saved",
   "forget-copy": "a copy was removed",
   "record-copy": "a copy was recorded",
 };
@@ -629,11 +707,14 @@ const FAILED = {
   "start-looking": "the goal could not be saved",
   "correct-copy": "that copy could not be corrected",
   "offering": "what you're offering could not be saved",
+  "keeping": "what you're keeping could not be saved",
   "forget-copy": "that copy could not be removed",
   "record-copy": "that copy could not be recorded",
 };
 const WHY = {
-  "grading-incoherent": "A card cannot be both graded and in a raw condition.",
+  /* A COPY, NOT A CARD. `gradingProblem` is about one physical object — or
+     about a Goal's criteria for one — and never about a card in the abstract. */
+  "grading-incoherent": "A copy cannot be both graded and in a raw condition.",
   "criteria-required": "A goal has to say which copy you're after.",
   "duplicate-goal": "That card is already on your list.",
   "goal-locked": "This card is part of an active deal.",
@@ -644,6 +725,15 @@ const WHY = {
   "card-unavailable": "MetYet can no longer use that version of the card.",
   "invalid-amount": "A reference value has to be a number, and not a negative one.",
   "identity-immutable": "That part of a copy cannot be changed.",
+  /* THE ONE RULE THIS BATCH ADDED IS THE ONE THE PANEL MUST BE ABLE TO SAY.
+     A binder holds cards a Collector has a relationship with; a card they have
+     said nothing about has no relationship to be coherent about. The message
+     names the two things that count, because "MetYet would not accept it" would
+     leave a person pressing Save again. */
+  "card-has-no-state": "A binder holds cards you're looking for or copies you "
+    + "own. Say you want this card, or record a copy, and it can be filed.",
+  "disposition-conflict": "A copy is either one you'd part with or one you're "
+    + "keeping — not both.",
 };
 const said = (finished) => (finished.length
   ? `${finished.map((s) => NAMES[s.kind] || "something was saved")

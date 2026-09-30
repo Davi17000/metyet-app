@@ -753,6 +753,14 @@ describe("F. the boundaries hold", () => {
       "addGoal", "updateGoalTier", "removeGoal",
       "addInventoryCopy",
       "addCollectorCopy", "setCollectorCopyOffered", "removeCollectorCopy",
+      /* AND THE ONE THE FOUR-STATE BATCH ADDED. `setCollectorCopyKept` is the
+         other half of a copy's disposition — "I own this and intend to keep it"
+         — and it needed its own door for the same reason offering did: it is a
+         decision about who may see the card, not a correctable field, so it
+         does not travel inside a patch. The two clear each other in the domain.
+         It states nothing about a card, touches no Goal, creates no Binder
+         membership, and never crosses to a partner. */
+      "setCollectorCopyKept",
       "createBinder", "addBinderEntry", "removeBinderEntry",
       "updateCollectorCopy", "updateGoalCriteria",
       "renameBinder", "setBinderArchived",
@@ -781,10 +789,10 @@ describe("F. the boundaries hold", () => {
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
     ].sort()), "C3.5 changed the production surface");
-    eq(EXPOSED_COMMANDS.length, 22);
+    eq(EXPOSED_COMMANDS.length, 23);
     /* 49 → 50 in Option B (`setCopyPending`). What this line guards is the
        door above, which has not moved: the new command is not exposed. */
-    eq(C.COMMAND_NAMES.length, 50, "a command was added or removed");
+    eq(C.COMMAND_NAMES.length, 51, "a command was added or removed");
   });
 
   test("C3.5 opened no door — the whole file is what it was", () => {

@@ -257,11 +257,35 @@ matters would be the one moment it was impossible — and a recreate destroys
 and nothing else, and it is deliberately **not** blocked by an active
 Opportunity, because nothing derives from criteria.
 
-**Criteria still do not filter Discovery.** A Goal wanting a PSA 10 still
-discovers a partner's Heavily Played raw copy, and the reverse. Discovery is
-exact canonical-card overlap and reads no grading at all — asserted against the
-source. Criteria are context for a human deciding whether to start a
-conversation, never a rule for a machine deciding whether they may.
+**Criteria FILTER Discovery, exactly — corrected.** This section used to say the
+opposite, and it was true when it was written: Discovery was canonical-card
+overlap and read no grading at all. The True Match batch reversed that, and the
+reversal is the current rule:
+
+> **A criterion the Collector stated is a constraint. A criterion they did not
+> state is not a guess.**
+
+`meetsGoalCriteria(goal.desired, copy)` (`domain/metyet-domain.js`) is the whole
+rule, consulted by `discoveriesIn` and by `startOpportunity`:
+
+- a **stated** `grade` must equal the copy's grade, by exact string equality
+  after trimming;
+- a **stated** `condition` must equal the copy's condition, the same way;
+- an **unstated** criterion restricts nothing;
+- there is no band, no floor, no "or better", no ordering and no ranking. A Goal
+  wanting **PSA 9** does not match a **PSA 10** copy, and a Goal wanting a
+  condition does not match a graded copy, because a graded copy carries no raw
+  condition.
+
+Two consequences worth stating because they surprise people:
+
+- **A canonical Goal cannot have zero criteria.** `addGoal` refuses
+  `criteria-required`, and `updateGoalCriteria` refuses clearing the last one. So
+  "I want this card, any copy" is not sayable on the production path; absent
+  `desired` survives only on legacy `cardId` Goals and on canonical rows written
+  before C3.3.
+- **`desired` is a closed two-key vocabulary** at the command boundary: `grade`
+  and `condition`, and nothing else.
 
 **Binder organisation stays private and independent.** Filing a card says
 nothing about wanting or owning it, membership survives both, and no partner

@@ -143,6 +143,16 @@ function everyCommand(store, rec) {
      and `setInterest` refuses a copy its owner is not offering. */
   x(C1, "setCollectorCopyOffered", { copyId: b, offered: true });
   step("setCollectorCopyOffered", { copy: s().collectorCopies.find((q) => q.id === b) });
+  /* AND THE OTHER HALF OF A COPY'S DISPOSITION (the four-state batch). Keeping a
+     copy withdraws the offer, which is why this runs after it and why the
+     snapshot shows both fields moving together. */
+  x(C1, "setCollectorCopyKept", { copyId: b, keeping: true });
+  step("setCollectorCopyKept", { copy: s().collectorCopies.find((q) => q.id === b) });
+  x(C1, "setCollectorCopyKept", { copyId: b, keeping: false });
+  /* AND WITHDRAWING "KEEP" DOES NOT RESTORE THE OFFER, which is the whole
+     asymmetry: neither statement may be inferred from the absence of the other.
+     The walkthrough below needs an offered copy, so it says so again. */
+  x(C1, "setCollectorCopyOffered", { copyId: b, offered: true });
   x(TP1, "setInterest", { binderId: b, on: true });
   step("setInterest", { interest: s().interests.find((i) => i.binderId === b) });
   x(C1, "removeCollectorCopy", { copyId: b });
@@ -156,6 +166,12 @@ function everyCommand(store, rec) {
   step("createBinder", { id: bd, binder: s().binders.find((q) => q.id === bd) });
   x(C1, "renameBinder", { binderId: bd, name: "Water Starters" });
   step("renameBinder", { binder: s().binders.find((q) => q.id === bd) });
+  /* A CARD HAS TO MEAN SOMETHING BEFORE IT CAN BE FILED (the four-state batch),
+     so the probe card gets a Goal first. That is also the order the Card
+     Specification panel sends in, for the same reason. */
+  const gp = x(C1, "addGoal", { canonicalCardId: "cc-legacy-probe", tier: "secondary",
+    desired: { grade: "PSA 9" } });
+  step("addGoal", { id: gp, goal: s().goals.find((q) => q.id === gp) });
   x(C1, "addBinderEntry", { binderId: bd, canonicalCardId: "cc-legacy-probe" });
   step("addBinderEntry", { entry: s().binderEntries.find((e) => e.binderId === bd) });
   x(C1, "setBinderArchived", { binderId: bd, archived: true });
@@ -337,7 +353,7 @@ describe("B. every minted id comes from the injected runtime", () => {
      implied. The pin is restated, not loosened: every name in the table must
      still be exercised by the script above, and the exact total is still
      asserted rather than compared loosely. */
-  test("all 49 commands ran", () => {
+  test("all 51 commands ran", () => {
     const { ran } = every();
     const missing = C.COMMAND_NAMES.filter((n) => !ran.has(n));
     eq(missing.join(","), "", "commands not exercised");
@@ -348,9 +364,14 @@ describe("B. every minted id comes from the injected runtime", () => {
        are working on one exact card is a fact nothing else in the system could
        express — every other availability answer is derived from what HAPPENED
        to a copy, and this one is derived from what somebody chose.
-       Restated, not loosened — the exact total is still asserted, and the new
-       command is exercised by the script above like every other. */
-    eq(C.COMMAND_NAMES.length, 50, "the command set");
+       50 → 51 in the four-state batch: `setCollectorCopyKept`, because "I own
+       this and intend to keep it" is a positive statement no other field could
+       carry — `offered: false` has meant "no offer stated" since C2, and reading
+       an intention into that absence is the confusion migration 0012 exists to
+       remember.
+       Restated, not loosened — the exact total is still asserted, and every new
+       command is exercised by the script above like all the others. */
+    eq(C.COMMAND_NAMES.length, 51, "the command set");
   });
 
   test("each new record's id is exactly what the runtime handed out, with the record's prefix", () => {

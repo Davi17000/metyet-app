@@ -137,6 +137,15 @@ const load = (ctx) => ctx.repository.loadWorld();
 const entriesOf = async (ctx, binderId) =>
   (await load(ctx)).binderEntries.filter((e) => e.binderId === binderId);
 const own = (app, token, copy) => post(app, token, "addCollectorCopy", { copy });
+/* SAYING SOMETHING ABOUT A CARD, SO THAT IT CAN THEN BE FILED.
+
+   The four-state batch made a card with no state unfilable. These scenarios are
+   about what happens to MEMBERSHIP rather than about how it began, so they say
+   the smallest true thing that makes filing legal and get on with the story. The
+   rule itself is proved once, in section B, rather than re-proved by accident in
+   every fixture. */
+const want = (app, token, canonicalCardId, tier = "secondary") =>
+  post(app, token, "addGoal", { canonicalCardId, tier, desired: { grade: "PSA 9" } });
 const PHOTOS = { front: "copy:front", back: "copy:back" };
 
 /* ============================================================== A */
@@ -176,6 +185,7 @@ describe("A. whose binder this is, and who decided", () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
+    await want(ctx.app, "casey", cards.unlimited);
     await file(ctx, ACTOR.casey, id, cards.unlimited);
 
     for (const [command, payload] of [
@@ -210,6 +220,7 @@ describe("A. whose binder this is, and who decided", () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
+    await want(ctx.app, "casey", cards.unlimited);
     await file(ctx, ACTOR.casey, id, cards.unlimited);
     const before = (await load(ctx)).binders[0];
 
@@ -229,6 +240,7 @@ describe("B. a binder holds each card once", () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
+    await want(ctx.app, "casey", cards.unlimited);
 
     const first = await file(ctx, ACTOR.casey, id, cards.unlimited);
     assert(!first.refused, json(first));
@@ -264,21 +276,42 @@ describe("B. a binder holds each card once", () => {
     eq(r.value, false, "and it says plainly that there was nothing to remove");
   });
 
-  test("a binder may hold a card the Collector neither wants nor owns", async () => {
+  test("a card the Collector neither wants nor owns cannot be filed", async () => {
+    /* REVERSED, DELIBERATELY, BY A PRODUCT DECISION RATHER THAN BY DRIFT.
+
+       C3.1 made filing unconditional on purpose, and this test asserted it: a
+       binder could hold a card somebody simply liked the art of, and the world
+       was valid because "curation is not an incomplete state". That reading has
+       been retired. A Binder expresses coherence among cards that already mean
+       something to this Collector, and a card they have said NOTHING about has
+       no relationship for a binder to be coherent about — what filing produced
+       in that case was a card that appeared nowhere else and did nothing.
+
+       WHAT C3.1 WAS RIGHT ABOUT IS UNCHANGED, and section C still proves it:
+       filing is not demand, it invents no Goal, it invents no copy, and nothing
+       that happens to wanting or owning may quietly reorganise it. The one thing
+       that changed is that there has to be something to be coherent about. */
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, "Cards I like the art of");
-    await file(ctx, ACTOR.casey, id, cards.unlimited);
+    const r = await file(ctx, ACTOR.casey, id, cards.unlimited);
+    eq(r.refused, "card-has-no-state", json(r));
 
     const w = await load(ctx);
-    eq(w.binderEntries.length, 1, "filed");
-    eq(w.goals.length, 0, "no Goal was created");
-    eq(w.collectorCopies.length, 0, "no copy was created");
-    assert(validateWorld(w).ok, "and the world is valid: curation is not an incomplete state");
-    /* And the partner is told nothing that could be read as demand. */
+    eq(w.binderEntries.length, 0, "a card with no state was filed anyway");
+    eq(w.goals.length, 0, "a Goal was invented to make the filing legal");
+    eq(w.collectorCopies.length, 0, "a copy was invented to make the filing legal");
+    assert(validateWorld(w).ok, "the refusal left the world in a bad state");
+
+    /* AND THE RULE IS ABOUT MEANING SOMETHING, NOT ABOUT WANTING SPECIFICALLY. */
+    await want(ctx.app, "casey", cards.unlimited);
+    const after = await file(ctx, ACTOR.casey, id, cards.unlimited);
+    assert(!after.refused, json(after));
+    eq((await load(ctx)).binderEntries.length, 1, "and then it files");
+
+    /* Filing still produces no demand, which was C3.1's real claim. */
     const tp = (await get(ctx.app, "north", "/api/view")).json().state;
-    eq(tp.goals.length, 0, "filing a card did not become demand");
-    eq(tp.discoveries.length, 0, "and produced no discovery");
+    eq(tp.discoveries.length, 0, "filing became a discovery");
   });
 });
 
@@ -293,9 +326,11 @@ describe("C. nothing reorganises a Collector's binder but the Collector", () => 
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
-    await file(ctx, ACTOR.casey, id, cards.firstEdition);
+    /* The card has to mean something before it can be filed (the four-state
+       batch), so the state that this scenario is about comes first. */
     const goalId = (await post(ctx.app, "casey", "addGoal",
       { canonicalCardId: cards.firstEdition, tier: "secondary", desired: { grade: "PSA 9" } })).json().value;
+    await file(ctx, ACTOR.casey, id, cards.firstEdition);
 
     eq((await post(ctx.app, "casey", "updateGoalTier", { goalId, tier: "primary" })).statusCode, 200);
 
@@ -309,9 +344,11 @@ describe("C. nothing reorganises a Collector's binder but the Collector", () => 
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
-    await file(ctx, ACTOR.casey, id, cards.firstEdition);
+    /* The card has to mean something before it can be filed (the four-state
+       batch), so the state that this scenario is about comes first. */
     const goalId = (await post(ctx.app, "casey", "addGoal",
       { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } })).json().value;
+    await file(ctx, ACTOR.casey, id, cards.firstEdition);
 
     /* The card turns up. */
     const copyId = (await own(ctx.app, "casey",
@@ -330,10 +367,13 @@ describe("C. nothing reorganises a Collector's binder but the Collector", () => 
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
-    await file(ctx, ACTOR.casey, id, cards.firstEdition);
+    /* OWNING IS ITSELF THE QUALIFYING STATE HERE, which is what makes this
+       scenario the sharp one: the card is filed BECAUSE it is owned, and then
+       the copy goes away. */
     const copyId = (await own(ctx.app, "casey",
       { canonicalCardId: cards.firstEdition, offered: true, photos: PHOTOS })).json().value;
     eq((await load(ctx)).collectorCopies.length, 1, "owned");
+    await file(ctx, ACTOR.casey, id, cards.firstEdition);
 
     eq((await post(ctx.app, "casey", "removeCollectorCopy", { copyId })).statusCode, 200);
 
@@ -350,13 +390,13 @@ describe("C. nothing reorganises a Collector's binder but the Collector", () => 
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
-    await file(ctx, ACTOR.casey, id, cards.shadowless);
-
     const made = [];
     for (const spec of [{ grade: "Raw", condition: "Near Mint" }, { grade: "PSA 9" }, { grade: "PSA 10" }]) {
       made.push((await own(ctx.app, "casey",
         { canonicalCardId: cards.shadowless, ...spec, photos: PHOTOS })).json().value);
     }
+    /* Owning three copies is one card meaning something, filed once. */
+    await file(ctx, ACTOR.casey, id, cards.shadowless);
     eq((await post(ctx.app, "casey", "setCollectorCopyOffered",
       { copyId: made[1], offered: true })).statusCode, 200);
 
@@ -372,6 +412,7 @@ describe("C. nothing reorganises a Collector's binder but the Collector", () => 
     const cards = await charizard(ctx);
     const mudkip = await binder(ctx, ACTOR.casey, "Mudkip Collection");
     const artists = await binder(ctx, ACTOR.casey, "Favourite Artists");
+    await want(ctx.app, "casey", cards.firstEdition);
     await file(ctx, ACTOR.casey, mudkip, cards.firstEdition);
     await file(ctx, ACTOR.casey, artists, cards.firstEdition);
     eq((await load(ctx)).binderEntries.length, 2, "one card, two places it belongs");
@@ -388,9 +429,9 @@ describe("C. nothing reorganises a Collector's binder but the Collector", () => 
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
-    await file(ctx, ACTOR.casey, id, cards.firstEdition);
     const goalId = (await post(ctx.app, "casey", "addGoal",
       { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } })).json().value;
+    await file(ctx, ACTOR.casey, id, cards.firstEdition);
     const copyId = (await own(ctx.app, "casey",
       { canonicalCardId: cards.firstEdition, offered: true, photos: PHOTOS })).json().value;
 
@@ -457,9 +498,11 @@ describe("D. what a Trusted Partner receives of a Collector's organisation", () 
   async function organised(ctx) {
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, SECRET_NAME);
-    await file(ctx, ACTOR.casey, id, cards.firstEdition);
+    /* State first, then filing — the four-state batch made a card with no state
+       unfilable, and this helper's subject is what a SEAT may see, not ordering. */
     await post(ctx.app, "casey", "addGoal", { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } });
     await own(ctx.app, "casey", { canonicalCardId: cards.firstEdition, offered: true, photos: PHOTOS });
+    await file(ctx, ACTOR.casey, id, cards.firstEdition);
     return { cards, id };
   }
 
@@ -546,6 +589,8 @@ describe("D. what a Trusted Partner receives of a Collector's organisation", () 
     const cards = await charizard(ctx);
     const casey = await binder(ctx, ACTOR.casey, SECRET_NAME);
     const dana = await binder(ctx, ACTOR.dana, "Dana's shelf");
+    await want(ctx.app, "casey", cards.firstEdition);
+    await want(ctx.app, "dana", cards.shadowless);
     await file(ctx, ACTOR.casey, casey, cards.firstEdition);
     await file(ctx, ACTOR.dana, dana, cards.shadowless);
 
@@ -645,6 +690,10 @@ describe("E. the commands exist, and production cannot reach them", () => {
       "addGoal", "updateGoalTier", "removeGoal",
       "addInventoryCopy",
       "addCollectorCopy", "setCollectorCopyOffered", "removeCollectorCopy",
+      /* AND THE ONE THE FOUR-STATE BATCH ADDED. `setCollectorCopyKept` is the
+         other half of a copy's disposition; it needed its own door for the same
+         reason offering did, and the two clear each other in the domain. */
+      "setCollectorCopyKept",
       "createBinder", "addBinderEntry", "removeBinderEntry",
       "updateCollectorCopy", "updateGoalCriteria",
       "renameBinder", "setBinderArchived",
@@ -673,7 +722,7 @@ describe("E. the commands exist, and production cannot reach them", () => {
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
     ].sort()), "the production surface is not what C3.4 declared");
-    eq(EXPOSED_COMMANDS.length, 22);
+    eq(EXPOSED_COMMANDS.length, 23);
   });
 
   /* SUPERSEDED AND RESTATED. The claim was that the client bound the three
@@ -708,14 +757,22 @@ describe("E. the commands exist, and production cannot reach them", () => {
   test("a canonical card that does not exist is refused by the foreign key", async () => {
     const ctx = await world();
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
-    /* Past the door there is no catalog guard — the domain holds no database,
-       by a rule this batch does not break. The foreign key is the backstop, and
-       it is exactly the backstop `addGoal` has: both throw 23503 rather than
-       writing a reference to a card that is not there. */
-    let threw = null;
-    try { await file(ctx, ACTOR.casey, id, "cc-not-a-real-card"); }
-    catch (e) { threw = e; }
-    assert(threw, "a binder filed a card that does not exist");
+    /* RE-PINNED, AND THE REASON IS WORTH KEEPING. Past the door there was no
+       catalog guard — the domain holds no database — so the foreign key was the
+       backstop, exactly as it is for `addGoal`, and this test proved it by
+       filing a card that does not exist and catching 23503.
+
+       The four-state batch put a guard in front of it: a card nobody has said
+       anything about cannot be filed, and a card that does not exist cannot
+       have a Goal or an owned copy either, because the same foreign key refuses
+       those too. So the refusal now arrives one step earlier, by name, and the
+       key is no longer reachable through this door at all. That is a better
+       answer than a thrown constraint, and the key remains the backstop for a
+       world assembled outside the commands — which
+       `validateWorld refuses a duplicate membership assembled outside the
+       command` above still exercises. */
+    const r = await file(ctx, ACTOR.casey, id, "cc-not-a-real-card");
+    eq(r.refused, "card-has-no-state", json(r));
     eq((await load(ctx)).binderEntries.length, 0, "and nothing was written");
   });
 
@@ -763,6 +820,8 @@ describe("F. what is stored, and what the schema refuses", () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, SECRET_NAME);
+    await want(ctx.app, "casey", cards.firstEdition);
+    await want(ctx.app, "casey", cards.shadowless);
     await file(ctx, ACTOR.casey, id, cards.firstEdition);
     await file(ctx, ACTOR.casey, id, cards.shadowless);
 
@@ -798,6 +857,7 @@ describe("F. what is stored, and what the schema refuses", () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
+    await want(ctx.app, "casey", cards.firstEdition);
     await file(ctx, ACTOR.casey, id, cards.firstEdition);
 
     const fails = async (sql, what) => {

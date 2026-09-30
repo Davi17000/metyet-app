@@ -334,9 +334,20 @@ describe("C. Nothing useful went with the tab", () => {
       market: 2050, photos: PH, addedAt: AT }],
       interests: [{ partnerId: "nl", binderId: "k1", at: AT }] });
     const shown = texts(await showView(st, { kind: "all" }));
-    for (const fact of ["PSA 9", "CERT-X", "Offered", "Interested", "Northline"]) {
+    /* "INTERESTED · <shop>" LEFT THIS LIST, AND NOT WITH THE TAB.
+
+       The binders batch was right that absorbing Your Cards must not quietly
+       lose a fact, and every fact it carried is still asserted here. This one
+       went later and for a different reason: `setInterest` is the only command
+       that writes an interest and it is not on the production surface, so the
+       line rendered from rows production cannot produce. A fact the product
+       cannot yet carry is not a fact a screen should claim. The row above still
+       seeds one, so this is a real absence and not a vacuous assertion. */
+    for (const fact of ["PSA 9", "CERT-X", "Offered"]) {
       assert(shown.includes(fact), `${fact} was lost with the tab: ` + shown);
     }
+    assert(!/Interested/.test(shown), "a claim no command can produce came back: " + shown);
+    assert(!shown.includes("Northline"), "a partner was named from an unreachable row");
     assert(/2,050/.test(shown), "the reference value was lost: " + shown);
     assert(/Photos/.test(shown), "the photo note was lost: " + shown);
   });
@@ -439,7 +450,7 @@ describe("E. Four facts, still four", () => {
     }
   });
 
-  test("[27][28] there is no PC view, and not-offered is never called one", () => {
+  test("[27][28] there is still no PC view, and silence is no longer labelled", () => {
     const views = build("client/collector/sections/Collection.jsx").COLLECTION_VIEWS;
     eq(views.map((v) => v.id).join(","), "binders,all,primary,secondary,trade",
       "the view list changed");
@@ -448,8 +459,20 @@ describe("E. Four facts, still four", () => {
     }
     const src = code("client/collector/sections/Collection.jsx");
     assert(!/personal ?collection/i.test(src), "the file names a Personal Collection");
-    /* The label for a copy nobody is offering says exactly that and no more. */
-    assert(/Not offered/.test(src), "the honest label went");
+    /* RE-PINNED, AND THE REASON IS THE POINT OF THE BATCH.
+
+       This used to require the words "Not offered" on a copy's row, because at
+       the time that was the honest thing to say: MetYet had no fact for "I am
+       keeping this", so the most it could report was that no offer existed.
+
+       PC is now a positive statement with its own command, so the old label has
+       become the dishonest one — it described a decision and an absence in the
+       same words. The row now says "Offered" or "Keeping" when somebody has
+       said one of them, and says NOTHING when nobody has. A view is still a
+       different question from a fact, and there is still no PC view. */
+    assert(!/Not offered/.test(src), "an absence is being reported as an answer again");
+    assert(/keeping === true/.test(src) && /Keeping/.test(src),
+      "a copy its owner is keeping cannot say so");
   });
 
   test("[29] no Smart or System binder is persisted, and no new durable fact", async () => {
@@ -478,7 +501,7 @@ describe("F. What did not move", () => {
        left this loop when photo fulfilment gave the Trusted Partner a surface
        for answering a Collector's request; it supplies evidence about a card
        and settles nothing. */
-    eq(EXPOSED_COMMANDS.length, 22, "a command was exposed that no batch declared");
+    eq(EXPOSED_COMMANDS.length, 23, "a command was exposed that no batch declared");
     for (const closed of ["startOpportunity", "proposePrice", "acceptPrice",
       "acceptMarketValue", "acceptDeal", "setCopyPending", "cancelOpportunity",
       "proposeFulfillment", "confirmHandoff"]) {
@@ -613,7 +636,7 @@ describe("phase5 binders — the adversarial pass", () => {
     const trade = texts(await showView(st, { kind: "trade" }));
     assert(/ORPHAN-1/.test(trade),
       "Trade/Sell dropped a copy that is offered: " + trade.slice(0, 160));
-    assert(!/not offering any of your cards/.test(trade),
+    assert(!/not offering any of your (cards|copies)/.test(trade),
       "Trade/Sell denied an offer that Trusted Partners can see: " + trade.slice(0, 160));
   });
 

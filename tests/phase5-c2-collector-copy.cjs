@@ -782,6 +782,14 @@ describe("H. the doors this batch opened, and no others", () => {
       "addInventoryCopy",
       /* C2 — three, and the whole of the concept. */
       "addCollectorCopy", "setCollectorCopyOffered", "removeCollectorCopy",
+      /* AND THE ONE THE FOUR-STATE BATCH ADDED. `setCollectorCopyKept` is the
+         other half of a copy's disposition — "I own this and intend to keep it"
+         — and it needed its own door for the same reason offering did: it is a
+         decision about who may see the card, not a correctable field, so it
+         does not travel inside a patch. The two clear each other in the domain.
+         It states nothing about a card, touches no Goal, creates no Binder
+         membership, and never crosses to a partner. */
+      "setCollectorCopyKept",
       /* C3.3 — the Card Specification panel's five. */
       "createBinder", "addBinderEntry", "removeBinderEntry",
       "updateCollectorCopy", "updateGoalCriteria",
@@ -812,7 +820,7 @@ describe("H. the doors this batch opened, and no others", () => {
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
     ].sort()), "the production surface is not what this batch declared");
-    eq(EXPOSED_COMMANDS.length, 22, "and nothing arrived unnamed");
+    eq(EXPOSED_COMMANDS.length, 23, "and nothing arrived unnamed");
   });
 
   test("every exposed name is a real command, and the client sends exactly these", () => {

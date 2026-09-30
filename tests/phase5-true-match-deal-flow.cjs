@@ -644,7 +644,7 @@ describe("E. The surface shows the copies, and only those", () => {
 /* ============================================ F. what must not have moved */
 describe("F. The boundary this batch did not cross", () => {
   test("[33] the production allow-list is unchanged", () => {
-    eq(EXPOSED_COMMANDS.length, 22, "a command was exposed by this batch");
+    eq(EXPOSED_COMMANDS.length, 23, "a command was exposed by this batch");
     /* THE TRANSACTION IS WHAT MUST STAY CLOSED. `reviewCopy`, `endReview` and
        `requestPhotos` left this loop when the qualification batch gave them a
        surface in Deal Flow, and `addCopyPhotos` left it when photo fulfilment
@@ -660,7 +660,7 @@ describe("F. The boundary this batch did not cross", () => {
 
   test("the domain grew no command and no durable field", () => {
     const { COMMAND_NAMES } = require("../domain/metyet-commands.js");
-    eq(COMMAND_NAMES.length, 50, "a command was added or removed");
+    eq(COMMAND_NAMES.length, 51, "a command was added or removed");
   });
 
   test("[11][34][35][36] Option B's availability model is untouched", () => {

@@ -350,6 +350,9 @@ const CSS = `
   align-items:center; margin-top:6px; }
 .mcs-df-state { font-size:11.5px; color:var(--dim); }
 .mcs-df-trouble { font-size:11.5px; color:var(--amber); }
+/* THE THREE THINGS A PERSON CAN MEAN ABOUT ONE COPY. A row, because they are
+   one question with three answers rather than three separate switches. */
+.mcs-disp { display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 0; }
 .mcs-df-none { margin:0; padding:2px 16px 14px; font-size:12.5px; color:var(--muted); }
 .mcs-rec-facts { display:flex; flex-wrap:wrap; gap:4px 14px; margin-top:8px; }
 

@@ -325,6 +325,30 @@ function validateWorld(state) {
         `${who} does not say whether it is offered. Owning a copy and offering it are `
         + `separate facts, and both must be stated (true or false).`);
     }
+    /* `keeping` IS OPTIONAL, AND THAT IS NOT THE SAME MISTAKE AS ABOVE.
+
+       `offered` is required because three states collapsed to two: the absence
+       was silently doing the work of `false`, and a Collector lost visible
+       supply over it. `keeping` is the opposite shape. Absent means UNSTATED,
+       unstated is the honest answer for every copy written before PC existed,
+       and nothing reads absence as a positive claim — PC is asserted or it is
+       not there. Requiring it would make every stored world invalid, which is
+       an error raised on the next command anybody sends rather than a refusal.
+
+       WHAT IS INVALID IS THE CONTRADICTION. A copy claiming both would be trade
+       supply its owner believes is safe, so the pair is reported even though the
+       two doors make it unreachable. */
+    if ("keeping" in b && typeof b.keeping !== "boolean") {
+      report("field.invalid", `${path}.keeping`,
+        `${who} says something other than yes or no about being kept. A copy either `
+        + `states that it is being kept, or says nothing at all.`);
+    }
+    if (b.offered === true && b.keeping === true) {
+      report("field.invalid", `${path}.keeping`,
+        `${who} is both offered and being kept. Those are contradictory statements `
+        + `about one physical card, and the product refuses the pair rather than `
+        + `choosing which half was meant.`);
+    }
     if (b.grade && !D.GRADED_VALUES.includes(b.grade)) {
       report("field.invalid", `${path}.grade`, `${who} has a grade the product has no word for.`);
     }

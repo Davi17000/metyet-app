@@ -50,7 +50,7 @@ import { savePartnerProfile, openCollectorInvitation, revokeCollectorInvitation,
   browseCards, addCollectorGoal, setGoalPriority, removeCollectorGoal,
   setGoalCriteria, addOwnedCopy, updateOwnedCopy, setCopyOffered, removeOwnedCopy,
   createBinder, fileCardInBinder, unfileCardFromBinder,
-  inspectCopy, endInspection, requestCopyPhotos, provideCopyPhotos,
+  inspectCopy, endInspection, requestCopyPhotos, provideCopyPhotos, setCopyKept,
   renameBinder, setBinderArchived,
   refreshView } from "../commands.js";
 
@@ -216,7 +216,8 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
     const goal = { add: addCollectorGoal(store), tier: setGoalPriority(store),
       remove: removeCollectorGoal(store), criteria: setGoalCriteria(store) };
     const copy = { add: addOwnedCopy(store), update: updateOwnedCopy(store),
-      offered: setCopyOffered(store), remove: removeOwnedCopy(store) };
+      offered: setCopyOffered(store), keeping: setCopyKept(store),
+      remove: removeOwnedCopy(store) };
     const binder = { create: createBinder(store), file: fileCardInBinder(store),
       unfile: unfileCardFromBinder(store) };
     return async (step, canonicalCardId) => {
@@ -236,6 +237,7 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
         case "start-looking": return goal.add({ canonicalCardId, tier: step.tier, desired: step.desired });
         case "correct-copy": return copy.update(step.copyId, step.patch);
         case "offering": return copy.offered(step.copyId, step.offered);
+        case "keeping": return copy.keeping(step.copyId, step.keeping);
         case "forget-copy": return copy.remove(step.copyId);
         case "record-copy": return copy.add({ canonicalCardId, ...step.copy });
         /* A step this build does not know is not guessed at. It cannot happen

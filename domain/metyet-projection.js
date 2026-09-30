@@ -191,6 +191,14 @@ const INVENTORY_FOR_COLLECTOR = ["invId", "partnerId", "cardId", "canonicalCardI
 
    `market` is still not here, and the reason has not changed: it is what the
    Collector thinks the card is worth, which is their side of a negotiation. */
+/* `keeping` IS NOT ON THIS LIST, AND ITS ABSENCE IS THE PRIVACY RULE.
+
+   What a Collector intends to KEEP is nobody else's business. A shop needs to
+   know what is on offer; it has no claim on the reasoning behind what is not.
+   The protection is doubled and both halves are deliberate: a kept copy is by
+   definition not offered, so it never enters `inSupply` and the row does not
+   reach a partner at all — and if it somehow did, `keeping` is not among the
+   fields that cross. `market` is excluded for the same kind of reason. */
 const COLLECTOR_COPY_FOR_PARTNER = ["id", "collectorId", "cardId", "canonicalCardId",
   "grade", "condition", "offered", "photos", "cert", "addedAt", "updatedAt"];
 

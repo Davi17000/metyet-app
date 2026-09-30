@@ -304,7 +304,9 @@ describe("A. the library", () => {
     const ctx = await world();
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
+    await want(ctx.app, "casey", made.mudkip, "secondary");
     await file(ctx.app, "casey", mine, made.mudkip);
+    await want(ctx.app, "casey", made.firstEdition, "secondary");
     await file(ctx.app, "casey", mine, made.firstEdition);
     /* Owned and offered, so a count of either WOULD have something to show. */
     await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "PSA 9" });
@@ -359,6 +361,7 @@ describe("A. the library", () => {
     const ctx = await world();
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
+    await want(ctx.app, "casey", made.mudkip, "secondary");
     await file(ctx.app, "casey", mine, made.mudkip);
     const { r } = await screen(ctx);
     await press(r, "Rename");
@@ -408,6 +411,7 @@ describe("B. put away", () => {
     const ctx = await world();
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
+    await want(ctx.app, "casey", made.mudkip, "secondary");
     await file(ctx.app, "casey", mine, made.mudkip);
     await post(ctx.app, "casey", "setBinderArchived", { binderId: mine, archived: true });
     const { r } = await screen(ctx);
@@ -425,7 +429,9 @@ describe("B. put away", () => {
     const ctx = await world();
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
+    await want(ctx.app, "casey", made.mudkip, "secondary");
     await file(ctx.app, "casey", mine, made.mudkip);
+    await want(ctx.app, "casey", made.firstEdition, "secondary");
     await file(ctx.app, "casey", mine, made.firstEdition);
     await want(ctx.app, "casey", made.mudkip, "primary");
     await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "PSA 9" });
@@ -450,6 +456,7 @@ describe("B. put away", () => {
     const ctx = await world();
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
+    await want(ctx.app, "casey", made.mudkip, "secondary");
     await file(ctx.app, "casey", mine, made.mudkip);
     await want(ctx.app, "casey", made.mudkip, "secondary");
     const before = await load(ctx);
@@ -478,6 +485,11 @@ describe("C. inside a binder", () => {
   async function filled(ctx) {
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
+    /* A card has to mean something before it can be filed (the four-state
+       batch). These tests are about what a binder SHOWS, so the fixture says
+       the smallest true thing and the individual tests then take it away where
+       that is what they are about. */
+    await want(ctx.app, "casey", made.mudkip, "secondary");
     await file(ctx.app, "casey", mine, made.mudkip);
     return { made, mine };
   }
@@ -498,23 +510,40 @@ describe("C. inside a binder", () => {
   test("Primary and Secondary when there is a Goal, and no tag when there is not", async () => {
     const ctx = await world();
     const { made, mine } = await filled(ctx);
+    /* THE SECOND CARD QUALIFIES BY BEING OWNED, not by being wanted — which is
+       what makes "no tag when there is not" sayable at all now that a card must
+       mean something before it can be filed. */
+    await own(ctx.app, "casey", { canonicalCardId: made.firstEdition, grade: "PSA 9" });
     await file(ctx.app, "casey", mine, made.firstEdition);
-    await want(ctx.app, "casey", made.mudkip, "primary");
+    const g = (await load(ctx)).goals.find((x) => x.canonicalCardId === made.mudkip);
+    await post(ctx.app, "casey", "updateGoalTier", { goalId: g.id, tier: "primary" });
     const { r } = await screen(ctx);
     await press(r, "Mudkip Collection");
     const said = texts(r);
     assert(said.includes("Actively hunting"), said);
-    /* The Charizard is filed and unwanted; one tag, not two. */
+    /* The Charizard is filed and owned but unwanted; one tag, not two. */
     eq((said.match(/Actively hunting|Keeping an eye out/g) || []).length, 1, said);
   });
 
-  test("a card with neither Goal nor copy stays filed, and reads as a card", async () => {
+  test("a card whose Goal has gone stays filed, and reads as a card", async () => {
+    /* RE-PINNED. This used to file a card that had never meant anything, which
+       the four-state batch made impossible. What it was really testing survives
+       exactly: a card in a binder with no Goal and no copy renders as a card and
+       carries no priority tag. The route to that state is now the honest one —
+       the card meant something when it was filed, and then the Collector stopped
+       wanting it. Membership is deliberately left behind, which is the C3.1
+       promise that nothing reorganises a binder but its owner. */
     const ctx = await world();
     const { made, mine } = await filled(ctx);
     await unfile(ctx.app, "casey", mine, made.mudkip);
+    await want(ctx.app, "casey", made.firstEdition, "secondary");
     await file(ctx.app, "casey", mine, made.firstEdition);
-    eq((await load(ctx)).goals.length, 0);
+    for (const g of (await load(ctx)).goals) {
+      eq((await post(ctx.app, "casey", "removeGoal", { goalId: g.id })).statusCode, 200);
+    }
+    eq((await load(ctx)).goals.length, 0, "the goals are gone");
     eq((await load(ctx)).collectorCopies.length, 0);
+    eq((await load(ctx)).binderEntries.length, 1, "and the card is still filed");
     const { r } = await screen(ctx);
     await press(r, "Mudkip Collection");
     const said = texts(r);
@@ -558,6 +587,7 @@ describe("C. inside a binder", () => {
     const made = await cards(ctx);
     const a = await makeBinder(ctx.app, "casey", "Mudkip Collection");
     const b = await makeBinder(ctx.app, "casey", "Favourites");
+    await want(ctx.app, "casey", made.mudkip, "secondary");
     await file(ctx.app, "casey", a, made.mudkip);
     await file(ctx.app, "casey", b, made.mudkip);
     /* Filing twice into one binder is still one entry — C3.1's rule, unmoved. */
@@ -590,7 +620,9 @@ describe("C. inside a binder", () => {
   test("one describe for the ids on screen, never one per card", async () => {
     const ctx = await world();
     const { made, mine } = await filled(ctx);
+    await want(ctx.app, "casey", made.firstEdition, "secondary");
     await file(ctx.app, "casey", mine, made.firstEdition);
+    await want(ctx.app, "casey", made.unlimited, "secondary");
     await file(ctx.app, "casey", mine, made.unlimited);
     const { r, calls } = await screen(ctx);
     const before = calls.describe;
@@ -650,6 +682,7 @@ describe("D. not in a binder yet", () => {
     const made = await cards(ctx);
     const a = await makeBinder(ctx.app, "casey", "Mudkip Collection");
     const b = await makeBinder(ctx.app, "casey", "Favourites");
+    await want(ctx.app, "casey", made.mudkip, "secondary");
     await file(ctx.app, "casey", a, made.mudkip);
     await file(ctx.app, "casey", b, made.mudkip);
     await want(ctx.app, "casey", made.mudkip, "primary");
@@ -668,6 +701,7 @@ describe("D. not in a binder yet", () => {
     const ctx = await world();
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
+    await want(ctx.app, "casey", made.mudkip, "secondary");
     await file(ctx.app, "casey", mine, made.mudkip);
     await want(ctx.app, "casey", made.mudkip, "primary");
     const s = await screen(ctx);
@@ -887,6 +921,13 @@ describe("E. add cards", () => {
     const ctx = await world();
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
+    /* THE CARD MEANS SOMETHING ALREADY, which is what the four-state batch now
+       requires before it can be filed. The "Add cards to this binder" flow
+       reaches this panel with a binder preselected, and a person who says
+       nothing else about the card will have the filing refused — see the
+       hand-back, which records that as a known consequence rather than
+       disguising it here. */
+    await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "PSA 9" });
     const state = await view(ctx.app, "casey");
     const Panel = build("client/collector/CardSpecification.jsx").default;
     const card = { canonicalCardId: made.mudkip, cardName: "Mudkip",
@@ -954,6 +995,14 @@ describe("F. the two new doors", () => {
       "addGoal", "updateGoalTier", "removeGoal",
       "addInventoryCopy",
       "addCollectorCopy", "setCollectorCopyOffered", "removeCollectorCopy",
+      /* AND THE ONE THE FOUR-STATE BATCH ADDED. `setCollectorCopyKept` is the
+         other half of a copy's disposition — "I own this and intend to keep it"
+         — and it needed its own door for the same reason offering did: it is a
+         decision about who may see the card, not a correctable field, so it
+         does not travel inside a patch. The two clear each other in the domain.
+         It states nothing about a card, touches no Goal, creates no Binder
+         membership, and never crosses to a partner. */
+      "setCollectorCopyKept",
       "createBinder", "addBinderEntry", "removeBinderEntry",
       "updateCollectorCopy", "updateGoalCriteria",
       "renameBinder", "setBinderArchived",
@@ -982,7 +1031,7 @@ describe("F. the two new doors", () => {
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
     ].sort()), "the production surface is not what C3.4 declared");
-    eq(EXPOSED_COMMANDS.length, 22);
+    eq(EXPOSED_COMMANDS.length, 23);
     for (const name of EXPOSED_COMMANDS) {
       assert(C.COMMAND_NAMES.includes(name), `${name} is not a command`);
     }
@@ -1127,7 +1176,9 @@ describe("F. the two new doors", () => {
     const ctx = await world();
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
+    await want(ctx.app, "casey", made.mudkip, "secondary");
     await file(ctx.app, "casey", mine, made.mudkip);
+    await want(ctx.app, "casey", made.firstEdition, "secondary");
     await file(ctx.app, "casey", mine, made.firstEdition);
     await want(ctx.app, "casey", made.mudkip, "primary");
     await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "PSA 9" });
@@ -1164,6 +1215,7 @@ describe("G. privacy", () => {
     const ctx = await world();
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "ZZ-PRIVATE-C34B");
+    await want(ctx.app, "casey", made.mudkip, "secondary");
     await file(ctx.app, "casey", mine, made.mudkip);
     await post(ctx.app, "casey", "renameBinder", { binderId: mine, name: "ZZ-RENAMED-C34B" });
     await post(ctx.app, "casey", "setBinderArchived", { binderId: mine, archived: true });
@@ -1186,6 +1238,7 @@ describe("G. privacy", () => {
     const ctx = await world();
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "ZZ-PRIVATE-C34B");
+    await want(ctx.app, "casey", made.mudkip, "secondary");
     await file(ctx.app, "casey", mine, made.mudkip);
     const theirs = (await get(ctx.app, "dana", "/api/view")).body;
     assert(!theirs.includes("ZZ-PRIVATE-C34B"), "another Collector saw a binder");
@@ -1198,6 +1251,9 @@ describe("G. privacy", () => {
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
     await post(ctx.app, "north", "addInventoryCopy",
       { copy: { canonicalCardId: made.mudkip, ask: 900 } });
+    /* THE CARD QUALIFIES BY BEING OWNED, not by being wanted — otherwise the
+       fixture would create the very Goal this test is checking for. */
+    await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "PSA 9" });
     const before = projectForActor(await load(ctx), ACTOR.north);
     await file(ctx.app, "casey", mine, made.mudkip);
     const after = projectForActor(await load(ctx), ACTOR.north);
@@ -1210,6 +1266,7 @@ describe("G. privacy", () => {
     const ctx = await world();
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
+    await want(ctx.app, "casey", made.mudkip, "secondary");
     await file(ctx.app, "casey", mine, made.mudkip);
     await want(ctx.app, "casey", made.mudkip, "primary");
     const partner = projectForActor(await load(ctx), ACTOR.north);
@@ -1233,6 +1290,7 @@ describe("G. privacy", () => {
     const ctx = await world();
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
+    await want(ctx.app, "casey", made.mudkip, "secondary");
     await file(ctx.app, "casey", mine, made.mudkip);
     await want(ctx.app, "casey", made.mudkip, "primary");
     const before = await load(ctx);
@@ -1343,7 +1401,7 @@ describe("H. the navigation", () => {
        above — no new MIGRATION — and it survived Option B intact: that batch
        added a durable field to an inventory copy and still needed no
        migration, because unmapped facts live in `attrs`. */
-    eq(C.COMMAND_NAMES.length, 50, "a command was added or removed");
+    eq(C.COMMAND_NAMES.length, 51, "a command was added or removed");
   });
 
   test("compatibility: a historical Goal with no criteria is still manageable", async () => {

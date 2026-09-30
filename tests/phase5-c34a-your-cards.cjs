@@ -331,8 +331,12 @@ describe("B. the card is a heading; the copies are the records", () => {
     const made = await cards(ctx);
     const a = (await own(ctx.app, "casey", { canonicalCardId: made.mudkip,
       grade: "PSA 9", cert: "CERT-A", market: 500, offered: true })).json().value;
+    /* RE-PINNED: the second copy is KEPT rather than merely unmentioned, which
+       is the whole reason a disposition lives on the copy and not on the card.
+       One Mudkip, two copies, two opposite decisions — and this screen has to
+       be able to show both at once. */
     const b = (await own(ctx.app, "casey", { canonicalCardId: made.mudkip,
-      grade: "Raw", condition: "Damaged", cert: "SER-B", market: 20 })).json().value;
+      grade: "Raw", condition: "Damaged", cert: "SER-B", market: 20, keeping: true })).json().value;
     assert(a !== b, "two copies became one record");
 
     const r = await showing(ctx);
@@ -344,7 +348,12 @@ describe("B. the card is a heading; the copies are the records", () => {
     assert(/PSA 9/.test(shown) && /Raw · Damaged/.test(shown), "both gradings: " + shown);
     assert(/CERT-A/.test(shown) && /SER-B/.test(shown), "both certificates: " + shown);
     assert(/\$500/.test(shown) && /\$20/.test(shown), "both reference values: " + shown);
-    assert(/Offered/.test(shown) && /Not offered/.test(shown), "offering is per copy: " + shown);
+    /* RE-PINNED: a disposition is per copy, and this now says so in the
+       Collector's own words rather than in an absence. The screen used to read
+       "Offered" and "Not offered", which described a copy somebody had decided
+       to keep in exactly the same words as one they had never mentioned. */
+    assert(/Offered/.test(shown) && /Keeping/.test(shown), "a disposition is per copy: " + shown);
+    assert(!/Not offered/.test(shown), "an absence is still being reported as an answer: " + shown);
   });
 
   /* THE RULE THIS SECTION EXISTS FOR. A group of a PSA 9 and a damaged raw copy

@@ -43,6 +43,26 @@ const refuse = (code) => ({ ok: false, refused: code });
 const done = (state, value) => ({ ok: true, state, value });
 const list = (xs) => xs || [];
 
+/* THE ONE PLACE A COPY'S DISPOSITION IS WRITTEN, AND THE TWO FIELDS ARE NOT
+   ALIKE.
+
+   `offered` is a field every copy has carried since C2, and `false` is its
+   honest resting value. `keeping` is not: the ABSENCE of the key is what "I
+   have not decided" looks like, it is what every copy written before PC existed
+   looks like, and the two must stay indistinguishable — otherwise MetYet is
+   storing a decision nobody made.
+
+   So a keep that is withdrawn, or cleared because an offer contradicted it,
+   REMOVES the key rather than writing `false`. Writing `false` everywhere would
+   dress "unstated" up as a decision, and migration 0012 exists because exactly
+   that confusion once cost a Collector their visible supply. */
+const withDisposition = (copy, offered, keeping, at) => {
+  const { keeping: _withdrawn, ...rest } = copy;
+  return { ...rest, offered: offered === true,
+    ...(keeping === true ? { keeping: true } : {}),
+    ...(at ? { updatedAt: at } : {}) };
+};
+
 /* Derive the seat from identity. An actor names exactly one of partnerId or
    collectorId, and that record must exist. Any `seat` the caller supplies is
    ignored. */
@@ -858,14 +878,25 @@ const COMMANDS = {
        contradicting assessment, and an unstated card is a real answer. */
     if (D.gradingProblem(copy)) return refuse(R.gradingIncoherent);
     if (copy.market != null && !(Number(copy.market) >= 0)) return refuse(R.invalidAmount);
-    const { id: askedId, addedAt: askedAt, updatedAt, offered, ...facts } = copy;
+    const { id: askedId, addedAt: askedAt, updatedAt, offered, keeping, ...facts } = copy;
+    /* BOTH AT ONCE IS NOT A THING SOMEBODY MEANT. Refused rather than resolved:
+       the domain does not get to pick which half of a contradiction was the
+       intention. */
+    if (offered === true && keeping === true) return refuse(R.dispositionConflict);
     const id = ctx.id("b", askedId);
     if (list(state.collectorCopies).some((b) => b.id === id)) return refuse(R.copyInUse);
     const addedAt = ctx.time(askedAt);
     /* A NEW COPY IS NOT OFFERED UNLESS ITS OWNER SAYS SO. Recording that you
        own a card is the base fact; parting with it is a decision, and a
        decision nobody made is not one to assume. */
+    /* AND A NEW COPY IS NOT BEING KEPT UNLESS ITS OWNER SAYS SO EITHER. The
+       field is written only when the answer is `true`, so a copy that said
+       nothing carries no `keeping` key at all — which is what every copy in
+       every existing world honestly is, PC having only just become sayable.
+       Writing `keeping: false` everywhere would dress "unstated" up as a
+       decision, and that is the confusion migration 0012 exists to remember. */
     const row = { ...facts, id, collectorId: a.collectorId, offered: offered === true,
+      ...(keeping === true ? { keeping: true } : {}),
       ...(addedAt ? { addedAt } : {}) };
     return done({ ...state, collectorCopies: [...list(state.collectorCopies), row] }, id);
   },
@@ -882,7 +913,7 @@ const COMMANDS = {
     }
     /* Willingness has its own command, so that "I am not selling this" and "I
        was wrong about the certificate" are never the same edit. */
-    if ("offered" in p) return refuse(R.identityImmutable);
+    if ("offered" in p || "keeping" in p) return refuse(R.identityImmutable);
     const status = D.collectorCopyStatus(copyId, state.opportunities);
     if ("cert" in p && p.cert !== copy.cert && (status === "committed" || status === "traded")) {
       return refuse(R.copyCommitted);
@@ -917,9 +948,44 @@ const COMMANDS = {
     if (!copy) return refuse(R.notFound);
     if (a.seat !== "collector" || copy.collectorId !== a.collectorId) return refuse(R.notOwner);
     if (typeof offered !== "boolean") return refuse(R.notFound);
-    if (copy.offered === offered) return done(state, copyId);
+    /* OFFERING A COPY WITHDRAWS ANY INTENTION TO KEEP IT, because those are two
+       contradictory statements about one object and the person has just made the
+       second one. The pair is cleared here rather than refused: saying "actually,
+       I would part with this" is a change of mind, not an error. Withdrawing an
+       offer does NOT set `keeping` — that would infer an intention nobody
+       stated, which is the whole reason `keeping` exists. */
+    if (copy.offered === offered && !(offered && D.copyKept(copy))) return done(state, copyId);
     return done({ ...state, collectorCopies: list(state.collectorCopies).map((b) => (b.id === copyId
-      ? { ...b, offered, ...(at ? { updatedAt: at } : {}) } : b)) }, copyId);
+      ? withDisposition(b, offered, offered ? false : D.copyKept(b), at)
+      : b)) }, copyId);
+  },
+
+  /* PERSONAL COLLECTION — "I own this physical copy and intend to keep it."
+
+     A POSITIVE STATEMENT, WITH ITS OWN DOOR, FOR THE SAME REASON `offered` HAS
+     ONE. Willingness to part with a card is not a correctable typo and neither
+     is the decision to keep one, so neither travels inside a patch: this and
+     `setCollectorCopyOffered` are the only two writers of a copy's disposition,
+     and `updateInventoryCopy`-style corrections cannot touch either.
+
+     IT CLEARS THE OFFER, AND THE REVERSE IS NOT TRUE. Keeping a copy that was
+     on offer withdraws the offer, because the person has just said the opposite
+     thing. But withdrawing an offer does not make a copy kept — `offered:
+     false` has meant "no offer stated" since C2, three places in the product
+     forbid reading more into it, and a migration exists because that confusion
+     already cost a Collector their visible supply once. */
+  setCollectorCopyKept(state, a, { copyId, keeping }, ctx) {
+    const at = ctx.at;
+    const copy = list(state.collectorCopies).find((b) => b.id === copyId);
+    if (!copy) return refuse(R.notFound);
+    if (a.seat !== "collector" || copy.collectorId !== a.collectorId) return refuse(R.notOwner);
+    if (typeof keeping !== "boolean") return refuse(R.notFound);
+    if (D.copyKept(copy) === keeping && !(keeping && D.copyOffered(copy))) {
+      return done(state, copyId);
+    }
+    return done({ ...state, collectorCopies: list(state.collectorCopies).map((b) => (b.id === copyId
+      ? withDisposition(b, keeping ? false : D.copyOffered(b), keeping, at)
+      : b)) }, copyId);
   },
 
   /* A copy any deal references is part of that deal's record: while reserved
@@ -1037,6 +1103,35 @@ const COMMANDS = {
     const already = list(state.binderEntries)
       .some((e) => e.binderId === binderId && e.canonicalCardId === canonicalCardId);
     if (already) return done(state, true);
+    /* NO STATE, NO MEMBERSHIP.
+
+       A Binder expresses coherence among cards that already mean something to
+       this Collector, so a card they have said NOTHING about has no
+       relationship for a binder to be coherent about. Until now filing was
+       unconditional, and the commonest thing it produced was a binder full of
+       cards that appeared nowhere else in the product and did nothing.
+
+       WHAT COUNTS: a Goal of either tier, or an owned copy of that card —
+       whatever the copy's disposition. Owning is itself a collecting decision,
+       and "I own this and have not decided whether I would part with it" is
+       both a real state and the state every copy in every existing world is in.
+       Requiring a disposition first would make the commonest card in the
+       product unfilable and would push people into declaring an intention they
+       have not formed.
+
+       ENFORCED HERE AND NOT IN `validateWorld`. Worlds written before this rule
+       contain filed cards with no state, and they are not corrupt — they were
+       legal when they were written. Making them invalid would make them
+       unstorable, which is a 500 on the next command anybody sends rather than
+       a refusal, and this repository has learned that lesson three times. The
+       rule governs what can be ADDED from now on; it does not retroactively
+       condemn what is already there, and nothing fabricates a state to rescue
+       it. */
+    if (!D.cardMeansSomething(canonicalCardId, list(state.goals)
+      .filter((g) => g.collectorId === a.collectorId), list(state.collectorCopies)
+      .filter((c) => c.collectorId === a.collectorId))) {
+      return refuse(R.cardHasNoState);
+    }
     return done({ ...state, binderEntries: [...list(state.binderEntries),
       { binderId, canonicalCardId, addedAt: ctx.at }] }, true);
   },
@@ -1463,9 +1558,24 @@ const COMMANDS = {
       priceThread: [...(x.priceThread || []), { by: a.seat, type, amount, at }] }, at)), oppId);
   },
 
-  /* Accepting the OTHER side's standing figure — never your own. Settling the
-     price commits the exact InventoryCopy, so a copy already committed to
-     another live deal cannot be settled again. */
+  /* Accepting the OTHER side's standing figure — never your own. The agreed
+     figure is the thread's, never the payload's: any `amount` a caller sends is
+     ignored.
+
+     AND SETTLING A PRICE DOES NOT COMMIT THE COPY — CORRECTED. This header used
+     to say that it did, and that "a copy already committed to another live deal
+     cannot be settled again". Option B moved the availability boundary to final
+     agreement and left both sentences behind; the comment inside this function
+     already said so, seventeen lines below, and the two contradicted each other.
+     Two Collectors may both settle a price on one copy and neither is owed it —
+     `copyCommittedTo` and `validateWorld` were both moved off `agreedPrice`, and
+     only this header was not.
+
+     What `agreedPrice` DOES open is the MUTATION window (`copyInLiveDeal`): from
+     here the partner may no longer re-certify, re-grade or archive the copy,
+     because a Collector is now reasoning about that exact physical card.
+     Availability is a different question with a different answer — see
+     `INVARIANTS.copyCommittedTo`. Comment corrected; behaviour untouched. */
   acceptPrice(state, a, { oppId }, ctx) {
     const at = ctx.at;
     const { o, refused } = oppGate(state, a, oppId);

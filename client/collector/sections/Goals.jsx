@@ -158,8 +158,24 @@ export default function Goals({ state, onAddGoal = null, onSetPriority = null,
             noteLabel="Your note"
             facts={
               <>
-                <Fact label="Wanted since" value={day(goal.since)} />
-                <Fact label="Confirmed" value={day(goal.confirmedAt)} />
+                {/* "WANTED SINCE" READ THE WRONG FIELD, AND SAID A FALSE DATE.
+
+                    `goal.since` means "in this tier since" — `updateGoalTier`
+                    overwrites it on every promotion and demotion — so after a
+                    Goal moved to Primary this screen showed the promotion date
+                    as the day the person started wanting the card. `createdAt`
+                    is the honest answer and was rendered nowhere. The durable
+                    timestamps are untouched; only the reading changed.
+
+                    AND "CONFIRMED" CLAIMED AN ACT NOBODY CAN PERFORM. It reads
+                    `confirmedAt`, whose own command (`confirmGoal`) is not on
+                    the production surface; the only thing that writes it is a
+                    promotion, as a side effect. So in production it meant "last
+                    promoted to Primary" under a label that promised a
+                    confirmation. It is not shown rather than shown wrongly —
+                    the field and its command are both left exactly as they are,
+                    for the batch that gives confirming a surface. */}
+                <Fact label="Wanted since" value={day(goal.createdAt) || day(goal.since)} />
               </>
             }
           >

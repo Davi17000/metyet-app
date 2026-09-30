@@ -609,9 +609,14 @@ describe("E. what C3.2 did not touch", () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const binderId = (await direct(ctx, ACTOR.casey, "createBinder", { name: "Mudkip Collection" })).value;
-    await direct(ctx, ACTOR.casey, "addBinderEntry", { binderId, canonicalCardId: cards.firstEdition });
+    /* THE WANT COMES FIRST NOW. The four-state batch made a card with no state
+       unfilable, so this fixture files after saying something about the card —
+       which is also the order the Card Specification panel sends in. The
+       assertions below are unchanged, and the last two are the interesting
+       ones: removing the Goal leaves the membership exactly where it was. */
     await want(ctx.app, "casey", cards.firstEdition, "secondary",
       { desired: { grade: "Raw", condition: "Near Mint" } });
+    await direct(ctx, ACTOR.casey, "addBinderEntry", { binderId, canonicalCardId: cards.firstEdition });
     const goalId = (await goalFor(ctx, cards.firstEdition)).id;
 
     await post(ctx.app, "casey", "updateGoalTier", { goalId, tier: "primary" });
@@ -676,6 +681,14 @@ describe("E. what C3.2 did not touch", () => {
       "addGoal", "updateGoalTier", "removeGoal",
       "addInventoryCopy",
       "addCollectorCopy", "setCollectorCopyOffered", "removeCollectorCopy",
+      /* AND THE ONE THE FOUR-STATE BATCH ADDED. `setCollectorCopyKept` is the
+         other half of a copy's disposition — "I own this and intend to keep it"
+         — and it needed its own door for the same reason offering did: it is a
+         decision about who may see the card, not a correctable field, so it
+         does not travel inside a patch. The two clear each other in the domain.
+         It states nothing about a card, touches no Goal, creates no Binder
+         membership, and never crosses to a partner. */
+      "setCollectorCopyKept",
       "createBinder", "addBinderEntry", "removeBinderEntry",
       "updateCollectorCopy", "updateGoalCriteria",
       "renameBinder", "setBinderArchived",
@@ -704,7 +717,7 @@ describe("E. what C3.2 did not touch", () => {
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
     ].sort()), "the production surface is not what C3.4 declared");
-    eq(EXPOSED_COMMANDS.length, 22);
+    eq(EXPOSED_COMMANDS.length, 23);
 
     /* C3.2 ADDED NEITHER, asserted against C3.2's own commit rather than
        against the world as it is now. This is the claim that batch actually

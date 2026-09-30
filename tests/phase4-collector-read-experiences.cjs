@@ -384,7 +384,9 @@ describe("B. Your Cards", () => {
     assert(!/error|failed|unavailable/i.test(all), "empty reads as broken: " + all);
 
     const trade = flat(showCollection(EMPTY, "Trade/Sell"));
-    assert(/not offering any of your cards/i.test(trade), trade);
+    /* RELABELLED: this view filters `copy.offered`, so what is not being
+       offered is a physical copy. */
+    assert(/not offering any of your copies/i.test(trade), trade);
     assert(/separate choice from owning it/i.test(trade),
       "Trade/Sell does not say offering is separate from owning: " + trade);
     assert(!/error|failed|unavailable/i.test(trade), "empty reads as broken: " + trade);
@@ -433,13 +435,32 @@ describe("B. Your Cards", () => {
     assert(!/Available|Reserved|Committed|Traded/.test(shown), "it was rounded: " + shown);
   });
 
-  test("interest attaches by binderId, and names no partner it cannot", () => {
+  test("no copy claims a partner is interested, because none can be", () => {
+    /* RE-PINNED, AND THE REASON IS THE WHOLE POINT.
+
+       This asserted that an `interest` attached to the right copy by
+       `binderId` — which holds a CollectorCopy id, not a Binder id — and named
+       the partner who made it. The attachment was correct. What was not correct
+       was showing it at all: `setInterest` is the only command that writes an
+       interest and it is not on the production surface, so this line rendered
+       from rows production cannot produce. A permanently empty branch that
+       promised a fact the product cannot carry.
+
+       The surface was removed rather than the command exposed, because opening
+       `setInterest` would be designing partner interest and nobody has decided
+       what that means. The durable concept, its command, its projection and the
+       `binderId` naming debt are all untouched. What is asserted now is that no
+       copy makes the claim. */
     const r = showCollection(FULL);
-    const umb = recordWith(r, "PSA 63118845");
-    assert(umb.includes("Second Shop"), "the interested partner, by partnerId: " + umb);
-    const blast = recordWith(r, "PSA 71204885");
-    assert(!blast.includes("Second Shop") && !/Interested/.test(blast),
-      "interest attached to the wrong copy: " + blast);
+    for (const cert of ["PSA 63118845", "PSA 71204885"]) {
+      const said = recordWith(r, cert);
+      assert(!/Interested/.test(said), `${cert} still claims interest: ` + said);
+      assert(!said.includes("Second Shop"), `${cert} named a shop: ` + said);
+    }
+    /* And the source no longer reads the collection at all. */
+    const bare = COLLECTOR_FILES.map(code).join("\n");
+    assert(!/state\.interests|interestsByCopy/.test(bare),
+      "a Collector surface still reads interests");
   });
 
   /* SUPERSEDED AND RESTATED (Phase 5 C3.4).

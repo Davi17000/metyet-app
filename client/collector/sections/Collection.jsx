@@ -39,23 +39,22 @@
    a damaged raw copy of one card owns two very different objects, and any
    single grading for the pair would be a fact about neither.
 
-   OWNING, OFFERING AND WANTING ARE THREE FACTS, AND STAY THREE. `offered` says
-   whether your Trusted Partners can see a copy as something you would trade; a
-   card can be yours and not offered, and withdrawing an offer does not remove
-   the card. A Goal for a card you already own is not a contradiction — it is
-   somebody hunting a better copy — so the group says so quietly. Nothing here
-   collapses them into a status, and `offered === false` is NOT read as any kind
-   of positive "keeping this" statement: it is the absence of an offer, which is
-   all anybody has actually said.
+   OWNING, OFFERING, KEEPING AND WANTING ARE FOUR FACTS, AND STAY FOUR.
+   `offered` says whether your Trusted Partners can see a copy as something you
+   would trade; `keeping` says its owner has decided to hold on to it. They
+   contradict each other and the domain keeps them apart, but NEITHER is the
+   other's absence: a card can be yours with nothing said about it at all, and
+   withdrawing an offer does not remove the card or make it a keeper. A Goal for
+   a card you already own is not a contradiction either — it is somebody hunting
+   a better copy — so the group says so quietly. Nothing here collapses them
+   into a status, and `offered === false` is NOT read as any kind of positive
+   "keeping this" statement: it is the absence of an offer, which is all
+   anybody has actually said, and `keeping` is where the other statement lives.
 
    THE STATUS IS THE SERVER'S ANSWER, carried on the row. Available, reserved,
    committed, traded — derived from every opportunity under the domain's rules,
    and read here as `copy.status`. This file does not look at opportunities and
    work it out: a second implementation of a rule is a second answer to it.
-
-   WHO IS INTERESTED, BY EXPLICIT ID. `interests` carries `{ partnerId,
-   binderId, at }` — `binderId` is legacy naming for a collector copy id, kept
-   as written-down debt (domain/README.md) rather than renamed here.
 
    NO PICTURES OF YOUR OWN COPY, HONESTLY. `photos` holds references like
    `binder:t15:front`, not URLs — the product does not serve a Collector's own
@@ -69,19 +68,21 @@ import { useCardDescriptions } from "../card-descriptions.js";
 import { Panel, Record, Fact, Tag } from "../parts.jsx";
 import CardArt from "../../card-art.jsx";
 import CardSpecification from "../CardSpecification.jsx";
-import { rows, indexById, groupBy, text, day, money, plural, cardTitle, cardSetLine,
+import { rows, indexById, text, day, money, plural, cardTitle, cardSetLine,
   gradeLine, isGraded, gradeConflictLine, cardMarks, statusLabel, photoNote,
   tierIntent, tierLabel, byRecency } from "../present.js";
 
 /* The four collection views, named once. Binders reads this to build its own
    selector, so the two cannot disagree about what exists.
 
-   THERE IS NO "PC" HERE, DELIBERATELY. The only fact that looks like one is
-   `offered === false`, which says a copy is not currently on offer and says
-   nothing whatever about whether its owner has decided to keep it. Reading the
-   second from the first would be MetYet inventing a statement nobody made —
-   the thing the last batch spent itself removing. A Personal Collection needs a
-   fact of its own before it can have a view of its own. */
+   THERE IS STILL NO "PC" VIEW HERE, AND THAT IS NOW A CHOICE RATHER THAN A
+   LIMIT. A Personal Collection has a fact of its own at last — `keeping`, a
+   positive statement with its own command — so a sixth tab is finally possible.
+   It is not added here because nobody has asked for one: this batch was asked
+   to make the four states sayable and truthful, and a view is a different
+   question about how somebody wants to browse what they own. What `keeping`
+   does get is the thing it could not have before — a copy that says so on its
+   own row, in its own words, instead of hiding inside "Not offered". */
 export const COLLECTION_VIEWS = Object.freeze([
   /* MY BINDERS IS FIRST AND IS THE DEFAULT, because a tab called Binders should
      open on binders. It is not a collection view — selecting it shows the
@@ -135,11 +136,9 @@ export default function Collection({ state, view = { kind: "all" }, query = "",
   const goals = rows(state && state.goals);
   const entries = rows(state && state.binderEntries);
   const catalog = indexById(state && state.catalog);
-  const interestsByCopy = groupBy(state && state.interests, "binderId");
-  const partnerName = new Map();
-  for (const p of rows(state && state.partners)) {
-    if (p.id != null) partnerName.set(p.id, text(p.name));
-  }
+  /* `interests` AND THE PARTNER-NAME INDEX ARE GONE FROM THIS FILE. They
+     existed only for the "Interested · <shop>" line removed below, which read
+     rows no exposed command can create. The durable concept is untouched. */
   const goalFor = new Map();
   for (const g of goals) {
     const groupId = groupIdOf(g.canonicalCardId, g.cardId, null);
@@ -376,9 +375,6 @@ export default function Collection({ state, view = { kind: "all" }, query = "",
             {listed.map((copy) => {
               const graded = isGraded(copy);
               const conflict = gradeConflictLine(copy);
-              const interested = (interestsByCopy.get(copy.id) || [])
-                .map((i) => partnerName.get(i.partnerId))
-                .filter(Boolean);
               return (
                 <Record
                   key={copy.id}
@@ -391,13 +387,21 @@ export default function Collection({ state, view = { kind: "all" }, query = "",
                       <Tag tone={copy.status === "available" ? null : "strong"}>
                         {statusLabel(copy.status)}
                       </Tag>
-                      {/* OWNING IS THE ROW; OFFERING IS THIS TAG. Said in both
-                          directions on purpose: "not offered" is a real answer
-                          a Collector chose, not an absence — and it is not a
-                          Personal Collection either, which nobody has said. */}
-                      <Tag tone={copy.offered === true ? "strong" : null}>
-                        {copy.offered === true ? "Offered" : "Not offered"}
-                      </Tag>
+                      {/* OWNING IS THE ROW; WHAT THE PERSON SAID ABOUT THIS
+                          COPY IS THIS TAG, AND THERE ARE THREE ANSWERS.
+
+                          It used to read "Offered" or "Not offered", which was
+                          the whole conflation this batch exists to end: it
+                          showed a copy somebody had deliberately marked
+                          Personal Collection in the same words as one they have
+                          simply never mentioned. Now the two statements say
+                          themselves and silence says nothing — no tag, because
+                          "hasn't decided" is not a decision to display. */}
+                      {copy.offered === true
+                        ? <Tag tone="strong">Offered</Tag>
+                        : copy.keeping === true
+                          ? <Tag tone="strong">Keeping</Tag>
+                          : null}
                     </>
                   }
                   facts={
@@ -409,12 +413,23 @@ export default function Collection({ state, view = { kind: "all" }, query = "",
                     </>
                   }
                 >
-                  {interested.length ? (
-                    <p className="mcs-rec-note">
-                      <span className="mcs-fact-l">Interested</span>
-                      {interested.join(" · ")}
-                    </p>
-                  ) : null}
+                  {/* "INTERESTED · <shop>" USED TO RENDER HERE, AND IT COULD
+                      NEVER SAY ANYTHING.
+
+                      An `interest` is a Trusted Partner's statement that they
+                      would consider one of your copies, and the only command
+                      that writes one — `setInterest` — is not on the production
+                      surface. So this line read from rows production cannot
+                      produce: a permanently empty branch that promised a fact
+                      the product cannot yet carry, and invited a question
+                      nobody could answer.
+
+                      REMOVED, NOT EXPOSED. Opening `setInterest` would be
+                      designing partner interest, which is a product decision
+                      nobody has made; the durable concept, its command, its
+                      projection and its tests are all untouched and ready for
+                      the batch that gives it a surface. What is gone is only
+                      the claim that it already has one. */}
                 </Record>
               );
             })}
@@ -440,7 +455,10 @@ const EMPTY_FOR = Object.freeze({
     + "chasing now; your Trusted Partners work from it.",
   secondary: "Nothing on your watchlist. A Secondary Goal is a card you're keeping an "
     + "eye out for rather than chasing.",
-  trade: "You're not offering any of your cards right now. Offering one is a separate "
+  /* COPIES, NOT CARDS. This view filters `copy.offered === true`, so what is or
+     is not being offered is a physical object; two lines up the panel note
+     already said "copies" correctly and these two disagreed. */
+  trade: "You're not offering any of your copies right now. Offering one is a separate "
     + "choice from owning it — your Trusted Partners see only what you offer.",
   binder: "Nothing in this binder yet. A binder is where a card belongs — it doesn't mean "
     + "you want it or own it.",

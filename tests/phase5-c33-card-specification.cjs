@@ -646,6 +646,14 @@ describe("D. the production door, and what is still shut", () => {
       "addGoal", "updateGoalTier", "removeGoal",
       "addInventoryCopy",
       "addCollectorCopy", "setCollectorCopyOffered", "removeCollectorCopy",
+      /* AND THE ONE THE FOUR-STATE BATCH ADDED. `setCollectorCopyKept` is the
+         other half of a copy's disposition — "I own this and intend to keep it"
+         — and it needed its own door for the same reason offering did: it is a
+         decision about who may see the card, not a correctable field, so it
+         does not travel inside a patch. The two clear each other in the domain.
+         It states nothing about a card, touches no Goal, creates no Binder
+         membership, and never crosses to a partner. */
+      "setCollectorCopyKept",
       "createBinder", "addBinderEntry", "removeBinderEntry",
       "updateCollectorCopy", "updateGoalCriteria",
       "renameBinder", "setBinderArchived",
@@ -674,7 +682,7 @@ describe("D. the production door, and what is still shut", () => {
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
     ].sort()), "the production surface is not what C3.4 declared");
-    eq(EXPOSED_COMMANDS.length, 22);
+    eq(EXPOSED_COMMANDS.length, 23);
     for (const name of EXPOSED_COMMANDS) {
       assert(C.COMMAND_NAMES.includes(name), `${name} is not a command`);
     }
@@ -753,6 +761,9 @@ describe("D. the production door, and what is still shut", () => {
       { binderId: mine, canonicalCardId: "not-a-card" })), "card-unavailable");
     eq((await load(ctx)).binderEntries.length, 0);
 
+    /* And the card has to mean something before it can be filed (the four-state
+       batch), so this says the smallest true thing first. */
+    await want(ctx.app, "casey", made.firstEdition, "secondary", { desired: { grade: "PSA 9" } });
     eq((await post(ctx.app, "casey", "addBinderEntry",
       { binderId: mine, canonicalCardId: made.firstEdition })).statusCode, 200);
     /* Idempotent, and the first addedAt stands. */
@@ -875,9 +886,9 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
     const bindA = (await post(ctx.app, "casey", "createBinder", { name: "Mudkip Collection" })).json().value;
     const bindB = (await post(ctx.app, "casey", "createBinder", { name: "Keepers" })).json().value;
     await post(ctx.app, "casey", "createBinder", { name: "Untouched" });
+    await want(ctx.app, "casey", made.mudkip, "secondary", { desired: { grade: "Raw", condition: "Lightly Played" } });
     await post(ctx.app, "casey", "addBinderEntry", { binderId: bindA, canonicalCardId: made.mudkip });
     await post(ctx.app, "casey", "addBinderEntry", { binderId: bindB, canonicalCardId: made.mudkip });
-    await want(ctx.app, "casey", made.mudkip, "secondary", { desired: { grade: "Raw", condition: "Lightly Played" } });
     await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "PSA 9", cert: "PSA 111", market: 500, offered: true });
     await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "Raw", condition: "Damaged", cert: "SER-2" });
 
@@ -893,9 +904,11 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
     eq(json(answers.desired), json({ grade: "Raw", condition: "Lightly Played" }), "the criteria");
     eq(answers.copies.length, 2, "both copies");
     eq(answers.copies[0].cert, "PSA 111");
-    eq(answers.copies[0].offered, true);
+    eq(answers.copies[0].disposition, "offered",
+      "a copy on offer opens showing that, in the three-answer form the panel uses");
     eq(answers.copies[1].cert, "SER-2");
-    eq(answers.copies[1].offered, false, "offering is per copy");
+    eq(answers.copies[1].disposition, "unstated",
+      "a copy that has said nothing opens saying nothing — disposition is per copy");
 
     assert(/Mudkip Collection/.test(shown) && /Keepers/.test(shown) && /Untouched/.test(shown),
       "every binder is offered, not only the ones this card is in: " + shown);
@@ -1089,7 +1102,7 @@ describe("F. one button, a sequence of commands that already existed", () => {
       want: "primary",
       desired: { grade: "Raw", condition: "Near Mint" },
       copies: [{ ...{ id: null, grade: "PSA 9", condition: "", cert: "PSA 900", market: "500",
-        offered: true, removed: false }, key: "new-1" }],
+        disposition: "offered", removed: false }, key: "new-1" }],
     };
     const plan = SPEC.planFrom(state0, made.mudkip, answers);
     eq(plan.steps.map((s) => s.kind).join(","), "make-binder,start-looking,record-copy",
@@ -1115,38 +1128,68 @@ describe("F. one button, a sequence of commands that already existed", () => {
     assert(!("cardSpecifications" in w), "a new collection appeared");
   });
 
-  /* THE ORDER IS THE POINT OF THIS SECTION. Organisation first because it is
-     the most reversible; new physical copies last because a duplicate copy is
-     a legitimate thing to own, so nothing downstream can tell an accidental
-     resend from a real second copy. */
-  test("the order puts the least reversible thing last", async () => {
+  /* THE ORDER IS THE POINT OF THIS SECTION, AND IT CHANGED FOR A REASON.
+
+     It used to be organisation first, because filing is the most reversible
+     thing on the panel. The four-state batch made a card with no state
+     unfilable, and an adversarial read of the plan found that this order would
+     then refuse the commonest flow in the whole product at its SECOND step:
+     find a card in Browse, tick a binder, say you want it, Save — the Goal that
+     makes the filing legal had not been written yet.
+
+     So the property is now: containers first (they name no card and cannot
+     fail), then what the Collector MEANS about the card, then where it belongs,
+     and removals last of all — so a sequence that stops leaves a person with
+     more said about their card than they started with, never less. New physical
+     copies are still created before anything can depend on them, because a
+     duplicate copy is a legitimate thing to own and nothing downstream can tell
+     an accidental resend from a real second copy. */
+  test("state is established before membership, and removals come last", async () => {
     const ctx = await world();
     const made = await cards(ctx);
     const bind = (await post(ctx.app, "casey", "createBinder", { name: "Old" })).json().value;
-    await post(ctx.app, "casey", "addBinderEntry", { binderId: bind, canonicalCardId: made.mudkip });
+    /* The want comes first, because a card with no state cannot be filed. */
     await want(ctx.app, "casey", made.mudkip, "secondary", { desired: { grade: "PSA 8" } });
+    await post(ctx.app, "casey", "addBinderEntry", { binderId: bind, canonicalCardId: made.mudkip });
     const copyId = (await own(ctx.app, "casey",
       { canonicalCardId: made.mudkip, grade: "PSA 9", cert: "A", offered: false })).json().value;
 
+    /* A SECOND BINDER, SO THE PLAN ACTUALLY CONTAINS A FILING. Without one this
+       test asserted the file-comes-after-saying rule inside an `if` that could
+       never be true, which is an assertion that asserts nothing — and the rule
+       it was guarding is the load-bearing one: a card is filed only after the
+       Goal or copy that makes the filing legal has been written. */
+    const bind2 = (await post(ctx.app, "casey", "createBinder", { name: "New Home" })).json().value;
+
     const state = await view(ctx.app, "casey");
     const answers = {
-      binders: new Set(), newBinders: ["Brand New"],
+      binders: new Set([bind2]), newBinders: ["Brand New"],
       want: "primary", desired: { grade: "PSA 10", condition: "" },
       copies: [
-        { id: copyId, grade: "PSA 9", condition: "", cert: "B", market: "", offered: true, removed: false },
-        { id: null, key: "new-1", grade: "Raw", condition: "Damaged", cert: "", market: "", offered: false, removed: false },
+        { id: copyId, grade: "PSA 9", condition: "", cert: "B", market: "", disposition: "offered", removed: false },
+        { id: null, key: "new-1", grade: "Raw", condition: "Damaged", cert: "", market: "", disposition: "unstated", removed: false },
       ],
     };
     const kinds = SPEC.planFrom(state, made.mudkip, answers).steps.map((s) => s.kind);
     eq(kinds.join(","),
-      "make-binder,unfile,wanted-copy,how-hard,correct-copy,offering,record-copy",
+      "make-binder,wanted-copy,how-hard,correct-copy,offering,record-copy,file,unfile",
       "the commit order moved");
-    /* Stated as the property rather than as the literal list, so the reason
-       survives a future reordering of the middle. */
-    eq(kinds[0], "make-binder", "organisation is not first");
-    eq(kinds[kinds.length - 1], "record-copy", "creating a physical copy is not last");
+    /* Stated as the properties rather than only as the literal, so the reasons
+       survive a future reordering of the middle. */
+    eq(kinds[0], "make-binder", "a container that names no card is not first");
     assert(kinds.indexOf("wanted-copy") < kinds.indexOf("how-hard"),
-      "a Goal becomes more urgent before it becomes more precise");
+      "a Goal becomes more precise before it becomes more urgent");
+    assert(kinds.includes("file"), "this plan no longer files anything, so the "
+      + "ordering rule below is not being tested at all");
+    for (const saying of ["wanted-copy", "how-hard", "record-copy", "offering"]) {
+      assert(kinds.includes(saying), `${saying} is missing, so the next line asserts nothing`);
+      assert(kinds.indexOf(saying) < kinds.indexOf("file"),
+        `${saying} must come before filing, or the filing is refused`);
+    }
+    /* Unfiling after filing so a binder swap never passes through a moment of
+       belonging nowhere. */
+    assert(kinds.indexOf("unfile") > kinds.indexOf("file"),
+      "a card is unfiled before it is filed");
   });
 
   test("a partial commit is legible: what stood, what did not, and no false success", async () => {
@@ -1198,7 +1241,7 @@ describe("F. one button, a sequence of commands that already existed", () => {
       binders: new Set(), newBinders: ["Mudkip Collection"],
       want: "primary", desired: { grade: "Raw", condition: "" },   // refused on the first pass
       copies: [{ id: null, key: "new-1", grade: "PSA 9", condition: "", cert: "C1",
-        market: "", offered: false, removed: false }],
+        market: "", disposition: "unstated", removed: false }],
     };
 
     /* FIRST PRESS. The binder is made; the Goal is refused; the sequence stops,
@@ -1224,8 +1267,15 @@ describe("F. one button, a sequence of commands that already existed", () => {
     const fixed = { ...answers, binders: new Set([bindId]), newBinders: [],
       desired: { grade: "Raw", condition: "Near Mint" } };
     const second = SPEC.planFrom(state1, made.mudkip, fixed);
-    eq(second.steps.map((s) => s.kind).join(","), "file,start-looking,record-copy",
+    /* RE-PINNED WITH THE ORDER. Filing now follows the Goal rather than leading
+       it, because a card with no state cannot be filed — so a retry says what
+       the card means and then files it, which is also the only order that could
+       have worked. What this test is really about is unchanged: the second plan
+       contains no `make-binder`, because that part already succeeded. */
+    eq(second.steps.map((s) => s.kind).join(","), "start-looking,record-copy,file",
       "the retry re-sent work that had already succeeded");
+    assert(!second.steps.some((st) => st.kind === "make-binder"),
+      "the retry tried to create the binder again");
     for (const step of second.steps) {
       const answer = await send(step, made.mudkip);
       eq(answer.ok, true, `${step.kind}: ${answer.refused}`);
@@ -1319,21 +1369,34 @@ describe("G. want, own, offer and file are four answers, not one", () => {
     eq(theirs.collectorCopies[0].id, a);
   });
 
-  test("a card can be filed with no goal and no copy — organisation is not demand", async () => {
+  test("filing is still not demand — but the card has to mean something first", async () => {
+    /* RE-PINNED BY A PRODUCT DECISION. C3.3 proved that filing a card created
+       neither demand nor ownership, and that claim is unchanged and re-proved
+       below. What changed is the precondition: a Binder expresses coherence
+       among cards that already mean something, so a card nobody has said
+       anything about can no longer be filed at all. */
     const { ctx, made } = await setup();
     const bind = (await post(ctx.app, "casey", "createBinder", { name: "Someday" })).json().value;
-    await post(ctx.app, "casey", "addBinderEntry", { binderId: bind, canonicalCardId: made.mudkip });
+    eq(refusal(await post(ctx.app, "casey", "addBinderEntry",
+      { binderId: bind, canonicalCardId: made.mudkip })), "card-has-no-state");
+    eq((await load(ctx)).binderEntries.length, 0, "a card with no state was filed anyway");
+
+    /* Say one thing about it, and filing works — and STILL creates nothing. */
+    await want(ctx.app, "casey", made.mudkip, "secondary", { desired: { grade: "PSA 9" } });
+    eq((await post(ctx.app, "casey", "addBinderEntry",
+      { binderId: bind, canonicalCardId: made.mudkip })).statusCode, 200);
     const w = await load(ctx);
     eq(w.binderEntries.length, 1);
-    eq(w.goals.length, 0, "filing a card created demand");
+    eq(w.goals.length, 1, "filing invented a second Goal");
     eq(w.collectorCopies.length, 0, "filing a card created ownership");
-    eq((await view(ctx.app, "casey")).discoveries.length, 0, "filing a card produced a discovery");
   });
 
   test("one card in two binders, and at most once in each", async () => {
     const { ctx, made } = await setup();
     const a = (await post(ctx.app, "casey", "createBinder", { name: "Mudkips" })).json().value;
     const b = (await post(ctx.app, "casey", "createBinder", { name: "Keepers" })).json().value;
+    /* State first: a card with no state cannot be filed (the four-state batch). */
+    await want(ctx.app, "casey", made.mudkip, "secondary", { desired: { grade: "PSA 9" } });
     for (const binderId of [a, b, a, b]) {
       await post(ctx.app, "casey", "addBinderEntry", { binderId, canonicalCardId: made.mudkip });
     }
@@ -1345,9 +1408,9 @@ describe("G. want, own, offer and file are four answers, not one", () => {
   test("removing the goal leaves the binders and the copies", async () => {
     const { ctx, made } = await setup();
     const bind = (await post(ctx.app, "casey", "createBinder", { name: "Keepers" })).json().value;
-    await post(ctx.app, "casey", "addBinderEntry", { binderId: bind, canonicalCardId: made.firstEdition });
     await want(ctx.app, "casey", made.firstEdition, "primary", { desired: { grade: "PSA 9" } });
     await own(ctx.app, "casey", { canonicalCardId: made.firstEdition, grade: "PSA 9", offered: true });
+    await post(ctx.app, "casey", "addBinderEntry", { binderId: bind, canonicalCardId: made.firstEdition });
     const goalId = (await load(ctx)).goals[0].id;
 
     eq((await post(ctx.app, "casey", "removeGoal", { goalId })).statusCode, 200);
@@ -1361,9 +1424,11 @@ describe("G. want, own, offer and file are four answers, not one", () => {
   test("selling the last copy leaves the binder membership — the C3.1 proof, from the new surface", async () => {
     const { ctx, made } = await setup();
     const bind = (await post(ctx.app, "casey", "createBinder", { name: "Keepers" })).json().value;
-    await post(ctx.app, "casey", "addBinderEntry", { binderId: bind, canonicalCardId: made.firstEdition });
+    /* OWNING IS THE QUALIFYING STATE HERE, which sharpens the proof: the card is
+       filed BECAUSE it is owned, and then the copy goes away. */
     const id = (await own(ctx.app, "casey",
       { canonicalCardId: made.firstEdition, grade: "PSA 9" })).json().value;
+    await post(ctx.app, "casey", "addBinderEntry", { binderId: bind, canonicalCardId: made.firstEdition });
 
     eq((await post(ctx.app, "casey", "removeCollectorCopy", { copyId: id })).statusCode, 200);
     const w = await load(ctx);
@@ -1397,6 +1462,9 @@ describe("H. how somebody organises their collection is not a fact about a trade
     const made = await cards(ctx);
     const bind = (await post(ctx.app, "casey", "createBinder",
       { name: "ZZ-PRIVATE-NAME-C33" })).json().value;
+    /* State first: a card with no state cannot be filed (the four-state batch). */
+    await want(ctx.app, "casey", made.firstEdition, "secondary", { desired: { grade: "PSA 9" } });
+    await want(ctx.app, "casey", made.mudkip, "secondary", { desired: { grade: "PSA 9" } });
     await post(ctx.app, "casey", "addBinderEntry", { binderId: bind, canonicalCardId: made.firstEdition });
     await post(ctx.app, "casey", "addBinderEntry", { binderId: bind, canonicalCardId: made.mudkip });
     /* An offered copy, so the partner receives SOMETHING about this card and

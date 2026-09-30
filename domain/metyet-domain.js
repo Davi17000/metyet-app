@@ -929,6 +929,15 @@ const REFUSE = {
      input nobody can store. It is a refusal code, not a durable fact: nothing
      is written, no lifecycle gains a state, and no migration follows. */
   photoUnusable: "photo-unusable",
+  /* A COPY CANNOT BE BOTH ON OFFER AND BEING KEPT. Two positive statements about
+     one physical object that contradict each other; the domain refuses the pair
+     rather than deciding which one the person meant. */
+  dispositionConflict: "disposition-conflict",
+  /* A CARD NOBODY HAS SAID ANYTHING ABOUT CANNOT BE FILED. Binders express
+     coherence among cards that already mean something; a card with no Goal and
+     no owned copy has no relationship to this Collector for a binder to be
+     coherent ABOUT. */
+  cardHasNoState: "card-has-no-state",
   /* A GOAL THAT NAMES A CANONICAL CARD SAYS WHICH COPY IT WANTS (Phase 5 C3.3).
      Distinct from `grading-incoherent`, which answers a pair that cannot be
      true: this answers a pair that was never stated. C3.2 deliberately left
@@ -1466,6 +1475,71 @@ const inventoryCopyStatus = (invId, opps, inventory) => {
   if (INVARIANTS.copyPendingFor(invId, inventory, opps)) return "pending";
   return "available";
 };
+/* ============================================================================
+   WHAT A COLLECTOR HAS SAID ABOUT A CARD
+
+   FOUR USER-FACING STATES, AT TWO DIFFERENT LEVELS, AND THE LEVELS ARE THE
+   POINT. A card page offers four things a person can mean:
+
+     Primary Goal    I am actively hunting this card, in this grade
+     Secondary Goal  I want it, in this grade, less urgently
+     Trade/Sell      I own this physical copy and would part with it
+     PC              I own this physical copy and intend to keep it
+
+   The first two are facts about a CANONICAL CARD — one Goal per collector per
+   card, carrying its own tier and its own criteria. The last two are facts
+   about a PHYSICAL COPY, and a person who owns two copies of one card may
+   truthfully keep one and offer the other. So the four are mutually exclusive
+   PER COPY and not per card, and anything that flattened them into one value
+   on the card would make the two-copy case unsayable. There is no `cardState`
+   and no `intent` field here, deliberately.
+
+   `keeping` IS A POSITIVE STATEMENT AND IS NEVER INFERRED. `offered === false`
+   means only that no offer has been made — three places in the product say so
+   and one of them is a migration written to repair exactly that confusion. A
+   copy that has said nothing has said nothing: `keeping` absent is not "not
+   keeping", it is "unstated", and that is the state every copy in every
+   existing world is in, honestly, because nobody has ever been able to say it.
+
+   THE PAIR CANNOT BOTH BE TRUE. "I would part with this" and "I intend to keep
+   this" are contradictory, so the two doors clear each other rather than
+   letting a copy hold both. The contradiction is made unreachable by the
+   commands, and `validateWorld` reports it as well — belt and braces, because a
+   copy asserting both would silently be trade supply the owner thinks is safe. */
+const copyKept = (copy) => copy != null && copy.keeping === true;
+const copyOffered = (copy) => copy != null && copy.offered === true;
+const copyDisposition = (copy) => (copyOffered(copy) ? "offered"
+  : copyKept(copy) ? "keeping" : "unstated");
+
+/* WHETHER A CANONICAL CARD MEANS ANYTHING TO THIS COLLECTOR YET.
+
+   The Binder invariant reads this: a binder expresses coherence among cards
+   that already mean something, so a card with no Goal and no owned copy has no
+   relationship for a binder to be coherent about.
+
+   OWNING COUNTS, WHETHER OR NOT A DISPOSITION HAS BEEN STATED. Acquiring a card
+   is itself a collecting decision; "I own this and have not yet decided whether
+   I would part with it" is a real and extremely common state, and it is the
+   state EVERY copy in every existing world is in, since PC has only just become
+   sayable. Requiring a disposition before a card could be filed would make the
+   commonest card in the product unfilable, and would push people into declaring
+   a disposition they have not made — which is the inference this whole design
+   exists to avoid. */
+const collectorStatesFor = (canonicalCardId, goals, copies) => {
+  const card = canonicalCardId;
+  if (card == null || card === "") return [];
+  const out = [];
+  for (const g of goals || []) {
+    if (g && g.canonicalCardId === card) out.push(g.tier === "primary" ? "primary" : "secondary");
+  }
+  for (const c of copies || []) {
+    if (c && c.canonicalCardId === card) out.push(`own:${copyDisposition(c)}`);
+  }
+  return out;
+};
+const cardMeansSomething = (canonicalCardId, goals, copies) =>
+  collectorStatesFor(canonicalCardId, goals, copies).length > 0;
+
 const soldInventoryIds = (opps) => new Set((opps || [])
   .filter((o) => isCompleted(o) && o.invId != null).map((o) => o.invId));
 
@@ -1628,6 +1702,11 @@ module.exports.finalAgreementGiven = finalAgreementGiven;
 module.exports.cancelledAfterAgreement = cancelledAfterAgreement;
 module.exports.currentCashFigure = currentCashFigure;
 module.exports.inventoryCopyStatus = inventoryCopyStatus;
+module.exports.copyKept = copyKept;
+module.exports.copyOffered = copyOffered;
+module.exports.copyDisposition = copyDisposition;
+module.exports.collectorStatesFor = collectorStatesFor;
+module.exports.cardMeansSomething = cardMeansSomething;
 module.exports.qualifyingOn = qualifyingOn;
 module.exports.openToNewQualification = openToNewQualification;
 module.exports.holdingCopy = holdingCopy;

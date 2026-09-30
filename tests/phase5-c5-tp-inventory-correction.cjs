@@ -175,7 +175,7 @@ const rowOf = async (ctx, invId) =>
 describe("A. the door opened by exactly two", () => {
 
   test("the allow-list, and the two C5 itself added", async () => {
-    eq(EXPOSED_COMMANDS.length, 22, "the production surface is not the size C5 intended");
+    eq(EXPOSED_COMMANDS.length, 23, "the production surface is not the size C5 intended");
     for (const name of ["updateInventoryCopy", "removeInventoryCopy"]) {
       assert(EXPOSED_COMMANDS.includes(name), `${name} is not offered`);
     }
@@ -229,7 +229,7 @@ describe("A. the door opened by exactly two", () => {
        it, so a fourth door opening anywhere still fails here — which is the
        whole reason it reads git rather than a literal. */
     eq(json(added.sort()), json(["addCopyPhotos", "endReview", "removeInventoryCopy",
-      "requestPhotos", "reviewCopy", "updateInventoryCopy"]),
+      "requestPhotos", "reviewCopy", "setCollectorCopyKept", "updateInventoryCopy"]),
       "a door was opened that no batch declared");
     eq(json(lost), json([]), "a door somebody else opened was closed");
   });
@@ -1028,7 +1028,7 @@ describe("H. nothing else moved", () => {
        voluntary Pending is a decision, and a decision leaves no trace to derive
        from. C5's own point stands — it shipped two commands that already
        existed rather than writing more. */
-    eq([...COMMAND_NAMES].length, 50, "C5 wrote a command instead of shipping two that existed");
+    eq([...COMMAND_NAMES].length, 51, "C5 wrote a command instead of shipping two that existed");
   });
 
   test("no new route, and the catalogue import is still unreachable", async () => {
