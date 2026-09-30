@@ -69,6 +69,7 @@ function Plain({ lead, onSignOut }) {
 
 export default function ProductionApp({ state, onSignOut, onSaveProfile = null,
   onAddCopy = null, onEditCopy = null, onRetireCopy = null, onBrowseCards = null,
+  onProvidePhotos = null,
   onAddGoal = null, onSetPriority = null, onRemoveGoal = null,
   onInvite = null, onRevokeInvite = null, onRefresh = null,
   onSpecify = null, onCreateBinder = null, onRenameBinder = null, onArchiveBinder = null,
@@ -90,6 +91,7 @@ export default function ProductionApp({ state, onSignOut, onSaveProfile = null,
   if (who.seat === "tp") {
     return <TrustedPartnerShell state={state} onSignOut={onSignOut} onSaveProfile={onSaveProfile}
       onAddCopy={onAddCopy} onEditCopy={onEditCopy} onRetireCopy={onRetireCopy}
+      onProvidePhotos={onProvidePhotos}
       onBrowseCards={onBrowseCards}
       onInvite={onInvite} onRevokeInvite={onRevokeInvite} onRefresh={onRefresh} />;
   }

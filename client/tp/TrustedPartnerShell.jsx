@@ -308,7 +308,8 @@ const CSS = `
 
 export default function TrustedPartnerShell({ state, onSignOut, onSaveProfile = null,
   onInvite = null, onRevokeInvite = null, onRefresh = null,
-  onAddCopy = null, onEditCopy = null, onRetireCopy = null, onBrowseCards = null }) {
+  onAddCopy = null, onEditCopy = null, onRetireCopy = null, onBrowseCards = null,
+  onProvidePhotos = null }) {
   const [section, setSection] = useState(SECTIONS[0].id);
 
   const who = describeActor(state);
@@ -330,7 +331,7 @@ export default function TrustedPartnerShell({ state, onSignOut, onSaveProfile = 
      for. It is a way to ASK WHAT A CARD IS CALLED — not a way to write, and
      the section is handed no command, exactly as before. */
   const extra = meta.id === "inventory"
-    ? { onSaveProfile, onAddCopy, onEditCopy, onRetireCopy, onBrowseCards }
+    ? { onSaveProfile, onAddCopy, onEditCopy, onRetireCopy, onBrowseCards, onProvidePhotos }
     : meta.id === "collectors" ? { onInvite, onRevokeInvite, onRefresh, onBrowseCards }
       : meta.id === "opportunities" ? { onBrowseCards }
         : null;

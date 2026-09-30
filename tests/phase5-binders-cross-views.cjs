@@ -474,10 +474,14 @@ describe("F. What did not move", () => {
        `endReview` and `requestPhotos` left this loop when the qualification
        batch gave them a surface; everything that settles a value, reserves a
        card or advances a deal is still unreachable. */
-    eq(EXPOSED_COMMANDS.length, 21, "a command was exposed that no batch declared");
+    /* THE TRANSACTION IS WHAT MUST STAY CLOSED, and it is. `addCopyPhotos`
+       left this loop when photo fulfilment gave the Trusted Partner a surface
+       for answering a Collector's request; it supplies evidence about a card
+       and settles nothing. */
+    eq(EXPOSED_COMMANDS.length, 22, "a command was exposed that no batch declared");
     for (const closed of ["startOpportunity", "proposePrice", "acceptPrice",
       "acceptMarketValue", "acceptDeal", "setCopyPending", "cancelOpportunity",
-      "proposeFulfillment", "confirmHandoff", "addCopyPhotos"]) {
+      "proposeFulfillment", "confirmHandoff"]) {
       assert(!EXPOSED_COMMANDS.includes(closed), `${closed} was exposed`);
     }
   });

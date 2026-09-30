@@ -921,6 +921,14 @@ const REFUSE = {
      `not-found`, which is what the four separate half-checks used to answer and
      which told a caller nothing about what was wrong. See gradingProblem. */
   gradingIncoherent: "grading-incoherent",
+  /* A PHOTOGRAPH REFERENCE THAT IS NOT ONE. Added by photo fulfilment, and the
+     reason is worth keeping: the first attempt at this COERCED a malformed face
+     to null instead, which turned `front: {}` from "junk masquerading as
+     evidence" into "junk silently deleting evidence" — a shop's only record of
+     a card's condition erased on a 200. Refusing is the only honest answer to
+     input nobody can store. It is a refusal code, not a durable fact: nothing
+     is written, no lifecycle gains a state, and no migration follows. */
+  photoUnusable: "photo-unusable",
   /* A GOAL THAT NAMES A CANONICAL CARD SAYS WHICH COPY IT WANTS (Phase 5 C3.3).
      Distinct from `grading-incoherent`, which answers a pair that cannot be
      true: this answers a pair that was never stated. C3.2 deliberately left

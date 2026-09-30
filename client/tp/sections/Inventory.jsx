@@ -59,18 +59,24 @@
    command or goes to the network — the callback arrived as a prop.
    ========================================================================== */
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Panel, Record, Fact, Tag } from "../parts.jsx";
 import CardBrowser, { EMPTY_SESSION } from "../../browse/CardBrowser.jsx";
 import { rows, indexById, text, day, money, plural, cardTitle, cardSetLine,
-  gradeLine, isGraded, gradeConflictLine, cardMarks, statusLabel, byRecency } from "../present.js";
+  gradeLine, isGraded, gradeConflictLine, cardMarks, statusLabel, byRecency,
+  photoNote } from "../present.js";
 import Profile from "./Profile.jsx";
 
 export default function Inventory({ state, onSaveProfile = null,
-  onAddCopy = null, onEditCopy = null, onRetireCopy = null, onBrowseCards = null }) {
+  onAddCopy = null, onEditCopy = null, onRetireCopy = null, onBrowseCards = null,
+  onProvidePhotos = null }) {
   /* Local to this screen, and nothing else's business. It is not a route, not a
      section id, and nothing outside this file can be pointed at it. */
   const [viewing, setViewing] = useState("copies");
+  /* WHICH COPY IS BEING PHOTOGRAPHED, IF ONE IS. The same shape as `editing`
+     and `retiring` above it, for the same reason: one copy at a time, and the
+     three are mutually exclusive so a row is never two forms at once. */
+  const [showing, setShowing] = useState(null);
 
   const inventory = rows(state && state.inventory);
   const catalog = indexById(state && state.catalog);
@@ -118,8 +124,44 @@ export default function Inventory({ state, onSaveProfile = null,
      which is what an unfinished correction should be. */
   const [editing, setEditing] = useState(null);
   const [retiring, setRetiring] = useState(null);
-  const openEdit = (invId) => { setRetiring(null); setAdding(null); setEditing(invId); };
-  const openRetire = (invId) => { setEditing(null); setAdding(null); setRetiring(invId); };
+  const openEdit = (invId) => { setRetiring(null); setAdding(null); setShowing(null); setEditing(invId); };
+  const openRetire = (invId) => { setEditing(null); setAdding(null); setShowing(null); setRetiring(invId); };
+  const openShow = (invId) => { setEditing(null); setAdding(null); setRetiring(null); setShowing(invId); };
+
+  /* WHO IS WAITING TO SEE WHICH COPY.
+
+     `photoRequests` reaches this shop already filtered to its own by the
+     projection, so an open row here is somebody asking about a card this shop
+     owns. It is grouped by copy because the question a shop answers is about
+     the CARD — one set of photographs of one physical object answers everybody
+     who asked about it, which is exactly what the domain does when it closes
+     every open request on the copy at once.
+
+     THE NAMES ARE ALREADY THIS SHOP'S TO KNOW. A Trusted Partner sees the
+     Collectors it has an accepted relationship with, by name, on this same
+     projection — that is what the Collector Network screen is made of. Joining
+     that to a request adds nothing the shop could not already read, so the
+     request says who asked rather than "somebody". Nothing else about them
+     comes with it: no Goal, no other shop, no deal, no Binder. */
+  const collectorName = new Map();
+  for (const c of rows(state && state.collectors)) {
+    if (c && c.id != null) collectorName.set(c.id, text(c.name));
+  }
+  /* AND THE ONES WHO ARE NAMED IN A RECORD WITHOUT BEING IN THE NETWORK.
+     `counterparties` exists for exactly that (see the projection): somebody
+     whose relationship has since ended is no longer in `collectors`, and an
+     adversarial run found the screen then calling them "A Collector you work
+     with" — a false sentence about somebody whose name it already had. */
+  for (const c of rows(state && state.counterparties)) {
+    if (c && c.id != null && !collectorName.has(c.id)) collectorName.set(c.id, text(c.name));
+  }
+  const waiting = new Map();
+  for (const r of rows(state && state.photoRequests)) {
+    if (!r || r.fulfilledAt || r.invId == null) continue;
+    const held = waiting.get(r.invId) || [];
+    held.push(collectorName.get(r.collectorId) || "A Collector you work with");
+    waiting.set(r.invId, held);
+  }
 
   if (viewing === "shop") {
     return (
@@ -204,6 +246,10 @@ export default function Inventory({ state, onSaveProfile = null,
                     being priced as the half that happens to read first. */}
                 {conflict ? <Tag tone="unknown">{`Says ${conflict}`}</Tag> : null}
                 <Tag tone={copy.status === "available" ? null : "strong"}>{statusLabel(copy.status)}</Tag>
+                {/* SOMEBODY IS WAITING ON THIS CARD. Said on the copy it is
+                    about, because that is the object they asked to see. */}
+                {(waiting.get(copy.invId) || []).length
+                  ? <Tag tone="strong">Photos requested</Tag> : null}
               </>
             }
             facts={
@@ -215,6 +261,7 @@ export default function Inventory({ state, onSaveProfile = null,
                 <Fact label="Your cost" value={money(copy.cost)} mono />
                 <Fact label="Acquired" value={day(copy.acquired)} mono />
                 <Fact label="Added" value={day(copy.addedAt)} mono />
+                <Fact label="Photos" value={photoNote(copy.photos) || "None yet"} />
               </>
             }
           >
@@ -235,11 +282,24 @@ export default function Inventory({ state, onSaveProfile = null,
             ) : retiring === copy.invId ? (
               <RetireCopy copy={copy} title={title} where={where}
                 onRetire={onRetireCopy} onDone={() => setRetiring(null)} />
+            ) : showing === copy.invId ? (
+              <ProvidePhotos copy={copy} title={title} where={where}
+                asked={waiting.get(copy.invId) || []}
+                onProvide={onProvidePhotos} onDone={() => setShowing(null)} />
             ) : (
               <p className="tps-rec-do">
                 {onEditCopy ? (
                   <button className="tps-edit" type="button"
                     onClick={() => openEdit(copy.invId)}>Edit</button>
+                ) : null}
+                {/* AND THE ONE THAT ANSWERS SOMEBODY. Offered only when a
+                    request is actually outstanding on this copy: a shop with
+                    nothing to answer is not shown a control for answering it,
+                    and this screen does not become a place to manage
+                    photographs in general. */}
+                {onProvidePhotos && (waiting.get(copy.invId) || []).length ? (
+                  <button className="tps-edit" type="button"
+                    onClick={() => openShow(copy.invId)}>Add requested photos</button>
                 ) : null}
                 {onRetireCopy ? (
                   <button className="tps-edit" type="button"
@@ -640,6 +700,26 @@ function EditCopy({ copy, title, where, onSave, onDone }) {
    no undo, because there is no un-archive command in the domain and inventing
    a half of one here would be worse than the honest absence — a shop that
    retires a copy by accident adds it again. */
+/* WHAT WENT WRONG, IN THE WORDS OF THIS FORM. `refusalSentence` is the copy
+   form's, and its fallback says "MetYet would not save that correction" — which
+   is not what a shop was doing here. The two refusals this form can actually
+   meet are the interesting ones. */
+const photoRefusal = (refused) => {
+  if (refused === "photo-unusable") {
+    return "That does not look like a link to a photo. Paste the address of one you have "
+      + "already put online, or leave the box empty.";
+  }
+  if (refused === "copy-committed") {
+    return "That copy is committed to a live deal, so the photos already on it cannot be "
+      + "changed. A face that is still empty can be filled.";
+  }
+  if (refused === "copy-unavailable") {
+    return "That copy is no longer on your shelf, so MetYet cannot add photos to it.";
+  }
+  if (refused === "not-owner") return "That copy is not one this shop can change.";
+  return "MetYet would not save those photos. Check the links and try again.";
+};
+
 function RetireCopy({ copy, title, where, onRetire, onDone }) {
   const [problem, setProblem] = useState(null);
   const [working, setWorking] = useState(false);
@@ -687,6 +767,142 @@ function RetireCopy({ copy, title, where, onRetire, onDone }) {
     </div>
   );
 }
+
+/* ============================================================================
+   PROVIDING THE EVIDENCE SOMEBODY ASKED FOR
+
+   A Collector this shop already works with asked to see one physical card
+   properly. This is the shop answering, and it is the whole of the shop's half
+   of that exchange: no reply, no message, no acceptance, no price, and nothing
+   that says the card is theirs or being held for them.
+
+   IT OFFERS ONLY THE FACES THAT ARE MISSING. `addCopyPhotos` merges by slot and
+   the mutation guard refuses a rewrite of a face that already holds evidence
+   inside a live deal, so a control for replacing one would be a control that is
+   sometimes refused — and the request is about what ISN'T there. A face already
+   on the copy is shown as already there, and left alone.
+
+   A PHOTOGRAPH IS A REFERENCE, AND THAT IS A REAL LIMITATION, NOT A CHOICE MADE
+   HERE. MetYet stores one string per face and has no upload path anywhere in
+   the product — no storage, no media service, nothing to upload TO. Building
+   one is a different project from closing this loop, so this asks for the
+   reference the shop already has and says so plainly rather than pretending to
+   be a file picker.
+
+   ONE SET OF PHOTOGRAPHS ANSWERS EVERYBODY. The domain closes every outstanding
+   request on the copy once both faces exist, because they are photographs of
+   one physical object and the second person to ask was asking about the same
+   card as the first. This screen says who is waiting for exactly that reason —
+   so a shop knows the work is answering all of them, not each of them. */
+function ProvidePhotos({ copy, title, where, asked, onProvide, onDone }) {
+  const held = copy.photos && typeof copy.photos === "object" ? copy.photos : {};
+  const hasFront = !!text(held.front);
+  const hasBack = !!text(held.back);
+  const [front, setFront] = useState("");
+  const [back, setBack] = useState("");
+  const [problem, setProblem] = useState(null);
+  const [working, setWorking] = useState(false);
+  /* A REF, BECAUSE `working` IS A STALE CLOSURE WITHIN ONE TICK. Three clicks
+     in the same tick all read `working === false` and all sent, which an
+     adversarial run reproduced. The repeat write happens to be identical, so
+     nothing was harmed — but "nothing was harmed" is not the same as "it did
+     not happen twice". */
+  const sending = useRef(false);
+
+  /* Sending nothing is legitimate when both faces are already on the copy: it
+     is the shop saying "what is there is the answer", and the domain closes the
+     outstanding requests on that basis. */
+  const nothingToSend = (hasFront || !front.trim()) && (hasBack || !back.trim());
+  const blocked = nothingToSend && !(hasFront && hasBack);
+
+  const provide = async () => {
+    if (sending.current || !onProvide || blocked) return;
+    sending.current = true;
+    setWorking(true); setProblem(null);
+    try {
+      const faces = {};
+      if (!hasFront && front.trim()) faces.front = front.trim();
+      if (!hasBack && back.trim()) faces.back = back.trim();
+      const answer = await onProvide(copy.invId, faces);
+      if (answer && answer.ok === false) {
+        setProblem(photoRefusal(answer.refused));
+        setWorking(false); sending.current = false;
+        return;
+      }
+      /* A CARD IS JUDGED ON BOTH SIDES, so one face is not an answer — the
+         domain leaves the request open, and an adversarial run found this form
+         closing on success anyway and saying nothing. The shop is told the face
+         landed and the request has not. */
+      const bothNow = (hasFront || faces.front) && (hasBack || faces.back);
+      if (!bothNow) {
+        setProblem("That face is saved. The request stays open until the other one is there "
+          + "too — a card is judged on both sides.");
+        setWorking(false); sending.current = false;
+        return;
+      }
+      onDone();
+    } catch (error) {
+      setProblem("MetYet lost contact, so it cannot tell whether those photos were saved. "
+        + "Re-open your inventory before trying again.");
+      setWorking(false); sending.current = false;
+    }
+  };
+
+  return (
+    <div className="tps-add">
+      <div className="tps-add-head">
+        <strong>Add requested photos</strong>
+      </div>
+      <p className="tps-add-card">
+        <strong>{title}</strong>
+        {where ? <span className="tps-dim">{where}</span> : null}
+      </p>
+      <p className="tps-dim">
+        {asked.length === 1
+          ? `${asked[0]} asked to see this copy.`
+          : `${asked.length} Collectors asked to see this copy: ${asked.join(", ")}.`}
+        {" "}One set of photographs of this card answers all of them.
+      </p>
+      {hasFront && hasBack ? (
+        <p className="tps-dim">Both faces are already on this copy.</p>
+      ) : null}
+      {hasFront ? (
+        <p className="tps-dim">The front is already on this copy.</p>
+      ) : (
+        <label className="tps-field">
+          <span>Front photo</span>
+          <input value={front} disabled={working} placeholder="Link to the front photo"
+            onChange={(e) => setFront(e.target.value)} />
+        </label>
+      )}
+      {hasBack ? (
+        <p className="tps-dim">The back is already on this copy.</p>
+      ) : (
+        <label className="tps-field">
+          <span>Back photo</span>
+          <input value={back} disabled={working} placeholder="Link to the back photo"
+            onChange={(e) => setBack(e.target.value)} />
+        </label>
+      )}
+      <p className="tps-dim">
+        MetYet stores a link to each photo rather than the picture itself, so paste the
+        address of one you have already put online. Both faces have to be there before the
+        Collector's request counts as answered — a card is judged on both sides.
+      </p>
+      {problem ? <p className="tps-problem" role="status">{problem}</p> : null}
+      <p className="tps-rec-do">
+        <button className="tps-edit" type="button" disabled={working || blocked}
+          onClick={provide}>
+          {working ? "Saving…" : "Provide photos"}
+        </button>
+        <button className="tps-edit" type="button" disabled={working} onClick={onDone}>
+          Cancel
+        </button>
+      </p>
+    </div>
+  );
+}
+
 
 /* The grading vocabulary the domain already has. Not a list this screen
    invented, and deliberately not widened here: another grading company is a

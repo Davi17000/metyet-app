@@ -175,7 +175,7 @@ const rowOf = async (ctx, invId) =>
 describe("A. the door opened by exactly two", () => {
 
   test("the allow-list, and the two C5 itself added", async () => {
-    eq(EXPOSED_COMMANDS.length, 21, "the production surface is not the size C5 intended");
+    eq(EXPOSED_COMMANDS.length, 22, "the production surface is not the size C5 intended");
     for (const name of ["updateInventoryCopy", "removeInventoryCopy"]) {
       assert(EXPOSED_COMMANDS.includes(name), `${name} is not offered`);
     }
@@ -192,13 +192,14 @@ describe("A. the door opened by exactly two", () => {
     /* The deal lifecycle, the legacy catalogue writer, and the two inventory
        commands C5 did NOT ship. Each is a real command and each is refused
        identically to one that does not exist. */
-    /* `reviewCopy` left this loop when the qualification batch gave it a surface.
-       `addCopyPhotos` stays, and its staying is a gap rather than a decision:
-       it is the only command that FULFILS a photo request, it belongs to the
-       Trusted Partner, and the partner has no screen for it yet. */
+    /* `reviewCopy` left this loop when the qualification batch gave it a
+       surface, and `addCopyPhotos` left it when photo fulfilment gave the
+       Trusted Partner one. That was recorded here as a gap rather than a
+       decision — the only command that FULFILS a photo request, with no screen
+       to send it from — and closing it is what that batch was for. */
     for (const name of ["startOpportunity", "proposePrice", "acceptPrice", "acceptDeal",
       "confirmHandoff", "cancelOpportunity", "sendMessage", "reachOut", "setInterest",
-      "resolveCardIdentity", "addCopyPhotos", "inviteCollector"]) {
+      "resolveCardIdentity", "inviteCollector"]) {
       assert(COMMAND_NAMES.has ? COMMAND_NAMES.has(name) : [...COMMAND_NAMES].includes(name),
         `${name} is not a command, so this test is asserting nothing`);
       assert(!EXPOSED_COMMANDS.includes(name), `${name} is exposed`);
@@ -227,8 +228,8 @@ describe("A. the door opened by exactly two", () => {
        test still measures the delta against the file as dc2fd25 actually had
        it, so a fourth door opening anywhere still fails here — which is the
        whole reason it reads git rather than a literal. */
-    eq(json(added.sort()), json(["endReview", "removeInventoryCopy", "requestPhotos",
-      "reviewCopy", "updateInventoryCopy"]),
+    eq(json(added.sort()), json(["addCopyPhotos", "endReview", "removeInventoryCopy",
+      "requestPhotos", "reviewCopy", "updateInventoryCopy"]),
       "a door was opened that no batch declared");
     eq(json(lost), json([]), "a door somebody else opened was closed");
   });

@@ -50,7 +50,7 @@ import { savePartnerProfile, openCollectorInvitation, revokeCollectorInvitation,
   browseCards, addCollectorGoal, setGoalPriority, removeCollectorGoal,
   setGoalCriteria, addOwnedCopy, updateOwnedCopy, setCopyOffered, removeOwnedCopy,
   createBinder, fileCardInBinder, unfileCardFromBinder,
-  inspectCopy, endInspection, requestCopyPhotos,
+  inspectCopy, endInspection, requestCopyPhotos, provideCopyPhotos,
   renameBinder, setBinderArchived,
   refreshView } from "../commands.js";
 
@@ -194,6 +194,8 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
      this copy" and "I no longer have it" are two sentences the shop says. */
   const onEditCopy = useMemo(() => (store ? correctInventoryCopy(store) : null), [store]);
   const onRetireCopy = useMemo(() => (store ? retireInventoryCopy(store) : null), [store]);
+  /* The shop's half of Request photos (this batch). */
+  const onProvidePhotos = useMemo(() => (store ? provideCopyPhotos(store) : null), [store]);
   const onBrowseCards = useMemo(() => (store ? browseCards(store) : null), [store]);
   /* Saying what you are looking for, and how hard (Batch 7). Bound the same way
      as everything else: the shell receives functions, never a store. */
@@ -678,7 +680,7 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
      one bound callback that saves a Trusted Partner's own profile. */
   return React.createElement(ProductionApp,
     { state: projection, onSignOut: signOut, onSaveProfile, onInvite, onRevokeInvite, onRefresh,
-      onAddCopy, onEditCopy, onRetireCopy,
+      onAddCopy, onEditCopy, onRetireCopy, onProvidePhotos,
       onBrowseCards, onAddGoal, onSetPriority, onRemoveGoal, onSpecify,
       onCreateBinder, onRenameBinder, onArchiveBinder,
       onInspect, onEndInspection, onRequestPhotos,

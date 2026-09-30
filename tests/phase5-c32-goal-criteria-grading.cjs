@@ -695,8 +695,16 @@ describe("E. what C3.2 did not touch", () => {
          Listed here because this pin reads the LIVE allow-list: it states the
          product's surface today, not a fossil of the batch that wrote it. */
       "reviewCopy", "endReview", "requestPhotos",
+      /* AND THE ONE PHOTO FULFILMENT ADDED. `addCopyPhotos` is the only command
+         that closes a photo request; the qualification batch shipped Request
+         Photos without it, so a Collector could ask and no shop could answer.
+         It is refused unless the caller's own seat is the Trusted Partner that
+         OWNS the copy, it fills empty faces without being able to rewrite
+         evidence in a live deal, and it changes no price, availability or
+         Pending. Listed here because this pin reads the LIVE allow-list. */
+      "addCopyPhotos",
     ].sort()), "the production surface is not what C3.4 declared");
-    eq(EXPOSED_COMMANDS.length, 21);
+    eq(EXPOSED_COMMANDS.length, 22);
 
     /* C3.2 ADDED NEITHER, asserted against C3.2's own commit rather than
        against the world as it is now. This is the claim that batch actually
