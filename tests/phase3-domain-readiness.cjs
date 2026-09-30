@@ -18,6 +18,16 @@
      K  validateWorld — rejects malformed worlds with useful diagnostics
      L  validateWorld — pure
    ========================================================================== */
+/* GOALS IN THIS SUITE NOW STATE THEIR TIER, BECAUSE EVERY GOAL MUST.
+
+   `addGoal` used to take a missing `tier` and write "secondary". As of the Goal
+   Tier Explicit Choice batch it refuses one — a tier is a choice the Collector
+   makes, and a command that invents it tells them they succeeded at something
+   they never asked for. `addGoal` is scaffolding here, not the subject: these
+   tests are about the injected runtime, id minting and
+   the prototype adapter, and they need a request the
+   domain will actually accept. The tier added below is arbitrary and load-
+   bearing for nothing; what each test asserts is unchanged. */
 const { describe, test, assert, eq, run } = require("./run.cjs");
 const fs = require("fs");
 const path = require("path");
@@ -280,7 +290,7 @@ describe("A. runtime contract", () => {
     const before = JSON.stringify(state);
     for (const bad of [undefined, null, {}, { now: () => "t", newId: (p) => p + "1" }]) {
       let threw = null;
-      try { C.execute(state, C1, "addGoal", { cardId: "k2" }, bad); } catch (e) { threw = e; }
+      try { C.execute(state, C1, "addGoal", { cardId: "k2", tier: "primary" }, bad); } catch (e) { threw = e; }
       assert(threw instanceof TypeError, "a missing or unbranded runtime throws a TypeError");
       assert(/runtime is required/.test(threw.message), "and says a runtime is required");
     }
@@ -303,10 +313,10 @@ describe("A. runtime contract", () => {
   test("a runtime that returns a bad time or id is a wiring error, not a silent default", () => {
     const state = createStore(seed()).get();
     const threw = (rt, cmd, payload) => { try { C.execute(state, C1, cmd, payload, rt); return false; } catch (e) { return e instanceof TypeError; } };
-    assert(threw(RT.createRuntime({ now: () => "", newId: (p) => p + "1" }), "addGoal", { cardId: "k2" }), "empty time");
-    assert(threw(RT.createRuntime({ now: () => 123, newId: (p) => p + "1" }), "addGoal", { cardId: "k2" }), "non-string time");
-    assert(threw(RT.createRuntime({ now: () => "t", newId: (p) => p }), "addGoal", { cardId: "k2" }), "id that is only the prefix");
-    assert(threw(RT.createRuntime({ now: () => "t", newId: () => "zz1" }), "addGoal", { cardId: "k2" }), "id without the prefix");
+    assert(threw(RT.createRuntime({ now: () => "", newId: (p) => p + "1" }), "addGoal", { cardId: "k2", tier: "primary" }), "empty time");
+    assert(threw(RT.createRuntime({ now: () => 123, newId: (p) => p + "1" }), "addGoal", { cardId: "k2", tier: "primary" }), "non-string time");
+    assert(threw(RT.createRuntime({ now: () => "t", newId: (p) => p }), "addGoal", { cardId: "k2", tier: "primary" }), "id that is only the prefix");
+    assert(threw(RT.createRuntime({ now: () => "t", newId: () => "zz1" }), "addGoal", { cardId: "k2", tier: "primary" }), "id without the prefix");
   });
 
   test("the command context exposes time and ids only — no identity, no payload", () => {
@@ -526,7 +536,7 @@ describe("D. caller proposals never survive an authoritative runtime", () => {
     const before = store.get();
     const r = store.execute(C1, "acceptPrice", { oppId: "nope", seat: "tp", partnerId: "p1", by: "tp", at: FORGED_AT });
     assert(!r.ok, "refused");
-    const unknown = store.execute({ partnerId: "p9" }, "addGoal", { collectorId: "c1", cardId: "k2" });
+    const unknown = store.execute({ partnerId: "p9" }, "addGoal", { collectorId: "c1", cardId: "k2", tier: "primary" });
     eq(unknown.refused, R.unknownActor, "an unknown actor is refused whatever the runtime");
     assert(store.get() === before, "nothing changed");
   });
@@ -641,7 +651,7 @@ describe("G. the prototype compatibility adapter", () => {
 
   test("the same store runs authoritatively when a runtime is injected", () => {
     const store = createStore(seed(), { runtime: RT.deterministicRuntime({ start: "2033-01-01T00:00:00.000Z" }) });
-    const g = ok(store.execute(C1, "addGoal", { cardId: "k2", at: "2026-08-14" }));
+    const g = ok(store.execute(C1, "addGoal", { cardId: "k2", tier: "primary", at: "2026-08-14" }));
     eq(g, "g000001", "minted");
     eq(store.get().goals.find((x) => x.id === g).since, "2033-01-01T00:00:00.000Z", "runtime time, not the demo date");
   });

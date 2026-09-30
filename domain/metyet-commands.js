@@ -346,6 +346,27 @@ const COMMANDS = {
      than a refusal because nothing said so. */
   addGoal(state, a, { cardId, canonicalCardId, tier, note, desired, grade, condition }, ctx) {
     if (a.seat !== "collector") return refuse(R.notOwner);
+    /* A TIER IS CHOSEN, NOT DEFAULTED.
+
+       The goal row below used to read `tier === "primary" ? "primary" :
+       "secondary"`, which is not a validation — it is an answer invented on the
+       caller's behalf. `undefined`, `null`, `""`, `"Primary"`, `"PRIMARY"`,
+       `"banana"`, `1` and `{}` all became a Secondary Goal, were stored, and
+       came back 200. The Collector was never told, and the tier is what
+       `startOpportunity` reads to decide whether this Goal may begin a deal, so
+       a fumbled field quietly closed the door the Goal exists to open.
+
+       PLACED HERE, WITH THE OTHER QUESTIONS ABOUT THE REQUEST ITSELF. The seat
+       check comes first because who is asking precedes what they asked; after
+       that, everything this command can answer without reading the world is
+       answered before anything that reads it. That is the same order
+       `updateGoalTier` keeps, and it is what makes the answer stable: a
+       malformed tier gets the same refusal whether or not the Collector
+       happens to already have a Goal for that card.
+
+       It is also before `ctx.id("g")` below, which advances the runtime's id
+       sequence the moment it is called. A refusal here consumes nothing. */
+    if (!D.GOAL_TIERS.includes(tier)) return refuse(R.invalidTier);
     if (grade !== undefined || condition !== undefined) return refuse(R.gradingIncoherent);
     if (desired !== undefined && (desired === null || typeof desired !== "object" || Array.isArray(desired))) {
       return refuse(R.gradingIncoherent);
@@ -416,7 +437,7 @@ const COMMANDS = {
     if (canonical && !(stated && Object.keys(stated).length)) return refuse(R.criteriaRequired);
     const goal = { id, collectorId: a.collectorId,
       ...(canonical ? { canonicalCardId: canonical } : { cardId }),
-      tier: tier === "primary" ? "primary" : "secondary",
+      tier,
       createdAt: ctx.at, since: ctx.at, note: note || "",
       ...(stated && Object.keys(stated).length ? { desired: stated } : {}) };
     return done({ ...state, goals: [...list(state.goals), goal] }, id);
@@ -427,7 +448,30 @@ const COMMANDS = {
     const g = list(state.goals).find((x) => x.id === goalId);
     if (!g) return refuse(R.notFound);
     if (a.seat !== "collector" || g.collectorId !== a.collectorId) return refuse(R.notOwner);
-    const next = tier === "primary" ? "primary" : "secondary";
+    /* WHICH REFUSAL WINS, AND WHY IT IS THIS ONE.
+
+       The tier is checked after `not-found` and `not-owner` — which settle
+       whether this caller may address this Goal at all — and before both the
+       idempotent no-op and the demotion lock.
+
+       Before the lock is the load-bearing half, and it is observable: a Primary
+       Goal held by an active Opportunity, asked to become `"banana"` or
+       `"Secondary"`, used to coerce to "secondary", hit the lock, and answer
+       `goal-locked`. That is a claim about the world — "this Goal is in a live
+       deal, so it may not be demoted" — made about a request that named no tier
+       and therefore asked for no demotion. It sent the caller to end its deal
+       when what it had to fix was its payload, and it was unstable: the same
+       malformed request answered differently depending on whether a partner
+       happened to have an Opportunity open, which is not a fact about the
+       request.
+
+       Before the no-op is not observable either way, and is not claimed to be.
+       `next` is now the caller's own value, so a malformed tier can never equal
+       a stored one — the no-op simply falls through to the gate. It sits first
+       because the two belong together: what the request said, then what the
+       world says about it. */
+    if (!D.GOAL_TIERS.includes(tier)) return refuse(R.invalidTier);
+    const next = tier;
     if (next === g.tier) return done(state, goalId);
     /* An active Opportunity locks its Goal at Primary. */
     if (next === "secondary" && D.goalLocked(goalId, state.opportunities)) return refuse(R.goalLocked);

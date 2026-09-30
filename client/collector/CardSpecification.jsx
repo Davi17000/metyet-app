@@ -797,6 +797,11 @@ const WHY = {
   "name-required": "A binder needs a name.",
   "card-unavailable": "MetYet can no longer use that version of the card.",
   "invalid-amount": "A reference value has to be a number, and not a negative one.",
+  /* This panel offers three buttons and can only send one of two tiers, so
+     nothing here reaches it today. It is written anyway: the domain now refuses
+     a tier it was never given, and a refusal with no sentence behind it reaches
+     a Collector as a blank. */
+  "invalid-tier": "A goal has to say whether you're hunting it or keeping an eye out.",
   "identity-immutable": "That part of a copy cannot be changed.",
   "disposition-conflict": "A copy is either one you'd part with or one you're "
     + "keeping — not both.",

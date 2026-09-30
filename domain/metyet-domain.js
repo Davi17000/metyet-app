@@ -879,6 +879,19 @@ const REFUSE = {
   /* Both faces, or the copy does not exist. */
   photosRequired: "photos-required",
   invalidAmount: "invalid-amount",
+  /* A GOAL IS PRIMARY OR SECONDARY, AND THE COLLECTOR CHOOSES WHICH.
+
+     The writers used to take anything that was not the string "primary" and
+     write "secondary" — so `undefined`, `""`, `"Primary"` and `"banana"` all
+     demoted a Goal, with a 200 and no way for the caller to know. Tier is not a
+     field with a sensible default; it is the whole difference between "I am
+     hunting this" and "I am keeping an eye out", and it is the one thing
+     `startOpportunity` asks about the Collector's own intent before letting a
+     deal begin — `goalIsPursued`, which is `tier === "primary"`.
+
+     Named for `invalid-amount`, which answers the same shape of question about
+     a number: the request named something the domain has no value for. */
+  invalidTier: "invalid-tier",
   /* Command-layer refusals (Phase 1). Deliberately terse: a refusal names the
      rule, never another collector, deal or price. */
   unknownActor: "unknown-actor",
@@ -990,6 +1003,21 @@ module.exports = {
 
    The persona changes what happens AFTER a card is chosen. It must not change
    how the card is defined. */
+
+/* THE TWO THINGS A GOAL CAN BE, AS A CLOSED LIST.
+
+   `validateWorld` has required a stored tier to be exactly one of these two
+   since the world validator was written. The writers did not: they took
+   anything that was not the string "primary" and wrote "secondary", so a
+   fumbled field demoted a Goal with a 200. This is the list they read now.
+
+   IT IS THE SECOND COPY OF THAT LIST, AND THAT IS A COMPROMISE, NOT A DESIGN.
+   `metyet-world.js` declares its own `GOAL_TIERS`. It could read this one —
+   it already imports this module — but the batch that added this constant was
+   not allowed to touch the validator, so instead a test reads the validator's
+   literal out of its source and fails the moment the two disagree. Single-
+   sourcing it is one line, and belongs to a batch that may edit that file. */
+const GOAL_TIERS = Object.freeze(["primary", "secondary"]);
 
 const GRADED_VALUES = ["Raw", "PSA 1", "PSA 2", "PSA 3", "PSA 4", "PSA 5",
   "PSA 6", "PSA 7", "PSA 8", "PSA 9", "PSA 10"];
@@ -1229,6 +1257,7 @@ const identityFrom = (printed, copy, edition) => {
   return t;
 };
 
+module.exports.GOAL_TIERS = GOAL_TIERS;
 module.exports.GRADED_VALUES = GRADED_VALUES;
 module.exports.CONDITION_VALUES = CONDITION_VALUES;
 module.exports.gradingOf = gradingOf;

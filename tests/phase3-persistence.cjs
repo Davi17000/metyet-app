@@ -18,6 +18,16 @@
      H  adapters
      I  boundaries
    ========================================================================== */
+/* GOALS IN THIS SUITE NOW STATE THEIR TIER, BECAUSE EVERY GOAL MUST.
+
+   `addGoal` used to take a missing `tier` and write "secondary". As of the Goal
+   Tier Explicit Choice batch it refuses one — a tier is a choice the Collector
+   makes, and a command that invents it tells them they succeeded at something
+   they never asked for. `addGoal` is scaffolding here, not the subject: these
+   tests are about the world lock, versioning and
+   transaction boundaries, and they need a request the
+   domain will actually accept. The tier added below is arbitrary and load-
+   bearing for nothing; what each test asserts is unchanged. */
 const { describe, test, assert, eq, run } = require("./run.cjs");
 const fs = require("fs");
 const path = require("path");
@@ -489,9 +499,9 @@ describe("C. durable commands", () => {
   test("the prototype runtime is refused before any transaction opens", async () => {
     const { pg } = await fresh();
     const spy = instrumented(pg);
-    await rejects(executeCommand(spy.repo, { actor: C1, command: "addGoal", payload: { cardId: "k2" }, runtime: RT.prototypeRuntime() }),
+    await rejects(executeCommand(spy.repo, { actor: C1, command: "addGoal", payload: { cardId: "k2", tier: "primary" }, runtime: RT.prototypeRuntime() }),
       CODES.runtimeNotAuthoritative);
-    await rejects(executeCommand(spy.repo, { actor: C1, command: "addGoal", payload: { cardId: "k2" } }), CODES.runtimeNotAuthoritative);
+    await rejects(executeCommand(spy.repo, { actor: C1, command: "addGoal", payload: { cardId: "k2", tier: "primary" } }), CODES.runtimeNotAuthoritative);
     eq(spy.log.length, 0, "no transaction");
   });
 });
@@ -518,7 +528,7 @@ describe("D. refused commands write nothing", () => {
     const before = await dump(pg);
     const o = (await repo.loadWorld()).opportunities[0].id;
     const cases = [
-      [{ partnerId: "p404" }, "addGoal", { cardId: "k2" }, "unknown-actor"],
+      [{ partnerId: "p404" }, "addGoal", { cardId: "k2", tier: "primary" }, "unknown-actor"],
       [C2, "acceptPrice", { oppId: o }, "not-participant"],
       [TP1, "proposePrice", { oppId: o, amount: 990 }, "not-your-turn"],
       [C1, "chooseCashOnly", { oppId: o }, "wrong-stage"],
@@ -574,7 +584,7 @@ describe("E. failures roll everything back", () => {
     await rejects(repo.withTransaction(async (tx) => {
       await repo.lockWorld(tx);
       const world = await repo.loadWorld(tx);
-      const next = C.execute(world, C2, "addGoal", { cardId: "k2" }, runtime()).state;
+      const next = C.execute(world, C2, "addGoal", { cardId: "k2", tier: "primary" }, runtime()).state;
       return repo.saveWorld(next, tx, { expectedVersion: 0 });
     }), CODES.versionConflict);
     eq(await dump(pg), before, "unchanged");
@@ -591,7 +601,7 @@ describe("F. validation at the boundary", () => {
     const before = await dump(pg);
     const e = await rejects(repo.loadWorld(), CODES.invalidWorld);
     assert(e.details.errors.some((x) => x.code === "ref.unknown" && /goalId/.test(x.path)), "names the dangling Goal");
-    await rejects(executeCommand(repo, { actor: C1, command: "addGoal", payload: { cardId: "k2" }, runtime: runtime() }), CODES.invalidWorld);
+    await rejects(executeCommand(repo, { actor: C1, command: "addGoal", payload: { cardId: "k2", tier: "primary" }, runtime: runtime() }), CODES.invalidWorld);
     eq(await dump(pg), before, "nothing written");
   });
 
@@ -601,7 +611,7 @@ describe("F. validation at the boundary", () => {
     const before = await dump(pg);
     /* A faulty runtime whose ids collide with existing records. */
     const colliding = RT.createRuntime({ now: () => "2030-01-01T00:00:00.000Z", newId: (p) => (p === "g" ? "g1" : p + "1") });
-    const e = await rejects(executeCommand(repo, { actor: C2, command: "addGoal", payload: { cardId: "k2" }, runtime: colliding }),
+    const e = await rejects(executeCommand(repo, { actor: C2, command: "addGoal", payload: { cardId: "k2", tier: "primary" }, runtime: colliding }),
       CODES.invalidNextWorld);
     assert(e.details.errors.some((x) => x.code === "id.duplicate"), "the duplicate id is named");
     eq(await dump(pg), before, "nothing written");
@@ -661,7 +671,7 @@ describe("G. serialization and locking", () => {
     const { pg } = await fresh();
     await createWorldRepository(fromPGlite(pg)).saveWorld(seed());
     const spy = instrumented(pg);
-    await executeCommand(spy.repo, { actor: C2, command: "addGoal", payload: { cardId: "k2" }, runtime: runtime() });
+    await executeCommand(spy.repo, { actor: C2, command: "addGoal", payload: { cardId: "k2", tier: "primary" }, runtime: runtime() });
     const queries = spy.log.filter((e) => e.event === "query").map((e) => e.sql);
     eq(queries[0], WORLD_LOCK_SQL, "lock is the first statement");
     assert(!queries.some((s) => /isolation level/i.test(s)), "no isolation change: READ COMMITTED sees commits made while waiting");
@@ -683,7 +693,7 @@ describe("G. serialization and locking", () => {
     await rejects(repo.withTransaction(async (tx) => {
       const version = await repo.readVersion(tx);
       const world = await repo.loadWorld(tx);
-      return repo.saveWorld(C.execute(world, C2, "addGoal", { cardId: "k2" }, runtime()).state, tx, { expectedVersion: version });
+      return repo.saveWorld(C.execute(world, C2, "addGoal", { cardId: "k2", tier: "primary" }, runtime()).state, tx, { expectedVersion: version });
     }), CODES.lockNotHeld);
     eq(await dump(pg), before, "nothing written");
   });
@@ -695,7 +705,7 @@ describe("G. serialization and locking", () => {
     await rejects(repo.withTransaction(async (tx) => {
       await repo.lockWorld(tx);
       const world = await repo.loadWorld(tx);
-      return repo.saveWorld(C.execute(world, C2, "addGoal", { cardId: "k2" }, runtime()).state, tx);
+      return repo.saveWorld(C.execute(world, C2, "addGoal", { cardId: "k2", tier: "primary" }, runtime()).state, tx);
     }), CODES.versionRequired);
     eq(await dump(pg), before, "nothing written");
   });
@@ -711,7 +721,7 @@ describe("G. serialization and locking", () => {
       return world;
     } };
     const before = await dump(pg);
-    await rejects(executeCommand(moved, { actor: C2, command: "addGoal", payload: { cardId: "k2" }, runtime: runtime() }),
+    await rejects(executeCommand(moved, { actor: C2, command: "addGoal", payload: { cardId: "k2", tier: "primary" }, runtime: runtime() }),
       CODES.versionConflict);
     eq(await dump(pg), before, "rolled back, including the moved version");
   });
@@ -720,12 +730,12 @@ describe("G. serialization and locking", () => {
     const { pg, repo } = await fresh();
     await repo.saveWorld(seed());
     const held = async () => (await pg.query("select count(*)::int as n from pg_locks where locktype = 'advisory'")).rows[0].n;
-    await executeCommand(repo, { actor: C2, command: "addGoal", payload: { cardId: "k2" }, runtime: runtime() });
+    await executeCommand(repo, { actor: C2, command: "addGoal", payload: { cardId: "k2", tier: "primary" }, runtime: runtime() });
     eq(await held(), 0, "after commit");
-    await executeCommand(repo, { actor: TP1, command: "addGoal", payload: { cardId: "k2" }, runtime: runtime() });
+    await executeCommand(repo, { actor: TP1, command: "addGoal", payload: { cardId: "k2", tier: "primary" }, runtime: runtime() });
     eq(await held(), 0, "after refusal");
     const faulty = instrumented(pg, { failWhen: (sql) => /^insert/i.test(sql) });
-    await rejects(executeCommand(faulty.repo, { actor: C2, command: "addGoal", payload: { cardId: "k5" }, runtime: runtime() }));
+    await rejects(executeCommand(faulty.repo, { actor: C2, command: "addGoal", payload: { cardId: "k5", tier: "primary" }, runtime: runtime() }));
     eq(await held(), 0, "after failure");
   });
 
@@ -748,7 +758,7 @@ describe("G. serialization and locking", () => {
     await repo.saveWorld(seed());
     const rt = runtime();
     const jobs = [[C1, "k2"], [C2, "k2"], [C2, "k5"], [TP1, null]].map(([actor, cardId]) => (cardId
-      ? executeCommand(repo, { actor, command: "addGoal", payload: { cardId }, runtime: rt })
+      ? executeCommand(repo, { actor, command: "addGoal", payload: { cardId, tier: "primary" }, runtime: rt })
       : executeCommand(repo, { actor, command: "updatePartnerProfile", payload: { patch: { about: "Vintage" } }, runtime: rt })));
     const results = await Promise.all(jobs);
     assert(results.every((r) => r.ok), "all accepted");
@@ -821,7 +831,7 @@ describe("I. boundaries", () => {
 
   test("the in-memory prototype store still works as before", () => {
     const store = createStore(seed());
-    const g = store.execute(C2, "addGoal", { cardId: "k2", at: "2026-08-14" });
+    const g = store.execute(C2, "addGoal", { cardId: "k2", tier: "primary", at: "2026-08-14" });
     assert(g.ok, "prototype command ok");
     eq(store.get().goals.find((x) => x.id === g.value).since, "2026-08-14", "demo clock honoured");
   });
