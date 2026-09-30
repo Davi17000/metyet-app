@@ -933,6 +933,22 @@ const REFUSE = {
      one physical object that contradict each other; the domain refuses the pair
      rather than deciding which one the person meant. */
   dispositionConflict: "disposition-conflict",
+  /* ONLY A COPY ITS OWNER HAS OFFERED MAY GO INTO A TRADE PACKAGE.
+
+     A package is the moment a Collector's own property is put on a shared
+     record and reserved, so the question "would you part with this one" has to
+     have been answered YES before it can be asked of a shop. Two copies are
+     refused here: one the owner is KEEPING, which is the opposite answer; and
+     one nobody has said anything about, which is no answer at all — and
+     silence is not consent to trade a card.
+
+     WHY A REFUSAL OF ITS OWN rather than `copy-unavailable`. Unavailable means
+     the product cannot use the copy — archived, reserved, sold. This copy is
+     perfectly usable and its owner has simply not offered it, which is a
+     sentence a person can act on ("offer it, then add it") rather than a dead
+     end. Nothing leaks: the only actor who can reach this refusal is the copy's
+     own owner. */
+  copyNotOffered: "copy-not-offered",
   /* A CARD NOBODY HAS SAID ANYTHING ABOUT CANNOT BE FILED. Binders express
      coherence among cards that already mean something; a card with no Goal and
      no owned copy has no relationship to this Collector for a binder to be

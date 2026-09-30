@@ -286,11 +286,16 @@ function collectorView(state, meId) {
        it — so offering it here would be offering a button that fails. The view
        does not decide the rule; it reads the same predicate.
 
-       `offered` is deliberately NOT a filter here. Broadcasting a card to your
-       whole network and putting it into ONE deal with ONE partner are different
-       acts, and the command draws the same line: a Collector may put a card
-       they were not advertising into a trade they chose to open. */
+       AND THE SAME DISPOSITION RULE, FOR THE SAME REASON. `offered` used to be
+       deliberately absent from this filter, on the argument that broadcasting a
+       card to your whole network and putting it into ONE deal are different
+       acts. The command no longer draws that line: a package is where property
+       is committed, so `proposeTradeSelection` refuses a copy its owner is
+       keeping AND one nobody has said anything about. Leaving them in this list
+       would be offering a button that fails — the very thing the paragraph
+       above exists to prevent. */
     const open = myCopies().filter((b) => !used.has(b.id)
+      && D.copyOffered(b)
       && D.INVARIANTS.copyPhotographed(b.photos)
       && D.collectorCopyStatus(b.id, state.opportunities, opp.id) === "available");
     const keen = (b) => E.hasInterest(state.interests, partnerId, b.id);

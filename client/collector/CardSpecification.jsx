@@ -44,7 +44,7 @@
    domain import. Handed a projection and some callbacks, it renders.
    ========================================================================== */
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { rows, text, money, gradeLine, gradeProblem, gradeConflictLine,
   statusLabel } from "./present.js";
 
@@ -196,7 +196,11 @@ export function planFrom(state, canonicalCardId, answers) {
       market: draft.market === "" ? null : Number(draft.market),
       offered: draft.disposition === "offered",
       keeping: draft.disposition === "keeping",
-    }, draftKey: draft.key });
+    /* `draftId`, because it IS one: the client-side identity of a copy that
+       does not have a durable one yet, and the handle the minted id is bound
+       back to. The Collector surface's own rule is that every map it builds is
+       keyed on an id, and this map is no exception. */
+    }, draftId: draft.key });
   }
 
   /* 10–11. FILING LAST, AND THIS ORDER IS LOAD-BEARING.
@@ -311,7 +315,14 @@ export default function CardSpecification({ card, context = null, state,
      received. Used for one thing — deciding which of two true sentences to say
      above — and it names nobody. */
   const partnerCount = rows(state && state.partners).length;
-  const [nextKey, setNextKey] = useState(1);
+  /* A DRAFT'S IDENTITY, MINTED SYNCHRONOUSLY. This was `useState`, read from
+     the render closure while the list itself was updated functionally — so two
+     "I own one of these" in one batched render both produced `new-1`. That was
+     survivable while nothing read the key; it stopped being survivable the
+     moment the minted copy id is bound back by it, because one id would bind to
+     two drafts and a later "I no longer own this" would remove the wrong copy.
+     A ref is incremented at the moment of the click, batching or not. */
+  const nextKey = useRef(1);
 
   const binders = rows(state && state.binders).filter((b) => !b.archivedAt);
   const plan = useMemo(() => planFrom(state, canonicalCardId, answers),
@@ -336,8 +347,9 @@ export default function CardSpecification({ card, context = null, state,
   };
 
   const addCopy = () => {
-    setAnswers((a) => ({ ...a, copies: [...a.copies, { ...BLANK_COPY, key: `new-${nextKey}` }] }));
-    setNextKey((n) => n + 1);
+    const key = `new-${nextKey.current}`;
+    nextKey.current += 1;
+    setAnswers((a) => ({ ...a, copies: [...a.copies, { ...BLANK_COPY, key }] }));
   };
 
   /* AN ACTIVE DEAL LOCKS THE GOAL — AND WHETHER ONE IS ACTIVE IS NOT THIS
@@ -426,6 +438,33 @@ export default function CardSpecification({ card, context = null, state,
       + (surviving === 1 ? "the binder it's in." : `all ${surviving} binders it's in.`);
   })();
 
+  /* THE COPY THE SERVER JUST MINTED, BOUND TO THE DRAFT THAT ASKED FOR IT.
+
+     A retry is the whole reason this panel recomputes its plan instead of
+     replaying it, and for every other step that works: a Goal that exists is not
+     created twice, a binder entry is idempotent. A NEW COPY was the exception,
+     because the draft that produced it carried `id: null` and nothing ever
+     filled that in — the step's draft id was written and read by nothing.
+     So a Save where `record-copy` succeeded and a later step failed left the
+     person holding the panel's own promise — "pressing Save again sends only
+     what is left" — over a button that would record a SECOND physical copy.
+
+     THE FIX IS THE ID THE SERVER ALREADY RETURNS, not a comparison of contents.
+     Two genuinely identical copies are a legitimate thing to own, so nothing
+     here may de-duplicate by grade, cert or card: the only safe handle is the
+     durable id `addCollectorCopy` mints, which `execute` already hands back as
+     `value` and which this file was simply discarding. Each draft is bound by
+     its own `draftId`, so two new copies in one Save keep two distinct ids and
+     a failure after the first leaves exactly one bound.
+
+     ADOPTED ON EVERY EXIT, including the refusal and the lost-contact paths,
+     because those are precisely the paths a retry follows. */
+  const adopt = (minted) => {
+    if (!minted.size) return;
+    setAnswers((a) => ({ ...a, copies: a.copies.map((d) => (d.id == null && minted.has(d.key)
+      ? { ...d, id: minted.get(d.key) } : d)) }));
+  };
+
   const commit = async () => {
     if (saving || localProblem) return;
     setSaving(true); setProblem(null); setDone(null); setSaved(null);
@@ -433,6 +472,7 @@ export default function CardSpecification({ card, context = null, state,
        a second press is the state the first press left behind. */
     const { steps } = planFrom(state, canonicalCardId, answers);
     const finished = [];
+    const minted = new Map();
     try {
       for (const step of steps) {
         const answer = await onCommit(step, canonicalCardId);
@@ -441,13 +481,19 @@ export default function CardSpecification({ card, context = null, state,
              would change, the binder an entry would name — and continuing past
              a refusal is how a person ends up with a commit that half means
              something else. */
+          adopt(minted);
           setDone(finished);
           setProblem(explain(step, answer.refused, finished));
           setSaving(false);
           return;
         }
+        if (step.kind === "record-copy" && step.draftId
+          && answer && typeof answer.value === "string" && answer.value) {
+          minted.set(step.draftId, answer.value);
+        }
         finished.push(step);
       }
+      adopt(minted);
       /* SAYING WHERE A NEW GOAL WENT (Phase 5 C5). Everything else this panel
          does is visible the moment it closes — a binder gains a card, Your
          Cards gains a copy, a tier changes in front of you. A GOAL is the one
@@ -474,6 +520,7 @@ export default function CardSpecification({ card, context = null, state,
       }
       onClose();
     } catch (error) {
+      adopt(minted);
       setDone(finished);
       setProblem(finished.length
         ? `MetYet lost contact partway. ${said(finished)} The rest was not saved — `

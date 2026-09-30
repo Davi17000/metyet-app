@@ -511,16 +511,28 @@ const COMMANDS = {
        demand disappear and come back as new, which is a lie about what
        happened.
 
-     SO IT IS NOT BLOCKED BY AN ACTIVE OPPORTUNITY — though the reason has
-     narrowed and the old one is no longer true. It used to be that nothing
-     derived from `desired` at all. Since the true-match batch, Discovery and
-     `startOpportunity` both read it, so correcting criteria mid-deal DOES
-     change which copies are offered, and can leave a live deal on a copy the
-     Collector's own Deal Flow no longer lists. That is still not a reason to
-     refuse: the criteria are hers, correcting them is the honest act, and the
-     deal she opened remains hers to finish or to cancel. What this command must
-     never do is rewrite a deal in progress, and it does not — it changes what
-     she is LOOKING for, never what she has already agreed.
+     AND IT WAS DELIBERATELY NOT BLOCKED BY AN ACTIVE OPPORTUNITY — UNTIL NOW.
+     That decision is reversed here, and the argument it replaces is worth
+     keeping rather than deleting, because it was a good one: the criteria are
+     hers, correcting them is the honest act, the deal she opened remains hers
+     to finish or to cancel, and mid-negotiation is the one moment being precise
+     about the copy actually matters.
+
+     WHAT CHANGED THE ANSWER. `startOpportunity` admits a copy by asking
+     `meetsGoalCriteria(goal.desired, copy)`, and nothing snapshots the answer.
+     So an edit mid-deal does not merely change what she is looking for; it
+     leaves a shared record whose own admission gate can no longer be
+     reproduced — the shop and the Collector negotiating over a copy that, read
+     back, never qualified. An object-identity audit found this command was the
+     only Goal mutation with no lock while `removeGoal` and `updateGoalTier`
+     both had one, and the product's answer is that the record holds still.
+
+     THE COST IS REAL AND IS NOT PAID BY ACCIDENT. A Collector mid-deal cannot
+     now sharpen her criteria at all; the way through is to cancel the deal, or
+     to finish it. The alternative that would preserve both — carrying `desired`
+     onto the Opportunity at `startOpportunity`, so the deal keeps its own gate
+     and she keeps her Goal — was considered and explicitly deferred: it adds a
+     durable field and is a larger decision than closing the hole.
 
      IT CHANGES ONE FIELD. Not the tier, not the card, not a timestamp — those
      each have their own command, or belong to nobody. */
@@ -528,6 +540,29 @@ const COMMANDS = {
     const g = list(state.goals).find((x) => x.id === goalId);
     if (!g) return refuse(R.notFound);
     if (a.seat !== "collector" || g.collectorId !== a.collectorId) return refuse(R.notOwner);
+    /* A LIVE DEAL HOLDS THE CRITERIA STILL, FOR THE REASON IT HOLDS THE GOAL.
+
+       `startOpportunity` admits a copy by asking `meetsGoalCriteria(goal.desired,
+       copy)` — the deal's whole justification for existing. Nothing snapshots
+       that answer, so rewriting `desired` while the deal is live leaves a record
+       whose own admission gate can no longer be reproduced from stored state:
+       the shop and the Collector are negotiating over a copy that, read back,
+       never qualified. An audit found this command was the only Goal mutation
+       with no such guard, while `removeGoal` and `updateGoalTier` both had one.
+
+       THE SAME PREDICATE AS `removeGoal`, DELIBERATELY. `goalLocked` is narrower
+       — negotiating, and not transactionally lost — because it answers a
+       different question, whether a Goal may be DEMOTED from Primary, and
+       Option B carved out the dead deal on purpose. This question is whether the
+       record may be rewritten underneath a live one, and that harm lasts as long
+       as the Opportunity does, fulfilment included. So `goalNamedByActive`, and
+       `goal-locked` as the answer, which is what a person already sees when they
+       try to stop looking.
+
+       NOTHING IS SNAPSHOTTED AND `goalLocked` IS NOT REDEFINED. Carrying the
+       criteria onto the Opportunity would be more faithful still and is a
+       larger, separate decision; this closes the hole without taking it. */
+    if (D.goalNamedByActive(goalId, state.opportunities)) return refuse(R.goalLocked);
     /* The same shape checks `addGoal` makes, for the same reasons — including
        the non-string one, which is there because `gradingProblem` reads a
        number as "not stated" and would have written `{ grade: 9 }` as no
@@ -1727,6 +1762,39 @@ const COMMANDS = {
       const b = list(state.collectorCopies).find((x) => x.id === bid);
       if (!b) return refuse(R.notFound);
       if (b.collectorId !== a.collectorId) return refuse(R.notOwner);
+      /* PC IS A HARD BAR, AND SILENCE IS NOT CONSENT.
+
+         An audit found this command reading only ownership, photographs and
+         reservation — never the copy's disposition. So a copy its owner had
+         marked PC could be put in a package, and it then crossed to the shop
+         through `referencedCopies` with its grade, cert and both photographs,
+         labelled "reserved", and could be accepted to "traded". The field-level
+         rule held (`keeping` is off the partner allow-list) but the ROW the
+         projection says never reaches a partner did reach them.
+
+         The four-state hand-back claimed that protection was DOUBLED. It was
+         not: it was single, and it rested entirely on no surface ever sending a
+         kept copy's id.
+
+         WHAT THIS CLOSES, EXACTLY, AND WHAT IT DOES NOT. This is the door INTO
+         a package. It is not a promise that a copy inside one can never be
+         kept: `setCollectorCopyKept` has no reserved-or-committed guard, so a
+         Collector may package an offered copy and then say they are keeping it,
+         and the copy stays visible to that partner as `reserved` because it IS
+         reserved to their deal. That is the same asymmetry `setCollectorCopyOffered`
+         already documents — a deal that has taken a copy is untouched by what
+         its owner later says about offering it — and unwinding it is
+         `withdrawTradeCard` or cancelling, not a disposition. Whether PC should
+         additionally refuse while a package holds the copy is a product
+         question this batch surfaced rather than answered.
+
+         `offered === true` AND NOTHING WEAKER. Refusing only `keeping` would
+         still let a copy nobody has said anything about — which is every copy
+         written before PC existed — be reserved against its owner's silence.
+         A package is where property is committed; the answer has to have been
+         given. Read through `D.copyOffered` so this and the projection's
+         `inSupply` cannot drift apart. */
+      if (!D.copyOffered(b)) return refuse(R.copyNotOffered);
       if (!D.INVARIANTS.copyPhotographed(b.photos)) return refuse(R.photosRequired);
       const status = D.collectorCopyStatus(bid, state.opportunities, oppId);
       if (status === "reserved") return refuse(R.copyReserved);

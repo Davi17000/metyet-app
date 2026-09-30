@@ -504,11 +504,30 @@ describe("C. a Goal says which copy is wanted, and can change its mind", () => {
     eq(json((await load(ctx)).goals[0].desired), json({ grade: "PSA 8" }));
   });
 
-  /* THE CASE REMOVE-AND-RECREATE CANNOT SERVE. `removeGoal` refuses while a
-     deal is live, so if correcting criteria meant recreating the Goal, the one
-     moment being precise about the copy actually matters would be the one
-     moment it was impossible. */
-  test("criteria can be corrected while a deal is under way — the case that decided the command", async () => {
+  /* RE-PINNED, AND THIS ONE IS A PRODUCT REVERSAL RATHER THAN A CORRECTION.
+
+     This test asserted that criteria CAN be corrected while a deal is under
+     way, and it is titled "the case that decided the command" because it was:
+     C3.3 chose an `updateGoalCriteria` command over remove-and-recreate
+     precisely so that the one moment being precise about the copy matters would
+     not be the one moment it was impossible.
+
+     The object-identity audit found the other half of that argument. Nothing
+     snapshots the criteria, and `startOpportunity` admits a copy by asking
+     them — so an edit mid-deal leaves a shared record whose own admission gate
+     can no longer be reproduced. The product's answer is that the record holds
+     still, so `updateGoalCriteria` now refuses `goal-locked` like its two
+     neighbours.
+
+     WHAT THIS TEST STILL PROTECTS, unchanged and still the reason the command
+     exists: correcting criteria must never mean destroying and recreating the
+     Goal — `createdAt` is the first step of the only funnel this product has,
+     and a partner must never watch demand disappear and come back as new. So
+     the correction is still one command on one field, and it is asserted here
+     once the deal is no longer live, which is the state a Collector reaches by
+     cancelling or finishing. The cost is written down in the hand-back: mid-deal
+     she must now choose between the deal and the correction. */
+  test("criteria are corrected in place, never by recreating the Goal", async () => {
     const ctx = await world();
     const made = await cards(ctx);
     /* The Goal states what the shop has, so the deal can open — since the
@@ -525,14 +544,32 @@ describe("C. a Goal says which copy is wanted, and can change its mind", () => {
       { goalId, invId, amount: 800 });
     eq(opened.ok, true, "the deal did not start: " + json(opened));
 
-    /* Removing it is refused, which is the whole point. */
+    /* While the deal is live, BOTH are refused, and by the same rule. */
     eq(refusal(await post(ctx.app, "casey", "removeGoal", { goalId })), "goal-locked");
-    /* Correcting it is not. */
+    eq(refusal(await post(ctx.app, "casey", "updateGoalCriteria",
+      { goalId, desired: { grade: "PSA 10" } })), "goal-locked",
+    "criteria were rewritten underneath a live deal");
+    eq(json((await load(ctx)).goals[0].desired), json({ grade: "PSA 9" }),
+      "they changed anyway");
+
+    /* Once it is not, the correction is IN PLACE — which is the property this
+       test was written for and the one that has not changed. */
+    const oppId = (await load(ctx)).opportunities[0].id;
+    eq((await direct(ctx, ACTOR.casey, "cancelOpportunity",
+      { oppId, reason: "the shop sold it" })).ok, true, "the deal did not end");
+    const before = (await load(ctx)).goals[0];
     eq((await post(ctx.app, "casey", "updateGoalCriteria",
       { goalId, desired: { grade: "PSA 10" } })).statusCode, 200,
-    "a Collector mid-deal could not say which copy they are after");
-    eq(json((await load(ctx)).goals[0].desired), json({ grade: "PSA 10" }));
-    /* And the deal is untouched. */
+    "a Collector could not say which copy they are after");
+    const after = (await load(ctx)).goals[0];
+    eq(json(after.desired), json({ grade: "PSA 10" }), "the correction did not land");
+    /* THE SAME GOAL, not a new one: the id stands, and so does every timestamp
+       that remove-and-recreate would have destroyed. */
+    eq(after.id, before.id, "the Goal was recreated");
+    eq(after.createdAt, before.createdAt, "createdAt was overwritten");
+    eq(after.since, before.since, "since was overwritten");
+    eq((await load(ctx)).goals.length, 1, "a second Goal appeared");
+    /* And the deal's own record still names it. */
     eq((await load(ctx)).opportunities.length, 1);
     eq((await load(ctx)).opportunities[0].goalId, goalId);
   });
