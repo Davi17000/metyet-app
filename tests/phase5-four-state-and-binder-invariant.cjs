@@ -32,11 +32,17 @@
    the product and did nothing. A card the Collector has said NOTHING about has
    no relationship for a binder to be coherent about — so it cannot be filed.
 
-   OWNING COUNTS, WHATEVER THE DISPOSITION. "I own this and have not decided
-   whether I would part with it" is a real state and the state every copy in
-   every existing world is in. Requiring a disposition before filing would make
-   the commonest card in the product unfilable and would push people into
-   declaring an intention they have not formed.
+   OWNING WITHOUT A DISPOSITION IS VALID, AND IS NOT ONE OF THE FOUR. A copy
+   nobody has said anything about is a real and honest record — it is what every
+   copy in every existing world is — and nothing removes it, hides it or invents
+   a disposition for it. It simply is not a statement about what the card MEANS,
+   which is what the four are and what a binder is coherent about. One word on
+   the copy opens the door.
+
+   AND WHEN THE LAST OF THE FOUR GOES, THE MEMBERSHIPS GO WITH IT. The act
+   itself always lands — MetYet never refuses an honest statement to protect a
+   filing — and the curation does not come back. It is the one genuinely
+   destructive rule in this design, so the panel says so before it sends.
 
    ENFORCED AT THE COMMAND, NEVER IN `validateWorld`. Worlds written before this
    rule hold filed cards with no state; they were legal when written and they
@@ -292,7 +298,7 @@ describe("C. No state, no membership", () => {
     eq(copies(st).length, 0, "a copy was invented to make it legal");
   });
 
-  test("[17] every one of the four states qualifies, and so does plain ownership", () => {
+  test("[17] the four states qualify — and owning without saying anything does not", () => {
     const { st, bd } = withBinder();
     wants(st, CASEY, "cc-p", "primary");
     wants(st, CASEY, "cc-s", "secondary");
@@ -300,12 +306,24 @@ describe("C. No state, no membership", () => {
     okv(x(st, CASEY, "setCollectorCopyOffered", { copyId: o, offered: true, at: AT }), "offer");
     const kp = own(st, CASEY, "cc-k", "K");
     okv(x(st, CASEY, "setCollectorCopyKept", { copyId: kp, keeping: true, at: AT }), "keep");
-    own(st, CASEY, "cc-u", "U");        // owned, nothing said
-    for (const card of ["cc-p", "cc-s", "cc-o", "cc-k", "cc-u"]) {
+    for (const card of ["cc-p", "cc-s", "cc-o", "cc-k"]) {
       eq(code(x(st, CASEY, "addBinderEntry", { binderId: bd, canonicalCardId: card, at: AT })), "OK",
         `${card} could not be filed`);
     }
-    eq(st.get().binderEntries.length, 5, "not everything landed");
+    eq(st.get().binderEntries.length, 4, "not all four landed");
+
+    /* OWNING WITHOUT A DISPOSITION IS VALID, AND IS NOT ONE OF THE FOUR. The
+       copy is a real record and nothing removes it or invents a disposition for
+       it — it simply says nothing about what the card MEANS, which is what a
+       binder is coherent about. One word on the copy opens the door. */
+    const u = own(st, CASEY, "cc-u", "U");
+    eq(code(x(st, CASEY, "addBinderEntry", { binderId: bd, canonicalCardId: "cc-u", at: AT })),
+      D.REFUSE.cardHasNoState, "bare ownership filed a card");
+    eq(copies(st).length, 3, "the refusal touched the copy");
+    eq(D.copyDisposition(copyOf(st, "U")), "unstated", "a disposition was invented");
+    okv(x(st, CASEY, "setCollectorCopyKept", { copyId: u, keeping: true, at: AT }), "keep it");
+    okv(x(st, CASEY, "addBinderEntry", { binderId: bd, canonicalCardId: "cc-u", at: AT }), "file");
+    eq(st.get().binderEntries.length, 5, "one word did not open the door");
   });
 
   test("[18] somebody else's state does not qualify your card", () => {
@@ -351,11 +369,132 @@ describe("C. No state, no membership", () => {
     const bd = okv(x(st, CASEY, "createBinder", { name: "B", at: AT }), "binder");
     const g = wants(st, CASEY, "cc-x");
     const k = own(st, CASEY, "cc-x", "A");
+    okv(x(st, CASEY, "setCollectorCopyKept", { copyId: k, keeping: true, at: AT }), "keep it");
     okv(x(st, CASEY, "addBinderEntry", { binderId: bd, canonicalCardId: "cc-x", at: AT }), "file");
+    /* Two of the four. Dropping either leaves the other, so the filing stands. */
     okv(x(st, CASEY, "removeGoal", { goalId: g, at: AT }), "stop wanting");
-    eq(st.get().binderEntries.length, 1, "dropping the Goal un-filed a card still owned");
-    okv(x(st, CASEY, "removeCollectorCopy", { copyId: k, at: AT }), "sell the copy");
-    eq(st.get().binderEntries.length, 1, "selling the copy un-filed the card");
+    eq(st.get().binderEntries.length, 1, "dropping the Goal un-filed a card still kept");
+    assert(valid(st), "the world became invalid");
+  });
+
+  test("[21b] and removing the LAST one takes the memberships with it", () => {
+    /* THE DECISION, AND IT IS DESTRUCTIVE. A card in none of the four has
+       nothing for a binder to be coherent about, so it does not stay in one.
+       The act itself always lands: the Goal goes, the copy goes, the offer is
+       withdrawn — MetYet never refuses an honest statement to protect a filing,
+       and never puts the curation back. */
+    const cases = {
+      "the last Goal": (st) => {
+        const g = wants(st, CASEY, "cc-x");
+        return () => okv(x(st, CASEY, "removeGoal", { goalId: g, at: AT }), "stop wanting");
+      },
+      "the last copy": (st) => {
+        const k = own(st, CASEY, "cc-x", "A");
+        okv(x(st, CASEY, "setCollectorCopyOffered", { copyId: k, offered: true, at: AT }), "offer");
+        return () => okv(x(st, CASEY, "removeCollectorCopy", { copyId: k, at: AT }), "sell");
+      },
+      "the last offer, on a copy still owned": (st) => {
+        const k = own(st, CASEY, "cc-x", "A");
+        okv(x(st, CASEY, "setCollectorCopyOffered", { copyId: k, offered: true, at: AT }), "offer");
+        return () => okv(x(st, CASEY, "setCollectorCopyOffered",
+          { copyId: k, offered: false, at: AT }), "withdraw");
+      },
+      "the last keep, on a copy still owned": (st) => {
+        const k = own(st, CASEY, "cc-x", "A");
+        okv(x(st, CASEY, "setCollectorCopyKept", { copyId: k, keeping: true, at: AT }), "keep");
+        return () => okv(x(st, CASEY, "setCollectorCopyKept",
+          { copyId: k, keeping: false, at: AT }), "un-keep");
+      },
+    };
+    for (const [why, setup] of Object.entries(cases)) {
+      const st = world();
+      const a = okv(x(st, CASEY, "createBinder", { name: "A", at: AT }), "A");
+      const b = okv(x(st, CASEY, "createBinder", { name: "B", at: AT }), "B");
+      const act = setup(st);
+      for (const bd of [a, b]) {
+        okv(x(st, CASEY, "addBinderEntry", { binderId: bd, canonicalCardId: "cc-x", at: AT }), "file");
+      }
+      eq(st.get().binderEntries.length, 2, `${why}: the filings did not land`);
+      act();
+      eq(st.get().binderEntries.length, 0, `${why}: a membership survived with no state`);
+      assert(valid(st), `${why}: the world became invalid`);
+      /* The statement itself stands, whatever it was. */
+      assert(!D.cardHasState("cc-x", st.get().goals, copies(st)), `${why}: the act was undone`);
+    }
+  });
+
+  test("[21c] the prune touches one Collector, one card, and nothing else", () => {
+    const st = world();
+    const mine = okv(x(st, CASEY, "createBinder", { name: "Mine", at: AT }), "mine");
+    const theirs = okv(x(st, JORDAN, "createBinder", { name: "Theirs", at: AT }), "theirs");
+    const g = wants(st, CASEY, "cc-x");
+    wants(st, CASEY, "cc-other");          // a second card of mine, untouched
+    wants(st, JORDAN, "cc-x");             // the same card, somebody else's
+    okv(x(st, CASEY, "addBinderEntry", { binderId: mine, canonicalCardId: "cc-x", at: AT }), "a");
+    okv(x(st, CASEY, "addBinderEntry", { binderId: mine, canonicalCardId: "cc-other", at: AT }), "b");
+    okv(x(st, JORDAN, "addBinderEntry", { binderId: theirs, canonicalCardId: "cc-x", at: AT }), "c");
+    okv(x(st, CASEY, "removeGoal", { goalId: g, at: AT }), "stop wanting");
+    const left = st.get().binderEntries
+      .map((e) => `${e.binderId === mine ? "mine" : "theirs"}:${e.canonicalCardId}`).sort();
+    eq(left.join(","), "mine:cc-other,theirs:cc-x",
+      "the prune reached past the one card and the one Collector: " + left.join(","));
+  });
+
+  test("[21d] a legacy stateless membership on another card is never swept up", () => {
+    /* PRECISELY WHAT THIS CLAIMS, because a looser claim would be false. A prune
+       is about ONE card: a legacy membership on a different card is out of its
+       reach entirely, whatever else the Collector does. A legacy membership on
+       the SAME card is a different matter — if the Collector gives that card a
+       state and then withdraws it, they have said something and taken it back,
+       and the prune is right to fire. `[21e]` pins that, so the distinction is
+       asserted rather than assumed. */
+    const st = world({
+      binders: [{ id: "b1", collectorId: "casey", name: "Old", createdAt: AT, archivedAt: null }],
+      binderEntries: [{ binderId: "b1", canonicalCardId: "cc-legacy", addedAt: AT }],
+    });
+    const g = wants(st, CASEY, "cc-x");
+    okv(x(st, CASEY, "addBinderEntry", { binderId: "b1", canonicalCardId: "cc-x", at: AT }), "file");
+    okv(x(st, CASEY, "removeGoal", { goalId: g, at: AT }), "stop wanting");
+    eq(st.get().binderEntries.map((e) => e.canonicalCardId).join(","), "cc-legacy",
+      "the legacy membership was swept away by somebody else's prune");
+    eq(st.get().goals.length, 0, "a state was fabricated to rescue it");
+    eq(copies(st).length, 0, "a copy was fabricated to rescue it");
+    assert(valid(st), "the world became invalid");
+  });
+
+  test("[21e] but a legacy membership on a card that gains and loses a state goes", () => {
+    /* Tolerated means "not swept for having been written before the rule", not
+       "immune forever". Once the Collector says something about that card and
+       then takes it back, the membership is theirs and follows the rule. */
+    const st = world({
+      binders: [{ id: "b1", collectorId: "casey", name: "Old", createdAt: AT, archivedAt: null }],
+      binderEntries: [{ binderId: "b1", canonicalCardId: "cc-legacy", addedAt: AT }],
+    });
+    const g = wants(st, CASEY, "cc-legacy");
+    eq(st.get().binderEntries.length, 1, "the legacy row went early");
+    okv(x(st, CASEY, "removeGoal", { goalId: g, at: AT }), "stop wanting");
+    eq(st.get().binderEntries.length, 0, "a membership survived with nothing behind it");
+  });
+
+  test("[21f] and an ARCHIVED binder is never reached into", () => {
+    /* `setBinderArchived` has said since C3.4 that putting a binder away touches
+       nothing inside it. Emptying one would destroy curation permanently, on a
+       screen the person cannot see. Unarchiving can therefore bring back a
+       stateless membership, which is the category the product tolerates. */
+    const st = world();
+    const live = okv(x(st, CASEY, "createBinder", { name: "Live", at: AT }), "live");
+    const old = okv(x(st, CASEY, "createBinder", { name: "Old", at: AT }), "old");
+    const g = wants(st, CASEY, "cc-x");
+    for (const bd of [live, old]) {
+      okv(x(st, CASEY, "addBinderEntry", { binderId: bd, canonicalCardId: "cc-x", at: AT }), "file");
+    }
+    okv(x(st, CASEY, "setBinderArchived", { binderId: old, archived: true, at: AT }), "put away");
+    okv(x(st, CASEY, "removeGoal", { goalId: g, at: AT }), "stop wanting");
+    const left = st.get().binderEntries;
+    eq(left.length, 1, "the archived binder was emptied, invisibly and for good");
+    eq(left[0].binderId, old, "the wrong binder kept its card");
+    okv(x(st, CASEY, "setBinderArchived", { binderId: old, archived: false, at: AT }), "bring back");
+    eq(st.get().binderEntries.length, 1, "unarchiving changed what the binder held");
     assert(valid(st), "the world became invalid");
   });
 
@@ -370,16 +509,27 @@ describe("C. No state, no membership", () => {
     }
   });
 
-  test("[23] a disposition change never touches membership", () => {
+  test("[23] swapping between the four never touches membership", () => {
+    /* Only LEAVING all four does. A Collector moving a copy from Trade/Sell to
+       PC, or a Goal from Secondary to Primary, has not stopped saying something
+       — so the filing must not so much as flicker. */
     const st = world();
     const bd = okv(x(st, CASEY, "createBinder", { name: "B", at: AT }), "binder");
     const k = own(st, CASEY, "cc-x", "A");
+    okv(x(st, CASEY, "setCollectorCopyOffered", { copyId: k, offered: true, at: AT }), "offer");
     okv(x(st, CASEY, "addBinderEntry", { binderId: bd, canonicalCardId: "cc-x", at: AT }), "file");
-    for (const [cmd, field] of [["setCollectorCopyOffered", { offered: true }],
-      ["setCollectorCopyKept", { keeping: true }], ["setCollectorCopyOffered", { offered: false }]]) {
+    for (const [cmd, field] of [["setCollectorCopyKept", { keeping: true }],
+      ["setCollectorCopyOffered", { offered: true }],
+      ["setCollectorCopyKept", { keeping: true }]]) {
       okv(x(st, CASEY, cmd, { copyId: k, ...field, at: AT }), cmd);
       eq(st.get().binderEntries.length, 1, `${cmd} reorganised a binder`);
     }
+    /* And a second copy losing its disposition changes nothing while the first
+       still holds one. */
+    const k2 = own(st, CASEY, "cc-x", "B");
+    okv(x(st, CASEY, "setCollectorCopyOffered", { copyId: k2, offered: true, at: AT }), "offer B");
+    okv(x(st, CASEY, "setCollectorCopyOffered", { copyId: k2, offered: false, at: AT }), "withdraw B");
+    eq(st.get().binderEntries.length, 1, "one copy going quiet emptied the card");
   });
 
   test("[24] a legacy world with filed, stateless cards is still storable", () => {
@@ -463,6 +613,99 @@ describe("D. The card page sends state before membership", () => {
     const kinds = SPEC.planFrom(state, "cc-x", answers).steps.map((s) => s.kind);
     eq(kinds[kinds.length - 1], "stop-looking",
       "removing the last thing said about a card is not last: " + kinds.join(","));
+  });
+
+  test("[28b] a save never passes through statelessness on its way somewhere else", () => {
+    /* THE DEFECT THIS EXISTS FOR, AND IT COST A BINDER IN AN ADVERSARIAL RUN.
+
+       Each step of the plan is its own command, and the cascade runs per
+       command. Withdrawing a disposition used to sit in the ownership block, so
+       somebody who set their only offered copy back to "haven't decided" AND
+       recorded a second copy they are keeping sent `offering(false)` first. For
+       the length of one command the card was in none of the four, the domain
+       pruned the memberships exactly as it should, and the next step put the
+       card back into a state. The save ended legal, the panel never warned, and
+       the binder had silently lost the card.
+
+       Asserted by RUNNING the plan against the real domain, not by reading the
+       order: the order is the mechanism, the surviving membership is the claim.
+       My own suite missed this by testing the domain one command at a time,
+       which is how the same class of defect got through in an earlier batch. */
+    const runs = [
+      { why: "withdraw one copy's offer while recording a kept one",
+        setup: (st) => [okv(x(st, CASEY, "addCollectorCopy",
+          { copy: { canonicalCardId: "cc-x", grade: "PSA 9", cert: "A", offered: true }, at: AT }), "add")],
+        answers: (ids) => ({ want: "none", copies: [
+          { id: ids[0], grade: "PSA 9", condition: "", cert: "A", market: "",
+            disposition: "unstated", removed: false },
+          { id: null, key: "n1", grade: "PSA 8", condition: "", cert: "N", market: "",
+            disposition: "keeping", removed: false }] }) },
+      { why: "move the statement from one copy to another",
+        setup: (st) => {
+          const a = okv(x(st, CASEY, "addCollectorCopy",
+            { copy: { canonicalCardId: "cc-x", grade: "PSA 9", cert: "A", offered: true }, at: AT }), "a");
+          const b = okv(x(st, CASEY, "addCollectorCopy",
+            { copy: { canonicalCardId: "cc-x", grade: "PSA 8", cert: "B" }, at: AT }), "b");
+          return [a, b];
+        },
+        answers: (ids) => ({ want: "none", copies: [
+          { id: ids[0], grade: "PSA 9", condition: "", cert: "A", market: "",
+            disposition: "unstated", removed: false },
+          { id: ids[1], grade: "PSA 8", condition: "", cert: "B", market: "",
+            disposition: "keeping", removed: false }] }) },
+      { why: "stop looking, but say you're keeping the copy",
+        setup: (st) => {
+          wants(st, CASEY, "cc-x");
+          return [okv(x(st, CASEY, "addCollectorCopy",
+            { copy: { canonicalCardId: "cc-x", grade: "PSA 9", cert: "A" }, at: AT }), "a")];
+        },
+        answers: (ids) => ({ want: "none", copies: [
+          { id: ids[0], grade: "PSA 9", condition: "", cert: "A", market: "",
+            disposition: "keeping", removed: false }] }) },
+    ];
+    const SPEC = (() => {
+      const out = esbuild.buildSync({
+        entryPoints: [path.join(ROOT, "client/collector/CardSpecification.jsx")],
+        bundle: true, format: "cjs", write: false, logLevel: "silent", jsx: "automatic",
+        external: ["react", "react-dom", "react/jsx-runtime"],
+        define: { "process.env.NODE_ENV": '"production"' },
+      });
+      const mod = { exports: {} };
+      new Function("module", "exports", "require", out.outputFiles[0].text)(mod, mod.exports, require);
+      return mod.exports;
+    })();
+    /* The binding switch, as `SignIn.jsx` writes it. */
+    const send = (st, step) => {
+      if (step.kind === "offering") {
+        return x(st, CASEY, "setCollectorCopyOffered", { copyId: step.copyId, offered: step.offered, at: AT });
+      }
+      if (step.kind === "keeping") {
+        return x(st, CASEY, "setCollectorCopyKept", { copyId: step.copyId, keeping: step.keeping, at: AT });
+      }
+      if (step.kind === "record-copy") {
+        return x(st, CASEY, "addCollectorCopy", { copy: { canonicalCardId: "cc-x", ...step.copy }, at: AT });
+      }
+      if (step.kind === "stop-looking") return x(st, CASEY, "removeGoal", { goalId: step.goalId, at: AT });
+      if (step.kind === "forget-copy") return x(st, CASEY, "removeCollectorCopy", { copyId: step.copyId, at: AT });
+      if (step.kind === "file") {
+        return x(st, CASEY, "addBinderEntry", { binderId: step.binderId, canonicalCardId: "cc-x", at: AT });
+      }
+      throw new Error("unbound step " + step.kind);
+    };
+    for (const run of runs) {
+      const st = world();
+      const bd = okv(x(st, CASEY, "createBinder", { name: "Shoebox", at: AT }), "binder");
+      const ids = run.setup(st);
+      okv(x(st, CASEY, "addBinderEntry", { binderId: bd, canonicalCardId: "cc-x", at: AT }), "file");
+      const a = run.answers(ids);
+      const steps = SPEC.planFrom(st.get(), "cc-x",
+        { binders: new Set([bd]), newBinders: [], desired: { grade: "", condition: "" }, ...a }).steps;
+      for (const step of steps) okv(send(st, step), `${run.why}: ${step.kind}`);
+      assert(D.cardHasState("cc-x", st.get().goals, copies(st)),
+        `${run.why}: the fixture ended with no state, so it proves nothing`);
+      eq(st.get().binderEntries.length, 1,
+        `${run.why}: the binder lost the card mid-save — ${steps.map((t) => t.kind).join(" -> ")}`);
+    }
   });
 
   test("[29] a copy's disposition is one of three answers, and sends one command", () => {
@@ -573,9 +816,94 @@ describe("D2. Where the four states nearly stayed a domain-only idea", () => {
     };
     walk(r.toJSON());
     const shown = flat.join(" ");
-    assert(/binder holds cards you're looking for or copies you own/.test(shown),
+    assert(/binder holds cards you're looking for, or copies you're trading or keeping/.test(shown),
       "the panel does not explain why this cannot be saved: " + shown.slice(0, 400));
     r.unmount();
+  });
+
+  test("[33b] and it warns before it destroys curation, rather than after", () => {
+    /* Removing the last of the four takes the card out of every binder it is in
+       and nothing can put it back. The panel does not block the statement and
+       does not offer to keep the filing — but a person has to be able to see it
+       coming. */
+    const SPEC = load("client/collector/CardSpecification.jsx");
+    const state = {
+      binders: [{ id: "bd1", collectorId: "casey", name: "Shoebox" },
+        { id: "bd2", collectorId: "casey", name: "Starters" }],
+      binderEntries: [{ binderId: "bd1", canonicalCardId: "cc-x" },
+        { binderId: "bd2", canonicalCardId: "cc-x" }],
+      goals: [{ id: "g1", collectorId: "casey", canonicalCardId: "cc-x", tier: "primary",
+        desired: { grade: "PSA 9" } }],
+      collectorCopies: [], catalog: [], partners: [] };
+    const card = { canonicalCardId: "cc-x", name: "Mudkip" };
+    const say = (node) => {
+      const flat = [];
+      const walk = (n) => {
+        if (Array.isArray(n)) return n.forEach(walk);
+        if (!n || typeof n !== "object") return;
+        for (const c of n.children || []) { if (typeof c === "string") flat.push(c); else walk(c); }
+      };
+      walk(node);
+      return flat.join(" ");
+    };
+    let r;
+    TR.act(() => {
+      r = TR.create(React.createElement(SPEC.default,
+        { card, state, onCommit: () => ({ ok: true }), onClose: () => {} }));
+    });
+    assert(!/comes out of/.test(say(r.toJSON())), "it warns before anything has been asked for");
+    /* Stop looking, with both binders still ticked. */
+    const stop = r.root.findAll((n) => n.type === "button"
+      && /not looking|stop looking|no longer/i.test(String(n.children)))[0];
+    assert(stop, "the panel has no way to stop looking: " + say(r.toJSON()).slice(0, 300));
+    TR.act(() => { stop.props.onClick(); });
+    const shown = say(r.toJSON());
+    assert(/comes out of all 2 binders/.test(shown),
+      "the panel destroys curation without saying so: " + shown.slice(0, 600));
+    r.unmount();
+  });
+
+  test("[33c] the Goals screen warns too, because it can do it in one click", () => {
+    /* THE OTHER SURFACE. "No longer looking" is a single button with no panel
+       and no confirmation, and it can take a card out of every binder it is in.
+       The warning shipped on the specification panel covered one of the two
+       places the loss can happen. */
+    const GOALS = load("client/collector/sections/Goals.jsx");
+    const goal = { id: "g1", collectorId: "casey", canonicalCardId: "cc-x", tier: "primary",
+      desired: { grade: "PSA 9" }, createdAt: AT };
+    const base = {
+      goals: [goal], catalog: [], opportunities: [], discoveries: [], partners: [],
+      binders: [{ id: "bd1", collectorId: "casey", name: "Shoebox", archivedAt: null },
+        { id: "bd2", collectorId: "casey", name: "Starters", archivedAt: null }],
+      binderEntries: [{ binderId: "bd1", canonicalCardId: "cc-x" },
+        { binderId: "bd2", canonicalCardId: "cc-x" }],
+      collectorCopies: [] };
+    const say = (state) => {
+      let r; const flat = [];
+      TR.act(() => { r = TR.create(React.createElement(GOALS.default,
+        { state, onRemoveGoal: () => {}, onSetPriority: () => {} })); });
+      const walk = (n) => {
+        if (Array.isArray(n)) return n.forEach(walk);
+        if (!n || typeof n !== "object") return;
+        for (const c of n.children || []) { if (typeof c === "string") flat.push(c); else walk(c); }
+      };
+      walk(r.toJSON());
+      r.unmount();
+      return flat.join(" ");
+    };
+    assert(/comes out of all 2 binders/.test(say(base)),
+      "the Goals screen destroys curation in one click without saying so: " + say(base));
+    /* Not when the card still means something else. */
+    const kept = { ...base, collectorCopies: [{ id: "k1", collectorId: "casey",
+      canonicalCardId: "cc-x", grade: "PSA 9", offered: false, keeping: true }] };
+    assert(!/comes out of/.test(say(kept)), "it warns about a loss that will not happen: " + say(kept));
+    /* Nor when owning without a disposition, which is not one of the four. */
+    const bare = { ...base, collectorCopies: [{ id: "k1", collectorId: "casey",
+      canonicalCardId: "cc-x", grade: "PSA 9", offered: false }] };
+    assert(/comes out of all 2 binders/.test(say(bare)),
+      "bare ownership was treated as a state that holds the filing up");
+    /* Nor when the card is in no binder at all. */
+    assert(!/comes out of/.test(say({ ...base, binderEntries: [] })), "a warning with nothing to lose");
   });
 
   test("[34] Your Cards shows a kept copy AS kept, and says nothing about silence", () => {

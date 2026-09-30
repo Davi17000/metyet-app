@@ -21,12 +21,19 @@ This batch does three things and nothing else:
    command, never inferred from `offered === false`, and mutually exclusive with
    `offered` **per copy** — which is what lets one Collector keep one Mudkip and
    offer another.
-2. **A Binder is given something to be coherent about.** A card the Collector
-   has said nothing about cannot be filed. *Binder expresses coherence. State
-   expresses the Collector's relationship to the card. No state → no Binder
-   membership.*
+2. **A Binder is given something to be coherent about.** *Binder expresses
+   coherence. State expresses the Collector's relationship to the card. No state
+   → no Binder membership.* A card in none of the four states cannot be filed,
+   and a card that loses its last one does not stay filed.
 3. **The truth-telling cleanup.** Six places where a screen or a document said
    something that was no longer true.
+
+**Two product decisions arrived after the first implementation and changed it**
+(§6). Owning a copy with no disposition is valid but is **not** one of the four,
+so it does not open a binder. And when an act removes a card's last state, its
+Binder memberships are removed with it — the act itself always lands. Legacy
+stateless memberships stay tolerated: not migrated, not swept, never fabricated
+into a state.
 
 **No migration. No new concept. No generic state field. Nothing transactional
 moved.** The exposed surface grew by exactly one command.
@@ -90,10 +97,23 @@ the four onto the card would make that unsayable. So:
 - A Goal for a card you already own is **not** a contradiction. It is somebody
   hunting a better copy, and `[15]` pins it.
 
+**Owning a copy with no disposition is valid, and is not one of the four.** A
+copy nobody has said anything about is a real, honest record — it is what every
+copy in every existing world is — and nothing removes it, hides it, or invents a
+disposition for it. It simply is not a statement about what the card *means* to
+its owner, which is what these four are. One word on the copy changes that.
+
+That line was drawn by the product, not derived from the code. The first
+implementation let bare ownership qualify, on the argument that acquiring a card
+is itself a collecting decision. The answer is that the four are the vocabulary,
+and the domain comment says so explicitly so that the next reader does not
+re-argue it from first principles.
+
 **Nothing joins them.** There is no `cardState`, no `intent`, no field that
 holds "which of the four". `collectorStatesFor(cardId, goals, copies)` returns a
-list, derived on demand, because a Collector can be in more than one of them at
-once and any single-valued answer would be a lie about the commonest case.
+list — `primary`, `secondary`, `trade-sell`, `pc` — derived on demand, because a
+Collector can be in more than one at once and any single-valued answer would be a
+lie about the commonest case.
 
 ---
 
@@ -150,7 +170,7 @@ produce.
 
 ---
 
-## 6. The Binder invariant
+## 6. The Binder invariant, and the cascade
 
 > **Binder expresses coherence. State expresses the Collector's relationship to
 > the card. No state → no Binder membership.**
@@ -159,57 +179,82 @@ Filing used to be unconditional, and C3.1 asserted that on purpose. What it
 produced most often was a binder full of cards that appeared nowhere else in the
 product and did nothing.
 
-**What counts as a state, exactly:**
+**What qualifies a card, exactly:**
 
 | Situation | May be filed? |
 |---|---|
 | Primary Goal on the card | yes |
 | Secondary Goal on the card | yes |
-| Owns a copy, offered | yes |
-| Owns a copy, kept | yes |
-| **Owns a copy, nothing said about it** | **yes** |
+| Owns a copy marked Trade/Sell | yes |
+| Owns a copy marked PC | yes |
+| **Owns a copy, nothing said about it** | **no** — valid record, not one of the four |
 | Nothing at all | **no** — `card-has-no-state` |
 | Another Collector's Goal or copy | **no** |
 
-**Owning counts whatever the disposition**, and that is not a softening.
-"I own this and have not decided whether I would part with it" is a real
-relationship and it is the one every copy in every existing world is in.
-Requiring a disposition before filing would make the commonest card in the
-product unfilable and would push people into declaring an intention they have
-not formed.
+### The cascade
 
-**Enforced at the command boundary, never in `validateWorld`.** This is the
-single most important implementation decision in the batch. Worlds written
-before this rule hold filed cards with no state; they were legal when written
-and they are not corrupt. Adding the rule to `validateWorld` would make them
-**unstorable**, which surfaces as a `PersistenceError(invalidNextWorld)` — a 500
-on the next command anybody sends, not a refusal. **This repository has made that
-exact mistake three times.** `[24]` loads such a world, asserts it is valid and
-storable, asserts nothing fabricates a Goal or a copy to rescue it, and asserts
-structurally that neither `cardHasNoState` nor `cardMeansSomething` appears in
+**When an act removes a card's last qualifying state, that card's Binder
+memberships are removed with it.** One predicate, `cardHasState`, answers both
+"may it get in" and "does it stay in", so the two rules cannot drift apart.
+
+**The act itself is never blocked or altered.** Stopping wanting a card, selling
+a copy, withdrawing an offer and withdrawing a keep are all honest statements,
+and refusing one to protect a filing would hold a person to a position they have
+abandoned. The statement lands; the organisation follows.
+
+**This destroys curation, and that is the decision rather than an oversight.**
+A person who drops their last Goal on a card loses that card's place in every
+binder it was in, and MetYet cannot give it back. Because it is destructive and
+irreversible, **both** surfaces that can cause it now say so before it happens —
+the specification panel and the Goals screen (§8).
+
+**What the cascade does not touch.** One Collector, one canonical card, and only
+when that card is now in none of the four. It runs in exactly four commands —
+`removeGoal`, `removeCollectorCopy`, `setCollectorCopyOffered`,
+`setCollectorCopyKept` — which are the complete set of single-command reducers of
+a card's states; every writer of `goals` and `collectorCopies` was enumerated to
+establish that, and nothing can change a Goal's or a copy's `canonicalCardId`.
+Swaps between the four (Secondary → Primary, Trade/Sell → PC) change nothing.
+A no-op returns the same state object.
+
+**Legacy stateless memberships stay tolerated.** Nothing sweeps them, nothing
+migrates them, and nothing fabricates a state for them — the prune is about one
+card, so a legacy membership on another card is out of its reach entirely
+(`[21d]`). If the Collector gives *that* card a state and later withdraws it,
+they have said something and taken it back, and the membership follows the rule
+like any other (`[21e]`). "Tolerated" means not swept for having been written
+before the rule, not immune forever.
+
+**Archived binders are not reached into** (`[21f]`). `setBinderArchived` has said
+since C3.4 that putting a binder away touches nothing inside it — *"an archived
+binder still holds its cards, or unarchiving would be a different binder"* — and
+a prune that emptied one would destroy curation permanently, on a screen the
+person cannot see. Unarchiving can therefore bring back a stateless membership,
+which lands in the category the product already tolerates. **This edge was not
+part of the decision**; §17 states the alternative.
+
+### Enforced at the command boundary, never in `validateWorld`
+
+This is the single most important implementation decision in the batch. Worlds
+written before this rule hold filed cards with no state; they were legal when
+written and they are not corrupt. Adding the rule to `validateWorld` would make
+them **unstorable**, which surfaces as a `PersistenceError(invalidNextWorld)` — a
+500 on the next command anybody sends, not a refusal. **This repository has made
+that exact mistake three times.** `[24]` loads such a world, asserts it is valid
+and storable, asserts nothing fabricates a Goal or a copy to rescue it, and
+asserts structurally that neither `cardHasNoState` nor `cardHasState` appears in
 `metyet-world.js`. `[25]` proves unfiling still works on one.
 
-**No bypass.** `binderEntries` is written in exactly one place — `addBinderEntry`
-— and filtered in one — `removeBinderEntry`. The only other writer is the seed
-at world load, which is not a command. There is no import, bulk or demo path that
-files a card.
+**No bypass.** `binderEntries` is written in exactly one place —
+`addBinderEntry` — filtered in one — `removeBinderEntry` — and pruned in one.
+The only other writer is the seed at world load, which is not a command.
 
----
-
-## 7. The command plan reorder — the load-bearing client fix
+## 7. The command plan order — the load-bearing client work
 
 The card specification panel sends a **plan**: a list of small commands derived
-from the difference between what is stored and what the person answered. The old
-order put filing second, on the reasoning that organisation is the most
-reversible thing on the panel.
-
-That reasoning stopped being true the moment the domain learned the invariant.
-An adversarial read of the plan found that **the commonest flow in the whole
-product** — find a card in Browse, tick a binder, say you want it, Save — would
-have been refused at its second step, because the Goal that makes the filing
-legal had not been written yet.
-
-The order is now:
+from the difference between what is stored and what the person answered. Each
+step is its own command, so the cascade runs between them — which makes the
+order load-bearing twice over.
 
 ```
 1  make-binder          a container that names no card, so it cannot fail for want of a state
@@ -217,18 +262,36 @@ The order is now:
 3  how-hard
 4  start-looking
 5  correct-copy         ownership
-6  offering / keeping   one command or the other, never both
+6  offering / keeping   SAYING one — never both, the domain clears the other side
 7  record-copy
 8  file                 MEMBERSHIP FOLLOWS STATE
 9  unfile               after filing, so a binder swap never passes through belonging nowhere
-10 stop-looking         removals last of all
-11 forget-copy
+10 offering / keeping   TAKING one back — a removal, and it waits
+11 stop-looking
+12 forget-copy
 ```
 
-`[26]`, `[27]` and `[28]` pin the three claims, and reverting the order makes
-`[26]` and `[27]` fail — verified by experiment, not asserted.
+**Why state precedes filing.** The old order put filing second, on the reasoning
+that organisation is the most reversible thing on the panel. That reasoning
+stopped being true the moment the domain learned the invariant: **the commonest
+flow in the whole product** — find a card in Browse, tick a binder, say you want
+it, Save — would have been refused at its second step.
 
----
+**Why withdrawals wait, which is the sharper one.** A disposition withdrawal is
+a *removal*, and it used to sit in the ownership block at step 6. An adversarial
+read found what that cost: somebody who set their only offered copy back to
+"haven't decided" **and** recorded a second copy they are keeping sent
+`offering(false)` first. For the length of one command the card was in none of
+the four; the domain pruned the memberships exactly as it should; the next step
+put the card back into a state. **The save ended legal, the panel never warned,
+and the binder had silently lost the card** — with no way for the panel to
+re-file it. Every step that takes a state away now happens after every step that
+adds one and after the filing, so a card never passes through statelessness on
+its way somewhere else.
+
+`[26]`, `[27]`, `[28]` and `[28b]` pin the four claims, and `[28b]` proves its
+one by **running** the plan against the real domain rather than by reading the
+order.
 
 ## 8. What the Collector actually sees
 
@@ -251,19 +314,31 @@ displayed a copy somebody had deliberately marked PC in exactly the same words
 as one they had never mentioned. Silence is not a decision and is no longer
 drawn as one.
 
-**When a binder cannot take a card.** The panel says so **before** it sends:
+**When a binder cannot take a card.** The panel says so **before** it sends, and
+the same sentence is the refusal message if the domain answers first:
 
-> A binder holds cards you're looking for or copies you own. Say you want this
-> card, or record a copy, and it can go in a binder.
+> A binder holds cards you're looking for, or copies you're trading or keeping.
+> Say you want this card, or say what you'd do with a copy, and it can go in a
+> binder.
 
-and the same sentence is the refusal message if the domain answers first.
+**Before curation is destroyed.** Both surfaces that can cause the cascade name
+it first, in plain words, beside the control that does it:
+
+- the panel, when the save would leave nothing said about the card —
+  *"Saving this leaves nothing said about the card, so it comes out of all 3
+  binders it's in."*
+- the **Goals** screen, beside *No longer looking* — *"This is the only thing
+  you've said about this card, so it comes out of the binder it's in."*
+
+Neither blocks the statement and neither offers to keep the filing; they read the
+same four states the domain reads and say what the click will do. The Goals
+screen mattered most: it is one button, with no panel and no confirmation, and
+an adversarial read found it doing the damage in silence.
 
 **There is still no PC *view*.** A sixth tab is finally *possible* now that PC is
 a fact, and it is deliberately not added: nobody asked for one, and how somebody
 wants to browse what they own is a different question from whether they can say
 it. The cross-views test was re-pinned to assert exactly that distinction.
-
----
 
 ## 9. Command exposure
 
@@ -352,16 +427,16 @@ Six places where the product said something that was no longer true.
 
 ## 14. Tests
 
-**New suite `tests/phase5-four-state-and-binder-invariant.cjs` — 42 tests**,
+**New suite `tests/phase5-four-state-and-binder-invariant.cjs` — 50 tests**,
 registered in `tests/all.cjs`.
 
 | Section | Covers |
 |---|---|
 | **A** `[1]`–`[8]` | What a Collector can say: specification required, both dispositions need a copy, `offered === false` is never PC, mutual exclusion unreachable in four directions, neither field travels in a patch, a both-true world is reported, a pre-PC world is valid |
 | **B** `[9]`–`[15]` | One card, two copies, two truths: kept and offered at once, changing or removing one does not rewrite the other, the partner sees only the offered one, the kept one does not leak because its sibling is offered, the allow-list, and wanting a card you own |
-| **C** `[16]`–`[25]` | The invariant: refusal with no state, all five qualifying situations, no cross-Collector qualification, several binders, removing one of several states, Primary ↔ Secondary, disposition changes, the legacy world, and unfiling |
-| **D** `[26]`–`[29]` | The panel's ordering, and the three-answer disposition |
-| **D2** `[30]`–`[34]` | **Every adversarial finding** (§15) |
+| **C** `[16]`–`[25]` | The invariant and the cascade: refusal with no state, the four qualifying situations and the one that does not, no cross-Collector qualification, several binders, removing one of several states, removing the **last** by four different routes, the prune's scope, legacy memberships on another card and on the same one, archived binders, Primary ↔ Secondary, swaps, the legacy world, and unfiling |
+| **D** `[26]`–`[29]` | The panel's ordering, including the whole plan **run against the real domain** (`[28b]`), and the three-answer disposition |
+| **D2** `[30]`–`[34]` | **Every adversarial finding** (§15), including both destruction warnings |
 | **E** `[35]`–`[42]` | What must not have moved |
 
 **Mutation-verified, not assumed.** Each load-bearing test was proved to bite by
@@ -375,11 +450,15 @@ reverting the code it guards and watching it fail:
 | `keeping` in the client binding | `[30]` |
 | the absent-key writer | `[4]`, `[31]` |
 | the refusal message and local check | `[32]`, `[33]` |
+| the panel's destruction warning | `[33b]` |
 | the three-way tag | `[34]` |
+| the cascade | `[21b]`, `[21c]`, `[21d]` |
+| withdrawals running last | `[28b]` |
 
-**Existing suites re-pinned: 19.** Five were **directly contradicted** and were
-rewritten to assert the new rule while preserving what each was really
-protecting, never worked around:
+**Existing suites re-pinned: 19.** Thirteen tests across nine suites were
+**directly contradicted** and were rewritten to assert the new rule while
+preserving what each was really protecting, never worked around. The five from
+the first pass:
 
 | Suite | Claimed | Now asserts |
 |---|---|---|
@@ -388,6 +467,18 @@ protecting, never worked around:
 | `c34b` | "a card with neither Goal nor copy stays filed" | a legacy membership survives; a new one is refused |
 | `c34a` | "Offered" and "Not offered" prove offering is per copy | **"Offered" and "Keeping"** prove a *disposition* is per copy, and "Not offered" must not reappear |
 | `binders-cross-views` | the "Not offered" label is the honest one | it has become the dishonest one now PC is sayable; there is still no PC **view** |
+
+And the eight the two product decisions contradicted, every one of them an
+assertion that membership is independent of state:
+
+| Suite / test | Claimed | Now asserts |
+|---|---|---|
+| `c31` **C** | dropping the Goal leaves membership alone | it does, **while the copy is kept** — and `C2` pins that dropping the last of the four does not |
+| `c31` **E** | the last owned copy leaving does not un-file the card | membership names the **card**, proved with a Goal behind it — and `E2` pins the last-state case |
+| `c31` **F** | owning three copies is one card meaning something | one **word** about one of the three is what opens the binder |
+| `c32` **Goal G** | removing the Goal leaves membership alone | *editing* a Goal — criteria, tier — never disturbs organisation, with a kept copy carrying the card |
+| `c33` | selling the last copy leaves the membership | what a membership **names**, with a Goal behind it; the last-state case is `[21b]` |
+| `c34b` ×3 | a card whose Goal has gone stays filed; Save files a bare-owned card; removing a Goal never un-files | the card is **kept**; Save needs one of the four; both halves — a Goal dropped beside a kept copy leaves the filing, and dropping the last one does not |
 
 ---
 
@@ -465,6 +556,69 @@ actually contains a filing.
 `groupBy` in `Collection.jsx`, orphaned by the `interests` removal, together with
 the header paragraph documenting a surface that no longer exists. Both gone.
 
+### A second pass, over the two product decisions
+
+The narrowing and the cascade were reviewed adversarially in turn, and the first
+finding is the worst defect in either batch.
+
+#### 8. A save could destroy a binder on its way to a legal end state
+
+The cascade runs per command, and the panel's plan is a sequence of commands.
+Withdrawing a disposition sat in the ownership block, so this plan —
+
+```
+offering(false)   copy A back to "haven't decided"
+record-copy       a second copy, marked "I'm keeping this one"
+```
+
+— left the card in **none of the four for the length of one command**. The
+domain pruned the memberships exactly as it is meant to. The next step put the
+card back into a state. So the save ended legal, `willHaveState` was true, the
+panel's warning correctly stayed silent, and **the binder had lost the card with
+no way for the panel to re-file it.** Reproduced end to end; three variants, one
+of which destroys an old membership while creating a new one in the same press.
+
+This is my error and it is the same shape as the batch-7 defect: a guard I had
+just added, doing damage through a door I had just opened. **And my own suite
+missed it for the same reason as batch 7 — it tested the domain one command at a
+time, never the sequence the panel actually sends.** Fixed by moving every
+state-removing step after every state-adding step and after the filing (§7), and
+pinned by `[28b]`, which runs the plan against the real domain rather than
+reading the order.
+
+#### 9. The Goals screen destroyed curation in total silence
+
+*No longer looking* is one button, on the main Goals screen, with no panel and
+no confirmation — and it can take a card out of every binder it is in. The
+warning shipped in the first pass existed on the specification panel only. Fixed:
+the Goals screen now reads the same four states and says what the click will do,
+and `[33c]` pins that it appears when the loss is real, stays silent when the
+card is kept, and treats bare ownership as not holding the filing up.
+
+#### 10. Archived binders were being emptied invisibly
+
+The prune reached every binder, including archived ones — contradicting
+`setBinderArchived`'s own stated invariant, and destroying curation on a screen
+the person cannot see. Fixed: the prune skips archived binders (§6), and the
+panel's warning counts only binders the person can see. `[21f]`.
+
+#### 11. `[21d]` over-claimed, and five comments had become false
+
+The test was titled *"a legacy stateless membership is left alone, not swept"*,
+but the code only guarantees that for a membership on **another** card; on the
+same card, a state given and withdrawn is pruned like any other, which is
+correct. Retitled to what it proves, with `[21e]` added for the other case. The
+false comments — `removeCollectorCopy`'s *"selling a card must not un-file it"*,
+`addBinderEntry`'s *"they are independent"*, the plan's *"a product decision that
+has not been made"*, the new suite's own header still arguing that bare ownership
+must qualify, and a c31 comment left directly above its own re-pin — are all
+corrected.
+
+Two smaller ones were confirmed and left: the panel's warning can promise a loss
+that will not happen if `removeGoal` is about to be refused `goal-locked` (the
+panel deliberately never predicts deal state), and the demo/prototype shell has
+remove controls with no warning (it is not production).
+
 ### Verified correct by the reviewer and left alone
 
 No route produces a both-true copy. No bypass of the binder invariant — every
@@ -474,6 +628,14 @@ partner projection, no deal record, and no cross-Collector qualification exists.
 `attrs` is jsonb with no allow-list. The keep-then-unkeep asymmetry is a
 deliberate change of mind, not data loss. And no disposition control renders for
 a copy the viewer does not own.
+
+From the second pass: the cascade's four commands are the **complete** set of
+single-command reducers (every writer of `goals` and `collectorCopies` was
+enumerated; nothing can change a `canonicalCardId`); it never over-reaches to
+another Collector, another card, or a card that still has a state, including the
+two-copy case; it cannot make a world unstorable or throw on a missing
+collection; every no-op returns the same object; and the client has no second
+source for binder contents, so a pruned membership disappears on the next paint.
 
 ---
 
@@ -502,67 +664,85 @@ a copy the viewer does not own.
 
 ---
 
-## 17. Two things deliberately NOT decided
+## 17. The decisions, and the one edge they did not cover
 
-Both are product decisions the principles do not settle, and the brief's stop
-conditions say to stop rather than guess. **Nothing in the code assumes an
-answer to either.**
+The first implementation left two questions open and wrote out the alternatives.
+Both have been answered by the product, and the answers are what §6 implements.
 
-### A. What happens when the last state is removed while memberships remain
+### A. What happens when the last state is removed — **ANSWERED**
 
-Today: `addBinderEntry` is guarded and **removal is untouched**, so a Collector
-who drops their last Goal on a filed card leaves a membership the invariant would
-not now allow. The world stays valid and storable; the card simply sits in a
-binder with nothing behind it, exactly as every pre-batch membership does.
+> **Automatically remove that card's Binder memberships, while preserving the
+> Goal/copy action itself.**
 
-The three options, with the argument for and against each:
+Of the three options written out, this is option 1 — the one the first
+implementation argued against, on the grounds that MetYet would silently destroy
+curation the person built in response to an unrelated act. The product's answer
+is that the act is not unrelated: a binder holds cards that mean something, so a
+card that means nothing is not in one. What the earlier argument did earn is the
+warnings in §8 — the destruction is not negotiable, but it is no longer silent on
+either surface that can cause it.
 
-| Option | For | Against |
-|---|---|---|
-| **1. Auto-remove** the memberships when the last state goes | The invariant becomes true of the whole world, not just of new writes | MetYet silently destroys curation the person built, in response to an unrelated act. Destructive, and unasked-for |
-| **2. Refuse** the removal while memberships exist | Nothing is destroyed and the rule is total | A Collector cannot stop wanting a card without first finding every binder it is in. The product blocks an honest statement to protect a filing rule |
-| **3. Allow it** (today's behaviour) — the invariant governs what can be *added* | Nothing is destroyed, nothing is blocked, and it is the only option that treats a pre-batch membership and a newly-orphaned one the same way | The invariant is true of writes rather than of the world; a binder can hold a card with no state, just not gain one |
+Option 2 (refuse the removal) is explicitly not what shipped: an honest statement
+is never blocked to protect a filing.
 
-**Option 3 is what ships**, because it is the only one that neither destroys nor
-blocks, and because it is what the existing worlds already require. It is not
-presented as the answer to the question — the question is which of the three
-MetYet *wants*, and that has not been asked.
+### B. Which states qualify — **ANSWERED**
 
-### B. The binder swap on a legacy stateless entry
+> **Only Primary Goal, Secondary Goal, Trade/Sell and PC. Ownership without
+> disposition is valid, and is not one of them.**
 
-A card filed before this rule, with no Goal and no copy, cannot be **moved**
+The first implementation let bare ownership qualify. The narrowing costs
+something real and it is worth naming: **every copy in every existing world has
+no disposition**, so a card whose only relationship is an undeclared copy is not
+filable until its owner says one word about it. That is the intended trade —
+the four are the vocabulary, and a binder rests on the vocabulary.
+
+### C. Archived binders — **NOT COVERED, AND READ CONSERVATIVELY**
+
+The decision says to remove "that card's Binder memberships". An archived binder
+is a binder, so the literal reading would empty it too. The implementation does
+**not**, for one reason: `setBinderArchived` has said since C3.4 that putting a
+binder away touches nothing inside it, and emptying one would destroy curation
+permanently on a screen the person cannot currently see. The conservative reading
+destroys nothing.
+
+The consequence, stated plainly: **unarchiving a binder can bring back a
+membership on a card that is now in none of the four.** That is exactly the
+legacy-tolerated category — a membership the rules permit to exist but would not
+create — so it needs no new machinery. If the product wants the literal reading
+instead, it is one filter in `pruneOrphanedMemberships` and one test (`[21f]`),
+and it should be decided rather than drifted into.
+
+### D. The binder swap on a legacy stateless entry — **UNCHANGED**
+
+A card filed before this rule, with no Goal and no copy, still cannot be **moved**
 between binders: the plan files before it unfiles (so a swap never passes through
-belonging nowhere), and the file is refused. The panel now explains why and names
-the two things that would fix it, which is the honest outcome — but it is a
-legacy membership that can be removed and not relocated.
-
-The three ways out are the same three above, plus a fourth that was **not**
-taken: letting `addBinderEntry` accept a stateless card **if it is already filed
-somewhere**. That would make membership self-justifying, which is the opposite of
-what the invariant says, so it is recorded here rather than done quietly.
-
----
+belonging nowhere), and the file is refused. The panel explains why and names
+what would make it legal. The fourth way out — letting `addBinderEntry` accept a
+stateless card *if it is already filed somewhere* — is still **not** taken,
+because it would make membership self-justifying, which is the opposite of the
+rule.
 
 ## 18. Changed files
 
 | File | Change |
 |---|---|
-| `domain/metyet-domain.js` | two refusal codes; `copyKept`, `copyOffered`, `copyDisposition`, `collectorStatesFor`, `cardMeansSomething` |
-| `domain/metyet-commands.js` | `withDisposition`; `setCollectorCopyKept` (new); `setCollectorCopyOffered` clears a keep without residue; `addCollectorCopy` accepts and validates `keeping`; `updateCollectorCopy` refuses it; `addBinderEntry` holds the invariant; `acceptPrice` header |
+| `domain/metyet-domain.js` | two refusal codes; `copyKept`, `copyOffered`, `copyDisposition`, `collectorStatesFor` (the four, narrowed), `cardHasState` |
+| `domain/metyet-commands.js` | `withDisposition`; `pruneOrphanedMemberships`; `setCollectorCopyKept` (new); `setCollectorCopyOffered` clears a keep without residue; `addCollectorCopy` accepts and validates `keeping`; `updateCollectorCopy` refuses it; `addBinderEntry` holds the invariant; the cascade in four commands; `acceptPrice` header |
 | `domain/metyet-world.js` | `keeping` optional and boolean; the both-true contradiction reported |
 | `domain/metyet-projection.js` | the partner allow-list documented — `keeping` deliberately absent |
 | `domain/README.md` | the True Match rule, corrected |
 | `server/exposed-commands.js` | 22 → 23; the hand-written count removed |
 | `client/commands.js` | `setCopyKept`; `addOwnedCopy` carries `keeping` |
 | `client/sign-in/SignIn.jsx` | the `keeping` step bound |
-| `client/collector/CardSpecification.jsx` | the plan reorder; three-value disposition; the refusal message; the pre-send check |
+| `client/collector/CardSpecification.jsx` | the plan order — state before filing, **withdrawals last**; three-value disposition; the refusal message; the pre-send check; the destruction warning |
 | `client/collector/sections/Collection.jsx` | Offered / Keeping / nothing; the `interests` block, indexes, dead import and stale comments removed |
-| `client/collector/sections/Goals.jsx` | "Wanted since" from `createdAt`; the "Confirmed" fact removed |
+| `client/collector/sections/Goals.jsx` | "Wanted since" from `createdAt`; the "Confirmed" fact removed; the destruction warning beside *No longer looking* |
 | `client/collector/CollectorShell.jsx`, `client/tp/sections/CollectorNetwork.jsx` | copy corrections |
 | `tests/phase5-four-state-and-binder-invariant.cjs` | **new**, 42 tests |
 | `tests/all.cjs` + 18 existing suites | registered; re-pinned, each with its reason in place |
 
-**33 files, +1,599 / −190.** `persistence/` untouched.
+**34 code files, +2,257 / −217**, across the first implementation and the two
+product decisions that followed it. `persistence/` untouched.
 
 ---
 
@@ -579,44 +759,55 @@ matching; no recommendations; no TP facelift; no notifications or task centre.
 
 ## 20. Risks and debt
 
-- **§17 A is unanswered**, and until it is, a binder can hold a card with no
-  state — it just cannot gain one. Every pre-batch membership is in this
-  position already.
+- **The cascade is irreversible, and that is by design.** MetYet cannot restore a
+  membership it pruned. Both production surfaces warn first; the demo and
+  prototype shells have remove controls that do not, because they are not
+  production. If a person ever asks "where did my binder go", the answer is in
+  this section rather than in the product.
+- **Every existing copy has no disposition**, so the narrowing means a card whose
+  only relationship is an undeclared copy is not filable until its owner says one
+  word about it. Nothing migrates, nothing is fabricated, and the panel explains
+  the refusal — but the first pilot Collector with a shoebox full of undeclared
+  copies will meet this.
+- **Unarchiving a binder can bring back a stateless membership** (§17 C). The
+  category is already tolerated, so nothing breaks; it is a known consequence of
+  the conservative reading, not an accident.
+- **The panel's warning can promise a loss that will not happen.** If
+  `removeGoal` is about to be refused `goal-locked`, nothing is saved and nothing
+  is pruned, but the sentence was already on screen. The panel deliberately never
+  predicts deal state, so fixing this means teaching it to — which is a second
+  implementation of a rule.
 - **A legacy `cardId`-only Goal or copy does not qualify a card for filing.**
   `collectorStatesFor` matches on `canonicalCardId` only, and migration 0011
   deliberately keeps the legacy column for the demo's copies. Binder entries are
   canonical-keyed, so this is unreachable in production data, but a demo world
-  that routes a canonical id to a legacy-keyed group would be refused on its face
-  — "I own this and you say I've said nothing". Recorded rather than fixed,
-  because fixing it means deciding whether a legacy id is an identity, which is a
-  closed question in the other direction.
+  that routes a canonical id to a legacy-keyed group would be refused on its
+  face. Recorded rather than fixed, because fixing it means deciding whether a
+  legacy id is an identity, which is a closed question in the other direction.
 - **The keep-then-unkeep asymmetry** loses an earlier offer. Defensible — the
   offer was withdrawn by the keep, which the person asked for — but it will
   surprise somebody, and one existing suite needed an explicit re-offer because
   of it.
-- **The panel's pre-send check duplicates the domain's rule in a second place.**
-  It is a message, not an authority (removing it changes only the wording a
-  person sees), but it is a second statement of when filing is legal and it can
-  drift. The domain remains the only thing that decides.
+- **Three places now compute "does this card mean something".** The domain
+  (authoritative), the panel's pre-send check, and the Goals screen's warning.
+  The latter two are messages, not authorities — removing either changes only
+  what a person reads — but they are second and third statements of the same
+  rule and they can drift. The domain remains the only thing that decides.
 - **`keeping` is unbounded by a migration.** It lives in `attrs` jsonb with no
-  column and no constraint, so nothing at the database level prevents a future
-  writer from putting something else there. `validateWorld` is the guard.
+  column and no constraint. `validateWorld` is the guard.
 - **`disposition-conflict` is now reachable** where before it was not, because
-  `keeping` travels through `addCollectorCopy`. The panel cannot produce it (the
-  disposition is one of three), but the door is open and the refusal exists for
-  that reason.
-
----
+  `keeping` travels through `addCollectorCopy`. The panel cannot produce it, but
+  the door is open and the refusal exists for that reason.
 
 ## 21. Completion gate
 
 ```
 $ node tests/all.cjs
-ALL SUITES PASSED          140 suites · 4,808 tests · 0 failures
+ALL SUITES PASSED          140 suites · 4,818 tests · 0 failures
 
-$ npm run prod     → PRODUCTION BUILD OK — bytes: 344,879
+$ npm run prod     → PRODUCTION BUILD OK — bytes: 345,458
 $ npm run smoke    → PROD SMOKE OK — rendered 83,686 chars
-$ npm run build:app -- --allow-unconfigured → main.js 319,166 bytes
+$ npm run build:app -- --allow-unconfigured → main.js 320,550 bytes
 ```
 
 Baseline reproduced before editing:
@@ -624,12 +815,12 @@ Baseline reproduced before editing:
 | | Before | After |
 |---|---|---|
 | Suites | 139 | **140** |
-| Tests | 4,766 | **4,808** |
+| Tests | 4,766 | **4,818** |
 | Failures | 0 | **0** |
 | Allow-list | 22 | **23** |
 | Domain commands | 50 | **51** |
 | Migrations | 13 (`0013_binders.sql`) | **13, unchanged** |
-| Production build | 343,529 | 344,879 |
+| Production build | 343,529 | 345,458 |
 | Production smoke | 83,686 chars | 83,686 chars |
 
 Confirmed: exposed commands 22 → 23, one addition, no removals; domain commands
@@ -657,19 +848,23 @@ somewhere honest to put that: nowhere.
 
 ## 23. Recommendation for the next smallest batch
 
-> **Answer §17 A: decide what happens to a Binder membership when the last state
-> behind it is removed.**
+> **Decide §17 C: whether the cascade should reach into archived binders.**
 
-It is the only question this batch deliberately left open, it is small, it
-touches one command, and every alternative is already written down with its
-argument. It also has to be answered before any batch that treats binders as
-something a person can rely on, because until then "a binder holds cards you have
-a relationship with" is true of new filings and not of the binder.
+It is the only question this batch answered by reading rather than by being told,
+it is one filter and one test either way, and leaving it undecided means the
+product has a rule with an unstated edge. It is genuinely small, so it belongs
+folded into whatever comes next rather than being a batch on its own.
 
-The second candidate, if that is judged too small to be a batch on its own, is
-**the PC view** — a sixth tab on Your Cards, now that PC is a fact. It is a
-derived view over an existing durable fact, adds no concept, and would be the
-first screen that treats keeping as a way to browse rather than a label.
+The candidate for that next batch is **the PC view** — a sixth tab on Your Cards,
+now that PC is a fact. It is a derived view over an existing durable fact, adds
+no concept, and would be the first screen that treats keeping as a way to browse
+rather than a label. It is also the natural place to find out whether people
+actually declare dispositions, which the narrowing now depends on.
+
+The alternative, if pilot feedback is wanted first: **nothing**. Two product
+rules landed here that change what a binder is, one of them destructive, and the
+cheapest way to learn whether they are right is to put them in front of a
+Collector before building on top of them.
 
 Explicitly **not** recommended next: anything transactional (Market Value,
 Pending, price), any generic abstraction over the four states, and any reopening

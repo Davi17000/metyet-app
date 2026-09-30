@@ -120,6 +120,8 @@ export function planFrom(state, canonicalCardId, answers) {
   const byId = new Map(copiesNow.map((b) => [b.id, b]));
 
   const steps = [];
+  /* Statements being TAKEN BACK, held until everything else has been sent. */
+  const withdrawals = [];
 
   /* 1. THE CONTAINERS, which say nothing about any card and so cannot fail for
      want of a state. */
@@ -165,7 +167,12 @@ export function planFrom(state, canonicalCardId, answers) {
     if (Object.keys(patch).length) steps.push({ kind: "correct-copy", copyId: draft.id, patch });
     /* A CHANGE OF DISPOSITION IS ONE OF TWO STATEMENTS, and going back to
        saying nothing is withdrawing whichever one was made. The two commands
-       clear each other in the domain, so a swap is one step and not two. */
+       clear each other in the domain, so a swap is one step and not two.
+
+       SAYING ONE HAPPENS HERE; TAKING ONE BACK HAPPENS LAST. Trade/Sell and PC
+       are two of the four states a binder membership rests on, so withdrawing
+       one is a REMOVAL and belongs with the other removals at the end — see
+       `withdrawals` and step 12. */
     const was = before.offered === true ? "offered"
       : before.keeping === true ? "keeping" : "unstated";
     if (was !== draft.disposition) {
@@ -174,9 +181,9 @@ export function planFrom(state, canonicalCardId, answers) {
       } else if (draft.disposition === "keeping") {
         steps.push({ kind: "keeping", copyId: draft.id, keeping: true });
       } else if (was === "offered") {
-        steps.push({ kind: "offering", copyId: draft.id, offered: false });
+        withdrawals.push({ kind: "offering", copyId: draft.id, offered: false });
       } else {
-        steps.push({ kind: "keeping", copyId: draft.id, keeping: false });
+        withdrawals.push({ kind: "keeping", copyId: draft.id, keeping: false });
       }
     }
   }
@@ -214,12 +221,26 @@ export function planFrom(state, canonicalCardId, answers) {
     if (!answers.binders.has(id)) steps.push({ kind: "unfile", binderId: id });
   }
 
-  /* 12. AND TAKING THINGS AWAY, AFTER EVERYTHING ELSE. Removing the last thing
-     a person had said about a card is the one step that can leave a filed card
-     with no state behind it, so it happens when nothing else is waiting on it.
-     What the domain should then do about the membership is a product decision
-     that has not been made — see the hand-back — so nothing here removes a
-     membership on somebody's behalf. */
+  /* 12. AND TAKING THINGS AWAY, AFTER EVERYTHING ELSE — INCLUDING WITHDRAWALS.
+
+     Removing the last of the four states takes the card out of every binder it
+     is in, and MetYet cannot put it back. That is what makes the position of
+     these steps load-bearing rather than tidy.
+
+     AN ADVERSARIAL READ CAUGHT THIS, AND IT COST A BINDER. Withdrawing a
+     disposition used to sit up in the ownership block, so somebody who set their
+     only offered copy back to "haven't decided" AND recorded a second copy they
+     are keeping sent `offering(false)` first. For the length of one command the
+     card was in none of the four; the domain pruned the memberships exactly as
+     it is meant to; the next step put the card back into a state. The save ended
+     legal, the panel never warned, and the binder had silently lost the card
+     with no way for the panel to re-file it.
+
+     So every step that takes a state AWAY happens after every step that adds one
+     and after the filing. The card never passes through statelessness on its way
+     somewhere else, and the cascade fires only when the person really has
+     stopped saying anything. */
+  for (const w of withdrawals) steps.push(w);
   if (goal && answers.want === "none") steps.push({ kind: "stop-looking", goalId: goal.id });
   for (const draft of answers.copies) {
     if (draft.removed && draft.id && byId.get(draft.id)) {
@@ -331,6 +352,15 @@ export default function CardSpecification({ card, context = null, state,
      act on — "This card is part of an active deal." The option is visible, it
      is never silently hidden, and nothing here decides what "active" means. */
 
+  /* THE FOUR STATES THIS SAVE WOULD LEAVE BEHIND, asked of the answers rather
+     than of what is stored: a Goal being removed in this press does not count,
+     and a copy being given a disposition in it does. Owning without saying
+     anything is deliberately not one of them. */
+  const willHaveState = answers.want !== "none"
+    || answers.copies.some((d) => !d.removed
+      && (d.disposition === "offered" || d.disposition === "keeping"));
+  const filedNow = plan.filedNow;
+
   /* Everything the person would have to fix before this can be sent. Asked of
      the answers, never of the server's refusals. */
   const localProblem = (() => {
@@ -347,23 +377,53 @@ export default function CardSpecification({ card, context = null, state,
         return "A reference value has to be a number, and not a negative one.";
       }
     }
-    /* FILING NEEDS SOMETHING TO BE COHERENT ABOUT, AND THE PANEL HAS TO SAY SO
-       BEFORE IT SENDS. A card the Collector has said nothing about cannot be
-       filed, and the domain refuses it — but without this the Save button looks
-       live, fires, and comes back with an error on the one screen whose entire
-       job is filing ("Add cards to this binder" opens here with a binder
-       already ticked). The sentence names the two things that would make it
-       legal rather than reporting a rule.
+    /* FILING NEEDS ONE OF THE FOUR, AND THE PANEL HAS TO SAY SO BEFORE IT
+       SENDS. A card in none of the four states cannot be filed, and the domain
+       refuses it — but without this the Save button looks live, fires, and comes
+       back with an error on the one screen whose entire job is filing ("Add
+       cards to this binder" opens here with a binder already ticked). The
+       sentence names what would make it legal rather than reporting a rule.
+
+       OWNING A COPY IS NOT ENOUGH; SAYING SOMETHING ABOUT IT IS. A recorded copy
+       with no disposition is a valid record and not a statement about what the
+       card means, so it does not open a binder — one word on the copy does.
 
        ASKED OF THE ANSWERS, so it describes the state this save WOULD leave
        behind: a Goal being removed in the same press does not count, and a copy
-       being recorded in it does. */
-    if (plan.steps.some((s) => s.kind === "file")
-      && answers.want === "none" && !answers.copies.some((d) => !d.removed)) {
-      return "A binder holds cards you're looking for or copies you own. "
-        + "Say you want this card, or record a copy, and it can go in a binder.";
+       being recorded with a disposition in it does. */
+    if (plan.steps.some((s) => s.kind === "file") && !willHaveState) {
+      return "A binder holds cards you're looking for, or copies you're trading "
+        + "or keeping. Say you want this card, or say what you'd do with a copy, "
+        + "and it can go in a binder.";
     }
     return null;
+  })();
+
+  /* WHAT THIS SAVE WILL COST, SAID BEFORE IT IS PRESSED.
+
+     Removing the last of the four states takes the card out of every binder it
+     is in, and MetYet cannot put it back. That is the product's decision and it
+     is not negotiable here — the panel does not block the statement and does not
+     offer to keep the filing — but a destructive consequence a person cannot
+     see coming is one they did not agree to. So it is named, once, in plain
+     words, beside the button that causes it. */
+  const consequence = (() => {
+    if (localProblem || willHaveState) return null;
+    /* The memberships this save would otherwise LEAVE behind — the ones still
+       ticked. A binder the person is unticking in the same press is being
+       unfiled on purpose and is not a consequence of anything. */
+    const visible = new Set(binders.map((b) => b.id));
+    const surviving = [...filedNow]
+      .filter((id) => answers.binders.has(id) && visible.has(id)).length;
+    if (!surviving) return null;
+    /* Only steps that TAKE a state away. A disposition being SET cannot reach
+       here — a draft carrying one makes `willHaveState` true — but the gate says
+       which it means rather than relying on that. */
+    if (!plan.steps.some((s) => s.kind === "stop-looking" || s.kind === "forget-copy"
+      || (s.kind === "offering" && s.offered === false)
+      || (s.kind === "keeping" && s.keeping === false))) return null;
+    return "Saving this leaves nothing said about the card, so it comes out of "
+      + (surviving === 1 ? "the binder it's in." : `all ${surviving} binders it's in.`);
   })();
 
   const commit = async () => {
@@ -657,6 +717,8 @@ export default function CardSpecification({ card, context = null, state,
 
         {problem ? <p className="mcs-add-problem" role="alert">{problem}</p> : null}
         {!problem && localProblem ? <p className="mcs-dim">{localProblem}</p> : null}
+        {!problem && !saved && consequence
+          ? <p className="mcs-dim" role="status">{consequence}</p> : null}
         {saved ? <p className="mcs-spec-saved" role="status">{saved}</p> : null}
 
         <p className="mcs-goal-do">
@@ -730,8 +792,9 @@ const WHY = {
      said nothing about has no relationship to be coherent about. The message
      names the two things that count, because "MetYet would not accept it" would
      leave a person pressing Save again. */
-  "card-has-no-state": "A binder holds cards you're looking for or copies you "
-    + "own. Say you want this card, or record a copy, and it can be filed.",
+  "card-has-no-state": "A binder holds cards you're looking for, or copies "
+    + "you're trading or keeping. Say you want this card, or say what you'd do "
+    + "with a copy, and it can be filed.",
   "disposition-conflict": "A copy is either one you'd part with or one you're "
     + "keeping — not both.",
 };

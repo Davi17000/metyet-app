@@ -350,12 +350,15 @@ describe("C. nothing reorganises a Collector's binder but the Collector", () => 
       { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } })).json().value;
     await file(ctx, ACTOR.casey, id, cards.firstEdition);
 
-    /* The card turns up. */
+    /* The card turns up, and they say what they'd do with it. RE-PINNED: the
+       disposition is the point of the scenario now, because the four states are
+       what a membership rests on and bare ownership is not one of them. */
     const copyId = (await own(ctx.app, "casey",
-      { canonicalCardId: cards.firstEdition, grade: "PSA 9", photos: PHOTOS })).json().value;
+      { canonicalCardId: cards.firstEdition, grade: "PSA 9", keeping: true, photos: PHOTOS })).json().value;
     eq((await entriesOf(ctx, id)).length, 1, "acquiring did not reorganise anything");
 
-    /* And the Collector stops looking. */
+    /* And the Collector stops looking. The Goal was never what the membership
+       named: they are keeping the copy, so the card still means something. */
     eq((await post(ctx.app, "casey", "removeGoal", { goalId })).statusCode, 200);
     const w = await load(ctx);
     eq(w.goals.length, 0, "the goal is gone");
@@ -363,16 +366,48 @@ describe("C. nothing reorganises a Collector's binder but the Collector", () => 
     assert(w.collectorCopies.some((b) => b.id === copyId), "and still owned");
   });
 
+  test("C2 — but dropping the LAST of the four takes the memberships with it", async () => {
+    /* THE PRODUCT'S DECISION, AND IT IS DESTRUCTIVE. C3.1 held that membership
+       was independent of state in every direction. It still is in every
+       direction but this one: a card in none of the four states has nothing for
+       a binder to be coherent about, so it does not stay in one. The Goal is
+       removed either way — MetYet never refuses an honest statement to protect a
+       filing — and the curation does not come back. */
+    const ctx = await world();
+    const cards = await charizard(ctx);
+    const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
+    const goalId = (await post(ctx.app, "casey", "addGoal",
+      { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } })).json().value;
+    await file(ctx, ACTOR.casey, id, cards.firstEdition);
+    /* Owned, but nothing said about the copy — which is valid, and is not one
+       of the four, so it does not hold the membership up. */
+    await own(ctx.app, "casey", { canonicalCardId: cards.firstEdition, grade: "PSA 9", photos: PHOTOS });
+    eq((await entriesOf(ctx, id)).length, 1, "the card was not filed to begin with");
+
+    eq((await post(ctx.app, "casey", "removeGoal", { goalId })).statusCode, 200);
+    const w = await load(ctx);
+    eq(w.goals.length, 0, "the Goal was refused to protect a filing");
+    eq(w.binderEntries.length, 0, "a membership survived with nothing behind it");
+    eq(w.collectorCopies.length, 1, "the copy was swept up in it");
+    assert(!("keeping" in w.collectorCopies[0]), "a disposition was invented to rescue the filing");
+  });
+
   test("E — the last owned copy leaving does not un-file the card", async () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
-    /* OWNING IS ITSELF THE QUALIFYING STATE HERE, which is what makes this
-       scenario the sharp one: the card is filed BECAUSE it is owned, and then
-       the copy goes away. */
+    /* AN OFFERED COPY IS THE QUALIFYING STATE HERE — owning alone is not one of
+       the four. */
     const copyId = (await own(ctx.app, "casey",
       { canonicalCardId: cards.firstEdition, offered: true, photos: PHOTOS })).json().value;
     eq((await load(ctx)).collectorCopies.length, 1, "owned");
+    /* RE-PINNED WITH A GOAL BEHIND IT, which is what makes this a test of what
+       a membership NAMES rather than of the last-state rule. The copy goes and
+       the card still means something, so if the membership survives it can only
+       be because it names the canonical card. (The case where the copy was the
+       last of the four is E2.) */
+    await post(ctx.app, "casey", "addGoal",
+      { canonicalCardId: cards.firstEdition, tier: "secondary", desired: { grade: "PSA 10" } });
     await file(ctx, ACTOR.casey, id, cards.firstEdition);
 
     eq((await post(ctx.app, "casey", "removeCollectorCopy", { copyId })).statusCode, 200);
@@ -386,6 +421,21 @@ describe("C. nothing reorganises a Collector's binder but the Collector", () => 
     eq(w.binderEntries[0].canonicalCardId, cards.firstEdition);
   });
 
+  test("E2 — and when that copy WAS the last of the four, the membership goes", async () => {
+    const ctx = await world();
+    const cards = await charizard(ctx);
+    const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
+    const copyId = (await own(ctx.app, "casey",
+      { canonicalCardId: cards.firstEdition, offered: true, photos: PHOTOS })).json().value;
+    await file(ctx, ACTOR.casey, id, cards.firstEdition);
+    eq((await entriesOf(ctx, id)).length, 1, "the card was not filed to begin with");
+
+    eq((await post(ctx.app, "casey", "removeCollectorCopy", { copyId })).statusCode, 200);
+    const w = await load(ctx);
+    eq(w.collectorCopies.length, 0, "the copy was refused to protect a filing");
+    eq(w.binderEntries.length, 0, "a membership survived with nothing behind it");
+  });
+
   test("F — three physical copies of one card are one place it belongs", async () => {
     const ctx = await world();
     const cards = await charizard(ctx);
@@ -395,10 +445,12 @@ describe("C. nothing reorganises a Collector's binder but the Collector", () => 
       made.push((await own(ctx.app, "casey",
         { canonicalCardId: cards.shadowless, ...spec, photos: PHOTOS })).json().value);
     }
-    /* Owning three copies is one card meaning something, filed once. */
-    await file(ctx, ACTOR.casey, id, cards.shadowless);
+    /* RE-PINNED: one word about one of the three is what opens the binder —
+       owning three copies and saying nothing about any of them is valid and is
+       not one of the four. Said BEFORE filing, because state comes first. */
     eq((await post(ctx.app, "casey", "setCollectorCopyOffered",
       { copyId: made[1], offered: true })).statusCode, 200);
+    await file(ctx, ACTOR.casey, id, cards.shadowless);
 
     const w = await load(ctx);
     eq(w.collectorCopies.length, 3, "three physical objects");

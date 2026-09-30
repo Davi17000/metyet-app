@@ -609,13 +609,20 @@ describe("E. what C3.2 did not touch", () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const binderId = (await direct(ctx, ACTOR.casey, "createBinder", { name: "Mudkip Collection" })).value;
-    /* THE WANT COMES FIRST NOW. The four-state batch made a card with no state
-       unfilable, so this fixture files after saying something about the card —
-       which is also the order the Card Specification panel sends in. The
-       assertions below are unchanged, and the last two are the interesting
-       ones: removing the Goal leaves the membership exactly where it was. */
+    /* THE WANT COMES FIRST NOW. The four-state batch made a card in none of the
+       four unfilable, so this fixture says something about the card before it
+       files it — which is also the order the Card Specification panel sends in.
+
+       AND A KEPT COPY, RE-PINNED. What this test is for is that EDITING a Goal
+       never disturbs organisation: sharpening the criteria, and moving between
+       Secondary and Primary, are changes WITHIN the four and must not so much as
+       flicker a membership. Removing the Goal is a different act — it can empty
+       the card — so the copy carries a state of its own here and the last
+       assertions stay about editing rather than about the last-state rule. */
     await want(ctx.app, "casey", cards.firstEdition, "secondary",
       { desired: { grade: "Raw", condition: "Near Mint" } });
+    await post(ctx.app, "casey", "addCollectorCopy",
+      { copy: { canonicalCardId: cards.firstEdition, grade: "PSA 9", keeping: true } });
     await direct(ctx, ACTOR.casey, "addBinderEntry", { binderId, canonicalCardId: cards.firstEdition });
     const goalId = (await goalFor(ctx, cards.firstEdition)).id;
 

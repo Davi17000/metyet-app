@@ -1424,10 +1424,18 @@ describe("G. want, own, offer and file are four answers, not one", () => {
   test("selling the last copy leaves the binder membership — the C3.1 proof, from the new surface", async () => {
     const { ctx, made } = await setup();
     const bind = (await post(ctx.app, "casey", "createBinder", { name: "Keepers" })).json().value;
-    /* OWNING IS THE QUALIFYING STATE HERE, which sharpens the proof: the card is
-       filed BECAUSE it is owned, and then the copy goes away. */
+    /* RE-PINNED. What this proves is what a membership NAMES — the canonical
+       card, never the physical copy — so the card has to still mean something
+       once the copy is gone, or the two questions get mixed up. A Goal carries
+       it here; the copy goes and the membership stays, which it could only do by
+       naming the card.
+
+       THE OTHER CASE, where the copy held the card's last state, is the
+       four-state suite's `[21b]`: there the membership goes, and that is the
+       last-state rule rather than anything about copies. */
     const id = (await own(ctx.app, "casey",
-      { canonicalCardId: made.firstEdition, grade: "PSA 9" })).json().value;
+      { canonicalCardId: made.firstEdition, grade: "PSA 9", offered: true })).json().value;
+    await want(ctx.app, "casey", made.firstEdition, "secondary", { desired: { grade: "PSA 10" } });
     await post(ctx.app, "casey", "addBinderEntry", { binderId: bind, canonicalCardId: made.firstEdition });
 
     eq((await post(ctx.app, "casey", "removeCollectorCopy", { copyId: id })).statusCode, 200);

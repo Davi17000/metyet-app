@@ -1511,20 +1511,30 @@ const copyOffered = (copy) => copy != null && copy.offered === true;
 const copyDisposition = (copy) => (copyOffered(copy) ? "offered"
   : copyKept(copy) ? "keeping" : "unstated");
 
-/* WHETHER A CANONICAL CARD MEANS ANYTHING TO THIS COLLECTOR YET.
+/* THE FOUR STATES A CANONICAL CARD CAN BE IN FOR ONE COLLECTOR.
 
-   The Binder invariant reads this: a binder expresses coherence among cards
-   that already mean something, so a card with no Goal and no owned copy has no
-   relationship for a binder to be coherent about.
+     Primary Goal     hunting it, in this grade            a fact about the CARD
+     Secondary Goal   want it, less urgently               a fact about the CARD
+     Trade/Sell       own this copy, would part with it    a fact about a COPY
+     PC               own this copy, intend to keep it     a fact about a COPY
 
-   OWNING COUNTS, WHETHER OR NOT A DISPOSITION HAS BEEN STATED. Acquiring a card
-   is itself a collecting decision; "I own this and have not yet decided whether
-   I would part with it" is a real and extremely common state, and it is the
-   state EVERY copy in every existing world is in, since PC has only just become
-   sayable. Requiring a disposition before a card could be filed would make the
-   commonest card in the product unfilable, and would push people into declaring
-   a disposition they have not made — which is the inference this whole design
-   exists to avoid. */
+   These four and no others. A card can be in several at once — somebody hunting
+   a better copy of a card they already keep is in two — so this returns a list
+   and there is no single-valued "state" anywhere, because any single value would
+   be a lie about that Collector.
+
+   OWNING WITHOUT A DISPOSITION IS VALID, AND IS NOT ONE OF THE FOUR. A copy
+   whose owner has said nothing about it is a real and honest record — it is what
+   every copy in every existing world is, since PC has only just become sayable —
+   and nothing here removes it, hides it, or invents a disposition for it. It
+   simply is not a statement about what the card MEANS to its owner, which is
+   what these four are and what a Binder is coherent about.
+
+   THIS IS A NARROWING, AND IT WAS DECIDED RATHER THAN DERIVED. An earlier draft
+   let bare ownership qualify, on the argument that acquiring a card is itself a
+   collecting decision. The product's answer is that it is not one of the four,
+   and the four are the vocabulary. Recorded here so the next reader knows the
+   line was drawn deliberately and does not re-argue it from the code. */
 const collectorStatesFor = (canonicalCardId, goals, copies) => {
   const card = canonicalCardId;
   if (card == null || card === "") return [];
@@ -1533,11 +1543,21 @@ const collectorStatesFor = (canonicalCardId, goals, copies) => {
     if (g && g.canonicalCardId === card) out.push(g.tier === "primary" ? "primary" : "secondary");
   }
   for (const c of copies || []) {
-    if (c && c.canonicalCardId === card) out.push(`own:${copyDisposition(c)}`);
+    if (!c || c.canonicalCardId !== card) continue;
+    if (copyOffered(c)) out.push("trade-sell");
+    else if (copyKept(c)) out.push("pc");
   }
   return out;
 };
-const cardMeansSomething = (canonicalCardId, goals, copies) =>
+
+/* WHETHER THIS CARD IS IN ANY OF THE FOUR, WHICH IS WHAT A BINDER NEEDS.
+
+   A binder expresses coherence among cards that mean something. A card in none
+   of the four has nothing for a binder to be coherent about, so it cannot be
+   filed — and when the last of the four goes, the memberships go with it. Both
+   halves read this one predicate, so the rule for getting in and the rule for
+   staying in cannot drift apart. */
+const cardHasState = (canonicalCardId, goals, copies) =>
   collectorStatesFor(canonicalCardId, goals, copies).length > 0;
 
 const soldInventoryIds = (opps) => new Set((opps || [])
@@ -1706,7 +1726,7 @@ module.exports.copyKept = copyKept;
 module.exports.copyOffered = copyOffered;
 module.exports.copyDisposition = copyDisposition;
 module.exports.collectorStatesFor = collectorStatesFor;
-module.exports.cardMeansSomething = cardMeansSomething;
+module.exports.cardHasState = cardHasState;
 module.exports.qualifyingOn = qualifyingOn;
 module.exports.openToNewQualification = openToNewQualification;
 module.exports.holdingCopy = holdingCopy;
