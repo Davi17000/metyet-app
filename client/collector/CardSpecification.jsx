@@ -120,38 +120,39 @@ export function planFrom(state, canonicalCardId, answers) {
   const byId = new Map(copiesNow.map((b) => [b.id, b]));
 
   const steps = [];
-  /* Statements being TAKEN BACK, held until everything else has been sent. */
+  /* Statements a live DEAL can refuse, held back behind everything it could
+     otherwise cost, and statements being TAKEN BACK, held back further still. */
+  const corrections = [];
   const withdrawals = [];
 
-  /* 1. THE CONTAINERS, which say nothing about any card and so cannot fail for
-     want of a state. */
+  /* 1. THE CONTAINERS, which name no card and so cannot fail for anything a
+     later step says. */
   for (const name of answers.newBinders) steps.push({ kind: "make-binder", name });
 
-  /* 2–5. DEMAND. Criteria before tier, so that a Goal a partner is already
-     working from becomes MORE precise before it becomes more urgent. */
-  const stated = (answers.desired.grade || answers.desired.condition)
-    ? { grade: answers.desired.grade || null,
-      condition: isRaw(answers.desired.grade) ? (answers.desired.condition || null) : null }
-    : null;
-  const sameCriteria = (a, b) => (text(a && a.grade) || null) === (text(b && b.grade) || null)
-    && (text(a && a.condition) || null) === (text(b && b.condition) || null);
-  if (goal && answers.want !== "none") {
-    if (stated && !sameCriteria(goal.desired, stated)) {
-      steps.push({ kind: "wanted-copy", goalId: goal.id, desired: stated });
-    }
-    if (goal.tier !== answers.want) {
-      steps.push({ kind: "how-hard", goalId: goal.id, tier: answers.want });
-    }
-  }
+  /* 2. WHAT CAN ONLY BE REFUSED FOR WHAT IT SAYS, AND THAT IS THE WHOLE ORDER.
 
-  if (!goal && answers.want !== "none") {
-    steps.push({ kind: "start-looking", tier: answers.want, desired: stated });
-  }
+     `commit` stops at the first refusal, because a later step might depend on an
+     earlier one. So the order decides what a person LOSES when one statement is
+     refused, and the rule is: every step that can only fail on its own terms
+     runs before every step a live DEAL can refuse.
 
-  /* 6–9. OWNERSHIP. A duplicate physical copy
-     is a legitimate thing to own, so nothing downstream can tell an accidental
-     second send from a real second copy — which means creating one must be the
-     step with the least behind it if the sequence stops. */
+     Three commands can be refused for something that is not about what they say:
+     `updateGoalCriteria` and `updateGoalTier` answer `goal-locked`, and
+     `updateCollectorCopy` answers `copy-committed` when a deal has taken the
+     copy. Everything else — recording a copy, saying what you would do with it,
+     starting a goal, filing, unfiling — can be refused only for itself.
+
+     THE FIRST ATTEMPT AT THIS GOT IT WRONG, and the correction is the point.
+     Demand used to run first, so a Goal held by a deal cost a person the card
+     they had just bought. Moving ALL ownership ahead of it mirrored the bug:
+     `correct-copy` is deal-refusable too, so a mistyped certificate on a traded
+     copy then cost them the tier change. The line is not ownership versus
+     demand; it is refusable-for-itself versus refusable-for-a-deal, and the
+     corrections below are held back with the criteria for exactly that reason.
+
+     A duplicate physical copy is a legitimate thing to own, so nothing
+     downstream can tell an accidental second send from a real second copy, which
+     is why creating one still has the least behind it if the sequence stops. */
   for (const draft of answers.copies) {
     const before = draft.id ? byId.get(draft.id) : null;
     if (draft.id && !before) continue;                 // already gone; nothing to do
@@ -164,15 +165,13 @@ export function planFrom(state, canonicalCardId, answers) {
       const was = before[k] === undefined ? null : before[k];
       if (json(v) !== json(was)) patch[k] = v;
     }
-    if (Object.keys(patch).length) steps.push({ kind: "correct-copy", copyId: draft.id, patch });
+    if (Object.keys(patch).length) corrections.push({ kind: "correct-copy", copyId: draft.id, patch });
     /* A CHANGE OF DISPOSITION IS ONE OF TWO STATEMENTS, and going back to
        saying nothing is withdrawing whichever one was made. The two commands
        clear each other in the domain, so a swap is one step and not two.
 
-       SAYING ONE HAPPENS HERE; TAKING ONE BACK HAPPENS LAST. Trade/Sell and PC
-       are two of the four states a binder membership rests on, so withdrawing
-       one is a REMOVAL and belongs with the other removals at the end — see
-       `withdrawals` and step 12. */
+       SAYING ONE HAPPENS HERE; TAKING ONE BACK HAPPENS LAST, with the other
+       removals — see `withdrawals` and the last block. */
     const was = before.offered === true ? "offered"
       : before.keeping === true ? "keeping" : "unstated";
     if (was !== draft.disposition) {
@@ -203,21 +202,30 @@ export function planFrom(state, canonicalCardId, answers) {
     }, draftId: draft.key });
   }
 
-  /* 10–11. FILING LAST, AND THIS ORDER IS LOAD-BEARING.
+  /* A NEW Goal belongs up here too: `addGoal` answers only for itself. It is
+     `updateGoalCriteria` and `updateGoalTier` — the two that touch a Goal a
+     negotiation may already be working from — that wait. */
+  const stated = (answers.desired.grade || answers.desired.condition)
+    ? { grade: answers.desired.grade || null,
+      condition: isRaw(answers.desired.grade) ? (answers.desired.condition || null) : null }
+    : null;
+  const sameCriteria = (a, b) => (text(a && a.grade) || null) === (text(b && b.grade) || null)
+    && (text(a && a.condition) || null) === (text(b && b.condition) || null);
+  if (!goal && answers.want !== "none") {
+    steps.push({ kind: "start-looking", tier: answers.want, desired: stated });
+  }
 
-     Filing used to come first, on the reasoning that organisation is the most
-     reversible thing on this panel. That reasoning stopped being true when the
-     domain learned that a card nobody has said anything about cannot be filed:
-     an adversarial read of this plan found that the commonest flow in the whole
-     product — find a card in Browse, tick a binder, say you want it, Save —
-     would have been refused at its second step, because the Goal that makes the
-     filing legal had not been written yet.
+  /* 3. FILING, WHICH DEPENDS ON NOTHING AND CAN BE REFUSED BY NOTHING BUT A
+     BINDER THAT IS NOT YOURS.
 
-     So state is established first and membership follows it. Unfiling comes
-     after filing for the same reason it always did (a binder swap should not
-     pass through a moment of belonging nowhere), and removals come last of all,
-     so a sequence that stops leaves a person with MORE said about their card
-     than they started with rather than less. */
+     For one batch a card had to be in one of the four states before it could be
+     filed, so this block had to follow the ones that put it there. That rule is
+     withdrawn: organisation does not decide whether a Goal or a copy is
+     meaningful. So filing joins the steps that can only fail on their own terms,
+     and a ticked binder is no longer lost to a locked Goal.
+
+     Unfiling comes after filing for the reason it always did — a binder swap
+     should not pass through a moment of belonging nowhere. */
   for (const id of answers.binders) {
     if (!filedNow.has(id)) steps.push({ kind: "file", binderId: id });
   }
@@ -225,25 +233,33 @@ export function planFrom(state, canonicalCardId, answers) {
     if (!answers.binders.has(id)) steps.push({ kind: "unfile", binderId: id });
   }
 
-  /* 12. AND TAKING THINGS AWAY, AFTER EVERYTHING ELSE — INCLUDING WITHDRAWALS.
+  /* 4. AND WHAT A DEAL CAN REFUSE, HELD BACK TO HERE. A correction to a copy a
+     shop has taken, and a Goal a negotiation is working from, are the three
+     commands that answer for something other than themselves. Nothing above
+     them is lost when one of them is. */
+  for (const c of corrections) steps.push(c);
+  if (goal && answers.want !== "none") {
+    if (stated && !sameCriteria(goal.desired, stated)) {
+      steps.push({ kind: "wanted-copy", goalId: goal.id, desired: stated });
+    }
+    if (goal.tier !== answers.want) {
+      steps.push({ kind: "how-hard", goalId: goal.id, tier: answers.want });
+    }
+  }
 
-     Removing the last of the four states takes the card out of every binder it
-     is in, and MetYet cannot put it back. That is what makes the position of
-     these steps load-bearing rather than tidy.
+  /* 5. AND TAKING THINGS AWAY, AFTER EVERYTHING ELSE — INCLUDING WITHDRAWALS.
 
-     AN ADVERSARIAL READ CAUGHT THIS, AND IT COST A BINDER. Withdrawing a
-     disposition used to sit up in the ownership block, so somebody who set their
-     only offered copy back to "haven't decided" AND recorded a second copy they
-     are keeping sent `offering(false)` first. For the length of one command the
-     card was in none of the four; the domain pruned the memberships exactly as
-     it is meant to; the next step put the card back into a state. The save ended
-     legal, the panel never warned, and the binder had silently lost the card
-     with no way for the panel to re-file it.
+     A sequence that stops should leave a person with MORE said about their card
+     than they started with, never less. Stopping looking, forgetting a copy and
+     withdrawing a disposition are all the same kind of act, so they all wait
+     until every addition has landed.
 
-     So every step that takes a state AWAY happens after every step that adds one
-     and after the filing. The card never passes through statelessness on its way
-     somewhere else, and the cascade fires only when the person really has
-     stopped saying anything. */
+     This block also used to carry a second reason, and that one is gone: while
+     the domain pruned binder memberships when a card lost its last state, a
+     withdrawal sitting earlier in the plan could take a binder's card away in
+     the middle of a Save that ended perfectly legal. No prune, no hazard. The
+     ordering survives on the first reason alone, which is the one it had before
+     the second one existed. */
   for (const w of withdrawals) steps.push(w);
   if (goal && answers.want === "none") steps.push({ kind: "stop-looking", goalId: goal.id });
   for (const draft of answers.copies) {
@@ -252,6 +268,11 @@ export function planFrom(state, canonicalCardId, answers) {
     }
   }
 
+  /* `steps` is the work; `goal` is read by the panel. `copiesNow`, `myBinders`
+     and `filedNow` became unread when the pre-send state check and the
+     destruction warning went, and they are kept because they describe the plan's
+     own inputs and cost nothing — a caller reasoning about a plan wants them.
+     If that stops being true they should go. */
   return { steps, goal, copiesNow, myBinders, filedNow };
 }
 
@@ -364,15 +385,6 @@ export default function CardSpecification({ card, context = null, state,
      act on — "This card is part of an active deal." The option is visible, it
      is never silently hidden, and nothing here decides what "active" means. */
 
-  /* THE FOUR STATES THIS SAVE WOULD LEAVE BEHIND, asked of the answers rather
-     than of what is stored: a Goal being removed in this press does not count,
-     and a copy being given a disposition in it does. Owning without saying
-     anything is deliberately not one of them. */
-  const willHaveState = answers.want !== "none"
-    || answers.copies.some((d) => !d.removed
-      && (d.disposition === "offered" || d.disposition === "keeping"));
-  const filedNow = plan.filedNow;
-
   /* Everything the person would have to fix before this can be sent. Asked of
      the answers, never of the server's refusals. */
   const localProblem = (() => {
@@ -389,65 +401,19 @@ export default function CardSpecification({ card, context = null, state,
         return "A reference value has to be a number, and not a negative one.";
       }
     }
-    /* FILING NEEDS ONE OF THE FOUR, AND THE PANEL HAS TO SAY SO BEFORE IT
-       SENDS. A card in none of the four states cannot be filed, and the domain
-       refuses it — but without this the Save button looks live, fires, and comes
-       back with an error on the one screen whose entire job is filing ("Add
-       cards to this binder" opens here with a binder already ticked). The
-       sentence names what would make it legal rather than reporting a rule.
-
-       OWNING A COPY IS NOT ENOUGH; SAYING SOMETHING ABOUT IT IS. A recorded copy
-       with no disposition is a valid record and not a statement about what the
-       card means, so it does not open a binder — one word on the copy does.
-
-       ASKED OF THE ANSWERS, so it describes the state this save WOULD leave
-       behind: a Goal being removed in the same press does not count, and a copy
-       being recorded with a disposition in it does. */
-    if (plan.steps.some((s) => s.kind === "file") && !willHaveState) {
-      return "A binder holds cards you're looking for, or copies you're trading "
-        + "or keeping. Say you want this card, or say what you'd do with a copy, "
-        + "and it can go in a binder.";
-    }
     return null;
-  })();
-
-  /* WHAT THIS SAVE WILL COST, SAID BEFORE IT IS PRESSED.
-
-     Removing the last of the four states takes the card out of every binder it
-     is in, and MetYet cannot put it back. That is the product's decision and it
-     is not negotiable here — the panel does not block the statement and does not
-     offer to keep the filing — but a destructive consequence a person cannot
-     see coming is one they did not agree to. So it is named, once, in plain
-     words, beside the button that causes it. */
-  const consequence = (() => {
-    if (localProblem || willHaveState) return null;
-    /* The memberships this save would otherwise LEAVE behind — the ones still
-       ticked. A binder the person is unticking in the same press is being
-       unfiled on purpose and is not a consequence of anything. */
-    const visible = new Set(binders.map((b) => b.id));
-    const surviving = [...filedNow]
-      .filter((id) => answers.binders.has(id) && visible.has(id)).length;
-    if (!surviving) return null;
-    /* Only steps that TAKE a state away. A disposition being SET cannot reach
-       here — a draft carrying one makes `willHaveState` true — but the gate says
-       which it means rather than relying on that. */
-    if (!plan.steps.some((s) => s.kind === "stop-looking" || s.kind === "forget-copy"
-      || (s.kind === "offering" && s.offered === false)
-      || (s.kind === "keeping" && s.keeping === false))) return null;
-    return "Saving this leaves nothing said about the card, so it comes out of "
-      + (surviving === 1 ? "the binder it's in." : `all ${surviving} binders it's in.`);
   })();
 
   /* THE COPY THE SERVER JUST MINTED, BOUND TO THE DRAFT THAT ASKED FOR IT.
 
      A retry is the whole reason this panel recomputes its plan instead of
-     replaying it, and for every other step that works: a Goal that exists is not
+     replaying it, and for every other step it works: a Goal that exists is not
      created twice, a binder entry is idempotent. A NEW COPY was the exception,
      because the draft that produced it carried `id: null` and nothing ever
-     filled that in — the step's draft id was written and read by nothing.
-     So a Save where `record-copy` succeeded and a later step failed left the
-     person holding the panel's own promise — "pressing Save again sends only
-     what is left" — over a button that would record a SECOND physical copy.
+     filled that in — the step's draft id was written and read by nothing. So a
+     Save where `record-copy` succeeded and a later step failed left the person
+     holding the panel's own promise — "pressing Save again sends only what is
+     left" — over a button that would record a SECOND physical copy.
 
      THE FIX IS THE ID THE SERVER ALREADY RETURNS, not a comparison of contents.
      Two genuinely identical copies are a legitimate thing to own, so nothing
@@ -764,8 +730,6 @@ export default function CardSpecification({ card, context = null, state,
 
         {problem ? <p className="mcs-add-problem" role="alert">{problem}</p> : null}
         {!problem && localProblem ? <p className="mcs-dim">{localProblem}</p> : null}
-        {!problem && !saved && consequence
-          ? <p className="mcs-dim" role="status">{consequence}</p> : null}
         {saved ? <p className="mcs-spec-saved" role="status">{saved}</p> : null}
 
         <p className="mcs-goal-do">
@@ -834,14 +798,6 @@ const WHY = {
   "card-unavailable": "MetYet can no longer use that version of the card.",
   "invalid-amount": "A reference value has to be a number, and not a negative one.",
   "identity-immutable": "That part of a copy cannot be changed.",
-  /* THE ONE RULE THIS BATCH ADDED IS THE ONE THE PANEL MUST BE ABLE TO SAY.
-     A binder holds cards a Collector has a relationship with; a card they have
-     said nothing about has no relationship to be coherent about. The message
-     names the two things that count, because "MetYet would not accept it" would
-     leave a person pressing Save again. */
-  "card-has-no-state": "A binder holds cards you're looking for, or copies "
-    + "you're trading or keeping. Say you want this card, or say what you'd do "
-    + "with a copy, and it can be filed.",
   "disposition-conflict": "A copy is either one you'd part with or one you're "
     + "keeping — not both.",
 };

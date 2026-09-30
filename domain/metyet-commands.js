@@ -56,58 +56,6 @@ const list = (xs) => xs || [];
    REMOVES the key rather than writing `false`. Writing `false` everywhere would
    dress "unstated" up as a decision, and migration 0012 exists because exactly
    that confusion once cost a Collector their visible supply. */
-/* WHEN THE LAST OF THE FOUR GOES, THE MEMBERSHIPS GO WITH IT.
-
-   A Binder holds cards that mean something to their owner. The filing rule says
-   a card with no state cannot get in; this says a card that loses its last state
-   does not stay in. One predicate, `cardHasState`, answers both, so "what a
-   binder is for" is stated once.
-
-   THE ACT ITSELF IS NEVER BLOCKED OR ALTERED. Stopping wanting a card, selling a
-   copy, withdrawing an offer and withdrawing a keep are all honest statements,
-   and refusing one to protect a filing would make MetYet hold a person to a
-   position they have abandoned. The statement lands; the organisation follows.
-
-   THIS DESTROYS CURATION, AND THAT IS THE DECISION, NOT AN OVERSIGHT. A person
-   who drops their last Goal on a card loses that card's place in every binder it
-   was in, and MetYet cannot give it back. It is recorded here because it is the
-   one genuinely destructive consequence in this design: the alternative
-   considered was refusing the removal until the card was unfiled by hand, which
-   blocks an honest statement, and the alternative shipped is this one.
-
-   IT TOUCHES ONE COLLECTOR AND ONE CARD. Only the acting Collector's binders,
-   only the canonical card the act was about, and only when that card is now in
-   none of the four. A legacy stateless membership on some OTHER card is left
-   exactly as it was: tolerated, not migrated, and never fabricated into a state.
-   A no-op returns the same state object, so a command that changes nothing still
-   changes nothing.
-
-   AND IT DOES NOT REACH INTO AN ARCHIVED BINDER. `setBinderArchived` has said
-   since C3.4 that putting a binder away touches nothing inside it — "an archived
-   binder still holds its cards, or unarchiving would be a different binder" —
-   and a prune that emptied one would destroy, permanently and invisibly,
-   curation on a screen the person cannot currently see. An archived binder is
-   put away, not live; what it holds is a record of how it was left. Unarchiving
-   one can therefore bring back a stateless membership, which lands in exactly
-   the category the product already tolerates and never fabricates a state for.
-   This edge was not part of the decision and the conservative reading is the one
-   that destroys nothing; it is written up in the hand-back with its
-   alternative. */
-const pruneOrphanedMemberships = (state, collectorId, canonicalCardId) => {
-  if (collectorId == null || canonicalCardId == null || canonicalCardId === "") return state;
-  const mine = list(state.binders)
-    .filter((b) => b.collectorId === collectorId && !b.archivedAt);
-  if (!mine.length) return state;
-  if (D.cardHasState(canonicalCardId,
-    list(state.goals).filter((g) => g.collectorId === collectorId),
-    list(state.collectorCopies).filter((c) => c.collectorId === collectorId))) return state;
-  const ids = new Set(mine.map((b) => b.id));
-  const kept = list(state.binderEntries)
-    .filter((e) => !(ids.has(e.binderId) && e.canonicalCardId === canonicalCardId));
-  if (kept.length === list(state.binderEntries).length) return state;
-  return { ...state, binderEntries: kept };
-};
-
 const withDisposition = (copy, offered, keeping, at) => {
   const { keeping: _withdrawn, ...rest } = copy;
   return { ...rest, offered: offered === true,
@@ -625,11 +573,10 @@ const COMMANDS = {
        persistence layer a world it refuses. Cancelling the dead deal is the way
        through, and it is one command away. */
     if (D.goalNamedByActive(goalId, state.opportunities)) return refuse(R.goalLocked);
-    /* The Goal goes whatever happens. If it was the card's last state, its
-       binder memberships go with it — see `pruneOrphanedMemberships`. */
-    return done(pruneOrphanedMemberships(
-      { ...state, goals: list(state.goals).filter((x) => x.id !== goalId) },
-      g.collectorId, g.canonicalCardId), true);
+    /* ORGANISATION IS NOT A CONSEQUENCE OF THIS. Dropping a Goal says the
+       Collector has stopped looking; it says nothing about where they had filed
+       the card, and a binder is theirs to reorganise. */
+    return done({ ...state, goals: list(state.goals).filter((x) => x.id !== goalId) }, true);
   },
 
   /* ------------------------------------------------------------ inventory */
@@ -1046,14 +993,9 @@ const COMMANDS = {
        offer does NOT set `keeping` — that would infer an intention nobody
        stated, which is the whole reason `keeping` exists. */
     if (copy.offered === offered && !(offered && D.copyKept(copy))) return done(state, copyId);
-    /* WITHDRAWING AN OFFER CAN EMPTY A CARD. Trade/Sell is one of the four, so a
-       copy returning to "nothing said" can leave its card in none of them —
-       and then the memberships follow it out. */
-    return done(pruneOrphanedMemberships(
-      { ...state, collectorCopies: list(state.collectorCopies).map((b) => (b.id === copyId
-        ? withDisposition(b, offered, offered ? false : D.copyKept(b), at)
-        : b)) },
-      copy.collectorId, copy.canonicalCardId), copyId);
+    return done({ ...state, collectorCopies: list(state.collectorCopies).map((b) => (b.id === copyId
+      ? withDisposition(b, offered, offered ? false : D.copyKept(b), at)
+      : b)) }, copyId);
   },
 
   /* PERSONAL COLLECTION — "I own this physical copy and intend to keep it."
@@ -1079,12 +1021,9 @@ const COMMANDS = {
     if (D.copyKept(copy) === keeping && !(keeping && D.copyOffered(copy))) {
       return done(state, copyId);
     }
-    /* And withdrawing a keep can empty a card the same way. */
-    return done(pruneOrphanedMemberships(
-      { ...state, collectorCopies: list(state.collectorCopies).map((b) => (b.id === copyId
-        ? withDisposition(b, keeping ? false : D.copyOffered(b), keeping, at)
-        : b)) },
-      copy.collectorId, copy.canonicalCardId), copyId);
+    return done({ ...state, collectorCopies: list(state.collectorCopies).map((b) => (b.id === copyId
+      ? withDisposition(b, keeping ? false : D.copyOffered(b), keeping, at)
+      : b)) }, copyId);
   },
 
   /* A copy any deal references is part of that deal's record: while reserved
@@ -1104,12 +1043,11 @@ const COMMANDS = {
     if (status === "reserved") return refuse(R.copyReserved);
     if (list(state.opportunities).some((o) => (o.trade && o.trade.cards || [])
       .some((c) => c.binderId === copyId))) return refuse(R.copyInUse);
-    /* The copy goes whatever happens; if it held the card's last state, the
-       memberships go with it. */
-    return done(pruneOrphanedMemberships(
-      { ...state, collectorCopies: list(state.collectorCopies).filter((b) => b.id !== copyId),
-        interests: list(state.interests).filter((i) => i.binderId !== copyId) },
-      copy.collectorId, copy.canonicalCardId), true);
+    /* Interests cascade because they NAME this copy — `interests.binderId` is a
+       CollectorCopy id, legacy naming and written down as such. A binder entry
+       names a card, not this copy, so it is not touched. */
+    return done({ ...state, collectorCopies: list(state.collectorCopies).filter((b) => b.id !== copyId),
+      interests: list(state.interests).filter((i) => i.binderId !== copyId) }, true);
   },
 
   /* ------------------------------------------- where a card belongs (C3.1)
@@ -1123,26 +1061,31 @@ const COMMANDS = {
        CollectorCopy I own this physical copy
        offered       I am willing to trade or sell that copy
 
-     THEY ARE INDEPENDENT IN EVERY DIRECTION BUT ONE, AND THE EXCEPTION IS
-     NARROW. Filing a card still says nothing about wanting it: a Binder that
-     implied demand would be a second, silent way of saying "I'm looking for
-     this" — which nobody said — and `addBinderEntry` creates and changes
-     nothing, it only READS whether the card is in one of the four.
+     THEY ARE INDEPENDENT, IN EVERY DIRECTION, AND THE EXCEPTION THAT WAS HERE
+     HAS BEEN REMOVED. Filing a card says nothing about wanting it — a Binder
+     that implied demand would be a second, silent way of saying "I'm looking
+     for this", which nobody said — and nothing below creates, changes or READS
+     a Goal or a copy.
 
-     THE EXCEPTION, decided after the four states existed: a binder holds cards
-     that mean something, so a card in NONE of the four cannot be filed, and a
-     card that loses its last one does not stay filed. That is the whole of it.
-     Which of the four, how many, and every change between them leave
-     organisation untouched.
+     WHAT WAS TRIED AND WITHDRAWN. For one batch, filing required the card to be
+     in one of the four states, and losing the last of them took the membership
+     away. Both rules asked the same question — "what does this canonical card
+     currently mean to this Collector?" — and that question is the wrong one: a
+     Collector's actionable objects are a specific sought copy and a specific
+     owned copy, never an aggregate of a card. Deriving whether organisation may
+     exist from an aggregate made curation a consequence of state, and losing it
+     silently was the cost. The product's rule is the plain one:
 
-     MEMBERSHIP NAMES THE CANONICAL CARD. Not a Goal, not a copy. Selling a copy
-     must not un-file a card the Collector still wants; satisfying a goal must
-     not un-file a card they still keep a copy of; and owning three physical
-     copies of one card must not mean three places it belongs. The canonical card
-     is the only reference that survives all of those. When the thing sold or
-     given up was the card's LAST state, the membership goes — but it goes
-     because the card now means nothing, not because the membership ever named
-     the object that carried it.
+       Binder organisation must not determine whether a Goal or CollectorCopy is
+       meaningful, and state changes must not silently destroy organisation.
+
+     MEMBERSHIP NAMES THE CANONICAL CARD, AND THAT IS TRANSITIONAL. Not a Goal,
+     not a copy — so selling a copy does not un-file a card the Collector still
+     wants, satisfying a goal does not un-file a card they still keep a copy of,
+     and owning three physical copies of one card does not mean three places it
+     belongs. That last one is the tell: three actionable objects share one row,
+     which is why the row is on its way to naming the object instead. Until it
+     does, nothing here pretends it already names one.
 
      AND NOBODY ELSE EVER SEES IT. Binders are projected to the owning Collector
      and to no one else — see metyet-projection.js. A Trusted Partner receives
@@ -1211,41 +1154,15 @@ const COMMANDS = {
     const binder = list(state.binders).find((b) => b.id === binderId);
     if (!binder) return refuse(R.notFound);
     if (a.seat !== "collector" || binder.collectorId !== a.collectorId) return refuse(R.notOwner);
-    if (typeof canonicalCardId !== "string" || !canonicalCardId) return refuse(R.notFound);
+    /* A BLANK IS NOT AN ID. The withdrawn state guard used to refuse whitespace
+       incidentally — a card of spaces has no Goal and no copy — so removing it
+       left this door a shade wider than it was. Unreachable from production
+       (the server asks the catalog first) and refused by the foreign key
+       underneath, but a door should say no for its own reasons. */
+    if (typeof canonicalCardId !== "string" || !canonicalCardId.trim()) return refuse(R.notFound);
     const already = list(state.binderEntries)
       .some((e) => e.binderId === binderId && e.canonicalCardId === canonicalCardId);
     if (already) return done(state, true);
-    /* NO STATE, NO MEMBERSHIP.
-
-       A Binder expresses coherence among cards that already mean something to
-       this Collector, so a card they have said NOTHING about has no
-       relationship for a binder to be coherent about. Until now filing was
-       unconditional, and the commonest thing it produced was a binder full of
-       cards that appeared nowhere else in the product and did nothing.
-
-       WHAT COUNTS IS THE FOUR AND ONLY THE FOUR: Primary Goal, Secondary Goal,
-       Trade/Sell, PC. Owning a copy with no disposition is a valid and honest
-       record — and it is what every copy in every existing world is — but it is
-       not a statement about what the card MEANS to its owner, so it does not
-       open a binder. One word on the copy does.
-
-       THE SAME PREDICATE GOVERNS STAYING IN. `pruneOrphanedMemberships` reads
-       `cardHasState` too, so the rule for getting in and the rule for staying in
-       are one rule and cannot drift apart.
-
-       ENFORCED HERE AND NOT IN `validateWorld`. Worlds written before this rule
-       contain filed cards with no state, and they are not corrupt — they were
-       legal when they were written. Making them invalid would make them
-       unstorable, which is a 500 on the next command anybody sends rather than
-       a refusal, and this repository has learned that lesson three times. The
-       rule governs what can be ADDED and what an ACT OF THE COLLECTOR'S can
-       orphan; it does not retroactively condemn what is already there, and
-       nothing fabricates a state to rescue it. */
-    if (!D.cardHasState(canonicalCardId, list(state.goals)
-      .filter((g) => g.collectorId === a.collectorId), list(state.collectorCopies)
-      .filter((c) => c.collectorId === a.collectorId))) {
-      return refuse(R.cardHasNoState);
-    }
     return done({ ...state, binderEntries: [...list(state.binderEntries),
       { binderId, canonicalCardId, addedAt: ctx.at }] }, true);
   },

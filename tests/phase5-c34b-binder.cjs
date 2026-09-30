@@ -530,11 +530,11 @@ describe("C. inside a binder", () => {
        that nobody is hunting renders as a card and shows no priority, because a
        binder is organisation and not a want list.
 
-       The route there has had to change twice. It used to file a card that had
-       never meant anything, which the four-state rule made impossible. Then it
-       stopped wanting the card, which now takes the membership with it. So the
-       card is KEPT — one of the four, and not a Goal — which is the honest way a
-       filed card ends up with no priority to show. */
+       The route there changed twice and has now settled. It could always file a
+       card that meant nothing; for one batch it could not, and stopping wanting
+       the card also took the membership. Both rules are withdrawn. The card is
+       left KEPT here rather than bare, because a filed card a Collector actually
+       holds is the more interesting version of "no priority to show". */
     const ctx = await world();
     const { made, mine } = await filled(ctx);
     await unfile(ctx.app, "casey", mine, made.mudkip);
@@ -925,13 +925,10 @@ describe("E. add cards", () => {
     const ctx = await world();
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
-    /* THE CARD IS IN ONE OF THE FOUR ALREADY, which is what filing now requires.
-       Owning the copy is not enough — it is a valid record and not a statement
-       about what the card means — so the copy is KEPT. The "Add cards to this
-       binder" flow reaches this panel with a binder preselected, and a person
-       who has said nothing about the card finds Save disabled with the reason
-       beside it: recorded in the hand-back as a known consequence rather than
-       disguised here. */
+    /* The card is owned and kept. Nothing about that is required for filing any
+       more — the "Add cards to this binder" flow reaches this panel with a
+       binder preselected and now works on a card nobody has said anything
+       about — but a real copy makes this a real scenario. */
     const owned = (await own(ctx.app, "casey",
       { canonicalCardId: made.mudkip, grade: "PSA 9" })).json().value;
     await post(ctx.app, "casey", "setCollectorCopyKept", { copyId: owned, keeping: true });
@@ -1375,25 +1372,18 @@ describe("H. the navigation", () => {
     eq(json((await load(ctx)).goals[0]), json(goal), "unfiling changed the Goal");
     await post(ctx.app, "casey", "setBinderArchived", { binderId: mine, archived: true });
     eq(json((await load(ctx)).goals[0]), json(goal), "archiving changed the Goal");
-    /* AND THE REVERSE, RE-PINNED. Removing a Goal used to leave membership
-       untouched in every case. It still does while the card is in another of the
-       four — here a kept copy — and it deliberately does NOT when the Goal was
-       the last one. Both halves are asserted, because the first is the promise
-       this test was written for and the second is the decision that narrowed it. */
+    /* AND THE REVERSE, RESTORED. Removing a Goal leaves membership untouched —
+       in every case, including when it was the only thing the Collector had ever
+       said about the card. For one batch that last case pruned the membership;
+       the rule is withdrawn, and this is the promise the test was written for. */
     await post(ctx.app, "casey", "setBinderArchived", { binderId: mine, archived: false });
     await file(ctx.app, "casey", mine, made.mudkip);
     const entries = (await load(ctx)).binderEntries.length;
-    const copyId = (await post(ctx.app, "casey", "addCollectorCopy",
-      { copy: { canonicalCardId: made.mudkip, grade: "PSA 9" } })).json().value;
-    await post(ctx.app, "casey", "setCollectorCopyKept", { copyId, keeping: true });
     await post(ctx.app, "casey", "removeGoal", { goalId: goal.id });
-    eq((await load(ctx)).binderEntries.length, entries,
-      "removing a Goal unfiled a card the Collector is keeping");
-    /* Now take the last one away. */
-    await post(ctx.app, "casey", "setCollectorCopyKept", { copyId, keeping: false });
-    eq((await load(ctx)).binderEntries.length, entries - 1,
-      "a membership survived with nothing behind it");
-    eq((await load(ctx)).collectorCopies.length, 1, "the copy was swept up in it");
+    const w = await load(ctx);
+    eq(w.goals.length, 0, "the Goal did not go");
+    eq(w.collectorCopies.length, 0, "the fixture left something else behind");
+    eq(w.binderEntries.length, entries, "removing a Goal unfiled a card");
   });
 
   test("the Collector's own count of binders is the row count, not a reading", async () => {

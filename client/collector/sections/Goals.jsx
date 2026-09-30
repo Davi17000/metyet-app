@@ -55,36 +55,6 @@ export default function Goals({ state, onAddGoal = null, onSetPriority = null,
      screen reads the answer and names the partner. */
   const foundByGoal = groupBy(state && state.discoveries, "goalId");
 
-  /* WHAT "NO LONGER LOOKING" TAKES AWAY, SAID BESIDE THE BUTTON THAT DOES IT.
-
-     A binder holds cards that mean something to their owner, and dropping a card's
-     last state takes it out of every binder it is in — permanently, because
-     nothing puts it back. On the specification panel that warning already
-     exists; this is the other surface that can cause the same loss, and it does
-     it in one click with no panel and no confirmation.
-
-     READ, NEVER DECIDED, HERE. This screen does not change what happens and does
-     not offer to keep the filing. It reads the same four states the domain reads
-     and says what the click will do, so that a destructive consequence is not a
-     surprise. Only ACTIVE binders are counted, because those are the ones the
-     prune reaches and the only ones the person can see. */
-  const activeBinders = new Set(rows(state && state.binders)
-    .filter((b) => !b.archivedAt).map((b) => b.id));
-  const filedIn = (canonicalCardId) => rows(state && state.binderEntries)
-    .filter((e) => e.canonicalCardId === canonicalCardId && activeBinders.has(e.binderId)).length;
-  const otherState = (goal) => goals.some((g) => g.id !== goal.id
-      && g.canonicalCardId === goal.canonicalCardId)
-    || rows(state && state.collectorCopies).some((c) => c.canonicalCardId === goal.canonicalCardId
-      && (c.offered === true || c.keeping === true));
-  const bindersLost = (goal) => {
-    if (!goal || goal.canonicalCardId == null) return null;
-    if (otherState(goal)) return null;
-    const n = filedIn(goal.canonicalCardId);
-    if (!n) return null;
-    return n === 1
-      ? "This is the only thing you've said about this card, so it comes out of the binder it's in."
-      : `This is the only thing you've said about this card, so it comes out of all ${n} binders it's in.`;
-  };
   const partnerName = new Map();
   for (const p of rows(state && state.partners)) {
     if (p.id != null) partnerName.set(p.id, text(p.name));
@@ -260,8 +230,6 @@ export default function Goals({ state, onAddGoal = null, onSetPriority = null,
                 ) : null}
               </p>
             ) : null}
-            {onRemoveGoal && bindersLost(goal)
-              ? <p className="mcs-dim" role="status">{bindersLost(goal)}</p> : null}
           </Record>
         );
       })}

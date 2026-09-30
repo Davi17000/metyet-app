@@ -949,11 +949,6 @@ const REFUSE = {
      end. Nothing leaks: the only actor who can reach this refusal is the copy's
      own owner. */
   copyNotOffered: "copy-not-offered",
-  /* A CARD NOBODY HAS SAID ANYTHING ABOUT CANNOT BE FILED. Binders express
-     coherence among cards that already mean something; a card with no Goal and
-     no owned copy has no relationship to this Collector for a binder to be
-     coherent ABOUT. */
-  cardHasNoState: "card-has-no-state",
   /* A GOAL THAT NAMES A CANONICAL CARD SAYS WHICH COPY IT WANTS (Phase 5 C3.3).
      Distinct from `grading-incoherent`, which answers a pair that cannot be
      true: this answers a pair that was never stated. C3.2 deliberately left
@@ -1527,54 +1522,30 @@ const copyOffered = (copy) => copy != null && copy.offered === true;
 const copyDisposition = (copy) => (copyOffered(copy) ? "offered"
   : copyKept(copy) ? "keeping" : "unstated");
 
-/* THE FOUR STATES A CANONICAL CARD CAN BE IN FOR ONE COLLECTOR.
+/* THE FOUR STATES, AND WHY THERE IS NO FUNCTION HERE THAT ANSWERS FOR A CARD.
 
-     Primary Goal     hunting it, in this grade            a fact about the CARD
-     Secondary Goal   want it, less urgently               a fact about the CARD
+     Primary Goal     hunting it, in this grade            a fact about a GOAL
+     Secondary Goal   want it, less urgently               a fact about a GOAL
      Trade/Sell       own this copy, would part with it    a fact about a COPY
      PC               own this copy, intend to keep it     a fact about a COPY
 
-   These four and no others. A card can be in several at once — somebody hunting
-   a better copy of a card they already keep is in two — so this returns a list
-   and there is no single-valued "state" anywhere, because any single value would
-   be a lie about that Collector.
+   Each of the four belongs to a specific object and is read from it: a Goal's
+   `tier`, and a copy's `copyDisposition` above. That is the whole vocabulary.
 
-   OWNING WITHOUT A DISPOSITION IS VALID, AND IS NOT ONE OF THE FOUR. A copy
-   whose owner has said nothing about it is a real and honest record — it is what
-   every copy in every existing world is, since PC has only just become sayable —
-   and nothing here removes it, hides it, or invents a disposition for it. It
-   simply is not a statement about what the card MEANS to its owner, which is
-   what these four are and what a Binder is coherent about.
+   `collectorStatesFor(canonicalCardId, goals, copies)` used to live here — one
+   call returning every label a CANONICAL CARD carried for one Collector — and
+   it is deliberately gone. It was the aggregate the object model rejects: a
+   card is reference data, and "what does this card mean to me" has no single
+   honest answer for somebody who keeps one copy, offers another and is hunting
+   a third. Its only consumer was the Binder rule that derived whether
+   organisation could exist from that aggregate, and with the rule withdrawn the
+   function had no caller and no future — the object-level work that follows
+   asks the Goal or the copy, never the card.
 
-   THIS IS A NARROWING, AND IT WAS DECIDED RATHER THAN DERIVED. An earlier draft
-   let bare ownership qualify, on the argument that acquiring a card is itself a
-   collecting decision. The product's answer is that it is not one of the four,
-   and the four are the vocabulary. Recorded here so the next reader knows the
-   line was drawn deliberately and does not re-argue it from the code. */
-const collectorStatesFor = (canonicalCardId, goals, copies) => {
-  const card = canonicalCardId;
-  if (card == null || card === "") return [];
-  const out = [];
-  for (const g of goals || []) {
-    if (g && g.canonicalCardId === card) out.push(g.tier === "primary" ? "primary" : "secondary");
-  }
-  for (const c of copies || []) {
-    if (!c || c.canonicalCardId !== card) continue;
-    if (copyOffered(c)) out.push("trade-sell");
-    else if (copyKept(c)) out.push("pc");
-  }
-  return out;
-};
-
-/* WHETHER THIS CARD IS IN ANY OF THE FOUR, WHICH IS WHAT A BINDER NEEDS.
-
-   A binder expresses coherence among cards that mean something. A card in none
-   of the four has nothing for a binder to be coherent about, so it cannot be
-   filed — and when the last of the four goes, the memberships go with it. Both
-   halves read this one predicate, so the rule for getting in and the rule for
-   staying in cannot drift apart. */
-const cardHasState = (canonicalCardId, goals, copies) =>
-  collectorStatesFor(canonicalCardId, goals, copies).length > 0;
+   OWNING WITHOUT A DISPOSITION REMAINS VALID AND REMAINS UNNAMED. A copy nobody
+   has said anything about is a real record; it is what every copy in every
+   existing world is; and it is not a fifth user-facing state. Nothing infers a
+   disposition for it, and nothing here reports one. */
 
 const soldInventoryIds = (opps) => new Set((opps || [])
   .filter((o) => isCompleted(o) && o.invId != null).map((o) => o.invId));
@@ -1741,8 +1712,6 @@ module.exports.inventoryCopyStatus = inventoryCopyStatus;
 module.exports.copyKept = copyKept;
 module.exports.copyOffered = copyOffered;
 module.exports.copyDisposition = copyDisposition;
-module.exports.collectorStatesFor = collectorStatesFor;
-module.exports.cardHasState = cardHasState;
 module.exports.qualifyingOn = qualifyingOn;
 module.exports.openToNewQualification = openToNewQualification;
 module.exports.holdingCopy = holdingCopy;

@@ -139,7 +139,7 @@ const entriesOf = async (ctx, binderId) =>
 const own = (app, token, copy) => post(app, token, "addCollectorCopy", { copy });
 /* SAYING SOMETHING ABOUT A CARD, SO THAT IT CAN THEN BE FILED.
 
-   The four-state batch made a card with no state unfilable. These scenarios are
+   A card with no state was briefly unfilable, and is not any more. These scenarios are
    about what happens to MEMBERSHIP rather than about how it began, so they say
    the smallest true thing that makes filing legal and get on with the story. The
    rule itself is proved once, in section B, rather than re-proved by accident in
@@ -276,51 +276,26 @@ describe("B. a binder holds each card once", () => {
     eq(r.value, false, "and it says plainly that there was nothing to remove");
   });
 
-  test("a card the Collector neither wants nor owns cannot be filed", async () => {
-    /* REVERSED, DELIBERATELY, BY A PRODUCT DECISION RATHER THAN BY DRIFT.
-
-       C3.1 made filing unconditional on purpose, and this test asserted it: a
-       binder could hold a card somebody simply liked the art of, and the world
-       was valid because "curation is not an incomplete state". That reading has
-       been retired. A Binder expresses coherence among cards that already mean
-       something to this Collector, and a card they have said NOTHING about has
-       no relationship for a binder to be coherent about — what filing produced
-       in that case was a card that appeared nowhere else and did nothing.
-
-       WHAT C3.1 WAS RIGHT ABOUT IS UNCHANGED, and section C still proves it:
-       filing is not demand, it invents no Goal, it invents no copy, and nothing
-       that happens to wanting or owning may quietly reorganise it. The one thing
-       that changed is that there has to be something to be coherent about. */
+  test("a binder may hold a card the Collector neither wants nor owns", async () => {
+    /* RESTORED, WORD FOR WORD IN INTENT. This is C3.1's own claim, and the one
+       the withdrawn rule reversed: a Binder holding a card its owner neither
+       wants nor owns is valid curation and is the state most binders start in.
+       Organisation does not decide whether anything else is meaningful. */
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, "Cards I like the art of");
-    const r = await file(ctx, ACTOR.casey, id, cards.unlimited);
-    eq(r.refused, "card-has-no-state", json(r));
+    await file(ctx, ACTOR.casey, id, cards.unlimited);
 
     const w = await load(ctx);
-    eq(w.binderEntries.length, 0, "a card with no state was filed anyway");
-    eq(w.goals.length, 0, "a Goal was invented to make the filing legal");
-    eq(w.collectorCopies.length, 0, "a copy was invented to make the filing legal");
-    assert(validateWorld(w).ok, "the refusal left the world in a bad state");
-
-    /* AND THE RULE IS ABOUT MEANING SOMETHING, NOT ABOUT WANTING SPECIFICALLY. */
-    await want(ctx.app, "casey", cards.unlimited);
-    const after = await file(ctx, ACTOR.casey, id, cards.unlimited);
-    assert(!after.refused, json(after));
-    eq((await load(ctx)).binderEntries.length, 1, "and then it files");
-
-    /* Filing still produces no demand, which was C3.1's real claim. */
+    eq(w.binderEntries.length, 1, "filed");
+    eq(w.goals.length, 0, "no Goal was created");
+    eq(w.collectorCopies.length, 0, "no copy was created");
+    assert(validateWorld(w).ok, "and the world is valid: curation is not an incomplete state");
+    /* And the partner is told nothing that could be read as demand. */
     const tp = (await get(ctx.app, "north", "/api/view")).json().state;
-    eq(tp.discoveries.length, 0, "filing became a discovery");
+    eq(tp.goals.length, 0, "filing a card did not become demand");
+    eq(tp.discoveries.length, 0, "and produced no discovery");
   });
-});
-
-/* ============================================================== C
-   THE CANONICAL SCENARIOS. Each is one story the product has to survive, and
-   each is the same assertion from a different direction: a Binder records where
-   a card belongs, and nothing that happens to wanting, owning or offering may
-   quietly reorganise it. */
-describe("C. nothing reorganises a Collector's binder but the Collector", () => {
 
   test("B — a Goal moving from Secondary to Primary leaves membership alone", async () => {
     const ctx = await world();
@@ -350,15 +325,15 @@ describe("C. nothing reorganises a Collector's binder but the Collector", () => 
       { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } })).json().value;
     await file(ctx, ACTOR.casey, id, cards.firstEdition);
 
-    /* The card turns up, and they say what they'd do with it. RE-PINNED: the
-       disposition is the point of the scenario now, because the four states are
-       what a membership rests on and bare ownership is not one of them. */
+    /* The card turns up, and they say they are keeping it. Nothing about the
+       disposition is load-bearing here any more — a membership rests on
+       nothing — but it stays because it makes the scenario a real one. */
     const copyId = (await own(ctx.app, "casey",
       { canonicalCardId: cards.firstEdition, grade: "PSA 9", keeping: true, photos: PHOTOS })).json().value;
     eq((await entriesOf(ctx, id)).length, 1, "acquiring did not reorganise anything");
 
     /* And the Collector stops looking. The Goal was never what the membership
-       named: they are keeping the copy, so the card still means something. */
+       named, so the filing stands — and would stand even with nothing else. */
     eq((await post(ctx.app, "casey", "removeGoal", { goalId })).statusCode, 200);
     const w = await load(ctx);
     eq(w.goals.length, 0, "the goal is gone");
@@ -366,74 +341,30 @@ describe("C. nothing reorganises a Collector's binder but the Collector", () => 
     assert(w.collectorCopies.some((b) => b.id === copyId), "and still owned");
   });
 
-  test("C2 — but dropping the LAST of the four takes the memberships with it", async () => {
-    /* THE PRODUCT'S DECISION, AND IT IS DESTRUCTIVE. C3.1 held that membership
-       was independent of state in every direction. It still is in every
-       direction but this one: a card in none of the four states has nothing for
-       a binder to be coherent about, so it does not stay in one. The Goal is
-       removed either way — MetYet never refuses an honest statement to protect a
-       filing — and the curation does not come back. */
-    const ctx = await world();
-    const cards = await charizard(ctx);
-    const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
-    const goalId = (await post(ctx.app, "casey", "addGoal",
-      { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } })).json().value;
-    await file(ctx, ACTOR.casey, id, cards.firstEdition);
-    /* Owned, but nothing said about the copy — which is valid, and is not one
-       of the four, so it does not hold the membership up. */
-    await own(ctx.app, "casey", { canonicalCardId: cards.firstEdition, grade: "PSA 9", photos: PHOTOS });
-    eq((await entriesOf(ctx, id)).length, 1, "the card was not filed to begin with");
-
-    eq((await post(ctx.app, "casey", "removeGoal", { goalId })).statusCode, 200);
-    const w = await load(ctx);
-    eq(w.goals.length, 0, "the Goal was refused to protect a filing");
-    eq(w.binderEntries.length, 0, "a membership survived with nothing behind it");
-    eq(w.collectorCopies.length, 1, "the copy was swept up in it");
-    assert(!("keeping" in w.collectorCopies[0]), "a disposition was invented to rescue the filing");
-  });
-
   test("E — the last owned copy leaving does not un-file the card", async () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
-    /* AN OFFERED COPY IS THE QUALIFYING STATE HERE — owning alone is not one of
-       the four. */
+    /* RESTORED TO ITS SHARPEST FORM: the copy is the ONLY thing the Collector
+       has ever said about this card, and then it goes away. For one batch this
+       needed a Goal standing behind it, because losing the last state took the
+       membership; with that rule withdrawn the bare case is testable again, and
+       it is the one the design turns on. */
     const copyId = (await own(ctx.app, "casey",
       { canonicalCardId: cards.firstEdition, offered: true, photos: PHOTOS })).json().value;
     eq((await load(ctx)).collectorCopies.length, 1, "owned");
-    /* RE-PINNED WITH A GOAL BEHIND IT, which is what makes this a test of what
-       a membership NAMES rather than of the last-state rule. The copy goes and
-       the card still means something, so if the membership survives it can only
-       be because it names the canonical card. (The case where the copy was the
-       last of the four is E2.) */
-    await post(ctx.app, "casey", "addGoal",
-      { canonicalCardId: cards.firstEdition, tier: "secondary", desired: { grade: "PSA 10" } });
     await file(ctx, ACTOR.casey, id, cards.firstEdition);
 
     eq((await post(ctx.app, "casey", "removeCollectorCopy", { copyId })).statusCode, 200);
 
     const w = await load(ctx);
     eq(w.collectorCopies.length, 0, "the copy is gone");
+    eq(w.goals.length, 0, "the fixture left something else behind, so this proves less");
     eq(w.binderEntries.length, 1, "and the card is still where the Collector put it");
     /* This is the scenario the whole design turns on: removeCollectorCopy
        cascades interests, and if membership named a copy it would cascade
        organisation too. It names the canonical card, so it does not. */
     eq(w.binderEntries[0].canonicalCardId, cards.firstEdition);
-  });
-
-  test("E2 — and when that copy WAS the last of the four, the membership goes", async () => {
-    const ctx = await world();
-    const cards = await charizard(ctx);
-    const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
-    const copyId = (await own(ctx.app, "casey",
-      { canonicalCardId: cards.firstEdition, offered: true, photos: PHOTOS })).json().value;
-    await file(ctx, ACTOR.casey, id, cards.firstEdition);
-    eq((await entriesOf(ctx, id)).length, 1, "the card was not filed to begin with");
-
-    eq((await post(ctx.app, "casey", "removeCollectorCopy", { copyId })).statusCode, 200);
-    const w = await load(ctx);
-    eq(w.collectorCopies.length, 0, "the copy was refused to protect a filing");
-    eq(w.binderEntries.length, 0, "a membership survived with nothing behind it");
   });
 
   test("F — three physical copies of one card are one place it belongs", async () => {
@@ -550,8 +481,8 @@ describe("D. what a Trusted Partner receives of a Collector's organisation", () 
   async function organised(ctx) {
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, SECRET_NAME);
-    /* State first, then filing — the four-state batch made a card with no state
-       unfilable, and this helper's subject is what a SEAT may see, not ordering. */
+    /* A Goal and a copy as well as the filing, because this helper's subject is
+       what a SEAT may see — not what filing requires, which is nothing. */
     await post(ctx.app, "casey", "addGoal", { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } });
     await own(ctx.app, "casey", { canonicalCardId: cards.firstEdition, offered: true, photos: PHOTOS });
     await file(ctx, ACTOR.casey, id, cards.firstEdition);
@@ -809,22 +740,22 @@ describe("E. the commands exist, and production cannot reach them", () => {
   test("a canonical card that does not exist is refused by the foreign key", async () => {
     const ctx = await world();
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
-    /* RE-PINNED, AND THE REASON IS WORTH KEEPING. Past the door there was no
-       catalog guard — the domain holds no database — so the foreign key was the
-       backstop, exactly as it is for `addGoal`, and this test proved it by
-       filing a card that does not exist and catching 23503.
+    /* RESTORED, AND THE DETOUR IS WORTH RECORDING. Past the door there is no
+       catalog guard — the domain holds no database — so the foreign key is the
+       backstop, exactly as it is for `addGoal`: both throw 23503 rather than
+       writing a reference to a card that is not there.
 
-       The four-state batch put a guard in front of it: a card nobody has said
-       anything about cannot be filed, and a card that does not exist cannot
-       have a Goal or an owned copy either, because the same foreign key refuses
-       those too. So the refusal now arrives one step earlier, by name, and the
-       key is no longer reachable through this door at all. That is a better
-       answer than a thrown constraint, and the key remains the backstop for a
-       world assembled outside the commands — which
-       `validateWorld refuses a duplicate membership assembled outside the
-       command` above still exercises. */
-    const r = await file(ctx, ACTOR.casey, id, "cc-not-a-real-card");
-    eq(r.refused, "card-has-no-state", json(r));
+       For one batch a state guard stood in front of it, and this test was
+       re-pinned to that refusal on the reasoning that a card which does not
+       exist cannot have a Goal or a copy either. True, but it meant the guard
+       was incidentally shielding a door whose real protection is the key — and
+       when the guard was withdrawn the key was still there, doing its job. That
+       is the whole point of a backstop, and it is why this assertion goes back
+       to what it always said. */
+    let threw = null;
+    try { await file(ctx, ACTOR.casey, id, "cc-not-a-real-card"); }
+    catch (e) { threw = e; }
+    assert(threw, "a binder filed a card that does not exist");
     eq((await load(ctx)).binderEntries.length, 0, "and nothing was written");
   });
 
