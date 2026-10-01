@@ -768,13 +768,13 @@ describe("F. the boundaries hold", () => {
          membership, and never crosses to a partner. */
       "setCollectorCopyKept",
       "createBinder", "addBinderEntry", "removeBinderEntry",
-      /* AND THE TWO BATCH 3A ADDED. `fileObject` and `unfileObject` file one
-         GOAL or one COLLECTORCOPY in a binder, which is where membership is
-         going — `addBinderEntry` above files a CARD, and is what every
-         Collector screen still sends. Both doors are open at once on purpose:
-         the screens move across in 3B, and a per-card checkbox cannot express
-         three homes for one card. */
-      "fileObject", "unfileObject",
+      /* AND NOT `fileObject` / `unfileObject` (Batch 3A, closed in 3A's own
+         closure). They file one GOAL or one COLLECTORCOPY and are complete
+         domain commands, but no screen sends them — the per-object controls
+         are 3B's — so they are not offered. They were listed here for one
+         commit while they were exposed; that was the mistake 3A's closure
+         corrected, and the list is back to what it was. `addBinderEntry`
+         above still files a CARD and is what every Collector screen sends. */
       "updateCollectorCopy", "updateGoalCriteria",
       "renameBinder", "setBinderArchived",
       /* AND THE TWO C5 ADDED (Phase 5 C5). `updateInventoryCopy` and
@@ -802,7 +802,7 @@ describe("F. the boundaries hold", () => {
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
     ].sort()), "C3.5 changed the production surface");
-    eq(EXPOSED_COMMANDS.length, 25);
+    eq(EXPOSED_COMMANDS.length, 23);
     /* 49 → 50 in Option B (`setCopyPending`). What this line guards is the
        door above, which has not moved: the new command is not exposed.
        51 → 53 in Batch 3A (`fileObject`, `unfileObject`), and this time the

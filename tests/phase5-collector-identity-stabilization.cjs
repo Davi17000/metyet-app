@@ -642,7 +642,7 @@ describe("C. What a second press of Save does", () => {
 /* =============================================== D. what did not move */
 describe("D. What this batch did not touch", () => {
   test("[18] no transaction command became exposed, and the count is what it was", () => {
-    eq(EXPOSED_COMMANDS.length, 25, "the production surface changed size");
+    eq(EXPOSED_COMMANDS.length, 23, "the production surface changed size");
     const { COMMAND_NAMES } = require("../domain/metyet-commands.js");
     const known = (n) => [...COMMAND_NAMES].includes(n);
     for (const shut of ["startOpportunity", "proposePrice", "acceptPrice",

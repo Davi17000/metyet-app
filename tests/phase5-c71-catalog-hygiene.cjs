@@ -505,7 +505,7 @@ describe("D. all four deployed surfaces use it", () => {
 
   test("the door, the command table and the schema are where C7.1 found them", () => {
     const { EXPOSED_COMMANDS } = require("../server/exposed-commands.js");
-    eq(EXPOSED_COMMANDS.length, 25, "the production door moved");
+    eq(EXPOSED_COMMANDS.length, 23, "the production door moved");
     /* 49 → 50 in Option B (`setCopyPending`), and → 51 in the four-state batch
        (`setCollectorCopyKept`). C7.1's claim is the door above, which has not
        moved for either: the first is written, tested and deliberately unexposed,

@@ -996,4 +996,146 @@ describe("H. What the schema itself refuses", () => {
   });
 });
 
+/* ============================== I. built, and deliberately out of reach */
+describe("I. A capability that exists and is not reachable yet", () => {
+  /* WHY THIS SECTION EXISTS. Batch 3A built object-level membership and, for
+     one commit, also EXPOSED the two commands that write it — while no screen
+     sent either, and while the only thing that could send them was a pair of
+     client thunks written for no reason but to satisfy the exact-set guard.
+     `server/exposed-commands.js` states the rule in its own words: an entry is
+     a command a production surface sends today, and "if nothing in `client/`
+     sends it, it does not belong here." A door open ahead of its surface is
+     reachable over HTTP by a path no screen can produce and no screen test
+     exercises — authorization is still the domain's, so nothing was unsafe,
+     but nothing was verified by use either.
+
+     So the capability stays and the reachability goes, until 3B writes the
+     controls. These assertions are what makes that a decision rather than an
+     oversight: if 3B opens the doors WITH its surface, they fail and are
+     re-pinned on purpose; if anything opens them without one, they fail and
+     that is the point. */
+  const { EXPOSED_COMMANDS } = require("../server/exposed-commands.js");
+  const OBJECT_COMMANDS = ["fileObject", "unfileObject"];
+  const clientSource = () => {
+    const dir = path.join(ROOT, "client");
+    const out = [];
+    const walk = (d) => {
+      for (const e of require("fs").readdirSync(d, { withFileTypes: true })) {
+        const full = path.join(d, e.name);
+        if (e.isDirectory()) walk(full);
+        /* COMMENTS STRIPPED, BECAUSE THE COMMENTS TALK ABOUT THESE NAMES. Both
+           `commands.js` and `exposed-commands.js` explain in prose why the two
+           commands are not bound or offered, and a scan that counts prose
+           cannot tell an explanation from a dispatch. */
+        else if (/\.(js|jsx)$/.test(e.name)) out.push([full.slice(ROOT.length + 1),
+          require("fs").readFileSync(full, "utf8")
+            .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ")]);
+      }
+    };
+    walk(dir);
+    return out;
+  };
+
+  test("[31] the two object-level commands are not externally reachable", () => {
+    for (const name of OBJECT_COMMANDS) {
+      assert(!EXPOSED_COMMANDS.includes(name),
+        `${name} is exposed with no surface that sends it: ${EXPOSED_COMMANDS.join(",")}`);
+    }
+    eq(EXPOSED_COMMANDS.length, 23, `the production surface is ${EXPOSED_COMMANDS.join(",")}`);
+    /* And the card-level pair IS reachable, so the line above is a statement
+       about these two rather than about Binder filing in general. */
+    for (const name of ["addBinderEntry", "removeBinderEntry"]) {
+      assert(EXPOSED_COMMANDS.includes(name), `${name} stopped being reachable`);
+    }
+  });
+
+  test("[32] and they are nonetheless complete domain commands", () => {
+    /* THE WHOLE POINT OF THE SECTION ABOVE. Unexposed is not unbuilt: every
+       assertion in sections A to H of this file runs the real commands through
+       the real store, and this names the capability directly so that removing
+       either command fails here as well as there. */
+    for (const name of OBJECT_COMMANDS) {
+      assert([...C.COMMAND_NAMES].includes(name), `${name} is not a domain command`);
+      eq(typeof C.COMMANDS[name], "function", `${name} has no implementation`);
+    }
+    eq([...C.COMMAND_NAMES].length, 53, "the domain command table moved");
+    /* And they still work, driven here rather than taken on trust. */
+    const st = world();
+    const id = okv(x(st, CASEY, "fileObject", { binderId: "A", goalId: "g1" }), "file");
+    eq(homeOf(st, "goalId", "g1").binderId, "A", "the unexposed command stopped working");
+    okv(x(st, CASEY, "unfileObject", { goalId: "g1" }), "unfile");
+    eq(homes(st).length, 0, "the unexposed command stopped working");
+    assert(id, "no membership id was minted");
+  });
+
+  test("[33] nothing in client/ sends either, and no thunk exists for one", () => {
+    const files = clientSource();
+    assert(files.length > 5, `only ${files.length} client files were read`);
+    for (const [name, body] of files) {
+      for (const cmd of OBJECT_COMMANDS) {
+        assert(!new RegExp(`["']${cmd}["']`).test(body),
+          `${name} names ${cmd}, so the door above is shut on something that sends it`);
+      }
+      assert(!/fileObjectInBinder|unfileObjectFromBinder/.test(body),
+        `${name} still carries a binding for an unexposed command`);
+    }
+  });
+
+  test("[34] the card-level UI still files a CARD, which is what 3B replaces", () => {
+    /* `phase5-b81` pins exact equality between what `client/commands.js` can
+       send and what is exposed; this says which commands the Binder control on
+       the Card Specification panel actually sends, because that is the thing
+       3B changes and it must still be the legacy pair today. */
+    const panel = require("fs").readFileSync(
+      path.join(ROOT, "client/collector/CardSpecification.jsx"), "utf8");
+    const signin = require("fs").readFileSync(
+      path.join(ROOT, "client/sign-in/SignIn.jsx"), "utf8");
+    const bindings = require("fs").readFileSync(path.join(ROOT, "client/commands.js"), "utf8");
+    /* The chain, end to end: the panel plans a `file` step, `SignIn.jsx` maps
+       that step kind onto a binding, and the binding sends the CARD-level
+       command. 3B changes the last link; today all three are the legacy path. */
+    assert(/kind: "file"/.test(panel) && /kind: "unfile"/.test(panel),
+      "the panel no longer plans a filing step at all");
+    assert(/case "file": return binder\.file\(/.test(signin)
+      && /case "unfile": return binder\.unfile\(/.test(signin),
+      "the step kinds are no longer mapped onto the card-level bindings");
+    assert(/fileCardInBinder/.test(signin) && /unfileCardFromBinder/.test(signin),
+      "SignIn.jsx no longer imports the card-level bindings");
+    assert(/execute\("addBinderEntry"/.test(bindings)
+      && /execute\("removeBinderEntry"/.test(bindings),
+      "the shipping filing path no longer sends the card-level commands");
+    for (const cmd of OBJECT_COMMANDS) {
+      assert(!new RegExp(cmd).test(signin), `SignIn.jsx dispatches ${cmd}`);
+      assert(!new RegExp(cmd).test(panel), `the Card Specification panel dispatches ${cmd}`);
+    }
+  });
+
+  test("[35] and the client/exposed sets agree without either being padded", () => {
+    /* THE INVARIANT THAT WAS BEING SATISFIED RATHER THAN HONOURED. `phase5-b81`
+       asserts set EQUALITY in both directions, and while the two doors were
+       open it held only because two thunks existed that nothing imported.
+       Measured here from the same two sources so that the equality is visible
+       beside the removal that restored it, and so that re-adding a thunk
+       without a door — or a door without a thunk — fails in both places. */
+    const client = require("fs").readFileSync(path.join(ROOT, "client/commands.js"), "utf8");
+    const sent = new Set();
+    for (const m of client.matchAll(/execute\(\s*"([A-Za-z]+)"/g)) sent.add(m[1]);
+    for (const m of client.matchAll(/^export const [A-Z_]+ = "([A-Za-z]+)";$/gm)) sent.add(m[1]);
+    eq(JSON.stringify([...sent].sort()), JSON.stringify([...EXPOSED_COMMANDS].sort()),
+      "the door and the client disagree about what the product offers");
+    eq(sent.size, 23, `the client can send ${sent.size}`);
+  });
+
+  test("[36] and nothing else about the foundation moved with the doors", () => {
+    /* The closure is an exposure change. These are the counts the brief fixes,
+       asserted together so that a change to the door cannot quietly arrive
+       with a change to the schema or the refusal vocabulary. */
+    eq(require("fs").readdirSync(path.join(ROOT, "persistence/migrations"))
+      .filter((f) => f.endsWith(".sql")).length, 14, "a migration moved");
+    eq(Object.keys(D.REFUSE).length, 44, "the refusal vocabulary moved");
+    assert(D.REFUSE.invalidTarget === "invalid-target" && D.REFUSE.binderArchived === "binder-archived",
+      "Batch 3A's two refusal codes changed");
+  });
+});
+
 run();

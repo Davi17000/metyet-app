@@ -365,31 +365,25 @@ export function unfileCardFromBinder(target) {
     target.execute("removeBinderEntry", { binderId, canonicalCardId });
 }
 
-/* WHERE AN OBJECT BELONGS (Batch 3A). The two above file a CARD, which is what
-   every Collector screen still sends; these file one Goal or one CollectorCopy,
-   which is where membership is going. Both are bound because both are exposed,
-   and this file's rule is that the two lists agree.
+/* WHERE AN OBJECT BELONGS, AND WHY THERE IS NO BINDING FOR IT YET (Batch 3A,
+   closed in 3A's own closure). The two above file a CARD, which is what every
+   Collector screen still sends. `fileObject` and `unfileObject` file one Goal
+   or one CollectorCopy and are complete domain commands, but nothing here
+   binds them, because this file's rule is that a binding exists for a screen
+   that sends it and the per-object controls are 3B's.
 
-   `fileObject` IS ALSO THE MOVE. An object has one home or none, so filing it
-   somewhere else moves the membership it already has rather than making a
-   second one — one call, one row, and no moment in between where the thing
-   belongs nowhere. There is nothing to bind for a move because there is no move
-   command to bind. */
-export function fileObjectInBinder(target) {
-  if (!target || typeof target.execute !== "function") {
-    throw new TypeError("fileObjectInBinder: the production store is required");
-  }
-  return ({ binderId, goalId, collectorCopyId } = {}) =>
-    target.execute("fileObject", { binderId, goalId, collectorCopyId });
-}
+   `fileObjectInBinder` and `unfileObjectFromBinder` were written here for one
+   commit, exported and imported by nothing, solely so that the exposed list
+   and this file would agree while both commands were exposed. That is the
+   exact-set guard being satisfied rather than honoured, and removing the two
+   doors is what made the pair unnecessary. 3B writes them for real, beside the
+   controls that call them.
 
-export function unfileObjectFromBinder(target) {
-  if (!target || typeof target.execute !== "function") {
-    throw new TypeError("unfileObjectFromBinder: the production store is required");
-  }
-  return ({ goalId, collectorCopyId } = {}) =>
-    target.execute("unfileObject", { goalId, collectorCopyId });
-}
+   One thing worth keeping written down for 3B: `fileObject` IS ALSO THE MOVE.
+   An object has one home or none, so filing it somewhere else moves the
+   membership it already has rather than making a second one — one call, one
+   row, and no moment in between where the thing belongs nowhere. There will be
+   nothing to bind for a move, because there is no move command to bind. */
 
 /* MANAGING THE BINDER ITSELF (Phase 5 C3.4). The four above are about a thing's
    place in a binder; these are about the binder. C3.3 had no screen for them

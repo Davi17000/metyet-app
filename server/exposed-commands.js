@@ -105,20 +105,22 @@ const EXPOSED_COMMANDS = Object.freeze([
      builds, and neither command has a control here. */
   "createBinder",                // Collector → Card Specification, "New binder…"
   "addBinderEntry",              // Collector → Card Specification, filing this card
-  /* WHERE AN OBJECT BELONGS (Batch 3A), AND THESE TWO ARE THE EXCEPTION TO THE
-     RULE AT THE TOP OF THIS FILE. Every other entry names the screen that sends
-     it. These are sent by `fileObjectInBinder` / `unfileObjectFromBinder` in
-     `client/commands.js` and by nothing else: no component imports either yet,
-     because the per-object controls are 3B and this batch is explicitly
-     forbidden to build them. So the door is open ahead of its surface, which is
-     the one thing this file says not to do, and it is recorded here rather than
-     left for a reader to discover. The alternative was to leave both unexposed
-     and have 3B open them, which the batch brief rules out by naming the
-     expected exposed count. `addBinderEntry` above remains the only door
-     anything presses, and the pair below is refused for every actor who does
-     not own both the binder and the object. */
-  "fileObject",                  // Collector → client/commands.js only, until 3B
-  "unfileObject",                // Collector → client/commands.js only, until 3B
+  /* WHERE AN OBJECT BELONGS, AND WHY IT IS NOT HERE (Batch 3A, closed in 3A's
+     own closure). `fileObject` and `unfileObject` are complete, tested domain
+     commands: the table, the invariants, the ownership rules, the removal
+     lifecycle and the refusals all exist and are exercised. They are
+     deliberately NOT in this list, because no product surface sends them —
+     the per-object Binder controls are 3B's, and 3A was forbidden to build
+     them.
+
+     They WERE listed here for one commit, which was a mistake and is worth
+     leaving written down: this file's rule is that an entry names the screen
+     that sends it, and a door open ahead of its surface is reachable by an
+     authenticated caller through a path no screen can produce or exercise.
+     3B adds them back together with the controls that press them.
+
+     `addBinderEntry` above remains the only Binder-filing door, and it still
+     files a CARD. */
   "removeBinderEntry",           // Collector → Card Specification, unfiling it
   "updateCollectorCopy",         // Collector → Card Specification, correcting a copy
   "updateGoalCriteria",          // Collector → Card Specification, which copy is wanted
