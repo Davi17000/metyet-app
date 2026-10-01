@@ -365,7 +365,33 @@ export function unfileCardFromBinder(target) {
     target.execute("removeBinderEntry", { binderId, canonicalCardId });
 }
 
-/* MANAGING THE BINDER ITSELF (Phase 5 C3.4). The two above are about a card's
+/* WHERE AN OBJECT BELONGS (Batch 3A). The two above file a CARD, which is what
+   every Collector screen still sends; these file one Goal or one CollectorCopy,
+   which is where membership is going. Both are bound because both are exposed,
+   and this file's rule is that the two lists agree.
+
+   `fileObject` IS ALSO THE MOVE. An object has one home or none, so filing it
+   somewhere else moves the membership it already has rather than making a
+   second one — one call, one row, and no moment in between where the thing
+   belongs nowhere. There is nothing to bind for a move because there is no move
+   command to bind. */
+export function fileObjectInBinder(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("fileObjectInBinder: the production store is required");
+  }
+  return ({ binderId, goalId, collectorCopyId } = {}) =>
+    target.execute("fileObject", { binderId, goalId, collectorCopyId });
+}
+
+export function unfileObjectFromBinder(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("unfileObjectFromBinder: the production store is required");
+  }
+  return ({ goalId, collectorCopyId } = {}) =>
+    target.execute("unfileObject", { goalId, collectorCopyId });
+}
+
+/* MANAGING THE BINDER ITSELF (Phase 5 C3.4). The four above are about a thing's
    place in a binder; these are about the binder. C3.3 had no screen for them
    and so did not bind them — the rule this file has always followed.
 

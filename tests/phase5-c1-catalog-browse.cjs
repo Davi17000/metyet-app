@@ -788,6 +788,13 @@ describe("G. boundaries, and what did not change", () => {
       "setCollectorCopyKept",
       /* C3.3, the Card Specification panel's five. */
       "createBinder", "addBinderEntry", "removeBinderEntry",
+      /* AND THE TWO BATCH 3A ADDED. `fileObject` and `unfileObject` file one
+         GOAL or one COLLECTORCOPY in a binder, which is where membership is
+         going — `addBinderEntry` above files a CARD, and is what every
+         Collector screen still sends. Both doors are open at once on purpose:
+         the screens move across in 3B, and a per-card checkbox cannot express
+         three homes for one card. */
+      "fileObject", "unfileObject",
       "updateCollectorCopy", "updateGoalCriteria",
       /* C3.4b, the Binder library's two: rename one in place, put one away and
          bring it back. Deleting one is still nobody's door. */

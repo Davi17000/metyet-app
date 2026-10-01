@@ -665,7 +665,7 @@ describe("F. reachable at last, and what that did not change", () => {
 
   test("no migration, and no new durable concept", async () => {
     const names = fs.readdirSync(path.join(ROOT, "persistence", "migrations")).sort();
-    eq(names[names.length - 1], "0013_binders.sql", "C3.4a added a migration: " + names.join(","));
+    eq(names[names.length - 1], "0014_binder_memberships.sql", "C3.4a added a migration: " + names.join(","));
     const { PROJECTED_COLLECTIONS } = require("../domain/metyet-projection.js");
     assert(!PROJECTED_COLLECTIONS.some((c) => /trade|offered|shelf/i.test(c)),
       "a new collection appeared: " + PROJECTED_COLLECTIONS.join(","));

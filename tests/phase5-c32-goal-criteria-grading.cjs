@@ -548,7 +548,10 @@ describe("D. what the product may not invent", () => {
 
   test("C3.2 adds no migration, and does not need one", () => {
     const versions = readMigrations().map((m) => m.version);
-    eq(versions[versions.length - 1], "0013_binders",
+    /* RE-PINNED TWICE. C3.2 added no migration and still has not; the newest
+       is whatever the newest is, and it has since been C3.1's and now Batch
+       3A's. What this asserts is that `desired` never acquired a column. */
+    eq(versions[versions.length - 1], "0014_binder_memberships",
       "C3.2 added a migration; `desired` lives in the Goal's attrs and needs no column");
     /* The Goal table stores everything but identity and its card in `attrs`
        (`tier` is a generated column read FROM attrs), so a new attrs key needs
@@ -705,6 +708,13 @@ describe("E. what C3.2 did not touch", () => {
          membership, and never crosses to a partner. */
       "setCollectorCopyKept",
       "createBinder", "addBinderEntry", "removeBinderEntry",
+      /* AND THE TWO BATCH 3A ADDED. `fileObject` and `unfileObject` file one
+         GOAL or one COLLECTORCOPY in a binder, which is where membership is
+         going — `addBinderEntry` above files a CARD, and is what every
+         Collector screen still sends. Both doors are open at once on purpose:
+         the screens move across in 3B, and a per-card checkbox cannot express
+         three homes for one card. */
+      "fileObject", "unfileObject",
       "updateCollectorCopy", "updateGoalCriteria",
       "renameBinder", "setBinderArchived",
       /* AND THE TWO C5 ADDED (Phase 5 C5). `updateInventoryCopy` and
@@ -732,7 +742,7 @@ describe("E. what C3.2 did not touch", () => {
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
     ].sort()), "the production surface is not what C3.4 declared");
-    eq(EXPOSED_COMMANDS.length, 23);
+    eq(EXPOSED_COMMANDS.length, 25);
 
     /* C3.2 ADDED NEITHER, asserted against C3.2's own commit rather than
        against the world as it is now. This is the claim that batch actually

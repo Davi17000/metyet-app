@@ -198,8 +198,17 @@ function everyCommand(store, rec) {
   step("addGoal", { id: gp, goal: s().goals.find((q) => q.id === gp) });
   x(C1, "addBinderEntry", { binderId: bd, canonicalCardId: "cc-legacy-probe" });
   step("addBinderEntry", { entry: s().binderEntries.find((e) => e.binderId === bd) });
+  /* PHASE 5 BATCH 3A: the same binder, named as the home of an OBJECT rather
+     than of a card. Both rows now exist side by side on purpose — that is the
+     whole shape of 3A, and the suite below reads them separately. Filed before
+     the archive two lines down, because `fileObject` refuses an archived
+     binder and `unfileObject` deliberately does not. */
+  const bm = x(C1, "fileObject", { binderId: bd, goalId: gp });
+  step("fileObject", { id: bm, membership: s().binderMemberships.find((m) => m.id === bm) });
   x(C1, "setBinderArchived", { binderId: bd, archived: true });
   step("setBinderArchived", { binder: s().binders.find((q) => q.id === bd) });
+  x(C1, "unfileObject", { goalId: gp });
+  step("unfileObject", { memberships: s().binderMemberships.filter((m) => m.goalId === gp) });
   x(C1, "removeBinderEntry", { binderId: bd, canonicalCardId: "cc-legacy-probe" });
 
   /* PHASE 5 BATCH 2: an invitation names nobody. It creates no Collector, so
@@ -394,15 +403,22 @@ describe("B. every minted id comes from the injected runtime", () => {
        an intention into that absence is the confusion migration 0012 exists to
        remember.
        Restated, not loosened — the exact total is still asserted, and every new
-       command is exercised by the script above like all the others. */
-    eq(C.COMMAND_NAMES.length, 51, "the command set");
+       command is exercised by the script above like all the others.
+       51 → 53 in Batch 3A (`fileObject`, `unfileObject`): object-level Binder
+       membership is a new durable fact, so it needed commands to state it. */
+    eq(C.COMMAND_NAMES.length, 53, "the command set");
   });
 
   test("each new record's id is exactly what the runtime handed out, with the record's prefix", () => {
     const { steps, rec, ids } = every();
     const handed = new Set(rec.log.ids);
     const expect = [["addGoal", "g"], ["addInventoryCopy", "invk1-"], ["requestPhotos", "pr"],
-      ["reviewCopy", "rv"], ["addCollectorCopy", "b"], ["inviteCollector", "inv-"], ["startOpportunity", "o"]];
+      ["reviewCopy", "rv"], ["addCollectorCopy", "b"], ["inviteCollector", "inv-"], ["startOpportunity", "o"],
+      /* Batch 3A: a membership mints its own id rather than being addressed by
+         the pair it names, which is what lets it be moved without renumbering
+         anything. `binder_entries` has no id of its own and is absent here for
+         exactly that reason. */
+      ["fileObject", "bm"]];
     for (const [name, prefix] of expect) {
       const id = steps[name].id;
       assert(countedId(prefix).test(id), `${name} id "${id}" has the runtime's shape for "${prefix}"`);
@@ -479,6 +495,10 @@ describe("C. every authoritative timestamp is the injected runtime's time", () =
     withdrawTradeCard: (x) => [x.opp.trade.cards[0].withdrawnAt, x.opp.updated],
     chooseCashOnly: (x) => [x.opp.trade.cashOnlyAt, x.opp.updated],
     cancelOpportunity: (x) => [x.opp.endedAt, x.opp.updated],
+    /* Batch 3A. `filedAt` is the server's record of WHEN a Collector put this
+       object here, so it is the runtime's time like every other authoritative
+       stamp — not the browser's, and not a field the payload can carry. */
+    fileObject: (x) => [x.membership.filedAt],
   };
   for (const [name, read] of Object.entries(cases)) {
     test(`${name} stamps the runtime's time`, () => {

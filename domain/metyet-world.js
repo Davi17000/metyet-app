@@ -66,7 +66,13 @@ const D = require("./metyet-domain.js");
 const REQUIRED_COLLECTIONS = ["collectors", "partners", "relationships", "invitations",
   "goals", "inventory", "collectorCopies", "binders", "binderEntries", "interests",
   "opportunities", "conversations", "photoRequests", "copyReviews"];
-const OPTIONAL_COLLECTIONS = ["catalog", "preferences", "activity"];
+/* `binderMemberships` is OPTIONAL, and that is a compatibility decision rather
+   than an afterthought (Batch 3A). Every world written before this batch has no
+   such collection, and a build rolled back past it produces none — so absent
+   has to read as "no memberships", not as a broken world. It is also what makes
+   the rollback safe: this function already tolerates a collection it has never
+   heard of, so a reverted build loads a world that contains one. */
+const OPTIONAL_COLLECTIONS = ["catalog", "preferences", "activity", "binderMemberships"];
 
 /* The stages an Opportunity occupies: D.STAGES without the two intent stages,
    which describe Goals. */
@@ -405,6 +411,68 @@ function validateWorld(state) {
         report("id.duplicate", `${path}.canonicalCardId`,
           `Binder "${e.binderId}" files card "${e.canonicalCardId}" more than once; a binder is a set of cards.`);
       } else filed.add(key);
+    }
+  }
+
+  /* ------------------------------------------------- WHERE AN OBJECT BELONGS
+     A membership is one Goal or one CollectorCopy filed in one Binder (Batch
+     3A). The rules below are about THAT and nothing else: there is still no
+     check that a Goal is pursued, that a copy is offered, or that a binder
+     holds anything in particular, for the same reason the entry rules above
+     have none — organising must never imply demand.
+
+     EVERY RULE HERE IS VACUOUS ON EVERY WORLD WRITTEN BEFORE THIS BATCH,
+     because none of them has a membership to fail one. That is what makes it
+     safe to add them all at once: this function runs on LOAD as well as before
+     save, so a rule true only of future worlds would turn every stored one into
+     a 500 on the next read. The card-level rules above are untouched, and
+     nothing here requires that there be no card-level rows left. */
+  /* Called for its reports rather than its map: `index` is what says a
+     membership has an id and that no two share one. */
+  index("binderMemberships");
+  const goalHome = new Map();
+  const copyHome = new Map();
+  for (const [m, path] of C.binderMemberships) {
+    const who = `Binder membership "${m.id}"`;
+    const binder = ref(binders, m.binderId, `${path}.binderId`, "binder", who);
+    const goal = isId(m.goalId);
+    const copy = isId(m.collectorCopyId);
+    /* EXACTLY ONE OBJECT. Both is a contradiction and neither is silence; the
+       command refuses each, and the database refuses each, and this is what
+       makes it true of a world assembled any other way. */
+    if (goal && copy) {
+      report("ref.ambiguous", `${path}.goalId`,
+        `${who} names both a Goal and a CollectorCopy. A membership is the home of one thing.`);
+    } else if (!goal && !copy) {
+      report("ref.missing", `${path}.goalId`,
+        `${who} names neither a Goal nor a CollectorCopy. A membership is the home of one thing.`);
+    }
+    const target = goal && !copy
+      ? ref(goals, m.goalId, `${path}.goalId`, "goal", who)
+      : (copy && !goal ? ref(collectorCopies, m.collectorCopyId, `${path}.collectorCopyId`, "collector copy", who) : null);
+    /* AT MOST ONE HOME. An object belongs in one place or in none — which is
+       the whole difference from a card, which could be filed in any number. */
+    const seen = goal && !copy ? goalHome : (copy && !goal ? copyHome : null);
+    const objectId = goal && !copy ? m.goalId : m.collectorCopyId;
+    if (seen && objectId) {
+      if (seen.has(objectId)) {
+        report("id.duplicate", `${path}.binderId`,
+          `${who} gives ${goal ? "goal" : "collector copy"} "${objectId}" a second Binder. An object has one home or none.`);
+      } else seen.set(objectId, m.binderId);
+    }
+    /* ONE COLLECTOR'S BINDER HOLDS ONE COLLECTOR'S THINGS. The projection scopes
+       memberships by the binder's owner AND the object's, and this is the rule
+       that says a world pairing two people could not have been written. Guarded
+       on both references resolving, as every owner check in this file is. */
+    if (binder && target && binder.collectorId !== target.collectorId) {
+      ownerMismatch(`${path}.binderId`,
+        `${who} files one Collector's ${goal ? "goal" : "copy"} in another Collector's binder.`);
+    }
+    /* `filedAt` is a time or it is nothing — the same shape, and the same
+       latitude, as a binder's `archivedAt` above. */
+    if (!blank(m.filedAt) && typeof m.filedAt !== "string") {
+      report("field.invalid", `${path}.filedAt`,
+        `${who} has an invalid filedAt; it is a timestamp or null.`);
     }
   }
   for (const [x, path] of C.interests) {

@@ -642,7 +642,7 @@ describe("C. What a second press of Save does", () => {
 /* =============================================== D. what did not move */
 describe("D. What this batch did not touch", () => {
   test("[18] no transaction command became exposed, and the count is what it was", () => {
-    eq(EXPOSED_COMMANDS.length, 23, "the production surface changed size");
+    eq(EXPOSED_COMMANDS.length, 25, "the production surface changed size");
     const { COMMAND_NAMES } = require("../domain/metyet-commands.js");
     const known = (n) => [...COMMAND_NAMES].includes(n);
     for (const shut of ["startOpportunity", "proposePrice", "acceptPrice",
@@ -654,15 +654,20 @@ describe("D. What this batch did not touch", () => {
     }
   });
 
-  test("[19] no migration, and no Binder architecture change", () => {
+  test("[19] the card-level Binder entry is exactly what it was", () => {
     const fs = require("fs");
     const migrations = fs.readdirSync(path.join(ROOT, "persistence/migrations"))
       .filter((f) => f.endsWith(".sql")).sort();
-    eq(migrations.length, 13, migrations.join(","));
-    eq(migrations[migrations.length - 1], "0013_binders.sql", "a migration was added");
-    /* Binder membership still names the canonical card and nothing else, and
-       the archive is still there. This batch deliberately does not begin the
-       object-level transition. */
+    /* RE-PINNED, AND THE TITLE WITH IT. This test used to claim "no migration,
+       and no Binder architecture change", which was true of the batch that
+       wrote it and is deliberately not true now: Batch 3A added 0014 and began
+       exactly the object-level transition the old comment said it was not
+       beginning. Superseding that claim is the decision; the rest of this test
+       is NOT superseded, and is in fact the proof 3A owes — `binder_entries`
+       keeps its exact shape, the archive still works, and the legacy row is
+       still a fact about a CARD. */
+    eq(migrations.length, 14, migrations.join(","));
+    eq(migrations[migrations.length - 1], "0014_binder_memberships.sql", "a migration was added");
     const st = world();
     const bd = okv(x(st, CASEY, "createBinder", { name: "Shoebox" }), "binder");
     okv(x(st, CASEY, "addGoal",
@@ -670,6 +675,12 @@ describe("D. What this batch did not touch", () => {
     okv(x(st, CASEY, "addBinderEntry", { binderId: bd, canonicalCardId: "cc-z" }), "file");
     eq(Object.keys(st.get().binderEntries[0]).sort().join(","), "addedAt,binderId,canonicalCardId",
       "a binder entry changed shape");
+    /* AND IT STAYED A FACT ABOUT A CARD. Filing the card did not quietly give
+       the Goal a home as well — no inference, no conversion, not even where
+       there is exactly one Goal for the card and it could only have meant that
+       one. 3A's legacy rows and its memberships are separate on purpose. */
+    eq((st.get().binderMemberships || []).length, 0,
+      "filing a card invented an object-level membership");
     okv(x(st, CASEY, "setBinderArchived", { binderId: bd, archived: true }), "archive is still there");
   });
 

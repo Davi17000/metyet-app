@@ -43,6 +43,21 @@ const refuse = (code) => ({ ok: false, refused: code });
 const done = (state, value) => ({ ok: true, state, value });
 const list = (xs) => xs || [];
 
+/* EXACTLY ONE OBJECT, OR NOTHING (Batch 3A). A Binder membership names one Goal
+   or one CollectorCopy. Both is a contradiction, neither is silence, and a
+   blank is neither wearing an id's clothes — `isId` does not trim anywhere in
+   this repository, so a whitespace id would otherwise travel all the way to a
+   foreign key and come back as a database error instead of a refusal. */
+const idText = (v) => (typeof v === "string" && v.trim() ? v : null);
+const oneTarget = (goalId, collectorCopyId) => {
+  const goal = idText(goalId);
+  const copy = idText(collectorCopyId);
+  if (goal && copy) return null;
+  if (goal) return { kind: "goal", id: goal };
+  if (copy) return { kind: "copy", id: copy };
+  return null;
+};
+
 /* THE ONE PLACE A COPY'S DISPOSITION IS WRITTEN, AND THE TWO FIELDS ARE NOT
    ALIKE.
 
@@ -617,10 +632,23 @@ const COMMANDS = {
        persistence layer a world it refuses. Cancelling the dead deal is the way
        through, and it is one command away. */
     if (D.goalNamedByActive(goalId, state.opportunities)) return refuse(R.goalLocked);
-    /* ORGANISATION IS NOT A CONSEQUENCE OF THIS. Dropping a Goal says the
-       Collector has stopped looking; it says nothing about where they had filed
-       the card, and a binder is theirs to reorganise. */
-    return done({ ...state, goals: list(state.goals).filter((x) => x.id !== goalId) }, true);
+    /* ORGANISATION IS NOT A CONSEQUENCE OF THIS, AND THE OBJECT'S OWN HOME IS
+       NOT ORGANISATION ABOUT SOMETHING ELSE.
+
+       Dropping a Goal says the Collector has stopped looking. It still says
+       nothing about where they had filed the CARD — that row stays exactly
+       where it is, and the binder is theirs to reorganise. What goes with the
+       Goal is the Goal's own membership, because a membership is where THIS
+       GOAL lives and there is no longer a Goal to live anywhere.
+
+       That is not the rule the salvage batch withdrew. `pruneOrphanedMemberships`
+       asked "does this CARD still mean anything to this Collector?" and took
+       curation away when the answer turned no — organisation as a consequence
+       of a STATE CHANGE. Deleting the subject is not a state change, and
+       `interests` is cascaded by `removeCollectorCopy` for exactly this reason:
+       a row that NAMES the thing goes when the thing goes. */
+    return done({ ...state, goals: list(state.goals).filter((x) => x.id !== goalId),
+      binderMemberships: list(state.binderMemberships).filter((m) => m.goalId !== goalId) }, true);
   },
 
   /* ------------------------------------------------------------ inventory */
@@ -1155,10 +1183,17 @@ const COMMANDS = {
     if (status === "reserved") return refuse(R.copyReserved);
     if (list(state.opportunities).some((o) => (o.trade && o.trade.cards || [])
       .some((c) => c.binderId === copyId))) return refuse(R.copyInUse);
-    /* Interests cascade because they NAME this copy — `interests.binderId` is a
-       CollectorCopy id, legacy naming and written down as such. A binder entry
-       names a card, not this copy, so it is not touched. */
+    /* WHAT NAMES THIS COPY GOES WITH IT, AND WHAT NAMES ITS CARD DOES NOT.
+
+       Interests cascade because they NAME this copy — `interests.binderId` is a
+       CollectorCopy id, legacy naming and written down as such. A binder
+       MEMBERSHIP names it too, and is this copy's home, so it goes the same
+       way: selling a card is not a reorganisation of the shelf, it is the thing
+       leaving the shelf. A binder ENTRY names a CARD rather than this copy, and
+       is not touched — the card may still be wanted, and other copies of it may
+       still be owned. */
     return done({ ...state, collectorCopies: list(state.collectorCopies).filter((b) => b.id !== copyId),
+      binderMemberships: list(state.binderMemberships).filter((m) => m.collectorCopyId !== copyId),
       interests: list(state.interests).filter((i) => i.binderId !== copyId) }, true);
   },
 
@@ -1291,6 +1326,105 @@ const COMMANDS = {
     if (!has) return done(state, false);
     return done({ ...state, binderEntries: list(state.binderEntries)
       .filter((e) => !(e.binderId === binderId && e.canonicalCardId === canonicalCardId)) }, true);
+  },
+
+  /* ======================================================= OBJECT MEMBERSHIP
+
+     WHERE A GOAL OR A COPY BELONGS (Batch 3A).
+
+     `addBinderEntry` above files a CARD, and that is the shape 0013 shipped and
+     the shape the Collector's screens still send. These two file an OBJECT: one
+     Goal, or one CollectorCopy, in one Binder. The difference is the whole
+     batch. A Collector who hunts a card, keeps one copy of it and would part
+     with another has three things that can belong in three different places,
+     and a row naming the card could not say so — "three actionable objects
+     share one row, which is why the row is on its way to naming the object
+     instead", as the note above `addBinderEntry` has said since the salvage.
+
+     NOTHING HERE READS A CARD-LEVEL ROW, AND NOTHING HERE WRITES ONE. The two
+     representations stand side by side while the screens move across, and a
+     legacy row is never an answer to "which Binder is this Goal in" — if no
+     membership names the object, the object is unfiled. A legacy row records an
+     act of filing a card; nothing on it records what caused it, so reading one
+     as a Goal's home would be inventing the one thing nobody wrote down.
+
+     AT MOST ONE HOME, WHICH IS WHY THERE IS NO `moveObject`. An object belongs
+     in one place or in none, so filing it somewhere else IS the move: one
+     command, one row, updated in place. Remove-then-add would pass through a
+     state where the object belongs nowhere, and across two transactions it
+     could stop there. */
+
+  fileObject(state, a, { binderId, goalId, collectorCopyId }, ctx) {
+    const at = ctx.at;
+    const target = oneTarget(goalId, collectorCopyId);
+    if (!target) return refuse(R.invalidTarget);
+    const binder = list(state.binders).find((b) => b.id === binderId);
+    if (!binder) return refuse(R.notFound);
+    if (a.seat !== "collector" || binder.collectorId !== a.collectorId) return refuse(R.notOwner);
+    const object = target.kind === "goal"
+      ? list(state.goals).find((g) => g.id === target.id)
+      : list(state.collectorCopies).find((b) => b.id === target.id);
+    if (!object) return refuse(R.notFound);
+    /* BOTH SIDES, NOT ONE. Owning the binder is not enough: a membership names
+       an object, and a row pairing this Collector's binder with somebody else's
+       Goal would put another person's object id into this Collector's own view,
+       which the projection scopes by the binder alone. */
+    if (object.collectorId !== a.collectorId) return refuse(R.notOwner);
+    const key = target.kind === "goal" ? "goalId" : "collectorCopyId";
+    const existing = list(state.binderMemberships).find((m) => m[key] === target.id);
+    /* Already there: the same answer, said twice. The row keeps its id and the
+       moment it was filed, because neither changed. */
+    if (existing && existing.binderId === binderId) return done(state, existing.id);
+    /* AND THE ARCHIVE GATE IS BELOW THAT, ON PURPOSE. It was above it first,
+       which refused a re-statement of a home the Collector already has in a
+       binder they have since archived — a no-op answered with an error, which
+       `addBinderEntry` does not do either. An archived binder is a bar on
+       filing something NEW into it, not on the truth staying true. */
+    if (binder.archivedAt) return refuse(R.binderArchived);
+    /* Somewhere else: the SAME row moves. Updated in place, never removed and
+       re-added — the membership's id is the handle everything else uses, and
+       `binderMemberships` must not be reordered by a move either. */
+    if (existing) {
+      return done({ ...state, binderMemberships: list(state.binderMemberships)
+        .map((m) => (m.id === existing.id ? { ...m, binderId, filedAt: at } : m)) }, existing.id);
+    }
+    const id = ctx.id("bm");
+    return done({ ...state, binderMemberships: [...list(state.binderMemberships),
+      { id, binderId, [key]: target.id, filedAt: at }] }, id);
+  },
+
+  /* NO HOME, WHICH IS NOT THE SAME AS NO MEANING. The Goal is still the hunt it
+     was and the copy is still owned, kept or offered exactly as before; they
+     are simply not in a binder. It names no binder because an object has one
+     home or none, and naming the one being left would be a fact a caller could
+     get wrong for no gain. */
+  unfileObject(state, a, { goalId, collectorCopyId }, ctx) {
+    const target = oneTarget(goalId, collectorCopyId);
+    if (!target) return refuse(R.invalidTarget);
+    /* THE SEAT BEFORE THE LOOKUP, AND THIS ORDER IS THE WHOLE REASON THE LINE
+       IS SPLIT IN TWO. It was one line below the lookup, which answered
+       `not-found` for an id that does not exist and `not-owner` for one that
+       does — to ANY authenticated caller, including a Trusted Partner with no
+       relationship to the owner. The difference between those two answers is a
+       fact about somebody else's collection, and a partner holding a copy id
+       could use it to learn whether that copy still exists. `fileObject` never
+       had the problem because it reaches the binder first and a non-owner stops
+       there; the other commands in this file that probe before checking probe
+       BINDER ids, which a partner is never given. This is the first that
+       probes an object, so it asks about the seat first. */
+    if (a.seat !== "collector") return refuse(R.notOwner);
+    const object = target.kind === "goal"
+      ? list(state.goals).find((g) => g.id === target.id)
+      : list(state.collectorCopies).find((b) => b.id === target.id);
+    if (!object) return refuse(R.notFound);
+    if (object.collectorId !== a.collectorId) return refuse(R.notOwner);
+    const key = target.kind === "goal" ? "goalId" : "collectorCopyId";
+    const existing = list(state.binderMemberships).find((m) => m[key] === target.id);
+    /* Unfiled already: nothing to do, and that is a success. An archived binder
+       is no bar here — a Collector must always be able to take a thing out. */
+    if (!existing) return done(state, false);
+    return done({ ...state, binderMemberships: list(state.binderMemberships)
+      .filter((m) => m.id !== existing.id) }, true);
   },
 
   /* ------------------------------------------------------------ relationships & profile */

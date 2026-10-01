@@ -175,7 +175,7 @@ const rowOf = async (ctx, invId) =>
 describe("A. the door opened by exactly two", () => {
 
   test("the allow-list, and the two C5 itself added", async () => {
-    eq(EXPOSED_COMMANDS.length, 23, "the production surface is not the size C5 intended");
+    eq(EXPOSED_COMMANDS.length, 25, "the production surface is not the size C5 intended");
     for (const name of ["updateInventoryCopy", "removeInventoryCopy"]) {
       assert(EXPOSED_COMMANDS.includes(name), `${name} is not offered`);
     }
@@ -224,12 +224,15 @@ describe("A. the door opened by exactly two", () => {
     eq(before.length, 16, "the baseline was not sixteen");
     const added = EXPOSED_COMMANDS.filter((n) => !before.includes(n));
     const lost = before.filter((n) => !EXPOSED_COMMANDS.includes(n));
-    /* C5's own two, plus the three the qualification batch added on top. The
-       test still measures the delta against the file as dc2fd25 actually had
-       it, so a fourth door opening anywhere still fails here — which is the
-       whole reason it reads git rather than a literal. */
-    eq(json(added.sort()), json(["addCopyPhotos", "endReview", "removeInventoryCopy",
-      "requestPhotos", "reviewCopy", "setCollectorCopyKept", "updateInventoryCopy"]),
+    /* C5's own two, plus the three the qualification batch added on top, plus
+       Batch 3A's `fileObject` and `unfileObject` — a Collector filing their own
+       Goal or copy in their own Binder, which has to reach the server because
+       the server is the only thing that knows whose Binder it is. The test
+       still measures the delta against the file as dc2fd25 actually had it, so
+       a door opening anywhere still fails here — which is the whole reason it
+       reads git rather than a literal. */
+    eq(json(added.sort()), json(["addCopyPhotos", "endReview", "fileObject", "removeInventoryCopy",
+      "requestPhotos", "reviewCopy", "setCollectorCopyKept", "unfileObject", "updateInventoryCopy"]),
       "a door was opened that no batch declared");
     eq(json(lost), json([]), "a door somebody else opened was closed");
   });
@@ -1023,17 +1026,20 @@ describe("G. what the product says", () => {
 /* ============================================================== H */
 describe("H. nothing else moved", () => {
 
-  test("no migration, and the newest is still C3.4's", async () => {
+  test("C5 wrote no migration: the newest is still somebody else's", async () => {
     const files = fs.readdirSync(path.join(ROOT, "persistence/migrations")).sort();
-    eq(files[files.length - 1], "0013_binders.sql", "C5 added or renamed a migration");
+    eq(files[files.length - 1], "0014_binder_memberships.sql", "C5 added or renamed a migration");
   });
 
   test("the domain's command table did not grow", async () => {
     /* 49 → 50 in Option B, which is the batch that DID need a new command:
        voluntary Pending is a decision, and a decision leaves no trace to derive
        from. C5's own point stands — it shipped two commands that already
-       existed rather than writing more. */
-    eq([...COMMAND_NAMES].length, 51, "C5 wrote a command instead of shipping two that existed");
+       existed rather than writing more.
+       51 → 53 in Batch 3A (`fileObject`, `unfileObject`), for the same reason:
+       there was no existing command that could name a Goal's or a copy's
+       Binder, because until 3A no row could hold one. */
+    eq([...COMMAND_NAMES].length, 53, "C5 wrote a command instead of shipping two that existed");
   });
 
   test("no new route, and the catalogue import is still unreachable", async () => {

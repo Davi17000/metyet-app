@@ -109,6 +109,19 @@ const TABLES = [
     fields: [["id", "id"], ["collectorId", "collector_id"]] },
   { collection: "binderEntries", table: "binder_entries", key: ["ord"],
     fields: [["binderId", "binder_id"], ["canonicalCardId", "canonical_card_id"]] },
+  /* AND WHERE AN OBJECT BELONGS (Batch 3A). A membership is one Goal or one
+     CollectorCopy filed in one Binder — the row `binderEntries` above was
+     always on its way to being, and a separate table because `binderEntries`
+     keys on a positional `ord` that renumbers on every save.
+
+     The two object columns are MIRRORS and not fields, because exactly one of
+     them is present on any row: a membership names a Goal or a copy, never
+     both, so neither column is always an id. That is the `invitations`
+     `collectorId` shape, for the same reason. `id` and `binderId` are always
+     present and so are fields. */
+  { collection: "binderMemberships", table: "binder_memberships", key: ["id"],
+    fields: [["id", "id"], ["binderId", "binder_id"]],
+    mirrors: [["goalId", "goal_id"], ["collectorCopyId", "collector_copy_id"]] },
   /* CAREFUL: `interests.binder_id` below names a COLLECTOR COPY, not a Binder.
      It is legacy naming from before C2 renamed `binder_copies`, kept as debt
      (domain/README.md). The only column in this schema that genuinely names a
@@ -142,7 +155,10 @@ const CHILD_TABLES = [
       "canonical_card_id", "binder_id"] },
 ];
 const COLLECTIONS = TABLES.map((t) => t.collection);
-const OPTIONAL = ["preferences", "activity"];
+/* `binderMemberships` is optional for the same reason `catalog` is on the
+   domain side: a world written before Batch 3A has no such table, and a build
+   rolled back past it has no such spec. Absent reads as none. */
+const OPTIONAL = ["preferences", "activity", "binderMemberships"];
 
 for (const t of TABLES) {
   t.columns = [...new Set([...t.fields.map(([, c]) => c), ...(t.mirrors || []).map(([, c]) => c), "ord", "attrs"])];

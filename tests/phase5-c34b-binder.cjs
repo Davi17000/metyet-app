@@ -840,7 +840,7 @@ describe("E. add cards", () => {
     }
     /* No table grew a place to put it, either. */
     const migrations = fs.readdirSync(path.join(ROOT, "persistence", "migrations")).sort();
-    eq(migrations[migrations.length - 1], "0013_binders.sql",
+    eq(migrations[migrations.length - 1], "0014_binder_memberships.sql",
       "C3.4 added a migration: " + migrations.join(","));
     assert(!/prefs/.test(code("persistence/world-repository.js")), "a prefs column appeared");
   });
@@ -1023,6 +1023,13 @@ describe("F. the two new doors", () => {
          membership, and never crosses to a partner. */
       "setCollectorCopyKept",
       "createBinder", "addBinderEntry", "removeBinderEntry",
+      /* AND THE TWO BATCH 3A ADDED. `fileObject` and `unfileObject` file one
+         GOAL or one COLLECTORCOPY in a binder, which is where membership is
+         going — `addBinderEntry` above files a CARD, and is what every
+         Collector screen still sends. Both doors are open at once on purpose:
+         the screens move across in 3B, and a per-card checkbox cannot express
+         three homes for one card. */
+      "fileObject", "unfileObject",
       "updateCollectorCopy", "updateGoalCriteria",
       "renameBinder", "setBinderArchived",
       /* AND THE TWO C5 ADDED (Phase 5 C5). `updateInventoryCopy` and
@@ -1050,7 +1057,7 @@ describe("F. the two new doors", () => {
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
     ].sort()), "the production surface is not what C3.4 declared");
-    eq(EXPOSED_COMMANDS.length, 23);
+    eq(EXPOSED_COMMANDS.length, 25);
     for (const name of EXPOSED_COMMANDS) {
       assert(C.COMMAND_NAMES.includes(name), `${name} is not a command`);
     }
@@ -1419,14 +1426,18 @@ describe("H. the navigation", () => {
     assert(/2 Binder/.test(texts(r)), texts(r));
   });
 
-  test("no new durable concept: 0013_binders.sql is still the newest migration", () => {
+  test("C3.4b wrote no migration: the newest is still somebody else's", () => {
     const migrations = fs.readdirSync(path.join(ROOT, "persistence", "migrations")).sort();
-    eq(migrations[migrations.length - 1], "0013_binders.sql", migrations.join(","));
+    eq(migrations[migrations.length - 1], "0014_binder_memberships.sql", migrations.join(","));
     /* 49 → 50 in Option B (`setCopyPending`). C3.4b's real claim is the line
        above — no new MIGRATION — and it survived Option B intact: that batch
        added a durable field to an inventory copy and still needed no
-       migration, because unmapped facts live in `attrs`. */
-    eq(C.COMMAND_NAMES.length, 51, "a command was added or removed");
+       migration, because unmapped facts live in `attrs`.
+       Batch 3A DID add a migration (0014) and two commands, which is why the
+       line above now names 0014. C3.4b's claim was about C3.4b: the Binder
+       foundation it shipped needed neither, and 3A's are additive — nothing
+       C3.4b built was re-keyed, widened or dropped to make room. */
+    eq(C.COMMAND_NAMES.length, 53, "a command was added or removed");
   });
 
   test("compatibility: a historical Goal with no criteria is still manageable", async () => {

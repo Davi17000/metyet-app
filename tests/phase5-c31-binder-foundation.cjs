@@ -536,8 +536,16 @@ describe("D. what a Trusted Partner receives of a Collector's organisation", () 
     for (const [k, v] of Object.entries(goal)) {
       assert(v !== 3 && v !== "3", `a binder count rode along on the goal as ${k}`);
     }
+    /* RE-PINNED: Batch 3A added a third binder-shaped section, and the point of
+       this assertion is that every one of them is DECLARED — a section nobody
+       named is a section nobody reasoned about. All three are empty for a
+       partner, which is asserted next rather than left to the name. */
     eq(Object.keys(state).filter((k) => /binder/i.test(k)).sort().join(","),
-      "binderEntries,binders", "a binder-shaped section appeared that nobody declared");
+      "binderEntries,binderMemberships,binders",
+      "a binder-shaped section appeared that nobody declared");
+    for (const k of Object.keys(state).filter((n) => /binder/i.test(n))) {
+      eq(json(state[k]), "[]", `${k} carried something to a partner`);
+    }
     eq(state.binders.length, 0);
     eq(state.binderEntries.length, 0);
   });
@@ -684,6 +692,13 @@ describe("E. the commands exist, and production cannot reach them", () => {
          reason offering did, and the two clear each other in the domain. */
       "setCollectorCopyKept",
       "createBinder", "addBinderEntry", "removeBinderEntry",
+      /* AND THE TWO BATCH 3A ADDED. `fileObject` and `unfileObject` file one
+         GOAL or one COLLECTORCOPY in a binder, which is where membership is
+         going — `addBinderEntry` above files a CARD, and is what every
+         Collector screen still sends. Both doors are open at once on purpose:
+         the screens move across in 3B, and a per-card checkbox cannot express
+         three homes for one card. */
+      "fileObject", "unfileObject",
       "updateCollectorCopy", "updateGoalCriteria",
       "renameBinder", "setBinderArchived",
       /* AND THE TWO C5 ADDED (Phase 5 C5). `updateInventoryCopy` and
@@ -711,7 +726,7 @@ describe("E. the commands exist, and production cannot reach them", () => {
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
     ].sort()), "the production surface is not what C3.4 declared");
-    eq(EXPOSED_COMMANDS.length, 23);
+    eq(EXPOSED_COMMANDS.length, 25);
   });
 
   /* SUPERSEDED AND RESTATED. The claim was that the client bound the three
@@ -780,7 +795,11 @@ describe("F. what is stored, and what the schema refuses", () => {
   test("the migration is the next one in sequence and applies to a fresh database", async () => {
     const versions = readMigrations().map((m) => m.version);
     assert(versions.includes("0013_binders"), "the migration is missing");
-    eq(versions[versions.length - 1], "0013_binders", "it is not the newest");
+    /* RE-PINNED: 0014 is Batch 3A's, and it is additive — a new table for
+       object-level membership, with `binder_entries` not altered at all. What
+       this test is for is that C3.1's own migration is present and in sequence,
+       which it still is. */
+    eq(versions[versions.length - 1], "0014_binder_memberships", "it is not the newest");
 
     const pg = new PGlite();
     const db = fromPGlite(pg);
@@ -799,7 +818,8 @@ describe("F. what is stored, and what the schema refuses", () => {
     assert(!first.applied.includes("0013_binders"), "the binder tables arrived early");
 
     const upgrade = await migrate(db, { migrations: all });
-    eq(upgrade.applied.join(","), "0013_binders", "the upgrade applied something else too");
+    eq(upgrade.applied.join(","), "0013_binders,0014_binder_memberships",
+      "the upgrade applied something else too");
     const t = await pg.query(
       "select table_name from information_schema.tables where table_schema = 'metyet' and table_name in ('binders','binder_entries') order by table_name");
     eq(t.rows.map((x) => x.table_name).join(","), "binder_entries,binders", "the tables are not there");

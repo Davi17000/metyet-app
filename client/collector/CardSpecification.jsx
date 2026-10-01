@@ -143,8 +143,28 @@ export function planFrom(state, canonicalCardId, answers) {
   const corrections = [];
 
   /* 1. THE CONTAINERS, which name no card and so cannot fail for anything a
-     later step says. */
-  for (const name of answers.newBinders) steps.push({ kind: "make-binder", name });
+     later step says.
+
+     EACH CARRIES A HANDLE, AND THAT IS THE FIX FOR A DEFECT (Batch 3A). A
+     binder named in this session has no id yet, and until now nothing could
+     refer to it: `answers.newBinders` held names, `answers.binders` held ids,
+     and no step ever joined them. So the panel created the binder, filed
+     nothing into it, closed without a word, and on a retry created a second one
+     — the Collector saw their new binder ticked beside the ones they had ticked
+     themselves, pressed Save, and got an empty binder.
+
+     `binderDraftId` is the same idea as a copy's `draftId` and is honest for
+     the same reason: it IS the identity of a binder that has no durable one
+     yet. `commit` records the id the server mints against it and resolves it
+     into the steps that name it, so a filing a few lines below can target a
+     binder created a few lines above.
+
+     NOT BY NAME. Two binders may share a name — `createBinder` has no duplicate
+     rule and the schema has no unique key — so a name cannot identify the one
+     that was just made. */
+  for (const [i, name] of answers.newBinders.entries()) {
+    steps.push({ kind: "make-binder", name, binderDraftId: `new-binder-${i}` });
+  }
 
   /* 2. WHAT CAN ONLY BE REFUSED FOR WHAT IT SAYS, AND THAT IS THE WHOLE ORDER.
 
@@ -262,6 +282,12 @@ export function planFrom(state, canonicalCardId, answers) {
      should not pass through a moment of belonging nowhere. */
   for (const id of answers.binders) {
     if (!filedNow.has(id)) steps.push({ kind: "file", binderId: id });
+  }
+  /* AND INTO THE BINDERS BEING MADE IN THIS SAME SAVE. The step names the
+     handle; `commit` turns it into the minted id before it is sent, so nothing
+     downstream — not `SignIn.jsx`, not the command — ever sees a handle. */
+  for (let i = 0; i < answers.newBinders.length; i += 1) {
+    steps.push({ kind: "file", binderDraftId: `new-binder-${i}` });
   }
   for (const id of filedNow) {
     if (!answers.binders.has(id)) steps.push({ kind: "unfile", binderId: id });
@@ -476,10 +502,29 @@ export default function CardSpecification({ card, context = null, state,
 
      ADOPTED ON EVERY EXIT, including the refusal and the lost-contact paths,
      because those are precisely the paths a retry follows. */
+  /* WHAT THE SERVER MINTED, WRITTEN BACK INTO THE ANSWERS, so that a second
+     press sends only what is left. A copy stops being new because its draft now
+     has an id; a binder stops being new because it has moved out of
+     `newBinders` and into `binders` as a real id — which is what stops a retry
+     creating a second binder of the same name, without anyone having to guess
+     which binder a name meant. */
   const adopt = (minted) => {
     if (!minted.size) return;
-    setAnswers((a) => ({ ...a, copies: a.copies.map((d) => (d.id == null && minted.has(d.key)
-      ? { ...d, id: minted.get(d.key) } : d)) }));
+    setAnswers((a) => {
+      const madeBinders = a.newBinders
+        .map((name, i) => minted.get(`new-binder-${i}`))
+        .filter((id) => typeof id === "string" && id);
+      if (!madeBinders.length) {
+        return { ...a, copies: a.copies.map((d) => (d.id == null && minted.has(d.key)
+          ? { ...d, id: minted.get(d.key) } : d)) };
+      }
+      const made = new Set(madeBinders);
+      return { ...a,
+        copies: a.copies.map((d) => (d.id == null && minted.has(d.key)
+          ? { ...d, id: minted.get(d.key) } : d)),
+        newBinders: a.newBinders.filter((name, i) => !minted.has(`new-binder-${i}`)),
+        binders: new Set([...a.binders, ...made]) };
+    });
   };
 
   const commit = async () => {
@@ -492,7 +537,32 @@ export default function CardSpecification({ card, context = null, state,
     const minted = new Map();
     try {
       for (const step of steps) {
-        const answer = await onCommit(step, canonicalCardId);
+        /* A STEP MAY NAME SOMETHING THIS SAVE HAS JUST CREATED. Resolved here,
+           immediately before dispatch, because `steps` is computed once and a
+           handle only becomes an id partway through. Nothing past this line
+           ever sees a `binderDraftId`: the key is REMOVED rather than set to
+           `undefined`, which left an own property behind and sent every
+           `make-binder` out carrying a stray `binderId: undefined`. */
+        const { binderDraftId, ...rest } = step;
+        const sending = binderDraftId && step.kind !== "make-binder"
+          ? { ...rest, binderId: minted.get(binderDraftId) }
+          : rest;
+        if (binderDraftId && step.kind !== "make-binder" && !sending.binderId) {
+          /* NO ID FOR A HANDLE THIS SAVE WAS SUPPOSED TO MINT, AND IT SAYS SO.
+             This used to `continue`, with a comment claiming the only cause was
+             an earlier refusal — which cannot happen, because a refusal returns
+             out of this loop rather than continuing. The one way here is a
+             `make-binder` that answered without an id, and skipping silently
+             then recreates exactly the defect this batch fixed: the binder is
+             made, the card is never filed, the panel closes saying nothing, and
+             the next Save makes a second binder. A missing id is a failure. */
+          adopt(minted);
+          setDone(finished);
+          setProblem(explain(step, "not-found", finished));
+          setSaving(false);
+          return;
+        }
+        const answer = await onCommit(sending, canonicalCardId);
         if (answer && answer.ok === false) {
           /* STOP. A later step may depend on this one — the Goal that criteria
              would change, the binder an entry would name — and continuing past
@@ -504,9 +574,17 @@ export default function CardSpecification({ card, context = null, state,
           setSaving(false);
           return;
         }
-        if (step.kind === "record-copy" && step.draftId
-          && answer && typeof answer.value === "string" && answer.value) {
-          minted.set(step.draftId, answer.value);
+        /* EVERY MINTING STEP, NOT ONE OF THEM. `record-copy` was the only kind
+           bound until this batch; a Goal's id and a binder's were returned and
+           dropped on the floor. A step says which draft id it is answering for,
+           and whatever comes back under it is what later steps may name.
+           It is called `draftId` rather than `handle` because that is what it
+           is — a client-side id — and because `phase4-collector-read-experiences`
+           reads this surface for maps keyed on anything but an id, which is a
+           guard worth keeping readable rather than widening. */
+        const draftId = step.draftId || (step.kind === "make-binder" ? step.binderDraftId : null);
+        if (draftId && answer && typeof answer.value === "string" && answer.value) {
+          minted.set(draftId, answer.value);
         }
         finished.push(step);
       }

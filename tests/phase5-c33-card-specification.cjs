@@ -698,6 +698,13 @@ describe("D. the production door, and what is still shut", () => {
          membership, and never crosses to a partner. */
       "setCollectorCopyKept",
       "createBinder", "addBinderEntry", "removeBinderEntry",
+      /* AND THE TWO BATCH 3A ADDED. `fileObject` and `unfileObject` file one
+         GOAL or one COLLECTORCOPY in a binder, which is where membership is
+         going — `addBinderEntry` above files a CARD, and is what every
+         Collector screen still sends. Both doors are open at once on purpose:
+         the screens move across in 3B, and a per-card checkbox cannot express
+         three homes for one card. */
+      "fileObject", "unfileObject",
       "updateCollectorCopy", "updateGoalCriteria",
       "renameBinder", "setBinderArchived",
       /* AND THE TWO C5 ADDED (Phase 5 C5). `updateInventoryCopy` and
@@ -725,7 +732,7 @@ describe("D. the production door, and what is still shut", () => {
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
     ].sort()), "the production surface is not what C3.4 declared");
-    eq(EXPOSED_COMMANDS.length, 23);
+    eq(EXPOSED_COMMANDS.length, 25);
     for (const name of EXPOSED_COMMANDS) {
       assert(C.COMMAND_NAMES.includes(name), `${name} is not a command`);
     }
@@ -1153,18 +1160,44 @@ describe("F. one button, a sequence of commands that already existed", () => {
         disposition: "offered", removed: false }, key: "new-1" }],
     };
     const plan = SPEC.planFrom(state0, made.mudkip, answers);
-    eq(plan.steps.map((s) => s.kind).join(","), "make-binder,record-copy,start-looking",
+    /* RE-PINNED (Batch 3A), AND THE DEFECT IS IN THE DIFFERENCE. The panel used
+       to emit `make-binder` for a brand-new binder and NOTHING ELSE: the binder
+       was created and this card was never put in it, because the filing step
+       could only name a binder that already had an id. A new binder now emits
+       both. The `file` is last here only because this fixture has no
+       corrections — section 3 of `planFrom` puts filing in the group that can
+       fail only on its own terms, AHEAD of the three a deal can refuse, which
+       is what the next test measures. */
+    eq(plan.steps.map((s) => s.kind).join(","), "make-binder,record-copy,start-looking,file",
       "the sequence is not what the panel declared");
 
     const send = runStep(ctx, "casey");
+    /* BINDING THE MINTED ID, BECAUSE THIS TEST DRIVES `planFrom` RATHER THAN
+       THE COMPONENT. A new binder's `file` step carries a draft handle, not an
+       id; `commit` in CardSpecification resolves it from the answer the
+       `make-binder` step returned, and the component doing that is proved
+       against the real mounted panel in phase5-binder-object-membership. Here
+       the harness stands in for it, in three lines, the same way the retry test
+       below stands in for `adopt`. */
+    const minted = new Map();
     for (const step of plan.steps) {
-      const answer = await send(step, made.mudkip);
+      const needsId = step.binderDraftId && step.kind !== "make-binder";
+      const sending = needsId ? { ...step, binderId: minted.get(step.binderDraftId) } : step;
+      assert(!needsId || sending.binderId, `${step.kind} named an unresolved handle`);
+      const answer = await send(sending, made.mudkip);
       eq(answer.ok, true, `${step.kind}: ${answer.refused}`);
+      if (step.binderDraftId && step.kind === "make-binder") minted.set(step.binderDraftId, answer.value);
     }
 
     const w = await load(ctx);
     eq(w.binders.length, 1);
     eq(w.binders[0].name, "Mudkip Collection");
+    /* THE CARD IS ACTUALLY IN IT. Before Batch 3A this was zero, and every
+       assertion in this test passed anyway — the binder existed, so the panel
+       looked right, and the card was simply not in it. */
+    eq(w.binderEntries.length, 1, "the new binder was created empty");
+    eq(w.binderEntries[0].binderId, w.binders[0].id, "the card was filed somewhere else");
+    eq(w.binderEntries[0].canonicalCardId, made.mudkip, "a different card was filed");
     eq(w.goals.length, 1);
     eq(json(w.goals[0].desired), json({ grade: "Raw", condition: "Near Mint" }));
     eq(w.collectorCopies.length, 1);
@@ -1229,9 +1262,28 @@ describe("F. one button, a sequence of commands that already existed", () => {
       ],
     };
     const kinds = SPEC.planFrom(state, made.mudkip, answers).steps.map((s) => s.kind);
+    /* RE-PINNED (Batch 3A): TWO filings, because there are two binders. "New
+       Home" already exists and is ticked, and "Brand New" is being created in
+       this same Save — and before 3A only the first of those produced a `file`,
+       so the binder the person made in this very plan was left empty. Two
+       binders, two filings is the rule stated as a count. */
     eq(kinds.join(","),
-      "make-binder,offering,record-copy,file,unfile,correct-copy,wanted-copy,how-hard",
+      "make-binder,offering,record-copy,file,file,unfile,correct-copy,wanted-copy,how-hard",
       "the commit order moved");
+    /* STATED AS THE RULE RATHER THAN AS THIS FIXTURE'S ARITHMETIC. The first
+       version counted `file` against `make-binder + 1`, which holds here only
+       because there happens to be exactly one existing unfiled ticked binder —
+       it would have passed just as well if BOTH filings had named the new
+       binder and the existing one had been skipped, which is the half of the
+       defect it was supposed to rule out. So it asserts what the filings
+       actually name: every ticked binder that does not already hold this card,
+       and every binder being created in this same Save, exactly once each. */
+    const plan = SPEC.planFrom(state, made.mudkip, answers).steps;
+    const filings = plan.filter((st) => st.kind === "file");
+    eq(filings.filter((st) => st.binderId === bind2).length, 1, "the existing binder was not filed into");
+    eq(filings.filter((st) => st.binderDraftId === "new-binder-0").length, 1,
+      "the binder being created in this Save was not filed into");
+    eq(filings.length, 2, `the plan filed ${JSON.stringify(filings)}`);
     /* Stated as the properties rather than only as the literal, so the reasons
        survive a future reordering of the middle. */
     eq(kinds[0], "make-binder", "a container that names no card is not first");
@@ -1322,7 +1374,10 @@ describe("F. one button, a sequence of commands that already existed", () => {
     /* FIRST PRESS. The binder is made; the Goal is refused; the sequence stops,
        so the copy is never sent. */
     const first = SPEC.planFrom(await view(ctx.app, "casey"), made.mudkip, answers);
-    eq(first.steps.map((s) => s.kind).join(","), "make-binder,record-copy,start-looking");
+    /* RE-PINNED (Batch 3A): a new binder now also emits the `file` that puts
+       this card in it. It is last, so it is below the refusal and never runs on
+       this press — which is exactly what the second plan below has to notice. */
+    eq(first.steps.map((s) => s.kind).join(","), "make-binder,record-copy,start-looking,file");
     const doneFirst = [];
     for (const step of first.steps) {
       const answer = await send(step, made.mudkip);
@@ -1391,7 +1446,11 @@ describe("F. one button, a sequence of commands that already existed", () => {
        future parallel 'optimisation' of the commit fails here first. */
     const store = code("client/production-store.js");
     assert(/CommandInFlightError/.test(store), "the store stopped serialising commands");
-    assert(/await onCommit\(step/.test(code("client/collector/CardSpecification.jsx")),
+    /* RE-PINNED: the step is resolved into `sending` immediately before
+       dispatch, because a step may name a binder this same Save has just
+       created and a handle only becomes an id partway through. It is still one
+       await per step, which is what this test is about. */
+    assert(/await onCommit\(sending/.test(code("client/collector/CardSpecification.jsx")),
       "the panel stopped awaiting each step");
   });
 });
@@ -1646,9 +1705,9 @@ describe("H. how somebody organises their collection is not a fact about a trade
     assert(validateWorld(w).ok, "the world is invalid");
   });
 
-  test("and no migration was written", () => {
+  test("C3.3 wrote no migration: the newest is still somebody else's", () => {
     const names = fs.readdirSync(path.join(ROOT, "persistence", "migrations")).sort();
-    eq(names[names.length - 1], "0013_binders.sql",
+    eq(names[names.length - 1], "0014_binder_memberships.sql",
       "C3.3 added a migration: " + names.join(","));
     /* `desired` lives in a Goal's attrs and needed no DDL; nothing else C3.3
        writes is a new shape. */

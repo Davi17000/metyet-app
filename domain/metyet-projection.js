@@ -297,6 +297,10 @@ const counterpartiesFrom = (rows, key, isNetwork, records, fields) => {
 /* ------------------------------------------------------------- THE EMPTY VIEW */
 const COLLECTIONS = ["catalog", "collectors", "partners", "relationships", "invitations",
   "goals", "preferences", "inventory", "collectorCopies", "binders", "binderEntries",
+  /* Batch 3A. Declared here so the section exists and is EMPTY for everyone who
+     is not told otherwise below — the same default that makes "an unclassified
+     section cannot appear unnoticed" a real guard rather than a list to edit. */
+  "binderMemberships",
   "interests", "opportunities", "conversations", "activity", "photoRequests", "copyReviews"];
 const SECTIONS = ["actor", ...COLLECTIONS, "counterparties", "discoveries"];
 const empty = () => {
@@ -335,6 +339,8 @@ function projectForCollector(state, me) {
   const myCopyIds = new Set(collectorCopies.map((b) => b.id));
   const myBinders = list(state.binders).filter((b) => b.collectorId === cid);
   const myBinderIds = new Set(myBinders.map((b) => b.id));
+  /* For the membership scope below; `myCopyIds` above is the other half. */
+  const myGoalIds = new Set(list(state.goals).filter((g) => g.collectorId === cid).map((g) => g.id));
 
   /* Inventory: the current supply of Trusted Partners, and the exact copies this
      collector's own deals name — each with a status from their own deals only.
@@ -426,6 +432,33 @@ function projectForCollector(state, me) {
        own cannot bring its cards into view. */
     binders: clone(myBinders),
     binderEntries: clone(list(state.binderEntries).filter((e) => myBinderIds.has(e.binderId))),
+    /* AND WHERE THEIR OBJECTS BELONG (Batch 3A), scoped by BOTH owners.
+
+       The entries above are scoped through the binder alone, which is complete
+       for them: an entry names a card, and a card has no owner, so a binder
+       they own cannot bring somebody else's anything into view. A membership
+       names an OBJECT, and an object does have an owner — so a row pairing
+       this Collector's binder with another Collector's Goal would put a
+       stranger's object id on this screen. The command refuses that pair and
+       `validateWorld` refuses a world containing one, but a filter that reads
+       only half the row would be relying on both of those being perfect
+       forever. This asks the question the row actually raises. */
+    binderMemberships: clone(list(state.binderMemberships).filter((m) => myBinderIds.has(m.binderId)
+      /* EVERY NAME ON THE ROW, NOT THE FIRST ONE. The first version of this
+         dispatched on `m.goalId` being set and checked only that side, which is
+         precisely the half-a-row reading the paragraph above rejects: a row
+         pairing this Collector's binder and Goal with a STRANGER'S copy id
+         passed the filter and put the stranger's id on this screen. Such a row
+         is refused by `fileObject` and by `validateWorld`, which is exactly the
+         "relying on both of those being perfect forever" this is here to avoid.
+         An adversarial pass on the finished batch built one by hand and read
+         the id back out. Now every reference present must be this Collector's,
+         and a row naming none of them is excluded by `.every` over an empty
+         list being true only if `myBinderIds` already said yes — so the binder
+         check above is what carries that case, as it did before. */
+      && (m.goalId == null || myGoalIds.has(m.goalId))
+      && (m.collectorCopyId == null || myCopyIds.has(m.collectorCopyId))
+      && (m.goalId != null || m.collectorCopyId != null))),
     interests: list(state.interests)
       .filter((x) => myCopyIds.has(x.binderId) && related(x.partnerId))
       .map((x) => pick(x, INTEREST_FOR_COLLECTOR)),
@@ -520,6 +553,11 @@ function projectForPartner(state, me) {
        one way for a partner to learn that a Collector wants something. */
     binders: [],
     binderEntries: [],
+    /* And a membership is the same answer about the same thing: an explicit
+       empty, for every reason the two above are. Where a Collector keeps a copy
+       is not a fact about a trade, and "this one lives in their Keepers binder"
+       would be negotiating information they never offered. */
+    binderMemberships: [],
     interests: clone(list(state.interests).filter((x) => x.partnerId === pid)),
     opportunities: opportunities.map(opportunityForPartner),
     conversations: clone(conversations),

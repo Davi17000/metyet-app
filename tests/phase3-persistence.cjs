@@ -77,8 +77,14 @@ function stable(v) {
   if (v && typeof v === "object") return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${stable(v[k])}`).join(",")}}`;
   return JSON.stringify(v === undefined ? null : v);
 }
-/* The world as JSON represents it, with optional collections as lists. */
-const asJson = (w) => ({ ...JSON.parse(JSON.stringify(w)), preferences: w.preferences || [], activity: w.activity || [] });
+/* The world as JSON represents it, with optional collections as lists.
+   `binderMemberships` joined the OPTIONAL list in Batch 3A, for the reason the
+   other two are there: the repository always reads the collection back, and an
+   absent key and an empty one are the same world. That is also precisely what
+   makes rolling 0014's code back safe — a build that never writes the section
+   loads every world that has it, and vice versa. */
+const asJson = (w) => ({ ...JSON.parse(JSON.stringify(w)), preferences: w.preferences || [],
+  activity: w.activity || [], binderMemberships: w.binderMemberships || [] });
 const canonical = (w) => stable(asJson(w));
 /* Equal worlds, or a failure naming the first path that differs. */
 function sameWorld(actual, expected, msg) {
@@ -338,13 +344,21 @@ describe("B. round-trip fidelity", () => {
     sameWorld(await repo.loadWorld(), mirror, "persisted = in-memory");
   });
 
-  test("worlds without preferences or activity load with both as []", async () => {
+  test("worlds without preferences, activity or binderMemberships load with all three as []", async () => {
     const { repo } = await fresh();
     const world = seed();
     assert(!("preferences" in world) && !("activity" in world), "both omitted");
+    /* BATCH 3A, AND THE REASON THE ROLLBACK IS SAFE. Every world written before
+       0014 omits this section, and every one of them must still load — not as a
+       tolerated absence but as a normal empty collection, so that nothing
+       downstream has to ask which era a world came from. The other half of the
+       same property is in tests/phase5-binder-object-membership.cjs: a build
+       that has never heard of the section loads a world that HAS one. */
+    assert(!("binderMemberships" in world), "and the section a pre-3A world has never heard of");
     await repo.saveWorld(world);
     const back = await repo.loadWorld();
-    eq(JSON.stringify([back.preferences, back.activity]), "[[],[]]", "normalized");
+    eq(JSON.stringify([back.preferences, back.activity, back.binderMemberships]),
+      "[[],[],[]]", "normalized");
   });
 
   test("private canonical data is stored and reloaded, not dropped because projection hides it", async () => {

@@ -912,6 +912,34 @@ const REFUSE = {
      `copyDisposition` still reports it as `unstated`. What ends is the ability
      to create another one. */
   invalidDisposition: "invalid-disposition",
+  /* A MEMBERSHIP IS THE HOME OF ONE THING.
+
+     A Binder holds a Goal or a CollectorCopy — the two objects a Collector can
+     act on — and `fileObject` must be told which. Naming both is a
+     contradiction, naming neither is silence, a non-string is unreadable and a
+     blank is none of them wearing an id's clothes. They fail at the same thing:
+     the request did not name exactly one object, so there is nothing to file.
+
+     `validateWorld` distinguishes `ref.ambiguous` from `ref.missing` for the
+     five records that name their card one of two ways, and that distinction is
+     right where it lives — it describes a stored world to a reader. A refusal
+     answers a caller about their payload, and this vocabulary has gone the
+     other way twice already: `invalid-tier` and `invalid-disposition` each
+     cover absence, garbage and wrong shape with one code, because a caller
+     looking for what to fix finds it in the same place either way. */
+  invalidTarget: "invalid-target",
+  /* A BINDER THAT HAS BEEN PUT AWAY TAKES NOTHING NEW.
+
+     Archiving does not unfile what a binder holds and does not change any
+     object's state — `setBinderArchived` touches one timestamp and says so. But
+     a shelf somebody has put away is not where a new thing goes, and the panel
+     has filtered archived binders out of the picker since C3.4. This is the
+     domain saying no for its own reasons, which is the same argument the blank
+     card id in `addBinderEntry` was given.
+
+     Unfiling is still allowed, deliberately: a Collector must always be able to
+     take a thing out of a binder, including out of one they have put away. */
+  binderArchived: "binder-archived",
   /* Command-layer refusals (Phase 1). Deliberately terse: a refusal names the
      rule, never another collector, deal or price. */
   unknownActor: "unknown-actor",

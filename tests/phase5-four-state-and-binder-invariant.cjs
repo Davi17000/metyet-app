@@ -880,7 +880,7 @@ describe("E. The boundaries this batch did not cross", () => {
   });
 
   test("[39] the allow-list grew by exactly one, and the transaction is shut", () => {
-    eq(EXPOSED_COMMANDS.length, 23, "the production surface is not the size this batch declared");
+    eq(EXPOSED_COMMANDS.length, 25, "the production surface is not the size this batch declared");
     assert(EXPOSED_COMMANDS.includes("setCollectorCopyKept"), "PC has a control but no door");
     const { COMMAND_NAMES } = require("../domain/metyet-commands.js");
     const known = COMMAND_NAMES.has ? (n) => COMMAND_NAMES.has(n)
@@ -896,7 +896,7 @@ describe("E. The boundaries this batch did not cross", () => {
   test("[40] no migration, and no generic state field anywhere", () => {
     const migrations = fs.readdirSync(path.join(ROOT, "persistence/migrations"))
       .filter((f) => f.endsWith(".sql")).sort();
-    eq(migrations[migrations.length - 1], "0013_binders.sql", migrations.join(","));
+    eq(migrations[migrations.length - 1], "0014_binder_memberships.sql", migrations.join(","));
     /* CLOSED DECISIONS: no generic `intent`, no generic `cardState`. What is
        forbidden is a FIELD — something written on a card, Goal or copy that
        joins the four truths into one. The word itself is not forbidden: the

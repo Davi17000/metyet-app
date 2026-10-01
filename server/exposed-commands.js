@@ -105,6 +105,20 @@ const EXPOSED_COMMANDS = Object.freeze([
      builds, and neither command has a control here. */
   "createBinder",                // Collector → Card Specification, "New binder…"
   "addBinderEntry",              // Collector → Card Specification, filing this card
+  /* WHERE AN OBJECT BELONGS (Batch 3A), AND THESE TWO ARE THE EXCEPTION TO THE
+     RULE AT THE TOP OF THIS FILE. Every other entry names the screen that sends
+     it. These are sent by `fileObjectInBinder` / `unfileObjectFromBinder` in
+     `client/commands.js` and by nothing else: no component imports either yet,
+     because the per-object controls are 3B and this batch is explicitly
+     forbidden to build them. So the door is open ahead of its surface, which is
+     the one thing this file says not to do, and it is recorded here rather than
+     left for a reader to discover. The alternative was to leave both unexposed
+     and have 3B open them, which the batch brief rules out by naming the
+     expected exposed count. `addBinderEntry` above remains the only door
+     anything presses, and the pair below is refused for every actor who does
+     not own both the binder and the object. */
+  "fileObject",                  // Collector → client/commands.js only, until 3B
+  "unfileObject",                // Collector → client/commands.js only, until 3B
   "removeBinderEntry",           // Collector → Card Specification, unfiling it
   "updateCollectorCopy",         // Collector → Card Specification, correcting a copy
   "updateGoalCriteria",          // Collector → Card Specification, which copy is wanted

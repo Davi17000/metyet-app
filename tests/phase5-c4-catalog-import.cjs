@@ -965,7 +965,7 @@ describe("G. the boundaries hold", () => {
        qualification batch gave Inspect and Request Photos one. What
        this test is about is unchanged and is asserted below by NAME: no catalog
        command is reachable, and no route writes the schema. */
-    eq(EXPOSED_COMMANDS.length, 23, "the production surface is not the size C5 left it");
+    eq(EXPOSED_COMMANDS.length, 25, "the production surface is not the size C5 left it");
     for (const name of ["catalogImport", "importCatalog", "putCanonicalCard",
       "putCardContext", "putExpansion", "recordSourceMapping", "resolveCardIdentity"]) {
       assert(!EXPOSED_COMMANDS.includes(name), `${name} is exposed`);
@@ -997,9 +997,9 @@ describe("G. the boundaries hold", () => {
       "the production door moved in a batch that adds an operator command");
   });
 
-  test("no migration, and 0013_binders.sql is still the newest", () => {
+  test("C4 wrote no migration: the newest is still somebody else's", () => {
     const migrations = fs.readdirSync(path.join(ROOT, "persistence", "migrations")).sort();
-    eq(migrations[migrations.length - 1], "0013_binders.sql", migrations.join(","));
+    eq(migrations[migrations.length - 1], "0014_binder_memberships.sql", migrations.join(","));
     /* WHY THIS NAMES BOTH ENDS, AND WHAT IT COST TO LEARN (Phase 5 C7.1).
        C4's claim is about C4: a batch that adds an ingestion runner with its own
        tables already migrated has no business changing persistence. The
