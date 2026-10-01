@@ -374,11 +374,17 @@ describe("B. a binder holds each card once", () => {
     const made = [];
     for (const spec of [{ grade: "Raw", condition: "Near Mint" }, { grade: "PSA 9" }, { grade: "PSA 10" }]) {
       made.push((await own(ctx.app, "casey",
-        { canonicalCardId: cards.shadowless, ...spec, photos: PHOTOS })).json().value);
+        { canonicalCardId: cards.shadowless, ...spec, keeping: true, photos: PHOTOS })).json().value);
     }
-    /* RE-PINNED: one word about one of the three is what opens the binder —
-       owning three copies and saying nothing about any of them is valid and is
-       not one of the four. Said BEFORE filing, because state comes first. */
+    /* RE-PINNED TWICE, AND THIS IS THE SECOND TIME.
+
+       The filing guard went in the four-state salvage batch, so nothing about a
+       copy's state opens or closes a binder any more. Then the disposition
+       batch made every new copy say which it is, so "saying nothing about any
+       of them" is no longer a state a new copy can be in: all three are
+       recorded as PC and the middle one is switched to Trade/Sell. What the
+       test is for survives both: three physical objects with independent facts
+       are ONE place the card belongs. */
     eq((await post(ctx.app, "casey", "setCollectorCopyOffered",
       { copyId: made[1], offered: true })).statusCode, 200);
     await file(ctx, ACTOR.casey, id, cards.shadowless);

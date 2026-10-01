@@ -892,6 +892,26 @@ const REFUSE = {
      Named for `invalid-amount`, which answers the same shape of question about
      a number: the request named something the domain has no value for. */
   invalidTier: "invalid-tier",
+  /* A COPY IS KEPT OR IT IS ON OFFER, AND ITS OWNER CHOOSES WHICH.
+
+     `disposition-conflict` below answers the opposite failure — both at once.
+     This one answers silence, and the three shapes silence used to take:
+     neither flag set, a flag set to something that is not a boolean, and
+     `false`, which is how the product used to say "I take it back".
+
+     WHY `false` IS NOW A REFUSAL AND NOT A WITHDRAWAL. A copy that says
+     nothing is a copy MetYet cannot act on: it is barred from a trade package
+     and it never reaches a partner, so "I take it back" made the copy
+     invisible without telling anybody that is what it did. Changing one's mind
+     about a copy means choosing the other answer, and both setters already
+     clear each other in one step, so nothing is lost.
+
+     Named for `invalid-tier`, and through it for `invalid-amount`: the request
+     named something the domain has no value for. Copies recorded before this
+     rule keep their silence — it is a real state they are really in, and
+     `copyDisposition` still reports it as `unstated`. What ends is the ability
+     to create another one. */
+  invalidDisposition: "invalid-disposition",
   /* Command-layer refusals (Phase 1). Deliberately terse: a refusal names the
      rule, never another collector, deal or price. */
   unknownActor: "unknown-actor",

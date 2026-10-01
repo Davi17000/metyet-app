@@ -270,9 +270,18 @@ export function addOwnedCopy(target) {
      statement the person made and MetYet threw away in silence. `keeping`
      travels here for that reason: the panel offers "I'm keeping this one" on a
      copy being recorded for the first time, and without this the copy would be
-     stored having said nothing and the person would have to say it twice. */
+     stored having said nothing and the person would have to say it twice.
+
+     AND THE DISPOSITION HAS NO DEFAULT. It used to default to `offered = false,
+     keeping = false`, which was the stateless pair — a caller that forgot the
+     field got a copy that says nothing. The domain now refuses that pair, so a
+     default here would be a default that cannot succeed, which is worse than
+     none: the omission would surface as a refusal from the server instead of as
+     `undefined` at the call site that caused it. The physical facts keep their
+     `null` defaults, because absent is a true and permitted answer for each of
+     them and always has been. */
   return ({ canonicalCardId, grade = null, condition = null, market = null,
-    cert = null, note = null, offered = false, keeping = false } = {}) =>
+    cert = null, note = null, offered, keeping } = {}) =>
     target.execute("addCollectorCopy", { copy: { canonicalCardId, grade, condition,
       market, cert, note, offered, keeping } });
 }

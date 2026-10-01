@@ -63,6 +63,18 @@ const WANTS = [
   { id: "primary", label: "Actively hunting" },
 ];
 
+/* NOT ONE OF THE ANSWERS: THE ABSENCE OF ONE.
+
+   A draft may be half-filled — that is what a draft is — so a new copy starts
+   with neither button pressed and this is what that looks like in state. It is
+   deliberately NOT the word the domain uses: `D.copyDisposition` returns
+   "unstated" for a copy that really is stored saying nothing, and
+   `gradingOf(copy).state` is "unstated" for a copy whose GRADE nobody has
+   stated, which is a third and unrelated thing. One word meaning three things across three layers is how
+   a reader comes to believe a draft and a durable record are the same kind of
+   claim. They are not: a draft may be unanswered, a durable copy may not. */
+const UNANSWERED = "unanswered";
+
 const isRaw = (grade) => /^raw$/i.test(text(grade) || "");
 /* The one rule, asked before the request. The domain decides this and refuses a
    record that breaks it; asking here means a person is told which control to
@@ -84,10 +96,12 @@ const asDraft = (copy) => ({
   condition: text(copy.condition) || "",
   cert: text(copy.cert) || "",
   market: copy.market == null ? "" : String(copy.market),
-  /* THREE ANSWERS, NOT A TICKBOX. "I would part with this", "I am keeping
-     this", and nothing said — which is what every copy recorded before PC
-     existed honestly is, and what a new copy starts as. */
-  disposition: copy.offered === true ? "offered" : copy.keeping === true ? "keeping" : "unstated",
+  /* A STORED COPY THAT SAYS NOTHING OPENS WITH NEITHER BUTTON PRESSED, and is
+     not given an answer by being looked at. Copies recorded before the
+     disposition was required are in that state honestly; the panel shows it as
+     the absence it is and asks for a decision only when one is being made. */
+  disposition: copy.offered === true ? "offered"
+    : copy.keeping === true ? "keeping" : UNANSWERED,
   removed: false,
   /* Carried so the row can show what the server says about it without this
      file working any of it out. */
@@ -95,16 +109,20 @@ const asDraft = (copy) => ({
   grading: copy.grading,
 });
 
-/* THE THREE THINGS A PERSON CAN MEAN ABOUT ONE COPY THEY OWN. "Nothing yet" is
-   a real answer and the default, not a prompt to be cleared. */
+/* THE TWO THINGS A PERSON CAN MEAN ABOUT ONE COPY THEY OWN. Per COPY, so two
+   copies of one card can truthfully disagree.
+
+   "Haven't decided" used to be a third button here and it is gone. A copy that
+   says nothing is one MetYet cannot act on — barred from every trade package,
+   never shown to a partner — so offering it as a choice was offering a dead
+   end. The domain now refuses to create one. */
 const DISPOSITIONS = Object.freeze([
   { id: "offered", label: "I'd trade or sell this one" },
   { id: "keeping", label: "I'm keeping this one" },
-  { id: "unstated", label: "Haven't decided" },
 ]);
 
 const BLANK_COPY = { id: null, grade: "", condition: "", cert: "", market: "",
-  disposition: "unstated", removed: false, status: null, grading: null };
+  disposition: UNANSWERED, removed: false, status: null, grading: null };
 
 /* WHAT THE PERSON WOULD BE CHANGING, against what the server currently says.
    Pure, and computed fresh every time Commit is pressed — including the second
@@ -123,7 +141,6 @@ export function planFrom(state, canonicalCardId, answers) {
   /* Statements a live DEAL can refuse, held back behind everything it could
      otherwise cost, and statements being TAKEN BACK, held back further still. */
   const corrections = [];
-  const withdrawals = [];
 
   /* 1. THE CONTAINERS, which name no card and so cannot fail for anything a
      later step says. */
@@ -166,28 +183,45 @@ export function planFrom(state, canonicalCardId, answers) {
       if (json(v) !== json(was)) patch[k] = v;
     }
     if (Object.keys(patch).length) corrections.push({ kind: "correct-copy", copyId: draft.id, patch });
-    /* A CHANGE OF DISPOSITION IS ONE OF TWO STATEMENTS, and going back to
-       saying nothing is withdrawing whichever one was made. The two commands
-       clear each other in the domain, so a swap is one step and not two.
+    /* A CHANGE OF DISPOSITION IS ONE POSITIVE STATEMENT, and it is sent as
+       one command. The two setters clear each other in the domain, so a swap
+       is a single step: there is no withdraw-then-set, which would pass
+       through a state the product does not have.
 
-       SAYING ONE HAPPENS HERE; TAKING ONE BACK HAPPENS LAST, with the other
-       removals — see `withdrawals` and the last block. */
+       AND THERE IS NO STEP FOR GOING BACK TO SAYING NOTHING. Two branches used
+       to live here pushing `offered: false` and `keeping: false` onto the
+       `withdrawals` list; both are gone with the button that produced them, and
+       both setters refuse `false`. So the test below selects one of the two
+       positive steps — or, if a draft that HAD an answer is ever set back to
+       the sentinel, nothing at all. No control does that today; the panel
+       offers two buttons and neither deselects. If one is ever added, silently
+       dropping the change is the wrong answer and this is where it would be
+       caught.
+
+       A COPY STORED SAYING NOTHING, LEFT ALONE, EMITS NOTHING. Both sides of
+       the comparison read `UNANSWERED` for that case, so opening such a copy
+       to fix its grade does not ask its owner to decide something else. */
     const was = before.offered === true ? "offered"
-      : before.keeping === true ? "keeping" : "unstated";
+      : before.keeping === true ? "keeping" : UNANSWERED;
     if (was !== draft.disposition) {
       if (draft.disposition === "offered") {
         steps.push({ kind: "offering", copyId: draft.id, offered: true });
       } else if (draft.disposition === "keeping") {
         steps.push({ kind: "keeping", copyId: draft.id, keeping: true });
-      } else if (was === "offered") {
-        withdrawals.push({ kind: "offering", copyId: draft.id, offered: false });
-      } else {
-        withdrawals.push({ kind: "keeping", copyId: draft.id, keeping: false });
       }
     }
   }
   for (const draft of answers.copies) {
     if (draft.id || draft.removed) continue;
+    /* AN UNANSWERED DRAFT IS NOT A STEP.
+
+       Save is already disabled while one exists, so this is not how the person
+       is told — but without it the plan still COMPOSES `{ offered: false,
+       keeping: false }`, which the domain refuses, and the invariant would live
+       in one `if` in the view rather than in the thing that decides what gets
+       sent. A plan that cannot express the refused shape is the stronger
+       statement, and it is what the tests drive directly. */
+    if (draft.disposition === UNANSWERED) continue;
     steps.push({ kind: "record-copy", copy: {
       grade: draft.grade || null,
       condition: isRaw(draft.grade) ? (draft.condition || null) : null,
@@ -259,8 +293,11 @@ export function planFrom(state, canonicalCardId, answers) {
      withdrawal sitting earlier in the plan could take a binder's card away in
      the middle of a Save that ended perfectly legal. No prune, no hazard. The
      ordering survives on the first reason alone, which is the one it had before
-     the second one existed. */
-  for (const w of withdrawals) steps.push(w);
+     the second one existed.
+
+     AND THE `withdrawals` LIST ITSELF IS GONE, with the two disposition
+     branches that were its only producers. What is left here is what the
+     ordering was always for: giving up a Goal, and letting go of a copy. */
   if (goal && answers.want === "none") steps.push({ kind: "stop-looking", goalId: goal.id });
   for (const draft of answers.copies) {
     if (draft.removed && draft.id && byId.get(draft.id)) {
@@ -399,6 +436,20 @@ export default function CardSpecification({ card, context = null, state,
       if (bad) return bad;
       if (draft.market !== "" && !(Number(draft.market) >= 0)) {
         return "A reference value has to be a number, and not a negative one.";
+      }
+      /* A NEW COPY HAS TO SAY WHICH, AND AN EXISTING ONE DOES NOT.
+
+         The domain refuses to create a copy with no disposition, so without
+         this check Save would be enabled over a guaranteed refusal — the exact
+         defect the four-state batch shipped with "Add cards to this binder".
+         It is the same shape as the Goal's requirement three lines above.
+
+         `draft.id` is the whole test. A copy already recorded saying nothing is
+         in a state the product no longer creates but does still hold, and
+         demanding a decision before its owner may correct a grade would make
+         this batch's rule retroactive through the back door. */
+      if (!draft.id && draft.disposition === UNANSWERED) {
+        return "Say whether you'd part with that copy or you're keeping it.";
       }
     }
     return null;
@@ -687,12 +738,14 @@ export default function CardSpecification({ card, context = null, state,
                             onChange={(e) => setCopy(key, { market: e.target.value })} />
                         </label>
                         {/* OWNING IS THE ROW; WHAT YOU MEAN TO DO WITH IT IS
-                            THIS. Three answers and one of them is silence: a
-                            new copy says nothing whatever the others say,
-                            because parting with a card and committing to keep
-                            one are both decisions, and a decision nobody made
-                            is not one to assume. Per COPY, so two copies of one
-                            card can truthfully disagree. */}
+                            THIS. Two answers, and neither of them pressed until
+                            the person presses one — parting with a card and
+                            committing to keep one are both decisions, and a
+                            decision nobody made is still not one to assume.
+                            What changed is where the silence may live: a draft
+                            may sit unanswered, a recorded copy may not, so a
+                            new copy cannot be saved until this is answered and
+                            an old one that never answered is left as it is. */}
                         <p className="mcs-disp" role="group"
                           aria-label="What you mean to do with this copy">
                           {DISPOSITIONS.map((d) => (
@@ -805,6 +858,13 @@ const WHY = {
   "identity-immutable": "That part of a copy cannot be changed.",
   "disposition-conflict": "A copy is either one you'd part with or one you're "
     + "keeping — not both.",
+  /* AND THE OPPOSITE FAILURE, WHICH IS THE NEW ONE. Two things keep this off
+     this screen: Save is disabled while a new copy has no answer, and `planFrom`
+     emits no step for one. But `addCollectorCopy` and both setters are on the
+     exposed command list, and a refusal with no sentence behind it reaches a
+     Collector as a blank. */
+  "invalid-disposition": "A copy has to say whether you'd part with it or "
+    + "you're keeping it.",
 };
 const said = (finished) => (finished.length
   ? `${finished.map((s) => NAMES[s.kind] || "something was saved")

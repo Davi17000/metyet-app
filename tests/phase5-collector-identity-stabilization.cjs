@@ -158,10 +158,25 @@ describe("A. What may go into a trade package", () => {
        practice: every copy written before PC existed is in exactly this state,
        so refusing only `keeping` would have left them all reservable against
        their owners' silence. */
-    const st = world();
-    const quiet = own(st, "unstated");
-    assert(!("keeping" in copies(st)[0]), "the fixture stored a decision");
-    eq(copies(st)[0].offered, false, "the fixture stored an offer");
+    /* RE-PINNED: THE COPY IS NOW SEEDED, BECAUSE THE COMMAND WILL NOT MAKE ONE.
+
+       This case is about the copies that ALREADY say nothing — every copy
+       written before PC existed, and every copy recorded between then and the
+       disposition batch. It used to create one through `addCollectorCopy`; that
+       command now refuses a copy with no disposition, so the fixture seeds the
+       row directly. That is the honest way to test a state the product holds
+       but no longer creates, and the guarantee is untouched: silence is not
+       consent, and a copy nobody has spoken for cannot be reserved. */
+    const st = world({ collectorCopies: [{ id: "quiet", collectorId: "casey",
+      canonicalCardId: "cc-y", grade: "PSA 8", cert: "MINE-1", photos: PHOTOS,
+      offered: false }] });
+    const quiet = "quiet";
+    /* Asserted through the domain's own reader rather than by re-reading the
+       literal two lines above: what matters is that the DOMAIN still calls this
+       shape silence, not that `createStore` copied the seed faithfully. */
+    eq(D.copyDisposition(copies(st)[0]), "unstated", "the fixture is not actually silent");
+    assert(!D.copyKept(copies(st)[0]), "the fixture reads as kept");
+    assert(valid(st), "a world holding a copy that says nothing stopped loading");
     const oppId = toSelectTrade(st);
     eq(code(x(st, CASEY, "proposeTradeSelection", { oppId, binderIds: [quiet] })),
       D.REFUSE.copyNotOffered, "an undeclared copy went into a package");

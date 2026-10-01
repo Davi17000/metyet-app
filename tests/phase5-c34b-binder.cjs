@@ -129,7 +129,15 @@ const unfile = (app, token, binderId, canonicalCardId) =>
   post(app, token, "removeBinderEntry", { binderId, canonicalCardId });
 const want = (app, token, canonicalCardId, tier = "primary", extra = {}) =>
   post(app, token, "addGoal", { canonicalCardId, tier, desired: { grade: "PSA 9" }, ...extra });
-const own = (app, token, copy) => post(app, token, "addCollectorCopy", { copy });
+/* A NEW COPY MUST SAY WHETHER ITS OWNER WOULD PART WITH IT (the disposition
+   batch). This suite is about what a BINDER shows — and one of its own tests
+   pins that a binder shows "no ownership or availability telemetry, however
+   much of it is true" — so the disposition is scaffolding here and the default
+   is stated once, visibly, rather than at twenty call sites. It applies ONLY
+   when the caller named neither, so a caller that says `keeping` does not get
+   `offered: true` added underneath it. */
+const own = (app, token, copy) => post(app, token, "addCollectorCopy",
+  { copy: ("offered" in copy || "keeping" in copy) ? copy : { ...copy, offered: true } });
 
 /* ---------------------------------------------------------------- RENDERING
    The real components, built with esbuild and driven by react-test-renderer
@@ -538,8 +546,15 @@ describe("C. inside a binder", () => {
     const ctx = await world();
     const { made, mine } = await filled(ctx);
     await unfile(ctx.app, "casey", mine, made.mudkip);
+    /* And "left KEPT" is now what the fixture actually stores. It used to record
+       a bare copy and then say PC in the comment; a new copy must state which,
+       so the two finally agree — which also makes the `setCollectorCopyKept`
+       call below the idempotent no-op path rather than a write. It is left in
+       place because what this test asserts is that a binder shows no ownership
+       telemetry however much of it is true, and saying PC twice is as true as
+       saying it once. */
     const copyId = (await post(ctx.app, "casey", "addCollectorCopy",
-      { copy: { canonicalCardId: made.firstEdition, grade: "PSA 9" } })).json().value;
+      { copy: { canonicalCardId: made.firstEdition, grade: "PSA 9", keeping: true } })).json().value;
     eq((await post(ctx.app, "casey", "setCollectorCopyKept",
       { copyId, keeping: true })).statusCode, 200);
     await file(ctx.app, "casey", mine, made.firstEdition);

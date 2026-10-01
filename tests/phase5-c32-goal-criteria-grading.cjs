@@ -107,7 +107,15 @@ const get = (app, token, url) => app.inject({ method: "GET", url,
   headers: { authorization: `Bearer ${token}` } });
 const want = (app, token, canonicalCardId, tier = "primary", extra = {}) =>
   post(app, token, "addGoal", { canonicalCardId, tier, ...extra });
-const own = (app, token, copy) => post(app, token, "addCollectorCopy", { copy });
+/* A NEW COPY MUST SAY WHETHER ITS OWNER WOULD PART WITH IT (the disposition
+   batch). This suite is about GRADING coherence — what a copy
+   and a Goal may say about grade and condition — and disposition is scaffolding,
+   so the default is stated once, visibly, rather than at every call site. It
+   applies ONLY when the caller named neither — a caller that says `keeping`
+   must not have `offered: true` added underneath it, which would turn a stated
+   decision into `disposition-conflict`. */
+const own = (app, token, copy) => post(app, token, "addCollectorCopy",
+  { copy: ("offered" in copy || "keeping" in copy) ? copy : { ...copy, offered: true } });
 const stock = (app, token, copy) => post(app, token, "addInventoryCopy", { copy });
 const load = (ctx) => ctx.repository.loadWorld();
 const goalFor = async (ctx, card) => (await load(ctx)).goals.find((g) => g.canonicalCardId === card);
@@ -751,9 +759,15 @@ describe("E. what C3.2 did not touch", () => {
   test("Binder, offering and Interest behaviour are all as C3.1 left them", async () => {
     const ctx = await world();
     const cards = await charizard(ctx);
+    /* RE-PINNED: this used to record a copy with no disposition and assert that
+       `offered` defaulted to false. There is no default any more — the
+       disposition batch made a new copy say which — so it records a copy its
+       owner is KEEPING, which is the thing that carries a stated `offered:
+       false` today, and then offers it. What the test is for is the two lines
+       below it: a binder is private, and offering a copy does not change that. */
     const id = (await own(ctx.app, "casey", { canonicalCardId: cards.firstEdition,
-      grade: "PSA 9", photos: { front: "f", back: "b" } })).json().value;
-    eq((await load(ctx)).collectorCopies[0].offered, false, "the offering default moved");
+      grade: "PSA 9", keeping: true, photos: { front: "f", back: "b" } })).json().value;
+    eq((await load(ctx)).collectorCopies[0].offered, false, "a kept copy is not on offer");
     eq((await post(ctx.app, "casey", "setCollectorCopyOffered", { copyId: id, offered: true })).statusCode, 200);
 
     /* A partner cannot see a binder, and never could. */

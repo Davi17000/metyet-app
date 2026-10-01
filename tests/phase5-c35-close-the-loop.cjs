@@ -366,8 +366,14 @@ describe("B. only what you asked for", () => {
   test("a card you own, wanted by nobody, is not an answer either", async () => {
     const ctx = await world();
     const made = await cards(ctx);
-    await post(ctx.app, "casey", "addCollectorCopy",
-      { copy: { canonicalCardId: made.mudkip, grade: "PSA 9" } });
+    /* `offered: true` because a new copy must say which (the disposition
+       batch) — AND the result is checked, which it was not before. Without the
+       disposition this call was refused, no copy was ever created, and the
+       assertion below was satisfied by the fixture's absence rather than by the
+       behaviour: the test passed while testing nothing. */
+    eq((await post(ctx.app, "casey", "addCollectorCopy",
+      { copy: { canonicalCardId: made.mudkip, grade: "PSA 9", offered: true } })).statusCode, 200,
+    "the copy this test is about was not recorded");
     await stock(ctx.app, "north", { canonicalCardId: made.mudkip, ask: 20 });
     const { r, state } = await shops(ctx);
     eq(state.discoveries.length, 0, "owning a card created demand");

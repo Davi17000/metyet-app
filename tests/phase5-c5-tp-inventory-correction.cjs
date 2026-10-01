@@ -889,10 +889,15 @@ describe("G. what the product says", () => {
   test("and what they both promise is what the projection does", async () => {
     const ctx = await world();
     const cards = await charizard(ctx);
-    /* Three facts, one of each kind: a Goal, a copy kept back, a copy offered. */
+    /* Three facts, one of each kind: a Goal, a copy kept back, a copy offered.
+
+       RE-PINNED: "kept back" used to be written as `offered: false`, which only
+       ever meant "no offer stated" — the fixture claimed PC and stored silence.
+       A new copy must now say which, so it says PC, and every assertion below
+       is unchanged because a PC copy's `offered` is still false. */
     await wants(ctx, "casey", cards.unlimited);
     const priv = await post(ctx.app, "casey", "addCollectorCopy",
-      { copy: { canonicalCardId: cards.firstEdition, offered: false } });
+      { copy: { canonicalCardId: cards.firstEdition, keeping: true } });
     eq(priv.statusCode, 200, priv.body);
     const open = await post(ctx.app, "casey", "addCollectorCopy",
       { copy: { canonicalCardId: cards.unlimited, offered: true } });
@@ -1056,8 +1061,9 @@ describe("H. nothing else moved", () => {
   test("offered is still separate from owned, and correcting a shop's copy does not touch it", async () => {
     const ctx = await world();
     const cards = await charizard(ctx);
+    /* PC, so `offered` is false for a stated reason rather than by default. */
     const mine = await post(ctx.app, "casey", "addCollectorCopy",
-      { copy: { canonicalCardId: cards.unlimited, offered: false } });
+      { copy: { canonicalCardId: cards.unlimited, keeping: true } });
     const copyId = mine.json().value;
     const invId = await stock(ctx, "north", { canonicalCardId: cards.unlimited });
     await correct(ctx.app, "north", invId, { ask: 1 });

@@ -116,7 +116,13 @@ const post = (app, token, command, payload) => app.inject({ method: "POST", url:
 const get = (app, token, url) => app.inject({ method: "GET", url,
   headers: { authorization: `Bearer ${token}` } });
 const view = async (app, token) => (await get(app, token, "/api/view")).json().state;
-const own = (app, token, copy) => post(app, token, "addCollectorCopy", { copy });
+/* A NEW COPY MUST SAY WHETHER ITS OWNER WOULD PART WITH IT (the disposition
+   batch). This suite is about the Card Specification panel; the disposition is
+   scaffolding in most of it and the subject of a few tests, which say so at the
+   call site. The default applies ONLY when the caller named neither, so a
+   caller that says `keeping` is never given `offered: true` underneath it. */
+const own = (app, token, copy) => post(app, token, "addCollectorCopy",
+  { copy: ("offered" in copy || "keeping" in copy) ? copy : { ...copy, offered: true } });
 const stock = (app, token, copy) => post(app, token, "addInventoryCopy", { copy });
 const want = (app, token, canonicalCardId, tier = "primary", extra = {}) =>
   post(app, token, "addGoal", { canonicalCardId, tier, ...extra });
@@ -927,7 +933,8 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
     await post(ctx.app, "casey", "addBinderEntry", { binderId: bindA, canonicalCardId: made.mudkip });
     await post(ctx.app, "casey", "addBinderEntry", { binderId: bindB, canonicalCardId: made.mudkip });
     await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "PSA 9", cert: "PSA 111", market: 500, offered: true });
-    await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "Raw", condition: "Damaged", cert: "SER-2" });
+    await own(ctx.app, "casey",
+      { canonicalCardId: made.mudkip, grade: "Raw", condition: "Damaged", cert: "SER-2", keeping: true });
 
     const { r, state } = await browsing(ctx, async () => ({ ok: true }));
     await openCard(r, "Mudkip");
@@ -942,10 +949,14 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
     eq(answers.copies.length, 2, "both copies");
     eq(answers.copies[0].cert, "PSA 111");
     eq(answers.copies[0].disposition, "offered",
-      "a copy on offer opens showing that, in the three-answer form the panel uses");
+      "a copy on offer opens showing that, in the form the panel's buttons use");
     eq(answers.copies[1].cert, "SER-2");
-    eq(answers.copies[1].disposition, "unstated",
-      "a copy that has said nothing opens saying nothing — disposition is per copy");
+    /* RE-PINNED: the second copy is KEPT rather than silent, because a new copy
+       must say which. What this asserts is unchanged and is the reason the
+       disposition lives on the copy: two copies of one card open showing two
+       different answers. */
+    eq(answers.copies[1].disposition, "keeping",
+      "a copy its owner is keeping opens showing that — disposition is per copy");
 
     assert(/Mudkip Collection/.test(shown) && /Keepers/.test(shown) && /Untouched/.test(shown),
       "every binder is offered, not only the ones this card is in: " + shown);
@@ -1192,8 +1203,11 @@ describe("F. one button, a sequence of commands that already existed", () => {
        nothing but a binder that is not yours — so this is just a fixture. */
     await want(ctx.app, "casey", made.mudkip, "secondary", { desired: { grade: "PSA 8" } });
     await post(ctx.app, "casey", "addBinderEntry", { binderId: bind, canonicalCardId: made.mudkip });
+    /* RE-PINNED: the stored copy is KEPT rather than silent — a new copy must
+       say which — so the draft's "offered" below is still a real switch and the
+       plan still contains the `offering` step this test orders. */
     const copyId = (await own(ctx.app, "casey",
-      { canonicalCardId: made.mudkip, grade: "PSA 9", cert: "A", offered: false })).json().value;
+      { canonicalCardId: made.mudkip, grade: "PSA 9", cert: "A", keeping: true })).json().value;
 
     /* A SECOND BINDER, SO THE PLAN ACTUALLY CONTAINS A FILING. Without one this
        test asserted the file-comes-after-saying rule inside an `if` that could
@@ -1208,7 +1222,10 @@ describe("F. one button, a sequence of commands that already existed", () => {
       want: "primary", desired: { grade: "PSA 10", condition: "" },
       copies: [
         { id: copyId, grade: "PSA 9", condition: "", cert: "B", market: "", disposition: "offered", removed: false },
-        { id: null, key: "new-1", grade: "Raw", condition: "Damaged", cert: "", market: "", disposition: "unstated", removed: false },
+        /* RE-PINNED: a new copy's draft must name a disposition — the panel will
+           not let one be saved without one — so the sentinel is gone from here. */
+        { id: null, key: "new-1", grade: "Raw", condition: "Damaged", cert: "", market: "",
+          disposition: "keeping", removed: false },
       ],
     };
     const kinds = SPEC.planFrom(state, made.mudkip, answers).steps.map((s) => s.kind);
@@ -1299,7 +1316,7 @@ describe("F. one button, a sequence of commands that already existed", () => {
       binders: new Set(), newBinders: ["Mudkip Collection"],
       want: "primary", desired: { grade: "Raw", condition: "" },   // refused on the first pass
       copies: [{ id: null, key: "new-1", grade: "PSA 9", condition: "", cert: "C1",
-        market: "", disposition: "unstated", removed: false }],
+        market: "", disposition: "offered", removed: false }],
     };
 
     /* FIRST PRESS. The binder is made; the Goal is refused; the sequence stops,
@@ -1421,8 +1438,12 @@ describe("G. want, own, offer and file are four answers, not one", () => {
     const { ctx, made } = await setup();
     const a = (await own(ctx.app, "casey",
       { canonicalCardId: made.firstEdition, grade: "PSA 9", cert: "A", offered: true })).json().value;
+    /* The one that is NOT offered says PC, which is what "not offered" means for
+       a copy recorded today. Every assertion below reads `offered`, and a kept
+       copy's `offered` is false, so none of them moves. */
     const b = (await own(ctx.app, "casey",
-      { canonicalCardId: made.firstEdition, grade: "Raw", condition: "Damaged", cert: "B" })).json().value;
+      { canonicalCardId: made.firstEdition, grade: "Raw", condition: "Damaged", cert: "B",
+        keeping: true })).json().value;
     assert(a !== b, "two copies of one card became one record");
     const mine = await view(ctx.app, "casey");
     eq(mine.collectorCopies.length, 2);
@@ -1511,12 +1532,20 @@ describe("G. want, own, offer and file are four answers, not one", () => {
     eq(w.binderEntries[0].canonicalCardId, made.firstEdition);
   });
 
-  test("withdrawing an offer is not losing the card, and never was", async () => {
+  test("ending an offer is not losing the card, and never was", async () => {
+    /* RE-PINNED: "withdrawing an offer" is now "saying you are keeping it".
+       `setCollectorCopyOffered(false)` is refused — a copy is kept or it is on
+       offer — and the switch is the act that ends an offer. Every assertion
+       below is unchanged, including that the copy stops being supply, because
+       what the projection reads is `offered` and a kept copy's is false. */
     const { ctx, made } = await setup();
     const id = (await own(ctx.app, "casey", { canonicalCardId: made.firstEdition,
       grade: "PSA 9", cert: "KEEP", market: 400, offered: true })).json().value;
     eq((await post(ctx.app, "casey", "setCollectorCopyOffered",
-      { copyId: id, offered: false })).statusCode, 200);
+      { copyId: id, offered: false })).json().error.refused, "invalid-disposition",
+    "an offer was withdrawn into silence");
+    eq((await post(ctx.app, "casey", "setCollectorCopyKept",
+      { copyId: id, keeping: true })).statusCode, 200);
     const copy = (await load(ctx)).collectorCopies[0];
     eq(copy.id, id, "the copy was replaced");
     eq(copy.cert, "KEEP", "the certificate went with the offer");

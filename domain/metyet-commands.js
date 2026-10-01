@@ -965,18 +965,62 @@ const COMMANDS = {
        the domain does not get to pick which half of a contradiction was the
        intention. */
     if (offered === true && keeping === true) return refuse(R.dispositionConflict);
+    /* AND NEITHER AT ONCE IS NOT A THING SOMEBODY MEANT EITHER.
+
+       A new copy used to be born saying nothing: `offered: offered === true`
+       took anything that was not literally `true` — `undefined`, `false`,
+       `"yes"`, `null` — and wrote a copy with no disposition, 200, silently.
+       `offered: "yes"` is somebody trying to offer a card, and it produced a
+       copy that is barred from every trade package and never reaches a
+       partner. The same `"yes"` on `setCollectorCopyOffered` has always been
+       refused, so one field answered two ways at two boundaries.
+
+       Owning a card and meaning something by it are still separate facts —
+       that is C2 and it stands. What changed is that the second one is no
+       longer optional at birth: a copy MetYet cannot act on is not a record
+       worth keeping, and the Collector is the only one who may say which it
+       is. Copies recorded before this rule keep their silence; `validateWorld`
+       is deliberately NOT given this opinion, because it runs on load and
+       would turn every one of them into a 500 on the next read.
+
+       TWO CHECKS, BECAUSE ONE WAS NOT ENOUGH. The first draft of this gate
+       refused only when BOTH flags failed to be `true`, which left the original
+       defect alive in a narrower form: `{ offered: "yes", keeping: true }` was
+       accepted, the `"yes"` was coerced to `false`, and the copy was stored as
+       PC — somebody trying to offer a card got the opposite answer with a 200.
+       A flag that is present and is not a boolean is a request the domain
+       cannot read, and it says so before asking which answer was given.
+
+       `false` on the OTHER flag stays legal, deliberately: the panel composes
+       `{ offered: true, keeping: false }` for Trade/Sell and the mirror for PC,
+       and those are complete, unambiguous answers.
+
+       PLACED HERE, one line below the contradiction it mirrors and above
+       `ctx.id`, which advances the runtime's id sequence the moment it is
+       called — so no refusal about a disposition consumes an id. (`copy-in-use`
+       below sits after the mint and would, but it answers an id collision the
+       runtime itself just produced, which is unreachable in practice.) */
+    if ((offered !== undefined && typeof offered !== "boolean")
+      || (keeping !== undefined && typeof keeping !== "boolean")) {
+      return refuse(R.invalidDisposition);
+    }
+    if (!(offered === true) && !(keeping === true)) return refuse(R.invalidDisposition);
     const id = ctx.id("b", askedId);
     if (list(state.collectorCopies).some((b) => b.id === id)) return refuse(R.copyInUse);
     const addedAt = ctx.time(askedAt);
-    /* A NEW COPY IS NOT OFFERED UNLESS ITS OWNER SAYS SO. Recording that you
-       own a card is the base fact; parting with it is a decision, and a
-       decision nobody made is not one to assume. */
-    /* AND A NEW COPY IS NOT BEING KEPT UNLESS ITS OWNER SAYS SO EITHER. The
-       field is written only when the answer is `true`, so a copy that said
-       nothing carries no `keeping` key at all — which is what every copy in
-       every existing world honestly is, PC having only just become sayable.
-       Writing `keeping: false` everywhere would dress "unstated" up as a
-       decision, and that is the confusion migration 0012 exists to remember. */
+    /* A NEW COPY IS NOT OFFERED UNLESS ITS OWNER SAYS SO, and it is not being
+       kept unless they say that either. Recording that you own a card is the
+       base fact; what you mean to do with it is a decision, and the gate above
+       is what makes the Collector the one who makes it.
+
+       `keeping` IS WRITTEN ONLY FOR `true`, AND THAT STILL MATTERS. Writing
+       `keeping: false` would dress a PC-less copy up as a decision not to keep
+       it, and absence is what "no keep stated" looks like — the confusion
+       migration 0012 exists to remember. This command can no longer create a
+       copy that is silent on both counts, so the shape it protects now belongs
+       to the copies recorded BEFORE that rule: they carry no `keeping` key, and
+       they must stay indistinguishable from each other and distinguishable from
+       a stated PC. */
     const row = { ...facts, id, collectorId: a.collectorId, offered: offered === true,
       ...(keeping === true ? { keeping: true } : {}),
       ...(addedAt ? { addedAt } : {}) };
@@ -1016,10 +1060,15 @@ const COMMANDS = {
       ? { ...next, updatedAt: at || b.updatedAt } : b)) }, copyId);
   },
 
-  /* WILLINGNESS, AND NOTHING ELSE (C2). Turning this off leaves the copy, its
-     card, its grade, its certificate and its photographs exactly where they
-     were — the Collector still owns it, and says so. Turning it back on is the
-     same record becoming supply again, not a new one.
+  /* WILLINGNESS, AND NOTHING ELSE (C2). Saying this leaves the copy, its card,
+     its grade, its certificate and its photographs exactly where they were —
+     the Collector still owns it, and says so. Saying it again after a spell as
+     PC is the same record becoming supply again, not a new one.
+
+     THERE IS NO LONGER AN "OFF" (the disposition batch). This used to take
+     `false` and return the copy to saying nothing, which produced a record
+     barred from every trade package and invisible to every partner. Ending an
+     offer is now `setCollectorCopyKept`, which clears it in the same step.
 
      A deal that has already taken the copy is untouched: a committed or traded
      copy keeps its history whatever its owner now says about offering it, and
@@ -1029,16 +1078,27 @@ const COMMANDS = {
     const copy = list(state.collectorCopies).find((b) => b.id === copyId);
     if (!copy) return refuse(R.notFound);
     if (a.seat !== "collector" || copy.collectorId !== a.collectorId) return refuse(R.notOwner);
-    if (typeof offered !== "boolean") return refuse(R.notFound);
+    /* `true` AND NOTHING ELSE. `false` used to mean "I take it back", which
+       returned the copy to saying nothing — a durable state the product no
+       longer creates. A non-boolean used to answer `not-found`, which told a
+       caller its copy did not exist. Both now say what is actually wrong, and
+       a copy that really is missing still answers `not-found` above. */
+    if (offered !== true) return refuse(R.invalidDisposition);
     /* OFFERING A COPY WITHDRAWS ANY INTENTION TO KEEP IT, because those are two
-       contradictory statements about one object and the person has just made the
-       second one. The pair is cleared here rather than refused: saying "actually,
-       I would part with this" is a change of mind, not an error. Withdrawing an
-       offer does NOT set `keeping` — that would infer an intention nobody
-       stated, which is the whole reason `keeping` exists. */
-    if (copy.offered === offered && !(offered && D.copyKept(copy))) return done(state, copyId);
+       contradictory statements about one object and the person has just made
+       the second one. The pair is cleared here rather than refused: saying
+       "actually, I would part with this" is a change of mind, not an error,
+       and clearing it here is what makes the switch one step instead of two.
+
+       `keeping` is therefore passed as `false`, flatly, and `withDisposition`
+       REMOVES the key rather than writing it — the shape has not changed. It
+       used to read `offered ? false : D.copyKept(b)`, where the second branch
+       preserved an existing keep through a withdrawal. Withdrawal is refused
+       above, so that branch is unreachable and saying it is reachable would be
+       a lie about what this command can do. */
+    if (copy.offered === true && !D.copyKept(copy)) return done(state, copyId);
     return done({ ...state, collectorCopies: list(state.collectorCopies).map((b) => (b.id === copyId
-      ? withDisposition(b, offered, offered ? false : D.copyKept(b), at)
+      ? withDisposition(b, true, false, at)
       : b)) }, copyId);
   },
 
@@ -1050,23 +1110,31 @@ const COMMANDS = {
      `setCollectorCopyOffered` are the only two writers of a copy's disposition,
      and `updateInventoryCopy`-style corrections cannot touch either.
 
-     IT CLEARS THE OFFER, AND THE REVERSE IS NOT TRUE. Keeping a copy that was
-     on offer withdraws the offer, because the person has just said the opposite
-     thing. But withdrawing an offer does not make a copy kept — `offered:
-     false` has meant "no offer stated" since C2, three places in the product
-     forbid reading more into it, and a migration exists because that confusion
-     already cost a Collector their visible supply once. */
+     IT CLEARS THE OFFER, AND ITS SIBLING NOW CLEARS THE KEEP. Keeping a copy
+     that was on offer withdraws the offer, because the person has just said the
+     opposite thing; offering one that was kept does the mirror. The two are
+     symmetric because a copy has exactly two answers and changing one's mind is
+     choosing the other.
+
+     THE ASYMMETRY THAT USED TO LIVE HERE IS GONE WITH THE ACT THAT NEEDED IT.
+     It read: withdrawing an offer does not make a copy kept, because `offered:
+     false` has meant "no offer stated" since C2. That is still what `offered:
+     false` means on a row — it is what a PC copy and a pre-rule copy both
+     carry, and nothing reads a decision into it. What is gone is the
+     withdrawal: there is no command that leaves a copy saying nothing, so
+     there is no longer an inference to refuse. */
   setCollectorCopyKept(state, a, { copyId, keeping }, ctx) {
     const at = ctx.at;
     const copy = list(state.collectorCopies).find((b) => b.id === copyId);
     if (!copy) return refuse(R.notFound);
     if (a.seat !== "collector" || copy.collectorId !== a.collectorId) return refuse(R.notOwner);
-    if (typeof keeping !== "boolean") return refuse(R.notFound);
-    if (D.copyKept(copy) === keeping && !(keeping && D.copyOffered(copy))) {
-      return done(state, copyId);
-    }
+    if (keeping !== true) return refuse(R.invalidDisposition);
+    /* The mirror of the block above, and dead branch removed for the same
+       reason: `D.copyOffered(b)` could only have been reached by withdrawing
+       a keep, which no longer happens. */
+    if (D.copyKept(copy) && !D.copyOffered(copy)) return done(state, copyId);
     return done({ ...state, collectorCopies: list(state.collectorCopies).map((b) => (b.id === copyId
-      ? withDisposition(b, keeping ? false : D.copyOffered(b), keeping, at)
+      ? withDisposition(b, false, true, at)
       : b)) }, copyId);
   },
 

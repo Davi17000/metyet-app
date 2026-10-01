@@ -98,8 +98,26 @@ const valid = (st) => {
   const v = W.validateWorld(st.get());
   return v && "ok" in v ? v.ok : ((v || []).length === 0);
 };
+/* A NEW COPY MUST SAY WHETHER ITS OWNER WOULD PART WITH IT (the disposition
+   batch). This suite is about the four states themselves, so the disposition is
+   NOT incidental here and every test that turns on it says so at the call site;
+   the default below exists only for the binder, cascade and projection cases
+   where a copy is scaffolding. It applies ONLY when the caller named neither,
+   so an `extra` that says `keeping` is never given `offered: true` underneath
+   it — that would be `disposition-conflict` rather than a default.
+
+   A copy that says NOTHING can no longer be created at all. The cases that need
+   one — every copy recorded before this rule — seed the row, which is the honest
+   way to test a state the product holds but does not make. */
 const own = (st, actor, card, cert, extra = {}) => okv(x(st, actor, "addCollectorCopy",
-  { copy: { canonicalCardId: card, grade: "PSA 9", cert, ...extra }, at: AT }), `own ${cert}`);
+  { copy: { canonicalCardId: card, grade: "PSA 9", cert,
+    ...(("offered" in extra) || ("keeping" in extra) ? {} : { offered: true }),
+    ...extra }, at: AT }), `own ${cert}`);
+
+/* AND THE SHAPE THIS SUITE KEEPS TESTING AND CAN NO LONGER BUILD: a stored copy
+   with no disposition. Seeded, never commanded. */
+const quietCopy = (over = {}) => ({ id: "quiet", collectorId: "casey",
+  canonicalCardId: "cc-x", grade: "PSA 9", cert: "Q", offered: false, ...over });
 const wants = (st, actor, card, tier = "secondary") => okv(x(st, actor, "addGoal",
   { canonicalCardId: card, tier, desired: { grade: "PSA 9" }, at: AT }), "want");
 
@@ -138,25 +156,51 @@ describe("A. What a Collector can say, and what they cannot", () => {
   });
 
   test("[4] `offered === false` is not PC, and never becomes it", () => {
-    const st = world();
-    const k = own(st, CASEY, "cc-x", "A");
-    eq(D.copyDisposition(copyOf(st, "A")), "unstated", "a new copy came with an opinion");
-    assert(!D.copyKept(copyOf(st, "A")), "a new copy was born being kept");
+    /* RE-PINNED: THE GUARANTEE IS UNCHANGED AND ITS PROOF HAD TO MOVE.
 
-    okv(x(st, CASEY, "setCollectorCopyOffered", { copyId: k, offered: true, at: AT }), "offer");
-    okv(x(st, CASEY, "setCollectorCopyOffered", { copyId: k, offered: false, at: AT }), "withdraw");
+       The claim is that the absence of an offer is never read as a decision to
+       keep. `offered: false` has meant "no offer stated" since C2, three places
+       forbid reading more into it, and migration 0012 exists because that
+       confusion once cost a Collector their visible supply.
+
+       Both acts this test used to perform are now refused. The disposition
+       batch requires a new copy to say which, and refuses
+       `setCollectorCopyOffered(false)` — so "create a copy that says nothing"
+       and "withdraw an offer" are both gone as routes. What replaces them: the
+       refusals themselves, and a SEEDED copy, which is what every copy recorded
+       before the rule actually is. The guarantee is asserted against the data
+       that really has this shape rather than against a shape a command once
+       made. */
+    const st = world({ collectorCopies: [quietCopy()] });
+    assert(!D.copyKept(copyOf(st, "Q")), "a copy with no keep was read as kept");
+    eq(D.copyDisposition(copyOf(st, "Q")), "unstated",
+      "the absence of an offer became a positive statement");
+    assert(valid(st), "a world holding such a copy stopped loading");
+
+    /* No command can make another one, in either of the two ways it used to. */
+    eq(code(x(st, CASEY, "addCollectorCopy",
+      { copy: { canonicalCardId: "cc-x", grade: "PSA 9", cert: "B" }, at: AT })),
+    D.REFUSE.invalidDisposition, "a copy was recorded saying nothing");
+    eq(code(x(st, CASEY, "addCollectorCopy",
+      { copy: { canonicalCardId: "cc-x", grade: "PSA 9", cert: "B", keeping: false }, at: AT })),
+    D.REFUSE.invalidDisposition, "an explicit no was accepted as an answer");
+
+    /* And an offered copy cannot be withdrawn back into it — the refusal
+       leaves the copy's own answer exactly as it was. */
+    const k = own(st, CASEY, "cc-x", "A", { offered: true });
+    eq(code(x(st, CASEY, "setCollectorCopyOffered", { copyId: k, offered: false, at: AT })),
+      D.REFUSE.invalidDisposition, "an offer was withdrawn into silence");
+    eq(D.copyDisposition(copyOf(st, "A")), "offered", "the refusal changed the copy");
     assert(!D.copyKept(copyOf(st, "A")),
       "withdrawing an offer was read as a decision to keep");
-    eq(D.copyDisposition(copyOf(st, "A")), "unstated",
-      "the absence of an offer became a positive statement");
 
-    /* And "no" is not stored as a fact either. The panel sends a boolean for
-       every new copy; a copy that said nothing must still carry NO key, because
-       that is what every copy written before PC existed looks like and the two
-       must be indistinguishable. */
-    own(st, CASEY, "cc-x", "B", { keeping: false });
-    assert(!("keeping" in copyOf(st, "B")), "a copy was stored as explicitly not-kept");
-    eq(D.copyDisposition(copyOf(st, "B")), "unstated", "an explicit no became a statement");
+    /* And PC's own `offered: false` is not what makes it PC: the key is. */
+    const pc = own(st, CASEY, "cc-x", "C", { keeping: true });
+    eq(copyOf(st, "C").offered, false, "a kept copy is on offer");
+    assert(D.copyKept(copyOf(st, "C")), "the keep did not land");
+    assert(copyOf(st, "C").keeping === true && !("keeping" in copyOf(st, "Q")),
+      "a kept copy and a silent one became indistinguishable");
+    assert(valid(st), "the world became invalid");
   });
 
   test("[5] the two statements cannot both be true, by any route", () => {
@@ -179,13 +223,17 @@ describe("A. What a Collector can say, and what they cannot", () => {
   });
 
   test("[6] neither statement travels inside a correction", () => {
+    /* RE-PINNED: the copy now starts as PC rather than silent, because a new
+       copy must say which. What the test asserts is unchanged — a disposition
+       does not travel inside a correction — and it is now checked against a
+       copy whose answer a successful patch would visibly have overwritten. */
     const st = world();
-    const k = own(st, CASEY, "cc-x", "A");
+    const k = own(st, CASEY, "cc-x", "A", { keeping: true });
     for (const patch of [{ offered: true }, { keeping: true }, { offered: false, keeping: true }]) {
       eq(code(x(st, CASEY, "updateCollectorCopy", { copyId: k, patch, at: AT })),
         D.REFUSE.identityImmutable, `${JSON.stringify(patch)} got through a patch`);
     }
-    eq(D.copyDisposition(copyOf(st, "A")), "unstated", "a patch changed the disposition");
+    eq(D.copyDisposition(copyOf(st, "A")), "keeping", "a patch changed the disposition");
   });
 
   test("[7] a world that says both is reported, even though no command can make one", () => {
@@ -378,8 +426,12 @@ describe("C. What a Binder does not decide", () => {
     }
     okv(x(st, CASEY, "removeGoal", { goalId: g, at: AT }), "stop wanting");
     eq(st.get().binderEntries.length, 2, "dropping the Goal un-filed a card");
-    okv(x(st, CASEY, "setCollectorCopyKept", { copyId: k, keeping: false, at: AT }), "un-keep");
-    eq(st.get().binderEntries.length, 2, "withdrawing the keep un-filed a card");
+    /* RE-PINNED: withdrawing a keep is refused now — a copy is kept or it is on
+       offer — so the state change here is the SWITCH, which is the only way a
+       disposition changes. It must leave organisation alone for the same reason
+       the withdrawal had to. */
+    okv(x(st, CASEY, "setCollectorCopyOffered", { copyId: k, offered: true, at: AT }), "switch");
+    eq(st.get().binderEntries.length, 2, "switching the disposition un-filed a card");
     okv(x(st, CASEY, "removeCollectorCopy", { copyId: k, at: AT }), "sell it");
     eq(st.get().binderEntries.length, 2,
       "selling the LAST thing said about the card un-filed it");
@@ -428,13 +480,22 @@ describe("C. What a Binder does not decide", () => {
     okv(x(st, CASEY, "addBinderEntry", { binderId: bd, canonicalCardId: "cc-x", at: AT }), "file");
     const entries = () => JSON.stringify(st.get().binderEntries);
     const before = entries();
+    /* RE-PINNED: "in any direction" is now the four legal moves — each answer
+       stated afresh, and each switch both ways. The two withdrawals that used
+       to be in this list are refused, so they are asserted below to be refusals
+       that also reorganise nothing: a refused command must leave a binder
+       exactly as alone as a successful one does. */
     for (const [cmd, field] of [["setCollectorCopyOffered", { offered: true }],
       ["setCollectorCopyKept", { keeping: true }],
       ["setCollectorCopyOffered", { offered: true }],
-      ["setCollectorCopyOffered", { offered: false }],
-      ["setCollectorCopyKept", { keeping: true }],
-      ["setCollectorCopyKept", { keeping: false }]]) {
+      ["setCollectorCopyKept", { keeping: true }]]) {
       okv(x(st, CASEY, cmd, { copyId: k, ...field, at: AT }), cmd);
+      eq(entries(), before, cmd + " " + JSON.stringify(field) + " reorganised a binder");
+    }
+    for (const [cmd, field] of [["setCollectorCopyOffered", { offered: false }],
+      ["setCollectorCopyKept", { keeping: false }]]) {
+      eq(code(x(st, CASEY, cmd, { copyId: k, ...field, at: AT })),
+        D.REFUSE.invalidDisposition, cmd + " accepted a withdrawal");
       eq(entries(), before, cmd + " " + JSON.stringify(field) + " reorganised a binder");
     }
   });
@@ -630,7 +691,19 @@ describe("D. The order the card page sends in", () => {
     eq(retry.join(","), "wanted-copy", "the retry sends more than what is left: " + retry.join(","));
     assert(valid(st), "the world became invalid");
   });
-  test("[29] a copy's disposition is one of three answers, and sends one command", () => {
+  test("[29] a copy's disposition is one of two answers, and sends one command", () => {
+    /* RE-PINNED: THREE ANSWERS BECAME TWO, AND THE THIRD IS NOT A STEP.
+
+       This test used to assert that going back to saying nothing sent
+       `offering: false`. The disposition batch removed that button and the
+       domain refuses that command: a copy is kept or it is on offer, because a
+       copy that says nothing is barred from every trade package and reaches no
+       partner. What survives, and is what the test was always for, is that one
+       answer sends exactly one command and no change sends none.
+
+       `"unanswered"` is now the panel's DRAFT sentinel — what a half-filled row
+       looks like, and what a copy stored before the rule opens as — and the
+       plan must emit nothing for it rather than a withdrawal. */
     const base = { binders: [], binderEntries: [], goals: [], catalog: [],
       collectorCopies: [{ id: "k1", collectorId: "casey", canonicalCardId: "cc-x",
         grade: "PSA 9", offered: true }] };
@@ -640,9 +713,19 @@ describe("D. The order the card page sends in", () => {
           disposition, removed: false }] }).steps;
     eq(plan("offered").length, 0, "no change sent a command anyway");
     eq(json(plan("keeping").map((s) => s.kind)), json(["keeping"]), "keeping sent the wrong thing");
-    eq(json(plan("unstated").map((s) => s.kind)), json(["offering"]),
-      "going back to saying nothing withdrew the wrong statement");
-    eq(plan("unstated")[0].offered, false, "it did not withdraw the offer");
+    eq(plan("keeping")[0].keeping, true, "the switch was not stated positively");
+    eq(json(plan("unanswered").map((s) => s.kind)), json([]),
+      "an unanswered draft sent a command");
+    /* And a copy stored saying nothing, opened and left alone, sends nothing —
+       both sides of the comparison read the sentinel for that case. */
+    const quiet = { binders: [], binderEntries: [], goals: [], catalog: [],
+      collectorCopies: [{ id: "k1", collectorId: "casey", canonicalCardId: "cc-x",
+        grade: "PSA 9", offered: false }] };
+    eq(json(SPEC.planFrom(quiet, "cc-x",
+      { binders: new Set(), newBinders: [], want: "none", desired: { grade: "", condition: "" },
+        copies: [{ id: "k1", grade: "PSA 9", condition: "", cert: "", market: "",
+          disposition: "unanswered", removed: false }] }).steps), json([]),
+    "looking at a copy that says nothing proposed a decision for it");
   });
 });
 
@@ -685,19 +768,39 @@ describe("D2. Where the four states nearly stayed a domain-only idea", () => {
        existed looks like. Writing `false` would make "I have not decided" and
        "I decided not to" the same row, which is the confusion migration 0012
        exists to remember. */
+    /* RE-PINNED: THE GUARANTEE IS UNCHANGED AND THE WITHDRAWALS THAT PROVED IT
+       ARE NOW REFUSED.
+
+       `keeping: false` must never be stored, because absence is what "no keep
+       stated" looks like and writing `false` would make "I have not decided"
+       and "I decided not to" the same row — the confusion migration 0012 exists
+       to remember. That still holds, and now has two proofs: the key is absent
+       after a switch AWAY from PC, and the withdrawal that used to be the other
+       route is refused without writing anything. */
     const st = world();
-    const k = own(st, CASEY, "cc-x", "A");
+    const k = own(st, CASEY, "cc-x", "A", { offered: true });
     const has = () => "keeping" in copyOf(st, "A");
-    okv(x(st, CASEY, "setCollectorCopyOffered", { copyId: k, offered: true, at: AT }), "offer");
-    assert(!has(), "offering wrote a keeping: false");
-    okv(x(st, CASEY, "setCollectorCopyOffered", { copyId: k, offered: false, at: AT }), "withdraw");
-    assert(!has(), "withdrawing an offer wrote a keeping: false");
+    assert(!has(), "a Trade/Sell copy was born with a keeping key");
     okv(x(st, CASEY, "setCollectorCopyKept", { copyId: k, keeping: true, at: AT }), "keep");
     eq(copyOf(st, "A").keeping, true, "the keep did not land");
-    okv(x(st, CASEY, "setCollectorCopyKept", { copyId: k, keeping: false, at: AT }), "un-keep");
-    assert(!has(), "withdrawing a keep left a decision behind: "
+    /* Switching away from PC is the only way to stop keeping a copy, and it
+       removes the key rather than writing `false`. */
+    okv(x(st, CASEY, "setCollectorCopyOffered", { copyId: k, offered: true, at: AT }), "switch back");
+    assert(!has(), "switching away from PC left a decision behind: "
       + JSON.stringify(copyOf(st, "A")));
-    eq(D.copyDisposition(copyOf(st, "A")), "unstated", "it did not return to unstated");
+    /* And the refusals write nothing at all. */
+    for (const [cmd, field] of [["setCollectorCopyKept", { keeping: false }],
+      ["setCollectorCopyOffered", { offered: false }]]) {
+      const before = JSON.stringify(copyOf(st, "A"));
+      eq(code(x(st, CASEY, cmd, { copyId: k, ...field, at: AT })),
+        D.REFUSE.invalidDisposition, cmd + " accepted a withdrawal");
+      eq(JSON.stringify(copyOf(st, "A")), before, cmd + " wrote something");
+      assert(!has(), cmd + " wrote a keeping: false");
+    }
+    /* RE-PINNED: the copy does NOT return to saying nothing, and that is the
+       point of the batch rather than a loss. It keeps the answer it had. */
+    eq(D.copyDisposition(copyOf(st, "A")), "offered",
+      "a refused withdrawal changed the copy's answer");
     /* And a keep cleared BY AN OFFER leaves no residue either. */
     okv(x(st, CASEY, "setCollectorCopyKept", { copyId: k, keeping: true, at: AT }), "keep");
     okv(x(st, CASEY, "setCollectorCopyOffered", { copyId: k, offered: true, at: AT }), "offer");

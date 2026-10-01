@@ -5811,9 +5811,9 @@ export default function MetYetCollector({ store: injectedStore, collectorId = SE
       setTier: (goalId, tier) => lg(exec("updateGoalTier", { goalId, tier })),
       removeGoal: (goalId) => exec("removeGoal", { goalId }).ok,
       /* `offered: true` is explicit (Phase 5 C2). This control is the Trade
-         Binder's "add a copy", so adding here IS offering; the command itself
-         defaults to not offered, because owning a card says nothing about
-         wanting to part with it. */
+         Binder's "add a copy", so adding here IS offering — and since the
+         disposition batch the command REFUSES a copy that says neither, so
+         stating it is no longer merely honest but required. */
       addCopy: (cardId, mine, photos, cert) => val(exec("addCollectorCopy", { copy: {
         id: "b" + Date.now().toString(36), cardId, offered: true,
         market: mine === "" ? null : Number(mine),

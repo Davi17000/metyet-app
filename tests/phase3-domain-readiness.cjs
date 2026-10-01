@@ -26,8 +26,16 @@
    they never asked for. `addGoal` is scaffolding here, not the subject: these
    tests are about the injected runtime, id minting and
    the prototype adapter, and they need a request the
-   domain will actually accept. The tier added below is arbitrary and load-
-   bearing for nothing; what each test asserts is unchanged. */
+   domain will actually accept.
+
+   THE SAME HAPPENED TO A COPY'S DISPOSITION one batch later: `addCollectorCopy`
+   refuses a copy that says neither PC nor Trade/Sell, for the same reason — a
+   copy MetYet cannot act on is barred from every trade package and invisible to
+   every partner. The transcript's copy is recorded as PC so that each switch
+   after it is real work rather than a no-op.
+
+   Both values added below are arbitrary and load-bearing for nothing; what each
+   test asserts is unchanged. */
 const { describe, test, assert, eq, run } = require("./run.cjs");
 const fs = require("fs");
 const path = require("path");
@@ -143,25 +151,31 @@ function everyCommand(store, rec) {
   step("addCopyPhotos", { request: s().photoRequests.find((r) => r.id === pr) });
   x(TP1, "removeInventoryCopy", { invId: inv });
 
+  /* A NEW COPY SAYS WHICH (the disposition batch), and this one starts as PC so
+     that each switch below is real work rather than a no-op — the snapshots and
+     the "stamps the runtime's time" assertions need a write to look at. */
   const b = x(C1, "addCollectorCopy", { copy: { cardId: "k2", market: 100, photos: photos("new"),
-    id: FORGED, addedAt: FORGED_AT, updatedAt: FORGED_AT } });
+    keeping: true, id: FORGED, addedAt: FORGED_AT, updatedAt: FORGED_AT } });
   step("addCollectorCopy", { id: b, copy: s().collectorCopies.find((q) => q.id === b) });
   x(C1, "updateCollectorCopy", { copyId: b, patch: { market: 120, addedAt: FORGED_AT, updatedAt: FORGED_AT } });
   step("updateCollectorCopy", { copy: s().collectorCopies.find((q) => q.id === b) });
   /* OFFERING IS ITS OWN ACT (Phase 5 C2), and it has to happen before a partner
-     can be interested: `addCollectorCopy` records ownership and offers nothing,
-     and `setInterest` refuses a copy its owner is not offering. */
+     can be interested: `setInterest` refuses a copy its owner is not offering.
+     Here it is also a SWITCH away from PC, which the domain does in one step. */
   x(C1, "setCollectorCopyOffered", { copyId: b, offered: true });
   step("setCollectorCopyOffered", { copy: s().collectorCopies.find((q) => q.id === b) });
   /* AND THE OTHER HALF OF A COPY'S DISPOSITION (the four-state batch). Keeping a
-     copy withdraws the offer, which is why this runs after it and why the
-     snapshot shows both fields moving together. */
+     copy withdraws the offer, which is why the snapshot shows both fields moving
+     together.
+
+     RE-PINNED: this used to be followed by `setCollectorCopyKept(false)`, which
+     returned the copy to saying nothing and demonstrated that withdrawing a keep
+     does not restore the offer. The disposition batch refuses that withdrawal —
+     a copy is kept or it is on offer — so the asymmetry it showed is now pinned
+     where it belongs, in the disposition suite, against the refusal itself. The
+     walkthrough below needs an offered copy, so it switches back. */
   x(C1, "setCollectorCopyKept", { copyId: b, keeping: true });
   step("setCollectorCopyKept", { copy: s().collectorCopies.find((q) => q.id === b) });
-  x(C1, "setCollectorCopyKept", { copyId: b, keeping: false });
-  /* AND WITHDRAWING "KEEP" DOES NOT RESTORE THE OFFER, which is the whole
-     asymmetry: neither statement may be inferred from the absence of the other.
-     The walkthrough below needs an offered copy, so it says so again. */
   x(C1, "setCollectorCopyOffered", { copyId: b, offered: true });
   x(TP1, "setInterest", { binderId: b, on: true });
   step("setInterest", { interest: s().interests.find((i) => i.binderId === b) });

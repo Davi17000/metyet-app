@@ -375,8 +375,10 @@ describe("B. rerun is recovery", () => {
       { canonicalCardId: zard, tier: "primary", desired: { grade: "PSA 9" } });
     const binder = (await post(ctx.app, "casey", "createBinder", { name: "Mine" })).json().value;
     await post(ctx.app, "casey", "addBinderEntry", { binderId: binder, canonicalCardId: zard });
+    /* `offered: true` because a new copy must now say which; this test is about
+       an imported card reaching both seats, and the disposition is scaffolding. */
     await post(ctx.app, "casey", "addCollectorCopy",
-      { copy: { canonicalCardId: zard, grade: "PSA 9" } });
+      { copy: { canonicalCardId: zard, grade: "PSA 9", offered: true } });
     await post(ctx.app, "north", "addInventoryCopy",
       { copy: { canonicalCardId: zard, ask: 900, grade: "PSA 9" } });
 
@@ -1191,7 +1193,7 @@ describe("H. and then it works", () => {
     eq((await post(ctx.app, "casey", "addGoal",
       { canonicalCardId: zard, tier: "primary", desired: { grade: "PSA 9" } })).statusCode, 200);
     eq((await post(ctx.app, "casey", "addCollectorCopy",
-      { copy: { canonicalCardId: zard, grade: "PSA 9" } })).statusCode, 200);
+      { copy: { canonicalCardId: zard, grade: "PSA 9", offered: true } })).statusCode, 200);
     eq((await post(ctx.app, "north", "addInventoryCopy",
       { copy: { canonicalCardId: zard, ask: 900 } })).statusCode, 200);
     const binder = (await post(ctx.app, "casey", "createBinder", { name: "Mine" })).json().value;

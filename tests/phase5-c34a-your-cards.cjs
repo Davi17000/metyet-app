@@ -117,7 +117,15 @@ const post = (app, token, command, payload) => app.inject({ method: "POST", url:
 const get = (app, token, url) => app.inject({ method: "GET", url,
   headers: { authorization: `Bearer ${token}` } });
 const view = async (app, token) => (await get(app, token, "/api/view")).json().state;
-const own = (app, token, copy) => post(app, token, "addCollectorCopy", { copy });
+/* A NEW COPY MUST SAY WHETHER ITS OWNER WOULD PART WITH IT (the disposition
+   batch). This suite is about what the COLLECTION screen
+   shows; most of it does not turn on the disposition and one test does,
+   so the default is stated once, visibly, rather than at every call site. It
+   applies ONLY when the caller named neither — a caller that says `keeping`
+   must not have `offered: true` added underneath it, which would turn a stated
+   decision into `disposition-conflict`. */
+const own = (app, token, copy) => post(app, token, "addCollectorCopy",
+  { copy: ("offered" in copy || "keeping" in copy) ? copy : { ...copy, offered: true } });
 const stock = (app, token, copy) => post(app, token, "addInventoryCopy", { copy });
 const want = (app, token, canonicalCardId, tier = "primary", extra = {}) =>
   post(app, token, "addGoal", { canonicalCardId, tier, ...extra });
@@ -410,8 +418,14 @@ describe("C. what you are offering is a filter, not a place", () => {
     const ctx = await world();
     const made = await cards(ctx);
     await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "PSA 9", cert: "YES-1", offered: true });
-    await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "Raw", condition: "Damaged", cert: "NO-1" });
-    await own(ctx.app, "casey", { canonicalCardId: made.firstEdition, grade: "PSA 8", cert: "NO-2" });
+    /* RE-PINNED: the two the view must hide are now KEPT rather than merely
+       unmentioned. A new copy has to say which, and "the copies you are not
+       offering" is exactly what PC means — so the fixture finally says what the
+       test's name has always claimed. */
+    await own(ctx.app, "casey",
+      { canonicalCardId: made.mudkip, grade: "Raw", condition: "Damaged", cert: "NO-1", keeping: true });
+    await own(ctx.app, "casey",
+      { canonicalCardId: made.firstEdition, grade: "PSA 8", cert: "NO-2", keeping: true });
 
     /* RE-PINNED (binders batch). "Offered only" was a toggle on one screen;
        Trade/Sell is one of four collection views, and you leave it by choosing
@@ -637,7 +651,10 @@ describe("F. reachable at last, and what that did not change", () => {
     const made = await cards(ctx);
     await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "PSA 9",
       offered: true, market: 7777, note: "do not sell under 9k" });
-    await own(ctx.app, "casey", { canonicalCardId: made.firstEdition, grade: "PSA 8" });
+    /* The copy that must NOT cross says PC, for the same reason as above: a new
+       copy has to say which, and "not offered" is what PC means. */
+    await own(ctx.app, "casey",
+      { canonicalCardId: made.firstEdition, grade: "PSA 8", keeping: true });
     const body = (await get(ctx.app, "north", "/api/view")).body;
     assert(!body.includes("7777"), "the reference value crossed");
     assert(!body.includes("do not sell"), "a private note crossed");
