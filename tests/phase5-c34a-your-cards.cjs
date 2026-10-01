@@ -519,7 +519,10 @@ describe("E. the same specification capability, opened from the shelf", () => {
 
     await press(r, "Open");
     const shown = texts(r);
-    assert(/Which binders does this card belong in\?/.test(shown), "the panel did not open: " + shown);
+    /* RE-PINNED (Batch 3B-1): the panel no longer asks a card-level Binder
+       question, because a card is no longer the subject of organisation. The
+       proof it opened is the question it still asks. */
+    assert(/Are you looking for it\?/.test(shown), "the panel did not open: " + shown);
     assert(/Are you looking for it\?/.test(shown), "the panel is a different one: " + shown);
     /* It opened on what the Collector already said. */
     const keeping = buttons(r).find((b) => instText(b).trim() === "Keeping an eye out");

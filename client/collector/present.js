@@ -123,6 +123,90 @@ export const gradeConflictLine = (row) => {
 export const cardMarks = (card) => (card
   ? [text(card.edition), text(card.print), text(card.language)].filter(Boolean) : []);
 
+/* ---------------------------------------- WHICH ONE OF THESE (Batch 3B-1)
+
+   TWO COPIES OF ONE CARD CAN BE TOLD APART, OR THEY CANNOT, AND THE PRODUCT
+   HAS TO BE HONEST ABOUT WHICH.
+
+   Until this batch nothing had to name a copy: the Card Specification panel's
+   rows carried no heading at all, and a binder showed cards rather than copies.
+   Now a copy has a home of its own, so the Collector has to be able to say
+   WHICH copy they are moving — and two copies of one card with no grade, no
+   certificate and no condition are, in the record, identical apart from the id
+   the server minted and the day they were added.
+
+   SO: THE FACTS FIRST, AND WHEN THE FACTS DO NOT DISTINGUISH, THE ORDER THEY
+   WERE ADDED IN. `PSA 9 · cert 222` is what a Collector would say themselves.
+   "The one you added first" is a true sentence about when, which is the only
+   other thing the record knows. What this never does is invent a name: there is
+   no "Copy #1", because a Collector would reasonably expect a number to be a
+   stable property of the card in their hand, and it is not one — it is this
+   screen's reading of an order. Nor is the id ever shown; it is identity for
+   the machine, not a label for a person.
+
+   THE ORDER IS DERIVED FROM `addedAt`, WITH THE ID AS A TIEBREAK, AND NEVER
+   FROM ARRAY POSITION. Array position is arrival order in a projection, which
+   is not a fact about the copies and can change. Two copies added on the same
+   day fall back to the id — not shown, but stable, so the same copy keeps the
+   same sentence between renders and between sessions. */
+const ADDED_ORDER = Object.freeze(["first", "next", "third", "fourth", "fifth", "sixth"]);
+export const addedOrderLabel = (n) => (n >= 1
+  ? `The one you added ${ADDED_ORDER[n - 1] || `${n}th`}` : null);
+
+/* The facts a Collector would use themselves, in the order they would say
+   them. `gradeLine` is the server's grading read; `cert` and `condition` are
+   the copy's own words. Empty when the copy states nothing, which is the case
+   `copyLabels` exists for. */
+export const copyFactsLine = (copy) => {
+  if (!copy) return null;
+  const said = [gradeLine(copy), text(copy.cert) ? `cert ${text(copy.cert)}` : null]
+    .filter(Boolean);
+  if (!said.length && text(copy.condition)) said.push(text(copy.condition));
+  return said.length ? said.join(" · ") : null;
+};
+
+/* ONE LABEL PER COPY, DECIDED ACROSS THE WHOLE SET. A label can only be known
+   to distinguish a copy by looking at its siblings, so this takes the list and
+   returns a Map keyed on the copy's id. Facts win when they are UNIQUE within
+   the set; when two copies say the same thing — or say nothing — the one that
+   needs it gets the added-order sentence beside whatever it does say. */
+export const copyLabels = (list) => {
+  const all = rows(list);
+  const order = [...all]
+    .map((copy, i) => ({ copy, i }))
+    .sort((a, b) => {
+      const da = day(a.copy && a.copy.addedAt) || "";
+      const db = day(b.copy && b.copy.addedAt) || "";
+      if (da !== db) return da < db ? -1 : 1;
+      const ia = String((a.copy && a.copy.id) || "");
+      const ib = String((b.copy && b.copy.id) || "");
+      return ia === ib ? a.i - b.i : (ia < ib ? -1 : 1);
+    });
+  /* A COPY'S IDENTITY, WHICH IS ITS MINTED ID OR — FOR A DRAFT THAT HAS NONE
+     YET — THE DRAFT OBJECT ITSELF. Every map this surface builds is keyed on an
+     identity and never on a name, a position or a label, which is the Collector
+     surface's own rule and is read off this file by
+     `phase4-collector-read-experiences`. */
+  const copyIdentity = (copy) => (copy && copy.id != null ? copy.id : copy);
+  const nth = new Map();
+  order.forEach(({ copy }, i) => nth.set(copyIdentity(copy), i + 1));
+  const facts = new Map(all.map((copy) => [copyIdentity(copy), copyFactsLine(copy)]));
+  /* HOW MANY COPIES SAY THE SAME THING. A plain object rather than a Map,
+     because the Collector surface's key rule is about identity maps and this
+     counts STRINGS — a facts line is exactly the sort of label that rule exists
+     to keep out of a Map key, so it does not go in one. */
+  const seen = Object.create(null);
+  for (const line of facts.values()) seen[line] = (seen[line] || 0) + 1;
+  const out = new Map();
+  for (const copy of all) {
+    const line = facts.get(copyIdentity(copy));
+    const unique = line && seen[line] === 1;
+    const when = addedOrderLabel(nth.get(copyIdentity(copy)));
+    out.set(copyIdentity(copy), unique ? line : [when, line].filter(Boolean).join(" · "));
+  }
+  return out;
+};
+
 /* Photo references, not URLs — `binder:t15:front` names a picture the product
    does not yet serve. So this reports WHETHER there are pictures, in words,
    and never pretends to show one. */

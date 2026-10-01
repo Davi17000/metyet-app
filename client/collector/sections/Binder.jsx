@@ -11,21 +11,33 @@
    the Collector neither wants nor owns is ordinary curation rather than an
    empty shelf.
 
-   WHICH IS WHY A CARD HERE SHOWS SO LITTLE. Its picture, its name, its set and
-   number — and, when there is a Goal, whether it is being hunted or watched.
-   Priority belongs here because a Goal refines a coherent binder: "these are my
-   Mudkips, and these two I am still looking for" is one thought. Ownership and
-   availability do not: how many copies you have and which you would part with
-   is a fact about your shelf, and the collection views above are the shelf. A
-   count of either here would turn curation into inventory one number at a time.
-   That is why selecting a view REPLACES the library rather than stacking above
-   it: the two answer different questions and one screen holding both would put
-   ownership telemetry on the binder library by the back door.
+   A CARD HERE SHOWED SO LITTLE, AND BATCH 3B-1 CHANGES THAT ON PURPOSE — IN
+   ONE PLACE, AND NOT IN THE PRINCIPLE.
+
+   C3.4's rule was that a card in a binder shows its picture, its name, its set
+   and number, and when there is a Goal whether it is hunted or watched; that
+   ownership and availability do not belong, because how many copies you have
+   and which you would part with is a fact about your shelf. The reasoning was
+   exactly right for the question a binder asked then, which was about a CARD.
+
+   A binder now holds a GOAL, or one specific copy, or two of three copies of
+   one card. So opening one has to say WHICH of your things are here, and a
+   thing cannot say which it is without saying what it is — a copy's grading and
+   whether you would part with it are no longer telemetry about a card, they are
+   how you tell one of your copies from another. The card stays the heading and
+   owns no action; every statement and every action belongs to the thing.
+
+   WHAT DID NOT CHANGE: the LIBRARY. It still counts cards, not things, and it
+   still carries no ownership total — a binder must not become inventory, and
+   saying what is in one is not inventory. Selecting a view still REPLACES the
+   library rather than stacking above it, for the reason it always did: the two
+   answer different questions.
 
    NOT IN A BINDER YET IS DERIVED, AND IS NOT A BINDER. Removing the Goals tab
-   must not hide a Goal, so the Goals that are in no ACTIVE binder are listed at
-   the bottom, computed on every render from the binders and entries the server
-   sent. There is no record for it, no synthetic binder, and nothing persisted:
+   must not hide a Goal, so the Goals in no ACTIVE binder are listed at the
+   bottom, computed on every render from the memberships the server sent — a
+   Goal with no membership of its own, never a Goal whose CARD happens to appear
+   in a binder, which is what this used to ask and got wrong. There is no record for it, no synthetic binder, and nothing persisted:
    file one of those cards and it leaves the list on the next authoritative
    refresh; take a card out of its last active binder and it comes back. A Goal
    whose only binders are put away counts as unfiled, because the question this
@@ -55,10 +67,21 @@ import { rows, text, plural, tierIntent, tierLabel, byRecency } from "../present
 
 export default function Binder({ state, onBrowseCards = null, onSpecify = null,
   onCreateBinder = null, onRenameBinder = null, onArchiveBinder = null,
-  onAddCards = null, fillingBinder = null }) {
+  onAddCards = null, fillingBinder = null,
+  /* Handed down and passed straight through to the card list, which is where a
+     filed object's `Move` and `Remove from Binder` live. This section names no
+     command, as it never has. */
+  onFileObject = null, onUnfileObject = null }) {
   const binders = rows(state && state.binders);
   const entries = rows(state && state.binderEntries);
   const goals = rows(state && state.goals);
+  /* WHAT IS FILED WHERE (Batch 3B-1). A membership names one Goal or one
+     CollectorCopy; `collectorCopies` is read for the same reason, because a
+     copy filed here is part of what this binder holds and the count has to see
+     the card it names. That is the C3.4 source guard being deliberately
+     reversed — see the header. */
+  const memberships = rows(state && state.binderMemberships);
+  const copies = rows(state && state.collectorCopies);
 
   /* WHERE THEY WERE, WHEN THEY WERE SENT AWAY TO BROWSE. The shell remounts a
      section when it changes, so coming back from "Add cards" would otherwise
@@ -89,22 +112,69 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
      library could say "3 cards" over a binder that then opened showing one.
      Two live derivations of one fact are two answers to it; this asks the
      question `Collection` asks — how many distinct cards are filed here. */
-  const cardsIn = (binderId) => new Set(entries
-    .filter((e) => e.binderId === binderId)
-    .map((e) => (e.canonicalCardId != null && e.canonicalCardId !== ""
-      ? String(e.canonicalCardId)
-      : e.cardId != null && e.cardId !== "" ? `legacy:${e.cardId}` : null))
-    .filter(Boolean));
+  /* HOW MANY CARDS OPENING THIS BINDER SHOWS, WHICH IS WHAT THE COUNT HAS
+     ALWAYS CLAIMED (Batch 3B-1).
+
+     The axis stays the CARD. A binder now holds objects — a Goal and two of
+     three copies of one card are three things — but the Collector reads it
+     under card headings, so "2 cards" is still the honest number and still
+     equals what the binder opens showing. Counting objects instead would turn
+     this into the inventory metric the library has always refused.
+
+     Three sources, one set: the card each filed Goal names, the card each filed
+     copy names, and the card each legacy row names. */
+  const cardKeyOf = (canonicalCardId, cardId) => (canonicalCardId != null && canonicalCardId !== ""
+    ? String(canonicalCardId)
+    : cardId != null && cardId !== "" ? `legacy:${cardId}` : null);
+  const goalById = new Map(goals.map((g) => [g.id, g]));
+  const copyById = new Map(copies.map((c) => [c.id, c]));
+  const cardsIn = (binderId) => {
+    const out = new Set();
+    for (const m of memberships) {
+      if (m.binderId !== binderId) continue;
+      const thing = m.goalId ? goalById.get(m.goalId) : copyById.get(m.collectorCopyId);
+      const key = thing && cardKeyOf(thing.canonicalCardId, thing.cardId);
+      if (key) out.add(key);
+    }
+    for (const e of entries) {
+      if (e.binderId !== binderId) continue;
+      const key = cardKeyOf(e.canonicalCardId, e.cardId);
+      if (key) out.add(key);
+    }
+    return out;
+  };
   const countOf = (binderId) => cardsIn(binderId).size;
 
-  /* DERIVED, EVERY RENDER. The Goals whose card is in no ACTIVE binder — see
-     the header for why archived membership does not count. */
+  /* DERIVED, EVERY RENDER: THE GOALS WITH NO HOME (Batch 3B-1 corrected this).
+
+     IT USED TO ANSWER THE WRONG QUESTION. The old derivation collected the
+     canonical cards named by every entry in an active binder and called a Goal
+     filed if its CARD was among them — so a Goal counted as filed because
+     somebody had once put that card in a binder, possibly before the Goal
+     existed and with no connection to it. That is the card-level answer
+     standing in for an object-level one, and it was wrong on the day it was
+     written; it simply had no better fact available.
+
+     Now there is one. A Goal is unfiled when THAT GOAL has no membership. A
+     legacy entry for the same card says nothing about it — not even when the
+     Goal is the only thing the entry could have meant.
+
+     ARCHIVED STILL DOES NOT COUNT, for the reason the header gives: a Goal in a
+     binder you have put away is a Goal you cannot see, so the list that exists
+     to surface forgotten Goals must surface it. */
   const activeIds = new Set(active.map((b) => b.id));
-  const filedSomewhereActive = new Set(entries
-    .filter((e) => activeIds.has(e.binderId))
-    .map((e) => e.canonicalCardId));
-  const unfiled = goals
-    .filter((g) => g.canonicalCardId && !filedSomewhereActive.has(g.canonicalCardId));
+  const goalsWithHome = new Set(memberships
+    .filter((m) => m.goalId && activeIds.has(m.binderId))
+    .map((m) => m.goalId));
+  /* AND A GOAL THAT NAMES NO CANONICAL CARD STAYS OUT, as it always has. Every
+     row in this list promises a describable card and an Open that reaches the
+     specification panel, and a pre-C2 Goal naming only `cardId` can do neither
+     — it would render as "A card" over a button that opens nothing. 3B-1 makes
+     such a Goal FILEABLE for the first time (`fileObject` names the Goal, not
+     its card), which is a reason to revisit the list's promise and not a reason
+     to put an unopenable row in front of somebody. Recorded as debt, as it was:
+     nothing in production can create one. */
+  const unfiled = goals.filter((g) => g.canonicalCardId && !goalsWithHome.has(g.id));
 
   const looking = open ? binders.find((b) => b.id === open) || null : null;
 
@@ -201,18 +271,35 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
               onCommit={onSpecify} onClose={() => setSpecifying(null)} />
           </div>
         ) : null}
-        <p className="mcs-binder-name">{text(looking.name) || "A binder"}</p>
+        <p className="mcs-binder-name">
+          {text(looking.name) || "A binder"}
+          {/* AND SAY WHEN IT IS PUT AWAY (Batch 3B-1 fixed this). An archived
+              binder opened in the same view as a live one, with nothing saying
+              so and a live "Add cards" button — which routed to a panel where
+              this binder could not be chosen at all, because nothing new may be
+              filed into one. The route is gone and the state is stated. */}
+          {looking.archivedAt ? <span className="mcs-dim"> — put away</span> : null}
+        </p>
         {chrome}
         {/* ONE COMPONENT FOR EVERY LIST OF CARDS, so a binder's cards and a
             collection view are read the same way and the copies a person owns
             appear in both. */}
         <Collection state={state} view={{ kind: "binder", binderId: looking.id }}
-          query={query} onBrowseCards={onBrowseCards} onSpecify={onSpecify} descriptions={cards} />
+          query={query} onBrowseCards={onBrowseCards} onSpecify={onSpecify} descriptions={cards}
+          onFileObject={onFileObject} onUnfileObject={onUnfileObject} />
         <p className="mcs-goal-do">
-          <button className="mcs-go" type="button" disabled={busy}
-            onClick={() => onAddCards && onAddCards({ binderId: looking.id, name: looking.name })}>
-            Add cards
-          </button>
+          {looking.archivedAt ? (
+            <button className="mcs-go" type="button" disabled={busy}
+              onClick={() => onArchiveBinder && run(() => onArchiveBinder(looking.id, false),
+                "bring that binder back")}>
+              Bring back
+            </button>
+          ) : (
+            <button className="mcs-go" type="button" disabled={busy}
+              onClick={() => onAddCards && onAddCards({ binderId: looking.id, name: looking.name })}>
+              Add cards
+            </button>
+          )}
           <button className="mcs-go quiet" type="button" onClick={() => { setOpen(null); setQuery(""); }}>
             All binders
           </button>

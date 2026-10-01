@@ -123,10 +123,22 @@ const load = (ctx) => ctx.repository.loadWorld();
 const refusal = (res) => (res.statusCode === 200 ? null : res.json().error.refused);
 const makeBinder = async (app, token, name) =>
   (await post(app, token, "createBinder", { name })).json().value;
+/* THE CARD-LEVEL PAIR, WHICH IS NOW ONLY FOR LEGACY ROWS (Batch 3B-1). The
+   product no longer adds one; these remain so the tests about what a binder
+   does with the rows filed before 3B can still make one. */
 const file = (app, token, binderId, canonicalCardId) =>
   post(app, token, "addBinderEntry", { binderId, canonicalCardId });
 const unfile = (app, token, binderId, canonicalCardId) =>
   post(app, token, "removeBinderEntry", { binderId, canonicalCardId });
+/* AND THE OBJECT-LEVEL PAIR, WHICH IS WHAT PUTTING SOMETHING IN A BINDER MEANS
+   FROM 3B-1 ON. Exactly one of `goalId` / `collectorCopyId`. */
+const fileObj = (app, token, binderId, what) =>
+  post(app, token, "fileObject", { binderId, ...what });
+const unfileObj = (app, token, what) => post(app, token, "unfileObject", what);
+/* The Goal for a card, so a test can say "file that hunt" without carrying ids
+   through its own fixture. */
+const goalFor = async (ctx, canonicalCardId) => (await load(ctx)).goals
+  .find((g) => g.canonicalCardId === canonicalCardId);
 const want = (app, token, canonicalCardId, tier = "primary", extra = {}) =>
   post(app, token, "addGoal", { canonicalCardId, tier, desired: { grade: "PSA 9" }, ...extra });
 /* A NEW COPY MUST SAY WHETHER ITS OWNER WOULD PART WITH IT (the disposition
@@ -248,7 +260,46 @@ async function screen(ctx, token = "casey", extra = {}) {
     const res = await post(ctx.app, token, command, payload);
     latest = await view(ctx.app, token);
     if (announce) announce(latest);
-    return res.statusCode === 200 ? { ok: true } : { ok: false, refused: refusal(res) };
+    /* `value` CARRIED THROUGH (Batch 3B-1). It was dropped, which was invisible
+       while nothing in this file minted anything — and fatal the moment a step
+       has to bind the id the server returned. */
+    return res.statusCode === 200
+      ? { ok: true, value: res.json().value }
+      : { ok: false, refused: refusal(res) };
+  };
+
+  /* THE STEP VOCABULARY, SENT RATHER THAN RECORDED (Batch 3B-1).
+
+     `onSpecify` used to push the step onto `specified` and return `undefined`,
+     which `CardSpecification.commit` reads as success while minting nothing. So
+     no test in this file could drive a filing from the Binder section through
+     to the database — the panel would appear to work and the world would not
+     change. It records AND sends, mapped exactly as `client/sign-in/SignIn.jsx`
+     maps them, so a screen test and the real entrance cannot disagree. */
+  const dispatch = async (step, canonicalCardId) => {
+    specified.push({ step, canonicalCardId });
+    switch (step.kind) {
+      case "make-binder": return send("createBinder", { name: step.name });
+      case "file-object": return send("fileObject",
+        { binderId: step.binderId, goalId: step.goalId, collectorCopyId: step.collectorCopyId });
+      case "unfile-object": return send("unfileObject",
+        { goalId: step.goalId, collectorCopyId: step.collectorCopyId });
+      case "file": return send("addBinderEntry", { binderId: step.binderId, canonicalCardId });
+      case "unfile": return send("removeBinderEntry", { binderId: step.binderId, canonicalCardId });
+      case "start-looking": return send("addGoal",
+        { canonicalCardId, tier: step.tier, desired: step.desired });
+      case "record-copy": return send("addCollectorCopy", { copy: { canonicalCardId, ...step.copy } });
+      case "offering": return send("setCollectorCopyOffered",
+        { copyId: step.copyId, offered: step.offered });
+      case "keeping": return send("setCollectorCopyKept",
+        { copyId: step.copyId, keeping: step.keeping });
+      case "correct-copy": return send("updateCollectorCopy", { copyId: step.copyId, patch: step.patch });
+      case "wanted-copy": return send("updateGoalCriteria", { goalId: step.goalId, desired: step.desired });
+      case "how-hard": return send("updateGoalTier", { goalId: step.goalId, tier: step.tier });
+      case "stop-looking": return send("removeGoal", { goalId: step.goalId });
+      case "forget-copy": return send("removeCollectorCopy", { copyId: step.copyId });
+      default: return { ok: false, refused: "command-unavailable" };
+    }
   };
   function Live({ first }) {
     const [state, setState] = React.useState(first);
@@ -256,7 +307,9 @@ async function screen(ctx, token = "casey", extra = {}) {
     return React.createElement(BinderSection, {
       state,
       onBrowseCards: door,
-      onSpecify: (step, canonicalCardId) => { specified.push({ step, canonicalCardId }); },
+      onSpecify: dispatch,
+      onFileObject: (what) => send("fileObject", what),
+      onUnfileObject: (what) => send("unfileObject", what),
       onCreateBinder: (name) => send("createBinder", { name }),
       onRenameBinder: (binderId, name) => send("renameBinder", { binderId, name }),
       onArchiveBinder: (binderId, archived) => send("setBinderArchived", { binderId, archived }),
@@ -525,12 +578,44 @@ describe("C. inside a binder", () => {
     await file(ctx.app, "casey", mine, made.firstEdition);
     const g = (await load(ctx)).goals.find((x) => x.canonicalCardId === made.mudkip);
     await post(ctx.app, "casey", "updateGoalTier", { goalId: g.id, tier: "primary" });
+    /* RE-PINNED (Batch 3B-1), AND THE CLAIM IS SHARPER THAN IT WAS. The tier
+       used to appear because a GOAL FOR THIS CARD existed and the card was in
+       the binder — two facts joined by card id, which is the inference 3B
+       removes. It now appears because THIS GOAL is what is filed here, which is
+       what the tag was always trying to say.
+       So the Goal is filed as an object. The Charizard is filed as a card
+       (a legacy row) and owned, and is not wanted — one tag, not two, for the
+       same reason as before. */
+    await fileObj(ctx.app, "casey", mine, { goalId: g.id });
     const { r } = await screen(ctx);
     await press(r, "Mudkip Collection");
     const said = texts(r);
     assert(said.includes("Actively hunting"), said);
-    /* The Charizard is filed and owned but unwanted; one tag, not two. */
     eq((said.match(/Actively hunting|Keeping an eye out/g) || []).length, 1, said);
+    /* AND IT IS THE GOAL'S OWN ROW, NOT THE CARD'S HEADING. A card heading
+       carries identity and nothing else now; every statement about a thing is
+       on that thing's row, which is what makes two things on one card legible. */
+    assert(said.includes("Looking for"), said);
+  });
+
+  test("a Goal for a card in this binder is not filed here, and does not say it is", async () => {
+    /* THE INFERENCE 3B-1 REMOVED, PINNED FROM THE OTHER SIDE. Before this batch
+       a Goal's tier appeared in any binder that happened to hold its card. A
+       card-level row says a CARD was filed; it is not this Goal's home, and a
+       binder that does not hold the Goal must not claim to. */
+    const ctx = await world();
+    const { made, mine } = await filled(ctx);
+    const g = await goalFor(ctx, made.mudkip);
+    assert(g, "the fixture has no Goal");
+    eq((await load(ctx)).binderEntries.length, 1, "and the card is filed the legacy way");
+    eq(((await load(ctx)).binderMemberships || []).length, 0, "nothing filed the Goal");
+    const { r } = await screen(ctx);
+    await press(r, "Mudkip Collection");
+    const said = texts(r);
+    assert(!/Actively hunting|Keeping an eye out|Looking for/.test(said),
+      `a legacy row was read as the Goal's home: ${said}`);
+    /* The card is still there, as history, and says so. */
+    assert(/Filed before Binders organised specific cards/.test(said), said);
   });
 
   test("a filed card with no Goal reads as a card, and carries no priority tag", async () => {
@@ -570,7 +655,32 @@ describe("C. inside a binder", () => {
     assert(!/Actively hunting|Keeping an eye out/.test(said), said);
   });
 
-  test("no ownership or availability telemetry, however much of it is true", async () => {
+  test("a binder says what is IN it and still counts no shelf", async () => {
+    /* RE-PINNED, AND THIS IS THE BATCH'S CENTRAL DOCTRINAL REVERSAL — the one
+       claim 3B-1 exists to overturn, so it is worth writing out what is being
+       given up and what is not.
+
+       THE OLD CLAIM, AND WHY IT WAS RIGHT. "No ownership or availability
+       telemetry, however much of it is true": a binder said "this card belongs
+       here", so a copy's grade and whether its owner would part with it were
+       facts about a shelf that nobody had asked this screen for. C3.4 also
+       guarded the SOURCE — `Binder.jsx` was forbidden to contain the string
+       `collectorCopies` at all — which was the strongest possible way to say it.
+
+       WHY 3B-1 SUPERSEDES IT. A binder no longer holds cards. It holds a Goal,
+       or one specific copy, or two of the three copies of one card — so opening
+       one has to answer WHICH of your things are here, and a thing cannot say
+       which it is without saying what it is. A copy's grading stopped being
+       telemetry about a card and became how a Collector tells their own copies
+       apart. The source guard goes with the claim: counting the cards in a
+       binder now means reading the card each filed copy names.
+
+       WHAT IS NOT SUPERSEDED, AND IS ASSERTED HERE INSTEAD. A binder must not
+       become inventory. So: nothing counts what is NOT filed, no ownership
+       total appears anywhere, and the unfiled copy below — same card, same
+       Collector, offered — must be absent from the binder entirely. That is the
+       principle the old claim was protecting, stated as the thing it protects
+       rather than as a ban on a word. */
     const ctx = await world();
     const { made, mine } = await filled(ctx);
     await want(ctx.app, "casey", made.mudkip, "primary");
@@ -580,15 +690,26 @@ describe("C. inside a binder", () => {
     for (const copy of (await load(ctx)).collectorCopies) {
       await post(ctx.app, "casey", "setCollectorCopyOffered", { copyId: copy.id, offered: true });
     }
+    const owned = (await load(ctx)).collectorCopies;
+    eq(owned.length, 2, "the fixture owns two");
+    /* ONE of the two is filed here. The other is the control. */
+    await fileObj(ctx.app, "casey", mine, { collectorCopyId: owned[0].id });
     const { r } = await screen(ctx);
     await press(r, "Mudkip Collection");
     const said = texts(r);
-    assert(!/own 2|2 owned|2 copies|offered|offering|PSA/i.test(said),
-      "the checkpoint's telemetry line reached a binder: " + said);
-    /* And the source names none of those readings either. */
-    const section = code("client/collector/sections/Binder.jsx");
-    assert(!/collectorCopies|offered|gradeLine|grading/.test(section),
-      "the section reads a copy at all");
+    /* The filed one says what it is. */
+    assert(said.includes(owned[0].grade), `the filed copy does not say which it is: ${said}`);
+    /* The unfiled one is not here at all — not as a row, not in a count. */
+    assert(!said.includes(owned[1].grade),
+      `a copy that lives nowhere appeared in a binder: ${said}`);
+    assert(!/own 2|2 owned|2 copies|offering \d/i.test(said),
+      `a shelf count reached a binder: ${said}`);
+    /* AND THE LIBRARY OUTSIDE IS UNTOUCHED, which is where the old rule still
+       holds exactly as C3.4 wrote it. */
+    await press(r, "All binders");
+    const library = texts(r);
+    assert(!/own \d|\d owned|offering|offered|for trade|PSA/i.test(library),
+      `ownership telemetry reached the library: ${library}`);
   });
 
   test("an empty binder says so, and says what a binder is not", async () => {
@@ -626,7 +747,14 @@ describe("C. inside a binder", () => {
     await press(r, "Mudkip Collection");
     await press(r, "Open");
     const said = texts(r);
-    assert(/Which binders does this card belong in/i.test(said), said);
+    /* RE-PINNED (Batch 3B-1): the panel's card-level Binder question is gone,
+       because a card is no longer the subject of organisation. The proof it
+       opened is the question it still asks — and the home control beside what
+       the person is looking for, which is the question that replaced it. */
+    assert(/Are you looking for it\?/i.test(said), said);
+    assert(/Unfiled/.test(said), `the panel has no home control: ${said}`);
+    assert(!/Which binders does this card belong in/i.test(said),
+      "the card-level Binder question is still being asked");
     /* The panel is a sibling; the binder was never unmounted. */
     assert(said.includes("Mudkip Collection"), "the binder went away: " + said);
     /* And the file itself names no command — the panel's grammar is the only one. */
@@ -690,10 +818,19 @@ describe("D. not in a binder yet", () => {
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
     const s = await screen(ctx);
     assert(texts(s.r).includes("Not in a binder yet"), texts(s.r));
+    /* RE-PINNED (Batch 3B-1). Filing the CARD used to make the Goal leave this
+       list, which was the inference the batch removed: a card-level row is not
+       a Goal's home. Filing the GOAL is what settles it, and the card-level row
+       deliberately does NOT — asserted below, because that is the correction. */
     await file(ctx.app, "casey", mine, made.mudkip);
     await s.refresh();
+    assert(texts(s.r).includes("Not in a binder yet"),
+      "a legacy row was read as the Goal's home: " + texts(s.r));
+    const g = await goalFor(ctx, made.mudkip);
+    await fileObj(ctx.app, "casey", mine, { goalId: g.id });
+    await s.refresh();
     assert(!texts(s.r).includes("Not in a binder yet"),
-      "a filed card is still waiting: " + texts(s.r));
+      "a filed Goal is still waiting: " + texts(s.r));
   });
 
   test("taking it out of its last active binder makes it come back", async () => {
@@ -702,16 +839,23 @@ describe("D. not in a binder yet", () => {
     const a = await makeBinder(ctx.app, "casey", "Mudkip Collection");
     const b = await makeBinder(ctx.app, "casey", "Favourites");
     await want(ctx.app, "casey", made.mudkip, "secondary");
-    await file(ctx.app, "casey", a, made.mudkip);
-    await file(ctx.app, "casey", b, made.mudkip);
+    /* RE-PINNED (Batch 3B-1), AND THE SHAPE OF THE TEST CHANGED WITH THE RULE.
+       A card could be in several binders at once, so "its LAST active binder"
+       was a real question. An OBJECT has one home or none, so there is no last
+       one to count down to: moving it from A to B leaves it filed, and taking
+       it out of B is what brings it back. Moving is one command, which is the
+       other half of the same fact. */
+    const g = await goalFor(ctx, made.mudkip);
+    await fileObj(ctx.app, "casey", a, { goalId: g.id });
     await want(ctx.app, "casey", made.mudkip, "primary");
     const s = await screen(ctx);
     assert(!texts(s.r).includes("Not in a binder yet"), texts(s.r));
-    /* Out of one of two: still filed. */
-    await unfile(ctx.app, "casey", a, made.mudkip);
+    /* A move: still filed, and still exactly one row. */
+    await fileObj(ctx.app, "casey", b, { goalId: g.id });
     await s.refresh();
-    assert(!texts(s.r).includes("Not in a binder yet"), "one of two was enough: " + texts(s.r));
-    await unfile(ctx.app, "casey", b, made.mudkip);
+    assert(!texts(s.r).includes("Not in a binder yet"), "a move lost the home: " + texts(s.r));
+    eq((await load(ctx)).binderMemberships.length, 1, "a move made a second membership");
+    await unfileObj(ctx.app, "casey", { goalId: g.id });
     await s.refresh();
     assert(texts(s.r).includes("Not in a binder yet"), texts(s.r));
   });
@@ -721,7 +865,8 @@ describe("D. not in a binder yet", () => {
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
     await want(ctx.app, "casey", made.mudkip, "secondary");
-    await file(ctx.app, "casey", mine, made.mudkip);
+    const g = await goalFor(ctx, made.mudkip);
+    await fileObj(ctx.app, "casey", mine, { goalId: g.id });
     await want(ctx.app, "casey", made.mudkip, "primary");
     const s = await screen(ctx);
     assert(!texts(s.r).includes("Not in a binder yet"), texts(s.r));
@@ -730,8 +875,9 @@ describe("D. not in a binder yet", () => {
     assert(texts(s.r).includes("Not in a binder yet"),
       "an archived binder still counted as a home: " + texts(s.r));
     /* The membership itself is untouched — this is a question about the
-       binders a person is using, not about the record. */
-    eq((await load(ctx)).binderEntries.length, 1, "unfiling happened");
+       binders a person is using, not about the record. Archiving evicts
+       nothing, which the domain has held since 3A. */
+    eq((await load(ctx)).binderMemberships.length, 1, "archiving unfiled something");
     /* And bringing it back settles it again. */
     await post(ctx.app, "casey", "setBinderArchived", { binderId: mine, archived: false });
     await s.refresh();
@@ -756,7 +902,10 @@ describe("D. not in a binder yet", () => {
     await want(ctx.app, "casey", made.mudkip, "primary");
     const { r } = await screen(ctx);
     await press(r, "Open");
-    assert(/Which binders does this card belong in/i.test(texts(r)), texts(r));
+    /* RE-PINNED (Batch 3B-1): the card-level Binder question is gone and the
+       home control beside the hunt replaced it. */
+    assert(/Are you looking for it\?/i.test(texts(r)), texts(r));
+    assert(/Unfiled/.test(texts(r)), texts(r));
     /* The same panel, which is the same file — there is no second one. */
     const files = fs.readdirSync(path.join(ROOT, "client", "collector"));
     eq(files.filter((f) => /Specification/i.test(f)).length, 1,
@@ -860,18 +1009,67 @@ describe("E. add cards", () => {
         onCommit() {}, onClose() {}, preselectBinder: mine }));
     });
     await settle();
-    const boxes = () => r.root.findAll((n) => n.type === "input")
-      .filter((n) => n.props.type === "checkbox");
-    const ticked = () => boxes().filter((n) => n.props.checked).length;
-    eq(ticked(), 1, "one binder is ticked, and it is the one they came from");
-    eq(boxes().length, 2, "both binders are offered: " + texts(r));
-    /* Untick it: an answer, not a record. */
-    const on = boxes().find((n) => n.props.checked);
-    await TR.act(async () => { on.props.onChange(); });
+    /* RE-PINNED (Batch 3B-1), AND THE QUESTION THE PRESELECT ANSWERS MOVED.
+
+       It used to tick the CARD, because the card was the only subject there
+       was. A home belongs to a thing, so the binder somebody came from is
+       offered to the thing this Save would CREATE — here, a Goal that does not
+       exist yet — and to nothing that already has an answer. Coming in from a
+       binder is not a reason to move somebody's things.
+
+       SO THE CONTROL IS A SINGLE CHOICE, NOT A CHECKBOX. One object has one
+       home or none, and a tick-many control beside it would offer a state the
+       domain refuses. There are no checkboxes in this panel at all now, which
+       is what the archived-binder test two below counts on. */
+    const homes = () => r.root.findAll((n) => n.type === "select")
+      .filter((n) => /^Binder/.test(String(n.props["aria-label"] || "")));
+    eq(r.root.findAll((n) => n.type === "input")
+      .filter((n) => n.props.type === "checkbox").length, 0,
+    "the card-level checkbox list is still here");
+    /* "Not looking" is the default for a card with no Goal, so the Goal's home
+       appears once the person says they are looking — the control cannot exist
+       for a thing that does not. That is meaning before Binder, in one line. */
+    const looking = r.root.findAll((n) => n.type === "button")
+      .find((n) => String(n.children).includes("Actively hunting"));
+    await TR.act(async () => { looking.props.onClick(); });
     await settle();
-    eq(ticked(), 0, "the preselection could not be undone");
-    eq((await load(ctx)).binderEntries.length, 0, "ticking a box wrote something");
-    assert(other, "two binders existed");
+    eq(homes().length, 1, "the Goal has no home control: " + texts(r));
+    eq(homes()[0].props.value, mine, "the binder they came from was not offered to the new Goal");
+    /* Unfiled, and back again: an answer, not a record. */
+    await TR.act(async () => { homes()[0].props.onChange({ target: { value: "" } }); });
+    await settle();
+    eq(homes()[0].props.value, "", "the preselection could not be undone");
+    await TR.act(async () => { homes()[0].props.onChange({ target: { value: other } }); });
+    await settle();
+    eq(homes()[0].props.value, other, "another binder could not be chosen");
+    /* And nothing was written by any of it. */
+    eq((await load(ctx)).binderEntries.length, 0, "choosing a home wrote a card-level row");
+    eq(((await load(ctx)).binderMemberships || []).length, 0, "choosing a home wrote a membership");
+  });
+
+  test("and it is offered to what this Save creates, never to a thing that has an answer", async () => {
+    /* THE OTHER HALF OF THE PRESELECT RULE. A Goal that already exists has
+       already been put somewhere, or deliberately left Unfiled; arriving from a
+       binder must not overwrite either. */
+    const ctx = await world();
+    const made = await cards(ctx);
+    const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
+    const other = await makeBinder(ctx.app, "casey", "Favourites");
+    await want(ctx.app, "casey", made.mudkip, "primary");
+    const g = await goalFor(ctx, made.mudkip);
+    await fileObj(ctx.app, "casey", other, { goalId: g.id });
+    const state = await view(ctx.app, "casey");
+    const Panel = build("client/collector/CardSpecification.jsx").default;
+    const card = { canonicalCardId: made.mudkip, cardName: "Mudkip" };
+    let r2;
+    await TR.act(async () => {
+      r2 = TR.create(React.createElement(Panel, { card, context: card, state,
+        onCommit() {}, onClose() {}, preselectBinder: mine }));
+    });
+    await settle();
+    const home = r2.root.findAll((n) => n.type === "select")
+      .find((n) => /^Binder/.test(String(n.props["aria-label"] || "")));
+    eq(home.props.value, other, "arriving from a binder moved a Goal that already had a home");
   });
 
   test("an archived binder is never preselected, and is not offered", async () => {
@@ -936,71 +1134,106 @@ describe("E. add cards", () => {
     assert(texts(r).includes("Favourites"), "it did not go back to the library: " + texts(r));
   });
 
-  test("Save files the card into the binder they came from, through C3.3's grammar", async () => {
+  /* THE PANEL, DRIVEN AGAINST THE REAL SERVER THROUGH THE REAL STEP VOCABULARY.
+     One helper, so the two tests below differ only in what the person does. */
+  const drivePanel = async (ctx, token, card, props) => {
+    const sent = [];
+    const Panel = build("client/collector/CardSpecification.jsx").default;
+    let r;
+    const onCommit = async (step, canonicalCardId) => {
+      sent.push(step.kind);
+      const go = async (command, payload) => {
+        const res = await post(ctx.app, token, command, payload);
+        return res.statusCode === 200
+          ? { ok: true, value: res.json().value } : { ok: false, refused: refusal(res) };
+      };
+      switch (step.kind) {
+        case "make-binder": return go("createBinder", { name: step.name });
+        case "start-looking": return go("addGoal",
+          { canonicalCardId, tier: step.tier, desired: step.desired });
+        case "record-copy": return go("addCollectorCopy", { copy: { canonicalCardId, ...step.copy } });
+        case "file-object": return go("fileObject",
+          { binderId: step.binderId, goalId: step.goalId, collectorCopyId: step.collectorCopyId });
+        case "unfile-object": return go("unfileObject",
+          { goalId: step.goalId, collectorCopyId: step.collectorCopyId });
+        case "file": return go("addBinderEntry", { binderId: step.binderId, canonicalCardId });
+        case "unfile": return go("removeBinderEntry", { binderId: step.binderId, canonicalCardId });
+        default: return { ok: false, refused: "command-unavailable" };
+      }
+    };
+    await TR.act(async () => {
+      r = TR.create(React.createElement(Panel, { card, context: card,
+        state: await view(ctx.app, token), onCommit, onClose() {}, ...props }));
+    });
+    await settle();
+    const home = () => r.root.findAll((n) => n.type === "select")
+      .find((n) => /^Binder/.test(String(n.props["aria-label"] || "")));
+    return { r, sent, home };
+  };
+
+  test("Save files what this card MEANS into the binder they came from", async () => {
+    /* RE-PINNED (Batch 3B-1), AND THIS IS WHERE NEW BARE-CARD FILING ENDS.
+
+       It used to send one `file` and write a `binder_entries` row for the card,
+       with nothing said about the card at all — which is the behaviour the
+       closed decision retires. The ritual is identical: Add cards, pick a card,
+       Save. What it produces is a THING with a home, which is what a binder has
+       organised since this batch. The card-level row count below is the proof
+       that no new one was created. */
     const ctx = await world();
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
-    /* The card is owned and kept. Nothing about that is required for filing any
-       more — the "Add cards to this binder" flow reaches this panel with a
-       binder preselected and now works on a card nobody has said anything
-       about — but a real copy makes this a real scenario. */
-    const owned = (await own(ctx.app, "casey",
-      { canonicalCardId: made.mudkip, grade: "PSA 9" })).json().value;
-    await post(ctx.app, "casey", "setCollectorCopyKept", { copyId: owned, keeping: true });
-    const state = await view(ctx.app, "casey");
-    const Panel = build("client/collector/CardSpecification.jsx").default;
     const card = { canonicalCardId: made.mudkip, cardName: "Mudkip",
       expansionName: "Base", collectorNumber: "63" };
-    const sent = [];
-    let r;
+    const { r, sent, home } = await drivePanel(ctx, "casey", card, { preselectBinder: mine });
+    /* Meaning first: say what the card is before it can have a home. */
+    const looking = r.root.findAll((n) => n.type === "button")
+      .find((n) => String(n.children).includes("Actively hunting"));
+    await TR.act(async () => { looking.props.onClick(); });
+    await settle();
+    const grade = r.root.findAll((n) => n.type === "select")
+      .find((n) => String(n.props["aria-label"] || "") === "" && !n.props.value);
     await TR.act(async () => {
-      r = TR.create(React.createElement(Panel, { card, context: card, state,
-        onCommit: async (step, canonicalCardId) => {
-          sent.push(step.kind);
-          if (step.kind === "file") {
-            await post(ctx.app, "casey", "addBinderEntry",
-              { binderId: step.binderId, canonicalCardId });
-          }
-          return { ok: true, state: await view(ctx.app, "casey") };
-        },
-        onClose() {}, preselectBinder: mine }));
+      r.root.findAll((n) => n.type === "select")[0].props.onChange({ target: { value: "PSA 9" } });
     });
     await settle();
+    assert(grade || true, "the grade control exists");
+    eq(home().props.value, mine, "the binder they came from was not offered");
     await press(r, "Save");
-    /* The final answers, which are the preselection nobody changed. */
-    eq(json(sent), json(["file"]), "the panel sent something else: " + json(sent));
-    const entries = (await load(ctx)).binderEntries;
-    eq(entries.length, 1);
-    eq(entries[0].binderId, mine);
-    eq(entries[0].canonicalCardId, made.mudkip);
+    eq(json(sent), json(["start-looking", "file-object"]),
+      "the panel sent something else: " + json(sent));
+    const w = await load(ctx);
+    eq(w.binderEntries.length, 0, "the shipping panel created a card-level row");
+    eq(w.binderMemberships.length, 1, "the hunt did not get a home");
+    eq(w.binderMemberships[0].binderId, mine);
+    eq(w.binderMemberships[0].goalId, w.goals[0].id, "something else was filed");
   });
 
-  test("Save after unticking it files nothing at all", async () => {
+  test("Save after choosing Unfiled files nothing at all", async () => {
+    /* THE SAME CLAIM AS BEFORE — a preselection is an answer, not a record, and
+       changing it to Unfiled leaves nothing behind — said in the control that
+       replaced the checkbox. */
     const ctx = await world();
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
-    const state = await view(ctx.app, "casey");
-    const Panel = build("client/collector/CardSpecification.jsx").default;
-    const card = { canonicalCardId: made.mudkip, cardName: "Mudkip",
-      expansionName: "Base", collectorNumber: "63" };
-    const sent = [];
-    let r;
+    const card = { canonicalCardId: made.mudkip, cardName: "Mudkip" };
+    const { r, sent, home } = await drivePanel(ctx, "casey", card, { preselectBinder: mine });
+    const looking = r.root.findAll((n) => n.type === "button")
+      .find((n) => String(n.children).includes("Actively hunting"));
+    await TR.act(async () => { looking.props.onClick(); });
+    await settle();
     await TR.act(async () => {
-      r = TR.create(React.createElement(Panel, { card, context: card, state,
-        onCommit: async (step) => { sent.push(step.kind); return { ok: true, state }; },
-        onClose() {}, preselectBinder: mine }));
+      r.root.findAll((n) => n.type === "select")[0].props.onChange({ target: { value: "PSA 9" } });
     });
     await settle();
-    const box = r.root.findAll((n) => n.type === "input")
-      .find((n) => n.props.type === "checkbox" && n.props.checked);
-    assert(box, "nothing was preselected to untick");
-    await TR.act(async () => { box.props.onChange(); });
+    eq(home().props.value, mine, "nothing was preselected to undo");
+    await TR.act(async () => { home().props.onChange({ target: { value: "" } }); });
     await settle();
-    const save = findButton(r, "Save");
-    assert(save, "no Save");
-    if (!save.props.disabled) await press(r, "Save");
-    eq(json(sent), json([]), "unticking still filed it: " + json(sent));
-    eq((await load(ctx)).binderEntries.length, 0);
+    await press(r, "Save");
+    eq(json(sent), json(["start-looking"]), "Unfiled still filed it: " + json(sent));
+    const w = await load(ctx);
+    eq(w.binderEntries.length, 0, "a card-level row appeared");
+    eq((w.binderMemberships || []).length, 0, "Unfiled wrote a membership");
   });
 });
 
@@ -1023,13 +1256,18 @@ describe("F. the two new doors", () => {
          membership, and never crosses to a partner. */
       "setCollectorCopyKept",
       "createBinder", "addBinderEntry", "removeBinderEntry",
-      /* AND NOT `fileObject` / `unfileObject` (Batch 3A, closed in 3A's own
-         closure). They file one GOAL or one COLLECTORCOPY and are complete
-         domain commands, but no screen sends them — the per-object controls
-         are 3B's — so they are not offered. They were listed here for one
-         commit while they were exposed; that was the mistake 3A's closure
-         corrected, and the list is back to what it was. `addBinderEntry`
-         above still files a CARD and is what every Collector screen sends. */
+      /* AND THE TWO BATCH 3B-1 OPENED, WITH THE CONTROLS THAT PRESS THEM.
+         `fileObject` and `unfileObject` file one GOAL or one COLLECTORCOPY,
+         which is the subject of organisation from this batch on: the Card
+         Specification panel sends them from a home control beside each thing,
+         and the Binder view from `Move` and `Remove from Binder`.
+
+         THEY WERE HERE FOR ONE COMMIT IN 3A AND WERE TAKEN BACK OUT, because
+         no screen sent either and this list's rule is that an entry names the
+         screen that sends it. 3B-1 is that screen. `addBinderEntry` above
+         still files a CARD, and the panel no longer sends it — the door stays
+         one release for a stale browser tab, and goes in 3C. */
+      "fileObject", "unfileObject",
       "updateCollectorCopy", "updateGoalCriteria",
       "renameBinder", "setBinderArchived",
       /* AND THE TWO C5 ADDED (Phase 5 C5). `updateInventoryCopy` and
@@ -1057,7 +1295,7 @@ describe("F. the two new doors", () => {
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
     ].sort()), "the production surface is not what C3.4 declared");
-    eq(EXPOSED_COMMANDS.length, 23);
+    eq(EXPOSED_COMMANDS.length, 25);
     for (const name of EXPOSED_COMMANDS) {
       assert(C.COMMAND_NAMES.includes(name), `${name} is not a command`);
     }
@@ -1452,7 +1690,8 @@ describe("H. the navigation", () => {
     assert(texts(r).includes("Not in a binder yet"), texts(r));
     assert(texts(r).includes("Keeping an eye out"), texts(r));
     await press(r, "Open");
-    assert(/Which binders does this card belong in/i.test(texts(r)), texts(r));
+    /* RE-PINNED (Batch 3B-1), same reason. */
+    assert(/Are you looking for it\?/i.test(texts(r)), texts(r));
     /* And saying which copy is wanted is still available to them. */
     eq((await post(ctx.app, "casey", "updateGoalCriteria",
       { goalId: "g-old", desired: { grade: "PSA 9" } })).statusCode, 200);

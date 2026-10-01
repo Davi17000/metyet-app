@@ -50,6 +50,7 @@ import { savePartnerProfile, openCollectorInvitation, revokeCollectorInvitation,
   browseCards, addCollectorGoal, setGoalPriority, removeCollectorGoal,
   setGoalCriteria, addOwnedCopy, updateOwnedCopy, setCopyOffered, removeOwnedCopy,
   createBinder, fileCardInBinder, unfileCardFromBinder,
+  fileObjectInBinder, unfileObjectFromBinder,
   inspectCopy, endInspection, requestCopyPhotos, provideCopyPhotos, setCopyKept,
   renameBinder, setBinderArchived,
   refreshView } from "../commands.js";
@@ -219,7 +220,11 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
       offered: setCopyOffered(store), keeping: setCopyKept(store),
       remove: removeOwnedCopy(store) };
     const binder = { create: createBinder(store), file: fileCardInBinder(store),
-      unfile: unfileCardFromBinder(store) };
+      unfile: unfileCardFromBinder(store),
+      /* WHERE A THING LIVES (Batch 3B-1), beside where a CARD was filed. The
+         card-level pair above is still bound because the legacy line can still
+         remove a row; nothing in the product adds one. */
+      fileObject: fileObjectInBinder(store), unfileObject: unfileObjectFromBinder(store) };
     return async (step, canonicalCardId) => {
       /* THE PANEL SPEAKS ITS OWN WORDS, AND THIS IS WHERE THEY BECOME COMMANDS.
          A Collector surface may not name a command — it calls the function it
@@ -229,6 +234,21 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
          holds every other binding. */
       switch (step.kind) {
         case "make-binder": return binder.create(step.name);
+        /* A THING'S HOME (Batch 3B-1). The step names ONE object — the panel
+           and the Binder view both resolve a draft handle into a minted id
+           before they send, so nothing here ever sees one. `file-object` is
+           also the move: a different binder id on the same object is one
+           command, not an unfile and a file. */
+        case "file-object":
+          return binder.fileObject({ binderId: step.binderId,
+            goalId: step.goalId, collectorCopyId: step.collectorCopyId });
+        case "unfile-object":
+          return binder.unfileObject({ goalId: step.goalId,
+            collectorCopyId: step.collectorCopyId });
+        /* A CARD'S, which the panel no longer sends. `file` is unreachable from
+           the shipping product as of 3B-1 and is kept only so a browser tab
+           opened before this deploy keeps working; `unfile` is what the legacy
+           line's Remove presses. Both go in 3C with the door. */
         case "file": return binder.file(step.binderId, canonicalCardId);
         case "unfile": return binder.unfile(step.binderId, canonicalCardId);
         case "wanted-copy": return goal.criteria(step.goalId, step.desired);
@@ -265,6 +285,11 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
   const onRequestPhotos = useMemo(() => (store ? requestCopyPhotos(store) : null), [store]);
   const onRenameBinder = useMemo(() => (store ? renameBinder(store) : null), [store]);
   const onArchiveBinder = useMemo(() => (store ? setBinderArchived(store) : null), [store]);
+  /* WHERE A FILED THING GOES NEXT (Batch 3B-1). The Binder view's `Move` and
+     `Remove from Binder` press these; the Card Specification panel reaches the
+     same two commands through its own step vocabulary. */
+  const onFileObject = useMemo(() => (store ? fileObjectInBinder(store) : null), [store]);
+  const onUnfileObject = useMemo(() => (store ? unfileObjectFromBinder(store) : null), [store]);
   /* Phase 5 Batch 3A. Not a command — there is no command to name, because the
      person calling it has no seat yet. Bound here anyway, for the same reason
      as the rest: the screen gets a function, never the store. */
@@ -684,7 +709,7 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
     { state: projection, onSignOut: signOut, onSaveProfile, onInvite, onRevokeInvite, onRefresh,
       onAddCopy, onEditCopy, onRetireCopy, onProvidePhotos,
       onBrowseCards, onAddGoal, onSetPriority, onRemoveGoal, onSpecify,
-      onCreateBinder, onRenameBinder, onArchiveBinder,
+      onCreateBinder, onRenameBinder, onArchiveBinder, onFileObject, onUnfileObject,
       onInspect, onEndInspection, onRequestPhotos,
       /* Phase 5 Batch 3A. Who they just joined, so the shell can greet them by
          it once. It is read from the server's own reply, it is cleared the

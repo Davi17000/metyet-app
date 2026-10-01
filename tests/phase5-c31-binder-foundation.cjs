@@ -692,13 +692,18 @@ describe("E. the commands exist, and production cannot reach them", () => {
          reason offering did, and the two clear each other in the domain. */
       "setCollectorCopyKept",
       "createBinder", "addBinderEntry", "removeBinderEntry",
-      /* AND NOT `fileObject` / `unfileObject` (Batch 3A, closed in 3A's own
-         closure). They file one GOAL or one COLLECTORCOPY and are complete
-         domain commands, but no screen sends them — the per-object controls
-         are 3B's — so they are not offered. They were listed here for one
-         commit while they were exposed; that was the mistake 3A's closure
-         corrected, and the list is back to what it was. `addBinderEntry`
-         above still files a CARD and is what every Collector screen sends. */
+      /* AND THE TWO BATCH 3B-1 OPENED, WITH THE CONTROLS THAT PRESS THEM.
+         `fileObject` and `unfileObject` file one GOAL or one COLLECTORCOPY,
+         which is the subject of organisation from this batch on: the Card
+         Specification panel sends them from a home control beside each thing,
+         and the Binder view from `Move` and `Remove from Binder`.
+
+         THEY WERE HERE FOR ONE COMMIT IN 3A AND WERE TAKEN BACK OUT, because
+         no screen sent either and this list's rule is that an entry names the
+         screen that sends it. 3B-1 is that screen. `addBinderEntry` above
+         still files a CARD, and the panel no longer sends it — the door stays
+         one release for a stale browser tab, and goes in 3C. */
+      "fileObject", "unfileObject",
       "updateCollectorCopy", "updateGoalCriteria",
       "renameBinder", "setBinderArchived",
       /* AND THE TWO C5 ADDED (Phase 5 C5). `updateInventoryCopy` and
@@ -726,7 +731,7 @@ describe("E. the commands exist, and production cannot reach them", () => {
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
     ].sort()), "the production surface is not what C3.4 declared");
-    eq(EXPOSED_COMMANDS.length, 23);
+    eq(EXPOSED_COMMANDS.length, 25);
   });
 
   /* SUPERSEDED AND RESTATED. The claim was that the client bound the three

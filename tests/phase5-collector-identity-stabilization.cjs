@@ -371,6 +371,11 @@ describe("C. What a second press of Save does", () => {
   const send = (st, step, canonicalCardId) => {
     switch (step.kind) {
       case "make-binder": return x(st, CASEY, "createBinder", { name: step.name });
+      /* BATCH 3B-1, mapped as `SignIn.jsx` maps them. */
+      case "file-object": return x(st, CASEY, "fileObject",
+        { binderId: step.binderId, goalId: step.goalId, collectorCopyId: step.collectorCopyId });
+      case "unfile-object": return x(st, CASEY, "unfileObject",
+        { goalId: step.goalId, collectorCopyId: step.collectorCopyId });
       case "file": return x(st, CASEY, "addBinderEntry", { binderId: step.binderId, canonicalCardId });
       case "unfile": return x(st, CASEY, "removeBinderEntry", { binderId: step.binderId, canonicalCardId });
       case "wanted-copy": return x(st, CASEY, "updateGoalCriteria", { goalId: step.goalId, desired: step.desired });
@@ -389,8 +394,10 @@ describe("C. What a second press of Save does", () => {
 
   const draft = (key, over = {}) => ({ id: null, key, grade: "PSA 9", condition: "",
     cert: "", market: "", disposition: "offered", removed: false, ...over });
-  const answersFor = (over = {}) => ({ binders: new Set(), newBinders: [], want: "none",
-    desired: { grade: "", condition: "" }, copies: [], ...over });
+  /* RE-PINNED (Batch 3B-1): `binders` is gone with the card-level question, and
+     each thing carries its own home instead. `null` is Unfiled. */
+  const answersFor = (over = {}) => ({ newBinders: [], want: "none",
+    desired: { grade: "", condition: "" }, copies: [], goalHome: null, madeGoal: null, ...over });
 
   /* THE REAL PANEL, MOUNTED, WITH ITS OWN SAVE BUTTON PRESSED.
 
@@ -457,9 +464,28 @@ describe("C. What a second press of Save does", () => {
         assert(all[nth], `no "${label}" #${nth} — found ${all.length}`);
         TR.act(() => { all[nth].props.onClick(); });
       },
-      selects: () => r.root.findAll((n) => n.type === "select").length,
+      /* RE-PINNED (Batch 3B-1): BY WHAT THE CONTROL IS, NOT BY ITS POSITION
+         AMONG EVERY SELECT ON SCREEN. A copy row now carries a Binder home as
+         well as a grade, so counting selects counted two controls per row and
+         addressed the wrong one. The grade controls are picked out by what they
+         are — the ones that offer grades — which also makes the count below a
+         statement about copy rows rather than about markup. */
+      grades: () => r.root.findAll((n) => n.type === "select")
+        .filter((n) => !/^Binder/.test(String(n.props["aria-label"] || ""))),
+      selects: () => r.root.findAll((n) => n.type === "select")
+        .filter((n) => !/^Binder/.test(String(n.props["aria-label"] || ""))).length,
+      /* AND THE HOMES, so a test can say where a particular copy goes. */
+      homes: () => r.root.findAll((n) => n.type === "select")
+        .filter((n) => /^Binder for /.test(String(n.props["aria-label"] || ""))),
+      home: (value, nth = 0) => {
+        const all = r.root.findAll((n) => n.type === "select")
+          .filter((n) => /^Binder for /.test(String(n.props["aria-label"] || "")));
+        assert(all[nth], `no home control #${nth} — found ${all.length}`);
+        TR.act(() => { all[nth].props.onChange({ target: { value } }); });
+      },
       grade: (value, nth = 0) => {
-        const sel = r.root.findAll((n) => n.type === "select")[nth];
+        const sel = r.root.findAll((n) => n.type === "select")
+          .filter((n) => !/^Binder/.test(String(n.props["aria-label"] || "")))[nth];
         assert(sel, `no grade control #${nth}`);
         TR.act(() => { sel.props.onChange({ target: { value } }); });
       },
@@ -489,7 +515,7 @@ describe("C. What a second press of Save does", () => {
   /* N new copies, each described and offered. The rows are filled AFTER they
      all exist, because every row carries its own controls and addressing them
      by position is only meaningful once the list has stopped growing. */
-  const addOffered = (p, grades) => {
+  const addOffered = (p, grades, homeFor = null) => {
     for (let i = 0; i < grades.length; i += 1) p.press("I own one of these");
     /* The panel is opened on a card with no Goal, so every grade control on
        screen belongs to a copy row. If that ever stops being true the rows are
@@ -498,6 +524,14 @@ describe("C. What a second press of Save does", () => {
     eq(p.selects(), grades.length, "the panel is showing a control this helper cannot address");
     grades.forEach((g, i) => p.grade(g, i));
     grades.forEach((_, i) => p.pressNth("I'd trade or sell this one", i));
+    /* AND WHERE EACH ONE GOES (Batch 3B-1). `homeFor(i)` returns a binder id or
+       null, so a test can make exactly one filing refusable — which is what the
+       partial-save cases need now that filing names a thing rather than a card
+       and the card-level preselect no longer produces a step at all. */
+    if (homeFor) {
+      eq(p.homes().length, grades.length, "a copy row has no home control");
+      grades.forEach((_, i) => { const to = homeFor(i); if (to) p.home(to, i); });
+    }
   };
 
   /* A binder that is NOT Casey's, so the `file` step is refused by the domain
@@ -511,8 +545,21 @@ describe("C. What a second press of Save does", () => {
      about the panel keeping a binding. */
   const runPlan = (st, canonicalCardId, answers) => {
     const steps = SPEC.planFrom(st.get(), canonicalCardId, answers).steps;
-    for (const step of steps) {
+    /* HANDLES RESOLVED, AS `commit` RESOLVES THEM (Batch 3B-1). A filing that
+       names a thing being created in this same plan carries a draft handle, not
+       an id; without this the step reaches the domain with no target and is
+       refused `invalid-target`, which would make every assertion below a
+       statement about a plan nothing ran. */
+    const minted = new Map();
+    for (const raw of steps) {
+      const declares = raw.kind === "make-binder" || raw.kind === "start-looking";
+      const step = { ...raw };
+      if (raw.binderDraftId && !declares) step.binderId = minted.get(raw.binderDraftId);
+      if (raw.copyDraftId && !declares) step.collectorCopyId = minted.get(raw.copyDraftId);
+      if (raw.goalDraftId && !declares) step.goalId = minted.get(raw.goalDraftId);
       const answer = send(st, step, canonicalCardId);
+      const handle = raw.draftId || (declares ? raw.binderDraftId || raw.goalDraftId : null);
+      if (handle && answer && answer.value) minted.set(handle, answer.value);
       if (answer && answer.ok === false) break;
     }
     return { steps: steps.map((s) => s.kind) };
@@ -523,23 +570,29 @@ describe("C. What a second press of Save does", () => {
        that the domain will refuse, press Save, then press it again — which is
        exactly what the panel's own sentence tells a person to do. */
     const st = world();
-    const p = panel(st, { preselectBinder: borrowedBinder(st) });
-    addOffered(p, ["PSA 9"]);
+    /* RE-PINNED (Batch 3B-1): THE REFUSABLE STEP IS THE COPY'S HOME. A ticked
+       card used to produce a `file` the domain would refuse; a card is no longer
+       what gets filed, so the thing that gets refused is this copy being sent
+       to a binder that is not its owner's. Same shape, same refusal, same
+       retry — a filing that names somebody else's binder. */
+    const theirs = borrowedBinder(st);
+    const p = panel(st, {});
+    addOffered(p, ["PSA 9"], () => theirs);
 
     const first = await p.save();
-    eq(first.join(","), "record-copy,file", "the fixture did not exercise a partial save");
+    eq(first.join(","), "record-copy,file-object", "the fixture did not exercise a partial save");
     eq(copies(st).length, 1, "the first press did not record the copy");
     const minted = copies(st)[0].id;
     assert(/could not be filed|Nothing was saved|But /.test(p.text()),
       "the fixture did not actually fail partway: " + p.text().slice(-300));
 
     const second = await p.save();
-    eq(second.join(","), "file",
+    eq(second.join(","), "file-object",
       "the retry sent something other than the one step that is left: " + second.join(","));
     eq(copies(st).length, 1, "the retry recorded a second physical copy: "
       + JSON.stringify(copies(st).map((c) => c.id)));
     eq(copies(st)[0].id, minted, "the copy was replaced rather than kept");
-    eq((await p.save()).join(","), "file", "a third press sent more than the remainder");
+    eq((await p.save()).join(","), "file-object", "a third press sent more than the remainder");
     eq(copies(st).length, 1, "a third press duplicated it");
     assert(valid(st), "the world became invalid");
     p.unmount();
@@ -561,17 +614,22 @@ describe("C. What a second press of Save does", () => {
 
   test("[14] two new drafts in one Save keep two distinct durable ids", async () => {
     const st = world();
-    const p = panel(st, { preselectBinder: borrowedBinder(st) });
-    addOffered(p, ["PSA 9", "PSA 10"]);
+    /* RE-PINNED (Batch 3B-1): ONLY THE SECOND COPY'S HOME IS REFUSABLE, so both
+       `record-copy` steps still run. With filing interleaved per thing, giving
+       the FIRST copy a bad home would stop the sequence before the second copy
+       existed and this test would be about something else. */
+    const theirs = borrowedBinder(st);
+    const p = panel(st, {});
+    addOffered(p, ["PSA 9", "PSA 10"], (i) => (i === 1 ? theirs : null));
 
     const first = await p.save();
-    eq(first.join(","), "record-copy,record-copy,file", "the fixture is not two drafts");
+    eq(first.join(","), "record-copy,record-copy,file-object", "the fixture is not two drafts");
     eq(copies(st).length, 2, "both copies were not recorded");
     const ids = copies(st).map((c) => c.id);
     eq([...new Set(ids)].length, 2, "one id was minted twice");
 
     /* Both drafts must now be bound, or the retry duplicates one of them. */
-    eq((await p.save()).join(","), "file", "the retry re-sent a copy that exists");
+    eq((await p.save()).join(","), "file-object", "the retry re-sent a copy that exists");
     eq(copies(st).length, 2, "the retry duplicated a copy: "
       + JSON.stringify(copies(st).map((c) => `${c.grade}:${c.id}`)));
     eq(copies(st).map((c) => c.grade).sort().join(","), "PSA 10,PSA 9",
@@ -623,15 +681,24 @@ describe("C. What a second press of Save does", () => {
        the rest so a future change cannot break them in the same way. */
     const st = world();
     const bd = okv(x(st, CASEY, "createBinder", { name: "Shoebox" }), "binder");
-    const answers = answersFor({ binders: new Set([bd]), want: "secondary",
+    /* RE-PINNED (Batch 3B-1): the hunt and the copy each get a home of their
+       own, which is what replaced ticking the card — so the replay below has
+       two filings to not re-send rather than one. */
+    const answers = answersFor({ want: "secondary",
       desired: { grade: "PSA 9", condition: "" },
-      copies: [draft("n1")] });
+      goalHome: bd,
+      copies: [{ ...draft("n1"), home: bd }] });
     const first = runPlan(st, "cc-z", answers);
     assert(first.steps.includes("start-looking") && first.steps.includes("record-copy")
-      && first.steps.includes("file"), "the fixture is thin: " + first.steps.join(","));
+      && first.steps.includes("file-object"), "the fixture is thin: " + first.steps.join(","));
+    eq(first.steps.filter((k) => k === "file-object").length, 2,
+      "the fixture filed fewer things than it has: " + first.steps.join(","));
     const before = JSON.stringify(st.get());
     /* Everything already done, so a replay of the SAME answers — minus the copy,
-       which [12] covers — must send nothing that changes anything. */
+       which [12] covers — must send nothing that changes anything. A home that
+       is already the one on record is not a difference, so neither filing is
+       re-sent: `fileObject` is idempotent, but a replay that sent it anyway
+       would be the panel failing its own promise. */
     const bound = { ...answers, copies: answers.copies.map((d) => ({ ...d, id: copies(st)[0].id })) };
     const again = runPlan(st, "cc-z", bound);
     eq(again.steps.length, 0, "a replay sent work: " + again.steps.join(","));
@@ -642,7 +709,7 @@ describe("C. What a second press of Save does", () => {
 /* =============================================== D. what did not move */
 describe("D. What this batch did not touch", () => {
   test("[18] no transaction command became exposed, and the count is what it was", () => {
-    eq(EXPOSED_COMMANDS.length, 23, "the production surface changed size");
+    eq(EXPOSED_COMMANDS.length, 25, "the production surface changed size");
     const { COMMAND_NAMES } = require("../domain/metyet-commands.js");
     const known = (n) => [...COMMAND_NAMES].includes(n);
     for (const shut of ["startOpportunity", "proposePrice", "acceptPrice",

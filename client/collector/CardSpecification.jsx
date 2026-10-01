@@ -45,7 +45,7 @@
    ========================================================================== */
 
 import React, { useMemo, useRef, useState } from "react";
-import { rows, text, money, gradeLine, gradeProblem, gradeConflictLine,
+import { rows, text, money, gradeLine, gradeProblem, gradeConflictLine, copyLabels,
   statusLabel } from "./present.js";
 
 /* The vocabulary the domain already has. Not a list this screen invented, and
@@ -122,7 +122,26 @@ const DISPOSITIONS = Object.freeze([
 ]);
 
 const BLANK_COPY = { id: null, grade: "", condition: "", cert: "", market: "",
-  disposition: UNANSWERED, removed: false, status: null, grading: null };
+  disposition: UNANSWERED, removed: false, status: null, grading: null,
+  /* WHERE THIS ONE LIVES (Batch 3B-1). `null` is Unfiled, and Unfiled is a
+     value the Collector picks rather than the absence of a tick: there is no
+     Unfiled binder, no default binder, and no hidden membership. The value is
+     either a binder id or the client key of a binder being created in this
+     same Save — `commit` turns the second into the first before it sends. */
+  home: null };
+
+/* A GOAL HAS ONE HOME AND A CARD HAS ONE GOAL, so the handle for a Goal being
+   created in this Save is a constant rather than an index. It is client-plan
+   identity and nothing else: no durable field anywhere records it, and nothing
+   downstream — not `SignIn.jsx`, not the command — ever sees it. */
+const GOAL_DRAFT = "the-goal";
+const idText = (v) => (typeof v === "string" && v.trim() ? v : null);
+
+/* A DESTINATION IS A BINDER THAT EXISTS, OR A HANDLE FOR ONE BEING MADE. Two
+   different fields, so nothing downstream has to guess which kind of string it
+   was handed: `commit` resolves `binderDraftId` and leaves `binderId` alone. */
+const binderTarget = (home, newKeys) => (newKeys.has(home)
+  ? { binderDraftId: home } : { binderId: home });
 
 /* WHAT THE PERSON WOULD BE CHANGING, against what the server currently says.
    Pure, and computed fresh every time Commit is pressed — including the second
@@ -132,10 +151,53 @@ export function planFrom(state, canonicalCardId, answers) {
   const entries = rows(state && state.binderEntries)
     .filter((e) => e.canonicalCardId === canonicalCardId);
   const filedNow = new Set(entries.map((e) => e.binderId));
-  const goal = rows(state && state.goals).find((g) => g.canonicalCardId === canonicalCardId) || null;
+  const stateGoal = rows(state && state.goals)
+    .find((g) => g.canonicalCardId === canonicalCardId) || null;
   const copiesNow = rows(state && state.collectorCopies)
     .filter((b) => b.canonicalCardId === canonicalCardId);
   const byId = new Map(copiesNow.map((b) => [b.id, b]));
+
+  /* THE HOME THE SERVER SAYS EACH THING HAS (Batch 3B-1), which is one half of
+     every filing decision below — the other half is the answer. A membership
+     names exactly one Goal or one copy, so these two maps cannot overlap, and
+     an object with no row simply has no home. `binderEntries` above is NOT
+     consulted for any of this: a card-level row records that a CARD was filed
+     and says nothing about which thing, not even when one thing is the only
+     candidate it could have meant. */
+  const homeOfGoal = new Map();
+  const homeOfCopy = new Map();
+  for (const m of rows(state && state.binderMemberships)) {
+    if (idText(m && m.goalId)) homeOfGoal.set(m.goalId, m.binderId);
+    else if (idText(m && m.collectorCopyId)) homeOfCopy.set(m.collectorCopyId, m.binderId);
+  }
+  /* A BINDER THAT IS PUT AWAY TAKES NOTHING NEW, so it is not a destination —
+     but a thing already in one stays there and may still be taken out. The
+     view says which, and the plan only has to refuse to send a NEW filing. */
+  const archived = new Set(myBinders.filter((b) => b.archivedAt).map((b) => b.id));
+  const newBinderKeys = new Set(answers.newBinders.map((nb) => nb.key));
+  /* AND THE BINDERS THIS SAVE ALREADY MADE, which the projection may not have
+     caught up with. `commit` reads its plan from the `state` PROP and the
+     parent's refresh is a round trip, so a person who presses Save again the
+     instant a refusal appears can get there first — and without this the home
+     that names the binder the server just minted would be dropped as a
+     destination the panel cannot see, so the retry would quietly do nothing.
+     The server returned the id; that is knowing it exists. */
+  const madeBinders = new Set(rows(answers.madeBinders));
+  const destination = (home) => (home != null
+    && (newBinderKeys.has(home) || madeBinders.has(home)
+      || myBinders.some((b) => b.id === home && !b.archivedAt))
+    ? home : null);
+  /* A GOAL THIS SAVE ALREADY CREATED, AS IT WAS CREATED. `adopt` records it on
+     a partial Save, so a retry does not re-send `start-looking` and collect
+     `duplicate-goal` while the projection the panel was handed still predates
+     the Goal. Client-plan identity, exactly like a copy's `draftId`, and
+     nothing durable anywhere records it.
+
+     IT KEEPS THE TIER AND CRITERIA THAT WERE SENT, not the ones now on screen.
+     Fabricating it from the current answers instead would make every
+     comparison below trivially equal, so a person who fixed the tier between
+     the two presses would have the correction silently dropped. */
+  const madeGoal = answers.madeGoal && idText(answers.madeGoal.id) ? answers.madeGoal : null;
 
   const steps = [];
   /* Statements a live DEAL can refuse, held back behind everything it could
@@ -161,9 +223,19 @@ export function planFrom(state, canonicalCardId, answers) {
 
      NOT BY NAME. Two binders may share a name — `createBinder` has no duplicate
      rule and the schema has no unique key — so a name cannot identify the one
-     that was just made. */
-  for (const [i, name] of answers.newBinders.entries()) {
-    steps.push({ kind: "make-binder", name, binderDraftId: `new-binder-${i}` });
+     that was just made.
+
+     NOR BY POSITION, SINCE 3B-1. The handle used to be `new-binder-${i}`, the
+     index in `answers.newBinders`, which was survivable while only the card
+     referred to a new binder: `adopt` removed the created ones and the next
+     plan recomputed the indices from scratch. It stops being survivable the
+     moment an OBJECT names one, because a partial Save removes an earlier entry
+     and every later object's chosen home then points at a different binder.
+     Each new binder now carries a key minted at the moment it was named, for
+     the same reason a copy draft does — the lesson is written out in `addCopy`
+     and it is the same lesson. */
+  for (const nb of answers.newBinders) {
+    steps.push({ kind: "make-binder", name: nb.name, binderDraftId: nb.key });
   }
 
   /* 2. WHAT CAN ONLY BE REFUSED FOR WHAT IT SAYS, AND THAT IS THE WHOLE ORDER.
@@ -254,6 +326,24 @@ export function planFrom(state, canonicalCardId, answers) {
        back to. The Collector surface's own rule is that every map it builds is
        keyed on an id, and this map is no exception. */
     }, draftId: draft.key });
+    /* AND ITS HOME, IMMEDIATELY (Batch 3B-1), WHICH IS A CHANGE OF ORDER AND
+       NOT ONLY OF SUBJECT.
+
+       Card-level filing sat in one block below everything that created
+       anything, which was right when the subject was the card: there was one
+       filing for the whole card and nothing it could depend on. A filing now
+       names ONE object, and for a new object it cannot be sent at all until
+       that object's creation minted an id — so block 3's position would mean a
+       second new copy being refused costs the FIRST one its binder, for a
+       reason that has nothing to do with where it belongs. Emitted here, each
+       new thing is filed before the next one is attempted, and a sequence that
+       stops leaves every object it did create already where it was put.
+
+       This does not weaken the refusal-class rule above it: `fileObject` can be
+       refused only for itself, so it may sit anywhere ahead of the three a live
+       deal can refuse. It still does. */
+    const home = destination(draft.home);
+    if (home) steps.push({ kind: "file-object", copyDraftId: draft.key, ...binderTarget(home, newBinderKeys) });
   }
 
   /* A NEW Goal belongs up here too: `addGoal` answers only for itself. It is
@@ -265,12 +355,20 @@ export function planFrom(state, canonicalCardId, answers) {
     : null;
   const sameCriteria = (a, b) => (text(a && a.grade) || null) === (text(b && b.grade) || null)
     && (text(a && a.condition) || null) === (text(b && b.condition) || null);
+  /* A GOAL THIS SAVE MADE COUNTS AS ONE, so a retry neither re-creates it nor
+     loses the home it was going to be given — and a change of mind between the
+     two presses still travels, as a tier or criteria step like any other. */
+  const goal = stateGoal || madeGoal;
   if (!goal && answers.want !== "none") {
-    steps.push({ kind: "start-looking", tier: answers.want, desired: stated });
+    steps.push({ kind: "start-looking", tier: answers.want, desired: stated,
+      /* The handle a dependent filing names, for the same reason a new copy
+         carries one. There is at most one Goal per card, so it is a constant. */
+      goalDraftId: GOAL_DRAFT });
+    const home = destination(answers.goalHome);
+    if (home) steps.push({ kind: "file-object", goalDraftId: GOAL_DRAFT, ...binderTarget(home, newBinderKeys) });
   }
 
-  /* 3. FILING, WHICH DEPENDS ON NOTHING AND CAN BE REFUSED BY NOTHING BUT A
-     BINDER THAT IS NOT YOURS.
+  /* 3. WHERE THE THINGS THAT ALREADY EXISTED NOW LIVE.
 
      For one batch a card had to be in one of the four states before it could be
      filed, so this block had to follow the ones that put it there. That rule is
@@ -278,19 +376,37 @@ export function planFrom(state, canonicalCardId, answers) {
      meaningful. So filing joins the steps that can only fail on their own terms,
      and a ticked binder is no longer lost to a locked Goal.
 
-     Unfiling comes after filing for the reason it always did — a binder swap
-     should not pass through a moment of belonging nowhere. */
-  for (const id of answers.binders) {
-    if (!filedNow.has(id)) steps.push({ kind: "file", binderId: id });
+     NEW objects were filed above, next to the step that created them. What is
+     left here is the objects the server already knew about, which have nothing
+     to wait for.
+
+     A MOVE IS ONE COMMAND. `fileObject` names the object and the destination
+     and updates the row it finds, so A → B is one step and not an unfile
+     followed by a file — there is no moment in between where the thing belongs
+     nowhere, and nothing has to decide which half to send first. Going to
+     Unfiled is the only thing `unfile-object` is for. */
+  const homeStep = (now, wanted, target) => {
+    const want = destination(wanted);
+    if (want && want !== now) return { kind: "file-object", ...target, ...binderTarget(want, newBinderKeys) };
+    /* Unfiled was chosen and there is something to take out. A wanted home that
+       is no longer a destination — a binder put away since the panel opened —
+       is NOT read as Unfiled: the answer was "leave it there", and this says
+       nothing rather than quietly emptying a binder. */
+    if (wanted == null && now) return { kind: "unfile-object", ...target };
+    return null;
+  };
+  /* `goal` rather than `stateGoal`, so a Goal this Save created on an earlier
+     press is filed by the retry — its membership is not in the projection the
+     panel was handed either, which is exactly why `homeOfGoal` says nothing
+     about it and a wanted home still reads as a filing to do. */
+  if (goal) {
+    const step = homeStep(homeOfGoal.get(goal.id) || null, answers.goalHome, { goalId: goal.id });
+    if (step) steps.push(step);
   }
-  /* AND INTO THE BINDERS BEING MADE IN THIS SAME SAVE. The step names the
-     handle; `commit` turns it into the minted id before it is sent, so nothing
-     downstream — not `SignIn.jsx`, not the command — ever sees a handle. */
-  for (let i = 0; i < answers.newBinders.length; i += 1) {
-    steps.push({ kind: "file", binderDraftId: `new-binder-${i}` });
-  }
-  for (const id of filedNow) {
-    if (!answers.binders.has(id)) steps.push({ kind: "unfile", binderId: id });
+  for (const draft of answers.copies) {
+    if (!draft.id || draft.removed || !byId.get(draft.id)) continue;
+    const step = homeStep(homeOfCopy.get(draft.id) || null, draft.home, { collectorCopyId: draft.id });
+    if (step) steps.push(step);
   }
 
   /* 4. AND WHAT A DEAL CAN REFUSE, HELD BACK TO HERE. A correction to a copy a
@@ -347,18 +463,30 @@ const json = (v) => JSON.stringify(v === undefined ? null : v);
    copies opens with no copy rows, not one blank one, because a pre-filled form
    is the product answering "how many do you own" with "one". */
 export function initialAnswers(state, canonicalCardId) {
-  const entries = rows(state && state.binderEntries)
-    .filter((e) => e.canonicalCardId === canonicalCardId);
   const goal = rows(state && state.goals).find((g) => g.canonicalCardId === canonicalCardId) || null;
   const copies = rows(state && state.collectorCopies)
     .filter((b) => b.canonicalCardId === canonicalCardId);
+  /* WHERE EACH THING LIVES, AS THE SERVER SAYS (Batch 3B-1). `binderEntries`
+     is not read here and nothing seeds a home from one: a card-level row says
+     a CARD was filed, and reading it as this Goal's home — or this copy's —
+     would be the inference the whole transition refuses. A card filed before
+     3B therefore opens with every object Unfiled, and the legacy line in the
+     panel says so plainly rather than quietly standing in for an answer. */
+  const homes = rows(state && state.binderMemberships);
+  const goalHome = goal
+    ? (homes.find((m) => m.goalId === goal.id) || {}).binderId || null : null;
+  const homeOfCopy = new Map(homes
+    .filter((m) => idText(m.collectorCopyId))
+    .map((m) => [m.collectorCopyId, m.binderId]));
   return {
-    binders: new Set(entries.map((e) => e.binderId)),
     newBinders: [],
     want: goal ? goal.tier : "none",
     desired: { grade: text(goal && goal.desired && goal.desired.grade) || "",
       condition: text(goal && goal.desired && goal.desired.condition) || "" },
-    copies: copies.map(asDraft),
+    goalHome,
+    madeGoal: null,
+    madeBinders: [],
+    copies: copies.map((copy) => ({ ...asDraft(copy), home: homeOfCopy.get(copy.id) || null })),
   };
 }
 
@@ -376,9 +504,23 @@ export default function CardSpecification({ card, context = null, state,
     const real = preselectBinder
       && rows(state && state.binders).some((b) => b.id === preselectBinder && !b.archivedAt);
     if (!real) return start;
-    const binders = new Set(start.binders);
-    binders.add(preselectBinder);
-    return { ...start, binders };
+    /* THE BINDER THEY CAME FROM, OFFERED TO WHAT THIS SAVE WOULD CREATE
+       (Batch 3B-1). It used to tick the card, which was the only subject there
+       was. A home belongs to a thing, so it is now offered only where there is
+       no answer to overwrite: a Goal that does not exist yet, and the copies
+       that do not either. An object that already HAS a home keeps it — coming
+       in from a binder is not a reason to move somebody's things — and an
+       object that is already Unfiled keeps that too, because Unfiled is an
+       answer and not a blank.
+
+       SO "ADD CARDS" FILLS A BINDER ONLY WITH WHAT IT CAUSED. That is the
+       meaning-first rule from the same end: the ritual is unchanged, and what
+       it now produces is a thing with a home rather than a card in a list. */
+    const fresh = !start.goalHome && !rows(state && state.goals)
+      .some((g) => g.canonicalCardId === canonicalCardId);
+    return { ...start,
+      goalHome: fresh ? preselectBinder : start.goalHome,
+      preselect: preselectBinder };
   });
   const [newBinderName, setNewBinderName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -417,18 +559,37 @@ export default function CardSpecification({ card, context = null, state,
   const setCopy = (key, next) => setAnswers((a) => ({ ...a,
     copies: a.copies.map((c) => ((c.id || c.key) === key ? { ...c, ...next } : c)) }));
 
-  const toggleBinder = (id) => setAnswers((a) => {
-    const binders2 = new Set(a.binders);
-    if (binders2.has(id)) binders2.delete(id); else binders2.add(id);
-    return { ...a, binders: binders2 };
-  });
+  /* ONE OBJECT, ONE HOME, SO THESE SET RATHER THAN TOGGLE. `toggleBinder` is
+     gone with the checkbox list it served: a tick-many control beside a thing
+     that has one home or none would offer a state the domain refuses, and
+     `fileObject` is already the move, so there is nothing a second tick could
+     mean. `null` is Unfiled. */
+  const setGoalHome = (home) => setAnswers((a) => ({ ...a, goalHome: home || null }));
+  const setCopyHome = (key, home) => setCopy(key, { home: home || null });
 
+  /* A NEW BINDER'S OWN KEY, MINTED THE WAY A COPY DRAFT'S IS AND FOR THE SAME
+     REASON. It used to be the array index, read back as `new-binder-${i}`,
+     which worked while only the card referred to a new binder. An object's
+     chosen home refers to one across a Save that may partly fail — and `adopt`
+     removes the created entries — so an index would silently re-point every
+     later object at a different binder. Minted at the click, batching or not. */
   const addBinder = () => {
     const name = newBinderName.trim();
     if (!name) return;
-    setAnswers((a) => ({ ...a, newBinders: [...a.newBinders, name] }));
+    const key = `new-binder-${nextKey.current}`;
+    nextKey.current += 1;
+    setAnswers((a) => ({ ...a, newBinders: [...a.newBinders, { key, name }] }));
     setNewBinderName("");
   };
+
+  /* AND IT CAN BE TAKEN BACK WITHOUT CANCELLING THE PANEL. The new-binder rows
+     used to be `checked readOnly disabled`, so a mistyped name could only be
+     escaped by throwing away every other answer on the screen. Anything that
+     had chosen it falls back to Unfiled, because the binder it named is gone. */
+  const dropNewBinder = (key) => setAnswers((a) => ({ ...a,
+    newBinders: a.newBinders.filter((nb) => nb.key !== key),
+    goalHome: a.goalHome === key ? null : a.goalHome,
+    copies: a.copies.map((c) => (c.home === key ? { ...c, home: null } : c)) }));
 
   const addCopy = () => {
     const key = `new-${nextKey.current}`;
@@ -508,22 +669,38 @@ export default function CardSpecification({ card, context = null, state,
      `newBinders` and into `binders` as a real id — which is what stops a retry
      creating a second binder of the same name, without anyone having to guess
      which binder a name meant. */
-  const adopt = (minted) => {
+  const adopt = (minted, sentGoal) => {
     if (!minted.size) return;
     setAnswers((a) => {
-      const madeBinders = a.newBinders
-        .map((name, i) => minted.get(`new-binder-${i}`))
-        .filter((id) => typeof id === "string" && id);
-      if (!madeBinders.length) {
-        return { ...a, copies: a.copies.map((d) => (d.id == null && minted.has(d.key)
-          ? { ...d, id: minted.get(d.key) } : d)) };
-      }
-      const made = new Set(madeBinders);
+      /* A BINDER STOPS BEING NEW BY ITS OWN KEY, NOT BY ITS POSITION. The
+         filter used to be by index, which was the same hazard the key exists
+         to remove: dropping an earlier entry re-pointed every later one. */
+      const madeBinder = new Map(a.newBinders
+        .map((nb) => [nb.key, minted.get(nb.key)])
+        .filter(([, id]) => typeof id === "string" && id));
+      /* A home that named a binder being made now names the binder that was
+         made. Anything whose binder was NOT created keeps its handle, because
+         the retry will create it. */
+      const settle = (home) => (home != null && madeBinder.has(home) ? madeBinder.get(home) : home);
       return { ...a,
-        copies: a.copies.map((d) => (d.id == null && minted.has(d.key)
-          ? { ...d, id: minted.get(d.key) } : d)),
-        newBinders: a.newBinders.filter((name, i) => !minted.has(`new-binder-${i}`)),
-        binders: new Set([...a.binders, ...made]) };
+        /* The ids this Save has minted for binders, kept for the same reason
+           `madeGoal` is kept: a retry may run before the projection returns. */
+        madeBinders: [...new Set([...(a.madeBinders || []), ...madeBinder.values()])],
+        copies: a.copies.map((d) => {
+          const withId = d.id == null && minted.has(d.key) ? { ...d, id: minted.get(d.key) } : d;
+          return { ...withId, home: settle(withId.home) };
+        }),
+        goalHome: settle(a.goalHome),
+        /* AND THE GOAL THIS SAVE MADE, AS IT WAS MADE. Without this a retry
+           re-sends `start-looking` and collects `duplicate-goal` — the panel's
+           own promise broken on the one step that cannot be idempotent. The
+           tier and criteria recorded are the ones that were SENT, so a change
+           of mind between the two presses still travels as its own step. */
+        madeGoal: minted.has(GOAL_DRAFT)
+          ? { id: minted.get(GOAL_DRAFT), tier: sentGoal ? sentGoal.tier : a.want,
+            desired: sentGoal ? sentGoal.desired : null }
+          : a.madeGoal,
+        newBinders: a.newBinders.filter((nb) => !madeBinder.has(nb.key)) };
     });
   };
 
@@ -535,6 +712,7 @@ export default function CardSpecification({ card, context = null, state,
     const { steps } = planFrom(state, canonicalCardId, answers);
     const finished = [];
     const minted = new Map();
+    let sentGoal = null;
     try {
       for (const step of steps) {
         /* A STEP MAY NAME SOMETHING THIS SAVE HAS JUST CREATED. Resolved here,
@@ -543,11 +721,26 @@ export default function CardSpecification({ card, context = null, state,
            ever sees a `binderDraftId`: the key is REMOVED rather than set to
            `undefined`, which left an own property behind and sent every
            `make-binder` out carrying a stray `binderId: undefined`. */
-        const { binderDraftId, ...rest } = step;
-        const sending = binderDraftId && step.kind !== "make-binder"
-          ? { ...rest, binderId: minted.get(binderDraftId) }
-          : rest;
-        if (binderDraftId && step.kind !== "make-binder" && !sending.binderId) {
+        const { binderDraftId, copyDraftId, goalDraftId, ...rest } = step;
+        /* TWO HANDLES NOW, AND ONE STEP MAY CARRY BOTH (Batch 3B-1). A filing
+           names a destination and a thing, and in a Save that creates a new
+           binder and a new copy together, neither exists when the plan is
+           built. `make-binder` and `start-looking` keep their own handle as a
+           DECLARATION of what they are about to mint, so those are passed
+           through rather than resolved. */
+        const declares = step.kind === "make-binder" || step.kind === "start-looking";
+        const needsBinder = binderDraftId && !declares;
+        const needsObject = (copyDraftId || goalDraftId) && !declares;
+        const sending = { ...rest };
+        if (needsBinder) sending.binderId = minted.get(binderDraftId);
+        if (needsObject) {
+          const of = copyDraftId || goalDraftId;
+          const id = minted.get(of);
+          if (copyDraftId) sending.collectorCopyId = id; else sending.goalId = id;
+        }
+        const unresolved = (needsBinder && !sending.binderId)
+          || (needsObject && !(sending.collectorCopyId || sending.goalId));
+        if (unresolved) {
           /* NO ID FOR A HANDLE THIS SAVE WAS SUPPOSED TO MINT, AND IT SAYS SO.
              This used to `continue`, with a comment claiming the only cause was
              an earlier refusal — which cannot happen, because a refusal returns
@@ -555,8 +748,10 @@ export default function CardSpecification({ card, context = null, state,
              `make-binder` that answered without an id, and skipping silently
              then recreates exactly the defect this batch fixed: the binder is
              made, the card is never filed, the panel closes saying nothing, and
-             the next Save makes a second binder. A missing id is a failure. */
-          adopt(minted);
+             the next Save makes a second binder. A missing id is a failure.
+             Since 3B-1 the same is true of an OBJECT's handle: a filing whose
+             thing was never minted must not be dropped on the floor either. */
+          adopt(minted, sentGoal);
           setDone(finished);
           setProblem(explain(step, "not-found", finished));
           setSaving(false);
@@ -568,7 +763,7 @@ export default function CardSpecification({ card, context = null, state,
              would change, the binder an entry would name — and continuing past
              a refusal is how a person ends up with a commit that half means
              something else. */
-          adopt(minted);
+          adopt(minted, sentGoal);
           setDone(finished);
           setProblem(explain(step, answer.refused, finished));
           setSaving(false);
@@ -582,13 +777,16 @@ export default function CardSpecification({ card, context = null, state,
            is — a client-side id — and because `phase4-collector-read-experiences`
            reads this surface for maps keyed on anything but an id, which is a
            guard worth keeping readable rather than widening. */
-        const draftId = step.draftId || (step.kind === "make-binder" ? step.binderDraftId : null);
+        const draftId = step.draftId || (declares ? binderDraftId || goalDraftId : null);
         if (draftId && answer && typeof answer.value === "string" && answer.value) {
           minted.set(draftId, answer.value);
         }
+        /* AND WHAT THE GOAL WAS CREATED AS, kept so `adopt` can record the tier
+           and criteria that were SENT rather than the ones now on screen. */
+        if (step.kind === "start-looking") sentGoal = { tier: step.tier, desired: step.desired };
         finished.push(step);
       }
-      adopt(minted);
+      adopt(minted, sentGoal);
       /* SAYING WHERE A NEW GOAL WENT (Phase 5 C5). Everything else this panel
          does is visible the moment it closes — a binder gains a card, Your
          Cards gains a copy, a tier changes in front of you. A GOAL is the one
@@ -615,7 +813,7 @@ export default function CardSpecification({ card, context = null, state,
       }
       onClose();
     } catch (error) {
-      adopt(minted);
+      adopt(minted, sentGoal);
       setDone(finished);
       setProblem(finished.length
         ? `MetYet lost contact partway. ${said(finished)} The rest was not saved — `
@@ -626,6 +824,83 @@ export default function CardSpecification({ card, context = null, state,
   };
 
   const shown = plan.steps.length;
+
+  /* ------------------------------------------------- WHERE THIS THING LIVES
+
+     ONE OBJECT, ONE HOME, SO ONE CHOICE. A `select` rather than the checkbox
+     list this replaced, because a tick-many control beside a thing that has one
+     home or none offers a state the domain refuses — and because `fileObject`
+     is already the move, so A → B is one answer changing and should read as one
+     gesture rather than two ticks.
+
+     UNFILED IS THE FIRST OPTION AND IT IS A REAL ANSWER. There is no Unfiled
+     binder, no default binder and no hidden membership: `null` here means the
+     plan emits nothing for a thing that has no home, and `unfile-object` for a
+     thing that had one.
+
+     A BINDER PUT AWAY IS NOT A DESTINATION, BUT IT IS STILL THE TRUTH. An
+     archived binder is not offered — nothing new may be filed into one — and
+     yet a thing already in one lives there, so when that is the current answer
+     it is shown, said plainly, and selectable only as itself. Choosing Unfiled
+     is how it comes out, which the domain allows from an archived binder for
+     exactly this reason. */
+  /* Decided across the whole set, because a label can only be known to
+     distinguish a copy by looking at its siblings. A draft with no id yet is
+     keyed on the object itself, which is what `copyLabels` falls back to. */
+  const labels = copyLabels(answers.copies.filter((d) => !d.removed));
+  const labelOf = (draft) => labels.get(draft.id == null ? draft : draft.id)
+    || "A copy of this card";
+
+  /* THE CARD-LEVEL ROWS FOR THIS CARD, read for one purpose only: to show them
+     and to let them go. Never to seed a home — see the section that renders
+     them. */
+  const legacyHere = rows(state && state.binderEntries)
+    .filter((e) => e.canonicalCardId === canonicalCardId);
+  const nameOfBinder = (id) => {
+    const b = rows(state && state.binders).find((x) => x.id === id);
+    return (b && text(b.name)) || "a binder";
+  };
+  /* REMOVING ONE IS ITS OWN GESTURE, NOT AN ANSWER THE PLAN CARRIES. It is the
+     only card-level act left in the product, it undoes something that was done
+     before this batch existed, and holding it in `answers` would put a legacy
+     row back into the difference the Save computes — which is exactly where it
+     does not belong. One press, one command, reported where it happened. */
+  const [dropping, setDropping] = useState(null);
+  const dropLegacy = async (binderId) => {
+    if (locked || dropping) return;
+    setDropping(binderId); setProblem(null);
+    try {
+      const answer = await onCommit({ kind: "unfile", binderId }, canonicalCardId);
+      if (answer && answer.ok === false) setProblem(explain({ kind: "unfile" }, answer.refused, []));
+    } catch (error) {
+      setProblem("MetYet lost contact, so that was not removed.");
+    } finally { setDropping(null); }
+  };
+
+  const archivedById = new Map(rows(state && state.binders)
+    .filter((b) => b.archivedAt).map((b) => [b.id, b]));
+  const BinderHome = ({ value, onPick, label }) => {
+    const away = value != null && archivedById.get(value);
+    return (
+      <label className="mcs-field">
+        <span>Binder</span>
+        <select value={value == null ? "" : value} disabled={locked}
+          aria-label={label}
+          onChange={(e) => onPick(e.target.value || null)}>
+          <option value="">Unfiled</option>
+          {binders.map((b) => (
+            <option key={b.id} value={b.id}>{text(b.name) || "A binder"}</option>
+          ))}
+          {answers.newBinders.map((nb) => (
+            <option key={nb.key} value={nb.key}>{nb.name} — new</option>
+          ))}
+          {away ? (
+            <option value={away.id}>{`${text(away.name) || "A binder"} (put away)`}</option>
+          ) : null}
+        </select>
+      </label>
+    );
+  };
 
   return (
     <div className="mcs-spec-sheet" role="dialog" aria-label="Card specification">
@@ -648,46 +923,6 @@ export default function CardSpecification({ card, context = null, state,
             {saved ? "Done" : "Cancel"}
           </button>
         </div>
-
-        {/* ------------------------------------------------- ORGANISATION */}
-        <section className="mcs-spec-part">
-          <h3 className="mcs-spec-ask">Which binders does this card belong in?</h3>
-          {binders.length || answers.newBinders.length ? (
-            <ul className="mcs-spec-binders">
-              {binders.map((b) => (
-                <li key={b.id}>
-                  <label className="mcs-check">
-                    <input type="checkbox" checked={answers.binders.has(b.id)}
-                      disabled={locked} onChange={() => toggleBinder(b.id)} />
-                    <span>{text(b.name) || "A binder"}</span>
-                  </label>
-                </li>
-              ))}
-              {/* A binder named in this session and not yet created. It is an
-                  answer, not a record: Cancel forgets it like everything else. */}
-              {answers.newBinders.map((name) => (
-                <li key={`new:${name}`}>
-                  <label className="mcs-check">
-                    <input type="checkbox" checked readOnly disabled />
-                    <span>{name} <span className="mcs-dim">— new</span></span>
-                  </label>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mcs-dim">
-              You haven&rsquo;t made any binders yet. A binder is your own grouping — it says
-              where a card belongs, not that you want it or own it.
-            </p>
-          )}
-          <p className="mcs-spec-new">
-            <input className="mcs-in" value={newBinderName} placeholder="New binder…"
-              aria-label="New binder name" disabled={locked}
-              onChange={(e) => setNewBinderName(e.target.value)} />
-            <button className="mcs-go quiet" type="button" disabled={locked || !newBinderName.trim()}
-              onClick={addBinder}>Add binder</button>
-          </p>
-        </section>
 
         {/* -------------------------------------------------------- WANT */}
         <section className="mcs-spec-part">
@@ -752,6 +987,16 @@ export default function CardSpecification({ card, context = null, state,
               stored fact ever read it. Specifying a card is saying which copy
               you want and how hard you are looking; who happens to hold one is
               a different question, answered properly elsewhere. */}
+
+          {/* AND WHERE THE HUNT ITSELF BELONGS (Batch 3B-1). Offered only when
+              there is a Goal to have a home — "Not looking" means there is no
+              thing for a binder to organise, and a binder may not manufacture
+              one. A card filed before this batch opens Unfiled here, and the
+              legacy line below says why rather than standing in for an answer. */}
+          {answers.want !== "none" ? (
+            <BinderHome value={answers.goalHome} onPick={setGoalHome}
+              label="Binder for what you're looking for" />
+          ) : null}
         </section>
 
         {/* --------------------------------------------------------- OWN */}
@@ -763,7 +1008,17 @@ export default function CardSpecification({ card, context = null, state,
                 const key = draft.id || draft.key;
                 const conflict = gradeConflictLine(draft);
                 return (
-                  <li key={key} className={draft.removed ? "gone" : null}>
+                  <li key={key} className={draft.removed ? "gone" : null}
+                    aria-label={labelOf(draft)}>
+                    {/* WHICH ONE OF THESE (Batch 3B-1). A copy row had no
+                        heading at all, which was survivable while a binder
+                        organised cards: there was nothing to do to one copy
+                        rather than another. Now each has a home, so the person
+                        has to be able to see which one they are moving. The
+                        facts when the facts distinguish, and otherwise a true
+                        sentence about the order they were added in — never an
+                        invented number and never the id. */}
+                    <p className="mcs-copy-which">{labelOf(draft)}</p>
                     {draft.removed ? (
                       <p className="mcs-dim">
                         This copy will be removed when you save.
@@ -835,6 +1090,13 @@ export default function CardSpecification({ card, context = null, state,
                             </button>
                           ))}
                         </p>
+                        {/* AND WHERE THIS ONE LIVES. Per copy, because each
+                            copy is its own thing: one kept in a Personal
+                            Collection and one offered in Trade Night is the
+                            case the card-level question could not say. */}
+                        <BinderHome value={draft.home}
+                          onPick={(home) => setCopyHome(key, home)}
+                          label={`Binder for ${labelOf(draft)}`} />
                         {draft.id ? (
                           <p>
                             <button className="mcs-linkish" type="button" disabled={locked}
@@ -858,6 +1120,81 @@ export default function CardSpecification({ card, context = null, state,
             </button>
           </p>
         </section>
+
+        {/* -------------------------------------------------- A NEW BINDER
+
+            ONE CREATOR FOR THE WHOLE PANEL, SO ONE NEW BINDER CAN HOLD SEVERAL
+            THINGS. A Collector naming "Mudkip Master Set" and then putting the
+            hunt and two copies in it should create ONE binder, and does: every
+            home control above offers it the moment it is named, and the plan
+            emits one `make-binder` with as many filings as chose it. */}
+        <section className="mcs-spec-part">
+          <h3 className="mcs-spec-ask">Need a new binder?</h3>
+          {answers.newBinders.length ? (
+            <ul className="mcs-spec-binders">
+              {answers.newBinders.map((nb) => (
+                <li key={nb.key}>
+                  <span>{nb.name} <span className="mcs-dim">— new</span></span>
+                  {/* AND IT CAN BE TAKEN BACK. These rows used to be ticked,
+                      read-only and disabled, so a typo could only be escaped by
+                      cancelling every other answer on the screen. */}
+                  <button className="mcs-linkish" type="button" disabled={locked}
+                    onClick={() => dropNewBinder(nb.key)}>
+                    Don&rsquo;t make it
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <p className="mcs-spec-new">
+            <input className="mcs-in" value={newBinderName} placeholder="New binder…"
+              aria-label="New binder name" disabled={locked}
+              onChange={(e) => setNewBinderName(e.target.value)} />
+            <button className="mcs-go quiet" type="button" disabled={locked || !newBinderName.trim()}
+              onClick={addBinder}>Add binder</button>
+          </p>
+          {!binders.length && !answers.newBinders.length ? (
+            <p className="mcs-dim">
+              You haven&rsquo;t made any binders yet. A binder is your own grouping — it says
+              where something belongs, not that you want it or own it.
+            </p>
+          ) : null}
+        </section>
+
+        {/* ------------------------------------------------- FILED BEFORE
+
+            A CARD FILED BEFORE BINDERS ORGANISED SPECIFIC THINGS (Batch 3B-1).
+
+            This is history, shown where its owner can act on it, and it is
+            NEVER read as an answer. Nothing above was seeded from one of these
+            rows — not even where this card has exactly one Goal and that Goal
+            is the only thing the row could have meant, because the row records
+            filing a CARD and nothing on it records a cause. Guessing would be
+            inventing a fact about somebody's collection.
+
+            So: it is visible, it is removable, and it cannot be moved. Moving
+            it would be asserting the very thing it cannot assert. Remove it and
+            give the thing you meant a home above. The panel does not add one
+            and no gesture anywhere in the product does any more. */}
+        {legacyHere.length ? (
+          <section className="mcs-spec-part">
+            <h3 className="mcs-spec-ask">Filed before</h3>
+            <ul className="mcs-spec-binders">
+              {legacyHere.map((e) => (
+                <li key={`${e.binderId}:${e.canonicalCardId}`}>
+                  <span>
+                    This card was filed in <strong>{nameOfBinder(e.binderId)}</strong> before
+                    Binders organised specific cards.
+                  </span>
+                  <button className="mcs-linkish" type="button" disabled={locked}
+                    onClick={() => dropLegacy(e.binderId)}>
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
 
         {problem ? <p className="mcs-add-problem" role="alert">{problem}</p> : null}
         {!problem && localProblem ? <p className="mcs-dim">{localProblem}</p> : null}
@@ -943,6 +1280,27 @@ const WHY = {
      Collector as a blank. */
   "invalid-disposition": "A copy has to say whether you'd part with it or "
     + "you're keeping it.",
+  /* WHERE SOMETHING LIVES (Batch 3B-1). A binder that has been put away takes
+     nothing new, and this is the one of the three below a Collector can
+     actually reach: the home control does not offer an archived binder, but the
+     list it was built from can go stale while the panel is open. */
+  "binder-archived": "That binder has been put away. Bring it back first, or "
+    + "choose another.",
+  /* AND THE TWO THAT SHOULD BE UNREACHABLE, written anyway for the reason
+     `invalid-tier` above is written: a refusal with no sentence behind it
+     reaches a Collector as a blank.
+     `invalid-target` means the filing named no thing, or two; the plan cannot
+     compose either. */
+  "invalid-target": "MetYet could not tell which of your things that was. "
+    + "Nothing was changed.",
+  /* `command-unavailable` IS THE VERSION-SKEW PATH, AND IT IS THE ONE REFUSAL A
+     CORRECT CLIENT CAN GET FROM A CORRECT SERVER. A browser tab left open
+     across a deploy that has not yet reached the server sends a command the
+     server does not offer, and the server answers in the command vocabulary
+     rather than failing — so the honest sentence is about the build, and the
+     fix is a reload. */
+  "command-unavailable": "This version of MetYet cannot file that yet. "
+    + "Reload the page and try again.",
 };
 const said = (finished) => (finished.length
   ? `${finished.map((s) => NAMES[s.kind] || "something was saved")

@@ -105,23 +105,24 @@ const EXPOSED_COMMANDS = Object.freeze([
      builds, and neither command has a control here. */
   "createBinder",                // Collector → Card Specification, "New binder…"
   "addBinderEntry",              // Collector → Card Specification, filing this card
-  /* WHERE AN OBJECT BELONGS, AND WHY IT IS NOT HERE (Batch 3A, closed in 3A's
-     own closure). `fileObject` and `unfileObject` are complete, tested domain
-     commands: the table, the invariants, the ownership rules, the removal
-     lifecycle and the refusals all exist and are exercised. They are
-     deliberately NOT in this list, because no product surface sends them —
-     the per-object Binder controls are 3B's, and 3A was forbidden to build
-     them.
+  /* WHERE AN OBJECT BELONGS (Batch 3B-1), AND NOW THERE IS A SCREEN. These file
+     one Goal or one CollectorCopy, and the Card Specification panel sends them
+     from a home control beside each of those things — the Binder view sends
+     them too, from `Move` and `Remove from Binder` on a filed object.
 
-     They WERE listed here for one commit, which was a mistake and is worth
-     leaving written down: this file's rule is that an entry names the screen
-     that sends it, and a door open ahead of its surface is reachable by an
-     authenticated caller through a path no screen can produce or exercise.
-     3B adds them back together with the controls that press them.
+     THEY WERE HERE ONCE BEFORE, FOR ONE COMMIT, AND THAT WAS WRONG. Batch 3A
+     built the commands and listed them while no screen sent either, which is
+     the one thing this file says not to do; 3A's own closure took them back out
+     and 3B-1 puts them back for the reason the rule gives — the product grew
+     the surface. The round trip is left written down because it is the rule
+     working, not a mistake to hide.
 
-     `addBinderEntry` above remains the only Binder-filing door, and it still
-     files a CARD. */
-  "removeBinderEntry",           // Collector → Card Specification, unfiling it
+     `addBinderEntry` above still files a CARD, and the shipping panel no longer
+     sends it. It stays on this list for one release so a browser tab opened
+     before this deploy keeps working; retiring the door is 3C's. */
+  "fileObject",                  // Collector → Card Specification / Binder, where this thing lives
+  "unfileObject",                // Collector → Card Specification / Binder, taking it out
+  "removeBinderEntry",           // Collector → the legacy line, removing a card filed before 3B
   "updateCollectorCopy",         // Collector → Card Specification, correcting a copy
   "updateGoalCriteria",          // Collector → Card Specification, which copy is wanted
   /* MANAGING A BINDER AS AN OBJECT (Phase 5 C3.4). C3.1 wrote these two and

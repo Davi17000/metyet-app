@@ -698,13 +698,18 @@ describe("D. the production door, and what is still shut", () => {
          membership, and never crosses to a partner. */
       "setCollectorCopyKept",
       "createBinder", "addBinderEntry", "removeBinderEntry",
-      /* AND NOT `fileObject` / `unfileObject` (Batch 3A, closed in 3A's own
-         closure). They file one GOAL or one COLLECTORCOPY and are complete
-         domain commands, but no screen sends them — the per-object controls
-         are 3B's — so they are not offered. They were listed here for one
-         commit while they were exposed; that was the mistake 3A's closure
-         corrected, and the list is back to what it was. `addBinderEntry`
-         above still files a CARD and is what every Collector screen sends. */
+      /* AND THE TWO BATCH 3B-1 OPENED, WITH THE CONTROLS THAT PRESS THEM.
+         `fileObject` and `unfileObject` file one GOAL or one COLLECTORCOPY,
+         which is the subject of organisation from this batch on: the Card
+         Specification panel sends them from a home control beside each thing,
+         and the Binder view from `Move` and `Remove from Binder`.
+
+         THEY WERE HERE FOR ONE COMMIT IN 3A AND WERE TAKEN BACK OUT, because
+         no screen sent either and this list's rule is that an entry names the
+         screen that sends it. 3B-1 is that screen. `addBinderEntry` above
+         still files a CARD, and the panel no longer sends it — the door stays
+         one release for a stale browser tab, and goes in 3C. */
+      "fileObject", "unfileObject",
       "updateCollectorCopy", "updateGoalCriteria",
       "renameBinder", "setBinderArchived",
       /* AND THE TWO C5 ADDED (Phase 5 C5). `updateInventoryCopy` and
@@ -732,7 +737,7 @@ describe("D. the production door, and what is still shut", () => {
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
     ].sort()), "the production surface is not what C3.4 declared");
-    eq(EXPOSED_COMMANDS.length, 23);
+    eq(EXPOSED_COMMANDS.length, 25);
     for (const name of EXPOSED_COMMANDS) {
       assert(C.COMMAND_NAMES.includes(name), `${name} is not a command`);
     }
@@ -937,11 +942,20 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
     const bindB = (await post(ctx.app, "casey", "createBinder", { name: "Keepers" })).json().value;
     await post(ctx.app, "casey", "createBinder", { name: "Untouched" });
     await want(ctx.app, "casey", made.mudkip, "secondary", { desired: { grade: "Raw", condition: "Lightly Played" } });
+    /* RE-PINNED (Batch 3B-1): A CARD IS NO LONGER IN TWO BINDERS, BECAUSE A
+       CARD IS NO LONGER WHAT IS IN A BINDER. Two card-level rows are kept so
+       the legacy line is part of "everything on it", and the THINGS are filed
+       separately — the hunt in one binder, one copy in the other — which is the
+       case the card-level answer could not express at all. */
     await post(ctx.app, "casey", "addBinderEntry", { binderId: bindA, canonicalCardId: made.mudkip });
-    await post(ctx.app, "casey", "addBinderEntry", { binderId: bindB, canonicalCardId: made.mudkip });
     await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "PSA 9", cert: "PSA 111", market: 500, offered: true });
     await own(ctx.app, "casey",
       { canonicalCardId: made.mudkip, grade: "Raw", condition: "Damaged", cert: "SER-2", keeping: true });
+    const w0 = await load(ctx);
+    await post(ctx.app, "casey", "fileObject",
+      { binderId: bindA, goalId: w0.goals.find((g) => g.canonicalCardId === made.mudkip).id });
+    await post(ctx.app, "casey", "fileObject",
+      { binderId: bindB, collectorCopyId: w0.collectorCopies.find((c) => c.cert === "PSA 111").id });
 
     const { r, state } = await browsing(ctx, async () => ({ ok: true }));
     await openCard(r, "Mudkip");
@@ -950,7 +964,19 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
     /* The panel reads the projection: assert the ANSWERS it derived, which is
        what the controls are bound to, rather than scraping labels. */
     const answers = SPEC.initialAnswers(state, made.mudkip);
-    eq(json([...answers.binders].sort()), json([bindA, bindB].sort()), "binder membership");
+    /* RE-PINNED: `answers.binders` is gone with the card-level question. Each
+       thing opens showing its OWN home, read from the memberships the server
+       sent — and the copy nobody filed opens Unfiled, which is an answer and
+       not a blank. */
+    eq(answers.goalHome, bindA, "the hunt opens somewhere else");
+    const byCert = new Map(answers.copies.map((c) => [c.cert, c]));
+    eq(byCert.get("PSA 111").home, bindB, "the offered copy opens somewhere else");
+    eq(byCert.get("SER-2").home, null, "a copy nobody filed opens filed");
+    /* AND NOT FROM THE LEGACY ROW. There is a card-level row in bindA for this
+       card; the second copy is still Unfiled, because that row says a CARD was
+       filed and is never read as a thing's home. */
+    assert(state.binderEntries.some((e) => e.binderId === bindA
+      && e.canonicalCardId === made.mudkip), "the fixture has no legacy row");
     eq(answers.want, "secondary", "the tier");
     eq(json(answers.desired), json({ grade: "Raw", condition: "Lightly Played" }), "the criteria");
     eq(answers.copies.length, 2, "both copies");
@@ -967,6 +993,8 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
 
     assert(/Mudkip Collection/.test(shown) && /Keepers/.test(shown) && /Untouched/.test(shown),
       "every binder is offered, not only the ones this card is in: " + shown);
+    /* And Unfiled is offered as a value rather than being the absence of one. */
+    assert(/Unfiled/.test(shown), shown);
     const keeping = buttons(r).find((b) => instText(b).trim() === "Keeping an eye out");
     eq(keeping.props["aria-pressed"], true, "the tier was not shown");
     /* And Save has nothing to do, because nothing has been changed. */
@@ -1005,11 +1033,15 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
     const { r, calls } = await browsing(ctx, async (step) => { sent.push(step); return { ok: true }; });
 
     await openCard(r, "Mudkip");
-    /* Tick a binder, choose a want, state a grade, add a copy, offer it. */
-    const box = r.root.findAll((n) => n.type === "input").find((n) => n.props.type === "checkbox");
-    await TR.act(async () => { box.props.onChange({ target: { checked: true } }); });
+    /* RE-PINNED (Batch 3B-1): there is no binder checkbox, because a card is
+       not what a binder holds. The gesture it is standing in for is the same —
+       choose a home — and it is now done to the thing, after the thing exists. */
     await press(r, "Actively hunting");
     await choose(r, "Grade wanted", "PSA 10");
+    const home = r.root.findAll((n) => n.type === "select")
+      .find((n) => /^Binder/.test(String(n.props["aria-label"] || "")));
+    assert(home, "the hunt has no home control: " + texts(r));
+    await TR.act(async () => { home.props.onChange({ target: { value: "Mudkip Collection" } }); });
     await press(r, "I own one of these");
     await choose(r, "Grade", "PSA 9");
     await press(r, "Cancel");
@@ -1115,6 +1147,11 @@ describe("F. one button, a sequence of commands that already existed", () => {
       : { ok: false, refused: res.json().error.refused });
     switch (step.kind) {
       case "make-binder": return answer(await send("createBinder", { name: step.name }));
+      /* BATCH 3B-1, mapped as `SignIn.jsx` maps them. */
+      case "file-object": return answer(await send("fileObject",
+        { binderId: step.binderId, goalId: step.goalId, collectorCopyId: step.collectorCopyId }));
+      case "unfile-object": return answer(await send("unfileObject",
+        { goalId: step.goalId, collectorCopyId: step.collectorCopyId }));
       case "file": return answer(await send("addBinderEntry", { binderId: step.binderId, canonicalCardId }));
       case "unfile": return answer(await send("removeBinderEntry", { binderId: step.binderId, canonicalCardId }));
       case "wanted-copy": return answer(await send("updateGoalCriteria", { goalId: step.goalId, desired: step.desired }));
@@ -1129,15 +1166,24 @@ describe("F. one button, a sequence of commands that already existed", () => {
     }
   };
 
-  const ORDER = ["make-binder", "file", "unfile", "wanted-copy", "how-hard",
-    "stop-looking", "start-looking", "correct-copy", "offering", "forget-copy", "record-copy"];
+  /* RE-PINNED (Batch 3B-1): `keeping` was already missing from this list, and
+     the two object-level kinds join it. `file` and `unfile` stay for the
+     entrance's sake — see the exception below. */
+  const ORDER = ["make-binder", "file", "unfile", "file-object", "unfile-object",
+    "wanted-copy", "how-hard", "stop-looking", "start-looking", "correct-copy",
+    "offering", "keeping", "forget-copy", "record-copy"];
 
   test("the panel and the entrance name exactly the same steps", () => {
     const entrance = code("client/sign-in/SignIn.jsx");
     const panel = code("client/collector/CardSpecification.jsx");
     for (const kind of ORDER) {
       assert(new RegExp(`case "${kind}"`).test(entrance), `the entrance cannot map "${kind}"`);
-      assert(new RegExp(`kind: "${kind}"`).test(panel) || kind === "unfile" || kind === "file",
+      /* `file` IS NO LONGER PRODUCED BY THE PANEL AT ALL (Batch 3B-1), which is
+         where new bare-card filing ends. The entrance still maps it so a
+         browser tab opened before this deploy keeps working, and `unfile` is
+         still produced — the legacy line's Remove is the one card-level gesture
+         left. So the exception shrinks to `file` alone. */
+      assert(new RegExp(`kind: "${kind}"`).test(panel) || kind === "file",
         `the panel never produces "${kind}"`);
     }
     /* And nothing the panel can produce is unmapped. */
@@ -1153,51 +1199,65 @@ describe("F. one button, a sequence of commands that already existed", () => {
     const state0 = await view(ctx.app, "casey");
     const answers = {
       ...SPEC.initialAnswers(state0, made.mudkip),
-      newBinders: ["Mudkip Collection"],
+      newBinders: [{ key: "nb-1", name: "Mudkip Collection" }],
       want: "primary",
       desired: { grade: "Raw", condition: "Near Mint" },
+      /* RE-PINNED (Batch 3B-1): BOTH things go into the binder being made in
+         this same Save, which is the case one new binder must serve with one
+         `make-binder`. */
+      goalHome: "nb-1",
       copies: [{ ...{ id: null, grade: "PSA 9", condition: "", cert: "PSA 900", market: "500",
-        disposition: "offered", removed: false }, key: "new-1" }],
+        disposition: "offered", removed: false, home: "nb-1" }, key: "new-1" }],
     };
     const plan = SPEC.planFrom(state0, made.mudkip, answers);
-    /* RE-PINNED (Batch 3A), AND THE DEFECT IS IN THE DIFFERENCE. The panel used
-       to emit `make-binder` for a brand-new binder and NOTHING ELSE: the binder
-       was created and this card was never put in it, because the filing step
-       could only name a binder that already had an id. A new binder now emits
-       both. The `file` is last here only because this fixture has no
-       corrections — section 3 of `planFrom` puts filing in the group that can
-       fail only on its own terms, AHEAD of the three a deal can refuse, which
-       is what the next test measures. */
-    eq(plan.steps.map((s) => s.kind).join(","), "make-binder,record-copy,start-looking,file",
+    /* RE-PINNED (Batch 3B-1), AND THE DEFECT 3A FIXED IS STILL THE POINT. 3A's
+       version of this was `make-binder,record-copy,start-looking,file`: one
+       card-level filing for the whole card, which was the only thing the panel
+       could say. Now each THING is filed, immediately after the step that
+       creates it, so a binder made in this Save gets both of them and a sibling
+       refusal cannot cost the one that already landed. */
+    eq(plan.steps.map((s) => s.kind).join(","),
+      "make-binder,record-copy,file-object,start-looking,file-object",
       "the sequence is not what the panel declared");
 
     const send = runStep(ctx, "casey");
-    /* BINDING THE MINTED ID, BECAUSE THIS TEST DRIVES `planFrom` RATHER THAN
-       THE COMPONENT. A new binder's `file` step carries a draft handle, not an
-       id; `commit` in CardSpecification resolves it from the answer the
-       `make-binder` step returned, and the component doing that is proved
-       against the real mounted panel in phase5-binder-object-membership. Here
-       the harness stands in for it, in three lines, the same way the retry test
-       below stands in for `adopt`. */
+    /* BINDING THE MINTED IDS, BECAUSE THIS TEST DRIVES `planFrom` RATHER THAN
+       THE COMPONENT — AND THERE ARE TWO KINDS NOW. A filing names a destination
+       and a thing, and in this Save neither exists when the plan is built;
+       `commit` in CardSpecification resolves both, and the component doing it is
+       proved against the real mounted panel in phase5-binder-object-membership.
+       Here the harness stands in for it, the same way the retry test below
+       stands in for `adopt`. */
     const minted = new Map();
     for (const step of plan.steps) {
-      const needsId = step.binderDraftId && step.kind !== "make-binder";
-      const sending = needsId ? { ...step, binderId: minted.get(step.binderDraftId) } : step;
-      assert(!needsId || sending.binderId, `${step.kind} named an unresolved handle`);
+      const declares = step.kind === "make-binder" || step.kind === "start-looking";
+      const sending = { ...step };
+      if (step.binderDraftId && !declares) sending.binderId = minted.get(step.binderDraftId);
+      if (step.copyDraftId && !declares) sending.collectorCopyId = minted.get(step.copyDraftId);
+      if (step.goalDraftId && !declares) sending.goalId = minted.get(step.goalDraftId);
+      if (step.kind === "file-object") {
+        assert(sending.binderId, `${step.kind} named an unresolved binder`);
+        assert(sending.goalId || sending.collectorCopyId, `${step.kind} named an unresolved thing`);
+      }
       const answer = await send(sending, made.mudkip);
       eq(answer.ok, true, `${step.kind}: ${answer.refused}`);
-      if (step.binderDraftId && step.kind === "make-binder") minted.set(step.binderDraftId, answer.value);
+      const handle = step.draftId || (declares ? step.binderDraftId || step.goalDraftId : null);
+      if (handle && answer.value) minted.set(handle, answer.value);
     }
 
     const w = await load(ctx);
     eq(w.binders.length, 1);
     eq(w.binders[0].name, "Mudkip Collection");
-    /* THE CARD IS ACTUALLY IN IT. Before Batch 3A this was zero, and every
-       assertion in this test passed anyway — the binder existed, so the panel
-       looked right, and the card was simply not in it. */
-    eq(w.binderEntries.length, 1, "the new binder was created empty");
-    eq(w.binderEntries[0].binderId, w.binders[0].id, "the card was filed somewhere else");
-    eq(w.binderEntries[0].canonicalCardId, made.mudkip, "a different card was filed");
+    /* BOTH THINGS ARE ACTUALLY IN IT, AND NO CARD WAS FILED. Before 3A the
+       binder was created empty and every other assertion here passed anyway;
+       before 3B-1 a card-level row stood in for both things at once. */
+    eq(w.binderEntries.length, 0, "the shipping panel created a card-level row");
+    eq(w.binderMemberships.length, 2, "the new binder was created empty");
+    for (const m of w.binderMemberships) {
+      eq(m.binderId, w.binders[0].id, "something was filed somewhere else");
+    }
+    eq(w.binderMemberships.filter((m) => m.goalId).length, 1, "the hunt was not filed");
+    eq(w.binderMemberships.filter((m) => m.collectorCopyId).length, 1, "the copy was not filed");
     eq(w.goals.length, 1);
     eq(json(w.goals[0].desired), json({ grade: "Raw", condition: "Near Mint" }));
     eq(w.collectorCopies.length, 1);
@@ -1251,39 +1311,58 @@ describe("F. one button, a sequence of commands that already existed", () => {
 
     const state = await view(ctx.app, "casey");
     const answers = {
-      binders: new Set([bind2]), newBinders: ["Brand New"],
+      /* RE-PINNED (Batch 3B-1): A HOME BELONGS TO A THING. `binders` is gone
+         with the card-level question; the hunt goes into the binder that
+         already exists, the stored copy into the one being created in this very
+         Save, and the new copy into the same new binder — which is the "one new
+         binder, several new things" case, and it must produce ONE
+         `make-binder`. */
+      newBinders: [{ key: "nb-1", name: "Brand New" }],
       want: "primary", desired: { grade: "PSA 10", condition: "" },
+      goalHome: bind2,
+      madeGoal: null,
       copies: [
-        { id: copyId, grade: "PSA 9", condition: "", cert: "B", market: "", disposition: "offered", removed: false },
+        { id: copyId, grade: "PSA 9", condition: "", cert: "B", market: "", disposition: "offered",
+          removed: false, home: "nb-1" },
         /* RE-PINNED: a new copy's draft must name a disposition — the panel will
            not let one be saved without one — so the sentinel is gone from here. */
         { id: null, key: "new-1", grade: "Raw", condition: "Damaged", cert: "", market: "",
-          disposition: "keeping", removed: false },
+          disposition: "keeping", removed: false, home: "nb-1" },
       ],
     };
     const kinds = SPEC.planFrom(state, made.mudkip, answers).steps.map((s) => s.kind);
-    /* RE-PINNED (Batch 3A): TWO filings, because there are two binders. "New
-       Home" already exists and is ticked, and "Brand New" is being created in
-       this same Save — and before 3A only the first of those produced a `file`,
-       so the binder the person made in this very plan was left empty. Two
-       binders, two filings is the rule stated as a count. */
+    /* RE-PINNED (Batch 3B-1), AND THE ORDER MOVED FOR A REASON, NOT ONLY THE
+       SUBJECT. A new thing's filing is emitted IMMEDIATELY after the step that
+       creates it, because a filing that names a new object cannot be sent until
+       that object's id exists — so leaving it in a block at the end would mean a
+       second new copy being refused costs the FIRST one its binder, for a
+       reason that has nothing to do with where it belongs. Things that already
+       exist are filed in the old position, which is all they ever needed. */
     eq(kinds.join(","),
-      "make-binder,offering,record-copy,file,file,unfile,correct-copy,wanted-copy,how-hard",
+      "make-binder,offering,record-copy,file-object,file-object,file-object,"
+      + "correct-copy,wanted-copy,how-hard",
       "the commit order moved");
-    /* STATED AS THE RULE RATHER THAN AS THIS FIXTURE'S ARITHMETIC. The first
-       version counted `file` against `make-binder + 1`, which holds here only
-       because there happens to be exactly one existing unfiled ticked binder —
-       it would have passed just as well if BOTH filings had named the new
-       binder and the existing one had been skipped, which is the half of the
-       defect it was supposed to rule out. So it asserts what the filings
-       actually name: every ticked binder that does not already hold this card,
-       and every binder being created in this same Save, exactly once each. */
+    /* STATED AS THE RULE RATHER THAN AS THIS FIXTURE'S ARITHMETIC: what the
+       filings actually NAME. Three things with a home, three filings — the
+       hunt, the stored copy and the new copy — and the two that chose the new
+       binder both name the same handle, so one `make-binder` serves both. */
     const plan = SPEC.planFrom(state, made.mudkip, answers).steps;
-    const filings = plan.filter((st) => st.kind === "file");
-    eq(filings.filter((st) => st.binderId === bind2).length, 1, "the existing binder was not filed into");
-    eq(filings.filter((st) => st.binderDraftId === "new-binder-0").length, 1,
-      "the binder being created in this Save was not filed into");
-    eq(filings.length, 2, `the plan filed ${JSON.stringify(filings)}`);
+    const filings = plan.filter((st) => st.kind === "file-object");
+    eq(filings.length, 3, `the plan filed ${JSON.stringify(filings)}`);
+    eq(plan.filter((st) => st.kind === "make-binder").length, 1,
+      "one new binder chosen by two things made two binders");
+    /* The hunt here is a Goal that already existed, so it is filed in block 3
+       by its real id rather than by a handle. */
+    eq(filings.filter((st) => st.goalId).length, 1, "the hunt was not filed");
+    eq(filings.filter((st) => st.goalDraftId).length, 0, "an existing Goal was filed by a handle");
+    eq(filings.filter((st) => st.collectorCopyId === copyId && st.binderDraftId === "nb-1").length, 1,
+      "the stored copy did not go into the binder being made");
+    eq(filings.filter((st) => st.copyDraftId === "new-1" && st.binderDraftId === "nb-1").length, 1,
+      "the new copy did not go into the binder being made");
+    /* AND NO CARD-LEVEL FILING, ANYWHERE. This is where new bare-card filing
+       ends: the shipping panel cannot plan one. */
+    eq(plan.filter((st) => st.kind === "file" || st.kind === "unfile").length, 0,
+      `the panel still plans card-level filing: ${JSON.stringify(plan)}`);
     /* Stated as the properties rather than only as the literal, so the reasons
        survive a future reordering of the middle. */
     eq(kinds[0], "make-binder", "a container that names no card is not first");
@@ -1294,7 +1373,7 @@ describe("F. one button, a sequence of commands that already existed", () => {
        fixing, because `correct-copy` is deal-refusable too. The line is
        refusable-for-itself versus refusable-for-a-deal. */
     const DEAL_CAN_REFUSE = ["correct-copy", "wanted-copy", "how-hard"];
-    const ONLY_ITSELF = ["make-binder", "offering", "record-copy", "file", "unfile"];
+    const ONLY_ITSELF = ["make-binder", "offering", "record-copy", "file-object"];
     for (const safe of ONLY_ITSELF) {
       assert(kinds.includes(safe), safe + " is missing, so the next line asserts nothing");
       for (const risky of DEAL_CAN_REFUSE) {
@@ -1304,19 +1383,32 @@ describe("F. one button, a sequence of commands that already existed", () => {
           + "work that had nothing to do with it");
       }
     }
-    assert(kinds.includes("file"), "this plan no longer files anything, so the "
+    assert(kinds.includes("file-object"), "this plan no longer files anything, so the "
       + "ordering rule below is not being tested at all");
-    /* A new copy is recorded before it can be filed alongside; the corrections
-       and the Goal edits deliberately come after, so a refused one cannot cost
-       the filing. */
-    for (const saying of ["record-copy", "offering"]) {
-      assert(kinds.indexOf(saying) < kinds.indexOf("file"),
-        saying + " should precede filing, so a stopped sequence reads in order");
+    /* A THING IS CREATED BEFORE IT IS FILED, AND THIS IS NO LONGER MERELY
+       TIDY. A filing that names a new object cannot be SENT before the step
+       that mints its id, so the rule the old test stated as an aesthetic is now
+       structural — and it is asserted per thing rather than over the whole
+       plan, because each new thing is filed immediately after its own creation
+       step and a global index comparison would not notice if one pair were
+       inverted. */
+    for (const st of plan.filter((x) => x.kind === "file-object" && (x.copyDraftId || x.goalDraftId))) {
+      const creates = st.copyDraftId
+        ? plan.findIndex((x) => x.kind === "record-copy" && x.draftId === st.copyDraftId)
+        : plan.findIndex((x) => x.kind === "start-looking" && x.goalDraftId === st.goalDraftId);
+      assert(creates >= 0, `nothing in the plan creates ${JSON.stringify(st)}`);
+      assert(creates < plan.indexOf(st),
+        `a filing precedes the step that mints its thing: ${JSON.stringify(st)}`);
+      eq(plan.indexOf(st), creates + 1,
+        `a filing is not adjacent to its creation, so a sibling refusal can cost it: ${
+          JSON.stringify(st)}`);
     }
-    /* Unfiling after filing so a binder swap never passes through a moment of
-       belonging nowhere. */
-    assert(kinds.indexOf("unfile") > kinds.indexOf("file"),
-      "a card is unfiled before it is filed");
+    /* A binder is created before anything names it. */
+    for (const st of plan.filter((x) => x.binderDraftId && x.kind !== "make-binder")) {
+      const made = plan.findIndex((x) => x.kind === "make-binder" && x.binderDraftId === st.binderDraftId);
+      assert(made >= 0 && made < plan.indexOf(st),
+        `something names a binder before it is made: ${JSON.stringify(st)}`);
+    }
   });
 
   test("a partial commit is legible: what stood, what did not, and no false success", async () => {
@@ -1324,7 +1416,8 @@ describe("F. one button, a sequence of commands that already existed", () => {
     const made = await cards(ctx);
     const state0 = await view(ctx.app, "casey");
     const answers = { ...SPEC.initialAnswers(state0, made.mudkip),
-      newBinders: ["Mudkip Collection"], want: "primary",
+      newBinders: [{ key: "nb-1", name: "Mudkip Collection" }], want: "primary",
+      goalHome: "nb-1",
       desired: { grade: "Raw", condition: "" } };   // Raw with no condition: refused
     const plan = SPEC.planFrom(state0, made.mudkip, answers);
     const send = runStep(ctx, "casey");
@@ -1365,31 +1458,44 @@ describe("F. one button, a sequence of commands that already existed", () => {
     const made = await cards(ctx);
     const send = runStep(ctx, "casey");
     const answers = {
-      binders: new Set(), newBinders: ["Mudkip Collection"],
+      newBinders: [{ key: "nb-1", name: "Mudkip Collection" }],
       want: "primary", desired: { grade: "Raw", condition: "" },   // refused on the first pass
+      goalHome: "nb-1", madeGoal: null,
       copies: [{ id: null, key: "new-1", grade: "PSA 9", condition: "", cert: "C1",
-        market: "", disposition: "offered", removed: false }],
+        market: "", disposition: "offered", removed: false, home: "nb-1" }],
     };
 
-    /* FIRST PRESS. The binder is made; the Goal is refused; the sequence stops,
-       so the copy is never sent. */
+    /* FIRST PRESS. The binder is made, the copy lands AND IS FILED, the Goal is
+       refused, the sequence stops — so the Goal's own filing is never sent. */
     const first = SPEC.planFrom(await view(ctx.app, "casey"), made.mudkip, answers);
-    /* RE-PINNED (Batch 3A): a new binder now also emits the `file` that puts
-       this card in it. It is last, so it is below the refusal and never runs on
-       this press — which is exactly what the second plan below has to notice. */
-    eq(first.steps.map((s) => s.kind).join(","), "make-binder,record-copy,start-looking,file");
+    /* RE-PINNED (Batch 3B-1), AND THE INTERLEAVING IS WHY. 3A's version put one
+       card-level `file` last, below the refusal, so nothing was filed at all on
+       this press. Each thing is now filed immediately after it is created, so
+       the copy that DID land keeps its binder — which is the whole reason the
+       order moved. */
+    eq(first.steps.map((s) => s.kind).join(","),
+      "make-binder,record-copy,file-object,start-looking,file-object");
+    const minted = new Map();
     const doneFirst = [];
     for (const step of first.steps) {
-      const answer = await send(step, made.mudkip);
+      const declares = step.kind === "make-binder" || step.kind === "start-looking";
+      const sending = { ...step };
+      if (step.binderDraftId && !declares) sending.binderId = minted.get(step.binderDraftId);
+      if (step.copyDraftId && !declares) sending.collectorCopyId = minted.get(step.copyDraftId);
+      if (step.goalDraftId && !declares) sending.goalId = minted.get(step.goalDraftId);
+      const answer = await send(sending, made.mudkip);
       if (!answer.ok) break;
+      const handle = step.draftId || (declares ? step.binderDraftId || step.goalDraftId : null);
+      if (handle && answer.value) minted.set(handle, answer.value);
       doneFirst.push(step.kind);
     }
-    /* RE-PINNED WITH THE ORDER. Ownership now precedes demand, so the copy
-       lands BEFORE the Goal is refused — which is the point of that order: an
-       independent ownership fact is not lost to an unrelated Goal problem. */
-    eq(doneFirst.join(","), "make-binder,record-copy");
+    /* RE-PINNED WITH THE ORDER. Ownership precedes demand, so the copy lands
+       before the Goal is refused — and now so does its filing. */
+    eq(doneFirst.join(","), "make-binder,record-copy,file-object");
     eq((await load(ctx)).binders.length, 1);
     eq((await load(ctx)).collectorCopies.length, 1, "the copy was lost to the Goal refusal");
+    eq((await load(ctx)).binderMemberships.length, 1,
+      "the copy that landed lost its binder to an unrelated refusal");
 
     /* The person fixes the criteria and presses Save again. The panel has
        adopted the projection the server returned, so the binder it made is now
@@ -1403,27 +1509,38 @@ describe("F. one button, a sequence of commands that already existed", () => {
        test drives `planFrom` rather than the component. */
     const mintedId = state1.collectorCopies[0].id;
     assert(mintedId, "the copy did not land on the first press");
-    const fixed = { ...answers, binders: new Set([bindId]), newBinders: [],
-      copies: answers.copies.map((c) => ({ ...c, id: mintedId })),
+    /* AND `adopt` SETTLES THE HOMES TOO (Batch 3B-1): a chosen home that named
+       the binder being made now names the binder that WAS made. Done here the
+       same way, because this test drives `planFrom` rather than the component. */
+    const fixed = { ...answers, newBinders: [], goalHome: bindId,
+      copies: answers.copies.map((c) => ({ ...c, id: mintedId, home: bindId })),
       desired: { grade: "Raw", condition: "Near Mint" } };
     const second = SPEC.planFrom(state1, made.mudkip, fixed);
     /* What this test is really about is unchanged: the second plan contains no
        `make-binder`, because that part already succeeded — and no `record-copy`
        either, because the copy landed on the first press and the panel bound the
-       id the server minted. Only the Goal and the filing are left. */
-    eq(second.steps.map((s) => s.kind).join(","), "start-looking,file",
+       id the server minted. AND NO SECOND FILING FOR THE COPY, because the one
+       that already ran put it exactly where the answer still says it goes. Only
+       the Goal and the Goal's home are left. */
+    eq(second.steps.map((s) => s.kind).join(","), "start-looking,file-object",
       "the retry re-sent work that had already succeeded");
     assert(!second.steps.some((st) => st.kind === "make-binder"),
       "the retry tried to create the binder again");
     for (const step of second.steps) {
-      const answer = await send(step, made.mudkip);
+      const declares = step.kind === "start-looking";
+      const sending = { ...step };
+      if (step.goalDraftId && !declares) sending.goalId = minted.get(step.goalDraftId);
+      const answer = await send(sending, made.mudkip);
       eq(answer.ok, true, `${step.kind}: ${answer.refused}`);
+      const handle = declares ? step.goalDraftId : null;
+      if (handle && answer.value) minted.set(handle, answer.value);
     }
 
     /* EXACTLY ONE OF EACH. */
     const w = await load(ctx);
     eq(w.binders.length, 1, "the retry created a second binder");
-    eq(w.binderEntries.length, 1);
+    eq(w.binderEntries.length, 0, "a card-level row was created");
+    eq(w.binderMemberships.length, 2, "the retry lost or duplicated a home");
     eq(w.goals.length, 1);
     eq(w.collectorCopies.length, 1, "the retry created a second physical copy");
     eq(w.collectorCopies[0].cert, "C1");

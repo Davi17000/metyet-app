@@ -175,7 +175,7 @@ const rowOf = async (ctx, invId) =>
 describe("A. the door opened by exactly two", () => {
 
   test("the allow-list, and the two C5 itself added", async () => {
-    eq(EXPOSED_COMMANDS.length, 23, "the production surface is not the size C5 intended");
+    eq(EXPOSED_COMMANDS.length, 25, "the production surface is not the size C5 intended");
     for (const name of ["updateInventoryCopy", "removeInventoryCopy"]) {
       assert(EXPOSED_COMMANDS.includes(name), `${name} is not offered`);
     }
@@ -224,15 +224,14 @@ describe("A. the door opened by exactly two", () => {
     eq(before.length, 16, "the baseline was not sixteen");
     const added = EXPOSED_COMMANDS.filter((n) => !before.includes(n));
     const lost = before.filter((n) => !EXPOSED_COMMANDS.includes(n));
-    /* C5's own two, plus the three the qualification batch added on top. Batch
-       3A briefly added `fileObject` and `unfileObject` here and 3A's own
-       closure took them back out, because no screen sends either and this
-       delta is measured against the file as dc2fd25 actually had it — so a
-       door opening anywhere still fails here, which is the whole reason it
-       reads git rather than a literal. That is the guard doing its job twice:
-       once when the doors opened, once when they shut. */
-    eq(json(added.sort()), json(["addCopyPhotos", "endReview", "removeInventoryCopy",
-      "requestPhotos", "reviewCopy", "setCollectorCopyKept", "updateInventoryCopy"]),
+    /* C5's own two, plus the three the qualification batch added on top, plus
+       the two Batch 3B-1 opened with the per-object controls that press them.
+       3A added that pair briefly and 3A's own closure took it back out, so this
+       guard has now fired three times for three different right reasons — which
+       is the whole point of measuring the delta against the file as dc2fd25
+       actually had it rather than against a literal. */
+    eq(json(added.sort()), json(["addCopyPhotos", "endReview", "fileObject", "removeInventoryCopy",
+      "requestPhotos", "reviewCopy", "setCollectorCopyKept", "unfileObject", "updateInventoryCopy"]),
       "a door was opened that no batch declared");
     eq(json(lost), json([]), "a door somebody else opened was closed");
   });

@@ -70,7 +70,7 @@ import CardArt from "../../card-art.jsx";
 import CardSpecification from "../CardSpecification.jsx";
 import { rows, indexById, text, day, money, plural, cardTitle, cardSetLine,
   gradeLine, isGraded, gradeConflictLine, cardMarks, statusLabel, photoNote,
-  tierIntent, tierLabel, byRecency } from "../present.js";
+  tierIntent, tierLabel, byRecency, criteriaLine, copyLabels } from "../present.js";
 
 /* The four collection views, named once. Binders reads this to build its own
    selector, so the two cannot disagree about what exists.
@@ -131,11 +131,29 @@ const isUnidentified = (key) => key.startsWith("copy:");
 const isCanonical = (key) => !isLegacy(key) && !isUnidentified(key);
 
 export default function Collection({ state, view = { kind: "all" }, query = "",
-  onBrowseCards = null, onSpecify = null, descriptions = null }) {
+  onBrowseCards = null, onSpecify = null, descriptions = null,
+  onFileObject = null, onUnfileObject = null }) {
   const copies = rows(state && state.collectorCopies);
   const goals = rows(state && state.goals);
   const entries = rows(state && state.binderEntries);
   const catalog = indexById(state && state.catalog);
+  /* WHAT IS FILED WHERE (Batch 3B-1). A membership names exactly one Goal or
+     one CollectorCopy, so a binder's contents are OBJECTS, and the two maps
+     below cannot overlap. `binderEntries` above is still read, for the one
+     thing it is: the card-level rows filed before this batch, shown as history
+     and never read as an object's home. */
+  const memberships = rows(state && state.binderMemberships);
+  const binderId = (view && view.kind) === "binder" ? (view && view.binderId) : null;
+  const filedHere = useMemo(() => {
+    const goalIds = new Set();
+    const copyIds = new Set();
+    if (!binderId) return { goalIds, copyIds };
+    for (const m of memberships) {
+      if (m.binderId !== binderId) continue;
+      if (m.goalId) goalIds.add(m.goalId); else if (m.collectorCopyId) copyIds.add(m.collectorCopyId);
+    }
+    return { goalIds, copyIds };
+  }, [binderId, memberships]);
   /* `interests` AND THE PARTNER-NAME INDEX ARE GONE FROM THIS FILE. They
      existed only for the "Interested · <shop>" line removed below, which read
      rows no exposed command can create. The durable concept is untouched. */
@@ -146,6 +164,66 @@ export default function Collection({ state, view = { kind: "all" }, query = "",
   }
 
   const [specifying, setSpecifying] = useState(null);
+  const [busyObject, setBusyObject] = useState(null);
+  const [objectProblem, setObjectProblem] = useState(null);
+
+  /* MOVE AND REMOVE FROM BINDER (Batch 3B-1), ON THE OBJECT AND NOWHERE ELSE.
+
+     A dropdown repeating the binder you are already looking at would be the
+     panel's control in the wrong place. So inside a binder the two gestures a
+     filed thing needs are the two it gets: send it somewhere else, or take it
+     out — one object, one action, one command each.
+
+     IT NAMES NO COMMAND. This is a presentation component and the Collector
+     surface's rule is that it calls what it was handed; `onFileObject` and
+     `onUnfileObject` come down from the shell, which is where every other
+     binding already lives. The guards that read this file for a command name
+     are right to, and they keep being right. */
+  const act = async (run, what) => {
+    if (busyObject) return;
+    setBusyObject(JSON.stringify(what)); setObjectProblem(null);
+    try {
+      const answer = await run();
+      if (answer && answer.ok === false) {
+        setObjectProblem(answer.refused === "binder-archived"
+          ? "That binder has been put away. Bring it back first, or choose another."
+          : "MetYet would not accept that. Nothing was changed.");
+      }
+    } catch (error) {
+      setObjectProblem("MetYet lost contact, so nothing was changed.");
+    } finally { setBusyObject(null); }
+  };
+  const elsewhere = rows(state && state.binders)
+    .filter((b) => !b.archivedAt && b.id !== binderId);
+  const ObjectDo = ({ what, label }) => {
+    const busy = busyObject === JSON.stringify(what);
+    return (
+      <p className="mcs-object-do">
+        {onFileObject && elsewhere.length ? (
+          <label className="mcs-field">
+            <span>Move</span>
+            <select value="" disabled={busy} aria-label={`Move ${label} to another binder`}
+              onChange={(e) => {
+                const to = e.target.value;
+                if (to) act(() => onFileObject({ binderId: to, ...what }), what);
+              }}>
+              <option value="">Move to…</option>
+              {elsewhere.map((b) => (
+                <option key={b.id} value={b.id}>{text(b.name) || "A binder"}</option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {onUnfileObject ? (
+          <button className="mcs-linkish" type="button" disabled={busy}
+            aria-label={`Remove ${label} from this binder`}
+            onClick={() => act(() => onUnfileObject(what), what)}>
+            Remove from Binder
+          </button>
+        ) : null}
+      </p>
+    );
+  };
 
   /* EVERY COPY THE COLLECTOR OWNS, INDEXED BY ITS CARD. Built once and used by
      every view, so "which copies are under this card" is answered in one place
@@ -162,14 +240,45 @@ export default function Collection({ state, view = { kind: "all" }, query = "",
     return out;
   }, [copies]);
 
+  /* WHICH COPY, SO A PERSON CAN SEE WHAT THEY ARE MOVING. Decided across every
+     copy of this card the Collector owns, not just the ones filed here, so the
+     sentence a copy gets in a binder is the same one it gets in the panel. */
+  const labelsByCard = useMemo(() => {
+    const out = new Map();
+    for (const [groupId, list] of copiesOfCard) out.set(groupId, copyLabels(list));
+    return out;
+  }, [copiesOfCard]);
+  const copyLabelFor = (copy) => {
+    const groupId = groupIdOf(copy.canonicalCardId, copy.cardId, copy.id);
+    const m = labelsByCard.get(groupId);
+    return (m && m.get(copy.id)) || "this copy";
+  };
+
   /* WHICH CARDS THIS VIEW IS ABOUT. Each branch is a filter over rows the
      server sent; none of them consults another, and none is stored. */
   const cardKeys = useMemo(() => {
     const kind = (view && view.kind) || "all";
     if (kind === "binder") {
-      const binderId = view && view.binderId;
-      return entries.filter((e) => e.binderId === binderId)
-        .map((e) => groupIdOf(e.canonicalCardId, e.cardId, null)).filter(Boolean);
+      /* THE CARDS A BINDER OPENS SHOWING, WHICH IS NOT THE SAME AS WHAT IS IN
+         IT (Batch 3B-1). What is IN it is objects — a Goal, a copy, several
+         copies — and the card is the heading they are read under. So this
+         branch collects the card each filed object names, plus the card each
+         legacy row names, and the grouping below hangs the objects off it.
+
+         A card appears once however many of its objects are here. That is what
+         keeps the library's count honest: "2 cards" is what opening the binder
+         shows, which is the claim the count has always made. */
+      const here = [];
+      for (const g of goals) {
+        if (filedHere.goalIds.has(g.id)) here.push(groupIdOf(g.canonicalCardId, g.cardId, null));
+      }
+      for (const c of copies) {
+        if (filedHere.copyIds.has(c.id)) here.push(groupIdOf(c.canonicalCardId, c.cardId, c.id));
+      }
+      for (const e of entries) {
+        if (e.binderId === (view && view.binderId)) here.push(groupIdOf(e.canonicalCardId, e.cardId, null));
+      }
+      return here.filter(Boolean);
     }
     if (kind === "primary" || kind === "secondary") {
       /* A GOAL NAMED THE LEGACY WAY IS STILL A GOAL. These branches used to
@@ -205,7 +314,7 @@ export default function Collection({ state, view = { kind: "all" }, query = "",
       ...goals.map((g) => groupIdOf(g.canonicalCardId, g.cardId, null)),
       ...copies.map((c) => groupIdOf(c.canonicalCardId, c.cardId, c.id)),
     ].filter(Boolean);
-  }, [view && view.kind, view && view.binderId, entries, goals, copies]);
+  }, [view && view.kind, view && view.binderId, entries, goals, copies, filedHere]);
 
   /* MOST RECENT FIRST — THE ORDER IS THE COLLECTOR'S, NOT THIS SCREEN'S.
 
@@ -278,13 +387,30 @@ export default function Collection({ state, view = { kind: "all" }, query = "",
   const shown = ordered.filter(matches);
   const kind = (view && view.kind) || "all";
   const tradeView = kind === "trade";
-  /* A BINDER SHOWS CARDS, NOT INVENTORY. Binder.jsx has held since C3.4 that a
-     binder says "this card belongs here" and must not quietly become a shelf:
-     how many copies you have, and which you would part with, is a different
-     fact and a count of it here would turn curation into inventory one number
-     at a time. That principle survives this batch intact — the collection views
-     are where the shelf lives now, and a named binder is not one of them. */
-  const withCopies = kind !== "binder";
+  const binderView = kind === "binder";
+  /* A BINDER SHOWED CARDS AND NOT INVENTORY, AND BATCH 3B-1 REVERSES THAT
+     DELIBERATELY — BUT ONLY HERE, AND NOT THE PRINCIPLE BEHIND IT.
+
+     C3.4's rule was that a binder says "this card belongs here" and must not
+     quietly become a shelf: a count of how many you own, or how many you would
+     part with, would turn curation into inventory one number at a time. That
+     reasoning was exactly right for the question a binder asked then, which was
+     about a CARD — under a card-level heading, a copy's grade and disposition
+     were telemetry nobody had asked for.
+
+     The question has changed. A binder now holds a Goal, or one specific copy,
+     or two of three copies of one card, and the thing a person needs to know
+     when they open it is WHICH of their things are here and why. So each filed
+     object says what it is — and that is not the shelf arriving: nothing here
+     counts what is NOT filed, no ownership total appears, and the library
+     screen outside is untouched. The principle survives as it was stated: a
+     binder must not become inventory. Saying what is in it is not inventory.
+
+     SO `withCopies` IS TRUE FOR A BINDER NOW, AND SCOPED. Outside a binder
+     `listed` is every copy of the card; inside one it must be only the copies
+     filed HERE, or opening Trade Night would show a copy that lives in Personal
+     Collection — the opposite of what the screen now claims to answer. */
+  const withCopies = true;
 
   /* HOW MUCH OF THE SHELF IS ON OFFER. Your Cards said this next to its
      "Offered only" toggle, and the toggle becoming a view chip is not a reason
@@ -310,6 +436,7 @@ export default function Collection({ state, view = { kind: "all" }, query = "",
       note={note}
       empty={empty}
     >
+      {objectProblem ? <p className="mcs-add-problem" role="alert">{objectProblem}</p> : null}
       {specifying ? (
         <div className="mcs-spec-scrim">
           <CardSpecification card={specifying} context={specifying} state={state}
@@ -323,7 +450,22 @@ export default function Collection({ state, view = { kind: "all" }, query = "",
         const goal = goalFor.get(key) || null;
         const mine = copiesOfCard.get(key) || [];
         const listed = !withCopies ? []
-          : tradeView ? mine.filter((c) => c.offered === true) : mine;
+          : binderView ? mine.filter((c) => filedHere.copyIds.has(c.id))
+            : tradeView ? mine.filter((c) => c.offered === true) : mine;
+        /* AND THE GOAL, WHEN IT IS THIS GOAL THAT IS FILED HERE. Outside a
+           binder the tier tag is a fact about the card, joined by card id, and
+           it stays that. Inside one it has to be a statement about the thing:
+           a Goal for this card that lives in another binder, or nowhere, is not
+           part of what this binder holds. */
+        const goalHere = binderView ? (goal && filedHere.goalIds.has(goal.id) ? goal : null) : goal;
+        /* THE LEGACY ROWS FOR THIS CARD IN THIS BINDER. History, shown as
+           history: never an object, never moved, only removable — and removable
+           from the panel rather than here, because the one card-level gesture
+           left belongs beside the card it is about. */
+        const legacyHere = binderView
+          ? entries.filter((e) => e.binderId === binderId
+            && groupIdOf(e.canonicalCardId, e.cardId, null) === key)
+          : [];
         const title = (known && known.cardName) || cardTitle(legacy)
           || (isUnidentified(key) ? "A copy you haven't identified yet"
             : isLegacy(key) ? "A card that isn't in your catalogue"
@@ -353,13 +495,17 @@ export default function Collection({ state, view = { kind: "all" }, query = "",
                   </div>
                 ) : null}
                 <div className="mcs-rec-tags">
-                  {listed.length ? (
+                  {!binderView && listed.length ? (
                     <Tag>{plural(listed.length, "copy", "copies")}</Tag>
                   ) : null}
                   {/* WANT STAYS VISIBLY INDEPENDENT OF OWN. A Goal for a card
                       you already own is somebody hunting a better copy, which
                       is ordinary and must not look like a contradiction. */}
-                  {goal ? (
+                  {/* INSIDE A BINDER THE HEADING CARRIES CARD IDENTITY AND
+                      NOTHING ELSE, because every statement about a thing now
+                      belongs on that thing's own row — including the hunt. The
+                      count is suppressed there for the same reason. */}
+                  {!binderView && goal ? (
                     <Tag tone={goal.tier === "primary" ? "strong" : null}>
                       {tierIntent(goal.tier) || tierLabel(goal.tier)}
                     </Tag>
@@ -371,6 +517,32 @@ export default function Collection({ state, view = { kind: "all" }, query = "",
               ) : null}
             </div>
 
+            {/* THE HUNT, WHEN IT IS WHAT IS FILED HERE (Batch 3B-1). A Goal is
+                a thing you can organise, so inside a binder it is a row of its
+                own with its own actions — never folded into the card heading,
+                which would make one actionable row out of two different
+                things, and never merged with a copy's row. */}
+            {binderView && goalHere ? (
+              <Record
+                title={tierIntent(goalHere.tier) || tierLabel(goalHere.tier)}
+                subtitle={criteriaLine(goalHere) ? `Looking for ${criteriaLine(goalHere)}` : null}
+                tags={<Tag tone={goalHere.tier === "primary" ? "strong" : null}>Looking for</Tag>}
+              >
+                <ObjectDo what={{ goalId: goalHere.id }} label="what you're looking for" />
+              </Record>
+            ) : null}
+
+            {/* AND THE LEGACY ROWS, AS HISTORY. Not an object: no Move, no
+                home, no actions here at all. It is removed from the panel,
+                beside the card it is actually about. */}
+            {legacyHere.map((e) => (
+              <Record key={`legacy:${e.binderId}:${e.canonicalCardId}`}
+                title="Filed before Binders organised specific cards"
+                subtitle="Open the card to remove it."
+                tags={<Tag tone="unknown">Earlier filing</Tag>}
+              />
+            ))}
+
             {/* EVERY PHYSICAL COPY, ON ITS OWN TERMS. */}
             {listed.map((copy) => {
               const graded = isGraded(copy);
@@ -378,7 +550,15 @@ export default function Collection({ state, view = { kind: "all" }, query = "",
               return (
                 <Record
                   key={copy.id}
-                  title={gradeLine(copy) || "Not stated"}
+                  /* WHICH ONE OF THESE, INSIDE A BINDER (Batch 3B-1). Elsewhere
+                     a copy row sits under a card heading among all of that
+                     card's copies and its grading is the useful title; "Not
+                     stated" is honest there, because the question is what this
+                     copy is. In a binder the question is WHICH copy this is —
+                     it has a home and the person may be about to move it — and
+                     "Not stated" answers nothing. So the label falls back to a
+                     true sentence about when it was added. */
+                  title={binderView ? copyLabelFor(copy) : (gradeLine(copy) || "Not stated")}
                   tags={
                     <>
                       {/* A COPY THAT DISAGREES WITH ITSELF SAYS SO (C3.3). */}
@@ -413,6 +593,14 @@ export default function Collection({ state, view = { kind: "all" }, query = "",
                     </>
                   }
                 >
+                  {/* WHERE THIS ONE GOES NEXT. Inside a binder only: elsewhere
+                      the card's own panel is where a home is chosen, and a Move
+                      control on every copy in All Cards would be a second place
+                      the same answer is given. */}
+                  {binderView ? (
+                    <ObjectDo what={{ collectorCopyId: copy.id }}
+                      label={copyLabelFor(copy)} />
+                  ) : null}
                   {/* "INTERESTED · <shop>" USED TO RENDER HERE, AND IT COULD
                       NEVER SAY ANYTHING.
 

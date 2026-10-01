@@ -583,32 +583,67 @@ describe("D. The order the card page sends in", () => {
   };
   const SPEC = build("client/collector/CardSpecification.jsx");
 
-  test("[26] a binder is ticked last, after what is being organised", () => {
-    /* FIND A CARD IN BROWSE, TICK A BINDER, SAY YOU WANT IT, SAVE. Filing could
-       now run anywhere — nothing refuses it for what the card does or does not
-       mean — and it stays after the statements because a person ticking a binder
-       is organising what they have just said, which is how it reads if the
-       sequence stops. */
+  test("[26] a home is given after the thing that has it exists", () => {
+    /* RE-PINNED (Batch 3B-1), AND THE RULE IS NOW STRUCTURAL RATHER THAN TIDY.
+
+       It used to read "a binder is ticked last, after what is being organised",
+       and the reason was legibility: a person ticking a binder is organising
+       what they have just said, which is how it reads if the sequence stops.
+       True, and it was all that was at stake while a filing named a CARD —
+       nothing stopped the panel sending it first.
+
+       A filing now names a THING, and a thing being created in this Save has no
+       id until its own step mints one. So the order is not a preference: the
+       filing CANNOT be sent earlier, and the plan puts it immediately after, so
+       a later sibling's refusal cannot cost it. */
     const state = { binders: [{ id: "bd1", collectorId: "casey", name: "Shoebox" }],
-      binderEntries: [], goals: [], collectorCopies: [], catalog: [] };
-    const answers = { binders: new Set(["bd1"]), newBinders: [], want: "primary",
+      binderEntries: [], binderMemberships: [], goals: [], collectorCopies: [], catalog: [] };
+    const answers = { newBinders: [], want: "primary", goalHome: "bd1", madeGoal: null,
       desired: { grade: "PSA 9", condition: "" }, copies: [] };
-    const kinds = SPEC.planFrom(state, "cc-x", answers).steps.map((s) => s.kind);
-    assert(kinds.includes("start-looking") && kinds.includes("file"), json(kinds));
-    assert(kinds.indexOf("start-looking") < kinds.indexOf("file"),
+    const plan = SPEC.planFrom(state, "cc-x", answers).steps;
+    const kinds = plan.map((s) => s.kind);
+    assert(kinds.includes("start-looking") && kinds.includes("file-object"), json(kinds));
+    assert(kinds.indexOf("start-looking") < kinds.indexOf("file-object"),
       "the panel files before it says anything: " + kinds.join(","));
+    /* And adjacent, which is the half the old ordering could not express. */
+    eq(kinds.indexOf("file-object"), kinds.indexOf("start-looking") + 1, kinds.join(","));
+    /* The filing names the handle `start-looking` declared, not an id nobody
+       has yet and not the card. */
+    const filing = plan.find((st) => st.kind === "file-object");
+    eq(filing.goalDraftId, plan.find((st) => st.kind === "start-looking").goalDraftId,
+      "the filing names something else");
+    assert(!filing.goalId, "the filing named an id that does not exist yet");
+    assert(!("canonicalCardId" in filing), "a filing named a card");
   });
 
   test("[27] and a copy is recorded before it is filed, for the same reason", () => {
     const state = { binders: [{ id: "bd1", collectorId: "casey", name: "Shoebox" }],
-      binderEntries: [], goals: [], collectorCopies: [], catalog: [] };
-    const answers = { binders: new Set(["bd1"]), newBinders: [], want: "none",
+      binderEntries: [], binderMemberships: [], goals: [], collectorCopies: [], catalog: [] };
+    const answers = { newBinders: [], want: "none", goalHome: null, madeGoal: null,
       desired: { grade: "", condition: "" },
       copies: [{ id: null, key: "n1", grade: "PSA 9", condition: "", cert: "C", market: "",
-        disposition: "keeping", removed: false }] };
-    const kinds = SPEC.planFrom(state, "cc-x", answers).steps.map((s) => s.kind);
-    assert(kinds.indexOf("record-copy") < kinds.indexOf("file"),
+        disposition: "keeping", removed: false, home: "bd1" }] };
+    const plan = SPEC.planFrom(state, "cc-x", answers).steps;
+    const kinds = plan.map((s) => s.kind);
+    assert(kinds.indexOf("record-copy") < kinds.indexOf("file-object"),
       "the panel files before the copy exists: " + kinds.join(","));
+    eq(kinds.indexOf("file-object"), kinds.indexOf("record-copy") + 1, kinds.join(","));
+    eq(plan.find((st) => st.kind === "file-object").copyDraftId, "n1",
+      "the filing names something other than the copy that was just recorded");
+  });
+
+  test("[27b] and a thing with no home emits no filing at all", () => {
+    /* UNFILED IS AN ANSWER AND IT COSTS NOTHING. A Collector who never opens a
+       home control must produce the plan they would have produced before this
+       batch, minus the card-level filing that is gone. */
+    const state = { binders: [{ id: "bd1", collectorId: "casey", name: "Shoebox" }],
+      binderEntries: [], binderMemberships: [], goals: [], collectorCopies: [], catalog: [] };
+    const answers = { newBinders: [], want: "primary", goalHome: null, madeGoal: null,
+      desired: { grade: "PSA 9", condition: "" },
+      copies: [{ id: null, key: "n1", grade: "PSA 9", condition: "", cert: "C", market: "",
+        disposition: "keeping", removed: false, home: null }] };
+    const kinds = SPEC.planFrom(state, "cc-x", answers).steps.map((s) => s.kind);
+    eq(kinds.join(","), "record-copy,start-looking", kinds.join(","));
   });
 
   /* A sequence that stops should leave a person with MORE said about their card
@@ -880,7 +915,7 @@ describe("E. The boundaries this batch did not cross", () => {
   });
 
   test("[39] the allow-list grew by exactly one, and the transaction is shut", () => {
-    eq(EXPOSED_COMMANDS.length, 23, "the production surface is not the size this batch declared");
+    eq(EXPOSED_COMMANDS.length, 25, "the production surface is not the size this batch declared");
     assert(EXPOSED_COMMANDS.includes("setCollectorCopyKept"), "PC has a control but no door");
     const { COMMAND_NAMES } = require("../domain/metyet-commands.js");
     const known = COMMAND_NAMES.has ? (n) => COMMAND_NAMES.has(n)

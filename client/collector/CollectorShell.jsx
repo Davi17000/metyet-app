@@ -512,7 +512,11 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
   onAddGoal = null, onSetPriority = null, onRemoveGoal = null, onBrowseCards = null,
   onSpecify = null, onCreateBinder = null, onRenameBinder = null,
   onInspect = null, onEndInspection = null, onRequestPhotos = null,
-  onArchiveBinder = null }) {
+  onArchiveBinder = null,
+  /* WHERE A FILED THING GOES NEXT (Batch 3B-1). Bound at the entrance like
+     every other command and handed down, so a section stays a surface that
+     calls what it was given. */
+  onFileObject = null, onUnfileObject = null }) {
   /* JUST ACCEPTED? OPEN ON THE THING THAT CHANGED (Phase 5 Batch 3A). A person
      who has this second finished joining a shop's network; the section that now
      holds that shop is what they came for. Everyone else opens where they
@@ -640,7 +644,7 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
                 fillingBinder, onDoneFilling: () => setFillingBinder(null) }
               : meta.id === "binder"
                   ? { onSpecify, onBrowseCards, onCreateBinder, onRenameBinder,
-                    onArchiveBinder, fillingBinder,
+                    onArchiveBinder, fillingBinder, onFileObject, onUnfileObject,
                     onAddCards: (into) => { setFillingBinder(into); setSection("browse"); } }
                   : meta.id === "partners"
                     /* Trusted Partners asks the catalog what the cards a shop

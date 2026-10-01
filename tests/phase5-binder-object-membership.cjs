@@ -627,6 +627,23 @@ describe("G. A binder made in the same Save is one you can file into", () => {
   const send = (st, step, canonicalCardId) => {
     switch (step.kind) {
       case "make-binder": return x(st, CASEY, "createBinder", { name: step.name });
+      /* BATCH 3B-1. The object-level pair, mapped exactly as `SignIn.jsx` maps
+         them, so a plan test and the real entrance cannot disagree about what a
+         step means. A kind this switch does not know is still a refusal rather
+         than a guess — which is why it had to learn these two rather than
+         silently answering `command-unavailable` to the batch's own steps. */
+      case "file-object": return x(st, CASEY, "fileObject",
+        { binderId: step.binderId, goalId: step.goalId, collectorCopyId: step.collectorCopyId });
+      case "unfile-object": return x(st, CASEY, "unfileObject",
+        { goalId: step.goalId, collectorCopyId: step.collectorCopyId });
+      case "start-looking": return x(st, CASEY, "addGoal",
+        { canonicalCardId, tier: step.tier, desired: step.desired });
+      case "record-copy": return x(st, CASEY, "addCollectorCopy",
+        { copy: { canonicalCardId, ...step.copy } });
+      case "offering": return x(st, CASEY, "setCollectorCopyOffered",
+        { copyId: step.copyId, offered: step.offered });
+      case "keeping": return x(st, CASEY, "setCollectorCopyKept",
+        { copyId: step.copyId, keeping: step.keeping });
       case "file": return x(st, CASEY, "addBinderEntry", { binderId: step.binderId, canonicalCardId });
       case "unfile": return x(st, CASEY, "removeBinderEntry",
         { binderId: step.binderId, canonicalCardId });
@@ -639,15 +656,19 @@ describe("G. A binder made in the same Save is one you can file into", () => {
      not reachable through the real store today — `production-store.js` forwards
      it and `createBinder` returns the id — so it is injected here rather than
      left as a path nothing covers. See [23b]. */
-  const panel = (st, { failOnce = null, swallowValue = null } = {}) => {
+  const panel = (st, { failOnce = null, swallowValue = null, stale = false } = {}) => {
     const sent = [];
     let pending = failOnce;
     const seen = () => {
       const w = st.get();
-      return { ...w, goals: w.goals.filter((g) => g.collectorId === "casey"),
-        collectorCopies: w.collectorCopies.filter((c) => c.collectorId === "casey"),
-        binders: w.binders.filter((b) => b.collectorId === "casey"),
-        catalog: [], partners: [] };
+      /* SCOPED THE WAY THE SERVER SCOPES IT (Batch 3B-1). This spread the raw
+         world and filtered three collections by hand, which left
+         `binderMemberships` UNSCOPED — including another Collector's rows. That
+         was harmless while a binder held cards; with per-object homes it means a
+         panel test could pass against a projection production never produces.
+         The real projection is the honest answer. */
+      const mine = projectForActor(w, CASEY);
+      return { ...mine, catalog: [], partners: [] };
     };
     const onCommit = async (step, canonicalCardId) => {
       /* THE OBJECT AS DISPATCHED, NOT ITS JSON. `JSON.parse(JSON.stringify(x))`
@@ -668,7 +689,11 @@ describe("G. A binder made in the same Save is one you can file into", () => {
       state: seen(), onCommit, onClose: () => { closed = true; },
     });
     TR.act(() => { r = TR.create(element()); });
-    const refresh = () => { TR.act(() => { r.update(element()); }); };
+    /* `stale` HOLDS THE PROJECTION STILL BETWEEN PRESSES, which is a real race
+       and not a contrivance: `commit` recomputes its plan from the `state`
+       PROP, and the parent's refresh is a round trip. A person who presses Save
+       again the moment the refusal appears can get there first. */
+    const refresh = () => { if (!stale) TR.act(() => { r.update(element()); }); };
     const button = (label) => {
       const b = r.root.findAll((n) => n.type === "button"
         && String(n.children).includes(label))[0];
@@ -685,6 +710,23 @@ describe("G. A binder made in the same Save is one you can file into", () => {
         TR.act(() => { i.props.onChange({ target: { value } }); });
       },
       press: (label) => { TR.act(() => { button(label).props.onClick(); }); },
+      /* THE HOME CONTROLS, BY WHAT THEY ARE (Batch 3B-1). Addressed by their
+         accessible label, never by position among every select on screen —
+         which is also what makes the label worth having. */
+      homes: () => r.root.findAll((n) => n.type === "select")
+        .filter((n) => /^Binder/.test(String(n.props["aria-label"] || ""))),
+      home: (value, nth = 0) => {
+        const all = r.root.findAll((n) => n.type === "select")
+          .filter((n) => /^Binder/.test(String(n.props["aria-label"] || "")));
+        assert(all[nth], `no home control #${nth} — found ${all.length}`);
+        TR.act(() => { all[nth].props.onChange({ target: { value } }); });
+      },
+      grade: (value, nth = 0) => {
+        const all = r.root.findAll((n) => n.type === "select")
+          .filter((n) => !/^Binder/.test(String(n.props["aria-label"] || "")));
+        assert(all[nth], `no grade control #${nth}`);
+        TR.act(() => { all[nth].props.onChange({ target: { value } }); });
+      },
       save: async () => {
         await TR.act(async () => { await button("Save").props.onClick(); });
         refresh();
@@ -695,21 +737,38 @@ describe("G. A binder made in the same Save is one you can file into", () => {
   test("[23] it is created AND filed into, in one Save", async () => {
     /* THE DEFECT THIS FIXES. `answers.newBinders` held names, `answers.binders`
        held ids, and nothing joined them — so the plan made the binder and filed
-       nothing into it, and the panel closed without a word. */
-    const st = world({ binders: [], binderEntries: [] });
+       nothing into it, and the panel closed without a word.
+       RE-PINNED (Batch 3B-1): what goes into the new binder is a THING, so the
+       person says what the card means first and the home follows. The binder is
+       still created and still filled, in one Save, which is the claim. */
+    const st = world({ binders: [], binderEntries: [], binderMemberships: [],
+      goals: [], collectorCopies: [] });
     const p = panel(st);
     p.name("Mudkips"); p.press("Add binder");
+    p.press("Actively hunting"); p.grade("PSA 9");
+    eq(p.homes().length, 1, "the hunt has no home control");
+    /* The new binder is offered by its client key; pick it by its label, never
+       by position and never by its name reaching the command. */
+    const option = p.homes()[0].props.children.flat(2)
+      .find((o) => o && o.props && /Mudkips/.test(String(o.props.children)));
+    assert(option, `the new binder was not offered: ${p.text().slice(0, 400)}`);
+    p.home(option.props.value);
     await p.save();
     eq(st.get().binders.length, 1, "the binder was not made");
-    eq(st.get().binderEntries.length, 1,
-      `the card was not filed into the new binder: ${JSON.stringify(st.get().binderEntries)}`);
-    eq(st.get().binderEntries[0].binderId, st.get().binders[0].id, "it was filed somewhere else");
+    eq(st.get().binderEntries.length, 0, "the panel created a card-level row");
+    eq(st.get().binderMemberships.length, 1,
+      `the hunt was not filed into the new binder: ${JSON.stringify(st.get().binderMemberships)}`);
+    eq(st.get().binderMemberships[0].binderId, st.get().binders[0].id, "it was filed somewhere else");
+    eq(st.get().binderMemberships[0].goalId, st.get().goals[0].id, "something else was filed");
     /* And nothing downstream ever saw a handle — the step that arrived carried
-       a real, minted binder id. */
-    const filed = p.sent.filter((s) => s.kind === "file");
-    eq(filed.length, 1, `the panel sent ${JSON.stringify(p.sent)}`);
+       a real, minted binder id and a real, minted Goal id. */
+    const filed = p.sent.filter((s) => s.kind === "file-object");
+    eq(filed.length, 1, `the panel sent ${JSON.stringify(p.sent.map((x) => x.kind))}`);
     eq(filed[0].binderId, st.get().binders[0].id, "the filing step named something else");
+    eq(filed[0].goalId, st.get().goals[0].id, "the filing step named no thing");
     assert(!filed[0].__keys.includes("binderDraftId"),
+      `a client handle reached the command layer: ${filed[0].__keys.join(",")}`);
+    assert(!filed[0].__keys.includes("goalDraftId"),
       `a client handle reached the command layer: ${filed[0].__keys.join(",")}`);
     /* And not as a key holding `undefined` either, which is how it passed this
        assertion before: a spread with `binderDraftId: undefined` leaves the own
@@ -734,12 +793,17 @@ describe("G. A binder made in the same Save is one you can file into", () => {
        nothing, next Save makes a second binder. Not reachable through the real
        store today, so the harness swallows the value; the point is that the
        panel must not treat a missing id as success. */
-    const st = world({ binders: [], binderEntries: [] });
+    const st = world({ binders: [], binderEntries: [], binderMemberships: [],
+      goals: [], collectorCopies: [] });
     const p = panel(st, { swallowValue: "make-binder" });
     p.name("Mudkips"); p.press("Add binder");
+    p.press("Actively hunting"); p.grade("PSA 9");
+    const option = p.homes()[0].props.children.flat(2)
+      .find((o) => o && o.props && /Mudkips/.test(String(o.props.children)));
+    p.home(option.props.value);
     await p.save();
     eq(st.get().binders.length, 1, "the binder was not made");
-    eq(st.get().binderEntries.length, 0, "the card was filed, so this test is about nothing");
+    eq(st.get().binderMemberships.length, 0, "the hunt was filed, so this test is about nothing");
     assert(!p.closed(), "the panel closed on a Save that did not do what was asked");
     assert(/not yet|could not|try again|Something/i.test(p.text()),
       `the panel reported nothing: ${p.text().slice(0, 400)}`);
@@ -750,18 +814,109 @@ describe("G. A binder made in the same Save is one you can file into", () => {
        that it had already happened. Not fixed by de-duplicating on the NAME —
        two binders may share one, and a name cannot say which one was made — but
        by adopting the minted id, exactly as a new copy's is adopted. */
-    const st = world({ binders: [], binderEntries: [] });
-    const p = panel(st, { failOnce: "file" });
+    const st = world({ binders: [], binderEntries: [], binderMemberships: [],
+      goals: [], collectorCopies: [] });
+    const p = panel(st, { failOnce: "file-object" });
     p.name("Mudkips"); p.press("Add binder");
+    p.press("Actively hunting"); p.grade("PSA 9");
+    const option = p.homes()[0].props.children.flat(2)
+      .find((o) => o && o.props && /Mudkips/.test(String(o.props.children)));
+    p.home(option.props.value);
     await p.save();
     eq(st.get().binders.length, 1, "the first Save did not make the binder");
-    eq(st.get().binderEntries.length, 0, "the fixture did not refuse the filing");
+    eq(st.get().goals.length, 1, "the first Save did not make the Goal");
+    eq(st.get().binderMemberships.length, 0, "the fixture did not refuse the filing");
     await p.save();
     eq(st.get().binders.length, 1,
       `the retry made a second binder: ${JSON.stringify(st.get().binders.map((b) => b.name))}`);
-    eq(st.get().binderEntries.length, 1, "the retry did not finish the filing");
+    /* AND NOT A SECOND GOAL EITHER (Batch 3B-1). `addGoal` is the one step in
+       this plan that is neither idempotent nor content-addressable: a retry
+       that re-sent it would collect `duplicate-goal` and the person would read
+       a refusal for work that had already succeeded. `adopt` records the Goal
+       it made, which is what stops it. */
+    eq(st.get().goals.length, 1,
+      `the retry made a second Goal: ${JSON.stringify(st.get().goals.map((g) => g.id))}`);
+    eq(st.get().binderMemberships.length, 1, "the retry did not finish the filing");
+    eq(st.get().binderMemberships[0].goalId, st.get().goals[0].id, "it filed something else");
     eq(p.sent.filter((s) => s.kind === "make-binder").length, 1,
       "the retry re-sent make-binder");
+    eq(p.sent.filter((s) => s.kind === "start-looking").length, 1,
+      "the retry re-sent start-looking");
+  });
+
+  test("[24b] and a retry does not make a second Goal, even before the projection catches up", () => {
+    /* THE ONE STEP IN THE PLAN THAT IS NEITHER IDEMPOTENT NOR
+       CONTENT-ADDRESSABLE. `createBinder` can be re-sent and produces a second
+       binder; `addCollectorCopy` likewise; both are fixed by adopting the
+       minted id. `addGoal` is different: a second one is REFUSED
+       `duplicate-goal`, so a retry that re-sent it would show a person a
+       refusal for work that had already succeeded.
+
+       The projection normally settles between presses and `planFrom` finds the
+       Goal there, so this is tested with the projection held STILL — which is
+       the real race: `commit` reads the `state` prop, the parent's refresh is a
+       round trip, and a person who presses Save again the instant the message
+       appears can beat it. `adopt` recording the Goal it made is what closes
+       it. */
+    const st = world({ binders: [], binderEntries: [], binderMemberships: [],
+      goals: [], collectorCopies: [] });
+    const p = panel(st, { failOnce: "file-object", stale: true });
+    p.name("Mudkips"); p.press("Add binder");
+    p.press("Actively hunting"); p.grade("PSA 9");
+    const option = p.homes()[0].props.children.flat(2)
+      .find((o) => o && o.props && /Mudkips/.test(String(o.props.children)));
+    p.home(option.props.value);
+    return (async () => {
+      await p.save();
+      eq(st.get().goals.length, 1, "the first Save did not make the Goal");
+      eq(st.get().binderMemberships.length, 0, "the fixture did not refuse the filing");
+      await p.save();
+      eq(p.sent.filter((x) => x.kind === "start-looking").length, 1,
+        `the retry re-sent start-looking against a stale projection: ${
+          JSON.stringify(p.sent.map((x) => x.kind))}`);
+      eq(st.get().goals.length, 1, "the retry made a second Goal");
+      /* AND IT STILL FINISHES THE WORK THAT WAS LEFT, naming the Goal it made
+         rather than one it would have had to look up. */
+      eq(st.get().binderMemberships.length, 1, "the retry did not finish the filing");
+      eq(st.get().binderMemberships[0].goalId, st.get().goals[0].id, "it filed something else");
+    })();
+  });
+
+  test("[24c] a binder put away while the panel is open stops being a destination", () => {
+    /* ARCHIVING EVICTS NOTHING AND TAKES NOTHING NEW, so a home chosen before
+       the binder was put away is in an awkward position: the answer still names
+       it, and `fileObject` would refuse it.
+
+       The plan says NOTHING for that thing rather than either sending a
+       guaranteed refusal or quietly reading the answer as Unfiled — because
+       "leave it there" is what the person said, and emptying a binder on their
+       behalf would be inventing a decision. */
+    const st = world({ binderMemberships: [] });
+    const state = () => projectForActor(st.get(), CASEY);
+    const answers = { newBinders: [], want: "primary", goalHome: null, madeGoal: null,
+      desired: { grade: "PSA 9", condition: "" },
+      copies: [{ id: "keep", grade: "PSA 9", condition: "", cert: "K1", market: "",
+        disposition: "keeping", removed: false, home: "A" }] };
+    /* While A is live: one filing. */
+    eq(SPEC.planFrom(state(), "cc-x", answers).steps.map((k) => k.kind).join(","),
+      "file-object", "the fixture does not file anything");
+    /* A is put away between the panel opening and Save. */
+    okv(x(st, CASEY, "setBinderArchived", { binderId: "A", archived: true }), "put away");
+    eq(SPEC.planFrom(state(), "cc-x", answers).steps.length, 0,
+      "the panel sent a filing into a binder that has been put away");
+    /* AND A THING ALREADY IN AN ARCHIVED BINDER IS NOT QUIETLY TAKEN OUT. */
+    const filed = world();
+    okv(x(filed, CASEY, "fileObject", { binderId: "A", collectorCopyId: "keep" }), "file");
+    okv(x(filed, CASEY, "setBinderArchived", { binderId: "A", archived: true }), "put away");
+    const stay = { ...answers, copies: [{ ...answers.copies[0], home: "A" }] };
+    eq(SPEC.planFrom(projectForActor(filed.get(), CASEY), "cc-x", stay).steps.length, 0,
+      "re-stating a home in a put-away binder sent a refusable filing");
+    /* Choosing Unfiled DOES take it out, which the domain allows from an
+       archived binder for exactly this reason. */
+    const out = { ...answers, copies: [{ ...answers.copies[0], home: null }] };
+    eq(SPEC.planFrom(projectForActor(filed.get(), CASEY), "cc-x", out).steps
+      .map((k) => k.kind).join(","), "unfile-object",
+    "a thing could not be taken out of a put-away binder");
   });
 
   test("[25] every minting step's id is recorded, not only a copy's", () => {
@@ -996,24 +1151,205 @@ describe("H. What the schema itself refuses", () => {
   });
 });
 
-/* ============================== I. built, and deliberately out of reach */
-describe("I. A capability that exists and is not reachable yet", () => {
-  /* WHY THIS SECTION EXISTS. Batch 3A built object-level membership and, for
-     one commit, also EXPOSED the two commands that write it — while no screen
-     sent either, and while the only thing that could send them was a pair of
-     client thunks written for no reason but to satisfy the exact-set guard.
-     `server/exposed-commands.js` states the rule in its own words: an entry is
-     a command a production surface sends today, and "if nothing in `client/`
-     sends it, it does not belong here." A door open ahead of its surface is
-     reachable over HTTP by a path no screen can produce and no screen test
-     exercises — authorization is still the domain's, so nothing was unsafe,
-     but nothing was verified by use either.
+/* ================= J. the Collector experience, driven end to end (3B-1) */
+describe("J. What a Collector sees and does", () => {
+  /* The real card list, built and mounted over the real projection. */
+  const build = (rel) => {
+    const out = esbuild.buildSync({
+      entryPoints: [path.join(ROOT, rel)],
+      bundle: true, format: "cjs", write: false, logLevel: "silent", jsx: "automatic",
+      external: ["react", "react-dom", "react/jsx-runtime"],
+      define: { "process.env.NODE_ENV": '"production"' },
+    });
+    const mod = { exports: {} };
+    new Function("module", "exports", "require", out.outputFiles[0].text)(mod, mod.exports, require);
+    return mod.exports;
+  };
+  const COLLECTION = build("client/collector/sections/Collection.jsx");
 
-     So the capability stays and the reachability goes, until 3B writes the
-     controls. These assertions are what makes that a decision rather than an
-     oversight: if 3B opens the doors WITH its surface, they fail and are
-     re-pinned on purpose; if anything opens them without one, they fail and
-     that is the point. */
+  const show = (st, binderId) => {
+    const out = [];
+    const walk = (n) => {
+      if (Array.isArray(n)) return n.forEach(walk);
+      if (!n || typeof n !== "object") return;
+      for (const c of n.children || []) { if (typeof c === "string") out.push(c); else walk(c); }
+    };
+    let r;
+    TR.act(() => {
+      r = TR.create(React.createElement(COLLECTION.default, {
+        state: projectForActor(st.get(), CASEY),
+        view: { kind: "binder", binderId },
+        /* The card captions, supplied rather than fetched, in the shape the
+           hook returns — so this test is about the rendering and not about the
+           catalogue. */
+        descriptions: { described: {
+          "cc-x": { canonicalCardId: "cc-x", cardName: "Charizard",
+            expansionName: "Base", collectorNumber: "4" },
+          "cc-y": { canonicalCardId: "cc-y", cardName: "Mudkip" },
+          "cc-z": { canonicalCardId: "cc-z", cardName: "Pikachu" },
+        }, describe() {} },
+        onFileObject: null, onUnfileObject: null,
+      }));
+    });
+    walk(r.toJSON());
+    return { said: out.join(" "), r };
+  };
+
+  test("[37] one card, four things, four different answers — and each binder shows only its own", () => {
+    /* THE SCENARIO THE CARD-LEVEL QUESTION COULD NOT ASK. A Goal, a kept copy,
+       an offered copy and a second offered copy, all of one card, in three
+       binders and nowhere. */
+    const st = world({ binders: [
+      { id: "A", collectorId: "casey", name: "Hunting", createdAt: AT, archivedAt: null },
+      { id: "B", collectorId: "casey", name: "Keepers", createdAt: AT, archivedAt: null },
+      { id: "T", collectorId: "casey", name: "Trade Night", createdAt: AT, archivedAt: null }] });
+    okv(x(st, CASEY, "fileObject", { binderId: "A", goalId: "g1" }), "goal");
+    okv(x(st, CASEY, "fileObject", { binderId: "B", collectorCopyId: "keep" }), "pc");
+    okv(x(st, CASEY, "fileObject", { binderId: "T", collectorCopyId: "sell" }), "trade");
+    eq(homes(st).length, 3, "three things, three homes");
+
+    const a = show(st, "A").said;
+    assert(/Actively hunting|Looking for/.test(a), `the hunt is not in A: ${a}`);
+    assert(!/PSA 9|PSA 8/.test(a), `a copy that lives elsewhere appeared in A: ${a}`);
+    const b = show(st, "B").said;
+    assert(/PSA 9/.test(b), `the kept copy is not in B: ${b}`);
+    assert(!/PSA 8/.test(b), `the offered copy appeared in B: ${b}`);
+    assert(!/Actively hunting|Looking for/.test(b), `the hunt appeared in B: ${b}`);
+    const c = show(st, "T").said;
+    assert(/PSA 8/.test(c), `the offered copy is not in C: ${c}`);
+    assert(!/PSA 9/.test(c), `the kept copy appeared in C: ${c}`);
+  });
+
+  test("[38] a Goal and a copy of one card in one binder: one heading, two things", () => {
+    const st = world();
+    okv(x(st, CASEY, "fileObject", { binderId: "A", goalId: "g1" }), "goal");
+    okv(x(st, CASEY, "fileObject", { binderId: "A", collectorCopyId: "keep" }), "copy");
+    const { said } = show(st, "A");
+    /* ONE CARD HEADING. The card is how the two are read together; it is not a
+       third thing and it owns no action. Counted structurally rather than by
+       the word, because the card's name legitimately appears twice in one
+       heading — once as the picture's label and once as the title. */
+    const { r } = show(st, "A");
+    eq(r.root.findAll((n) => n.props && n.props.className === "mcs-group").length, 1,
+      `the card was listed once per thing: ${said}`);
+    /* AND TWO THINGS, EACH SAYING WHAT IT IS. */
+    assert(/Looking for/.test(said), `the hunt is not its own row: ${said}`);
+    assert(/PSA 9/.test(said), `the copy is not its own row: ${said}`);
+    assert(/Keeping/.test(said), `the copy does not say what it is: ${said}`);
+  });
+
+  test("[39] a binder with memberships and no legacy rows is not empty", () => {
+    /* THE SILENT-FAILURE GUARD. `rows()` tolerates `undefined` and the
+       collection is optional, so a regression that stopped reading memberships
+       would render an EMPTY binder rather than failing — a Collector would
+       watch their organising vanish and the logs would say nothing. */
+    const st = world({ binderEntries: [] });
+    okv(x(st, CASEY, "fileObject", { binderId: "A", collectorCopyId: "keep" }), "file");
+    eq(st.get().binderEntries.length, 0, "the fixture has a legacy row");
+    const { said } = show(st, "A");
+    assert(!/Nothing in this binder yet/.test(said), `a filed binder rendered empty: ${said}`);
+    assert(/PSA 9/.test(said), said);
+  });
+
+  test("[40] two copies with no distinguishing facts are told apart truthfully", () => {
+    /* THE CLOSED DECISION ON IDENTICAL COPIES. No invented number, no id on
+       screen — a true sentence about the order they were added in, derived from
+       `addedAt` with the stable id as a tiebreak, and never from array
+       position. */
+    const st = world({ collectorCopies: [
+      { id: "bare1", collectorId: "casey", canonicalCardId: "cc-x", offered: true, addedAt: "2026-09-01" },
+      { id: "bare2", collectorId: "casey", canonicalCardId: "cc-x", offered: true, addedAt: "2026-09-02" }] });
+    okv(x(st, CASEY, "fileObject", { binderId: "A", collectorCopyId: "bare1" }), "file");
+    okv(x(st, CASEY, "fileObject", { binderId: "B", collectorCopyId: "bare2" }), "file");
+    const a = show(st, "A").said;
+    const b = show(st, "B").said;
+    assert(/added first/.test(a), `the first copy is not named: ${a}`);
+    assert(/added next/.test(b), `the second copy is not named: ${b}`);
+    /* AND NEITHER SCREEN SHOWS AN ID OR AN INVENTED NUMBER. */
+    for (const said of [a, b]) {
+      assert(!/bare1|bare2/.test(said), `an id reached the screen: ${said}`);
+      assert(!/Copy #|#1|#2/.test(said), `an invented number reached the screen: ${said}`);
+    }
+    /* THE ORDER IS THE ORDER THEY WERE ADDED IN, NOT THE ORDER THEY ARRIVE IN.
+       Reversing the projection's array must not rename them. */
+    const flipped = world({ collectorCopies: [
+      { id: "bare2", collectorId: "casey", canonicalCardId: "cc-x", offered: true, addedAt: "2026-09-02" },
+      { id: "bare1", collectorId: "casey", canonicalCardId: "cc-x", offered: true, addedAt: "2026-09-01" }] });
+    okv(x(flipped, CASEY, "fileObject", { binderId: "A", collectorCopyId: "bare1" }), "file");
+    assert(/added first/.test(show(flipped, "A").said),
+      "the label follows array position rather than when the copy was added");
+  });
+
+  test("[41] a legacy row beside a Goal and several copies infers nothing", () => {
+    /* SCENARIO Q, RENDERED. One card-level row, a Goal and three copies, and
+       nothing anywhere that says which — if any — the row was about. The row is
+       shown as history with no actions; the things show their own homes. */
+    const st = world();
+    eq(st.get().binderEntries.length, 1, "the fixture has no legacy row");
+    eq(homes(st).length, 0, "the fixture filed something");
+    const { said } = show(st, "A");
+    assert(/Filed before Binders organised specific cards/.test(said),
+      `the legacy row is not shown as history: ${said}`);
+    assert(!/Looking for|Keeping|Offered/.test(said),
+      `a legacy row was read as a thing's home: ${said}`);
+    /* And it carries no Move and no Remove here — it is removed from the card's
+       own panel, beside the card it is actually about. */
+    assert(!/Move to…/.test(said), `a legacy row was offered a Move: ${said}`);
+  });
+
+  test("[42] duplicate binder names stay distinguishable by id, never by name", () => {
+    const st = world({ binders: [
+      { id: "x1", collectorId: "casey", name: "Trade Night", createdAt: AT, archivedAt: null },
+      { id: "x2", collectorId: "casey", name: "Trade Night", createdAt: AT, archivedAt: null }] });
+    okv(x(st, CASEY, "fileObject", { binderId: "x1", goalId: "g1" }), "file");
+    eq(homeOf(st, "goalId", "g1").binderId, "x1", "the wrong binder took it");
+    /* And the other one is still empty — a name identified nothing. */
+    eq(homes(st).filter((m) => m.binderId === "x2").length, 0,
+      "a binder was chosen by its name");
+    const { said } = show(st, "x2");
+    assert(!/Looking for/.test(said), `the same-named binder claimed the hunt: ${said}`);
+  });
+
+  test("[43] a Trusted Partner sees none of the new rendering either", () => {
+    /* THE PRIVACY CLAIM, AT THE RENDERING LAYER. [14] proves the projection
+       carries nothing; this proves nothing in 3B-1 reads around it. */
+    const st = world();
+    okv(x(st, CASEY, "fileObject", { binderId: "A", goalId: "g1" }), "goal");
+    okv(x(st, CASEY, "fileObject", { binderId: "B", collectorCopyId: "sell" }), "copy");
+    const theirs = projectForActor(st.get(), { partnerId: "nl" });
+    const body = JSON.stringify(theirs);
+    for (const n of ["Hunting", "Keepers", "A", "B", "Cc"]) {
+      assert(!new RegExp(`"name":"${n}"`).test(body), `a binder name reached a partner: ${n}`);
+    }
+    eq(JSON.stringify(theirs.binderMemberships), "[]", body);
+    eq(JSON.stringify(theirs.binders), "[]", body);
+    eq(JSON.stringify(theirs.binderEntries), "[]", body);
+    assert(!/binderCount|filedIn|binderTotal/.test(body), body);
+  });
+});
+
+/* =========================== I. reachable, with the controls that reach it */
+describe("I. A capability with a surface, at last", () => {
+  /* WHAT THIS SECTION WAS, AND WHY IT IS NOW THE OPPOSITE.
+
+     Batch 3A built object-level membership and, for one commit, exposed the two
+     commands that write it while no screen sent either. 3A's own closure took
+     them back out and this section pinned that: not exposed, nothing in
+     `client/` naming them, no thunk, the client able to send exactly 23. Every
+     one of those assertions was right, and every one of them is now deliberately
+     reversed — because the reason they gave has stopped being true.
+
+     `server/exposed-commands.js` states the rule: an entry is a command a
+     production surface sends TODAY, and "when a command joins this list" is
+     "when the product grows a surface that sends it." Batch 3B-1 is that
+     surface. So the pins are not deleted; they are turned around, and what they
+     assert now is the thing that made the difference — that the door and the
+     control arrived together, in one batch, and that the card-level door the
+     panel no longer presses is still open for one release.
+
+     THE INVARIANT UNDERNEATH NEVER MOVED: a Collector presentation surface may
+     not name a command. That is asserted below and in four other suites, and it
+     tightened by itself when the list grew to 25. */
   const { EXPOSED_COMMANDS } = require("../server/exposed-commands.js");
   const OBJECT_COMMANDS = ["fileObject", "unfileObject"];
   const clientSource = () => {
@@ -1023,10 +1359,9 @@ describe("I. A capability that exists and is not reachable yet", () => {
       for (const e of require("fs").readdirSync(d, { withFileTypes: true })) {
         const full = path.join(d, e.name);
         if (e.isDirectory()) walk(full);
-        /* COMMENTS STRIPPED, BECAUSE THE COMMENTS TALK ABOUT THESE NAMES. Both
-           `commands.js` and `exposed-commands.js` explain in prose why the two
-           commands are not bound or offered, and a scan that counts prose
-           cannot tell an explanation from a dispatch. */
+        /* Comments stripped: both `commands.js` and `exposed-commands.js`
+           explain these commands in prose, and a scan that counts prose cannot
+           tell an explanation from a dispatch. */
         else if (/\.(js|jsx)$/.test(e.name)) out.push([full.slice(ROOT.length + 1),
           require("fs").readFileSync(full, "utf8")
             .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ")]);
@@ -1036,105 +1371,132 @@ describe("I. A capability that exists and is not reachable yet", () => {
     return out;
   };
 
-  test("[31] the two object-level commands are not externally reachable", () => {
+  test("[31] the two object-level commands are reachable, and the card-level pair still is", () => {
     for (const name of OBJECT_COMMANDS) {
-      assert(!EXPOSED_COMMANDS.includes(name),
-        `${name} is exposed with no surface that sends it: ${EXPOSED_COMMANDS.join(",")}`);
+      assert(EXPOSED_COMMANDS.includes(name),
+        `${name} is not reachable, so no control can press it: ${EXPOSED_COMMANDS.join(",")}`);
     }
-    eq(EXPOSED_COMMANDS.length, 23, `the production surface is ${EXPOSED_COMMANDS.join(",")}`);
-    /* And the card-level pair IS reachable, so the line above is a statement
-       about these two rather than about Binder filing in general. */
+    eq(EXPOSED_COMMANDS.length, 25, `the production surface is ${EXPOSED_COMMANDS.join(",")}`);
+    /* AND THE CARD-LEVEL PAIR IS STILL OPEN, ON PURPOSE. The panel no longer
+       sends `addBinderEntry` — proved in [34] — but the door stays one release
+       so a browser tab opened before this deploy keeps working, and
+       `removeBinderEntry` stays indefinitely because it is how a legacy row is
+       removed. Retiring either is 3C's, with the seven guards that hold them. */
     for (const name of ["addBinderEntry", "removeBinderEntry"]) {
       assert(EXPOSED_COMMANDS.includes(name), `${name} stopped being reachable`);
     }
   });
 
-  test("[32] and they are nonetheless complete domain commands", () => {
-    /* THE WHOLE POINT OF THE SECTION ABOVE. Unexposed is not unbuilt: every
-       assertion in sections A to H of this file runs the real commands through
-       the real store, and this names the capability directly so that removing
-       either command fails here as well as there. */
+  test("[32] and they are complete domain commands, exercised end to end", () => {
     for (const name of OBJECT_COMMANDS) {
       assert([...C.COMMAND_NAMES].includes(name), `${name} is not a domain command`);
       eq(typeof C.COMMANDS[name], "function", `${name} has no implementation`);
     }
     eq([...C.COMMAND_NAMES].length, 53, "the domain command table moved");
-    /* And they still work, driven here rather than taken on trust. */
     const st = world();
     const id = okv(x(st, CASEY, "fileObject", { binderId: "A", goalId: "g1" }), "file");
-    eq(homeOf(st, "goalId", "g1").binderId, "A", "the unexposed command stopped working");
+    eq(homeOf(st, "goalId", "g1").binderId, "A", "the command stopped working");
     okv(x(st, CASEY, "unfileObject", { goalId: "g1" }), "unfile");
-    eq(homes(st).length, 0, "the unexposed command stopped working");
+    eq(homes(st).length, 0, "the command stopped working");
     assert(id, "no membership id was minted");
   });
 
-  test("[33] nothing in client/ sends either, and no thunk exists for one", () => {
+  test("[33] exactly one file in client/ names them, and it is the bindings", () => {
+    /* REVERSED FROM "NOTHING NAMES EITHER", AND THE REPLACEMENT IS THE RULE
+       THAT ALWAYS HELD: `client/commands.js` is the only file allowed to name a
+       command, and every surface calls what it was handed. The panel reaches
+       them through a step kind and the Binder view through a callback, so
+       neither names one — which is also enforced by source guards in
+       `phase5-c33`, `phase5-c34a` and `phase5-c34b` that tightened by
+       themselves when the exposed list grew. */
     const files = clientSource();
     assert(files.length > 5, `only ${files.length} client files were read`);
     for (const [name, body] of files) {
-      for (const cmd of OBJECT_COMMANDS) {
-        assert(!new RegExp(`["']${cmd}["']`).test(body),
-          `${name} names ${cmd}, so the door above is shut on something that sends it`);
+      const named = OBJECT_COMMANDS.filter((cmd) => new RegExp(`["']${cmd}["']`).test(body));
+      if (name === "client/commands.js") {
+        eq(named.length, 2, `the bindings name ${named.join(",") || "neither command"}`);
+      } else {
+        eq(named.length, 0, `${name} names ${named.join(",")} — only the bindings may`);
       }
-      assert(!/fileObjectInBinder|unfileObjectFromBinder/.test(body),
-        `${name} still carries a binding for an unexposed command`);
     }
+    /* And the bindings exist, with the shape every other binding has. */
+    const bindings = files.find(([n]) => n === "client/commands.js")[1];
+    for (const fn of ["fileObjectInBinder", "unfileObjectFromBinder"]) {
+      assert(new RegExp(`export function ${fn}\\(`).test(bindings), `${fn} is missing`);
+    }
+    /* ONE BINDER AND ONE OBJECT, AND NOTHING ELSE. No owner — the seat comes
+       from the verified token — and no canonical card, because the object named
+       its card when it was created. */
+    const slice = bindings.slice(bindings.indexOf("export function fileObjectInBinder"));
+    const body = slice.slice(0, slice.indexOf("export function unfileObjectFromBinder"));
+    assert(!/collectorId|canonicalCardId|cardId/.test(body),
+      `the binding carries an owner or a card: ${body}`);
   });
 
-  test("[34] the card-level UI still files a CARD, which is what 3B replaces", () => {
-    /* `phase5-b81` pins exact equality between what `client/commands.js` can
-       send and what is exposed; this says which commands the Binder control on
-       the Card Specification panel actually sends, because that is the thing
-       3B changes and it must still be the legacy pair today. */
-    const panel = require("fs").readFileSync(
+  test("[34] the shipping panel files a THING, and creates no card-level row", () => {
+    /* THE HEADLINE REVERSAL OF 3A'S CLOSURE, AND WHERE NEW BARE-CARD FILING
+       ENDS. This used to assert that the panel plans `kind: "file"`, that
+       `SignIn.jsx` maps it onto the card-level binding, and that neither file
+       mentions an object command. The first is now false on purpose. */
+    const panelSrc = require("fs").readFileSync(
       path.join(ROOT, "client/collector/CardSpecification.jsx"), "utf8");
     const signin = require("fs").readFileSync(
       path.join(ROOT, "client/sign-in/SignIn.jsx"), "utf8");
-    const bindings = require("fs").readFileSync(path.join(ROOT, "client/commands.js"), "utf8");
-    /* The chain, end to end: the panel plans a `file` step, `SignIn.jsx` maps
-       that step kind onto a binding, and the binding sends the CARD-level
-       command. 3B changes the last link; today all three are the legacy path. */
-    assert(/kind: "file"/.test(panel) && /kind: "unfile"/.test(panel),
-      "the panel no longer plans a filing step at all");
-    assert(/case "file": return binder\.file\(/.test(signin)
-      && /case "unfile": return binder\.unfile\(/.test(signin),
-      "the step kinds are no longer mapped onto the card-level bindings");
-    assert(/fileCardInBinder/.test(signin) && /unfileCardFromBinder/.test(signin),
-      "SignIn.jsx no longer imports the card-level bindings");
-    assert(/execute\("addBinderEntry"/.test(bindings)
-      && /execute\("removeBinderEntry"/.test(bindings),
-      "the shipping filing path no longer sends the card-level commands");
-    for (const cmd of OBJECT_COMMANDS) {
-      assert(!new RegExp(cmd).test(signin), `SignIn.jsx dispatches ${cmd}`);
-      assert(!new RegExp(cmd).test(panel), `the Card Specification panel dispatches ${cmd}`);
+    /* The panel plans the object kinds and NOT the card-level add. */
+    assert(/kind: "file-object"/.test(panelSrc), "the panel plans no filing");
+    assert(/kind: "unfile-object"/.test(panelSrc), "the panel plans no unfiling");
+    assert(!/kind: "file"[^-]/.test(panelSrc.replace(/\/\*[\s\S]*?\*\//g, " ")),
+      "the panel still plans a card-level filing");
+    /* The entrance maps both, and still maps the card-level pair for a stale
+       tab and for the legacy line's Remove. */
+    for (const kind of ["file-object", "unfile-object", "file", "unfile"]) {
+      assert(new RegExp(`case "${kind}"`).test(signin), `the entrance cannot map "${kind}"`);
+    }
+    /* AND THE PANEL NAMES NO COMMAND, which is the invariant that did not move
+       and which now covers the two new ones for free. */
+    for (const cmd of [...OBJECT_COMMANDS, "addBinderEntry"]) {
+      assert(!new RegExp(`["']${cmd}["']`).test(panelSrc), `the panel names ${cmd}`);
     }
   });
 
   test("[35] and the client/exposed sets agree without either being padded", () => {
-    /* THE INVARIANT THAT WAS BEING SATISFIED RATHER THAN HONOURED. `phase5-b81`
-       asserts set EQUALITY in both directions, and while the two doors were
-       open it held only because two thunks existed that nothing imported.
-       Measured here from the same two sources so that the equality is visible
-       beside the removal that restored it, and so that re-adding a thunk
-       without a door — or a door without a thunk — fails in both places. */
+    /* THE GUARD THAT MADE 3A'S CLOSURE NECESSARY, holding at 25 = 25 and
+       unmodified. While the doors were open with no control, it held only
+       because two thunks existed that nothing imported — the guard satisfied
+       rather than honoured. Now both sides moved together, in one commit,
+       because this assertion does not allow anything else. */
     const client = require("fs").readFileSync(path.join(ROOT, "client/commands.js"), "utf8");
     const sent = new Set();
     for (const m of client.matchAll(/execute\(\s*"([A-Za-z]+)"/g)) sent.add(m[1]);
     for (const m of client.matchAll(/^export const [A-Z_]+ = "([A-Za-z]+)";$/gm)) sent.add(m[1]);
     eq(JSON.stringify([...sent].sort()), JSON.stringify([...EXPOSED_COMMANDS].sort()),
       "the door and the client disagree about what the product offers");
-    eq(sent.size, 23, `the client can send ${sent.size}`);
+    eq(sent.size, 25, `the client can send ${sent.size}`);
+    /* AND EVERY ONE OF THEM IS IMPORTED BY SOMETHING. This is the half the
+       exact-set guard cannot see: a binding nothing imports satisfies it while
+       being dead, which is what 3A's two thunks were. */
+    const importers = require("fs").readFileSync(
+      path.join(ROOT, "client/sign-in/SignIn.jsx"), "utf8");
+    for (const fn of ["fileObjectInBinder", "unfileObjectFromBinder"]) {
+      assert(new RegExp(fn).test(importers), `${fn} is exported and imported by nothing`);
+    }
   });
 
   test("[36] and nothing else about the foundation moved with the doors", () => {
-    /* The closure is an exposure change. These are the counts the brief fixes,
-       asserted together so that a change to the door cannot quietly arrive
+    /* The batch is a change of SUBJECT in the UI. These are the counts it
+       fixes, asserted together so a change to a screen cannot quietly arrive
        with a change to the schema or the refusal vocabulary. */
     eq(require("fs").readdirSync(path.join(ROOT, "persistence/migrations"))
       .filter((f) => f.endsWith(".sql")).length, 14, "a migration moved");
     eq(Object.keys(D.REFUSE).length, 44, "the refusal vocabulary moved");
     assert(D.REFUSE.invalidTarget === "invalid-target" && D.REFUSE.binderArchived === "binder-archived",
       "Batch 3A's two refusal codes changed");
+    /* AND THE DOMAIN FILE IS UNTOUCHED BY THIS BATCH, which is the strongest
+       single statement of it. */
+    const { execFileSync } = require("child_process");
+    const changed = execFileSync("git", ["diff", "--name-only", "ff80c17", "--",
+      "domain/", "persistence/"], { cwd: ROOT, encoding: "utf8" }).trim();
+    eq(changed, "", `3B-1 changed the foundation: ${changed}`);
   });
 });
 
