@@ -1,6 +1,8 @@
 # MetYet --- Canonical Engineering Context
 
 **Canonical handoff:** 2026-10-02\
+**Release checkpoint:** 2026-10-03 --- 3B-1 live at `b658e7e` (§9,
+§18)\
 **Purpose:** bootstrap a fresh Claude Project without importing the
 overloaded historical Project Knowledge.
 
@@ -189,25 +191,37 @@ before pilot, not a reason to expand Binder retirement.
 Never conflate local commit, bundle, remote branch, merged `main`, and
 deployed production.
 
-## 9. Immediate task
+## 9. Release checkpoint (2026-10-03) and next eligible batch
 
-Immediate task is **landing/deploying accepted work through 3B-1 onto
-`main` as its own production overlap release**.
+**3B-1 is closed in production.** PR #79 merged into `main` with a merge
+commit; production runs `b658e7e` (deployed around 2026-10-03 01:00
+UTC). The stale-client compatibility window began then.
 
-Use task file:
-`SUBMIT_THIS_FILE_TO_CLAUDE_MetYet_Land_and_Deploy_Through_Batch_3B1.md`
+Production baseline: - object-level Binder homes (`binder_memberships`,
+`fileObject`/`unfileObject`) are the production baseline; - the current
+client creates and files Goals and CollectorCopies and creates no new
+bare-card Binder entries; - `addBinderEntry` remains externally exposed
+**temporarily, only for stale-client compatibility**; -
+`removeBinderEntry` remains required for legacy-row removal.
 
-Hard stop after production verification. Do not begin 3C-1.
+The accepted 3C audit remains authoritative for retiring the external
+add door, together with the 2026-10-03 read-only checkpoint addition
+that test `[36]` must compare 3B-1's own commits rather than the working
+tree.
 
-Expected recent lineage --- **verify, do not trust blindly**: -
-`64f88e1` earlier main baseline after qualification/photo work -
-`88712d0` 3B audit lineage - `f7f820d` 3B-1 implementation - `ca9bb41`
-3B-1 hand-back/docs - `3a2b3ef` 3C pre-implementation audit/docs
+**3C-1 is the next eligible engineering cleanup batch**, defined in
+`docs/tasks/BATCH_3C1_CLOSE_LEGACY_BARE_CARD_BINDER_ADD_DOOR.md`. It
+becomes actionable only after the release owner explicitly decides the
+compatibility window is sufficient. It must ship as a separate release
+from 3B-1. **Prepared does not mean authorized.**
 
-Pushes from prior Claude sessions were blocked by repository
-authorization/proxy 403. Never route around authorization. If blocked,
-preserve clean state, give exact owner action, and do not claim
-deployment.
+Phase 6 / UX work remains downstream and must not be mixed into 3C-1.
+Build-gate debt (§8: `build:app` in the canonical verification gate, a
+production-client smoke) remains separate from 3C-1.
+
+Never route around repository authorization. If a push or deploy is
+blocked, preserve clean state, give the exact owner action, and do not
+claim deployment.
 
 ## 10. Qualification / photos / visibility
 
@@ -312,10 +326,9 @@ Add older artifacts only when a task actually needs them.
 Read this file first, then the current task prompt and latest 3C audit.
 Inspect the repository before action.
 
-For the immediate release: - land/deploy through accepted 3B-1; -
-preserve `addBinderEntry` external reachability for overlap; - prove
-current client emits no new bare-card filing; - preserve
-`removeBinderEntry`; - explicitly run `build:app`; - verify
-production; - stop.
-
-**Do not start 3C-1 in that release.**
+3B-1 is landed and live (§9). Do not begin 3C-1 unless the current task
+explicitly states that the release owner has authorized closing the
+stale-client compatibility window. When authorized, follow
+`docs/tasks/BATCH_3C1_CLOSE_LEGACY_BARE_CARD_BINDER_ADD_DOOR.md`
+exactly, including its mandatory order: fixtures converted first,
+per-test anti-vacuity proof, then closure.
