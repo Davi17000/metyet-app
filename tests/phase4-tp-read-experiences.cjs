@@ -217,7 +217,9 @@ describe("B. every join is by identifier, never by position", () => {
        offered" since C2, and says what it counts: a partner only ever receives
        a Collector's OFFERED copies, so this was never a count of what Bo owns
        and no longer pretends to be. */
-    assert(/Cards offered 2/.test(bo), "Bo's offered-card count: " + bo);
+    /* RELABELLED: the number counts physical COPIES, and a Collector offering
+       two copies of one card is offering two things. */
+    assert(/Copies offered 2/.test(bo), "Bo's offered-copy count: " + bo);
     assert(!/Cards offered/.test(ada), "Ada was given a count she has not got: " + ada);
   });
 

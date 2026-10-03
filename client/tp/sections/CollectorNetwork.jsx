@@ -536,7 +536,10 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
                   <Fact label="Last contact" value={day(rel && rel.last)} mono />
                   <Fact label="Cards reviewed" value={day(rel && rel.binderReviewedAt)} mono />
                   <Fact label="Goals" value={goals.length ? String(goals.length) : null} mono />
-                  <Fact label="Cards offered" value={offeredCopies.length ? String(offeredCopies.length) : null} mono />
+                  {/* COPIES, NOT CARDS. `offeredCopies` counts physical
+                      objects: a Collector offering two copies of one card is
+                      offering two things, and this number says so. */}
+                  <Fact label="Copies offered" value={offeredCopies.length ? String(offeredCopies.length) : null} mono />
                   <Fact label="In progress" value={live.length ? String(live.length) : null} mono />
                 </>
               }

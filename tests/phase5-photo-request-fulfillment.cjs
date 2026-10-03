@@ -402,7 +402,7 @@ describe("F. The transaction did not start", () => {
   });
 
   test("[22] the allow-list grew by exactly one, and the transaction is shut", () => {
-    eq(EXPOSED_COMMANDS.length, 22, "the production surface is not the size this batch declared");
+    eq(EXPOSED_COMMANDS.length, 25, "the production surface is not the size this batch declared");
     assert(EXPOSED_COMMANDS.includes("addCopyPhotos"), "the shop has no way to answer");
     /* EVERY NAME HERE IS A REAL COMMAND, checked the way `phase5-c5` checks it:
        an adversarial run found `reviewCopy2` in this list — not a command
@@ -423,7 +423,7 @@ describe("F. The transaction did not start", () => {
   test("[23] no migration, and no new durable fact", () => {
     const migrations = fs.readdirSync(path.join(ROOT, "persistence/migrations"))
       .filter((f) => f.endsWith(".sql")).sort();
-    eq(migrations[migrations.length - 1], "0013_binders.sql", migrations.join(","));
+    eq(migrations[migrations.length - 1], "0014_binder_memberships.sql", migrations.join(","));
     const src = codeOf("domain/metyet-domain.js") + codeOf("domain/metyet-commands.js")
       + codeOf("domain/metyet-projection.js");
     for (const invented of ["acknowledged", "fulfilment", "photoTask", "notified",

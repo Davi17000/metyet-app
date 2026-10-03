@@ -319,7 +319,7 @@ describe("B. a template is configuration, and cannot outvote the domain", () => 
     assert(!/create table|insert into|select |db\.|repository/i.test(body),
       "the template module reaches persistence");
     const migrations = fs.readdirSync(path.join(ROOT, "persistence", "migrations")).sort();
-    eq(migrations[migrations.length - 1], "0013_binders.sql", "C8 added a migration: " + migrations.join(","));
+    eq(migrations[migrations.length - 1], "0014_binder_memberships.sql", "C8 added a migration: " + migrations.join(","));
   });
 });
 
@@ -1023,11 +1023,20 @@ describe("G. whose shelf this is", () => {
 
   test("there is no HTTP way in, and the production door did not move", async () => {
     const { EXPOSED_COMMANDS } = require("../server/exposed-commands.js");
-    eq(EXPOSED_COMMANDS.length, 22, "C8 opened a production command: " + EXPOSED_COMMANDS.join(","));
-    /* 49 → 50 in Option B (`setCopyPending`). C8's claim is unchanged: C8 added
-       no domain command, and the door it is really guarding — the allow-list
-       above — has not moved either. */
-    eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 50,
+    eq(EXPOSED_COMMANDS.length, 25, "C8 opened a production command: " + EXPOSED_COMMANDS.join(","));
+    /* 49 → 50 in Option B (`setCopyPending`), and → 51 in the four-state batch
+       (`setCollectorCopyKept`). C8's claim is unchanged: C8 added no domain
+       command, and the door it is really guarding — the allow-list above —
+       still has nothing to do with importing a CSV.
+       → 53 in Batch 3A (`fileObject`, `unfileObject`), and the door moved
+       23 → 25 in Batch 3B-1, with the per-object controls that send them.
+       Still nothing to do with importing a CSV.
+       AND THE SAME CORRECTION AS C7.1's. This claimed the pair was exposed
+       from 3A; 3A's closure unexposed it and left the prose, so for two
+       batches this sentence contradicted the assertion above it. 3B-1 makes
+       the count 25 again, and the history is now written out rather than
+       quietly becoming true. */
+    eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 53,
       "C8 added a domain command");
     const app = code("server/app.js");
     assert(!/inventory-import|inventoryImport|\/api\/inventory|csv/i.test(app),
@@ -1107,9 +1116,9 @@ describe("H. no provider, no network, no artwork", () => {
 /* ============================================ I. THE REST OF MetYet IS UNTOUCHED */
 describe("I. and nothing else moved", () => {
 
-  test("no migration, and 0013_binders.sql is still the newest", () => {
+  test("C8 wrote no migration: the newest is still somebody else's", () => {
     const migrations = fs.readdirSync(path.join(ROOT, "persistence", "migrations")).sort();
-    eq(migrations[migrations.length - 1], "0013_binders.sql", migrations.join(","));
+    eq(migrations[migrations.length - 1], "0014_binder_memberships.sql", migrations.join(","));
   });
 
   test("the catalog gained a read and no write", () => {

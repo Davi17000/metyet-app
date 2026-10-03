@@ -1,9 +1,14 @@
 /* ============================================================================
    WHAT THE PRODUCT CURRENTLY OFFERS (Phase 5 Batch 8.1)
 
-   The domain holds forty-nine commands. The product offers eighteen. Until this
-   file existed the difference between those two numbers was a fact about the
-   client — the offered ones were whatever `client/commands.js` happened to bind
+   THE DOMAIN HOLDS MANY MORE COMMANDS THAN THE PRODUCT OFFERS, and the exact
+   two numbers are the list below and `COMMAND_NAMES` — not this paragraph. It
+   said "forty-nine" and "eighteen" for three batches after both had moved,
+   which is the third time a hand-written count in this file has gone stale, so
+   it no longer carries one. The tests assert the real totals; a sentence cannot.
+
+   Until this file existed the difference between those two numbers was a fact
+   about the client — the offered ones were whatever `client/commands.js` happened to bind
    — and a fact about the client is not a boundary. Anybody who could send one
    request could send any of them.
 
@@ -68,6 +73,16 @@ const EXPOSED_COMMANDS = Object.freeze([
      and tested; it joins this list in the batch that gives it a screen. */
   "addCollectorCopy",            // Collector → Your Cards, "I own this card"
   "setCollectorCopyOffered",     // Collector → Your Cards, offering ⇄ not offering
+  /* AND WHETHER THEY ARE KEEPING IT (the four-state batch). PC is the other
+     half of a copy's disposition, and it needed a door of its own for the same
+     reason offering did: it is a decision with consequences for who can see the
+     card, not a correctable typo, so it does not travel inside a patch. The two
+     commands clear each other in the domain, which is what makes "both at once"
+     unreachable rather than merely discouraged. It states nothing about a card,
+     changes no Goal, creates no Binder membership, and never crosses to a
+     Trusted Partner — a kept copy is not offered, so the row does not reach
+     them at all. */
+  "setCollectorCopyKept",
   "removeCollectorCopy",         // Collector → Your Cards, "I no longer own this"
   /* THE CARD SPECIFICATION SURFACE (Phase 5 C3.3). Five, and each one is a
      control on the panel a Collector opens from Browse — which is the rule this
@@ -90,7 +105,24 @@ const EXPOSED_COMMANDS = Object.freeze([
      builds, and neither command has a control here. */
   "createBinder",                // Collector → Card Specification, "New binder…"
   "addBinderEntry",              // Collector → Card Specification, filing this card
-  "removeBinderEntry",           // Collector → Card Specification, unfiling it
+  /* WHERE AN OBJECT BELONGS (Batch 3B-1), AND NOW THERE IS A SCREEN. These file
+     one Goal or one CollectorCopy, and the Card Specification panel sends them
+     from a home control beside each of those things — the Binder view sends
+     them too, from `Move` and `Remove from Binder` on a filed object.
+
+     THEY WERE HERE ONCE BEFORE, FOR ONE COMMIT, AND THAT WAS WRONG. Batch 3A
+     built the commands and listed them while no screen sent either, which is
+     the one thing this file says not to do; 3A's own closure took them back out
+     and 3B-1 puts them back for the reason the rule gives — the product grew
+     the surface. The round trip is left written down because it is the rule
+     working, not a mistake to hide.
+
+     `addBinderEntry` above still files a CARD, and the shipping panel no longer
+     sends it. It stays on this list for one release so a browser tab opened
+     before this deploy keeps working; retiring the door is 3C's. */
+  "fileObject",                  // Collector → Card Specification / Binder, where this thing lives
+  "unfileObject",                // Collector → Card Specification / Binder, taking it out
+  "removeBinderEntry",           // Collector → the legacy line, removing a card filed before 3B
   "updateCollectorCopy",         // Collector → Card Specification, correcting a copy
   "updateGoalCriteria",          // Collector → Card Specification, which copy is wanted
   /* MANAGING A BINDER AS AN OBJECT (Phase 5 C3.4). C3.1 wrote these two and

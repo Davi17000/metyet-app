@@ -366,8 +366,14 @@ describe("B. only what you asked for", () => {
   test("a card you own, wanted by nobody, is not an answer either", async () => {
     const ctx = await world();
     const made = await cards(ctx);
-    await post(ctx.app, "casey", "addCollectorCopy",
-      { copy: { canonicalCardId: made.mudkip, grade: "PSA 9" } });
+    /* `offered: true` because a new copy must say which (the disposition
+       batch) — AND the result is checked, which it was not before. Without the
+       disposition this call was refused, no copy was ever created, and the
+       assertion below was satisfied by the fixture's absence rather than by the
+       behaviour: the test passed while testing nothing. */
+    eq((await post(ctx.app, "casey", "addCollectorCopy",
+      { copy: { canonicalCardId: made.mudkip, grade: "PSA 9", offered: true } })).statusCode, 200,
+    "the copy this test is about was not recorded");
     await stock(ctx.app, "north", { canonicalCardId: made.mudkip, ask: 20 });
     const { r, state } = await shops(ctx);
     eq(state.discoveries.length, 0, "owning a card created demand");
@@ -753,7 +759,27 @@ describe("F. the boundaries hold", () => {
       "addGoal", "updateGoalTier", "removeGoal",
       "addInventoryCopy",
       "addCollectorCopy", "setCollectorCopyOffered", "removeCollectorCopy",
+      /* AND THE ONE THE FOUR-STATE BATCH ADDED. `setCollectorCopyKept` is the
+         other half of a copy's disposition — "I own this and intend to keep it"
+         — and it needed its own door for the same reason offering did: it is a
+         decision about who may see the card, not a correctable field, so it
+         does not travel inside a patch. The two clear each other in the domain.
+         It states nothing about a card, touches no Goal, creates no Binder
+         membership, and never crosses to a partner. */
+      "setCollectorCopyKept",
       "createBinder", "addBinderEntry", "removeBinderEntry",
+      /* AND THE TWO BATCH 3B-1 OPENED, WITH THE CONTROLS THAT PRESS THEM.
+         `fileObject` and `unfileObject` file one GOAL or one COLLECTORCOPY,
+         which is the subject of organisation from this batch on: the Card
+         Specification panel sends them from a home control beside each thing,
+         and the Binder view from `Move` and `Remove from Binder`.
+
+         THEY WERE HERE FOR ONE COMMIT IN 3A AND WERE TAKEN BACK OUT, because
+         no screen sent either and this list's rule is that an entry names the
+         screen that sends it. 3B-1 is that screen. `addBinderEntry` above
+         still files a CARD, and the panel no longer sends it — the door stays
+         one release for a stale browser tab, and goes in 3C. */
+      "fileObject", "unfileObject",
       "updateCollectorCopy", "updateGoalCriteria",
       "renameBinder", "setBinderArchived",
       /* AND THE TWO C5 ADDED (Phase 5 C5). `updateInventoryCopy` and
@@ -781,10 +807,13 @@ describe("F. the boundaries hold", () => {
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
     ].sort()), "C3.5 changed the production surface");
-    eq(EXPOSED_COMMANDS.length, 22);
+    eq(EXPOSED_COMMANDS.length, 25);
     /* 49 → 50 in Option B (`setCopyPending`). What this line guards is the
-       door above, which has not moved: the new command is not exposed. */
-    eq(C.COMMAND_NAMES.length, 50, "a command was added or removed");
+       door above, which has not moved: the new command is not exposed.
+       51 → 53 in Batch 3A (`fileObject`, `unfileObject`), and this time the
+       door DID move — both are listed above. The pin is re-stated rather than
+       loosened: the surface is still named command by command. */
+    eq(C.COMMAND_NAMES.length, 53, "a command was added or removed");
   });
 
   test("C3.5 opened no door — the whole file is what it was", () => {
@@ -822,12 +851,17 @@ describe("F. the boundaries hold", () => {
 
   test("no migration, and no new durable concept", async () => {
     const migrations = fs.readdirSync(path.join(ROOT, "persistence", "migrations")).sort();
-    eq(migrations[migrations.length - 1], "0013_binders.sql", migrations.join(","));
+    eq(migrations[migrations.length - 1], "0014_binder_memberships.sql", migrations.join(","));
     const ctx = await world();
     await oneOverlap(ctx);
     const stored = await load(ctx);
+    /* RE-PINNED (Batch 3A): `binderMemberships` is the new durable concept, and
+       naming it here is the point — this list is how a section arrives on
+       purpose rather than by accident. `binderEntries` is still beside it and
+       still carries exactly what it carried; 3A added, it did not replace. */
     eq(json(Object.keys(stored).sort()), json([
-      "activity", "binderEntries", "binders", "catalog", "collectorCopies", "collectors",
+      "activity", "binderEntries", "binderMemberships", "binders", "catalog",
+      "collectorCopies", "collectors",
       "conversations", "copyReviews", "interests", "inventory", "invitations", "goals",
       "opportunities", "partners", "photoRequests", "preferences", "relationships",
     ].sort()), "the canonical world grew or lost a collection");

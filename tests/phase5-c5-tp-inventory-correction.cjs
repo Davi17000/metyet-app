@@ -175,7 +175,7 @@ const rowOf = async (ctx, invId) =>
 describe("A. the door opened by exactly two", () => {
 
   test("the allow-list, and the two C5 itself added", async () => {
-    eq(EXPOSED_COMMANDS.length, 22, "the production surface is not the size C5 intended");
+    eq(EXPOSED_COMMANDS.length, 25, "the production surface is not the size C5 intended");
     for (const name of ["updateInventoryCopy", "removeInventoryCopy"]) {
       assert(EXPOSED_COMMANDS.includes(name), `${name} is not offered`);
     }
@@ -224,12 +224,14 @@ describe("A. the door opened by exactly two", () => {
     eq(before.length, 16, "the baseline was not sixteen");
     const added = EXPOSED_COMMANDS.filter((n) => !before.includes(n));
     const lost = before.filter((n) => !EXPOSED_COMMANDS.includes(n));
-    /* C5's own two, plus the three the qualification batch added on top. The
-       test still measures the delta against the file as dc2fd25 actually had
-       it, so a fourth door opening anywhere still fails here — which is the
-       whole reason it reads git rather than a literal. */
-    eq(json(added.sort()), json(["addCopyPhotos", "endReview", "removeInventoryCopy",
-      "requestPhotos", "reviewCopy", "updateInventoryCopy"]),
+    /* C5's own two, plus the three the qualification batch added on top, plus
+       the two Batch 3B-1 opened with the per-object controls that press them.
+       3A added that pair briefly and 3A's own closure took it back out, so this
+       guard has now fired three times for three different right reasons — which
+       is the whole point of measuring the delta against the file as dc2fd25
+       actually had it rather than against a literal. */
+    eq(json(added.sort()), json(["addCopyPhotos", "endReview", "fileObject", "removeInventoryCopy",
+      "requestPhotos", "reviewCopy", "setCollectorCopyKept", "unfileObject", "updateInventoryCopy"]),
       "a door was opened that no batch declared");
     eq(json(lost), json([]), "a door somebody else opened was closed");
   });
@@ -889,10 +891,15 @@ describe("G. what the product says", () => {
   test("and what they both promise is what the projection does", async () => {
     const ctx = await world();
     const cards = await charizard(ctx);
-    /* Three facts, one of each kind: a Goal, a copy kept back, a copy offered. */
+    /* Three facts, one of each kind: a Goal, a copy kept back, a copy offered.
+
+       RE-PINNED: "kept back" used to be written as `offered: false`, which only
+       ever meant "no offer stated" — the fixture claimed PC and stored silence.
+       A new copy must now say which, so it says PC, and every assertion below
+       is unchanged because a PC copy's `offered` is still false. */
     await wants(ctx, "casey", cards.unlimited);
     const priv = await post(ctx.app, "casey", "addCollectorCopy",
-      { copy: { canonicalCardId: cards.firstEdition, offered: false } });
+      { copy: { canonicalCardId: cards.firstEdition, keeping: true } });
     eq(priv.statusCode, 200, priv.body);
     const open = await post(ctx.app, "casey", "addCollectorCopy",
       { copy: { canonicalCardId: cards.unlimited, offered: true } });
@@ -1018,17 +1025,20 @@ describe("G. what the product says", () => {
 /* ============================================================== H */
 describe("H. nothing else moved", () => {
 
-  test("no migration, and the newest is still C3.4's", async () => {
+  test("C5 wrote no migration: the newest is still somebody else's", async () => {
     const files = fs.readdirSync(path.join(ROOT, "persistence/migrations")).sort();
-    eq(files[files.length - 1], "0013_binders.sql", "C5 added or renamed a migration");
+    eq(files[files.length - 1], "0014_binder_memberships.sql", "C5 added or renamed a migration");
   });
 
   test("the domain's command table did not grow", async () => {
     /* 49 → 50 in Option B, which is the batch that DID need a new command:
        voluntary Pending is a decision, and a decision leaves no trace to derive
        from. C5's own point stands — it shipped two commands that already
-       existed rather than writing more. */
-    eq([...COMMAND_NAMES].length, 50, "C5 wrote a command instead of shipping two that existed");
+       existed rather than writing more.
+       51 → 53 in Batch 3A (`fileObject`, `unfileObject`), for the same reason:
+       there was no existing command that could name a Goal's or a copy's
+       Binder, because until 3A no row could hold one. */
+    eq([...COMMAND_NAMES].length, 53, "C5 wrote a command instead of shipping two that existed");
   });
 
   test("no new route, and the catalogue import is still unreachable", async () => {
@@ -1056,8 +1066,9 @@ describe("H. nothing else moved", () => {
   test("offered is still separate from owned, and correcting a shop's copy does not touch it", async () => {
     const ctx = await world();
     const cards = await charizard(ctx);
+    /* PC, so `offered` is false for a stated reason rather than by default. */
     const mine = await post(ctx.app, "casey", "addCollectorCopy",
-      { copy: { canonicalCardId: cards.unlimited, offered: false } });
+      { copy: { canonicalCardId: cards.unlimited, keeping: true } });
     const copyId = mine.json().value;
     const invId = await stock(ctx, "north", { canonicalCardId: cards.unlimited });
     await correct(ctx.app, "north", invId, { ask: 1 });

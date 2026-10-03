@@ -132,9 +132,25 @@ const get = (app, token, url) => app.inject({ method: "GET", url,
 
 /* The product's own door, every time. A Collector records a card by sending the
    command a browser sends; nothing in this file reaches around the route. */
-const own = (app, token, copy) => post(app, token, "addCollectorCopy", { copy });
+/* A NEW COPY MUST SAY WHETHER ITS OWNER WOULD PART WITH IT (the disposition
+   batch). Many tests here are about identity, ownership, several copies of one
+   card, or the record surviving an edit, and the disposition is scaffolding in
+   all of them — so the default is stated once, visibly. It applies ONLY when
+   the caller named neither, so a caller that says `keeping` does not get
+   `offered: true` added underneath it. The tests that ARE about the
+   disposition say so at the call site. */
+const own = (app, token, copy) => post(app, token, "addCollectorCopy",
+  { copy: ("offered" in copy || "keeping" in copy) ? copy : { ...copy, offered: true } });
 const offer = (app, token, copyId, offered) =>
   post(app, token, "setCollectorCopyOffered", { copyId, offered });
+/* AND AN OFFER NOW ENDS BY SAYING THE OTHER THING. The disposition batch
+   refuses `setCollectorCopyOffered(false)`: a copy is kept or it is on offer,
+   and withdrawing into silence produced a copy barred from every trade package
+   and invisible to every partner. Switching to PC clears the offer in one step
+   and leaves `offered` false exactly as the withdrawal did, so every assertion
+   that reads `offered` is unchanged. */
+const keep = (app, token, copyId) =>
+  post(app, token, "setCollectorCopyKept", { copyId, keeping: true });
 const drop = (app, token, copyId) => post(app, token, "removeCollectorCopy", { copyId });
 const copiesOf = async (ctx) => (await ctx.repository.loadWorld()).collectorCopies;
 const copyOf = async (ctx, id) => (await copiesOf(ctx)).find((b) => b.id === id);
@@ -220,7 +236,8 @@ describe("A. whose card this is, which card it is, and who decided", () => {
   test("a Collector cannot touch another Collector's copy — offer, withdraw, edit or remove", async () => {
     const ctx = await world();
     const cards = await charizard(ctx);
-    const id = (await own(ctx.app, "casey", { canonicalCardId: cards.unlimited, cert: "CASEY" })).json().value;
+    const id = (await own(ctx.app, "casey",
+      { canonicalCardId: cards.unlimited, cert: "CASEY", keeping: true })).json().value;
 
     eq((await offer(ctx.app, "dana", id, true)).json().error.refused, "not-owner", "offering");
     eq((await drop(ctx.app, "dana", id)).json().error.refused, "not-owner", "removing");
@@ -274,7 +291,7 @@ describe("B. two of the same card are two objects", () => {
     const cards = await charizard(ctx);
     const a = (await own(ctx.app, "casey", { canonicalCardId: cards.unlimited, offered: true })).json().value;
     const b = (await own(ctx.app, "casey", { canonicalCardId: cards.unlimited, offered: true })).json().value;
-    eq((await offer(ctx.app, "casey", a, false)).statusCode, 200);
+    eq((await keep(ctx.app, "casey", a)).statusCode, 200);
     eq((await copyOf(ctx, a)).offered, false, "one withdrawn");
     eq((await copyOf(ctx, b)).offered, true, "the other untouched");
   });
@@ -283,13 +300,27 @@ describe("B. two of the same card are two objects", () => {
 /* ============================================================== C */
 describe("C. willingness changes; ownership does not", () => {
 
-  test("a new copy is NOT offered unless its owner says so", async () => {
+  test("a new copy is NOT offered unless its owner says so — and it must say one", async () => {
+    /* RE-PINNED, AND THE ORIGINAL HALF IS INTACT. Owning a card and offering it
+       are still two facts and the second is never inferred from the first: this
+       test's point was that `addCollectorCopy` does not put a card on the
+       table, and it still does not.
+
+       What the disposition batch added is that silence is not an answer either.
+       A copy that says nothing is barred from every trade package and reaches
+       no partner, so recording one was recording a dead end; the Collector now
+       says which, and PC is how "I own this and I am not offering it" is said. */
     const ctx = await world();
     const cards = await charizard(ctx);
-    const quiet = (await own(ctx.app, "casey", { canonicalCardId: cards.unlimited })).json().value;
+    const quiet = (await own(ctx.app, "casey",
+      { canonicalCardId: cards.unlimited, keeping: true })).json().value;
     eq((await copyOf(ctx, quiet)).offered, false, "owning is the base fact");
+    eq((await copyOf(ctx, quiet)).keeping, true, "and keeping is a thing you say");
     const loud = (await own(ctx.app, "casey", { canonicalCardId: cards.shadowless, offered: true })).json().value;
     eq((await copyOf(ctx, loud)).offered, true, "and offering is a thing you say");
+    /* And saying neither is refused, which is the new half. */
+    eq((await own(ctx.app, "casey", { canonicalCardId: cards.firstEdition, offered: false }))
+      .json().error.refused, D.REFUSE.invalidDisposition, "a copy was recorded saying nothing");
   });
 
   test("stopping offering keeps the record, the card and every physical fact", async () => {
@@ -300,7 +331,7 @@ describe("C. willingness changes; ownership does not", () => {
     const before = await copyOf(ctx, id);
     eq(before.offered, true, "offered to start with");
 
-    eq((await offer(ctx.app, "casey", id, false)).statusCode, 200);
+    eq((await keep(ctx.app, "casey", id)).statusCode, 200);
     const after = await copyOf(ctx, id);
 
     assert(after, "the CollectorCopy still exists");
@@ -322,7 +353,7 @@ describe("C. willingness changes; ownership does not", () => {
 
     const supply = async () => (await get(ctx.app, "north", "/api/view")).json().state.collectorCopies;
     eq((await supply()).length, 1, "offered: Northline sees it");
-    await offer(ctx.app, "casey", id, false);
+    await keep(ctx.app, "casey", id);
     eq((await supply()).length, 0, "withdrawn: Northline sees nothing");
     /* And the owner still sees it whole. */
     const mine = (await get(ctx.app, "casey", "/api/view")).json().state.collectorCopies;
@@ -335,7 +366,7 @@ describe("C. willingness changes; ownership does not", () => {
     const cards = await charizard(ctx);
     const id = (await own(ctx.app, "casey", { canonicalCardId: cards.firstEdition,
       offered: true, cert: "PSA 4242", photos: PHOTOS })).json().value;
-    await offer(ctx.app, "casey", id, false);
+    await keep(ctx.app, "casey", id);
     eq((await offer(ctx.app, "casey", id, true)).statusCode, 200);
 
     eq((await copiesOf(ctx)).length, 1, "one record throughout");
@@ -370,13 +401,21 @@ describe("C. willingness changes; ownership does not", () => {
     eq((await copyOf(ctx, id)).offered, true, "and offering survived it");
   });
 
-  test("`offered` is a boolean or it is refused, and validateWorld says so too", async () => {
+  test("`offered` is `true` or it is refused, and validateWorld still polices the row", async () => {
+    /* RE-PINNED: the setter used to take any boolean and refuse everything else.
+       It now takes `true` only — `false` returned a copy to saying nothing,
+       which is the state this batch stopped creating — so `false` joins the
+       list below. The stored-row half is untouched: a world carrying
+       `offered: "yes"` is still invalid, and that rule lives in
+       `validateWorld`, which this batch deliberately did not teach the new
+       requirement. */
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = (await own(ctx.app, "casey", { canonicalCardId: cards.unlimited })).json().value;
-    for (const value of ["yes", 1, null, undefined]) {
+    for (const value of ["yes", 1, null, undefined, false]) {
       const res = await offer(ctx.app, "casey", id, value);
       eq(res.statusCode, 409, `offered: ${json(value)}`);
+      eq(res.json().error.refused, D.REFUSE.invalidDisposition, `offered: ${json(value)}`);
     }
     const bad = await ctx.repository.loadWorld();
     bad.collectorCopies = bad.collectorCopies.map((b) => ({ ...b, offered: "yes" }));
@@ -394,7 +433,7 @@ describe("D. leaving your hands is not changing your mind", () => {
     const kept = (await own(ctx.app, "casey", { canonicalCardId: cards.unlimited, offered: true })).json().value;
     const gone = (await own(ctx.app, "casey", { canonicalCardId: cards.shadowless, offered: true })).json().value;
 
-    await offer(ctx.app, "casey", kept, false);
+    await keep(ctx.app, "casey", kept);
     eq((await drop(ctx.app, "casey", gone)).statusCode, 200);
 
     assert(await copyOf(ctx, kept), "withdrawing left the record");
@@ -410,7 +449,7 @@ describe("D. leaving your hands is not changing your mind", () => {
     assert(!keen.refused, json(keen));
     eq((await ctx.repository.loadWorld()).interests.length, 1, "Northline is interested");
 
-    await offer(ctx.app, "casey", id, false);
+    await keep(ctx.app, "casey", id);
     eq((await ctx.repository.loadWorld()).interests.length, 1,
       "withdrawing an offer does not erase who had been interested");
 
@@ -423,7 +462,8 @@ describe("D. leaving your hands is not changing your mind", () => {
   test("a partner cannot register interest in a card its owner is not offering", async () => {
     const ctx = await world();
     const cards = await charizard(ctx);
-    const id = (await own(ctx.app, "casey", { canonicalCardId: cards.unlimited, photos: PHOTOS })).json().value;
+    const id = (await own(ctx.app, "casey",
+      { canonicalCardId: cards.unlimited, photos: PHOTOS, keeping: true })).json().value;
     const r = await direct(ctx, ACTOR.north, "setInterest", { binderId: id, on: true });
     /* `not-found`, deliberately: the answer a copy that does not exist gets. A
        refusal that told the two apart would be the leak. */
@@ -438,9 +478,14 @@ describe("D. leaving your hands is not changing your mind", () => {
 
     eq((await drop(ctx.app, "casey", w.copyId)).json().error.refused, "copy-reserved",
       "a reserved copy is part of a deal");
-    /* Withdrawing the OFFER is still allowed — it is a statement, not a deletion
-       — and the deal keeps the copy regardless. */
-    eq((await offer(ctx.app, "casey", w.copyId, false)).statusCode, 200);
+    /* Changing what the owner MEANS by the copy is still allowed — it is a
+       statement, not a deletion — and the deal keeps the copy regardless.
+       RE-PINNED: that statement used to be "withdraw the offer"; it is now
+       "say I am keeping it", which is the same act in the two-answer model and
+       leaves `offered` false just as the withdrawal did. The known edge case —
+       that neither command consults the deal's hold on the copy — is unchanged
+       by this batch and is documented, not fixed, here. */
+    eq((await keep(ctx.app, "casey", w.copyId)).statusCode, 200);
     assert(await copyOf(ctx, w.copyId), "the copy is still there");
     eq((await drop(ctx.app, "casey", w.copyId)).json().error.refused, "copy-reserved",
       "and still cannot be deleted out from under the deal");
@@ -624,7 +669,9 @@ describe("F. `offered` did not replace the derived status", () => {
     const w = await reservedCopy(ctx, cards);
     await direct(ctx, ACTOR.north, "reviewTradeCard",
       { oppId: w.oppId, tradeCardId: w.tradeCardId, decision: "accept" });
-    eq((await offer(ctx.app, "casey", w.copyId, false)).statusCode, 200, "the owner may still say it");
+    /* RE-PINNED: "stop offering" is now "say I am keeping it". Still permitted
+       mid-deal, still changes nothing about the deal — see the comment above. */
+    eq((await keep(ctx.app, "casey", w.copyId)).statusCode, 200, "the owner may still say it");
     eq(D.collectorCopyStatus(w.copyId, (await ctx.repository.loadWorld()).opportunities), "committed",
       "and the deal's hold on the copy is untouched");
     const row = (await ctx.repository.loadWorld()).opportunities
@@ -639,7 +686,7 @@ describe("F. `offered` did not replace the derived status", () => {
     const seen = async () => (await get(ctx.app, "north", "/api/view")).json().state.collectorCopies;
 
     eq((await seen()).find((b) => b.id === w.copyId).status, "reserved", "their own deal's answer");
-    await offer(ctx.app, "casey", w.copyId, false);
+    await keep(ctx.app, "casey", w.copyId);
     const after = (await seen()).find((b) => b.id === w.copyId);
     /* `offered` gates SUPPLY. A copy the partner's own submitted package names
        is not reaching them as supply — it is reaching them as part of a deal
@@ -665,7 +712,8 @@ describe("F. `offered` did not replace the derived status", () => {
   test("an unoffered copy NO partner has named reaches nobody at all", async () => {
     const ctx = await world();
     const cards = await charizard(ctx);
-    const id = (await own(ctx.app, "casey", { canonicalCardId: cards.unlimited, photos: PHOTOS })).json().value;
+    const id = (await own(ctx.app, "casey",
+      { canonicalCardId: cards.unlimited, photos: PHOTOS, keeping: true })).json().value;
     const seen = (await get(ctx.app, "north", "/api/view")).json().state.collectorCopies;
     eq(seen.length, 0, "not as supply, not as unavailable, not at all");
     assert(await copyOf(ctx, id), "though it is certainly in the world");
@@ -782,8 +830,28 @@ describe("H. the doors this batch opened, and no others", () => {
       "addInventoryCopy",
       /* C2 — three, and the whole of the concept. */
       "addCollectorCopy", "setCollectorCopyOffered", "removeCollectorCopy",
+      /* AND THE ONE THE FOUR-STATE BATCH ADDED. `setCollectorCopyKept` is the
+         other half of a copy's disposition — "I own this and intend to keep it"
+         — and it needed its own door for the same reason offering did: it is a
+         decision about who may see the card, not a correctable field, so it
+         does not travel inside a patch. The two clear each other in the domain.
+         It states nothing about a card, touches no Goal, creates no Binder
+         membership, and never crosses to a partner. */
+      "setCollectorCopyKept",
       /* C3.3 — the Card Specification panel's five. */
       "createBinder", "addBinderEntry", "removeBinderEntry",
+      /* AND THE TWO BATCH 3B-1 OPENED, WITH THE CONTROLS THAT PRESS THEM.
+         `fileObject` and `unfileObject` file one GOAL or one COLLECTORCOPY,
+         which is the subject of organisation from this batch on: the Card
+         Specification panel sends them from a home control beside each thing,
+         and the Binder view from `Move` and `Remove from Binder`.
+
+         THEY WERE HERE FOR ONE COMMIT IN 3A AND WERE TAKEN BACK OUT, because
+         no screen sent either and this list's rule is that an entry names the
+         screen that sends it. 3B-1 is that screen. `addBinderEntry` above
+         still files a CARD, and the panel no longer sends it — the door stays
+         one release for a stale browser tab, and goes in 3C. */
+      "fileObject", "unfileObject",
       "updateCollectorCopy", "updateGoalCriteria",
       /* C3.4b — managing a binder as an object, now that there is a screen. */
       "renameBinder", "setBinderArchived",
@@ -812,7 +880,7 @@ describe("H. the doors this batch opened, and no others", () => {
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
     ].sort()), "the production surface is not what this batch declared");
-    eq(EXPOSED_COMMANDS.length, 22, "and nothing arrived unnamed");
+    eq(EXPOSED_COMMANDS.length, 25, "and nothing arrived unnamed");
   });
 
   test("every exposed name is a real command, and the client sends exactly these", () => {
@@ -847,7 +915,7 @@ describe("H. the doors this batch opened, and no others", () => {
     assert(C.COMMAND_NAMES.includes("updateCollectorCopy"), "the command exists");
     assert(EXPOSED_COMMANDS.includes("updateCollectorCopy"), "C3.3 gave it a screen");
     const id = (await own(ctx.app, "casey", { canonicalCardId: cards.firstEdition,
-      grade: "PSA 9", cert: "PSA 1" })).json().value;
+      grade: "PSA 9", cert: "PSA 1", keeping: true })).json().value;
 
     /* It works, for its owner. */
     const ok = await post(ctx.app, "casey", "updateCollectorCopy", { copyId: id, patch: { cert: "PSA 2" } });
@@ -899,10 +967,18 @@ describe("H. the doors this batch opened, and no others", () => {
     const cards = await charizard(ctx);
     /* A payload that claims an actor at the top level is refused by the route
        before any command runs — the Phase 4 rule, unchanged. */
+    /* THE COPY ITSELF MUST BE LEGAL, so that the route is the only thing that
+       can refuse. Without `offered` the command now answers `invalid-disposition`
+       on its own, and this loop would pass even if the route guard were deleted
+       — which is the guarantee it exists to hold. */
     for (const claim of [{ actor: { collectorId: "c2" } }, { seat: "tp" }, { account: "c2" }]) {
       const res = await post(ctx.app, "casey", "addCollectorCopy",
-        { copy: { canonicalCardId: cards.unlimited }, ...claim });
+        { copy: { canonicalCardId: cards.unlimited, offered: true }, ...claim });
       assert(res.statusCode === 400 || res.statusCode === 409, json(claim) + ": " + res.body);
+      if (res.statusCode === 409) {
+        assert(res.json().error.refused !== D.REFUSE.invalidDisposition,
+          json(claim) + ": the command answered for the payload, not the route");
+      }
     }
     eq((await copiesOf(ctx)).length, 0, "and nothing was written");
 

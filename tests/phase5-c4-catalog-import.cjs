@@ -375,8 +375,10 @@ describe("B. rerun is recovery", () => {
       { canonicalCardId: zard, tier: "primary", desired: { grade: "PSA 9" } });
     const binder = (await post(ctx.app, "casey", "createBinder", { name: "Mine" })).json().value;
     await post(ctx.app, "casey", "addBinderEntry", { binderId: binder, canonicalCardId: zard });
+    /* `offered: true` because a new copy must now say which; this test is about
+       an imported card reaching both seats, and the disposition is scaffolding. */
     await post(ctx.app, "casey", "addCollectorCopy",
-      { copy: { canonicalCardId: zard, grade: "PSA 9" } });
+      { copy: { canonicalCardId: zard, grade: "PSA 9", offered: true } });
     await post(ctx.app, "north", "addInventoryCopy",
       { copy: { canonicalCardId: zard, ask: 900, grade: "PSA 9" } });
 
@@ -963,7 +965,7 @@ describe("G. the boundaries hold", () => {
        qualification batch gave Inspect and Request Photos one. What
        this test is about is unchanged and is asserted below by NAME: no catalog
        command is reachable, and no route writes the schema. */
-    eq(EXPOSED_COMMANDS.length, 22, "the production surface is not the size C5 left it");
+    eq(EXPOSED_COMMANDS.length, 25, "the production surface is not the size C5 left it");
     for (const name of ["catalogImport", "importCatalog", "putCanonicalCard",
       "putCardContext", "putExpansion", "recordSourceMapping", "resolveCardIdentity"]) {
       assert(!EXPOSED_COMMANDS.includes(name), `${name} is exposed`);
@@ -995,9 +997,9 @@ describe("G. the boundaries hold", () => {
       "the production door moved in a batch that adds an operator command");
   });
 
-  test("no migration, and 0013_binders.sql is still the newest", () => {
+  test("C4 wrote no migration: the newest is still somebody else's", () => {
     const migrations = fs.readdirSync(path.join(ROOT, "persistence", "migrations")).sort();
-    eq(migrations[migrations.length - 1], "0013_binders.sql", migrations.join(","));
+    eq(migrations[migrations.length - 1], "0014_binder_memberships.sql", migrations.join(","));
     /* WHY THIS NAMES BOTH ENDS, AND WHAT IT COST TO LEARN (Phase 5 C7.1).
        C4's claim is about C4: a batch that adds an ingestion runner with its own
        tables already migrated has no business changing persistence. The
@@ -1191,7 +1193,7 @@ describe("H. and then it works", () => {
     eq((await post(ctx.app, "casey", "addGoal",
       { canonicalCardId: zard, tier: "primary", desired: { grade: "PSA 9" } })).statusCode, 200);
     eq((await post(ctx.app, "casey", "addCollectorCopy",
-      { copy: { canonicalCardId: zard, grade: "PSA 9" } })).statusCode, 200);
+      { copy: { canonicalCardId: zard, grade: "PSA 9", offered: true } })).statusCode, 200);
     eq((await post(ctx.app, "north", "addInventoryCopy",
       { copy: { canonicalCardId: zard, ask: 900 } })).statusCode, 200);
     const binder = (await post(ctx.app, "casey", "createBinder", { name: "Mine" })).json().value;

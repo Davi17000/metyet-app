@@ -137,6 +137,15 @@ const load = (ctx) => ctx.repository.loadWorld();
 const entriesOf = async (ctx, binderId) =>
   (await load(ctx)).binderEntries.filter((e) => e.binderId === binderId);
 const own = (app, token, copy) => post(app, token, "addCollectorCopy", { copy });
+/* SAYING SOMETHING ABOUT A CARD, SO THAT IT CAN THEN BE FILED.
+
+   A card with no state was briefly unfilable, and is not any more. These scenarios are
+   about what happens to MEMBERSHIP rather than about how it began, so they say
+   the smallest true thing that makes filing legal and get on with the story. The
+   rule itself is proved once, in section B, rather than re-proved by accident in
+   every fixture. */
+const want = (app, token, canonicalCardId, tier = "secondary") =>
+  post(app, token, "addGoal", { canonicalCardId, tier, desired: { grade: "PSA 9" } });
 const PHOTOS = { front: "copy:front", back: "copy:back" };
 
 /* ============================================================== A */
@@ -176,6 +185,7 @@ describe("A. whose binder this is, and who decided", () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
+    await want(ctx.app, "casey", cards.unlimited);
     await file(ctx, ACTOR.casey, id, cards.unlimited);
 
     for (const [command, payload] of [
@@ -210,6 +220,7 @@ describe("A. whose binder this is, and who decided", () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
+    await want(ctx.app, "casey", cards.unlimited);
     await file(ctx, ACTOR.casey, id, cards.unlimited);
     const before = (await load(ctx)).binders[0];
 
@@ -229,6 +240,7 @@ describe("B. a binder holds each card once", () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
+    await want(ctx.app, "casey", cards.unlimited);
 
     const first = await file(ctx, ACTOR.casey, id, cards.unlimited);
     assert(!first.refused, json(first));
@@ -265,6 +277,10 @@ describe("B. a binder holds each card once", () => {
   });
 
   test("a binder may hold a card the Collector neither wants nor owns", async () => {
+    /* RESTORED, WORD FOR WORD IN INTENT. This is C3.1's own claim, and the one
+       the withdrawn rule reversed: a Binder holding a card its owner neither
+       wants nor owns is valid curation and is the state most binders start in.
+       Organisation does not decide whether anything else is meaningful. */
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, "Cards I like the art of");
@@ -280,22 +296,16 @@ describe("B. a binder holds each card once", () => {
     eq(tp.goals.length, 0, "filing a card did not become demand");
     eq(tp.discoveries.length, 0, "and produced no discovery");
   });
-});
-
-/* ============================================================== C
-   THE CANONICAL SCENARIOS. Each is one story the product has to survive, and
-   each is the same assertion from a different direction: a Binder records where
-   a card belongs, and nothing that happens to wanting, owning or offering may
-   quietly reorganise it. */
-describe("C. nothing reorganises a Collector's binder but the Collector", () => {
 
   test("B — a Goal moving from Secondary to Primary leaves membership alone", async () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
-    await file(ctx, ACTOR.casey, id, cards.firstEdition);
+    /* The card has to mean something before it can be filed (the four-state
+       batch), so the state that this scenario is about comes first. */
     const goalId = (await post(ctx.app, "casey", "addGoal",
       { canonicalCardId: cards.firstEdition, tier: "secondary", desired: { grade: "PSA 9" } })).json().value;
+    await file(ctx, ACTOR.casey, id, cards.firstEdition);
 
     eq((await post(ctx.app, "casey", "updateGoalTier", { goalId, tier: "primary" })).statusCode, 200);
 
@@ -309,16 +319,21 @@ describe("C. nothing reorganises a Collector's binder but the Collector", () => 
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
-    await file(ctx, ACTOR.casey, id, cards.firstEdition);
+    /* The card has to mean something before it can be filed (the four-state
+       batch), so the state that this scenario is about comes first. */
     const goalId = (await post(ctx.app, "casey", "addGoal",
       { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } })).json().value;
+    await file(ctx, ACTOR.casey, id, cards.firstEdition);
 
-    /* The card turns up. */
+    /* The card turns up, and they say they are keeping it. Nothing about the
+       disposition is load-bearing here any more — a membership rests on
+       nothing — but it stays because it makes the scenario a real one. */
     const copyId = (await own(ctx.app, "casey",
-      { canonicalCardId: cards.firstEdition, grade: "PSA 9", photos: PHOTOS })).json().value;
+      { canonicalCardId: cards.firstEdition, grade: "PSA 9", keeping: true, photos: PHOTOS })).json().value;
     eq((await entriesOf(ctx, id)).length, 1, "acquiring did not reorganise anything");
 
-    /* And the Collector stops looking. */
+    /* And the Collector stops looking. The Goal was never what the membership
+       named, so the filing stands — and would stand even with nothing else. */
     eq((await post(ctx.app, "casey", "removeGoal", { goalId })).statusCode, 200);
     const w = await load(ctx);
     eq(w.goals.length, 0, "the goal is gone");
@@ -330,15 +345,21 @@ describe("C. nothing reorganises a Collector's binder but the Collector", () => 
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
-    await file(ctx, ACTOR.casey, id, cards.firstEdition);
+    /* RESTORED TO ITS SHARPEST FORM: the copy is the ONLY thing the Collector
+       has ever said about this card, and then it goes away. For one batch this
+       needed a Goal standing behind it, because losing the last state took the
+       membership; with that rule withdrawn the bare case is testable again, and
+       it is the one the design turns on. */
     const copyId = (await own(ctx.app, "casey",
       { canonicalCardId: cards.firstEdition, offered: true, photos: PHOTOS })).json().value;
     eq((await load(ctx)).collectorCopies.length, 1, "owned");
+    await file(ctx, ACTOR.casey, id, cards.firstEdition);
 
     eq((await post(ctx.app, "casey", "removeCollectorCopy", { copyId })).statusCode, 200);
 
     const w = await load(ctx);
     eq(w.collectorCopies.length, 0, "the copy is gone");
+    eq(w.goals.length, 0, "the fixture left something else behind, so this proves less");
     eq(w.binderEntries.length, 1, "and the card is still where the Collector put it");
     /* This is the scenario the whole design turns on: removeCollectorCopy
        cascades interests, and if membership named a copy it would cascade
@@ -350,15 +371,23 @@ describe("C. nothing reorganises a Collector's binder but the Collector", () => 
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
-    await file(ctx, ACTOR.casey, id, cards.shadowless);
-
     const made = [];
     for (const spec of [{ grade: "Raw", condition: "Near Mint" }, { grade: "PSA 9" }, { grade: "PSA 10" }]) {
       made.push((await own(ctx.app, "casey",
-        { canonicalCardId: cards.shadowless, ...spec, photos: PHOTOS })).json().value);
+        { canonicalCardId: cards.shadowless, ...spec, keeping: true, photos: PHOTOS })).json().value);
     }
+    /* RE-PINNED TWICE, AND THIS IS THE SECOND TIME.
+
+       The filing guard went in the four-state salvage batch, so nothing about a
+       copy's state opens or closes a binder any more. Then the disposition
+       batch made every new copy say which it is, so "saying nothing about any
+       of them" is no longer a state a new copy can be in: all three are
+       recorded as PC and the middle one is switched to Trade/Sell. What the
+       test is for survives both: three physical objects with independent facts
+       are ONE place the card belongs. */
     eq((await post(ctx.app, "casey", "setCollectorCopyOffered",
       { copyId: made[1], offered: true })).statusCode, 200);
+    await file(ctx, ACTOR.casey, id, cards.shadowless);
 
     const w = await load(ctx);
     eq(w.collectorCopies.length, 3, "three physical objects");
@@ -372,6 +401,7 @@ describe("C. nothing reorganises a Collector's binder but the Collector", () => 
     const cards = await charizard(ctx);
     const mudkip = await binder(ctx, ACTOR.casey, "Mudkip Collection");
     const artists = await binder(ctx, ACTOR.casey, "Favourite Artists");
+    await want(ctx.app, "casey", cards.firstEdition);
     await file(ctx, ACTOR.casey, mudkip, cards.firstEdition);
     await file(ctx, ACTOR.casey, artists, cards.firstEdition);
     eq((await load(ctx)).binderEntries.length, 2, "one card, two places it belongs");
@@ -388,9 +418,9 @@ describe("C. nothing reorganises a Collector's binder but the Collector", () => 
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
-    await file(ctx, ACTOR.casey, id, cards.firstEdition);
     const goalId = (await post(ctx.app, "casey", "addGoal",
       { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } })).json().value;
+    await file(ctx, ACTOR.casey, id, cards.firstEdition);
     const copyId = (await own(ctx.app, "casey",
       { canonicalCardId: cards.firstEdition, offered: true, photos: PHOTOS })).json().value;
 
@@ -457,9 +487,11 @@ describe("D. what a Trusted Partner receives of a Collector's organisation", () 
   async function organised(ctx) {
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, SECRET_NAME);
-    await file(ctx, ACTOR.casey, id, cards.firstEdition);
+    /* A Goal and a copy as well as the filing, because this helper's subject is
+       what a SEAT may see — not what filing requires, which is nothing. */
     await post(ctx.app, "casey", "addGoal", { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } });
     await own(ctx.app, "casey", { canonicalCardId: cards.firstEdition, offered: true, photos: PHOTOS });
+    await file(ctx, ACTOR.casey, id, cards.firstEdition);
     return { cards, id };
   }
 
@@ -504,8 +536,16 @@ describe("D. what a Trusted Partner receives of a Collector's organisation", () 
     for (const [k, v] of Object.entries(goal)) {
       assert(v !== 3 && v !== "3", `a binder count rode along on the goal as ${k}`);
     }
+    /* RE-PINNED: Batch 3A added a third binder-shaped section, and the point of
+       this assertion is that every one of them is DECLARED — a section nobody
+       named is a section nobody reasoned about. All three are empty for a
+       partner, which is asserted next rather than left to the name. */
     eq(Object.keys(state).filter((k) => /binder/i.test(k)).sort().join(","),
-      "binderEntries,binders", "a binder-shaped section appeared that nobody declared");
+      "binderEntries,binderMemberships,binders",
+      "a binder-shaped section appeared that nobody declared");
+    for (const k of Object.keys(state).filter((n) => /binder/i.test(n))) {
+      eq(json(state[k]), "[]", `${k} carried something to a partner`);
+    }
     eq(state.binders.length, 0);
     eq(state.binderEntries.length, 0);
   });
@@ -546,6 +586,8 @@ describe("D. what a Trusted Partner receives of a Collector's organisation", () 
     const cards = await charizard(ctx);
     const casey = await binder(ctx, ACTOR.casey, SECRET_NAME);
     const dana = await binder(ctx, ACTOR.dana, "Dana's shelf");
+    await want(ctx.app, "casey", cards.firstEdition);
+    await want(ctx.app, "dana", cards.shadowless);
     await file(ctx, ACTOR.casey, casey, cards.firstEdition);
     await file(ctx, ACTOR.dana, dana, cards.shadowless);
 
@@ -645,7 +687,23 @@ describe("E. the commands exist, and production cannot reach them", () => {
       "addGoal", "updateGoalTier", "removeGoal",
       "addInventoryCopy",
       "addCollectorCopy", "setCollectorCopyOffered", "removeCollectorCopy",
+      /* AND THE ONE THE FOUR-STATE BATCH ADDED. `setCollectorCopyKept` is the
+         other half of a copy's disposition; it needed its own door for the same
+         reason offering did, and the two clear each other in the domain. */
+      "setCollectorCopyKept",
       "createBinder", "addBinderEntry", "removeBinderEntry",
+      /* AND THE TWO BATCH 3B-1 OPENED, WITH THE CONTROLS THAT PRESS THEM.
+         `fileObject` and `unfileObject` file one GOAL or one COLLECTORCOPY,
+         which is the subject of organisation from this batch on: the Card
+         Specification panel sends them from a home control beside each thing,
+         and the Binder view from `Move` and `Remove from Binder`.
+
+         THEY WERE HERE FOR ONE COMMIT IN 3A AND WERE TAKEN BACK OUT, because
+         no screen sent either and this list's rule is that an entry names the
+         screen that sends it. 3B-1 is that screen. `addBinderEntry` above
+         still files a CARD, and the panel no longer sends it — the door stays
+         one release for a stale browser tab, and goes in 3C. */
+      "fileObject", "unfileObject",
       "updateCollectorCopy", "updateGoalCriteria",
       "renameBinder", "setBinderArchived",
       /* AND THE TWO C5 ADDED (Phase 5 C5). `updateInventoryCopy` and
@@ -673,7 +731,7 @@ describe("E. the commands exist, and production cannot reach them", () => {
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
     ].sort()), "the production surface is not what C3.4 declared");
-    eq(EXPOSED_COMMANDS.length, 22);
+    eq(EXPOSED_COMMANDS.length, 25);
   });
 
   /* SUPERSEDED AND RESTATED. The claim was that the client bound the three
@@ -708,10 +766,18 @@ describe("E. the commands exist, and production cannot reach them", () => {
   test("a canonical card that does not exist is refused by the foreign key", async () => {
     const ctx = await world();
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
-    /* Past the door there is no catalog guard — the domain holds no database,
-       by a rule this batch does not break. The foreign key is the backstop, and
-       it is exactly the backstop `addGoal` has: both throw 23503 rather than
-       writing a reference to a card that is not there. */
+    /* RESTORED, AND THE DETOUR IS WORTH RECORDING. Past the door there is no
+       catalog guard — the domain holds no database — so the foreign key is the
+       backstop, exactly as it is for `addGoal`: both throw 23503 rather than
+       writing a reference to a card that is not there.
+
+       For one batch a state guard stood in front of it, and this test was
+       re-pinned to that refusal on the reasoning that a card which does not
+       exist cannot have a Goal or a copy either. True, but it meant the guard
+       was incidentally shielding a door whose real protection is the key — and
+       when the guard was withdrawn the key was still there, doing its job. That
+       is the whole point of a backstop, and it is why this assertion goes back
+       to what it always said. */
     let threw = null;
     try { await file(ctx, ACTOR.casey, id, "cc-not-a-real-card"); }
     catch (e) { threw = e; }
@@ -734,7 +800,11 @@ describe("F. what is stored, and what the schema refuses", () => {
   test("the migration is the next one in sequence and applies to a fresh database", async () => {
     const versions = readMigrations().map((m) => m.version);
     assert(versions.includes("0013_binders"), "the migration is missing");
-    eq(versions[versions.length - 1], "0013_binders", "it is not the newest");
+    /* RE-PINNED: 0014 is Batch 3A's, and it is additive — a new table for
+       object-level membership, with `binder_entries` not altered at all. What
+       this test is for is that C3.1's own migration is present and in sequence,
+       which it still is. */
+    eq(versions[versions.length - 1], "0014_binder_memberships", "it is not the newest");
 
     const pg = new PGlite();
     const db = fromPGlite(pg);
@@ -753,7 +823,8 @@ describe("F. what is stored, and what the schema refuses", () => {
     assert(!first.applied.includes("0013_binders"), "the binder tables arrived early");
 
     const upgrade = await migrate(db, { migrations: all });
-    eq(upgrade.applied.join(","), "0013_binders", "the upgrade applied something else too");
+    eq(upgrade.applied.join(","), "0013_binders,0014_binder_memberships",
+      "the upgrade applied something else too");
     const t = await pg.query(
       "select table_name from information_schema.tables where table_schema = 'metyet' and table_name in ('binders','binder_entries') order by table_name");
     eq(t.rows.map((x) => x.table_name).join(","), "binder_entries,binders", "the tables are not there");
@@ -763,6 +834,8 @@ describe("F. what is stored, and what the schema refuses", () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, SECRET_NAME);
+    await want(ctx.app, "casey", cards.firstEdition);
+    await want(ctx.app, "casey", cards.shadowless);
     await file(ctx, ACTOR.casey, id, cards.firstEdition);
     await file(ctx, ACTOR.casey, id, cards.shadowless);
 
@@ -798,6 +871,7 @@ describe("F. what is stored, and what the schema refuses", () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = await binder(ctx, ACTOR.casey, "Mudkip Collection");
+    await want(ctx.app, "casey", cards.firstEdition);
     await file(ctx, ACTOR.casey, id, cards.firstEdition);
 
     const fails = async (sql, what) => {

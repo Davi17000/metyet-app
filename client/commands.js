@@ -266,10 +266,24 @@ export function addOwnedCopy(target) {
   if (!target || typeof target.execute !== "function") {
     throw new TypeError("addOwnedCopy: the production store is required");
   }
+  /* THE FIELD LIST IS THE COMMAND'S SURFACE, so a disposition left off it is a
+     statement the person made and MetYet threw away in silence. `keeping`
+     travels here for that reason: the panel offers "I'm keeping this one" on a
+     copy being recorded for the first time, and without this the copy would be
+     stored having said nothing and the person would have to say it twice.
+
+     AND THE DISPOSITION HAS NO DEFAULT. It used to default to `offered = false,
+     keeping = false`, which was the stateless pair — a caller that forgot the
+     field got a copy that says nothing. The domain now refuses that pair, so a
+     default here would be a default that cannot succeed, which is worse than
+     none: the omission would surface as a refusal from the server instead of as
+     `undefined` at the call site that caused it. The physical facts keep their
+     `null` defaults, because absent is a true and permitted answer for each of
+     them and always has been. */
   return ({ canonicalCardId, grade = null, condition = null, market = null,
-    cert = null, note = null, offered = false } = {}) =>
+    cert = null, note = null, offered, keeping } = {}) =>
     target.execute("addCollectorCopy", { copy: { canonicalCardId, grade, condition,
-      market, cert, note, offered } });
+      market, cert, note, offered, keeping } });
 }
 
 export function setCopyOffered(target) {
@@ -277,6 +291,18 @@ export function setCopyOffered(target) {
     throw new TypeError("setCopyOffered: the production store is required");
   }
   return (copyId, offered) => target.execute("setCollectorCopyOffered", { copyId, offered });
+}
+
+/* PERSONAL COLLECTION — "I'm keeping this one." The sibling of `setCopyOffered`
+   and deliberately its own function for the same reason: a copy's disposition is
+   a decision with consequences for who can see it, not a field on a form. The
+   domain clears the other statement when this one is made, so the caller sends
+   one thing and gets one outcome. */
+export function setCopyKept(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("setCopyKept: the production store is required");
+  }
+  return (copyId, keeping) => target.execute("setCollectorCopyKept", { copyId, keeping });
 }
 
 export function removeOwnedCopy(target) {
@@ -339,7 +365,41 @@ export function unfileCardFromBinder(target) {
     target.execute("removeBinderEntry", { binderId, canonicalCardId });
 }
 
-/* MANAGING THE BINDER ITSELF (Phase 5 C3.4). The two above are about a card's
+/* WHERE AN OBJECT BELONGS (Batch 3B-1). The two above file a CARD and the
+   shipping panel no longer sends either; these file one Goal or one
+   CollectorCopy, which is what the Card Specification panel and the Binder
+   view now send.
+
+   `fileObject` IS ALSO THE MOVE, and that is why there is no third binding. An
+   object has one home or none, so filing it somewhere else moves the membership
+   it already has rather than making a second one — one call, one row, and no
+   moment in between where the thing belongs nowhere. `Move` on a filed object
+   is this binding with a different binder id.
+
+   ONE BINDER AND ONE OBJECT, AND NOTHING ELSE IN THE PAYLOAD. No owner: the
+   seat comes from the verified token and the command checks both sides itself.
+   No canonical card: the object named its card when it was created, and a
+   Collector must still be able to organise a Goal for a card the catalogue has
+   since withdrawn. */
+export function fileObjectInBinder(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("fileObjectInBinder: the production store is required");
+  }
+  return ({ binderId, goalId, collectorCopyId } = {}) =>
+    target.execute("fileObject", { binderId, goalId, collectorCopyId });
+}
+
+/* IT NAMES NO BINDER. An object has one home or none, so the one being left is
+   a fact the caller could get wrong for no gain. */
+export function unfileObjectFromBinder(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("unfileObjectFromBinder: the production store is required");
+  }
+  return ({ goalId, collectorCopyId } = {}) =>
+    target.execute("unfileObject", { goalId, collectorCopyId });
+}
+
+/* MANAGING THE BINDER ITSELF (Phase 5 C3.4). The four above are about a thing's
    place in a binder; these are about the binder. C3.3 had no screen for them
    and so did not bind them — the rule this file has always followed.
 

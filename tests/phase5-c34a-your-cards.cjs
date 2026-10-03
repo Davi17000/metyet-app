@@ -117,7 +117,15 @@ const post = (app, token, command, payload) => app.inject({ method: "POST", url:
 const get = (app, token, url) => app.inject({ method: "GET", url,
   headers: { authorization: `Bearer ${token}` } });
 const view = async (app, token) => (await get(app, token, "/api/view")).json().state;
-const own = (app, token, copy) => post(app, token, "addCollectorCopy", { copy });
+/* A NEW COPY MUST SAY WHETHER ITS OWNER WOULD PART WITH IT (the disposition
+   batch). This suite is about what the COLLECTION screen
+   shows; most of it does not turn on the disposition and one test does,
+   so the default is stated once, visibly, rather than at every call site. It
+   applies ONLY when the caller named neither — a caller that says `keeping`
+   must not have `offered: true` added underneath it, which would turn a stated
+   decision into `disposition-conflict`. */
+const own = (app, token, copy) => post(app, token, "addCollectorCopy",
+  { copy: ("offered" in copy || "keeping" in copy) ? copy : { ...copy, offered: true } });
 const stock = (app, token, copy) => post(app, token, "addInventoryCopy", { copy });
 const want = (app, token, canonicalCardId, tier = "primary", extra = {}) =>
   post(app, token, "addGoal", { canonicalCardId, tier, ...extra });
@@ -331,8 +339,12 @@ describe("B. the card is a heading; the copies are the records", () => {
     const made = await cards(ctx);
     const a = (await own(ctx.app, "casey", { canonicalCardId: made.mudkip,
       grade: "PSA 9", cert: "CERT-A", market: 500, offered: true })).json().value;
+    /* RE-PINNED: the second copy is KEPT rather than merely unmentioned, which
+       is the whole reason a disposition lives on the copy and not on the card.
+       One Mudkip, two copies, two opposite decisions — and this screen has to
+       be able to show both at once. */
     const b = (await own(ctx.app, "casey", { canonicalCardId: made.mudkip,
-      grade: "Raw", condition: "Damaged", cert: "SER-B", market: 20 })).json().value;
+      grade: "Raw", condition: "Damaged", cert: "SER-B", market: 20, keeping: true })).json().value;
     assert(a !== b, "two copies became one record");
 
     const r = await showing(ctx);
@@ -344,7 +356,12 @@ describe("B. the card is a heading; the copies are the records", () => {
     assert(/PSA 9/.test(shown) && /Raw · Damaged/.test(shown), "both gradings: " + shown);
     assert(/CERT-A/.test(shown) && /SER-B/.test(shown), "both certificates: " + shown);
     assert(/\$500/.test(shown) && /\$20/.test(shown), "both reference values: " + shown);
-    assert(/Offered/.test(shown) && /Not offered/.test(shown), "offering is per copy: " + shown);
+    /* RE-PINNED: a disposition is per copy, and this now says so in the
+       Collector's own words rather than in an absence. The screen used to read
+       "Offered" and "Not offered", which described a copy somebody had decided
+       to keep in exactly the same words as one they had never mentioned. */
+    assert(/Offered/.test(shown) && /Keeping/.test(shown), "a disposition is per copy: " + shown);
+    assert(!/Not offered/.test(shown), "an absence is still being reported as an answer: " + shown);
   });
 
   /* THE RULE THIS SECTION EXISTS FOR. A group of a PSA 9 and a damaged raw copy
@@ -401,8 +418,14 @@ describe("C. what you are offering is a filter, not a place", () => {
     const ctx = await world();
     const made = await cards(ctx);
     await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "PSA 9", cert: "YES-1", offered: true });
-    await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "Raw", condition: "Damaged", cert: "NO-1" });
-    await own(ctx.app, "casey", { canonicalCardId: made.firstEdition, grade: "PSA 8", cert: "NO-2" });
+    /* RE-PINNED: the two the view must hide are now KEPT rather than merely
+       unmentioned. A new copy has to say which, and "the copies you are not
+       offering" is exactly what PC means — so the fixture finally says what the
+       test's name has always claimed. */
+    await own(ctx.app, "casey",
+      { canonicalCardId: made.mudkip, grade: "Raw", condition: "Damaged", cert: "NO-1", keeping: true });
+    await own(ctx.app, "casey",
+      { canonicalCardId: made.firstEdition, grade: "PSA 8", cert: "NO-2", keeping: true });
 
     /* RE-PINNED (binders batch). "Offered only" was a toggle on one screen;
        Trade/Sell is one of four collection views, and you leave it by choosing
@@ -496,7 +519,10 @@ describe("E. the same specification capability, opened from the shelf", () => {
 
     await press(r, "Open");
     const shown = texts(r);
-    assert(/Which binders does this card belong in\?/.test(shown), "the panel did not open: " + shown);
+    /* RE-PINNED (Batch 3B-1): the panel no longer asks a card-level Binder
+       question, because a card is no longer the subject of organisation. The
+       proof it opened is the question it still asks. */
+    assert(/Are you looking for it\?/.test(shown), "the panel did not open: " + shown);
     assert(/Are you looking for it\?/.test(shown), "the panel is a different one: " + shown);
     /* It opened on what the Collector already said. */
     const keeping = buttons(r).find((b) => instText(b).trim() === "Keeping an eye out");
@@ -628,7 +654,10 @@ describe("F. reachable at last, and what that did not change", () => {
     const made = await cards(ctx);
     await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "PSA 9",
       offered: true, market: 7777, note: "do not sell under 9k" });
-    await own(ctx.app, "casey", { canonicalCardId: made.firstEdition, grade: "PSA 8" });
+    /* The copy that must NOT cross says PC, for the same reason as above: a new
+       copy has to say which, and "not offered" is what PC means. */
+    await own(ctx.app, "casey",
+      { canonicalCardId: made.firstEdition, grade: "PSA 8", keeping: true });
     const body = (await get(ctx.app, "north", "/api/view")).body;
     assert(!body.includes("7777"), "the reference value crossed");
     assert(!body.includes("do not sell"), "a private note crossed");
@@ -639,7 +668,7 @@ describe("F. reachable at last, and what that did not change", () => {
 
   test("no migration, and no new durable concept", async () => {
     const names = fs.readdirSync(path.join(ROOT, "persistence", "migrations")).sort();
-    eq(names[names.length - 1], "0013_binders.sql", "C3.4a added a migration: " + names.join(","));
+    eq(names[names.length - 1], "0014_binder_memberships.sql", "C3.4a added a migration: " + names.join(","));
     const { PROJECTED_COLLECTIONS } = require("../domain/metyet-projection.js");
     assert(!PROJECTED_COLLECTIONS.some((c) => /trade|offered|shelf/i.test(c)),
       "a new collection appeared: " + PROJECTED_COLLECTIONS.join(","));

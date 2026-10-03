@@ -778,8 +778,28 @@ describe("G. boundaries, and what did not change", () => {
       "revokeCollectorInvitation", "updateGoalTier", "updatePartnerProfile",
       /* C2, and only these three: owning, offering, no longer owning. */
       "addCollectorCopy", "setCollectorCopyOffered", "removeCollectorCopy",
+      /* AND THE ONE THE FOUR-STATE BATCH ADDED. `setCollectorCopyKept` is the
+         other half of a copy's disposition — "I own this and intend to keep it"
+         — and it needed its own door for the same reason offering did: it is a
+         decision about who may see the card, not a correctable field, so it
+         does not travel inside a patch. The two clear each other in the domain.
+         It states nothing about a card, touches no Goal, creates no Binder
+         membership, and never crosses to a partner. */
+      "setCollectorCopyKept",
       /* C3.3, the Card Specification panel's five. */
       "createBinder", "addBinderEntry", "removeBinderEntry",
+      /* AND THE TWO BATCH 3B-1 OPENED, WITH THE CONTROLS THAT PRESS THEM.
+         `fileObject` and `unfileObject` file one GOAL or one COLLECTORCOPY,
+         which is the subject of organisation from this batch on: the Card
+         Specification panel sends them from a home control beside each thing,
+         and the Binder view from `Move` and `Remove from Binder`.
+
+         THEY WERE HERE FOR ONE COMMIT IN 3A AND WERE TAKEN BACK OUT, because
+         no screen sent either and this list's rule is that an entry names the
+         screen that sends it. 3B-1 is that screen. `addBinderEntry` above
+         still files a CARD, and the panel no longer sends it — the door stays
+         one release for a stale browser tab, and goes in 3C. */
+      "fileObject", "unfileObject",
       "updateCollectorCopy", "updateGoalCriteria",
       /* C3.4b, the Binder library's two: rename one in place, put one away and
          bring it back. Deleting one is still nobody's door. */

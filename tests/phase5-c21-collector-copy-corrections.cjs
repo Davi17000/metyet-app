@@ -120,6 +120,14 @@ const get = (app, token, url) => app.inject({ method: "GET", url,
 const own = (app, token, copy) => post(app, token, "addCollectorCopy", { copy });
 const offer = (app, token, copyId, offered) =>
   post(app, token, "setCollectorCopyOffered", { copyId, offered });
+/* TAKING A CARD OFF THE TABLE IS NOW SAYING THE OTHER THING. The disposition
+   batch refuses `setCollectorCopyOffered(false)`: a copy is kept or it is on
+   offer, and withdrawing into silence produced a copy MetYet could not act on.
+   So the act section C is about — the owner ending an offer — is performed by
+   switching to PC, which clears the offer in one step and leaves `offered`
+   false exactly as the withdrawal did. */
+const keep = (app, token, copyId) =>
+  post(app, token, "setCollectorCopyKept", { copyId, keeping: true });
 const copiesOf = async (ctx) => (await ctx.repository.loadWorld()).collectorCopies;
 const copyOf = async (ctx, id) => (await copiesOf(ctx)).find((b) => b.id === id);
 const interestsOf = async (ctx) => (await ctx.repository.loadWorld()).interests;
@@ -243,7 +251,13 @@ describe("A. a copy that existed before C2 still means what it meant", () => {
   test("the backfill changes nothing a person actually said", async () => {
     const ctx = await world();
     const cards = await charizard(ctx);
-    const quiet = (await own(ctx.app, "casey", { canonicalCardId: cards.firstEdition })).json().value;
+    /* RE-PINNED: the quiet copy is now one its owner is KEEPING. It used to be
+       recorded with no disposition at all, which is the shape a new copy can no
+       longer have — and it was always the wrong fixture for this test, because
+       what the backfill must leave alone is an explicit `offered: false`, which
+       is exactly what PC stores. The assertions are unchanged. */
+    const quiet = (await own(ctx.app, "casey",
+      { canonicalCardId: cards.firstEdition, keeping: true })).json().value;
     const loud = (await own(ctx.app, "casey",
       { canonicalCardId: cards.shadowless, offered: true })).json().value;
     eq((await copyOf(ctx, quiet)).offered, false);
@@ -308,14 +322,25 @@ describe("B. `offered` is a boolean, and absence is not an answer", () => {
     eq((await copiesOf(ctx)).length, 0, "and nothing was written");
   });
 
-  test("a new copy defaults to false, explicitly, and survives a round trip", async () => {
+  test("`offered: false` is written explicitly, and survives a round trip", async () => {
+    /* RE-PINNED, AND IT IS THE NAME THAT MOVED, NOT THE GUARANTEE.
+
+       This test has always been about STORAGE: that `offered` is a real key on
+       the row with a real boolean in it, and not a default something supplies
+       on read. That is unchanged and is what every assertion below checks.
+
+       What is gone is the framing. A new copy no longer DEFAULTS to anything —
+       the disposition batch made it say which, because a copy that says nothing
+       is barred from every trade package and invisible to every partner. So the
+       copy here is one its owner is keeping, which is the thing that carries an
+       explicit `offered: false` today. */
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = (await own(ctx.app, "casey",
-      { canonicalCardId: cards.firstEdition, cert: "PSA 4242" })).json().value;
+      { canonicalCardId: cards.firstEdition, cert: "PSA 4242", keeping: true })).json().value;
 
     const stored = await copyOf(ctx, id);
-    eq(stored.offered, false, "owning is the base fact");
+    eq(stored.offered, false, "a copy being kept is not on offer");
     eq(typeof stored.offered, "boolean", "and it is stated, not merely absent");
 
     /* Through the database and back: the key is really on the row, not a
@@ -336,6 +361,9 @@ describe("B. `offered` is a boolean, and absence is not an answer", () => {
 
 /* ============================================================== C */
 describe("C. putting a card down is not the same act as picking it up", () => {
+  /* RE-PINNED THROUGHOUT: every "unoffer" below is now a switch to PC — see
+     `keep` above. What each test asserts is unchanged, because what the
+     Interest model reads is `offered`, and a PC copy's `offered` is false. */
 
   test("a partner can withdraw Interest after the Collector unoffers the copy", async () => {
     const ctx = await world();
@@ -347,7 +375,7 @@ describe("C. putting a card down is not the same act as picking it up", () => {
     assert(!on.refused, "Northline could not express interest: " + json(on));
     eq((await interestsOf(ctx)).length, 1, "one interest");
 
-    eq((await offer(ctx.app, "casey", id, false)).statusCode, 200, "Casey takes it off the table");
+    eq((await keep(ctx.app, "casey", id)).statusCode, 200, "Casey takes it off the table");
 
     const off = await interest(ctx, ACTOR.north, id, false);
     assert(!off.refused, "withdrawal was refused: " + json(off));
@@ -362,7 +390,7 @@ describe("C. putting a card down is not the same act as picking it up", () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = (await own(ctx.app, "casey",
-      { canonicalCardId: cards.firstEdition, photos: PHOTOS })).json().value;
+      { canonicalCardId: cards.firstEdition, photos: PHOTOS, keeping: true })).json().value;
     eq((await copyOf(ctx, id)).offered, false, "never offered");
 
     const r = await interest(ctx, ACTOR.north, id, true);
@@ -378,7 +406,7 @@ describe("C. putting a card down is not the same act as picking it up", () => {
     const id = (await own(ctx.app, "casey",
       { canonicalCardId: cards.firstEdition, offered: true, photos: PHOTOS })).json().value;
     await interest(ctx, ACTOR.north, id, true);
-    await offer(ctx.app, "casey", id, false);
+    await keep(ctx.app, "casey", id);
     await interest(ctx, ACTOR.north, id, false);
 
     const again = await interest(ctx, ACTOR.north, id, true);
@@ -409,7 +437,7 @@ describe("C. putting a card down is not the same act as picking it up", () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const id = (await own(ctx.app, "casey",
-      { canonicalCardId: cards.firstEdition, photos: PHOTOS })).json().value;
+      { canonicalCardId: cards.firstEdition, photos: PHOTOS, keeping: true })).json().value;
     const r = await interest(ctx, ACTOR.north, id, false);
     assert(!r.refused, "an unoffered copy the partner never touched refused a no-op: " + json(r));
     eq((await interestsOf(ctx)).length, 0);

@@ -18,6 +18,24 @@
      K  validateWorld — rejects malformed worlds with useful diagnostics
      L  validateWorld — pure
    ========================================================================== */
+/* GOALS IN THIS SUITE NOW STATE THEIR TIER, BECAUSE EVERY GOAL MUST.
+
+   `addGoal` used to take a missing `tier` and write "secondary". As of the Goal
+   Tier Explicit Choice batch it refuses one — a tier is a choice the Collector
+   makes, and a command that invents it tells them they succeeded at something
+   they never asked for. `addGoal` is scaffolding here, not the subject: these
+   tests are about the injected runtime, id minting and
+   the prototype adapter, and they need a request the
+   domain will actually accept.
+
+   THE SAME HAPPENED TO A COPY'S DISPOSITION one batch later: `addCollectorCopy`
+   refuses a copy that says neither PC nor Trade/Sell, for the same reason — a
+   copy MetYet cannot act on is barred from every trade package and invisible to
+   every partner. The transcript's copy is recorded as PC so that each switch
+   after it is real work rather than a no-op.
+
+   Both values added below are arbitrary and load-bearing for nothing; what each
+   test asserts is unchanged. */
 const { describe, test, assert, eq, run } = require("./run.cjs");
 const fs = require("fs");
 const path = require("path");
@@ -133,16 +151,32 @@ function everyCommand(store, rec) {
   step("addCopyPhotos", { request: s().photoRequests.find((r) => r.id === pr) });
   x(TP1, "removeInventoryCopy", { invId: inv });
 
+  /* A NEW COPY SAYS WHICH (the disposition batch), and this one starts as PC so
+     that each switch below is real work rather than a no-op — the snapshots and
+     the "stamps the runtime's time" assertions need a write to look at. */
   const b = x(C1, "addCollectorCopy", { copy: { cardId: "k2", market: 100, photos: photos("new"),
-    id: FORGED, addedAt: FORGED_AT, updatedAt: FORGED_AT } });
+    keeping: true, id: FORGED, addedAt: FORGED_AT, updatedAt: FORGED_AT } });
   step("addCollectorCopy", { id: b, copy: s().collectorCopies.find((q) => q.id === b) });
   x(C1, "updateCollectorCopy", { copyId: b, patch: { market: 120, addedAt: FORGED_AT, updatedAt: FORGED_AT } });
   step("updateCollectorCopy", { copy: s().collectorCopies.find((q) => q.id === b) });
   /* OFFERING IS ITS OWN ACT (Phase 5 C2), and it has to happen before a partner
-     can be interested: `addCollectorCopy` records ownership and offers nothing,
-     and `setInterest` refuses a copy its owner is not offering. */
+     can be interested: `setInterest` refuses a copy its owner is not offering.
+     Here it is also a SWITCH away from PC, which the domain does in one step. */
   x(C1, "setCollectorCopyOffered", { copyId: b, offered: true });
   step("setCollectorCopyOffered", { copy: s().collectorCopies.find((q) => q.id === b) });
+  /* AND THE OTHER HALF OF A COPY'S DISPOSITION (the four-state batch). Keeping a
+     copy withdraws the offer, which is why the snapshot shows both fields moving
+     together.
+
+     RE-PINNED: this used to be followed by `setCollectorCopyKept(false)`, which
+     returned the copy to saying nothing and demonstrated that withdrawing a keep
+     does not restore the offer. The disposition batch refuses that withdrawal —
+     a copy is kept or it is on offer — so the asymmetry it showed is now pinned
+     where it belongs, in the disposition suite, against the refusal itself. The
+     walkthrough below needs an offered copy, so it switches back. */
+  x(C1, "setCollectorCopyKept", { copyId: b, keeping: true });
+  step("setCollectorCopyKept", { copy: s().collectorCopies.find((q) => q.id === b) });
+  x(C1, "setCollectorCopyOffered", { copyId: b, offered: true });
   x(TP1, "setInterest", { binderId: b, on: true });
   step("setInterest", { interest: s().interests.find((i) => i.binderId === b) });
   x(C1, "removeCollectorCopy", { copyId: b });
@@ -156,10 +190,25 @@ function everyCommand(store, rec) {
   step("createBinder", { id: bd, binder: s().binders.find((q) => q.id === bd) });
   x(C1, "renameBinder", { binderId: bd, name: "Water Starters" });
   step("renameBinder", { binder: s().binders.find((q) => q.id === bd) });
+  /* A CARD HAS TO MEAN SOMETHING BEFORE IT CAN BE FILED (the four-state batch),
+     so the probe card gets a Goal first. That is also the order the Card
+     Specification panel sends in, for the same reason. */
+  const gp = x(C1, "addGoal", { canonicalCardId: "cc-legacy-probe", tier: "secondary",
+    desired: { grade: "PSA 9" } });
+  step("addGoal", { id: gp, goal: s().goals.find((q) => q.id === gp) });
   x(C1, "addBinderEntry", { binderId: bd, canonicalCardId: "cc-legacy-probe" });
   step("addBinderEntry", { entry: s().binderEntries.find((e) => e.binderId === bd) });
+  /* PHASE 5 BATCH 3A: the same binder, named as the home of an OBJECT rather
+     than of a card. Both rows now exist side by side on purpose — that is the
+     whole shape of 3A, and the suite below reads them separately. Filed before
+     the archive two lines down, because `fileObject` refuses an archived
+     binder and `unfileObject` deliberately does not. */
+  const bm = x(C1, "fileObject", { binderId: bd, goalId: gp });
+  step("fileObject", { id: bm, membership: s().binderMemberships.find((m) => m.id === bm) });
   x(C1, "setBinderArchived", { binderId: bd, archived: true });
   step("setBinderArchived", { binder: s().binders.find((q) => q.id === bd) });
+  x(C1, "unfileObject", { goalId: gp });
+  step("unfileObject", { memberships: s().binderMemberships.filter((m) => m.goalId === gp) });
   x(C1, "removeBinderEntry", { binderId: bd, canonicalCardId: "cc-legacy-probe" });
 
   /* PHASE 5 BATCH 2: an invitation names nobody. It creates no Collector, so
@@ -264,7 +313,7 @@ describe("A. runtime contract", () => {
     const before = JSON.stringify(state);
     for (const bad of [undefined, null, {}, { now: () => "t", newId: (p) => p + "1" }]) {
       let threw = null;
-      try { C.execute(state, C1, "addGoal", { cardId: "k2" }, bad); } catch (e) { threw = e; }
+      try { C.execute(state, C1, "addGoal", { cardId: "k2", tier: "primary" }, bad); } catch (e) { threw = e; }
       assert(threw instanceof TypeError, "a missing or unbranded runtime throws a TypeError");
       assert(/runtime is required/.test(threw.message), "and says a runtime is required");
     }
@@ -287,10 +336,10 @@ describe("A. runtime contract", () => {
   test("a runtime that returns a bad time or id is a wiring error, not a silent default", () => {
     const state = createStore(seed()).get();
     const threw = (rt, cmd, payload) => { try { C.execute(state, C1, cmd, payload, rt); return false; } catch (e) { return e instanceof TypeError; } };
-    assert(threw(RT.createRuntime({ now: () => "", newId: (p) => p + "1" }), "addGoal", { cardId: "k2" }), "empty time");
-    assert(threw(RT.createRuntime({ now: () => 123, newId: (p) => p + "1" }), "addGoal", { cardId: "k2" }), "non-string time");
-    assert(threw(RT.createRuntime({ now: () => "t", newId: (p) => p }), "addGoal", { cardId: "k2" }), "id that is only the prefix");
-    assert(threw(RT.createRuntime({ now: () => "t", newId: () => "zz1" }), "addGoal", { cardId: "k2" }), "id without the prefix");
+    assert(threw(RT.createRuntime({ now: () => "", newId: (p) => p + "1" }), "addGoal", { cardId: "k2", tier: "primary" }), "empty time");
+    assert(threw(RT.createRuntime({ now: () => 123, newId: (p) => p + "1" }), "addGoal", { cardId: "k2", tier: "primary" }), "non-string time");
+    assert(threw(RT.createRuntime({ now: () => "t", newId: (p) => p }), "addGoal", { cardId: "k2", tier: "primary" }), "id that is only the prefix");
+    assert(threw(RT.createRuntime({ now: () => "t", newId: () => "zz1" }), "addGoal", { cardId: "k2", tier: "primary" }), "id without the prefix");
   });
 
   test("the command context exposes time and ids only — no identity, no payload", () => {
@@ -337,7 +386,7 @@ describe("B. every minted id comes from the injected runtime", () => {
      implied. The pin is restated, not loosened: every name in the table must
      still be exercised by the script above, and the exact total is still
      asserted rather than compared loosely. */
-  test("all 49 commands ran", () => {
+  test("all 51 commands ran", () => {
     const { ran } = every();
     const missing = C.COMMAND_NAMES.filter((n) => !ran.has(n));
     eq(missing.join(","), "", "commands not exercised");
@@ -348,16 +397,28 @@ describe("B. every minted id comes from the injected runtime", () => {
        are working on one exact card is a fact nothing else in the system could
        express — every other availability answer is derived from what HAPPENED
        to a copy, and this one is derived from what somebody chose.
-       Restated, not loosened — the exact total is still asserted, and the new
-       command is exercised by the script above like every other. */
-    eq(C.COMMAND_NAMES.length, 50, "the command set");
+       50 → 51 in the four-state batch: `setCollectorCopyKept`, because "I own
+       this and intend to keep it" is a positive statement no other field could
+       carry — `offered: false` has meant "no offer stated" since C2, and reading
+       an intention into that absence is the confusion migration 0012 exists to
+       remember.
+       Restated, not loosened — the exact total is still asserted, and every new
+       command is exercised by the script above like all the others.
+       51 → 53 in Batch 3A (`fileObject`, `unfileObject`): object-level Binder
+       membership is a new durable fact, so it needed commands to state it. */
+    eq(C.COMMAND_NAMES.length, 53, "the command set");
   });
 
   test("each new record's id is exactly what the runtime handed out, with the record's prefix", () => {
     const { steps, rec, ids } = every();
     const handed = new Set(rec.log.ids);
     const expect = [["addGoal", "g"], ["addInventoryCopy", "invk1-"], ["requestPhotos", "pr"],
-      ["reviewCopy", "rv"], ["addCollectorCopy", "b"], ["inviteCollector", "inv-"], ["startOpportunity", "o"]];
+      ["reviewCopy", "rv"], ["addCollectorCopy", "b"], ["inviteCollector", "inv-"], ["startOpportunity", "o"],
+      /* Batch 3A: a membership mints its own id rather than being addressed by
+         the pair it names, which is what lets it be moved without renumbering
+         anything. `binder_entries` has no id of its own and is absent here for
+         exactly that reason. */
+      ["fileObject", "bm"]];
     for (const [name, prefix] of expect) {
       const id = steps[name].id;
       assert(countedId(prefix).test(id), `${name} id "${id}" has the runtime's shape for "${prefix}"`);
@@ -434,6 +495,10 @@ describe("C. every authoritative timestamp is the injected runtime's time", () =
     withdrawTradeCard: (x) => [x.opp.trade.cards[0].withdrawnAt, x.opp.updated],
     chooseCashOnly: (x) => [x.opp.trade.cashOnlyAt, x.opp.updated],
     cancelOpportunity: (x) => [x.opp.endedAt, x.opp.updated],
+    /* Batch 3A. `filedAt` is the server's record of WHEN a Collector put this
+       object here, so it is the runtime's time like every other authoritative
+       stamp — not the browser's, and not a field the payload can carry. */
+    fileObject: (x) => [x.membership.filedAt],
   };
   for (const [name, read] of Object.entries(cases)) {
     test(`${name} stamps the runtime's time`, () => {
@@ -505,7 +570,7 @@ describe("D. caller proposals never survive an authoritative runtime", () => {
     const before = store.get();
     const r = store.execute(C1, "acceptPrice", { oppId: "nope", seat: "tp", partnerId: "p1", by: "tp", at: FORGED_AT });
     assert(!r.ok, "refused");
-    const unknown = store.execute({ partnerId: "p9" }, "addGoal", { collectorId: "c1", cardId: "k2" });
+    const unknown = store.execute({ partnerId: "p9" }, "addGoal", { collectorId: "c1", cardId: "k2", tier: "primary" });
     eq(unknown.refused, R.unknownActor, "an unknown actor is refused whatever the runtime");
     assert(store.get() === before, "nothing changed");
   });
@@ -620,7 +685,7 @@ describe("G. the prototype compatibility adapter", () => {
 
   test("the same store runs authoritatively when a runtime is injected", () => {
     const store = createStore(seed(), { runtime: RT.deterministicRuntime({ start: "2033-01-01T00:00:00.000Z" }) });
-    const g = ok(store.execute(C1, "addGoal", { cardId: "k2", at: "2026-08-14" }));
+    const g = ok(store.execute(C1, "addGoal", { cardId: "k2", tier: "primary", at: "2026-08-14" }));
     eq(g, "g000001", "minted");
     eq(store.get().goals.find((x) => x.id === g).since, "2033-01-01T00:00:00.000Z", "runtime time, not the demo date");
   });

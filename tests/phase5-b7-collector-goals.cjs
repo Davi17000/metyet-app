@@ -393,7 +393,15 @@ describe("D. one Goal per Collector per exact card", () => {
        no similarity, no normalisation. */
     assert(/g\.canonicalCardId === canonical/.test(body),
       "the canonical duplicate test is not an id comparison");
-    assert(!/includes\(|toLowerCase\(|similar|fuzzy|distance/.test(body),
+    /* THE TIER GATE IS THE ONE `includes(` THIS BODY MAY CONTAIN, and it is
+       about a closed two-value vocabulary, not about matching one card to
+       another. It is named and removed rather than tolerated, so that a second
+       `includes(` — the shape a resemblance rule would actually take — still
+       fails this test. */
+    const TIER_GATE = "D.GOAL_TIERS.includes(tier)";
+    eq(body.split(TIER_GATE).length - 1, 1, "the tier gate is not where this test expects it");
+    const matching = body.split(TIER_GATE).join(" ");
+    assert(!/includes\(|toLowerCase\(|similar|fuzzy|distance/.test(matching),
       "a resemblance crept into the duplicate rule");
   });
 

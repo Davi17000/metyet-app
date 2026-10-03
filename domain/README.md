@@ -44,7 +44,7 @@ Two facts, not one:
 | Fact | Where it lives | How it changes |
 |---|---|---|
 | **You own this card** | the row's existence | `addCollectorCopy` / `removeCollectorCopy` |
-| **You are offering it** | `offered`, a boolean on the row | `setCollectorCopyOffered`, and **only** that |
+| **What you mean to do with it** | `offered` and `keeping` on the row | `setCollectorCopyOffered` or `setCollectorCopyKept`, and **only** those two |
 
 Before C2 these were the same act. A copy existed only because the Collector had
 put it up for trade, so "I own this but I'm not trading it" was unsayable, and
@@ -64,7 +64,11 @@ somewhere you can get it wrong:
    withdrawing it from a copy a deal is holding. Putting a card down is not the
    same act as picking it up: Interest reserves nothing, and a partner whose
    needs have changed must be able to clear a stale signal without the Collector
-   having to re-offer a card they just took off the table (C2.1).
+   having to clear a stale signal without the Collector having to offer the card
+   again (C2.1). Since the disposition batch, "taking a card off the table" is
+   saying the other thing — `setCollectorCopyKept` — rather than withdrawing the
+   offer, which is refused; `offered` is false either way, so none of the above
+   changes.
    `setInterest` also refuses NEW interest in a copy whose derived status is not
    `available`, so a card already reserved, committed or traded inside a deal
    takes no second claimant. That is the same derivation the projection uses;
@@ -72,8 +76,20 @@ somewhere you can get it wrong:
 2. **`offered` cannot ride in on a patch.** `updateCollectorCopy` refuses it
    with `identity-immutable`, so a screen editing a reference value can never
    change what a card is doing in the world.
-3. **New copies default to `offered: false`.** Owning is the base fact. Rows
-   that existed before C2 are offered, because creating one *was* offering it —
+3. **A new copy says which, and nothing defaults.** Owning is still the base
+   fact and offering is still a separate decision — but as of the disposition
+   batch a new copy must state exactly one of PC (`keeping: true`) or Trade/Sell
+   (`offered: true`), and `addCollectorCopy` refuses one that states neither or
+   that sends a non-boolean for either. A copy that says nothing is barred from
+   every trade package and reaches no partner, so recording one was recording a
+   dead end. Neither setter accepts `false`: changing one's mind is choosing the
+   other answer, and each setter clears the other in one step. **This rule lives
+   at the command boundary and deliberately NOT in `validateWorld`**, which runs
+   on load — copies recorded before it are valid, loadable, editable and are
+   never assigned a disposition by inference.
+
+   Rows that existed before C2 are offered, because creating one *was* offering
+   it —
    migration **0012** writes that answer onto them. C2 claimed the repository
    would supply it on the next write; nothing did, so those rows loaded as
    `undefined`, and `undefined !== true` silently removed every Collector's
@@ -257,11 +273,35 @@ matters would be the one moment it was impossible — and a recreate destroys
 and nothing else, and it is deliberately **not** blocked by an active
 Opportunity, because nothing derives from criteria.
 
-**Criteria still do not filter Discovery.** A Goal wanting a PSA 10 still
-discovers a partner's Heavily Played raw copy, and the reverse. Discovery is
-exact canonical-card overlap and reads no grading at all — asserted against the
-source. Criteria are context for a human deciding whether to start a
-conversation, never a rule for a machine deciding whether they may.
+**Criteria FILTER Discovery, exactly — corrected.** This section used to say the
+opposite, and it was true when it was written: Discovery was canonical-card
+overlap and read no grading at all. The True Match batch reversed that, and the
+reversal is the current rule:
+
+> **A criterion the Collector stated is a constraint. A criterion they did not
+> state is not a guess.**
+
+`meetsGoalCriteria(goal.desired, copy)` (`domain/metyet-domain.js`) is the whole
+rule, consulted by `discoveriesIn` and by `startOpportunity`:
+
+- a **stated** `grade` must equal the copy's grade, by exact string equality
+  after trimming;
+- a **stated** `condition` must equal the copy's condition, the same way;
+- an **unstated** criterion restricts nothing;
+- there is no band, no floor, no "or better", no ordering and no ranking. A Goal
+  wanting **PSA 9** does not match a **PSA 10** copy, and a Goal wanting a
+  condition does not match a graded copy, because a graded copy carries no raw
+  condition.
+
+Two consequences worth stating because they surprise people:
+
+- **A canonical Goal cannot have zero criteria.** `addGoal` refuses
+  `criteria-required`, and `updateGoalCriteria` refuses clearing the last one. So
+  "I want this card, any copy" is not sayable on the production path; absent
+  `desired` survives only on legacy `cardId` Goals and on canonical rows written
+  before C3.3.
+- **`desired` is a closed two-key vocabulary** at the command boundary: `grade`
+  and `condition`, and nothing else.
 
 **Binder organisation stays private and independent.** Filing a card says
 nothing about wanting or owning it, membership survives both, and no partner

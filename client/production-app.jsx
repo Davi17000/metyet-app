@@ -73,6 +73,7 @@ export default function ProductionApp({ state, onSignOut, onSaveProfile = null,
   onAddGoal = null, onSetPriority = null, onRemoveGoal = null,
   onInvite = null, onRevokeInvite = null, onRefresh = null,
   onSpecify = null, onCreateBinder = null, onRenameBinder = null, onArchiveBinder = null,
+  onFileObject = null, onUnfileObject = null,
   onInspect = null, onEndInspection = null, onRequestPhotos = null,
   joined = null, onDismissJoined = null }) {
   const who = describeActor(state);
@@ -104,6 +105,7 @@ export default function ProductionApp({ state, onSignOut, onSaveProfile = null,
       onRequestPhotos={onRequestPhotos}
       onCreateBinder={onCreateBinder} onRenameBinder={onRenameBinder}
       onArchiveBinder={onArchiveBinder}
+      onFileObject={onFileObject} onUnfileObject={onUnfileObject}
       joined={joined} onDismissJoined={onDismissJoined} />;
   }
 

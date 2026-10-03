@@ -107,7 +107,15 @@ const get = (app, token, url) => app.inject({ method: "GET", url,
   headers: { authorization: `Bearer ${token}` } });
 const want = (app, token, canonicalCardId, tier = "primary", extra = {}) =>
   post(app, token, "addGoal", { canonicalCardId, tier, ...extra });
-const own = (app, token, copy) => post(app, token, "addCollectorCopy", { copy });
+/* A NEW COPY MUST SAY WHETHER ITS OWNER WOULD PART WITH IT (the disposition
+   batch). This suite is about GRADING coherence — what a copy
+   and a Goal may say about grade and condition — and disposition is scaffolding,
+   so the default is stated once, visibly, rather than at every call site. It
+   applies ONLY when the caller named neither — a caller that says `keeping`
+   must not have `offered: true` added underneath it, which would turn a stated
+   decision into `disposition-conflict`. */
+const own = (app, token, copy) => post(app, token, "addCollectorCopy",
+  { copy: ("offered" in copy || "keeping" in copy) ? copy : { ...copy, offered: true } });
 const stock = (app, token, copy) => post(app, token, "addInventoryCopy", { copy });
 const load = (ctx) => ctx.repository.loadWorld();
 const goalFor = async (ctx, card) => (await load(ctx)).goals.find((g) => g.canonicalCardId === card);
@@ -540,7 +548,10 @@ describe("D. what the product may not invent", () => {
 
   test("C3.2 adds no migration, and does not need one", () => {
     const versions = readMigrations().map((m) => m.version);
-    eq(versions[versions.length - 1], "0013_binders",
+    /* RE-PINNED TWICE. C3.2 added no migration and still has not; the newest
+       is whatever the newest is, and it has since been C3.1's and now Batch
+       3A's. What this asserts is that `desired` never acquired a column. */
+    eq(versions[versions.length - 1], "0014_binder_memberships",
       "C3.2 added a migration; `desired` lives in the Goal's attrs and needs no column");
     /* The Goal table stores everything but identity and its card in `attrs`
        (`tier` is a generated column read FROM attrs), so a new attrs key needs
@@ -609,9 +620,21 @@ describe("E. what C3.2 did not touch", () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const binderId = (await direct(ctx, ACTOR.casey, "createBinder", { name: "Mudkip Collection" })).value;
-    await direct(ctx, ACTOR.casey, "addBinderEntry", { binderId, canonicalCardId: cards.firstEdition });
+    /* THE WANT COMES FIRST NOW. The four-state batch made a card in none of the
+       four unfilable, so this fixture says something about the card before it
+       files it — which is also the order the Card Specification panel sends in.
+
+       AND A KEPT COPY, RE-PINNED. What this test is for is that EDITING a Goal
+       never disturbs organisation: sharpening the criteria, and moving between
+       Secondary and Primary, are changes WITHIN the four and must not so much as
+       flicker a membership. Removing the Goal is a different act — it can empty
+       the card — so the copy carries a state of its own here and the last
+       assertions stay about editing rather than about the last-state rule. */
     await want(ctx.app, "casey", cards.firstEdition, "secondary",
       { desired: { grade: "Raw", condition: "Near Mint" } });
+    await post(ctx.app, "casey", "addCollectorCopy",
+      { copy: { canonicalCardId: cards.firstEdition, grade: "PSA 9", keeping: true } });
+    await direct(ctx, ACTOR.casey, "addBinderEntry", { binderId, canonicalCardId: cards.firstEdition });
     const goalId = (await goalFor(ctx, cards.firstEdition)).id;
 
     await post(ctx.app, "casey", "updateGoalTier", { goalId, tier: "primary" });
@@ -676,7 +699,27 @@ describe("E. what C3.2 did not touch", () => {
       "addGoal", "updateGoalTier", "removeGoal",
       "addInventoryCopy",
       "addCollectorCopy", "setCollectorCopyOffered", "removeCollectorCopy",
+      /* AND THE ONE THE FOUR-STATE BATCH ADDED. `setCollectorCopyKept` is the
+         other half of a copy's disposition — "I own this and intend to keep it"
+         — and it needed its own door for the same reason offering did: it is a
+         decision about who may see the card, not a correctable field, so it
+         does not travel inside a patch. The two clear each other in the domain.
+         It states nothing about a card, touches no Goal, creates no Binder
+         membership, and never crosses to a partner. */
+      "setCollectorCopyKept",
       "createBinder", "addBinderEntry", "removeBinderEntry",
+      /* AND THE TWO BATCH 3B-1 OPENED, WITH THE CONTROLS THAT PRESS THEM.
+         `fileObject` and `unfileObject` file one GOAL or one COLLECTORCOPY,
+         which is the subject of organisation from this batch on: the Card
+         Specification panel sends them from a home control beside each thing,
+         and the Binder view from `Move` and `Remove from Binder`.
+
+         THEY WERE HERE FOR ONE COMMIT IN 3A AND WERE TAKEN BACK OUT, because
+         no screen sent either and this list's rule is that an entry names the
+         screen that sends it. 3B-1 is that screen. `addBinderEntry` above
+         still files a CARD, and the panel no longer sends it — the door stays
+         one release for a stale browser tab, and goes in 3C. */
+      "fileObject", "unfileObject",
       "updateCollectorCopy", "updateGoalCriteria",
       "renameBinder", "setBinderArchived",
       /* AND THE TWO C5 ADDED (Phase 5 C5). `updateInventoryCopy` and
@@ -704,7 +747,7 @@ describe("E. what C3.2 did not touch", () => {
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
     ].sort()), "the production surface is not what C3.4 declared");
-    eq(EXPOSED_COMMANDS.length, 22);
+    eq(EXPOSED_COMMANDS.length, 25);
 
     /* C3.2 ADDED NEITHER, asserted against C3.2's own commit rather than
        against the world as it is now. This is the claim that batch actually
@@ -731,9 +774,15 @@ describe("E. what C3.2 did not touch", () => {
   test("Binder, offering and Interest behaviour are all as C3.1 left them", async () => {
     const ctx = await world();
     const cards = await charizard(ctx);
+    /* RE-PINNED: this used to record a copy with no disposition and assert that
+       `offered` defaulted to false. There is no default any more — the
+       disposition batch made a new copy say which — so it records a copy its
+       owner is KEEPING, which is the thing that carries a stated `offered:
+       false` today, and then offers it. What the test is for is the two lines
+       below it: a binder is private, and offering a copy does not change that. */
     const id = (await own(ctx.app, "casey", { canonicalCardId: cards.firstEdition,
-      grade: "PSA 9", photos: { front: "f", back: "b" } })).json().value;
-    eq((await load(ctx)).collectorCopies[0].offered, false, "the offering default moved");
+      grade: "PSA 9", keeping: true, photos: { front: "f", back: "b" } })).json().value;
+    eq((await load(ctx)).collectorCopies[0].offered, false, "a kept copy is not on offer");
     eq((await post(ctx.app, "casey", "setCollectorCopyOffered", { copyId: id, offered: true })).statusCode, 200);
 
     /* A partner cannot see a binder, and never could. */

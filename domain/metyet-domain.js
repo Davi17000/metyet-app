@@ -879,6 +879,67 @@ const REFUSE = {
   /* Both faces, or the copy does not exist. */
   photosRequired: "photos-required",
   invalidAmount: "invalid-amount",
+  /* A GOAL IS PRIMARY OR SECONDARY, AND THE COLLECTOR CHOOSES WHICH.
+
+     The writers used to take anything that was not the string "primary" and
+     write "secondary" — so `undefined`, `""`, `"Primary"` and `"banana"` all
+     demoted a Goal, with a 200 and no way for the caller to know. Tier is not a
+     field with a sensible default; it is the whole difference between "I am
+     hunting this" and "I am keeping an eye out", and it is the one thing
+     `startOpportunity` asks about the Collector's own intent before letting a
+     deal begin — `goalIsPursued`, which is `tier === "primary"`.
+
+     Named for `invalid-amount`, which answers the same shape of question about
+     a number: the request named something the domain has no value for. */
+  invalidTier: "invalid-tier",
+  /* A COPY IS KEPT OR IT IS ON OFFER, AND ITS OWNER CHOOSES WHICH.
+
+     `disposition-conflict` below answers the opposite failure — both at once.
+     This one answers silence, and the three shapes silence used to take:
+     neither flag set, a flag set to something that is not a boolean, and
+     `false`, which is how the product used to say "I take it back".
+
+     WHY `false` IS NOW A REFUSAL AND NOT A WITHDRAWAL. A copy that says
+     nothing is a copy MetYet cannot act on: it is barred from a trade package
+     and it never reaches a partner, so "I take it back" made the copy
+     invisible without telling anybody that is what it did. Changing one's mind
+     about a copy means choosing the other answer, and both setters already
+     clear each other in one step, so nothing is lost.
+
+     Named for `invalid-tier`, and through it for `invalid-amount`: the request
+     named something the domain has no value for. Copies recorded before this
+     rule keep their silence — it is a real state they are really in, and
+     `copyDisposition` still reports it as `unstated`. What ends is the ability
+     to create another one. */
+  invalidDisposition: "invalid-disposition",
+  /* A MEMBERSHIP IS THE HOME OF ONE THING.
+
+     A Binder holds a Goal or a CollectorCopy — the two objects a Collector can
+     act on — and `fileObject` must be told which. Naming both is a
+     contradiction, naming neither is silence, a non-string is unreadable and a
+     blank is none of them wearing an id's clothes. They fail at the same thing:
+     the request did not name exactly one object, so there is nothing to file.
+
+     `validateWorld` distinguishes `ref.ambiguous` from `ref.missing` for the
+     five records that name their card one of two ways, and that distinction is
+     right where it lives — it describes a stored world to a reader. A refusal
+     answers a caller about their payload, and this vocabulary has gone the
+     other way twice already: `invalid-tier` and `invalid-disposition` each
+     cover absence, garbage and wrong shape with one code, because a caller
+     looking for what to fix finds it in the same place either way. */
+  invalidTarget: "invalid-target",
+  /* A BINDER THAT HAS BEEN PUT AWAY TAKES NOTHING NEW.
+
+     Archiving does not unfile what a binder holds and does not change any
+     object's state — `setBinderArchived` touches one timestamp and says so. But
+     a shelf somebody has put away is not where a new thing goes, and the panel
+     has filtered archived binders out of the picker since C3.4. This is the
+     domain saying no for its own reasons, which is the same argument the blank
+     card id in `addBinderEntry` was given.
+
+     Unfiling is still allowed, deliberately: a Collector must always be able to
+     take a thing out of a binder, including out of one they have put away. */
+  binderArchived: "binder-archived",
   /* Command-layer refusals (Phase 1). Deliberately terse: a refusal names the
      rule, never another collector, deal or price. */
   unknownActor: "unknown-actor",
@@ -929,6 +990,26 @@ const REFUSE = {
      input nobody can store. It is a refusal code, not a durable fact: nothing
      is written, no lifecycle gains a state, and no migration follows. */
   photoUnusable: "photo-unusable",
+  /* A COPY CANNOT BE BOTH ON OFFER AND BEING KEPT. Two positive statements about
+     one physical object that contradict each other; the domain refuses the pair
+     rather than deciding which one the person meant. */
+  dispositionConflict: "disposition-conflict",
+  /* ONLY A COPY ITS OWNER HAS OFFERED MAY GO INTO A TRADE PACKAGE.
+
+     A package is the moment a Collector's own property is put on a shared
+     record and reserved, so the question "would you part with this one" has to
+     have been answered YES before it can be asked of a shop. Two copies are
+     refused here: one the owner is KEEPING, which is the opposite answer; and
+     one nobody has said anything about, which is no answer at all — and
+     silence is not consent to trade a card.
+
+     WHY A REFUSAL OF ITS OWN rather than `copy-unavailable`. Unavailable means
+     the product cannot use the copy — archived, reserved, sold. This copy is
+     perfectly usable and its owner has simply not offered it, which is a
+     sentence a person can act on ("offer it, then add it") rather than a dead
+     end. Nothing leaks: the only actor who can reach this refusal is the copy's
+     own owner. */
+  copyNotOffered: "copy-not-offered",
   /* A GOAL THAT NAMES A CANONICAL CARD SAYS WHICH COPY IT WANTS (Phase 5 C3.3).
      Distinct from `grading-incoherent`, which answers a pair that cannot be
      true: this answers a pair that was never stated. C3.2 deliberately left
@@ -970,6 +1051,21 @@ module.exports = {
 
    The persona changes what happens AFTER a card is chosen. It must not change
    how the card is defined. */
+
+/* THE TWO THINGS A GOAL CAN BE, AS A CLOSED LIST.
+
+   `validateWorld` has required a stored tier to be exactly one of these two
+   since the world validator was written. The writers did not: they took
+   anything that was not the string "primary" and wrote "secondary", so a
+   fumbled field demoted a Goal with a 200. This is the list they read now.
+
+   IT IS THE SECOND COPY OF THAT LIST, AND THAT IS A COMPROMISE, NOT A DESIGN.
+   `metyet-world.js` declares its own `GOAL_TIERS`. It could read this one —
+   it already imports this module — but the batch that added this constant was
+   not allowed to touch the validator, so instead a test reads the validator's
+   literal out of its source and fails the moment the two disagree. Single-
+   sourcing it is one line, and belongs to a batch that may edit that file. */
+const GOAL_TIERS = Object.freeze(["primary", "secondary"]);
 
 const GRADED_VALUES = ["Raw", "PSA 1", "PSA 2", "PSA 3", "PSA 4", "PSA 5",
   "PSA 6", "PSA 7", "PSA 8", "PSA 9", "PSA 10"];
@@ -1209,6 +1305,7 @@ const identityFrom = (printed, copy, edition) => {
   return t;
 };
 
+module.exports.GOAL_TIERS = GOAL_TIERS;
 module.exports.GRADED_VALUES = GRADED_VALUES;
 module.exports.CONDITION_VALUES = CONDITION_VALUES;
 module.exports.gradingOf = gradingOf;
@@ -1466,6 +1563,67 @@ const inventoryCopyStatus = (invId, opps, inventory) => {
   if (INVARIANTS.copyPendingFor(invId, inventory, opps)) return "pending";
   return "available";
 };
+/* ============================================================================
+   WHAT A COLLECTOR HAS SAID ABOUT A CARD
+
+   FOUR USER-FACING STATES, AT TWO DIFFERENT LEVELS, AND THE LEVELS ARE THE
+   POINT. A card page offers four things a person can mean:
+
+     Primary Goal    I am actively hunting this card, in this grade
+     Secondary Goal  I want it, in this grade, less urgently
+     Trade/Sell      I own this physical copy and would part with it
+     PC              I own this physical copy and intend to keep it
+
+   The first two are facts about a CANONICAL CARD — one Goal per collector per
+   card, carrying its own tier and its own criteria. The last two are facts
+   about a PHYSICAL COPY, and a person who owns two copies of one card may
+   truthfully keep one and offer the other. So the four are mutually exclusive
+   PER COPY and not per card, and anything that flattened them into one value
+   on the card would make the two-copy case unsayable. There is no `cardState`
+   and no `intent` field here, deliberately.
+
+   `keeping` IS A POSITIVE STATEMENT AND IS NEVER INFERRED. `offered === false`
+   means only that no offer has been made — three places in the product say so
+   and one of them is a migration written to repair exactly that confusion. A
+   copy that has said nothing has said nothing: `keeping` absent is not "not
+   keeping", it is "unstated", and that is the state every copy in every
+   existing world is in, honestly, because nobody has ever been able to say it.
+
+   THE PAIR CANNOT BOTH BE TRUE. "I would part with this" and "I intend to keep
+   this" are contradictory, so the two doors clear each other rather than
+   letting a copy hold both. The contradiction is made unreachable by the
+   commands, and `validateWorld` reports it as well — belt and braces, because a
+   copy asserting both would silently be trade supply the owner thinks is safe. */
+const copyKept = (copy) => copy != null && copy.keeping === true;
+const copyOffered = (copy) => copy != null && copy.offered === true;
+const copyDisposition = (copy) => (copyOffered(copy) ? "offered"
+  : copyKept(copy) ? "keeping" : "unstated");
+
+/* THE FOUR STATES, AND WHY THERE IS NO FUNCTION HERE THAT ANSWERS FOR A CARD.
+
+     Primary Goal     hunting it, in this grade            a fact about a GOAL
+     Secondary Goal   want it, less urgently               a fact about a GOAL
+     Trade/Sell       own this copy, would part with it    a fact about a COPY
+     PC               own this copy, intend to keep it     a fact about a COPY
+
+   Each of the four belongs to a specific object and is read from it: a Goal's
+   `tier`, and a copy's `copyDisposition` above. That is the whole vocabulary.
+
+   `collectorStatesFor(canonicalCardId, goals, copies)` used to live here — one
+   call returning every label a CANONICAL CARD carried for one Collector — and
+   it is deliberately gone. It was the aggregate the object model rejects: a
+   card is reference data, and "what does this card mean to me" has no single
+   honest answer for somebody who keeps one copy, offers another and is hunting
+   a third. Its only consumer was the Binder rule that derived whether
+   organisation could exist from that aggregate, and with the rule withdrawn the
+   function had no caller and no future — the object-level work that follows
+   asks the Goal or the copy, never the card.
+
+   OWNING WITHOUT A DISPOSITION REMAINS VALID AND REMAINS UNNAMED. A copy nobody
+   has said anything about is a real record; it is what every copy in every
+   existing world is; and it is not a fifth user-facing state. Nothing infers a
+   disposition for it, and nothing here reports one. */
+
 const soldInventoryIds = (opps) => new Set((opps || [])
   .filter((o) => isCompleted(o) && o.invId != null).map((o) => o.invId));
 
@@ -1628,6 +1786,9 @@ module.exports.finalAgreementGiven = finalAgreementGiven;
 module.exports.cancelledAfterAgreement = cancelledAfterAgreement;
 module.exports.currentCashFigure = currentCashFigure;
 module.exports.inventoryCopyStatus = inventoryCopyStatus;
+module.exports.copyKept = copyKept;
+module.exports.copyOffered = copyOffered;
+module.exports.copyDisposition = copyDisposition;
 module.exports.qualifyingOn = qualifyingOn;
 module.exports.openToNewQualification = openToNewQualification;
 module.exports.holdingCopy = holdingCopy;

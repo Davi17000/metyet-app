@@ -43,6 +43,41 @@ const refuse = (code) => ({ ok: false, refused: code });
 const done = (state, value) => ({ ok: true, state, value });
 const list = (xs) => xs || [];
 
+/* EXACTLY ONE OBJECT, OR NOTHING (Batch 3A). A Binder membership names one Goal
+   or one CollectorCopy. Both is a contradiction, neither is silence, and a
+   blank is neither wearing an id's clothes — `isId` does not trim anywhere in
+   this repository, so a whitespace id would otherwise travel all the way to a
+   foreign key and come back as a database error instead of a refusal. */
+const idText = (v) => (typeof v === "string" && v.trim() ? v : null);
+const oneTarget = (goalId, collectorCopyId) => {
+  const goal = idText(goalId);
+  const copy = idText(collectorCopyId);
+  if (goal && copy) return null;
+  if (goal) return { kind: "goal", id: goal };
+  if (copy) return { kind: "copy", id: copy };
+  return null;
+};
+
+/* THE ONE PLACE A COPY'S DISPOSITION IS WRITTEN, AND THE TWO FIELDS ARE NOT
+   ALIKE.
+
+   `offered` is a field every copy has carried since C2, and `false` is its
+   honest resting value. `keeping` is not: the ABSENCE of the key is what "I
+   have not decided" looks like, it is what every copy written before PC existed
+   looks like, and the two must stay indistinguishable — otherwise MetYet is
+   storing a decision nobody made.
+
+   So a keep that is withdrawn, or cleared because an offer contradicted it,
+   REMOVES the key rather than writing `false`. Writing `false` everywhere would
+   dress "unstated" up as a decision, and migration 0012 exists because exactly
+   that confusion once cost a Collector their visible supply. */
+const withDisposition = (copy, offered, keeping, at) => {
+  const { keeping: _withdrawn, ...rest } = copy;
+  return { ...rest, offered: offered === true,
+    ...(keeping === true ? { keeping: true } : {}),
+    ...(at ? { updatedAt: at } : {}) };
+};
+
 /* Derive the seat from identity. An actor names exactly one of partnerId or
    collectorId, and that record must exist. Any `seat` the caller supplies is
    ignored. */
@@ -326,6 +361,27 @@ const COMMANDS = {
      than a refusal because nothing said so. */
   addGoal(state, a, { cardId, canonicalCardId, tier, note, desired, grade, condition }, ctx) {
     if (a.seat !== "collector") return refuse(R.notOwner);
+    /* A TIER IS CHOSEN, NOT DEFAULTED.
+
+       The goal row below used to read `tier === "primary" ? "primary" :
+       "secondary"`, which is not a validation — it is an answer invented on the
+       caller's behalf. `undefined`, `null`, `""`, `"Primary"`, `"PRIMARY"`,
+       `"banana"`, `1` and `{}` all became a Secondary Goal, were stored, and
+       came back 200. The Collector was never told, and the tier is what
+       `startOpportunity` reads to decide whether this Goal may begin a deal, so
+       a fumbled field quietly closed the door the Goal exists to open.
+
+       PLACED HERE, WITH THE OTHER QUESTIONS ABOUT THE REQUEST ITSELF. The seat
+       check comes first because who is asking precedes what they asked; after
+       that, everything this command can answer without reading the world is
+       answered before anything that reads it. That is the same order
+       `updateGoalTier` keeps, and it is what makes the answer stable: a
+       malformed tier gets the same refusal whether or not the Collector
+       happens to already have a Goal for that card.
+
+       It is also before `ctx.id("g")` below, which advances the runtime's id
+       sequence the moment it is called. A refusal here consumes nothing. */
+    if (!D.GOAL_TIERS.includes(tier)) return refuse(R.invalidTier);
     if (grade !== undefined || condition !== undefined) return refuse(R.gradingIncoherent);
     if (desired !== undefined && (desired === null || typeof desired !== "object" || Array.isArray(desired))) {
       return refuse(R.gradingIncoherent);
@@ -396,7 +452,7 @@ const COMMANDS = {
     if (canonical && !(stated && Object.keys(stated).length)) return refuse(R.criteriaRequired);
     const goal = { id, collectorId: a.collectorId,
       ...(canonical ? { canonicalCardId: canonical } : { cardId }),
-      tier: tier === "primary" ? "primary" : "secondary",
+      tier,
       createdAt: ctx.at, since: ctx.at, note: note || "",
       ...(stated && Object.keys(stated).length ? { desired: stated } : {}) };
     return done({ ...state, goals: [...list(state.goals), goal] }, id);
@@ -407,7 +463,30 @@ const COMMANDS = {
     const g = list(state.goals).find((x) => x.id === goalId);
     if (!g) return refuse(R.notFound);
     if (a.seat !== "collector" || g.collectorId !== a.collectorId) return refuse(R.notOwner);
-    const next = tier === "primary" ? "primary" : "secondary";
+    /* WHICH REFUSAL WINS, AND WHY IT IS THIS ONE.
+
+       The tier is checked after `not-found` and `not-owner` — which settle
+       whether this caller may address this Goal at all — and before both the
+       idempotent no-op and the demotion lock.
+
+       Before the lock is the load-bearing half, and it is observable: a Primary
+       Goal held by an active Opportunity, asked to become `"banana"` or
+       `"Secondary"`, used to coerce to "secondary", hit the lock, and answer
+       `goal-locked`. That is a claim about the world — "this Goal is in a live
+       deal, so it may not be demoted" — made about a request that named no tier
+       and therefore asked for no demotion. It sent the caller to end its deal
+       when what it had to fix was its payload, and it was unstable: the same
+       malformed request answered differently depending on whether a partner
+       happened to have an Opportunity open, which is not a fact about the
+       request.
+
+       Before the no-op is not observable either way, and is not claimed to be.
+       `next` is now the caller's own value, so a malformed tier can never equal
+       a stored one — the no-op simply falls through to the gate. It sits first
+       because the two belong together: what the request said, then what the
+       world says about it. */
+    if (!D.GOAL_TIERS.includes(tier)) return refuse(R.invalidTier);
+    const next = tier;
     if (next === g.tier) return done(state, goalId);
     /* An active Opportunity locks its Goal at Primary. */
     if (next === "secondary" && D.goalLocked(goalId, state.opportunities)) return refuse(R.goalLocked);
@@ -439,16 +518,28 @@ const COMMANDS = {
        demand disappear and come back as new, which is a lie about what
        happened.
 
-     SO IT IS NOT BLOCKED BY AN ACTIVE OPPORTUNITY — though the reason has
-     narrowed and the old one is no longer true. It used to be that nothing
-     derived from `desired` at all. Since the true-match batch, Discovery and
-     `startOpportunity` both read it, so correcting criteria mid-deal DOES
-     change which copies are offered, and can leave a live deal on a copy the
-     Collector's own Deal Flow no longer lists. That is still not a reason to
-     refuse: the criteria are hers, correcting them is the honest act, and the
-     deal she opened remains hers to finish or to cancel. What this command must
-     never do is rewrite a deal in progress, and it does not — it changes what
-     she is LOOKING for, never what she has already agreed.
+     AND IT WAS DELIBERATELY NOT BLOCKED BY AN ACTIVE OPPORTUNITY — UNTIL NOW.
+     That decision is reversed here, and the argument it replaces is worth
+     keeping rather than deleting, because it was a good one: the criteria are
+     hers, correcting them is the honest act, the deal she opened remains hers
+     to finish or to cancel, and mid-negotiation is the one moment being precise
+     about the copy actually matters.
+
+     WHAT CHANGED THE ANSWER. `startOpportunity` admits a copy by asking
+     `meetsGoalCriteria(goal.desired, copy)`, and nothing snapshots the answer.
+     So an edit mid-deal does not merely change what she is looking for; it
+     leaves a shared record whose own admission gate can no longer be
+     reproduced — the shop and the Collector negotiating over a copy that, read
+     back, never qualified. An object-identity audit found this command was the
+     only Goal mutation with no lock while `removeGoal` and `updateGoalTier`
+     both had one, and the product's answer is that the record holds still.
+
+     THE COST IS REAL AND IS NOT PAID BY ACCIDENT. A Collector mid-deal cannot
+     now sharpen her criteria at all; the way through is to cancel the deal, or
+     to finish it. The alternative that would preserve both — carrying `desired`
+     onto the Opportunity at `startOpportunity`, so the deal keeps its own gate
+     and she keeps her Goal — was considered and explicitly deferred: it adds a
+     durable field and is a larger decision than closing the hole.
 
      IT CHANGES ONE FIELD. Not the tier, not the card, not a timestamp — those
      each have their own command, or belong to nobody. */
@@ -456,6 +547,29 @@ const COMMANDS = {
     const g = list(state.goals).find((x) => x.id === goalId);
     if (!g) return refuse(R.notFound);
     if (a.seat !== "collector" || g.collectorId !== a.collectorId) return refuse(R.notOwner);
+    /* A LIVE DEAL HOLDS THE CRITERIA STILL, FOR THE REASON IT HOLDS THE GOAL.
+
+       `startOpportunity` admits a copy by asking `meetsGoalCriteria(goal.desired,
+       copy)` — the deal's whole justification for existing. Nothing snapshots
+       that answer, so rewriting `desired` while the deal is live leaves a record
+       whose own admission gate can no longer be reproduced from stored state:
+       the shop and the Collector are negotiating over a copy that, read back,
+       never qualified. An audit found this command was the only Goal mutation
+       with no such guard, while `removeGoal` and `updateGoalTier` both had one.
+
+       THE SAME PREDICATE AS `removeGoal`, DELIBERATELY. `goalLocked` is narrower
+       — negotiating, and not transactionally lost — because it answers a
+       different question, whether a Goal may be DEMOTED from Primary, and
+       Option B carved out the dead deal on purpose. This question is whether the
+       record may be rewritten underneath a live one, and that harm lasts as long
+       as the Opportunity does, fulfilment included. So `goalNamedByActive`, and
+       `goal-locked` as the answer, which is what a person already sees when they
+       try to stop looking.
+
+       NOTHING IS SNAPSHOTTED AND `goalLocked` IS NOT REDEFINED. Carrying the
+       criteria onto the Opportunity would be more faithful still and is a
+       larger, separate decision; this closes the hole without taking it. */
+    if (D.goalNamedByActive(goalId, state.opportunities)) return refuse(R.goalLocked);
     /* The same shape checks `addGoal` makes, for the same reasons — including
        the non-string one, which is there because `gradingProblem` reads a
        number as "not stated" and would have written `{ grade: 9 }` as no
@@ -518,7 +632,23 @@ const COMMANDS = {
        persistence layer a world it refuses. Cancelling the dead deal is the way
        through, and it is one command away. */
     if (D.goalNamedByActive(goalId, state.opportunities)) return refuse(R.goalLocked);
-    return done({ ...state, goals: list(state.goals).filter((x) => x.id !== goalId) }, true);
+    /* ORGANISATION IS NOT A CONSEQUENCE OF THIS, AND THE OBJECT'S OWN HOME IS
+       NOT ORGANISATION ABOUT SOMETHING ELSE.
+
+       Dropping a Goal says the Collector has stopped looking. It still says
+       nothing about where they had filed the CARD — that row stays exactly
+       where it is, and the binder is theirs to reorganise. What goes with the
+       Goal is the Goal's own membership, because a membership is where THIS
+       GOAL lives and there is no longer a Goal to live anywhere.
+
+       That is not the rule the salvage batch withdrew. `pruneOrphanedMemberships`
+       asked "does this CARD still mean anything to this Collector?" and took
+       curation away when the answer turned no — organisation as a consequence
+       of a STATE CHANGE. Deleting the subject is not a state change, and
+       `interests` is cascaded by `removeCollectorCopy` for exactly this reason:
+       a row that NAMES the thing goes when the thing goes. */
+    return done({ ...state, goals: list(state.goals).filter((x) => x.id !== goalId),
+      binderMemberships: list(state.binderMemberships).filter((m) => m.goalId !== goalId) }, true);
   },
 
   /* ------------------------------------------------------------ inventory */
@@ -858,14 +988,69 @@ const COMMANDS = {
        contradicting assessment, and an unstated card is a real answer. */
     if (D.gradingProblem(copy)) return refuse(R.gradingIncoherent);
     if (copy.market != null && !(Number(copy.market) >= 0)) return refuse(R.invalidAmount);
-    const { id: askedId, addedAt: askedAt, updatedAt, offered, ...facts } = copy;
+    const { id: askedId, addedAt: askedAt, updatedAt, offered, keeping, ...facts } = copy;
+    /* BOTH AT ONCE IS NOT A THING SOMEBODY MEANT. Refused rather than resolved:
+       the domain does not get to pick which half of a contradiction was the
+       intention. */
+    if (offered === true && keeping === true) return refuse(R.dispositionConflict);
+    /* AND NEITHER AT ONCE IS NOT A THING SOMEBODY MEANT EITHER.
+
+       A new copy used to be born saying nothing: `offered: offered === true`
+       took anything that was not literally `true` — `undefined`, `false`,
+       `"yes"`, `null` — and wrote a copy with no disposition, 200, silently.
+       `offered: "yes"` is somebody trying to offer a card, and it produced a
+       copy that is barred from every trade package and never reaches a
+       partner. The same `"yes"` on `setCollectorCopyOffered` has always been
+       refused, so one field answered two ways at two boundaries.
+
+       Owning a card and meaning something by it are still separate facts —
+       that is C2 and it stands. What changed is that the second one is no
+       longer optional at birth: a copy MetYet cannot act on is not a record
+       worth keeping, and the Collector is the only one who may say which it
+       is. Copies recorded before this rule keep their silence; `validateWorld`
+       is deliberately NOT given this opinion, because it runs on load and
+       would turn every one of them into a 500 on the next read.
+
+       TWO CHECKS, BECAUSE ONE WAS NOT ENOUGH. The first draft of this gate
+       refused only when BOTH flags failed to be `true`, which left the original
+       defect alive in a narrower form: `{ offered: "yes", keeping: true }` was
+       accepted, the `"yes"` was coerced to `false`, and the copy was stored as
+       PC — somebody trying to offer a card got the opposite answer with a 200.
+       A flag that is present and is not a boolean is a request the domain
+       cannot read, and it says so before asking which answer was given.
+
+       `false` on the OTHER flag stays legal, deliberately: the panel composes
+       `{ offered: true, keeping: false }` for Trade/Sell and the mirror for PC,
+       and those are complete, unambiguous answers.
+
+       PLACED HERE, one line below the contradiction it mirrors and above
+       `ctx.id`, which advances the runtime's id sequence the moment it is
+       called — so no refusal about a disposition consumes an id. (`copy-in-use`
+       below sits after the mint and would, but it answers an id collision the
+       runtime itself just produced, which is unreachable in practice.) */
+    if ((offered !== undefined && typeof offered !== "boolean")
+      || (keeping !== undefined && typeof keeping !== "boolean")) {
+      return refuse(R.invalidDisposition);
+    }
+    if (!(offered === true) && !(keeping === true)) return refuse(R.invalidDisposition);
     const id = ctx.id("b", askedId);
     if (list(state.collectorCopies).some((b) => b.id === id)) return refuse(R.copyInUse);
     const addedAt = ctx.time(askedAt);
-    /* A NEW COPY IS NOT OFFERED UNLESS ITS OWNER SAYS SO. Recording that you
-       own a card is the base fact; parting with it is a decision, and a
-       decision nobody made is not one to assume. */
+    /* A NEW COPY IS NOT OFFERED UNLESS ITS OWNER SAYS SO, and it is not being
+       kept unless they say that either. Recording that you own a card is the
+       base fact; what you mean to do with it is a decision, and the gate above
+       is what makes the Collector the one who makes it.
+
+       `keeping` IS WRITTEN ONLY FOR `true`, AND THAT STILL MATTERS. Writing
+       `keeping: false` would dress a PC-less copy up as a decision not to keep
+       it, and absence is what "no keep stated" looks like — the confusion
+       migration 0012 exists to remember. This command can no longer create a
+       copy that is silent on both counts, so the shape it protects now belongs
+       to the copies recorded BEFORE that rule: they carry no `keeping` key, and
+       they must stay indistinguishable from each other and distinguishable from
+       a stated PC. */
     const row = { ...facts, id, collectorId: a.collectorId, offered: offered === true,
+      ...(keeping === true ? { keeping: true } : {}),
       ...(addedAt ? { addedAt } : {}) };
     return done({ ...state, collectorCopies: [...list(state.collectorCopies), row] }, id);
   },
@@ -882,7 +1067,7 @@ const COMMANDS = {
     }
     /* Willingness has its own command, so that "I am not selling this" and "I
        was wrong about the certificate" are never the same edit. */
-    if ("offered" in p) return refuse(R.identityImmutable);
+    if ("offered" in p || "keeping" in p) return refuse(R.identityImmutable);
     const status = D.collectorCopyStatus(copyId, state.opportunities);
     if ("cert" in p && p.cert !== copy.cert && (status === "committed" || status === "traded")) {
       return refuse(R.copyCommitted);
@@ -903,10 +1088,15 @@ const COMMANDS = {
       ? { ...next, updatedAt: at || b.updatedAt } : b)) }, copyId);
   },
 
-  /* WILLINGNESS, AND NOTHING ELSE (C2). Turning this off leaves the copy, its
-     card, its grade, its certificate and its photographs exactly where they
-     were — the Collector still owns it, and says so. Turning it back on is the
-     same record becoming supply again, not a new one.
+  /* WILLINGNESS, AND NOTHING ELSE (C2). Saying this leaves the copy, its card,
+     its grade, its certificate and its photographs exactly where they were —
+     the Collector still owns it, and says so. Saying it again after a spell as
+     PC is the same record becoming supply again, not a new one.
+
+     THERE IS NO LONGER AN "OFF" (the disposition batch). This used to take
+     `false` and return the copy to saying nothing, which produced a record
+     barred from every trade package and invisible to every partner. Ending an
+     offer is now `setCollectorCopyKept`, which clears it in the same step.
 
      A deal that has already taken the copy is untouched: a committed or traded
      copy keeps its history whatever its owner now says about offering it, and
@@ -916,10 +1106,64 @@ const COMMANDS = {
     const copy = list(state.collectorCopies).find((b) => b.id === copyId);
     if (!copy) return refuse(R.notFound);
     if (a.seat !== "collector" || copy.collectorId !== a.collectorId) return refuse(R.notOwner);
-    if (typeof offered !== "boolean") return refuse(R.notFound);
-    if (copy.offered === offered) return done(state, copyId);
+    /* `true` AND NOTHING ELSE. `false` used to mean "I take it back", which
+       returned the copy to saying nothing — a durable state the product no
+       longer creates. A non-boolean used to answer `not-found`, which told a
+       caller its copy did not exist. Both now say what is actually wrong, and
+       a copy that really is missing still answers `not-found` above. */
+    if (offered !== true) return refuse(R.invalidDisposition);
+    /* OFFERING A COPY WITHDRAWS ANY INTENTION TO KEEP IT, because those are two
+       contradictory statements about one object and the person has just made
+       the second one. The pair is cleared here rather than refused: saying
+       "actually, I would part with this" is a change of mind, not an error,
+       and clearing it here is what makes the switch one step instead of two.
+
+       `keeping` is therefore passed as `false`, flatly, and `withDisposition`
+       REMOVES the key rather than writing it — the shape has not changed. It
+       used to read `offered ? false : D.copyKept(b)`, where the second branch
+       preserved an existing keep through a withdrawal. Withdrawal is refused
+       above, so that branch is unreachable and saying it is reachable would be
+       a lie about what this command can do. */
+    if (copy.offered === true && !D.copyKept(copy)) return done(state, copyId);
     return done({ ...state, collectorCopies: list(state.collectorCopies).map((b) => (b.id === copyId
-      ? { ...b, offered, ...(at ? { updatedAt: at } : {}) } : b)) }, copyId);
+      ? withDisposition(b, true, false, at)
+      : b)) }, copyId);
+  },
+
+  /* PERSONAL COLLECTION — "I own this physical copy and intend to keep it."
+
+     A POSITIVE STATEMENT, WITH ITS OWN DOOR, FOR THE SAME REASON `offered` HAS
+     ONE. Willingness to part with a card is not a correctable typo and neither
+     is the decision to keep one, so neither travels inside a patch: this and
+     `setCollectorCopyOffered` are the only two writers of a copy's disposition,
+     and `updateInventoryCopy`-style corrections cannot touch either.
+
+     IT CLEARS THE OFFER, AND ITS SIBLING NOW CLEARS THE KEEP. Keeping a copy
+     that was on offer withdraws the offer, because the person has just said the
+     opposite thing; offering one that was kept does the mirror. The two are
+     symmetric because a copy has exactly two answers and changing one's mind is
+     choosing the other.
+
+     THE ASYMMETRY THAT USED TO LIVE HERE IS GONE WITH THE ACT THAT NEEDED IT.
+     It read: withdrawing an offer does not make a copy kept, because `offered:
+     false` has meant "no offer stated" since C2. That is still what `offered:
+     false` means on a row — it is what a PC copy and a pre-rule copy both
+     carry, and nothing reads a decision into it. What is gone is the
+     withdrawal: there is no command that leaves a copy saying nothing, so
+     there is no longer an inference to refuse. */
+  setCollectorCopyKept(state, a, { copyId, keeping }, ctx) {
+    const at = ctx.at;
+    const copy = list(state.collectorCopies).find((b) => b.id === copyId);
+    if (!copy) return refuse(R.notFound);
+    if (a.seat !== "collector" || copy.collectorId !== a.collectorId) return refuse(R.notOwner);
+    if (keeping !== true) return refuse(R.invalidDisposition);
+    /* The mirror of the block above, and dead branch removed for the same
+       reason: `D.copyOffered(b)` could only have been reached by withdrawing
+       a keep, which no longer happens. */
+    if (D.copyKept(copy) && !D.copyOffered(copy)) return done(state, copyId);
+    return done({ ...state, collectorCopies: list(state.collectorCopies).map((b) => (b.id === copyId
+      ? withDisposition(b, false, true, at)
+      : b)) }, copyId);
   },
 
   /* A copy any deal references is part of that deal's record: while reserved
@@ -939,7 +1183,17 @@ const COMMANDS = {
     if (status === "reserved") return refuse(R.copyReserved);
     if (list(state.opportunities).some((o) => (o.trade && o.trade.cards || [])
       .some((c) => c.binderId === copyId))) return refuse(R.copyInUse);
+    /* WHAT NAMES THIS COPY GOES WITH IT, AND WHAT NAMES ITS CARD DOES NOT.
+
+       Interests cascade because they NAME this copy — `interests.binderId` is a
+       CollectorCopy id, legacy naming and written down as such. A binder
+       MEMBERSHIP names it too, and is this copy's home, so it goes the same
+       way: selling a card is not a reorganisation of the shelf, it is the thing
+       leaving the shelf. A binder ENTRY names a CARD rather than this copy, and
+       is not touched — the card may still be wanted, and other copies of it may
+       still be owned. */
     return done({ ...state, collectorCopies: list(state.collectorCopies).filter((b) => b.id !== copyId),
+      binderMemberships: list(state.binderMemberships).filter((m) => m.collectorCopyId !== copyId),
       interests: list(state.interests).filter((i) => i.binderId !== copyId) }, true);
   },
 
@@ -954,17 +1208,31 @@ const COMMANDS = {
        CollectorCopy I own this physical copy
        offered       I am willing to trade or sell that copy
 
-     THEY ARE INDEPENDENT, AND KEEPING THEM SO IS THE POINT. Nothing below
-     creates a Goal, creates a copy, reads one, or changes one. Filing a card
-     says nothing about wanting it; a Binder holding a card the Collector
-     neither wants nor owns is valid curation, and is the state most binders
-     start in. A Binder that implied demand would be a second, silent way of
-     saying "I'm looking for this" — which nobody said.
+     THEY ARE INDEPENDENT, IN EVERY DIRECTION, AND THE EXCEPTION THAT WAS HERE
+     HAS BEEN REMOVED. Filing a card says nothing about wanting it — a Binder
+     that implied demand would be a second, silent way of saying "I'm looking
+     for this", which nobody said — and nothing below creates, changes or READS
+     a Goal or a copy.
 
-     MEMBERSHIP NAMES THE CANONICAL CARD. Not a Goal, not a copy. Selling a card
-     must not un-file it, satisfying a goal must not un-file it, and owning
-     three physical copies of one card must not mean three places it belongs.
-     The canonical card is the only reference that survives all of those.
+     WHAT WAS TRIED AND WITHDRAWN. For one batch, filing required the card to be
+     in one of the four states, and losing the last of them took the membership
+     away. Both rules asked the same question — "what does this canonical card
+     currently mean to this Collector?" — and that question is the wrong one: a
+     Collector's actionable objects are a specific sought copy and a specific
+     owned copy, never an aggregate of a card. Deriving whether organisation may
+     exist from an aggregate made curation a consequence of state, and losing it
+     silently was the cost. The product's rule is the plain one:
+
+       Binder organisation must not determine whether a Goal or CollectorCopy is
+       meaningful, and state changes must not silently destroy organisation.
+
+     MEMBERSHIP NAMES THE CANONICAL CARD, AND THAT IS TRANSITIONAL. Not a Goal,
+     not a copy — so selling a copy does not un-file a card the Collector still
+     wants, satisfying a goal does not un-file a card they still keep a copy of,
+     and owning three physical copies of one card does not mean three places it
+     belongs. That last one is the tell: three actionable objects share one row,
+     which is why the row is on its way to naming the object instead. Until it
+     does, nothing here pretends it already names one.
 
      AND NOBODY ELSE EVER SEES IT. Binders are projected to the owning Collector
      and to no one else — see metyet-projection.js. A Trusted Partner receives
@@ -1033,7 +1301,12 @@ const COMMANDS = {
     const binder = list(state.binders).find((b) => b.id === binderId);
     if (!binder) return refuse(R.notFound);
     if (a.seat !== "collector" || binder.collectorId !== a.collectorId) return refuse(R.notOwner);
-    if (typeof canonicalCardId !== "string" || !canonicalCardId) return refuse(R.notFound);
+    /* A BLANK IS NOT AN ID. The withdrawn state guard used to refuse whitespace
+       incidentally — a card of spaces has no Goal and no copy — so removing it
+       left this door a shade wider than it was. Unreachable from production
+       (the server asks the catalog first) and refused by the foreign key
+       underneath, but a door should say no for its own reasons. */
+    if (typeof canonicalCardId !== "string" || !canonicalCardId.trim()) return refuse(R.notFound);
     const already = list(state.binderEntries)
       .some((e) => e.binderId === binderId && e.canonicalCardId === canonicalCardId);
     if (already) return done(state, true);
@@ -1053,6 +1326,105 @@ const COMMANDS = {
     if (!has) return done(state, false);
     return done({ ...state, binderEntries: list(state.binderEntries)
       .filter((e) => !(e.binderId === binderId && e.canonicalCardId === canonicalCardId)) }, true);
+  },
+
+  /* ======================================================= OBJECT MEMBERSHIP
+
+     WHERE A GOAL OR A COPY BELONGS (Batch 3A).
+
+     `addBinderEntry` above files a CARD, and that is the shape 0013 shipped and
+     the shape the Collector's screens still send. These two file an OBJECT: one
+     Goal, or one CollectorCopy, in one Binder. The difference is the whole
+     batch. A Collector who hunts a card, keeps one copy of it and would part
+     with another has three things that can belong in three different places,
+     and a row naming the card could not say so — "three actionable objects
+     share one row, which is why the row is on its way to naming the object
+     instead", as the note above `addBinderEntry` has said since the salvage.
+
+     NOTHING HERE READS A CARD-LEVEL ROW, AND NOTHING HERE WRITES ONE. The two
+     representations stand side by side while the screens move across, and a
+     legacy row is never an answer to "which Binder is this Goal in" — if no
+     membership names the object, the object is unfiled. A legacy row records an
+     act of filing a card; nothing on it records what caused it, so reading one
+     as a Goal's home would be inventing the one thing nobody wrote down.
+
+     AT MOST ONE HOME, WHICH IS WHY THERE IS NO `moveObject`. An object belongs
+     in one place or in none, so filing it somewhere else IS the move: one
+     command, one row, updated in place. Remove-then-add would pass through a
+     state where the object belongs nowhere, and across two transactions it
+     could stop there. */
+
+  fileObject(state, a, { binderId, goalId, collectorCopyId }, ctx) {
+    const at = ctx.at;
+    const target = oneTarget(goalId, collectorCopyId);
+    if (!target) return refuse(R.invalidTarget);
+    const binder = list(state.binders).find((b) => b.id === binderId);
+    if (!binder) return refuse(R.notFound);
+    if (a.seat !== "collector" || binder.collectorId !== a.collectorId) return refuse(R.notOwner);
+    const object = target.kind === "goal"
+      ? list(state.goals).find((g) => g.id === target.id)
+      : list(state.collectorCopies).find((b) => b.id === target.id);
+    if (!object) return refuse(R.notFound);
+    /* BOTH SIDES, NOT ONE. Owning the binder is not enough: a membership names
+       an object, and a row pairing this Collector's binder with somebody else's
+       Goal would put another person's object id into this Collector's own view,
+       which the projection scopes by the binder alone. */
+    if (object.collectorId !== a.collectorId) return refuse(R.notOwner);
+    const key = target.kind === "goal" ? "goalId" : "collectorCopyId";
+    const existing = list(state.binderMemberships).find((m) => m[key] === target.id);
+    /* Already there: the same answer, said twice. The row keeps its id and the
+       moment it was filed, because neither changed. */
+    if (existing && existing.binderId === binderId) return done(state, existing.id);
+    /* AND THE ARCHIVE GATE IS BELOW THAT, ON PURPOSE. It was above it first,
+       which refused a re-statement of a home the Collector already has in a
+       binder they have since archived — a no-op answered with an error, which
+       `addBinderEntry` does not do either. An archived binder is a bar on
+       filing something NEW into it, not on the truth staying true. */
+    if (binder.archivedAt) return refuse(R.binderArchived);
+    /* Somewhere else: the SAME row moves. Updated in place, never removed and
+       re-added — the membership's id is the handle everything else uses, and
+       `binderMemberships` must not be reordered by a move either. */
+    if (existing) {
+      return done({ ...state, binderMemberships: list(state.binderMemberships)
+        .map((m) => (m.id === existing.id ? { ...m, binderId, filedAt: at } : m)) }, existing.id);
+    }
+    const id = ctx.id("bm");
+    return done({ ...state, binderMemberships: [...list(state.binderMemberships),
+      { id, binderId, [key]: target.id, filedAt: at }] }, id);
+  },
+
+  /* NO HOME, WHICH IS NOT THE SAME AS NO MEANING. The Goal is still the hunt it
+     was and the copy is still owned, kept or offered exactly as before; they
+     are simply not in a binder. It names no binder because an object has one
+     home or none, and naming the one being left would be a fact a caller could
+     get wrong for no gain. */
+  unfileObject(state, a, { goalId, collectorCopyId }, ctx) {
+    const target = oneTarget(goalId, collectorCopyId);
+    if (!target) return refuse(R.invalidTarget);
+    /* THE SEAT BEFORE THE LOOKUP, AND THIS ORDER IS THE WHOLE REASON THE LINE
+       IS SPLIT IN TWO. It was one line below the lookup, which answered
+       `not-found` for an id that does not exist and `not-owner` for one that
+       does — to ANY authenticated caller, including a Trusted Partner with no
+       relationship to the owner. The difference between those two answers is a
+       fact about somebody else's collection, and a partner holding a copy id
+       could use it to learn whether that copy still exists. `fileObject` never
+       had the problem because it reaches the binder first and a non-owner stops
+       there; the other commands in this file that probe before checking probe
+       BINDER ids, which a partner is never given. This is the first that
+       probes an object, so it asks about the seat first. */
+    if (a.seat !== "collector") return refuse(R.notOwner);
+    const object = target.kind === "goal"
+      ? list(state.goals).find((g) => g.id === target.id)
+      : list(state.collectorCopies).find((b) => b.id === target.id);
+    if (!object) return refuse(R.notFound);
+    if (object.collectorId !== a.collectorId) return refuse(R.notOwner);
+    const key = target.kind === "goal" ? "goalId" : "collectorCopyId";
+    const existing = list(state.binderMemberships).find((m) => m[key] === target.id);
+    /* Unfiled already: nothing to do, and that is a success. An archived binder
+       is no bar here — a Collector must always be able to take a thing out. */
+    if (!existing) return done(state, false);
+    return done({ ...state, binderMemberships: list(state.binderMemberships)
+      .filter((m) => m.id !== existing.id) }, true);
   },
 
   /* ------------------------------------------------------------ relationships & profile */
@@ -1463,9 +1835,24 @@ const COMMANDS = {
       priceThread: [...(x.priceThread || []), { by: a.seat, type, amount, at }] }, at)), oppId);
   },
 
-  /* Accepting the OTHER side's standing figure — never your own. Settling the
-     price commits the exact InventoryCopy, so a copy already committed to
-     another live deal cannot be settled again. */
+  /* Accepting the OTHER side's standing figure — never your own. The agreed
+     figure is the thread's, never the payload's: any `amount` a caller sends is
+     ignored.
+
+     AND SETTLING A PRICE DOES NOT COMMIT THE COPY — CORRECTED. This header used
+     to say that it did, and that "a copy already committed to another live deal
+     cannot be settled again". Option B moved the availability boundary to final
+     agreement and left both sentences behind; the comment inside this function
+     already said so, seventeen lines below, and the two contradicted each other.
+     Two Collectors may both settle a price on one copy and neither is owed it —
+     `copyCommittedTo` and `validateWorld` were both moved off `agreedPrice`, and
+     only this header was not.
+
+     What `agreedPrice` DOES open is the MUTATION window (`copyInLiveDeal`): from
+     here the partner may no longer re-certify, re-grade or archive the copy,
+     because a Collector is now reasoning about that exact physical card.
+     Availability is a different question with a different answer — see
+     `INVARIANTS.copyCommittedTo`. Comment corrected; behaviour untouched. */
   acceptPrice(state, a, { oppId }, ctx) {
     const at = ctx.at;
     const { o, refused } = oppGate(state, a, oppId);
@@ -1538,6 +1925,39 @@ const COMMANDS = {
       const b = list(state.collectorCopies).find((x) => x.id === bid);
       if (!b) return refuse(R.notFound);
       if (b.collectorId !== a.collectorId) return refuse(R.notOwner);
+      /* PC IS A HARD BAR, AND SILENCE IS NOT CONSENT.
+
+         An audit found this command reading only ownership, photographs and
+         reservation — never the copy's disposition. So a copy its owner had
+         marked PC could be put in a package, and it then crossed to the shop
+         through `referencedCopies` with its grade, cert and both photographs,
+         labelled "reserved", and could be accepted to "traded". The field-level
+         rule held (`keeping` is off the partner allow-list) but the ROW the
+         projection says never reaches a partner did reach them.
+
+         The four-state hand-back claimed that protection was DOUBLED. It was
+         not: it was single, and it rested entirely on no surface ever sending a
+         kept copy's id.
+
+         WHAT THIS CLOSES, EXACTLY, AND WHAT IT DOES NOT. This is the door INTO
+         a package. It is not a promise that a copy inside one can never be
+         kept: `setCollectorCopyKept` has no reserved-or-committed guard, so a
+         Collector may package an offered copy and then say they are keeping it,
+         and the copy stays visible to that partner as `reserved` because it IS
+         reserved to their deal. That is the same asymmetry `setCollectorCopyOffered`
+         already documents — a deal that has taken a copy is untouched by what
+         its owner later says about offering it — and unwinding it is
+         `withdrawTradeCard` or cancelling, not a disposition. Whether PC should
+         additionally refuse while a package holds the copy is a product
+         question this batch surfaced rather than answered.
+
+         `offered === true` AND NOTHING WEAKER. Refusing only `keeping` would
+         still let a copy nobody has said anything about — which is every copy
+         written before PC existed — be reserved against its owner's silence.
+         A package is where property is committed; the answer has to have been
+         given. Read through `D.copyOffered` so this and the projection's
+         `inSupply` cannot drift apart. */
+      if (!D.copyOffered(b)) return refuse(R.copyNotOffered);
       if (!D.INVARIANTS.copyPhotographed(b.photos)) return refuse(R.photosRequired);
       const status = D.collectorCopyStatus(bid, state.opportunities, oppId);
       if (status === "reserved") return refuse(R.copyReserved);

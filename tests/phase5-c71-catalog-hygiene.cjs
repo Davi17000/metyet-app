@@ -117,10 +117,19 @@ describe("A. the corrected history pin still asks something", () => {
     /* Two claims share that test. One is archaeology — both ends frozen, so it
        can never change again, which is what "did C4 touch persistence" MEANS
        and is the whole correction. The other is live and does the real work:
-       the newest migration is still 0013. Correcting the first must not have
-       quietly dropped the second. */
+       C4 wrote no migration, so the newest one is somebody else's. Correcting
+       the first must not have quietly dropped the second.
+       RE-PINNED (Batch 3A), AND THE OLD SPELLING WAS A TRAP. This read
+       `/0013_binders\.sql/` over C4's whole file, and once 3A made 0014 the
+       newest it was satisfied by C4's stale test TITLE while the assertion
+       underneath had already moved on — a guard passing on a comment. It now
+       reads the assertion itself: whatever the newest migration is on disk, C4's
+       suite must be pinning THAT, and must not be pinning one of its own. */
     const suite = read("tests/phase5-c4-catalog-import.cjs");
-    assert(/0013_binders\.sql/.test(suite), "the newest-migration assertion vanished");
+    const newest = fs.readdirSync(path.join(ROOT, "persistence", "migrations"))
+      .filter((f) => f.endsWith(".sql")).sort().pop();
+    assert(suite.includes(`eq(migrations[migrations.length - 1], "${newest}"`),
+      `the newest-migration assertion vanished or no longer names ${newest}`);
   });
 
   test("no test compares history against a moving end", () => {
@@ -496,11 +505,22 @@ describe("D. all four deployed surfaces use it", () => {
 
   test("the door, the command table and the schema are where C7.1 found them", () => {
     const { EXPOSED_COMMANDS } = require("../server/exposed-commands.js");
-    eq(EXPOSED_COMMANDS.length, 22, "the production door moved");
-    /* 49 → 50 in Option B (`setCopyPending`). C7.1's claim is the door above,
-       which has not moved: the new command is written, tested and deliberately
-       not exposed, exactly as the deal lifecycle still is. */
-    eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 50,
+    eq(EXPOSED_COMMANDS.length, 25, "the production door moved");
+    /* 49 → 50 in Option B (`setCopyPending`), and → 51 in the four-state batch
+       (`setCollectorCopyKept`). C7.1's claim is the door above, which has not
+       moved for either: the first is written, tested and deliberately unexposed,
+       and the second is a Collector's own statement about their own copy.
+       → 53 in Batch 3A (`fileObject`, `unfileObject`), and the door above
+       moved 23 → 25 in Batch 3B-1, when the per-object Binder controls that
+       send them arrived. Neither touches the catalog, which is what C7.1 is
+       about.
+       THIS COMMENT WAS WRONG FOR TWO BATCHES AND IS WORTH THE CORRECTION
+       RATHER THAN THE SILENCE. 3A wrote it claiming the pair was exposed; 3A's
+       own closure took the pair back out and moved the count to 23 without
+       rewriting this prose, so it sat directly above an assertion of 23 saying
+       25. 3B-1 makes the number right, which would have let it become correct
+       by accident — the reason it says is now the reason that happened. */
+    eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 53,
       "the domain's command table moved");
   });
 });

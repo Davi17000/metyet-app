@@ -17,6 +17,16 @@
      I  configuration
      J  boundaries and composition
    ========================================================================== */
+/* GOALS IN THIS SUITE NOW STATE THEIR TIER, BECAUSE EVERY GOAL MUST.
+
+   `addGoal` used to take a missing `tier` and write "secondary". As of the Goal
+   Tier Explicit Choice batch it refuses one — a tier is a choice the Collector
+   makes, and a command that invents it tells them they succeeded at something
+   they never asked for. `addGoal` is scaffolding here, not the subject: these
+   tests are about the HTTP boundary, authentication and the
+   server-owned runtime, and they need a request the
+   domain will actually accept. The tier added below is arbitrary and load-
+   bearing for nothing; what each test asserts is unchanged. */
 const { describe, test, assert, eq, run } = require("./run.cjs");
 const fs = require("fs");
 const path = require("path");
@@ -206,7 +216,7 @@ describe("A. authentication", () => {
 
   test("commands need the same authentication as reads", async () => {
     const { app } = await serve();
-    const res = await send(app, null, { command: "addGoal", payload: { cardId: "k2" } });
+    const res = await send(app, null, { command: "addGoal", payload: { cardId: "k2", tier: "primary" } });
     eq(res.statusCode, 401);
     eq(res.json().error.code, "unauthenticated");
   });
@@ -422,7 +432,7 @@ describe("E. the command endpoint", () => {
 
   test("the server's runtime owns the ids and the times", async () => {
     const { app, repository } = await serve();
-    const res = await send(app, SUBJECTS.casey, { command: "addGoal", payload: { cardId: "k2" } });
+    const res = await send(app, SUBJECTS.casey, { command: "addGoal", payload: { cardId: "k2", tier: "primary" } });
     const id = res.json().value;
     assert(/^g\d{6}$/.test(id), "the runtime minted the id: " + id);
     const goal = (await repository.loadWorld()).goals.find((g) => g.id === id);
@@ -438,7 +448,7 @@ describe("E. the command endpoint", () => {
   test("a refused command answers with the rule and writes nothing", async () => {
     const { app, pg } = await serve();
     const before = await dump(pg);
-    const res = await send(app, SUBJECTS.northline, { command: "addGoal", payload: { cardId: "k2" } });
+    const res = await send(app, SUBJECTS.northline, { command: "addGoal", payload: { cardId: "k2", tier: "primary" } });
     eq(res.statusCode, 409, res.body);
     const body = res.json();
     eq(body.error.code, "command_refused");
@@ -522,9 +532,9 @@ describe("F. authority cannot be claimed by a request", () => {
     const { app, pg } = await serve();
     const before = await dump(pg);
     const bodies = [
-      { command: "addGoal", payload: { cardId: "k2" }, actor: { partnerId: "p1" } },
-      { command: "addGoal", payload: { cardId: "k2" }, account: "someone-else" },
-      ...FORBIDDEN_PAYLOAD_KEYS.map((key) => ({ command: "addGoal", payload: { cardId: "k2", [key]: "p1" } })),
+      { command: "addGoal", payload: { cardId: "k2", tier: "primary" }, actor: { partnerId: "p1" } },
+      { command: "addGoal", payload: { cardId: "k2", tier: "primary" }, account: "someone-else" },
+      ...FORBIDDEN_PAYLOAD_KEYS.map((key) => ({ command: "addGoal", payload: { cardId: "k2", tier: "primary", [key]: "p1" } })),
     ];
     for (const body of bodies) {
       const res = await send(app, SUBJECTS.casey, body);
@@ -532,9 +542,9 @@ describe("F. authority cannot be claimed by a request", () => {
       eq(res.json().error.code, "invalid_request");
     }
     /* Written as raw JSON, because an object literal cannot carry these keys. */
-    for (const raw of ['{"command":"addGoal","payload":{"cardId":"k2","__proto__":{"admin":true}}}',
-      '{"command":"addGoal","payload":{"cardId":"k2","nested":{"constructor":{"x":1}}}}',
-      '{"command":"addGoal","payload":{"cardId":"k2","at":"1999-01-01"}}']) {
+    for (const raw of ['{"command":"addGoal","payload":{"cardId":"k2","tier":"primary","__proto__":{"admin":true}}}',
+      '{"command":"addGoal","payload":{"cardId":"k2","tier":"primary","nested":{"constructor":{"x":1}}}}',
+      '{"command":"addGoal","payload":{"cardId":"k2","tier":"primary","at":"1999-01-01"}}']) {
       const res = await app.inject({ method: "POST", url: "/api/commands",
         headers: { ...bearer(SUBJECTS.casey), "content-type": "application/json" }, payload: raw });
       eq(res.statusCode, 400, raw);
@@ -638,7 +648,7 @@ describe("G. failures, health and the error vocabulary", () => {
   test("a world that moved under a command is a retryable conflict", async () => {
     const { app } = await serve({ repositoryWrapper: (repo) => ({ ...repo,
       loadWorld: async (tx) => { const w = await repo.loadWorld(tx); if (tx) await tx.query("update metyet.world_meta set version = version + 1"); return w; } }) });
-    const res = await send(app, SUBJECTS.casey, { command: "addGoal", payload: { cardId: "k2" } });
+    const res = await send(app, SUBJECTS.casey, { command: "addGoal", payload: { cardId: "k2", tier: "primary" } });
     eq(res.statusCode, 409);
     eq(res.json().error.code, "state_changed");
   });
@@ -980,7 +990,7 @@ describe("J. boundaries and composition", () => {
 
   test("the in-memory prototype is untouched by any of this", () => {
     const store = createStore(world());
-    const r = store.execute({ collectorId: "c1" }, "addGoal", { cardId: "k2", at: "2026-08-14" });
+    const r = store.execute({ collectorId: "c1" }, "addGoal", { cardId: "k2", tier: "primary", at: "2026-08-14" });
     assert(r.ok, "the prototype still runs its own way");
     eq(store.get().goals.find((g) => g.id === r.value).since, "2026-08-14", "on the demo clock");
   });
