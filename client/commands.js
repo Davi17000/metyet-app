@@ -335,6 +335,9 @@ export function updateOwnedCopy(target) {
    the concept and deliberately shipped no way to reach it; these three are the
    Card Specification panel's controls, and they are the whole of what that
    panel needs: make a binder, put this card in one, take it out again.
+   (Since Batch 3B-1 the panel files a THING rather than a card — see the
+   object-level pair below — and since Batch 3C-1 only two of the three remain:
+   `createBinder`, and the card-level removal for rows filed before 3B-1.)
 
    THE TWO MEMBERSHIP COMMANDS ARE IDEMPOTENT at the domain, which is what makes
    a second press of Commit safe after a partial one. `createBinder` is not —

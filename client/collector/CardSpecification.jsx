@@ -148,9 +148,6 @@ const binderTarget = (home, newKeys) => (newKeys.has(home)
    time, which is what makes a retry send only what is left. */
 export function planFrom(state, canonicalCardId, answers) {
   const myBinders = rows(state && state.binders);
-  const entries = rows(state && state.binderEntries)
-    .filter((e) => e.canonicalCardId === canonicalCardId);
-  const filedNow = new Set(entries.map((e) => e.binderId));
   const stateGoal = rows(state && state.goals)
     .find((g) => g.canonicalCardId === canonicalCardId) || null;
   const copiesNow = rows(state && state.collectorCopies)
@@ -160,8 +157,8 @@ export function planFrom(state, canonicalCardId, answers) {
   /* THE HOME THE SERVER SAYS EACH THING HAS (Batch 3B-1), which is one half of
      every filing decision below — the other half is the answer. A membership
      names exactly one Goal or one copy, so these two maps cannot overlap, and
-     an object with no row simply has no home. `binderEntries` above is NOT
-     consulted for any of this: a card-level row records that a CARD was filed
+     an object with no row simply has no home. `binderEntries` is NOT read
+     here at all (since Batch 3C-1, not even above): a card-level row records that a CARD was filed
      and says nothing about which thing, not even when one thing is the only
      candidate it could have meant. */
   const homeOfGoal = new Map();
@@ -447,12 +444,19 @@ export function planFrom(state, canonicalCardId, answers) {
     }
   }
 
-  /* `steps` is the work; `goal` is read by the panel. `copiesNow`, `myBinders`
-     and `filedNow` became unread when the pre-send state check and the
-     destruction warning went, and they are kept because they describe the plan's
-     own inputs and cost nothing — a caller reasoning about a plan wants them.
-     If that stops being true they should go. */
-  return { steps, goal, copiesNow, myBinders, filedNow };
+  /* `steps` is the work; `goal` is read by the panel. `copiesNow` and
+     `myBinders` became unread when the pre-send state check and the destruction
+     warning went, and they are kept because they describe the plan's own inputs
+     and cost nothing — a caller reasoning about a plan wants them.
+
+     `filedNow` WENT IN BATCH 3C-1, and it was not like those two. It was the
+     set of binders holding a card-level row for this card — the last place a
+     plan READ legacy rows while being computed, which is exactly the inference
+     the comments in this file say the panel must never make. Nothing consumed
+     it, so removing it changes no plan; it makes "nothing is seeded from a
+     legacy row" true of this function's code and not only of its output. The
+     panel's legacy line still reads those rows, to show them and to Remove one. */
+  return { steps, goal, copiesNow, myBinders };
 }
 
 const json = (v) => JSON.stringify(v === undefined ? null : v);
