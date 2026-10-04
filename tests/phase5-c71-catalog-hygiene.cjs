@@ -505,7 +505,9 @@ describe("D. all four deployed surfaces use it", () => {
 
   test("the door, the command table and the schema are where C7.1 found them", () => {
     const { EXPOSED_COMMANDS } = require("../server/exposed-commands.js");
-    eq(EXPOSED_COMMANDS.length, 25, "the production door moved");
+    /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
+       name; any other change to the size still fails here. */
+    eq(EXPOSED_COMMANDS.length, 24, "the production door moved");
     /* 49 → 50 in Option B (`setCopyPending`), and → 51 in the four-state batch
        (`setCollectorCopyKept`). C7.1's claim is the door above, which has not
        moved for either: the first is written, tested and deliberately unexposed,

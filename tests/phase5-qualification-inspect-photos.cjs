@@ -639,7 +639,9 @@ describe("G. The boundary", () => {
     /* RE-PINNED by photo fulfilment, which added the fourth: `addCopyPhotos`,
        the only command that closes a photo request. This batch's own three are
        still asserted below, and the transaction set is still shut. */
-    eq(EXPOSED_COMMANDS.length, 25, "the production surface is not the size this batch declared");
+    /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
+       name; any other change to the size still fails here. */
+    eq(EXPOSED_COMMANDS.length, 24, "the production surface is not the size this batch declared");
     assert(EXPOSED_COMMANDS.includes("addCopyPhotos"),
       "the shop lost its way to answer a request");
     for (const open of ["reviewCopy", "endReview", "requestPhotos"]) {

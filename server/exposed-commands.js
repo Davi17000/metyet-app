@@ -104,7 +104,6 @@ const EXPOSED_COMMANDS = Object.freeze([
      objects — renaming, archiving, listing, opening one — is a surface C3.4
      builds, and neither command has a control here. */
   "createBinder",                // Collector → Card Specification, "New binder…"
-  "addBinderEntry",              // Collector → Card Specification, filing this card
   /* WHERE AN OBJECT BELONGS (Batch 3B-1), AND NOW THERE IS A SCREEN. These file
      one Goal or one CollectorCopy, and the Card Specification panel sends them
      from a home control beside each of those things — the Binder view sends
@@ -117,9 +116,19 @@ const EXPOSED_COMMANDS = Object.freeze([
      the surface. The round trip is left written down because it is the rule
      working, not a mistake to hide.
 
-     `addBinderEntry` above still files a CARD, and the shipping panel no longer
-     sends it. It stays on this list for one release so a browser tab opened
-     before this deploy keeps working; retiring the door is 3C's. */
+     THE CARD-LEVEL ADD IS GONE FROM THIS LIST (Batch 3C-1). `addBinderEntry`
+     files a CARD; 3B-1 stopped the panel sending it and kept it here for one
+     release so a browser tab opened before that deploy kept working. That
+     release shipped (`b658e7e`), the release owner judged the window enough,
+     and a door with no caller closes — which is this file's rule read in the
+     other direction. A tab still that old now gets `command-unavailable` and
+     a reload fixes it. The command itself stays in the domain, dormant, because
+     the rows it made still exist and tests have to make them honestly.
+
+     `removeBinderEntry` STAYS, AND NOT BY SYMMETRY. It is the only way a row
+     filed before 3B-1 can ever leave, from the legacy line's Remove. Stopping
+     new rows and stopping their removal are two decisions, and only the first
+     was made. */
   "fileObject",                  // Collector → Card Specification / Binder, where this thing lives
   "unfileObject",                // Collector → Card Specification / Binder, taking it out
   "removeBinderEntry",           // Collector → the legacy line, removing a card filed before 3B

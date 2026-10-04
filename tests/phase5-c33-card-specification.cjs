@@ -711,7 +711,7 @@ describe("D. the production door, and what is still shut", () => {
          It states nothing about a card, touches no Goal, creates no Binder
          membership, and never crosses to a partner. */
       "setCollectorCopyKept",
-      "createBinder", "addBinderEntry", "removeBinderEntry",
+      "createBinder", "removeBinderEntry",
       /* AND THE TWO BATCH 3B-1 OPENED, WITH THE CONTROLS THAT PRESS THEM.
          `fileObject` and `unfileObject` file one GOAL or one COLLECTORCOPY,
          which is the subject of organisation from this batch on: the Card
@@ -720,9 +720,11 @@ describe("D. the production door, and what is still shut", () => {
 
          THEY WERE HERE FOR ONE COMMIT IN 3A AND WERE TAKEN BACK OUT, because
          no screen sent either and this list's rule is that an entry names the
-         screen that sends it. 3B-1 is that screen. `addBinderEntry` above
-         still files a CARD, and the panel no longer sends it — the door stays
-         one release for a stale browser tab, and goes in 3C. */
+         screen that sends it. 3B-1 is that screen. `addBinderEntry`, the
+         CARD-level add, is no longer on this list: the panel stopped sending it
+         at 3B-1, the door stayed open one release for a stale browser tab, and
+         Batch 3C-1 closed it by name once the release owner judged that window
+         enough. `removeBinderEntry` stays — it is how a legacy row is removed. */
       "fileObject", "unfileObject",
       "updateCollectorCopy", "updateGoalCriteria",
       "renameBinder", "setBinderArchived",
@@ -751,7 +753,9 @@ describe("D. the production door, and what is still shut", () => {
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
     ].sort()), "the production surface is not what C3.4 declared");
-    eq(EXPOSED_COMMANDS.length, 25);
+    /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
+       name; any other change to the size still fails here. */
+    eq(EXPOSED_COMMANDS.length, 24);
     for (const name of EXPOSED_COMMANDS) {
       assert(C.COMMAND_NAMES.includes(name), `${name} is not a command`);
     }
@@ -816,29 +820,34 @@ describe("D. the production door, and what is still shut", () => {
     eq(made.archivedAt, null);
   });
 
+  /* RE-PINNED (Batch 3C-1). The add door is closed, so the card-level add's
+     rules are asserted where they live — the domain, which is also the only
+     place a legacy row can still be made — and the door's own answer is
+     asserted over HTTP: `command-unavailable`, ahead of the catalog guard,
+     whoever asks and whatever they name. Removal is still a door, and still
+     owner-only over HTTP. */
   test("addBinderEntry / removeBinderEntry: owner only, and the catalog guard runs", async () => {
     const ctx = await world();
     const made = await cards(ctx);
     const mine = (await post(ctx.app, "casey", "createBinder", { name: "Mine" })).json().value;
 
-    eq(refusal(await post(ctx.app, "north", "addBinderEntry",
-      { binderId: mine, canonicalCardId: made.firstEdition })), "not-owner");
+    for (const [token, card] of [["casey", made.firstEdition], ["north", made.firstEdition],
+      ["casey", "not-a-card"]]) {
+      const res = await post(ctx.app, token, "addBinderEntry", { binderId: mine, canonicalCardId: card });
+      eq(res.statusCode, 409, `the retired add reached past the door for ${token}`);
+      eq(refusal(res), "command-unavailable", `the door did not answer first for ${token}`);
+    }
+    eq((await direct(ctx, ACTOR.north, "addBinderEntry",
+      { binderId: mine, canonicalCardId: made.firstEdition })).refused, "not-owner");
     eq(refusal(await post(ctx.app, "second", "removeBinderEntry",
       { binderId: mine, canonicalCardId: made.firstEdition })), "not-owner");
-    /* The guard C3.1 wrote for the batch that would open this door. */
-    eq(refusal(await post(ctx.app, "casey", "addBinderEntry",
-      { binderId: mine, canonicalCardId: "not-a-card" })), "card-unavailable");
     eq((await load(ctx)).binderEntries.length, 0);
 
-    /* And the card has to mean something before it can be filed (the four-state
-       batch), so this says the smallest true thing first. */
+    /* Idempotent in the domain, and the first addedAt stands. */
     await want(ctx.app, "casey", made.firstEdition, "secondary", { desired: { grade: "PSA 9" } });
-    eq((await post(ctx.app, "casey", "addBinderEntry",
-      { binderId: mine, canonicalCardId: made.firstEdition })).statusCode, 200);
-    /* Idempotent, and the first addedAt stands. */
+    await legacyRow(ctx, ACTOR.casey, mine, made.firstEdition);
     const first = (await load(ctx)).binderEntries[0].addedAt;
-    eq((await post(ctx.app, "casey", "addBinderEntry",
-      { binderId: mine, canonicalCardId: made.firstEdition })).statusCode, 200);
+    await legacyRow(ctx, ACTOR.casey, mine, made.firstEdition);
     eq((await load(ctx)).binderEntries.length, 1, "filing a filed card made a second entry");
     eq((await load(ctx)).binderEntries[0].addedAt, first, "re-filing restamped it");
   });
@@ -1166,7 +1175,7 @@ describe("F. one button, a sequence of commands that already existed", () => {
         { binderId: step.binderId, goalId: step.goalId, collectorCopyId: step.collectorCopyId }));
       case "unfile-object": return answer(await send("unfileObject",
         { goalId: step.goalId, collectorCopyId: step.collectorCopyId }));
-      case "file": return answer(await send("addBinderEntry", { binderId: step.binderId, canonicalCardId }));
+      /* No `case "file"` (Batch 3C-1): the entrance this mirrors no longer maps it. */
       case "unfile": return answer(await send("removeBinderEntry", { binderId: step.binderId, canonicalCardId }));
       case "wanted-copy": return answer(await send("updateGoalCriteria", { goalId: step.goalId, desired: step.desired }));
       case "how-hard": return answer(await send("updateGoalTier", { goalId: step.goalId, tier: step.tier }));
@@ -1181,30 +1190,36 @@ describe("F. one button, a sequence of commands that already existed", () => {
   };
 
   /* RE-PINNED (Batch 3B-1): `keeping` was already missing from this list, and
-     the two object-level kinds join it. `file` and `unfile` stay for the
-     entrance's sake — see the exception below. */
-  const ORDER = ["make-binder", "file", "unfile", "file-object", "unfile-object",
+     the two object-level kinds join it. RE-PINNED AGAIN (Batch 3C-1): `file`
+     leaves — nothing produces it and the entrance no longer maps it — and
+     `unfile` stays, because the legacy line's Remove really does produce it. */
+  const ORDER = ["make-binder", "unfile", "file-object", "unfile-object",
     "wanted-copy", "how-hard", "stop-looking", "start-looking", "correct-copy",
     "offering", "keeping", "forget-copy", "record-copy"];
 
   test("the panel and the entrance name exactly the same steps", () => {
     const entrance = code("client/sign-in/SignIn.jsx");
     const panel = code("client/collector/CardSpecification.jsx");
+    /* THE EXCEPTION IS GONE (Batch 3C-1). 3B-1 kept `file` mapped with no
+       producer, for a browser tab opened before that deploy; the door has now
+       closed, so the entrance maps every kind the panel produces and NO kind it
+       does not. `unfile` is still both produced and mapped — the legacy line's
+       Remove is the one card-level gesture left. */
     for (const kind of ORDER) {
       assert(new RegExp(`case "${kind}"`).test(entrance), `the entrance cannot map "${kind}"`);
-      /* `file` IS NO LONGER PRODUCED BY THE PANEL AT ALL (Batch 3B-1), which is
-         where new bare-card filing ends. The entrance still maps it so a
-         browser tab opened before this deploy keeps working, and `unfile` is
-         still produced — the legacy line's Remove is the one card-level gesture
-         left. So the exception shrinks to `file` alone. */
-      assert(new RegExp(`kind: "${kind}"`).test(panel) || kind === "file",
-        `the panel never produces "${kind}"`);
+      assert(new RegExp(`kind: "${kind}"`).test(panel), `the panel never produces "${kind}"`);
     }
     /* And nothing the panel can produce is unmapped. */
     const produced = [...panel.matchAll(/kind: "([a-z-]+)"/g)].map((m) => m[1]);
     for (const kind of new Set(produced)) {
       assert(new RegExp(`case "${kind}"`).test(entrance), `the entrance cannot map "${kind}"`);
     }
+    /* And nothing is mapped that the panel cannot produce — the card-level add
+       above all. */
+    const mapped = [...entrance.matchAll(/case "([a-z-]+)":/g)].map((m) => m[1]);
+    eq(json([...new Set(mapped)].sort()), json([...new Set(produced)].sort()),
+      "the entrance maps a step nothing produces");
+    assert(!/case "file"/.test(entrance), "the entrance maps the retired card-level add");
   });
 
   test("a full specification commits as one ordered sequence of existing commands", async () => {
@@ -1654,8 +1669,10 @@ describe("G. want, own, offer and file are four answers, not one", () => {
        is withdrawn, so the original and simpler statement holds again. */
     const { ctx, made } = await setup();
     const bind = (await post(ctx.app, "casey", "createBinder", { name: "Someday" })).json().value;
-    eq((await post(ctx.app, "casey", "addBinderEntry",
-      { binderId: bind, canonicalCardId: made.mudkip })).statusCode, 200,
+    /* Past the door since 3C-1: no client can make this row, but the rows that
+       were made this way still exist, and this is still true of them. */
+    eq((await direct(ctx, ACTOR.casey, "addBinderEntry",
+      { binderId: bind, canonicalCardId: made.mudkip })).refused, undefined,
     "a card nobody has said anything about could not be filed");
     let w = await load(ctx);
     eq(w.binderEntries.length, 1, "the entry did not land");

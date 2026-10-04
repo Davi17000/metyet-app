@@ -300,7 +300,7 @@ async function screen(ctx, token = "casey", extra = {}) {
         { binderId: step.binderId, goalId: step.goalId, collectorCopyId: step.collectorCopyId });
       case "unfile-object": return send("unfileObject",
         { goalId: step.goalId, collectorCopyId: step.collectorCopyId });
-      case "file": return send("addBinderEntry", { binderId: step.binderId, canonicalCardId });
+      /* No `case "file"` (Batch 3C-1): the entrance this mirrors no longer maps it. */
       case "unfile": return send("removeBinderEntry", { binderId: step.binderId, canonicalCardId });
       case "start-looking": return send("addGoal",
         { canonicalCardId, tier: step.tier, desired: step.desired });
@@ -1172,7 +1172,7 @@ describe("E. add cards", () => {
           { binderId: step.binderId, goalId: step.goalId, collectorCopyId: step.collectorCopyId });
         case "unfile-object": return go("unfileObject",
           { goalId: step.goalId, collectorCopyId: step.collectorCopyId });
-        case "file": return go("addBinderEntry", { binderId: step.binderId, canonicalCardId });
+        /* No `case "file"` (Batch 3C-1): the entrance this mirrors no longer maps it. */
         case "unfile": return go("removeBinderEntry", { binderId: step.binderId, canonicalCardId });
         default: return { ok: false, refused: "command-unavailable" };
       }
@@ -1271,7 +1271,7 @@ describe("F. the two new doors", () => {
          It states nothing about a card, touches no Goal, creates no Binder
          membership, and never crosses to a partner. */
       "setCollectorCopyKept",
-      "createBinder", "addBinderEntry", "removeBinderEntry",
+      "createBinder", "removeBinderEntry",
       /* AND THE TWO BATCH 3B-1 OPENED, WITH THE CONTROLS THAT PRESS THEM.
          `fileObject` and `unfileObject` file one GOAL or one COLLECTORCOPY,
          which is the subject of organisation from this batch on: the Card
@@ -1280,9 +1280,11 @@ describe("F. the two new doors", () => {
 
          THEY WERE HERE FOR ONE COMMIT IN 3A AND WERE TAKEN BACK OUT, because
          no screen sent either and this list's rule is that an entry names the
-         screen that sends it. 3B-1 is that screen. `addBinderEntry` above
-         still files a CARD, and the panel no longer sends it — the door stays
-         one release for a stale browser tab, and goes in 3C. */
+         screen that sends it. 3B-1 is that screen. `addBinderEntry`, the
+         CARD-level add, is no longer on this list: the panel stopped sending it
+         at 3B-1, the door stayed open one release for a stale browser tab, and
+         Batch 3C-1 closed it by name once the release owner judged that window
+         enough. `removeBinderEntry` stays — it is how a legacy row is removed. */
       "fileObject", "unfileObject",
       "updateCollectorCopy", "updateGoalCriteria",
       "renameBinder", "setBinderArchived",
@@ -1311,7 +1313,9 @@ describe("F. the two new doors", () => {
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
     ].sort()), "the production surface is not what C3.4 declared");
-    eq(EXPOSED_COMMANDS.length, 25);
+    /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
+       name; any other change to the size still fails here. */
+    eq(EXPOSED_COMMANDS.length, 24);
     for (const name of EXPOSED_COMMANDS) {
       assert(C.COMMAND_NAMES.includes(name), `${name} is not a command`);
     }
@@ -1341,8 +1345,13 @@ describe("F. the two new doors", () => {
        about C3.4b permanently, but on its own it would stop noticing if a later
        batch CLOSED one of the doors C3.3 or C3.4b opened — which is half of what
        this test was for. So the "lost" check is asked again, of today's list. */
+    /* RE-PINNED (Batch 3C-1): FROM "MUST BE EMPTY" TO "MUST BE EXACTLY THIS
+       ONE". A door closes when the product has removed its last caller, and the
+       batch that closes it says so by name. `addBinderEntry` filed a CARD; 3B-1
+       removed its caller and 3C-1 closed it. Asserted as a literal, so closing
+       any OTHER door C3.3 or C3.4b opened still fails here. */
     const closedSince = before.filter((n) => !EXPOSED_COMMANDS.includes(n));
-    eq(json(closedSince), json([]), "a door open at C3.3 has since been closed");
+    eq(json(closedSince), json(["addBinderEntry"]), "a door open at C3.3 has since been closed");
     for (const name of ["renameBinder", "setBinderArchived"]) {
       assert(EXPOSED_COMMANDS.includes(name), `${name} was closed again`);
     }

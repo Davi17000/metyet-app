@@ -981,7 +981,9 @@ describe("G. the boundaries hold", () => {
        qualification batch gave Inspect and Request Photos one. What
        this test is about is unchanged and is asserted below by NAME: no catalog
        command is reachable, and no route writes the schema. */
-    eq(EXPOSED_COMMANDS.length, 25, "the production surface is not the size C5 left it");
+    /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
+       name; any other change to the size still fails here. */
+    eq(EXPOSED_COMMANDS.length, 24, "the production surface is not the size C5 left it");
     for (const name of ["catalogImport", "importCatalog", "putCanonicalCard",
       "putCardContext", "putExpansion", "recordSourceMapping", "resolveCardIdentity"]) {
       assert(!EXPOSED_COMMANDS.includes(name), `${name} is exposed`);
@@ -1213,8 +1215,12 @@ describe("H. and then it works", () => {
     eq((await post(ctx.app, "north", "addInventoryCopy",
       { copy: { canonicalCardId: zard, ask: 900 } })).statusCode, 200);
     const binder = (await post(ctx.app, "casey", "createBinder", { name: "Mine" })).json().value;
-    eq((await post(ctx.app, "casey", "addBinderEntry",
-      { binderId: binder, canonicalCardId: zard })).statusCode, 200);
+    /* RE-PINNED (Batch 3C-1). Filing an imported card used to mean the
+       card-level add, which no client can send any more; what the product files
+       now is the THING — here the Goal — and the claim is unchanged: an
+       imported card is as fileable as any other. */
+    const goalId = (await ctx.repository.loadWorld()).goals.find((g) => g.canonicalCardId === zard).id;
+    eq((await post(ctx.app, "casey", "fileObject", { binderId: binder, goalId })).statusCode, 200);
 
     /* And a card the catalog does not hold is still refused, so the guard is
        working rather than merely absent. */

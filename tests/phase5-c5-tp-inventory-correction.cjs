@@ -191,7 +191,9 @@ const rowOf = async (ctx, invId) =>
 describe("A. the door opened by exactly two", () => {
 
   test("the allow-list, and the two C5 itself added", async () => {
-    eq(EXPOSED_COMMANDS.length, 25, "the production surface is not the size C5 intended");
+    /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
+       name; any other change to the size still fails here. */
+    eq(EXPOSED_COMMANDS.length, 24, "the production surface is not the size C5 intended");
     for (const name of ["updateInventoryCopy", "removeInventoryCopy"]) {
       assert(EXPOSED_COMMANDS.includes(name), `${name} is not offered`);
     }
@@ -249,7 +251,10 @@ describe("A. the door opened by exactly two", () => {
     eq(json(added.sort()), json(["addCopyPhotos", "endReview", "fileObject", "removeInventoryCopy",
       "requestPhotos", "reviewCopy", "setCollectorCopyKept", "unfileObject", "updateInventoryCopy"]),
       "a door was opened that no batch declared");
-    eq(json(lost), json([]), "a door somebody else opened was closed");
+    /* RE-PINNED (Batch 3C-1): exactly one door somebody else opened has been
+       closed — `addBinderEntry`, by 3C-1, after 3B-1 removed its last caller —
+       and it is named as a literal so that any other closure still fails. */
+    eq(json(lost), json(["addBinderEntry"]), "a door somebody else opened was closed");
   });
 });
 

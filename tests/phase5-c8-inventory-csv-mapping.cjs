@@ -1023,7 +1023,9 @@ describe("G. whose shelf this is", () => {
 
   test("there is no HTTP way in, and the production door did not move", async () => {
     const { EXPOSED_COMMANDS } = require("../server/exposed-commands.js");
-    eq(EXPOSED_COMMANDS.length, 25, "C8 opened a production command: " + EXPOSED_COMMANDS.join(","));
+    /* RE-PINNED (Batch 3C-1): 25 → 24, `addBinderEntry` closed by name. Still
+       nothing to do with importing a CSV, and any other move still fails. */
+    eq(EXPOSED_COMMANDS.length, 24, "C8 opened a production command: " + EXPOSED_COMMANDS.join(","));
     /* 49 → 50 in Option B (`setCopyPending`), and → 51 in the four-state batch
        (`setCollectorCopyKept`). C8's claim is unchanged: C8 added no domain
        command, and the door it is really guarding — the allow-list above —

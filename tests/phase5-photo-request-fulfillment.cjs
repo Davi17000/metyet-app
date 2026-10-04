@@ -402,7 +402,9 @@ describe("F. The transaction did not start", () => {
   });
 
   test("[22] the allow-list grew by exactly one, and the transaction is shut", () => {
-    eq(EXPOSED_COMMANDS.length, 25, "the production surface is not the size this batch declared");
+    /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
+       name; any other change to the size still fails here. */
+    eq(EXPOSED_COMMANDS.length, 24, "the production surface is not the size this batch declared");
     assert(EXPOSED_COMMANDS.includes("addCopyPhotos"), "the shop has no way to answer");
     /* EVERY NAME HERE IS A REAL COMMAND, checked the way `phase5-c5` checks it:
        an adversarial run found `reviewCopy2` in this list — not a command

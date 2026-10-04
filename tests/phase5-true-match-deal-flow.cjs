@@ -644,7 +644,9 @@ describe("E. The surface shows the copies, and only those", () => {
 /* ============================================ F. what must not have moved */
 describe("F. The boundary this batch did not cross", () => {
   test("[33] the production allow-list is unchanged", () => {
-    eq(EXPOSED_COMMANDS.length, 25, "a command was exposed by this batch");
+    /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
+       name; any other change to the size still fails here. */
+    eq(EXPOSED_COMMANDS.length, 24, "a command was exposed by this batch");
     /* THE TRANSACTION IS WHAT MUST STAY CLOSED. `reviewCopy`, `endReview` and
        `requestPhotos` left this loop when the qualification batch gave them a
        surface in Deal Flow, and `addCopyPhotos` left it when photo fulfilment

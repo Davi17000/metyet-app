@@ -349,14 +349,10 @@ export function createBinder(target) {
   return (name) => target.execute("createBinder", { name });
 }
 
-export function fileCardInBinder(target) {
-  if (!target || typeof target.execute !== "function") {
-    throw new TypeError("fileCardInBinder: the production store is required");
-  }
-  return (binderId, canonicalCardId) =>
-    target.execute("addBinderEntry", { binderId, canonicalCardId });
-}
-
+/* THE CARD-LEVEL ADD HAS NO BINDING (Batch 3C-1). `fileCardInBinder` sent
+   `addBinderEntry`, which the product stopped using at 3B-1 and the door
+   stopped accepting at 3C-1. The removal below stays: it is how a row filed
+   before Binders organised specific things is taken out. */
 export function unfileCardFromBinder(target) {
   if (!target || typeof target.execute !== "function") {
     throw new TypeError("unfileCardFromBinder: the production store is required");

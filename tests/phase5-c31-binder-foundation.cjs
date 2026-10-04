@@ -650,9 +650,14 @@ describe("E. the commands exist, and production cannot reach them", () => {
   test("and the three C3.3 opened kept every rule behind them", async () => {
     const ctx = await world();
     const cards = await charizard(ctx);
-    for (const name of ["createBinder", "addBinderEntry", "removeBinderEntry"]) {
+    /* RE-PINNED (Batch 3C-1). C3.3 opened three; two are still open, and the
+       card-level add is closed by name because the product no longer has a
+       caller for it. Its rules did not go anywhere — they are the domain's, and
+       are asserted there below, past a door that now answers for itself. */
+    for (const name of ["createBinder", "removeBinderEntry"]) {
       assert(EXPOSED_COMMANDS.includes(name), `${name} was not opened by C3.3`);
     }
+    assert(!EXPOSED_COMMANDS.includes("addBinderEntry"), "the card-level add is reachable again");
     /* A partner has no binders, and cannot make one. */
     eq((await post(ctx.app, "north", "createBinder", { name: "Mine" })).json().error.refused,
       "not-owner", "a Trusted Partner made a binder");
@@ -660,17 +665,27 @@ describe("E. the commands exist, and production cannot reach them", () => {
     eq((await post(ctx.app, "casey", "createBinder", { name: "   " })).json().error.refused,
       "name-required");
     const mine = (await post(ctx.app, "casey", "createBinder", { name: "Mudkip Collection" })).json().value;
-    /* Another Collector's binder is not reachable by naming it. */
-    eq((await post(ctx.app, "dana", "addBinderEntry",
-      { binderId: mine, canonicalCardId: cards.firstEdition })).json().error.refused,
+    /* Another Collector's binder is not reachable by naming it — in the
+       domain, which is where the rule lives and where a legacy row can still be
+       made (Batch 3C-1: no client can reach the command any more). */
+    eq((await run1(ctx, ACTOR.dana, "addBinderEntry",
+      { binderId: mine, canonicalCardId: cards.firstEdition })).refused,
     "not-owner", "another Collector filed a card in somebody else's binder");
     eq((await post(ctx.app, "north", "removeBinderEntry",
       { binderId: mine, canonicalCardId: cards.firstEdition })).json().error.refused, "not-owner");
-    /* And a card the catalog does not hold is refused at the door, by the
-       guard C3.1 wrote for exactly this moment and could not reach. */
-    eq((await post(ctx.app, "casey", "addBinderEntry",
-      { binderId: mine, canonicalCardId: "not-a-card" })).json().error.refused,
-    "card-unavailable", "the catalog guard did not run on an open door");
+    /* A card the catalog does not hold still never becomes a row. Over HTTP
+       the door now answers first — `command-unavailable`, before the catalog
+       guard C3.1 wrote — and underneath, the domain path is stopped by the
+       foreign key and leaves nothing behind. */
+    const shut = await post(ctx.app, "casey", "addBinderEntry",
+      { binderId: mine, canonicalCardId: "not-a-card" });
+    eq(shut.statusCode, 409, "the retired add was let through the door");
+    eq(shut.json().error.refused, "command-unavailable", "the door did not answer first");
+    let threw = false;
+    try { await run1(ctx, ACTOR.casey, "addBinderEntry", { binderId: mine, canonicalCardId: "not-a-card" }); }
+    catch { threw = true; }
+    assert(threw, "a card the catalog does not hold was accepted by the domain path");
+    eq((await ctx.repository.loadWorld()).binderEntries.length, 0, "an uncatalogued card was filed");
   });
 
   /* SUPERSEDED AND RESTATED, three times over now, for the reason above. C3.1's
@@ -691,7 +706,7 @@ describe("E. the commands exist, and production cannot reach them", () => {
          other half of a copy's disposition; it needed its own door for the same
          reason offering did, and the two clear each other in the domain. */
       "setCollectorCopyKept",
-      "createBinder", "addBinderEntry", "removeBinderEntry",
+      "createBinder", "removeBinderEntry",
       /* AND THE TWO BATCH 3B-1 OPENED, WITH THE CONTROLS THAT PRESS THEM.
          `fileObject` and `unfileObject` file one GOAL or one COLLECTORCOPY,
          which is the subject of organisation from this batch on: the Card
@@ -700,9 +715,11 @@ describe("E. the commands exist, and production cannot reach them", () => {
 
          THEY WERE HERE FOR ONE COMMIT IN 3A AND WERE TAKEN BACK OUT, because
          no screen sent either and this list's rule is that an entry names the
-         screen that sends it. 3B-1 is that screen. `addBinderEntry` above
-         still files a CARD, and the panel no longer sends it — the door stays
-         one release for a stale browser tab, and goes in 3C. */
+         screen that sends it. 3B-1 is that screen. `addBinderEntry`, the
+         CARD-level add, is no longer on this list: the panel stopped sending it
+         at 3B-1, the door stayed open one release for a stale browser tab, and
+         Batch 3C-1 closed it by name once the release owner judged that window
+         enough. `removeBinderEntry` stays — it is how a legacy row is removed. */
       "fileObject", "unfileObject",
       "updateCollectorCopy", "updateGoalCriteria",
       "renameBinder", "setBinderArchived",
@@ -731,7 +748,9 @@ describe("E. the commands exist, and production cannot reach them", () => {
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
     ].sort()), "the production surface is not what C3.4 declared");
-    eq(EXPOSED_COMMANDS.length, 25);
+    /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
+       name; any other change to the size still fails here. */
+    eq(EXPOSED_COMMANDS.length, 24);
   });
 
   /* SUPERSEDED AND RESTATED. The claim was that the client bound the three
@@ -741,21 +760,32 @@ describe("E. the commands exist, and production cannot reach them", () => {
      replaces it is stricter, because it no longer merely counts on absence: it
      names the command that STILL has no surface — markBinderReviewed, the
      legacy partner-read command — and holds the client to not binding it. */
+  /* RE-PINNED AND STRENGTHENED (Batch 3C-1). The client now binds FOUR binder
+     commands with a surface, and the card-level add is no longer one of them:
+     the product removed its last caller at 3B-1 and 3C-1 removed the binding.
+     This used to be a bare `client.includes(name)` over the whole file, which
+     a comment mentioning a command satisfies — and 3C-1's own comment in
+     `client/commands.js` names `addBinderEntry` — so it now reads what the
+     bindings actually SEND, `execute("name"`, and nothing else. */
   test("the client binds the five with a surface, and not the one without", () => {
     const client = read("client/commands.js");
-    for (const name of ["createBinder", "addBinderEntry", "removeBinderEntry",
-      "renameBinder", "setBinderArchived"]) {
-      assert(client.includes(name), `client/commands.js does not bind ${name}`);
+    const sends = (name) => new RegExp(`execute\\(\\s*"${name}"`).test(client);
+    for (const name of ["createBinder", "removeBinderEntry", "renameBinder", "setBinderArchived"]) {
+      assert(sends(name), `client/commands.js does not bind ${name}`);
     }
+    assert(!sends("addBinderEntry"), "client/commands.js sends the retired card-level add");
+    assert(!/export function fileCardInBinder\b/.test(client), "the card-level add binding came back");
     assert(!client.includes("markBinderReviewed"),
       "client/commands.js names markBinderReviewed");
   });
 
-  test("addBinderEntry is on the catalog guard's list, ready for the batch that opens the door", () => {
-    /* The guard is unreachable from a browser today, because the command is not
-       exposed. It is written now so that the batch which exposes it does not
-       also have to remember to close this. Asserted against the exported rule
-       rather than the source text, so it is the behaviour that is pinned. */
+  test("addBinderEntry is still on the catalog guard's list, behind a door that is shut again", () => {
+    /* C3.1 wrote this guard for the batch that would open the door; C3.3 opened
+       it and 3C-1 closed it again (the card-level add has no caller). The guard
+       is unreachable for an unexposed name — `isExposed` answers first — and is
+       deliberately kept: it is inert, and dropping the name would change a
+       guard for no product gain. Asserted against the exported rule rather than
+       the source text, so it is the behaviour that is pinned. */
     assert(CARD_NAMING_COMMANDS.includes("addBinderEntry"),
       "a command that names a canonical card is not guarded");
     eq(json([...CARD_NAMING_COMMANDS].sort()),

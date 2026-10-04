@@ -49,7 +49,7 @@ import { savePartnerProfile, openCollectorInvitation, revokeCollectorInvitation,
   correctInventoryCopy, retireInventoryCopy,
   browseCards, addCollectorGoal, setGoalPriority, removeCollectorGoal,
   setGoalCriteria, addOwnedCopy, updateOwnedCopy, setCopyOffered, removeOwnedCopy,
-  createBinder, fileCardInBinder, unfileCardFromBinder,
+  createBinder, unfileCardFromBinder,
   fileObjectInBinder, unfileObjectFromBinder,
   inspectCopy, endInspection, requestCopyPhotos, provideCopyPhotos, setCopyKept,
   renameBinder, setBinderArchived,
@@ -219,11 +219,12 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
     const copy = { add: addOwnedCopy(store), update: updateOwnedCopy(store),
       offered: setCopyOffered(store), keeping: setCopyKept(store),
       remove: removeOwnedCopy(store) };
-    const binder = { create: createBinder(store), file: fileCardInBinder(store),
+    const binder = { create: createBinder(store),
       unfile: unfileCardFromBinder(store),
-      /* WHERE A THING LIVES (Batch 3B-1), beside where a CARD was filed. The
-         card-level pair above is still bound because the legacy line can still
-         remove a row; nothing in the product adds one. */
+      /* WHERE A THING LIVES (Batch 3B-1), beside where a CARD was filed. Only
+         the card-level REMOVE is still bound, because the legacy line can still
+         take a row out; nothing in the product adds one, and since 3C-1 nothing
+         can. */
       fileObject: fileObjectInBinder(store), unfileObject: unfileObjectFromBinder(store) };
     return async (step, canonicalCardId) => {
       /* THE PANEL SPEAKS ITS OWN WORDS, AND THIS IS WHERE THEY BECOME COMMANDS.
@@ -245,11 +246,10 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
         case "unfile-object":
           return binder.unfileObject({ goalId: step.goalId,
             collectorCopyId: step.collectorCopyId });
-        /* A CARD'S, which the panel no longer sends. `file` is unreachable from
-           the shipping product as of 3B-1 and is kept only so a browser tab
-           opened before this deploy keeps working; `unfile` is what the legacy
-           line's Remove presses. Both go in 3C with the door. */
-        case "file": return binder.file(step.binderId, canonicalCardId);
+        /* A CARD'S, and only its removal. `unfile` is what the legacy line's
+           Remove presses, and it stays. `file` is gone (Batch 3C-1): nothing
+           plans it, the door refuses it, and a step this build does not know
+           falls through to the refusal below rather than being guessed at. */
         case "unfile": return binder.unfile(step.binderId, canonicalCardId);
         case "wanted-copy": return goal.criteria(step.goalId, step.desired);
         case "how-hard": return goal.tier(step.goalId, step.tier);
