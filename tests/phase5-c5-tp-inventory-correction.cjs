@@ -41,6 +41,7 @@ const TR = require("react-test-renderer");
 const esbuild = require("esbuild");
 const { EXPOSED_COMMANDS } = require("../server/exposed-commands.js");
 const { COMMAND_NAMES } = require("../domain/metyet-commands.js");
+const { executeCommand } = require("../persistence/command-transaction.js");
 const RT = require("../domain/metyet-runtime.js");
 
 const ROOT = path.join(__dirname, "..");
@@ -138,6 +139,21 @@ async function charizard(ctx) {
   return { expansionId, cardContextId, ...made };
 }
 
+const CASEY = { collectorId: "c1" };   // the seat SUBJECT.casey is linked to
+/* A LEGACY ROW IS MADE PAST THE DOOR, AND PROVES IT LANDED (Batch 3C-1). No
+   client may create a bare-card Binder row any more, so a test that needs one
+   makes it the way the historical rows were made: the domain command, through
+   the same transaction, advisory lock and validateWorld the route uses. This
+   used to POST and discard the answer, which the 3C audit measured passing
+   with no row at all — so it now refuses to return until the row exists. */
+const legacyRow = async (ctx, actor, binderId, canonicalCardId) => {
+  const r = await executeCommand(ctx.repository, { actor,
+    command: "addBinderEntry", payload: { binderId, canonicalCardId }, runtime: ctx.runtime });
+  assert(!r.refused, `the legacy fixture was refused: ${r.refused}`);
+  assert((await ctx.repository.loadWorld()).binderEntries.some((e) => e.binderId === binderId
+    && e.canonicalCardId === canonicalCardId), "the legacy fixture row did not land");
+  return r;
+};
 const post = (app, token, command, payload) => app.inject({ method: "POST", url: "/api/commands",
   headers: { authorization: `Bearer ${token}` }, payload: { command, payload } });
 const view = async (app, token) => (await app.inject({ method: "GET", url: "/api/view",
@@ -1055,8 +1071,7 @@ describe("H. nothing else moved", () => {
     const cards = await charizard(ctx);
     const made = await post(ctx.app, "casey", "createBinder", { name: "Secret run" });
     eq(made.statusCode, 200, made.body);
-    await post(ctx.app, "casey", "addBinderEntry",
-      { binderId: made.json().value, canonicalCardId: cards.unlimited });
+    await legacyRow(ctx, CASEY, made.json().value, cards.unlimited);
     const theirs = await view(ctx.app, "north");
     eq(theirs.binders.length, 0, "no binder");
     eq(theirs.binderEntries.length, 0, "no membership");

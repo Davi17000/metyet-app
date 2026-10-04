@@ -111,6 +111,20 @@ async function cards(ctx) {
   return made;
 }
 
+/* A LEGACY ROW IS MADE PAST THE DOOR, AND PROVES IT LANDED (Batch 3C-1). No
+   client may create a bare-card Binder row any more, so a test that needs one
+   makes it the way the historical rows were made: the domain command, through
+   the same transaction, advisory lock and validateWorld the route uses. This
+   used to POST and discard the answer, which the 3C audit measured passing
+   with no row at all — so it now refuses to return until the row exists. */
+const legacyRow = async (ctx, actor, binderId, canonicalCardId) => {
+  const r = await executeCommand(ctx.repository, { actor,
+    command: "addBinderEntry", payload: { binderId, canonicalCardId }, runtime: ctx.runtime });
+  assert(!r.refused, `the legacy fixture was refused: ${r.refused}`);
+  assert((await ctx.repository.loadWorld()).binderEntries.some((e) => e.binderId === binderId
+    && e.canonicalCardId === canonicalCardId), "the legacy fixture row did not land");
+  return r;
+};
 const post = (app, token, command, payload) => app.inject({ method: "POST", url: "/api/commands",
   headers: { authorization: `Bearer ${token}` }, payload: { command, payload } });
 const get = (app, token, url) => app.inject({ method: "GET", url,
@@ -833,7 +847,7 @@ describe("D. the production door, and what is still shut", () => {
     const ctx = await world();
     const made = await cards(ctx);
     const mine = (await post(ctx.app, "casey", "createBinder", { name: "Mine" })).json().value;
-    await post(ctx.app, "casey", "addBinderEntry", { binderId: mine, canonicalCardId: made.firstEdition });
+    await legacyRow(ctx, ACTOR.casey, mine, made.firstEdition);
     await want(ctx.app, "casey", made.firstEdition, "primary", { desired: { grade: "PSA 9" } });
     const copyId = (await own(ctx.app, "casey",
       { canonicalCardId: made.firstEdition, grade: "PSA 9", offered: true })).json().value;
@@ -947,7 +961,7 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
        the legacy line is part of "everything on it", and the THINGS are filed
        separately — the hunt in one binder, one copy in the other — which is the
        case the card-level answer could not express at all. */
-    await post(ctx.app, "casey", "addBinderEntry", { binderId: bindA, canonicalCardId: made.mudkip });
+    await legacyRow(ctx, ACTOR.casey, bindA, made.mudkip);
     await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "PSA 9", cert: "PSA 111", market: 500, offered: true });
     await own(ctx.app, "casey",
       { canonicalCardId: made.mudkip, grade: "Raw", condition: "Damaged", cert: "SER-2", keeping: true });
@@ -1295,7 +1309,7 @@ describe("F. one button, a sequence of commands that already existed", () => {
     /* Order no longer matters for legality here — filing is refused for
        nothing but a binder that is not yours — so this is just a fixture. */
     await want(ctx.app, "casey", made.mudkip, "secondary", { desired: { grade: "PSA 8" } });
-    await post(ctx.app, "casey", "addBinderEntry", { binderId: bind, canonicalCardId: made.mudkip });
+    await legacyRow(ctx, ACTOR.casey, bind, made.mudkip);
     /* RE-PINNED: the stored copy is KEPT rather than silent — a new copy must
        say which — so the draft's "offered" below is still a real switch and the
        plan still contains the `offering` step this test orders. */
@@ -1660,7 +1674,7 @@ describe("G. want, own, offer and file are four answers, not one", () => {
     const a = (await post(ctx.app, "casey", "createBinder", { name: "Mudkips" })).json().value;
     const b = (await post(ctx.app, "casey", "createBinder", { name: "Keepers" })).json().value;
     for (const binderId of [a, b, a, b]) {
-      await post(ctx.app, "casey", "addBinderEntry", { binderId, canonicalCardId: made.mudkip });
+      await legacyRow(ctx, ACTOR.casey, binderId, made.mudkip);
     }
     const entries = (await load(ctx)).binderEntries;
     eq(entries.length, 2, "a card was filed twice in one binder, or once across two");
@@ -1672,7 +1686,7 @@ describe("G. want, own, offer and file are four answers, not one", () => {
     const bind = (await post(ctx.app, "casey", "createBinder", { name: "Keepers" })).json().value;
     await want(ctx.app, "casey", made.firstEdition, "primary", { desired: { grade: "PSA 9" } });
     await own(ctx.app, "casey", { canonicalCardId: made.firstEdition, grade: "PSA 9", offered: true });
-    await post(ctx.app, "casey", "addBinderEntry", { binderId: bind, canonicalCardId: made.firstEdition });
+    await legacyRow(ctx, ACTOR.casey, bind, made.firstEdition);
     const goalId = (await load(ctx)).goals[0].id;
 
     eq((await post(ctx.app, "casey", "removeGoal", { goalId })).statusCode, 200);
@@ -1698,7 +1712,7 @@ describe("G. want, own, offer and file are four answers, not one", () => {
     const id = (await own(ctx.app, "casey",
       { canonicalCardId: made.firstEdition, grade: "PSA 9", offered: true })).json().value;
     await want(ctx.app, "casey", made.firstEdition, "secondary", { desired: { grade: "PSA 10" } });
-    await post(ctx.app, "casey", "addBinderEntry", { binderId: bind, canonicalCardId: made.firstEdition });
+    await legacyRow(ctx, ACTOR.casey, bind, made.firstEdition);
 
     eq((await post(ctx.app, "casey", "removeCollectorCopy", { copyId: id })).statusCode, 200);
     const w = await load(ctx);
@@ -1743,8 +1757,8 @@ describe("H. how somebody organises their collection is not a fact about a trade
     /* A Goal, because this is about one card in two binders, not about it. */
     await want(ctx.app, "casey", made.firstEdition, "secondary", { desired: { grade: "PSA 9" } });
     await want(ctx.app, "casey", made.mudkip, "secondary", { desired: { grade: "PSA 9" } });
-    await post(ctx.app, "casey", "addBinderEntry", { binderId: bind, canonicalCardId: made.firstEdition });
-    await post(ctx.app, "casey", "addBinderEntry", { binderId: bind, canonicalCardId: made.mudkip });
+    await legacyRow(ctx, ACTOR.casey, bind, made.firstEdition);
+    await legacyRow(ctx, ACTOR.casey, bind, made.mudkip);
     /* An offered copy, so the partner receives SOMETHING about this card and
        the absence below is about binders rather than about visibility. */
     await own(ctx.app, "casey", { canonicalCardId: made.firstEdition, grade: "PSA 9", offered: true });
@@ -1773,7 +1787,7 @@ describe("H. how somebody organises their collection is not a fact about a trade
        demand. It must not: a Goal is demand, and nobody set one. */
     await stock(ctx.app, "north", { canonicalCardId: made.firstEdition, grade: "PSA 9", ask: 900 });
     const bind = (await post(ctx.app, "casey", "createBinder", { name: "Mine" })).json().value;
-    await post(ctx.app, "casey", "addBinderEntry", { binderId: bind, canonicalCardId: made.firstEdition });
+    await legacyRow(ctx, ACTOR.casey, bind, made.firstEdition);
 
     eq((await view(ctx.app, "casey")).discoveries.length, 0,
       "filing a card was read as wanting it");
