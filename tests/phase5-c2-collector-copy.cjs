@@ -839,7 +839,7 @@ describe("H. the doors this batch opened, and no others", () => {
          membership, and never crosses to a partner. */
       "setCollectorCopyKept",
       /* C3.3 — the Card Specification panel's five. */
-      "createBinder", "addBinderEntry", "removeBinderEntry",
+      "createBinder", "removeBinderEntry",
       /* AND THE TWO BATCH 3B-1 OPENED, WITH THE CONTROLS THAT PRESS THEM.
          `fileObject` and `unfileObject` file one GOAL or one COLLECTORCOPY,
          which is the subject of organisation from this batch on: the Card
@@ -848,9 +848,11 @@ describe("H. the doors this batch opened, and no others", () => {
 
          THEY WERE HERE FOR ONE COMMIT IN 3A AND WERE TAKEN BACK OUT, because
          no screen sent either and this list's rule is that an entry names the
-         screen that sends it. 3B-1 is that screen. `addBinderEntry` above
-         still files a CARD, and the panel no longer sends it — the door stays
-         one release for a stale browser tab, and goes in 3C. */
+         screen that sends it. 3B-1 is that screen. `addBinderEntry`, the
+         CARD-level add, is no longer on this list: the panel stopped sending it
+         at 3B-1, the door stayed open one release for a stale browser tab, and
+         Batch 3C-1 closed it by name once the release owner judged that window
+         enough. `removeBinderEntry` stays — it is how a legacy row is removed. */
       "fileObject", "unfileObject",
       "updateCollectorCopy", "updateGoalCriteria",
       /* C3.4b — managing a binder as an object, now that there is a screen. */
@@ -880,7 +882,9 @@ describe("H. the doors this batch opened, and no others", () => {
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
     ].sort()), "the production surface is not what this batch declared");
-    eq(EXPOSED_COMMANDS.length, 25, "and nothing arrived unnamed");
+    /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
+       name; any other change to the size still fails here. */
+    eq(EXPOSED_COMMANDS.length, 24, "and nothing arrived unnamed");
   });
 
   test("every exposed name is a real command, and the client sends exactly these", () => {
@@ -1215,8 +1219,19 @@ describe("I. everything else, exactly as it was", () => {
     eq(json(table.slice().sort()), json([...OPENED_BY_C33, ...OPENED_BY_C34, ...STILL_C34].sort()),
       "a Binder command arrived or left without being named here");
     eq(STILL_C34.length, 0, "C3.4 arrived; nothing is waiting for it");
+    /* RE-PINNED (Batch 3C-1): EVERY DOOR C3.3 OPENED IS STILL OPEN EXCEPT THE
+       ONE WHOSE SURFACE THE PRODUCT REMOVED. `addBinderEntry` filed a CARD; the
+       panel stopped sending it at 3B-1 and 3C-1 closed it, by name. A door
+       closes only when its last caller is gone, and this list says which one
+       and why — so any OTHER Binder door going missing still fails below. The
+       command itself stays in the table above, dormant in the domain. */
+    const CLOSED_BY_3C1 = ["addBinderEntry"];
     for (const name of [...OPENED_BY_C33, ...OPENED_BY_C34]) {
-      assert(EXPOSED_COMMANDS.includes(name), `${name} lost its surface`);
+      if (CLOSED_BY_3C1.includes(name)) {
+        assert(!EXPOSED_COMMANDS.includes(name), `${name} is reachable again`);
+      } else {
+        assert(EXPOSED_COMMANDS.includes(name), `${name} lost its surface`);
+      }
     }
     assert(!EXPOSED_COMMANDS.includes("markBinderReviewed"),
       "markBinderReviewed is exposed; it is not a Binder command");

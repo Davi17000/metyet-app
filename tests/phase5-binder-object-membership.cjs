@@ -644,7 +644,7 @@ describe("G. A binder made in the same Save is one you can file into", () => {
         { copyId: step.copyId, offered: step.offered });
       case "keeping": return x(st, CASEY, "setCollectorCopyKept",
         { copyId: step.copyId, keeping: step.keeping });
-      case "file": return x(st, CASEY, "addBinderEntry", { binderId: step.binderId, canonicalCardId });
+      /* No `case "file"` (Batch 3C-1): the entrance this mirrors no longer maps it. */
       case "unfile": return x(st, CASEY, "removeBinderEntry",
         { binderId: step.binderId, canonicalCardId });
       default: return { ok: false, refused: "command-unavailable" };
@@ -1345,7 +1345,8 @@ describe("I. A capability with a surface, at last", () => {
      surface. So the pins are not deleted; they are turned around, and what they
      assert now is the thing that made the difference — that the door and the
      control arrived together, in one batch, and that the card-level door the
-     panel no longer presses is still open for one release.
+     panel no longer pressed stayed open for one release (and, since Batch 3C-1,
+     is closed — see [31]).
 
      THE INVARIANT UNDERNEATH NEVER MOVED: a Collector presentation surface may
      not name a command. That is asserted below and in four other suites, and it
@@ -1371,20 +1372,20 @@ describe("I. A capability with a surface, at last", () => {
     return out;
   };
 
-  test("[31] the two object-level commands are reachable, and the card-level pair still is", () => {
+  test("[31] the two object-level commands are reachable; the card-level add is not, and the remove still is", () => {
     for (const name of OBJECT_COMMANDS) {
       assert(EXPOSED_COMMANDS.includes(name),
         `${name} is not reachable, so no control can press it: ${EXPOSED_COMMANDS.join(",")}`);
     }
-    eq(EXPOSED_COMMANDS.length, 25, `the production surface is ${EXPOSED_COMMANDS.join(",")}`);
-    /* AND THE CARD-LEVEL PAIR IS STILL OPEN, ON PURPOSE. The panel no longer
-       sends `addBinderEntry` — proved in [34] — but the door stays one release
-       so a browser tab opened before this deploy keeps working, and
-       `removeBinderEntry` stays indefinitely because it is how a legacy row is
-       removed. Retiring either is 3C's, with the seven guards that hold them. */
-    for (const name of ["addBinderEntry", "removeBinderEntry"]) {
-      assert(EXPOSED_COMMANDS.includes(name), `${name} stopped being reachable`);
-    }
+    eq(EXPOSED_COMMANDS.length, 24, `the production surface is ${EXPOSED_COMMANDS.join(",")}`);
+    /* RE-PINNED (Batch 3C-1): THE CARD-LEVEL PAIR IS NO LONGER A PAIR. 3B-1
+       kept `addBinderEntry` open for one release so a browser tab opened before
+       that deploy kept working; that release shipped (`b658e7e`), the release
+       owner judged the window enough, and 3C-1 closed it. `removeBinderEntry`
+       stays, indefinitely — it is how a legacy row is removed, and stopping new
+       rows is not stopping their removal. */
+    assert(!EXPOSED_COMMANDS.includes("addBinderEntry"), "the card-level add is reachable again");
+    assert(EXPOSED_COMMANDS.includes("removeBinderEntry"), "removeBinderEntry stopped being reachable");
   });
 
   test("[32] and they are complete domain commands, exercised end to end", () => {
@@ -1447,11 +1448,14 @@ describe("I. A capability with a surface, at last", () => {
     assert(/kind: "unfile-object"/.test(panelSrc), "the panel plans no unfiling");
     assert(!/kind: "file"[^-]/.test(panelSrc.replace(/\/\*[\s\S]*?\*\//g, " ")),
       "the panel still plans a card-level filing");
-    /* The entrance maps both, and still maps the card-level pair for a stale
-       tab and for the legacy line's Remove. */
-    for (const kind of ["file-object", "unfile-object", "file", "unfile"]) {
+    /* The entrance maps both, and the legacy line's Remove. RE-PINNED (Batch
+       3C-1): it no longer maps `file` — the stale-tab allowance ended with the
+       door — so a card-level add has no path from any step a panel plans. */
+    for (const kind of ["file-object", "unfile-object", "unfile"]) {
       assert(new RegExp(`case "${kind}"`).test(signin), `the entrance cannot map "${kind}"`);
     }
+    assert(!/case "file"/.test(signin.replace(/\/\*[\s\S]*?\*\//g, " ")),
+      "the entrance still maps the retired card-level add");
     /* AND THE PANEL NAMES NO COMMAND, which is the invariant that did not move
        and which now covers the two new ones for free. */
     for (const cmd of [...OBJECT_COMMANDS, "addBinderEntry"]) {
@@ -1471,7 +1475,9 @@ describe("I. A capability with a surface, at last", () => {
     for (const m of client.matchAll(/^export const [A-Z_]+ = "([A-Za-z]+)";$/gm)) sent.add(m[1]);
     eq(JSON.stringify([...sent].sort()), JSON.stringify([...EXPOSED_COMMANDS].sort()),
       "the door and the client disagree about what the product offers");
-    eq(sent.size, 25, `the client can send ${sent.size}`);
+    /* RE-PINNED (Batch 3C-1): 25 → 24, both sides at once — `fileCardInBinder`
+       left with the door it sent through. */
+    eq(sent.size, 24, `the client can send ${sent.size}`);
     /* AND EVERY ONE OF THEM IS IMPORTED BY SOMETHING. This is the half the
        exact-set guard cannot see: a binding nothing imports satisfies it while
        being dead, which is what 3A's two thunks were. */
@@ -1492,11 +1498,33 @@ describe("I. A capability with a surface, at last", () => {
     assert(D.REFUSE.invalidTarget === "invalid-target" && D.REFUSE.binderArchived === "binder-archived",
       "Batch 3A's two refusal codes changed");
     /* AND THE DOMAIN FILE IS UNTOUCHED BY THIS BATCH, which is the strongest
-       single statement of it. */
+       single statement of it.
+
+       BOTH ENDS ARE NAMED (corrected in Batch 3C-1, the C3.5/C7.1 lesson). This
+       compared `ff80c17` against the WORKING TREE, which asks "has the
+       foundation changed since 3B-1 began" — true the day 3B-1 merged, and
+       false for every later batch that touches `domain/` or `persistence/`,
+       whatever 3B-1 did. What 3B-1 claims is that IT changed neither, which is
+       a statement about two commits: its base (`ff80c17`, the 3A closure) and
+       its implementation (`f7f820d`). Asked that way it is true for ever.
+
+       And the release that shipped it added only words on top: from the
+       implementation to the merge that went to production (`b658e7e`, PR #79)
+       every changed file is documentation, so nothing reached users that this
+       suite did not see. */
     const { execFileSync } = require("child_process");
-    const changed = execFileSync("git", ["diff", "--name-only", "ff80c17", "--",
-      "domain/", "persistence/"], { cwd: ROOT, encoding: "utf8" }).trim();
+    const git = (...a) => execFileSync("git", a, { cwd: ROOT, encoding: "utf8" }).trim();
+    const B3B1 = Object.freeze({ from: "ff80c17", to: "f7f820d", released: "b658e7e" });
+    const changed = git("diff", "--name-only", B3B1.from, B3B1.to, "--", "domain/", "persistence/");
     eq(changed, "", `3B-1 changed the foundation: ${changed}`);
+    const implemented = git("diff", "--name-only", B3B1.from, B3B1.to).split("\n").filter(Boolean);
+    assert(implemented.includes("client/collector/CardSpecification.jsx")
+      && implemented.includes("server/exposed-commands.js"),
+    `the named range is not 3B-1's implementation: ${implemented.join(",")}`);
+    const afterwards = git("diff", "--name-only", B3B1.to, B3B1.released).split("\n").filter(Boolean);
+    assert(afterwards.length > 0, "the release range is empty — the refs are wrong");
+    eq(JSON.stringify(afterwards.filter((f) => !f.endsWith(".md"))), "[]",
+      "something other than documentation shipped with 3B-1 after its implementation");
   });
 });
 

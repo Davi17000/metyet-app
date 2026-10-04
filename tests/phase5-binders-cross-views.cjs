@@ -501,7 +501,9 @@ describe("F. What did not move", () => {
        left this loop when photo fulfilment gave the Trusted Partner a surface
        for answering a Collector's request; it supplies evidence about a card
        and settles nothing. */
-    eq(EXPOSED_COMMANDS.length, 25, "a command was exposed that no batch declared");
+    /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
+       name; any other change to the size still fails here. */
+    eq(EXPOSED_COMMANDS.length, 24, "a command was exposed that no batch declared");
     for (const closed of ["startOpportunity", "proposePrice", "acceptPrice",
       "acceptMarketValue", "acceptDeal", "setCopyPending", "cancelOpportunity",
       "proposeFulfillment", "confirmHandoff"]) {

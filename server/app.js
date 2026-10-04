@@ -469,9 +469,12 @@ function createApp({
          third voice: a Collector saying "this card belongs here". It names the
          card directly, like a Goal. It was written before the command was
          exposed, so that the batch which opened that door did not also have to
-         remember to close this one; the door is open now (C3.3 put
-         `addBinderEntry` on the allow-list) and this guard is what a browser
-         meets. An entry already filed is never revisited either. */
+         remember to close this one. C3.3 opened the door and Batch 3C-1 closed
+         it again — the product stopped sending the card-level add at 3B-1 — so
+         for this name the guard is now unreachable: `isExposed` answers
+         `command-unavailable` first. It is left in place, inert, because
+         removing it would change a guard for no product gain. An entry already
+         filed is never revisited either. */
       const named = CARD_IN_COPY.has(command)
         ? payload && payload.copy && payload.copy.canonicalCardId
         : payload && payload.canonicalCardId;

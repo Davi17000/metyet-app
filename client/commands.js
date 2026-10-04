@@ -335,6 +335,9 @@ export function updateOwnedCopy(target) {
    the concept and deliberately shipped no way to reach it; these three are the
    Card Specification panel's controls, and they are the whole of what that
    panel needs: make a binder, put this card in one, take it out again.
+   (Since Batch 3B-1 the panel files a THING rather than a card — see the
+   object-level pair below — and since Batch 3C-1 only two of the three remain:
+   `createBinder`, and the card-level removal for rows filed before 3B-1.)
 
    THE TWO MEMBERSHIP COMMANDS ARE IDEMPOTENT at the domain, which is what makes
    a second press of Commit safe after a partial one. `createBinder` is not —
@@ -349,14 +352,10 @@ export function createBinder(target) {
   return (name) => target.execute("createBinder", { name });
 }
 
-export function fileCardInBinder(target) {
-  if (!target || typeof target.execute !== "function") {
-    throw new TypeError("fileCardInBinder: the production store is required");
-  }
-  return (binderId, canonicalCardId) =>
-    target.execute("addBinderEntry", { binderId, canonicalCardId });
-}
-
+/* THE CARD-LEVEL ADD HAS NO BINDING (Batch 3C-1). `fileCardInBinder` sent
+   `addBinderEntry`, which the product stopped using at 3B-1 and the door
+   stopped accepting at 3C-1. The removal below stays: it is how a row filed
+   before Binders organised specific things is taken out. */
 export function unfileCardFromBinder(target) {
   if (!target || typeof target.execute !== "function") {
     throw new TypeError("unfileCardFromBinder: the production store is required");

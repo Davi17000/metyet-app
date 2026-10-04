@@ -376,7 +376,7 @@ describe("C. What a second press of Save does", () => {
         { binderId: step.binderId, goalId: step.goalId, collectorCopyId: step.collectorCopyId });
       case "unfile-object": return x(st, CASEY, "unfileObject",
         { goalId: step.goalId, collectorCopyId: step.collectorCopyId });
-      case "file": return x(st, CASEY, "addBinderEntry", { binderId: step.binderId, canonicalCardId });
+      /* No `case "file"` (Batch 3C-1): the entrance this mirrors no longer maps it. */
       case "unfile": return x(st, CASEY, "removeBinderEntry", { binderId: step.binderId, canonicalCardId });
       case "wanted-copy": return x(st, CASEY, "updateGoalCriteria", { goalId: step.goalId, desired: step.desired });
       case "how-hard": return x(st, CASEY, "updateGoalTier", { goalId: step.goalId, tier: step.tier });
@@ -709,7 +709,9 @@ describe("C. What a second press of Save does", () => {
 /* =============================================== D. what did not move */
 describe("D. What this batch did not touch", () => {
   test("[18] no transaction command became exposed, and the count is what it was", () => {
-    eq(EXPOSED_COMMANDS.length, 25, "the production surface changed size");
+    /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
+       name; any other change to the size still fails here. */
+    eq(EXPOSED_COMMANDS.length, 24, "the production surface changed size");
     const { COMMAND_NAMES } = require("../domain/metyet-commands.js");
     const known = (n) => [...COMMAND_NAMES].includes(n);
     for (const shut of ["startOpportunity", "proposePrice", "acceptPrice",

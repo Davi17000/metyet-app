@@ -129,7 +129,7 @@ they always did.
 
 | Fact | Record | Changed by |
 |---|---|---|
-| **This card belongs here** | `binders` + `binderEntries` | `createBinder`, `renameBinder`, `setBinderArchived`, `addBinderEntry`, `removeBinderEntry` |
+| **This card belongs here** | `binders` + `binderEntries` | `createBinder`, `renameBinder`, `setBinderArchived`, `addBinderEntry` (domain-only since Batch 3C-1 — no client may create a card-level row), `removeBinderEntry` |
 | **I want this card** | `goals` | `addGoal` / `updateGoalTier` / `removeGoal` |
 | **I own this physical copy** | `collectorCopies` | `addCollectorCopy` / `removeCollectorCopy` |
 | **I'll trade or sell that copy** | `offered` | `setCollectorCopyOffered` |
@@ -342,7 +342,7 @@ send it.
 | Command | The control |
 |---|---|
 | `createBinder` | "New binder…", inline, because every pilot Collector has zero binders and an empty list with no way to act is the impossible screen C2 refused to ship |
-| `addBinderEntry` / `removeBinderEntry` | the binder checkboxes |
+| `addBinderEntry` / `removeBinderEntry` | the binder checkboxes (since Batch 3B-1 the panel files a Goal or a copy instead; `addBinderEntry` left the allow-list in Batch 3C-1, and `removeBinderEntry` remains for the legacy line's Remove) |
 | `updateCollectorCopy` | editing a copy's grade, condition, certificate or value — C2 wrote it and said it would join "in the batch that gives it a screen"; it is also the only way to correct a copy written before C3.2 that contradicts itself |
 | `updateGoalCriteria` | the grade-wanted control |
 
@@ -818,7 +818,7 @@ exactly one reference. The rest move with the batches that own them.
 | Goals | `metyet-commands.js` `addGoal` (+ `desired`, C3.2) → `GOAL_FOR_PARTNER` in `metyet-projection.js` → `client/collector/sections/Goals.jsx` |
 | Grading | `metyet-domain.js` `gradingProblem` (the one rule) / `gradingRead` (the honest reader) → every copy and Goal write path |
 | Inventory | `metyet-commands.js` `addInventoryCopy` → `INVENTORY_FOR_COLLECTOR` → `client/tp/sections/Inventory.jsx` |
-| Binders | `metyet-commands.js` `createBinder` / `addBinderEntry` → `projectForActor` (owner only) → no surface yet (C3.1 ships none) |
+| Binders | `metyet-commands.js` `createBinder` / `fileObject` / `unfileObject` (and the legacy `removeBinderEntry`; `addBinderEntry` is domain-only since Batch 3C-1) → `projectForActor` (owner only) → `client/collector/CardSpecification.jsx` and `client/collector/sections/Binder.jsx` |
 | A Collector's own cards | `metyet-commands.js` `addCollectorCopy` / `setCollectorCopyOffered` → `COLLECTOR_COPY_FOR_PARTNER` → `client/collector/sections/MyCards.jsx` (built, not yet in the navigation) |
 | Discovery | `metyet-discovery.js` → `withDiscoveries` in `metyet-projection.js` → both shells |
 | Opportunity | `metyet-commands.js` `startOpportunity` → `metyet-domain.js` `STAGES` (no production surface sends these yet) |

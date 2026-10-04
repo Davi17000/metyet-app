@@ -49,6 +49,7 @@ const { importCatalog, exitCodeFor, EXIT } = require("../server/catalog/import.j
 const { applyTranslation, QUARANTINE, REJECTED }
   = require("../server/catalog/translation.js");
 const { runCommand } = require("../server/cli.js");
+const { executeCommand } = require("../persistence/command-transaction.js");
 const RT = require("../domain/metyet-runtime.js");
 
 const ROOT = path.join(__dirname, "..");
@@ -92,6 +93,21 @@ async function world() {
     app: createApp({ repository, catalog, accounts, verifier, runtime }) };
 }
 
+const CASEY = { collectorId: "c1" };   // the seat SUBJECT.casey is linked to
+/* A LEGACY ROW IS MADE PAST THE DOOR, AND PROVES IT LANDED (Batch 3C-1). No
+   client may create a bare-card Binder row any more, so a test that needs one
+   makes it the way the historical rows were made: the domain command, through
+   the same transaction, advisory lock and validateWorld the route uses. This
+   used to POST and discard the answer, which the 3C audit measured passing
+   with no row at all — so it now refuses to return until the row exists. */
+const legacyRow = async (ctx, actor, binderId, canonicalCardId) => {
+  const r = await executeCommand(ctx.repository, { actor,
+    command: "addBinderEntry", payload: { binderId, canonicalCardId }, runtime: ctx.runtime });
+  assert(!r.refused, `the legacy fixture was refused: ${r.refused}`);
+  assert((await ctx.repository.loadWorld()).binderEntries.some((e) => e.binderId === binderId
+    && e.canonicalCardId === canonicalCardId), "the legacy fixture row did not land");
+  return r;
+};
 const post = (app, token, command, payload) => app.inject({ method: "POST", url: "/api/commands",
   headers: { authorization: `Bearer ${token}` }, payload: { command, payload } });
 const get = (app, token, url) => app.inject({ method: "GET", url,
@@ -374,7 +390,7 @@ describe("B. rerun is recovery", () => {
     await post(ctx.app, "casey", "addGoal",
       { canonicalCardId: zard, tier: "primary", desired: { grade: "PSA 9" } });
     const binder = (await post(ctx.app, "casey", "createBinder", { name: "Mine" })).json().value;
-    await post(ctx.app, "casey", "addBinderEntry", { binderId: binder, canonicalCardId: zard });
+    await legacyRow(ctx, CASEY, binder, zard);
     /* `offered: true` because a new copy must now say which; this test is about
        an imported card reaching both seats, and the disposition is scaffolding. */
     await post(ctx.app, "casey", "addCollectorCopy",
@@ -965,7 +981,9 @@ describe("G. the boundaries hold", () => {
        qualification batch gave Inspect and Request Photos one. What
        this test is about is unchanged and is asserted below by NAME: no catalog
        command is reachable, and no route writes the schema. */
-    eq(EXPOSED_COMMANDS.length, 25, "the production surface is not the size C5 left it");
+    /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
+       name; any other change to the size still fails here. */
+    eq(EXPOSED_COMMANDS.length, 24, "the production surface is not the size C5 left it");
     for (const name of ["catalogImport", "importCatalog", "putCanonicalCard",
       "putCardContext", "putExpansion", "recordSourceMapping", "resolveCardIdentity"]) {
       assert(!EXPOSED_COMMANDS.includes(name), `${name} is exposed`);
@@ -1197,8 +1215,12 @@ describe("H. and then it works", () => {
     eq((await post(ctx.app, "north", "addInventoryCopy",
       { copy: { canonicalCardId: zard, ask: 900 } })).statusCode, 200);
     const binder = (await post(ctx.app, "casey", "createBinder", { name: "Mine" })).json().value;
-    eq((await post(ctx.app, "casey", "addBinderEntry",
-      { binderId: binder, canonicalCardId: zard })).statusCode, 200);
+    /* RE-PINNED (Batch 3C-1). Filing an imported card used to mean the
+       card-level add, which no client can send any more; what the product files
+       now is the THING — here the Goal — and the claim is unchanged: an
+       imported card is as fileable as any other. */
+    const goalId = (await ctx.repository.loadWorld()).goals.find((g) => g.canonicalCardId === zard).id;
+    eq((await post(ctx.app, "casey", "fileObject", { binderId: binder, goalId })).statusCode, 200);
 
     /* And a card the catalog does not hold is still refused, so the guard is
        working rather than merely absent. */

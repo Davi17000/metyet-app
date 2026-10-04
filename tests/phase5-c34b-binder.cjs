@@ -44,6 +44,7 @@ const { createAccountDirectory } = require("../server/auth/accounts.js");
 const { projectForActor } = require("../domain/metyet-projection.js");
 const { validateWorld } = require("../domain/metyet-world.js");
 const { EXPOSED_COMMANDS } = require("../server/exposed-commands.js");
+const { executeCommand } = require("../persistence/command-transaction.js");
 const C = require("../domain/metyet-commands.js");
 const RT = require("../domain/metyet-runtime.js");
 
@@ -125,9 +126,24 @@ const makeBinder = async (app, token, name) =>
   (await post(app, token, "createBinder", { name })).json().value;
 /* THE CARD-LEVEL PAIR, WHICH IS NOW ONLY FOR LEGACY ROWS (Batch 3B-1). The
    product no longer adds one; these remain so the tests about what a binder
-   does with the rows filed before 3B can still make one. */
-const file = (app, token, binderId, canonicalCardId) =>
-  post(app, token, "addBinderEntry", { binderId, canonicalCardId });
+   does with the rows filed before 3B can still make one.
+
+   A LEGACY ROW IS MADE PAST THE DOOR, AND PROVES IT LANDED (Batch 3C-1). The
+   add door is closed — no client may create a bare-card row — so a fixture
+   makes one the way the historical rows were made: the domain command, through
+   the same transaction, advisory lock and validateWorld the route uses. It
+   used to POST and discard the answer, and the 3C audit measured fourteen
+   tests here that went on passing with no row at all. So it now refuses to
+   return until the row it promised is in the world: a test that reasons about
+   a legacy row is reasoning about one that exists. */
+const file = async (ctx, token, binderId, canonicalCardId) => {
+  const r = await executeCommand(ctx.repository, { actor: ACTOR[token],
+    command: "addBinderEntry", payload: { binderId, canonicalCardId }, runtime: ctx.runtime });
+  assert(!r.refused, `the legacy fixture was refused: ${r.refused}`);
+  assert((await load(ctx)).binderEntries.some((e) => e.binderId === binderId
+    && e.canonicalCardId === canonicalCardId), "the legacy fixture row did not land");
+  return r;
+};
 const unfile = (app, token, binderId, canonicalCardId) =>
   post(app, token, "removeBinderEntry", { binderId, canonicalCardId });
 /* AND THE OBJECT-LEVEL PAIR, WHICH IS WHAT PUTTING SOMETHING IN A BINDER MEANS
@@ -284,7 +300,7 @@ async function screen(ctx, token = "casey", extra = {}) {
         { binderId: step.binderId, goalId: step.goalId, collectorCopyId: step.collectorCopyId });
       case "unfile-object": return send("unfileObject",
         { goalId: step.goalId, collectorCopyId: step.collectorCopyId });
-      case "file": return send("addBinderEntry", { binderId: step.binderId, canonicalCardId });
+      /* No `case "file"` (Batch 3C-1): the entrance this mirrors no longer maps it. */
       case "unfile": return send("removeBinderEntry", { binderId: step.binderId, canonicalCardId });
       case "start-looking": return send("addGoal",
         { canonicalCardId, tier: step.tier, desired: step.desired });
@@ -366,9 +382,9 @@ describe("A. the library", () => {
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
     await want(ctx.app, "casey", made.mudkip, "secondary");
-    await file(ctx.app, "casey", mine, made.mudkip);
+    await file(ctx, "casey", mine, made.mudkip);
     await want(ctx.app, "casey", made.firstEdition, "secondary");
-    await file(ctx.app, "casey", mine, made.firstEdition);
+    await file(ctx, "casey", mine, made.firstEdition);
     /* Owned and offered, so a count of either WOULD have something to show. */
     await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "PSA 9" });
     await post(ctx.app, "casey", "setCollectorCopyOffered",
@@ -423,7 +439,7 @@ describe("A. the library", () => {
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
     await want(ctx.app, "casey", made.mudkip, "secondary");
-    await file(ctx.app, "casey", mine, made.mudkip);
+    await file(ctx, "casey", mine, made.mudkip);
     const { r } = await screen(ctx);
     await press(r, "Rename");
     await typeInto(r, "Binder name", "The Mudkips");
@@ -473,7 +489,7 @@ describe("B. put away", () => {
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
     await want(ctx.app, "casey", made.mudkip, "secondary");
-    await file(ctx.app, "casey", mine, made.mudkip);
+    await file(ctx, "casey", mine, made.mudkip);
     await post(ctx.app, "casey", "setBinderArchived", { binderId: mine, archived: true });
     const { r } = await screen(ctx);
     assert(!findButton(r, "Bring back"), "an archived binder was showing without being asked for");
@@ -491,9 +507,9 @@ describe("B. put away", () => {
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
     await want(ctx.app, "casey", made.mudkip, "secondary");
-    await file(ctx.app, "casey", mine, made.mudkip);
+    await file(ctx, "casey", mine, made.mudkip);
     await want(ctx.app, "casey", made.firstEdition, "secondary");
-    await file(ctx.app, "casey", mine, made.firstEdition);
+    await file(ctx, "casey", mine, made.firstEdition);
     await want(ctx.app, "casey", made.mudkip, "primary");
     await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "PSA 9" });
     const before = await load(ctx);
@@ -518,7 +534,7 @@ describe("B. put away", () => {
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
     await want(ctx.app, "casey", made.mudkip, "secondary");
-    await file(ctx.app, "casey", mine, made.mudkip);
+    await file(ctx, "casey", mine, made.mudkip);
     await want(ctx.app, "casey", made.mudkip, "secondary");
     const before = await load(ctx);
     eq((await post(ctx.app, "casey", "renameBinder",
@@ -551,7 +567,7 @@ describe("C. inside a binder", () => {
        the smallest true thing and the individual tests then take it away where
        that is what they are about. */
     await want(ctx.app, "casey", made.mudkip, "secondary");
-    await file(ctx.app, "casey", mine, made.mudkip);
+    await file(ctx, "casey", mine, made.mudkip);
     return { made, mine };
   }
 
@@ -575,7 +591,7 @@ describe("C. inside a binder", () => {
        what makes "no tag when there is not" sayable at all now that a card must
        mean something before it can be filed. */
     await own(ctx.app, "casey", { canonicalCardId: made.firstEdition, grade: "PSA 9" });
-    await file(ctx.app, "casey", mine, made.firstEdition);
+    await file(ctx, "casey", mine, made.firstEdition);
     const g = (await load(ctx)).goals.find((x) => x.canonicalCardId === made.mudkip);
     await post(ctx.app, "casey", "updateGoalTier", { goalId: g.id, tier: "primary" });
     /* RE-PINNED (Batch 3B-1), AND THE CLAIM IS SHARPER THAN IT WAS. The tier
@@ -642,7 +658,7 @@ describe("C. inside a binder", () => {
       { copy: { canonicalCardId: made.firstEdition, grade: "PSA 9", keeping: true } })).json().value;
     eq((await post(ctx.app, "casey", "setCollectorCopyKept",
       { copyId, keeping: true })).statusCode, 200);
-    await file(ctx.app, "casey", mine, made.firstEdition);
+    await file(ctx, "casey", mine, made.firstEdition);
     for (const g of (await load(ctx)).goals) {
       eq((await post(ctx.app, "casey", "removeGoal", { goalId: g.id })).statusCode, 200);
     }
@@ -728,10 +744,10 @@ describe("C. inside a binder", () => {
     const a = await makeBinder(ctx.app, "casey", "Mudkip Collection");
     const b = await makeBinder(ctx.app, "casey", "Favourites");
     await want(ctx.app, "casey", made.mudkip, "secondary");
-    await file(ctx.app, "casey", a, made.mudkip);
-    await file(ctx.app, "casey", b, made.mudkip);
+    await file(ctx, "casey", a, made.mudkip);
+    await file(ctx, "casey", b, made.mudkip);
     /* Filing twice into one binder is still one entry — C3.1's rule, unmoved. */
-    await file(ctx.app, "casey", b, made.mudkip);
+    await file(ctx, "casey", b, made.mudkip);
     const entries = (await load(ctx)).binderEntries;
     eq(entries.length, 2, "the same card in two binders is not two entries");
     eq(json(entries.map((e) => e.binderId).sort()), json([a, b].sort()));
@@ -768,9 +784,9 @@ describe("C. inside a binder", () => {
     const ctx = await world();
     const { made, mine } = await filled(ctx);
     await want(ctx.app, "casey", made.firstEdition, "secondary");
-    await file(ctx.app, "casey", mine, made.firstEdition);
+    await file(ctx, "casey", mine, made.firstEdition);
     await want(ctx.app, "casey", made.unlimited, "secondary");
-    await file(ctx.app, "casey", mine, made.unlimited);
+    await file(ctx, "casey", mine, made.unlimited);
     const { r, calls } = await screen(ctx);
     const before = calls.describe;
     await press(r, "Mudkip Collection");
@@ -822,7 +838,7 @@ describe("D. not in a binder yet", () => {
        list, which was the inference the batch removed: a card-level row is not
        a Goal's home. Filing the GOAL is what settles it, and the card-level row
        deliberately does NOT — asserted below, because that is the correction. */
-    await file(ctx.app, "casey", mine, made.mudkip);
+    await file(ctx, "casey", mine, made.mudkip);
     await s.refresh();
     assert(texts(s.r).includes("Not in a binder yet"),
       "a legacy row was read as the Goal's home: " + texts(s.r));
@@ -1156,7 +1172,7 @@ describe("E. add cards", () => {
           { binderId: step.binderId, goalId: step.goalId, collectorCopyId: step.collectorCopyId });
         case "unfile-object": return go("unfileObject",
           { goalId: step.goalId, collectorCopyId: step.collectorCopyId });
-        case "file": return go("addBinderEntry", { binderId: step.binderId, canonicalCardId });
+        /* No `case "file"` (Batch 3C-1): the entrance this mirrors no longer maps it. */
         case "unfile": return go("removeBinderEntry", { binderId: step.binderId, canonicalCardId });
         default: return { ok: false, refused: "command-unavailable" };
       }
@@ -1255,7 +1271,7 @@ describe("F. the two new doors", () => {
          It states nothing about a card, touches no Goal, creates no Binder
          membership, and never crosses to a partner. */
       "setCollectorCopyKept",
-      "createBinder", "addBinderEntry", "removeBinderEntry",
+      "createBinder", "removeBinderEntry",
       /* AND THE TWO BATCH 3B-1 OPENED, WITH THE CONTROLS THAT PRESS THEM.
          `fileObject` and `unfileObject` file one GOAL or one COLLECTORCOPY,
          which is the subject of organisation from this batch on: the Card
@@ -1264,9 +1280,11 @@ describe("F. the two new doors", () => {
 
          THEY WERE HERE FOR ONE COMMIT IN 3A AND WERE TAKEN BACK OUT, because
          no screen sent either and this list's rule is that an entry names the
-         screen that sends it. 3B-1 is that screen. `addBinderEntry` above
-         still files a CARD, and the panel no longer sends it — the door stays
-         one release for a stale browser tab, and goes in 3C. */
+         screen that sends it. 3B-1 is that screen. `addBinderEntry`, the
+         CARD-level add, is no longer on this list: the panel stopped sending it
+         at 3B-1, the door stayed open one release for a stale browser tab, and
+         Batch 3C-1 closed it by name once the release owner judged that window
+         enough. `removeBinderEntry` stays — it is how a legacy row is removed. */
       "fileObject", "unfileObject",
       "updateCollectorCopy", "updateGoalCriteria",
       "renameBinder", "setBinderArchived",
@@ -1295,7 +1313,9 @@ describe("F. the two new doors", () => {
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
     ].sort()), "the production surface is not what C3.4 declared");
-    eq(EXPOSED_COMMANDS.length, 25);
+    /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
+       name; any other change to the size still fails here. */
+    eq(EXPOSED_COMMANDS.length, 24);
     for (const name of EXPOSED_COMMANDS) {
       assert(C.COMMAND_NAMES.includes(name), `${name} is not a command`);
     }
@@ -1325,8 +1345,13 @@ describe("F. the two new doors", () => {
        about C3.4b permanently, but on its own it would stop noticing if a later
        batch CLOSED one of the doors C3.3 or C3.4b opened — which is half of what
        this test was for. So the "lost" check is asked again, of today's list. */
+    /* RE-PINNED (Batch 3C-1): FROM "MUST BE EMPTY" TO "MUST BE EXACTLY THIS
+       ONE". A door closes when the product has removed its last caller, and the
+       batch that closes it says so by name. `addBinderEntry` filed a CARD; 3B-1
+       removed its caller and 3C-1 closed it. Asserted as a literal, so closing
+       any OTHER door C3.3 or C3.4b opened still fails here. */
     const closedSince = before.filter((n) => !EXPOSED_COMMANDS.includes(n));
-    eq(json(closedSince), json([]), "a door open at C3.3 has since been closed");
+    eq(json(closedSince), json(["addBinderEntry"]), "a door open at C3.3 has since been closed");
     for (const name of ["renameBinder", "setBinderArchived"]) {
       assert(EXPOSED_COMMANDS.includes(name), `${name} was closed again`);
     }
@@ -1441,9 +1466,9 @@ describe("F. the two new doors", () => {
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
     await want(ctx.app, "casey", made.mudkip, "secondary");
-    await file(ctx.app, "casey", mine, made.mudkip);
+    await file(ctx, "casey", mine, made.mudkip);
     await want(ctx.app, "casey", made.firstEdition, "secondary");
-    await file(ctx.app, "casey", mine, made.firstEdition);
+    await file(ctx, "casey", mine, made.firstEdition);
     await want(ctx.app, "casey", made.mudkip, "primary");
     await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "PSA 9" });
 
@@ -1480,7 +1505,7 @@ describe("G. privacy", () => {
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "ZZ-PRIVATE-C34B");
     await want(ctx.app, "casey", made.mudkip, "secondary");
-    await file(ctx.app, "casey", mine, made.mudkip);
+    await file(ctx, "casey", mine, made.mudkip);
     await post(ctx.app, "casey", "renameBinder", { binderId: mine, name: "ZZ-RENAMED-C34B" });
     await post(ctx.app, "casey", "setBinderArchived", { binderId: mine, archived: true });
 
@@ -1503,7 +1528,7 @@ describe("G. privacy", () => {
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "ZZ-PRIVATE-C34B");
     await want(ctx.app, "casey", made.mudkip, "secondary");
-    await file(ctx.app, "casey", mine, made.mudkip);
+    await file(ctx, "casey", mine, made.mudkip);
     const theirs = (await get(ctx.app, "dana", "/api/view")).body;
     assert(!theirs.includes("ZZ-PRIVATE-C34B"), "another Collector saw a binder");
     eq(json(JSON.parse(theirs).state.binders), json([]), "another Collector received binders");
@@ -1519,7 +1544,7 @@ describe("G. privacy", () => {
        fixture would create the very Goal this test is checking for. */
     await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "PSA 9" });
     const before = projectForActor(await load(ctx), ACTOR.north);
-    await file(ctx.app, "casey", mine, made.mudkip);
+    await file(ctx, "casey", mine, made.mudkip);
     const after = projectForActor(await load(ctx), ACTOR.north);
     eq(json(after.discoveries || []), json(before.discoveries || []),
       "filing a card created demand");
@@ -1531,7 +1556,7 @@ describe("G. privacy", () => {
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
     await want(ctx.app, "casey", made.mudkip, "secondary");
-    await file(ctx.app, "casey", mine, made.mudkip);
+    await file(ctx, "casey", mine, made.mudkip);
     await want(ctx.app, "casey", made.mudkip, "primary");
     const partner = projectForActor(await load(ctx), ACTOR.north);
     const seen = new Set();
@@ -1555,7 +1580,7 @@ describe("G. privacy", () => {
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
     await want(ctx.app, "casey", made.mudkip, "secondary");
-    await file(ctx.app, "casey", mine, made.mudkip);
+    await file(ctx, "casey", mine, made.mudkip);
     await want(ctx.app, "casey", made.mudkip, "primary");
     const before = await load(ctx);
     const { r } = await screen(ctx);
@@ -1626,7 +1651,7 @@ describe("H. the navigation", () => {
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
     await want(ctx.app, "casey", made.mudkip, "primary");
     const goal = (await load(ctx)).goals[0];
-    await file(ctx.app, "casey", mine, made.mudkip);
+    await file(ctx, "casey", mine, made.mudkip);
     eq(json((await load(ctx)).goals[0]), json(goal), "filing changed the Goal");
     await unfile(ctx.app, "casey", mine, made.mudkip);
     eq(json((await load(ctx)).goals[0]), json(goal), "unfiling changed the Goal");
@@ -1637,7 +1662,7 @@ describe("H. the navigation", () => {
        said about the card. For one batch that last case pruned the membership;
        the rule is withdrawn, and this is the promise the test was written for. */
     await post(ctx.app, "casey", "setBinderArchived", { binderId: mine, archived: false });
-    await file(ctx.app, "casey", mine, made.mudkip);
+    await file(ctx, "casey", mine, made.mudkip);
     const entries = (await load(ctx)).binderEntries.length;
     await post(ctx.app, "casey", "removeGoal", { goalId: goal.id });
     const w = await load(ctx);

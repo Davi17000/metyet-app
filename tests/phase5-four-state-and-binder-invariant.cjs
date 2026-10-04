@@ -915,7 +915,9 @@ describe("E. The boundaries this batch did not cross", () => {
   });
 
   test("[39] the allow-list grew by exactly one, and the transaction is shut", () => {
-    eq(EXPOSED_COMMANDS.length, 25, "the production surface is not the size this batch declared");
+    /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
+       name; any other change to the size still fails here. */
+    eq(EXPOSED_COMMANDS.length, 24, "the production surface is not the size this batch declared");
     assert(EXPOSED_COMMANDS.includes("setCollectorCopyKept"), "PC has a control but no door");
     const { COMMAND_NAMES } = require("../domain/metyet-commands.js");
     const known = COMMAND_NAMES.has ? (n) => COMMAND_NAMES.has(n)

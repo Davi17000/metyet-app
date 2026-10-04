@@ -44,6 +44,7 @@ const { createAccountDirectory } = require("../server/auth/accounts.js");
 const { EXPOSED_COMMANDS } = require("../server/exposed-commands.js");
 const C = require("../domain/metyet-commands.js");
 const D = require("../domain/metyet-domain.js");
+const { executeCommand } = require("../persistence/command-transaction.js");
 const RT = require("../domain/metyet-runtime.js");
 
 const ROOT = path.join(__dirname, "..");
@@ -112,6 +113,21 @@ async function cards(ctx) {
   return made;
 }
 
+const CASEY = { collectorId: "c1" };   // the seat SUBJECT.casey is linked to
+/* A LEGACY ROW IS MADE PAST THE DOOR, AND PROVES IT LANDED (Batch 3C-1). No
+   client may create a bare-card Binder row any more, so a test that needs one
+   makes it the way the historical rows were made: the domain command, through
+   the same transaction, advisory lock and validateWorld the route uses. This
+   used to POST and discard the answer, which the 3C audit measured passing
+   with no row at all — so it now refuses to return until the row exists. */
+const legacyRow = async (ctx, actor, binderId, canonicalCardId) => {
+  const r = await executeCommand(ctx.repository, { actor,
+    command: "addBinderEntry", payload: { binderId, canonicalCardId }, runtime: ctx.runtime });
+  assert(!r.refused, `the legacy fixture was refused: ${r.refused}`);
+  assert((await ctx.repository.loadWorld()).binderEntries.some((e) => e.binderId === binderId
+    && e.canonicalCardId === canonicalCardId), "the legacy fixture row did not land");
+  return r;
+};
 const post = (app, token, command, payload) => app.inject({ method: "POST", url: "/api/commands",
   headers: { authorization: `Bearer ${token}` }, payload: { command, payload } });
 const get = (app, token, url) => app.inject({ method: "GET", url,
@@ -354,8 +370,7 @@ describe("B. only what you asked for", () => {
     const ctx = await world();
     const made = await cards(ctx);
     const binder = (await post(ctx.app, "casey", "createBinder", { name: "Mudkips" })).json().value;
-    await post(ctx.app, "casey", "addBinderEntry",
-      { binderId: binder, canonicalCardId: made.mudkip });
+    await legacyRow(ctx, CASEY, binder, made.mudkip);
     await stock(ctx.app, "north", { canonicalCardId: made.mudkip, ask: 20 });
     const { r, state } = await shops(ctx);
     eq(state.discoveries.length, 0, "filing a card created demand");
@@ -767,7 +782,7 @@ describe("F. the boundaries hold", () => {
          It states nothing about a card, touches no Goal, creates no Binder
          membership, and never crosses to a partner. */
       "setCollectorCopyKept",
-      "createBinder", "addBinderEntry", "removeBinderEntry",
+      "createBinder", "removeBinderEntry",
       /* AND THE TWO BATCH 3B-1 OPENED, WITH THE CONTROLS THAT PRESS THEM.
          `fileObject` and `unfileObject` file one GOAL or one COLLECTORCOPY,
          which is the subject of organisation from this batch on: the Card
@@ -776,9 +791,11 @@ describe("F. the boundaries hold", () => {
 
          THEY WERE HERE FOR ONE COMMIT IN 3A AND WERE TAKEN BACK OUT, because
          no screen sent either and this list's rule is that an entry names the
-         screen that sends it. 3B-1 is that screen. `addBinderEntry` above
-         still files a CARD, and the panel no longer sends it — the door stays
-         one release for a stale browser tab, and goes in 3C. */
+         screen that sends it. 3B-1 is that screen. `addBinderEntry`, the
+         CARD-level add, is no longer on this list: the panel stopped sending it
+         at 3B-1, the door stayed open one release for a stale browser tab, and
+         Batch 3C-1 closed it by name once the release owner judged that window
+         enough. `removeBinderEntry` stays — it is how a legacy row is removed. */
       "fileObject", "unfileObject",
       "updateCollectorCopy", "updateGoalCriteria",
       "renameBinder", "setBinderArchived",
@@ -807,7 +824,9 @@ describe("F. the boundaries hold", () => {
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
     ].sort()), "C3.5 changed the production surface");
-    eq(EXPOSED_COMMANDS.length, 25);
+    /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
+       name; any other change to the size still fails here. */
+    eq(EXPOSED_COMMANDS.length, 24);
     /* 49 → 50 in Option B (`setCopyPending`). What this line guards is the
        door above, which has not moved: the new command is not exposed.
        51 → 53 in Batch 3A (`fileObject`, `unfileObject`), and this time the
@@ -891,8 +910,7 @@ describe("F. the boundaries hold", () => {
     const made = await cards(ctx);
     const binder = (await post(ctx.app, "casey", "createBinder",
       { name: "ZZ-PRIVATE-C35" })).json().value;
-    await post(ctx.app, "casey", "addBinderEntry",
-      { binderId: binder, canonicalCardId: made.firstEdition });
+    await legacyRow(ctx, CASEY, binder, made.firstEdition);
     await want(ctx.app, "casey", made.firstEdition, "primary");
     await stock(ctx.app, "north", { canonicalCardId: made.firstEdition, ask: 900 });
 
