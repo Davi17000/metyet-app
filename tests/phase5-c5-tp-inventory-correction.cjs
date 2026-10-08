@@ -1059,7 +1059,8 @@ describe("H. nothing else moved", () => {
        51 → 53 in Batch 3A (`fileObject`, `unfileObject`), for the same reason:
        there was no existing command that could name a Goal's or a copy's
        Binder, because until 3A no row could hold one. */
-    eq([...COMMAND_NAMES].length, 53, "C5 wrote a command instead of shipping two that existed");
+    /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
+    eq([...COMMAND_NAMES].length, 54, "C5 wrote a command instead of shipping two that existed");
   });
 
   test("no new route, and the catalogue import is still unreachable", async () => {

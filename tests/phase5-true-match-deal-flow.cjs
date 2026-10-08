@@ -665,7 +665,8 @@ describe("F. The boundary this batch did not cross", () => {
     /* 51 → 53 in Batch 3A (`fileObject`, `unfileObject`). The deal flow is
        untouched: filing a copy in a Binder is organising, not dealing, and a
        copy in a live deal is filed and unfiled exactly as any other. */
-    eq(COMMAND_NAMES.length, 53, "a command was added or removed");
+    /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
+    eq(COMMAND_NAMES.length, 54, "a command was added or removed");
   });
 
   test("[11][34][35][36] Option B's availability model is untouched", () => {

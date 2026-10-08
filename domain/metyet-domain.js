@@ -194,6 +194,36 @@ const totalTradeValue = (o) => acceptedTradeCards(o).reduce((a, c) => a + (trade
 
 /* Positive = the collector pays the partner. Negative = the partner pays the
    collector. One directionality, expressed differently by each persona. */
+/* A MARKET-VALUE PROPOSAL, IN WHOLE DOLLARS (Market Validation, Batch 2).
+   MetYet does not negotiate in cents. A proposal — the Collector's opening, or
+   either side's counter — is EITHER a whole-dollar `amount`, OR a `percent` of
+   the Proposed Market Price captured when the negotiation opened (a fraction:
+   0.9 = 90%, as trade percentages already are), resolved to the nearest whole
+   dollar with Math.round. Never measured against the previous counter.
+   A fractional dollar amount is refused, never rounded: rounding a number a
+   person typed is MetYet choosing a price for them. The resolved dollar amount
+   is the one authority; the percentage is kept beside it only as its basis.
+   Returns { amount, basis } or { refused }. */
+const priceProposal = (listed, { amount, percent }) => {
+  const has = (v) => v !== undefined && v !== null;
+  const dollars = (n) => Number.isSafeInteger(n) && n > 0;
+  if (has(percent)) {
+    if (has(amount)) return { refused: REFUSE.invalidAmount };
+    if (!(typeof percent === "number" && isFinite(percent) && percent > 0)) return { refused: REFUSE.invalidAmount };
+    if (!(typeof listed === "number" && isFinite(listed) && listed > 0)) return { refused: REFUSE.invalidAmount };
+    const resolved = Math.round(listed * percent);
+    if (!dollars(resolved)) return { refused: REFUSE.invalidAmount };
+    return { amount: resolved, basis: { percent } };
+  }
+  if (!dollars(amount)) return { refused: REFUSE.invalidAmount };
+  return { amount, basis: null };
+};
+/* THE PROPOSED MARKET PRICE IN NEGOTIATION TERMS: whole dollars. A shop's
+   stored `ask` may carry cents (a CSV import allows two places, and so does
+   the form); every screen already shows it rounded, and Firm on Price compares
+   an opening against exactly that figure. The stored value is never rewritten. */
+const wholeDollarPrice = (listed) =>
+  (typeof listed === "number" && isFinite(listed) && listed > 0 ? Math.round(listed) : null);
 const calculatedBalance = (o) =>
   (o.agreedPrice == null ? null : o.agreedPrice - totalTradeValue(o));
 const finalBalance = (o) =>
@@ -757,6 +787,16 @@ const INVARIANTS = {
      find out whether you want the card; this is where you commit to buying one. */
   oneNegotiationPerGoal: (goalId, opps) => activeOppForGoal(goalId, opps) == null,
 
+  /* AND PER EXACT CARD (Market Validation, Batch 2). One active outbound offer
+     per Collector per exact card, whichever partner holds it and whether or not
+     a Goal began it — the rule a Goal-free offer will need, stated without
+     reference to a Goal. Same window as the Goal rule (negotiating, not ended,
+     not completed) and the same exception (a deal whose copy is already gone to
+     somebody else no longer holds the slot), so a completed purchase frees it
+     for the next copy. `sameCard(o)` answers whether `o` is about this card. */
+  oneActiveOfferPerCard: (collectorId, sameCard, opps) => !(opps || []).some((o) =>
+    o.collectorId === collectorId && isNegotiating(o) && !transactionallyLost(o, opps) && sameCard(o)),
+
   /* THE PARTNER'S BOUNDARY, and deliberately a different one.
 
      A partner is not committed merely because somebody has offered — several
@@ -933,6 +973,11 @@ const REFUSE = {
      Price, and `firmOnPrice` is that answer — `true` or `false`, never "yes",
      1 or null, which would be a preference nobody can read the same way twice. */
   invalidPricingPreference: "invalid-pricing-preference",
+  /* FIRM ON PRICE HOLDS AT THE OPENING (Market Validation, Batch 2). A copy the
+     partner marked Firm on Price can only be opened at the Proposed Market
+     Price captured when the offer is made. The partner may still counter later;
+     this governs only how a Collector begins. */
+  firmOnPrice: "firm-on-price",
   /* A BINDER THAT HAS BEEN PUT AWAY TAKES NOTHING NEW.
 
      Archiving does not unfile what a binder holds and does not change any
@@ -1040,7 +1085,7 @@ module.exports = {
   INVITATION_DAYS, invitationExpiry, invitationOpen,
   STAGES, STAGE_IX, STAGE_LABEL,
   isEnded, isCompleted, isTerminal, isActive, isNegotiating,
-  activeOppForGoal, goalState,
+  activeOppForGoal, goalState, priceProposal, wholeDollarPrice,
   acceptedTradeCards, cardSettled, tradeValueOf, tradeValueAt, totalTradeValue,
   calculatedBalance, finalBalance,
   lastEntry, nextActor, seatOfActor, cardOwner, nextValueSeq,

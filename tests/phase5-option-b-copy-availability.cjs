@@ -216,7 +216,10 @@ describe("C. Pending is the one availability fact a partner chooses", () => {
       { id: "gA2", collectorId: "casey", canonicalCardId: "cc-x", tier: "primary", desired: { grade: "PSA 9" } },
       { id: "gB", collectorId: "jordan", canonicalCardId: "cc-x", tier: "primary", desired: { grade: "PSA 9" } }] });
     const a = valued(st, A, "gA", "i1", 27);
-    const other = valued(st, A, "gA2", "i2", 31);
+    /* Market Validation Batch 2: one Collector may hold only one active offer
+       per exact card, so the deal about a DIFFERENT copy is the other
+       Collector's — which is all this assertion needs. */
+    const other = valued(st, B, "gB", "i2", 31);
     nov(x(st, TP, "setCopyPending", { invId: "i1", oppId: "nope", at: AT }), D.REFUSE.notFound,
       "an invented deal");
     nov(x(st, TP, "setCopyPending", { invId: "i1", oppId: other, at: AT }), D.REFUSE.identityMismatch,

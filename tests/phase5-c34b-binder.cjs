@@ -1700,7 +1700,8 @@ describe("H. the navigation", () => {
        line above now names 0014. C3.4b's claim was about C3.4b: the Binder
        foundation it shipped needed neither, and 3A's are additive — nothing
        C3.4b built was re-keyed, widened or dropped to make room. */
-    eq(C.COMMAND_NAMES.length, 53, "a command was added or removed");
+    /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
+    eq(C.COMMAND_NAMES.length, 54, "a command was added or removed");
   });
 
   test("compatibility: a historical Goal with no criteria is still manageable", async () => {

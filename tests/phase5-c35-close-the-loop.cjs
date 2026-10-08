@@ -832,7 +832,8 @@ describe("F. the boundaries hold", () => {
        51 → 53 in Batch 3A (`fileObject`, `unfileObject`), and this time the
        door DID move — both are listed above. The pin is re-stated rather than
        loosened: the surface is still named command by command. */
-    eq(C.COMMAND_NAMES.length, 53, "a command was added or removed");
+    /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
+    eq(C.COMMAND_NAMES.length, 54, "a command was added or removed");
   });
 
   test("C3.5 opened no door — the whole file is what it was", () => {

@@ -293,6 +293,12 @@ function everyCommand(store, rec) {
   x(C2, "cancelOpportunity", { oppId: k });
   step("cancelOpportunity", { opp: opp(k) });
 
+  /* Market Validation Batch 2: an opening the partner declines. The cancelled
+     deal above freed the Goal's offer slot, so the same Goal may open again. */
+  const dk = x(C2, "startOpportunity", { goalId: "g2", invId: "i3", amount: 900 });
+  x(TP1, "declineOffer", { oppId: dk, reason: "not this one" });
+  step("declineOffer", { opp: opp(dk) });
+
   out.ids = { goal: g, inv, pr, rv, collectorCopies: b, invited, o, w, k };
   return out;
 }
@@ -405,8 +411,9 @@ describe("B. every minted id comes from the injected runtime", () => {
        Restated, not loosened — the exact total is still asserted, and every new
        command is exercised by the script above like all the others.
        51 → 53 in Batch 3A (`fileObject`, `unfileObject`): object-level Binder
-       membership is a new durable fact, so it needed commands to state it. */
-    eq(C.COMMAND_NAMES.length, 53, "the command set");
+       membership is a new durable fact, so it needed commands to state it.
+       53 → 54 in Market Validation Batch 2 (`declineOffer`), exercised above. */
+    eq(C.COMMAND_NAMES.length, 54, "the command set");
   });
 
   test("each new record's id is exactly what the runtime handed out, with the record's prefix", () => {
@@ -495,6 +502,7 @@ describe("C. every authoritative timestamp is the injected runtime's time", () =
     withdrawTradeCard: (x) => [x.opp.trade.cards[0].withdrawnAt, x.opp.updated],
     chooseCashOnly: (x) => [x.opp.trade.cashOnlyAt, x.opp.updated],
     cancelOpportunity: (x) => [x.opp.endedAt, x.opp.updated],
+    declineOffer: (x) => [x.opp.endedAt, x.opp.updated],
     /* Batch 3A. `filedAt` is the server's record of WHEN a Collector put this
        object here, so it is the runtime's time like every other authoritative
        stamp — not the browser's, and not a field the payload can carry. */

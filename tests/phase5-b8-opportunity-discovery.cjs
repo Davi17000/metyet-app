@@ -876,7 +876,9 @@ describe("G. B5, B6, B7 and the demo, as they were", () => {
     const commands = code("domain/metyet-commands.js");
     const starts = [...commands.matchAll(/opportunities:\s*\[\.\.\.list\(state\.opportunities\)/g)];
     eq(starts.length, 1, "exactly one command creates an Opportunity");
-    assert(/startOpportunity\(state, a, \{ goalId, invId, amount \}/.test(commands),
+    /* Market Validation Batch 2 added `percent`: an opening may be stated as a
+       share of the partner's price. Still a figure a person chose. */
+    assert(/startOpportunity\(state, a, \{ goalId, invId, amount(, percent)? \}/.test(commands),
       "and it is the collector's offer, which carries a figure a person chose");
   });
 });

@@ -513,6 +513,10 @@ function validateWorld(state) {
   const allOpportunities = C.opportunities.map(([o]) => o);
   for (const [o, path] of C.opportunities) {
     const who = `Opportunity "${o.id}"`;
+    /* The captured Firm on Price, when present, is a boolean (Market Validation, Batch 2). */
+    if (o.firmOnPrice !== undefined && o.firmOnPrice !== null && typeof o.firmOnPrice !== "boolean") {
+      report("field.invalid", `${path}.firmOnPrice`, `${who}.firmOnPrice must be true or false.`);
+    }
     ref(collectors, o.collectorId, `${path}.collectorId`, "collector", who);
     ref(partners, o.partnerId, `${path}.partnerId`, "partner", who);
     /* AN OPPORTUNITY NAMES ITS CARD ONE WAY OR THE OTHER (Phase 5 Batch 8), on

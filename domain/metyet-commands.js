@@ -1758,7 +1758,7 @@ const COMMANDS = {
      was the only comparison, and it reads an absent card as the empty string —
      so two canonical records, holding no legacy card between them, compared
      equal, and any canonical copy would have satisfied any canonical Goal. */
-  startOpportunity(state, a, { goalId, invId, amount }, ctx) {
+  startOpportunity(state, a, { goalId, invId, amount, percent }, ctx) {
     const at = ctx.at;
     if (a.seat !== "collector") return refuse(R.notOwner);
     const g = list(state.goals).find((x) => x.id === goalId);
@@ -1782,6 +1782,13 @@ const COMMANDS = {
       return refuse(R.identityMismatch);
     }
     if (!isRelated(state, copy.partnerId, a.collectorId)) return refuse(R.noRelationship);
+    /* ONE ACTIVE OFFER PER EXACT CARD (Market Validation, Batch 2), whichever
+       shop holds it. Asked only of this Collector's own deals, so it says
+       nothing about anybody else's. */
+    const sameCard = (o) => (wanted ? o.canonicalCardId === wanted
+      : !o.canonicalCardId && (o.cardId === g.cardId
+        || D.sameIdentity(cardById(state, o.cardId), cardById(state, g.cardId))));
+    if (!D.INVARIANTS.oneActiveOfferPerCard(a.collectorId, sameCard, state.opportunities)) return refuse(R.alreadyNegotiating);
     /* THE SAME QUESTION DISCOVERY ASKS, ASKED BY THE SAME FUNCTION. A Collector
        must not be able to reach past a surface that correctly declined to offer
        them this copy; and a pair Discovery DOES offer must never be refused
@@ -1811,13 +1818,25 @@ const COMMANDS = {
     if (copy.archived) return refuse(R.copyUnavailable);
     const status = D.inventoryCopyStatus(invId, state.opportunities, state.inventory);
     if (status !== "available") return refuse(R.copyUnavailable);
-    if (!(validMoney(amount) && amount > 0)) return refuse(R.invalidAmount);
+    /* THE OPENING OFFER (Market Validation, Batch 2). Whole dollars, or a share
+       of the Proposed Market Price rounded to the whole dollar — see
+       `priceProposal`. The partner's price and Firm on Price are CAPTURED here
+       — `listedPrice` and `firmOnPrice` on the opportunity — so a later edit to
+       the shelf cannot move a negotiation already under way, and every
+       percentage in it is measured against that captured price. Firm means the
+       opening must equal the captured price in whole dollars; it never means
+       the deal is agreed: every opening still waits for the partner. */
+    const opening = D.priceProposal(copy.ask, { amount, percent });
+    if (opening.refused) return refuse(opening.refused);
+    const firm = copy.firmOnPrice === true;
+    if (firm && opening.amount !== D.wholeDollarPrice(copy.ask)) return refuse(R.firmOnPrice);
     const partner = list(state.partners).find((p) => p.id === copy.partnerId) || {};
     const id = ctx.id("o");
     const opp = { id, goalId, collectorId: a.collectorId, partnerId: copy.partnerId,
       ...(wanted ? { canonicalCardId: wanted } : { cardId: g.cardId }),
-      invId, stage: "agree-price", listedPrice: copy.ask,
-      agreedPrice: null, priceThread: [{ by: "collector", type: "offer", amount, at }],
+      invId, stage: "agree-price", listedPrice: copy.ask, firmOnPrice: firm,
+      agreedPrice: null, priceThread: [{ by: "collector", type: "offer", amount: opening.amount, at,
+        ...(opening.basis ? { basis: opening.basis } : {}) }],
       trade: { submitted: false, cards: [] },
       tradeRate: partner.tradeRate != null ? partner.tradeRate : null,
       deal: D.emptyDeal(), fulfillment: D.emptyFulfillment(),
@@ -1827,7 +1846,7 @@ const COMMANDS = {
 
   /* A counter. The actor must own the turn, which also means nobody can
      counter their own standing figure. */
-  proposePrice(state, a, { oppId, amount }, ctx) {
+  proposePrice(state, a, { oppId, amount, percent }, ctx) {
     const at = ctx.at;
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
@@ -1840,10 +1859,14 @@ const COMMANDS = {
     const blocked = copyBlockedFor(state, o, a);
     if (blocked) return refuse(blocked);
     if (!turnFor(a, o, "price", "offer")) return refuse(R.notYourTurn);
-    if (!(validMoney(amount) && amount > 0)) return refuse(R.invalidAmount);
+    /* WHOLE DOLLARS, OR A SHARE OF THE PRICE CAPTURED AT THE OPENING (Market
+       Validation, Batch 2) — the same rule as the opening, for either side. */
+    const proposal = D.priceProposal(o.listedPrice, { amount, percent });
+    if (proposal.refused) return refuse(proposal.refused);
     const type = (o.priceThread || []).length ? "counter" : "offer";
     return done(withOpp(state, oppId, (x) => stamp({ ...x,
-      priceThread: [...(x.priceThread || []), { by: a.seat, type, amount, at }] }, at)), oppId);
+      priceThread: [...(x.priceThread || []), { by: a.seat, type, amount: proposal.amount, at,
+        ...(proposal.basis ? { basis: proposal.basis } : {}) }] }, at)), oppId);
   },
 
   /* Accepting the OTHER side's standing figure — never your own. The agreed
@@ -2174,6 +2197,26 @@ const COMMANDS = {
     return done(withOpp(state, oppId, (x) => ({ ...x, declined: true, endedBy: a.seat,
       endedAt: at || null, endedStage: x.stage, endedReason: why || null,
       outcome: agreed ? "cancelled" : "ended", ...(at ? { updated: at } : {}) })), oppId);
+  },
+
+  /* THE PARTNER SAYS NO (Market Validation, Batch 2). While the market value is
+     still unresolved — Agree on Price — the partner may decline the
+     negotiation outright, whoever's turn it is. Distinct from ending: the
+     outcome is "declined", recorded beside who and when, and the price thread
+     is left exactly as it was, so the history of what was offered survives.
+     A declined opportunity is ended, which frees the Collector's offer slot.
+     Once a value is agreed this is no longer the door — `cancelOpportunity`
+     and its rules are. */
+  declineOffer(state, a, { oppId, reason }, ctx) {
+    const at = ctx.at;
+    if (a.seat !== "tp") return refuse(R.notOwner);
+    const { o, refused } = oppGate(state, a, oppId);
+    if (refused) return refuse(refused);
+    if (o.stage !== "agree-price" || o.agreedPrice != null) return refuse(R.wrongStage);
+    const why = typeof reason === "string" ? reason.trim() : "";
+    return done(withOpp(state, oppId, (x) => ({ ...x, declined: true, endedBy: a.seat,
+      endedAt: at || null, endedStage: x.stage, endedReason: why || null,
+      outcome: "declined", ...(at ? { updated: at } : {}) })), oppId);
   },
 };
 

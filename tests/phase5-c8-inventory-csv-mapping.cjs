@@ -1038,7 +1038,8 @@ describe("G. whose shelf this is", () => {
        batches this sentence contradicted the assertion above it. 3B-1 makes
        the count 25 again, and the history is now written out rather than
        quietly becoming true. */
-    eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 53,
+    /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
+    eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 54,
       "C8 added a domain command");
     const app = code("server/app.js");
     assert(!/inventory-import|inventoryImport|\/api\/inventory|csv/i.test(app),

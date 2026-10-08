@@ -237,7 +237,8 @@ describe("B. kept in the domain, closed at the door, and only one way in", () =>
     eq(typeof C.COMMANDS.addBinderEntry, "function", "the dormant domain command has no body");
     assert(!EXPOSED_COMMANDS.includes("addBinderEntry"), "the retired add is exposed");
     assert(EXPOSED_COMMANDS.includes("removeBinderEntry"), "the legacy removal is not exposed");
-    eq(C.COMMAND_NAMES.length, 53, "the domain command table moved");
+    /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
+    eq(C.COMMAND_NAMES.length, 54, "the domain command table moved");
     eq(EXPOSED_COMMANDS.length, 24, "the production surface is not 24");
   });
 
