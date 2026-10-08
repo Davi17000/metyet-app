@@ -271,6 +271,10 @@ const CSS = `
 .tps-fields { display:flex; flex-wrap:wrap; gap:14px 18px; padding:15px 16px; }
 .tps-field { display:flex; flex-direction:column; gap:4px; flex:1 1 220px; min-width:0; }
 .tps-field.wide { flex-basis:100%; }
+.tps-check { flex-basis:100%; }
+.tps-check-row { display:flex; align-items:center; gap:8px; color:var(--text); font-size:13px; }
+.tps-check-row input { width:auto; padding:0; margin:0; }
+.tps-check-help { color:var(--faint); font-size:11.5px; }
 .tps-field-l { font-family:'Archivo',system-ui,sans-serif; font-size:9.5px; letter-spacing:.07em;
   text-transform:uppercase; color:var(--faint); font-weight:600; }
 .tps-field-h { color:var(--faint); font-size:11.5px; }

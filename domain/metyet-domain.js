@@ -928,6 +928,11 @@ const REFUSE = {
      cover absence, garbage and wrong shape with one code, because a caller
      looking for what to fix finds it in the same place either way. */
   invalidTarget: "invalid-target",
+  /* A PRICING PREFERENCE IS YES OR NO (Market Validation, Batch 1). A Trusted
+     Partner's copy is Open to Offers unless the partner says it is Firm on
+     Price, and `firmOnPrice` is that answer — `true` or `false`, never "yes",
+     1 or null, which would be a preference nobody can read the same way twice. */
+  invalidPricingPreference: "invalid-pricing-preference",
   /* A BINDER THAT HAS BEEN PUT AWAY TAKES NOTHING NEW.
 
      Archiving does not unfile what a binder holds and does not change any

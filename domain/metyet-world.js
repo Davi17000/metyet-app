@@ -284,6 +284,10 @@ function validateWorld(state) {
     if (!blank(i.archived) && typeof i.archived !== "boolean") {
       report("field.invalid", `${path}.archived`, `${who}.archived must be true or false.`);
     }
+    /* Absent is Open to Offers; stated, it is a boolean (Market Validation, Batch 1). */
+    if (!blank(i.firmOnPrice) && typeof i.firmOnPrice !== "boolean") {
+      report("field.invalid", `${path}.firmOnPrice`, `${who}.firmOnPrice must be true or false.`);
+    }
     /* OPTION B: pendingFor is deliberately allowed to go STALE — it names an
        opportunity that may since have ended, and copyPendingFor derives
        Available from that without a sweep. So this checks the shape only, never

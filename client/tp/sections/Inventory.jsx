@@ -256,7 +256,8 @@ export default function Inventory({ state, onSaveProfile = null,
               <>
                 {/* The certificate is the copy's, not the card's. */}
                 <Fact label={graded ? "Cert" : "Serial"} value={text(copy.cert)} mono />
-                <Fact label="Ask" value={money(copy.ask)} mono />
+                <Fact label="Proposed Market Price" value={money(copy.ask)} mono />
+                <Fact label="Pricing" value={copy.firmOnPrice === true ? "Firm on Price" : "Open to Offers"} />
                 {/* THIS copy's cost. Read from this row, by construction. */}
                 <Fact label="Your cost" value={money(copy.cost)} mono />
                 <Fact label="Acquired" value={day(copy.acquired)} mono />
@@ -485,7 +486,7 @@ function AddCopy({ browse, onAdd, onDone }) {
    THE PAYLOAD IS BUILT IN ONE PLACE for the same reason: "a graded copy sends
    no condition" is a sentence about what MetYet means, and two spellings of it
    is two chances to disagree. */
-const BLANK_FACTS = Object.freeze({ grade: "", condition: "", ask: "", cost: "", cert: "" });
+const BLANK_FACTS = Object.freeze({ grade: "", condition: "", ask: "", cost: "", cert: "", firmOnPrice: false });
 
 /* A copy's stored facts as this form's answers. A number that is absent is an
    empty box, never a zero: `0` and "nobody said" are different claims about an
@@ -504,6 +505,10 @@ const factsOf = (copy) => ({
   ask: asText(copy && copy.ask),
   cost: asText(copy && copy.cost),
   cert: asText(copy && copy.cert),
+  /* OPEN TO OFFERS UNLESS SAID OTHERWISE (Market Validation, Batch 1). A copy
+     written before this preference existed has no key and opens unchecked;
+     only an explicit `true` opens checked, so editing never changes it. */
+  firmOnPrice: !!(copy && copy.firmOnPrice === true),
 });
 
 function useCopyFacts(initial) {
@@ -545,6 +550,7 @@ function useCopyFacts(initial) {
     ask: facts.ask === "" ? null : Number(facts.ask),
     cost: facts.cost === "" ? null : Number(facts.cost),
     cert: facts.cert || null,
+    firmOnPrice: facts.firmOnPrice === true,
   });
   return { facts, set, setGrade, rawNeedsCondition, payload };
 }
@@ -584,7 +590,18 @@ function CopyFactFields({ facts, set, setGrade, disabled = false }) {
         </label>
       ) : null}
       {field("Certificate", "cert", { inputMode: "numeric" })}
-      {field("Ask", "ask", { inputMode: "decimal" })}
+      {field("Proposed Market Price", "ask", { inputMode: "decimal" })}
+      {/* FIRM ON PRICE (Market Validation, Batch 1). Optional, unchecked by
+          default: an unchecked card is Open to Offers. A starting point, never a
+          policy step — nothing else here changes. */}
+      <label className="tps-field tps-check">
+        <span className="tps-check-row">
+          <input type="checkbox" checked={facts.firmOnPrice === true} disabled={disabled}
+            onChange={(e) => set("firmOnPrice", e.target.checked)} />
+          <span>Firm on Price</span>
+        </span>
+        <span className="tps-check-help">When enabled, Collectors can only initiate at your proposed market price. You'll still confirm the offer before proceeding.</span>
+      </label>
       {field("What it cost you", "cost", { inputMode: "decimal" })}
     </>
   );
@@ -599,6 +616,7 @@ const refusalSentence = (refused, grade, verb) => {
     return "That version is no longer one MetYet can add. Choose another.";
   }
   if (refused === "invalid-amount") return "An amount has to be a number, and not a negative one.";
+  if (refused === "invalid-pricing-preference") return "Firm on Price is either on or off. Check the box, or leave it clear.";
   if (refused === "grading-incoherent") {
     return grade === "Raw"
       ? "A raw copy needs a condition. Choose one."

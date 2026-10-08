@@ -1494,7 +1494,11 @@ describe("I. A capability with a surface, at last", () => {
        with a change to the schema or the refusal vocabulary. */
     eq(require("fs").readdirSync(path.join(ROOT, "persistence/migrations"))
       .filter((f) => f.endsWith(".sql")).length, 14, "a migration moved");
-    eq(Object.keys(D.REFUSE).length, 44, "the refusal vocabulary moved");
+    /* 45 since Market Validation Batch 1, which added exactly one code,
+       `invalid-pricing-preference` (a TP's Firm on Price must be a boolean).
+       The pin still fails on any other change to the vocabulary. */
+    eq(Object.keys(D.REFUSE).length, 45, "the refusal vocabulary moved");
+    eq(D.REFUSE.invalidPricingPreference, "invalid-pricing-preference", "Batch 1's one new refusal code");
     assert(D.REFUSE.invalidTarget === "invalid-target" && D.REFUSE.binderArchived === "binder-archived",
       "Batch 3A's two refusal codes changed");
     /* AND THE DOMAIN FILE IS UNTOUCHED BY THIS BATCH, which is the strongest

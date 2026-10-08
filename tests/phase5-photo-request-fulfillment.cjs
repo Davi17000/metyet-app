@@ -608,7 +608,11 @@ describe("G. The shop's screen", () => {
   });
 
   test("[33] and the shop's screen grew nothing else", () => {
-    const src = codeOf("client/tp/sections/Inventory.jsx");
+    /* ONE PHRASE IS EXEMPT, AND ONLY THAT PHRASE (Market Validation, Batch 1).
+       "Open to Offers" is the shelf's own status label for a copy that is not
+       Firm on Price — a description of the copy, not an offer control. Every
+       other "Offer" (a button, an inbox, an intent) still fails here. */
+    const src = codeOf("client/tp/sections/Inventory.jsx").replace(/Open to Offers/g, "");
     for (const gone of ["startOpportunity", "acceptPrice", "setCopyPending", "sendMessage",
       "Market Value", "Lead", "Buyer intent", "Offer", "Negotiation", "Conversion"]) {
       assert(!src.includes(gone), `Inventory grew ${gone}`);

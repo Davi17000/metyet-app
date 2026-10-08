@@ -164,7 +164,9 @@ const GOAL_FOR_PARTNER = ["id", "collectorId", "cardId", "canonicalCardId", "tie
   "note", "since", "createdAt", "confirmedAt", "secondarySince", "desired"];
 const PREFERENCE_FOR_PARTNER = ["collectorId", "tags"];
 
-/* An InventoryCopy as a Collector sees it: identity, ask, photos.
+/* An InventoryCopy as a Collector sees it: identity, ask, photos — and, since
+   Market Validation Batch 1, whether the partner is Firm on Price (named here,
+   and normalised to a boolean where the list is applied, below).
    `cost`, `acquired`, `note` and any unlisted field are partner-private.
 
    `canonicalCardId` joined the list in Batch 6 because it IS the identity now —
@@ -175,7 +177,7 @@ const PREFERENCE_FOR_PARTNER = ["collectorId", "tags"];
    tell whether they want it. What stayed off the list is what it always was —
    what the partner paid, when they got it, and what they wrote to themselves. */
 const INVENTORY_FOR_COLLECTOR = ["invId", "partnerId", "cardId", "canonicalCardId",
-  "grade", "condition", "ask", "cert", "photos", "addedAt", "archived"];
+  "grade", "condition", "ask", "cert", "photos", "addedAt", "archived", "firmOnPrice"];
 
 /* A CollectorCopy as a partner sees it: identity, photos, cert. The reference
    value (`market`) and any unlisted field are collector-private.
@@ -387,7 +389,10 @@ function projectForCollector(state, me) {
     }
   }
   const inventory = list(state.inventory)
-    .map((i) => withGrading(copyForViewer(pick(i, INVENTORY_FOR_COLLECTOR), {
+    /* `firmOnPrice` is projected as a boolean, never as the stored value: a copy
+       written before Market Validation has no key at all and is Open to Offers,
+       and a Collector should not have to know that (Batch 1). */
+    .map((i) => withGrading(copyForViewer({ ...pick(i, INVENTORY_FOR_COLLECTOR), firmOnPrice: i.firmOnPrice === true }, {
       /* `own` asks the question of THIS collector's own deals, so a copy
          pending for somebody else's is simply not pending to them — which is
          how "Pending for your deal" and a bare "unavailable" come out of one

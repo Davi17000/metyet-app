@@ -687,6 +687,12 @@ const COMMANDS = {
     for (const k of ["ask", "cost"]) {
       if (copy[k] != null && !(validMoney(Number(copy[k])) && Number(copy[k]) >= 0)) return refuse(R.invalidAmount);
     }
+    /* FIRM ON PRICE, OR OPEN TO OFFERS (Market Validation, Batch 1). `ask` is
+       the partner's Proposed Market Price — a starting point, not a binding
+       price — and `firmOnPrice` says whether a Collector may open at anything
+       else. Absent means Open to Offers; when stated it must be a boolean.
+       Checked here, before `ctx.id` below, so a refusal consumes no id. */
+    if ("firmOnPrice" in copy && typeof copy.firmOnPrice !== "boolean") return refuse(R.invalidPricingPreference);
     /* `pendingFor` IS NOT A FACT ABOUT A NEW CARD (Option B). This spread is
        deliberately open — a shop's own description of a copy is theirs — but
        availability is not a description, and a copy nobody has ever dealt over
@@ -700,7 +706,7 @@ const COMMANDS = {
        later reader has to cope with, and one created with `{front:{},back:{}}`
        read as fully photographed while holding no evidence at all. */
     const born = { ...facts, photos: photographs(facts && facts.photos) };
-    const row = { archived: false, ...born, invId,
+    const row = { archived: false, firmOnPrice: false, ...born, invId,
       partnerId: a.partnerId, ...(ctx.time(askedAt) ? { addedAt: ctx.time(askedAt) } : {}) };
     return done({ ...state, inventory: [...list(state.inventory), row] }, invId);
   },
@@ -767,7 +773,12 @@ const COMMANDS = {
        copy, and certainly not a new CARD (Phase 5 Batch 6). Whether that
        restatement is ALLOWED NOW is the guard above; this list is only about
        which fields the command understands at all. */
-    const allowed = ["ask", "cost", "acquired", "cert", "note", "photos", "grade", "condition"];
+    /* `firmOnPrice` (Market Validation, Batch 1) is the partner's own pricing
+       preference, not a fact about the card, so it is not a protected fact and
+       may change while a deal is live; a live negotiation reads the snapshot it
+       began with, not the shelf. When named it must be a boolean. */
+    if ("firmOnPrice" in p && typeof p.firmOnPrice !== "boolean") return refuse(R.invalidPricingPreference);
+    const allowed = ["ask", "cost", "acquired", "cert", "note", "photos", "grade", "condition", "firmOnPrice"];
     const clean = {};
     for (const k of allowed) if (k in p) clean[k] = p[k];
     /* PHOTOGRAPHS ARE STORED IN THE ONLY SHAPE THE GUARD CAN READ.
