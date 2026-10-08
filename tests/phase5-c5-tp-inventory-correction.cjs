@@ -798,8 +798,11 @@ describe("F2. the controls, pressed", () => {
     const sent = [];
     const r = await shelf(ctx, sent, await view(ctx.app, "north"));
     await pressText(r, "Edit");
-    const ask = r.root.findAll((n) => n.type === "input")
-      .find((n) => n.props.inputMode === "decimal");
+    /* Found by its label, not its keyboard: since Batch 2.1 the price box is a
+       whole-dollar (numeric) field, and "decimal" now belongs to the cost box. */
+    const ask = r.root.findAll((n) => n.type === "label"
+      && texts(n).join(" ").includes("Proposed Market Price"))
+      .map((l) => l.findAll((n) => n.type === "input")[0]).find(Boolean);
     assert(ask, "no ask field");
     await TR.act(async () => { ask.props.onChange({ target: { value: "3900" } }); });
     await pressText(r, "Save changes");

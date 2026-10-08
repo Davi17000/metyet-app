@@ -112,6 +112,8 @@ const withOpp = (state, oppId, fn) => ({ ...state,
   opportunities: list(state.opportunities).map((o) => (o.id === oppId ? fn(o) : o)) });
 const stamp = (o, at) => (at ? { ...o, updated: at } : o);
 const validMoney = (n) => typeof n === "number" && isFinite(n);
+/* A price in MetYet's terms: a whole number of dollars above zero (Batch 2.1). */
+const wholeDollars = (n) => Number.isSafeInteger(n) && n > 0;
 
 /* A label a person typed, or nothing. Trimmed to one line and capped, because a
    hint is for recognising an invitation in a list — not a place to put a
@@ -687,6 +689,12 @@ const COMMANDS = {
     for (const k of ["ask", "cost"]) {
       if (copy[k] != null && !(validMoney(Number(copy[k])) && Number(copy[k]) >= 0)) return refuse(R.invalidAmount);
     }
+    /* THE PROPOSED MARKET PRICE IS WHOLE DOLLARS (Batch 2.1). MetYet does not
+       price in cents, and a new copy's price — when it has one — is a whole
+       number of dollars above zero. Refused, never rounded. `cost` is the
+       shop's own bookkeeping, not a price anybody negotiates, and keeps its
+       rule above. */
+    if (copy.ask != null && !wholeDollars(Number(copy.ask))) return refuse(R.invalidAmount);
     /* FIRM ON PRICE, OR OPEN TO OFFERS (Market Validation, Batch 1). `ask` is
        the partner's Proposed Market Price — a starting point, not a binding
        price — and `firmOnPrice` says whether a Collector may open at anything
@@ -802,6 +810,11 @@ const COMMANDS = {
        this field, spreads the caller's facts over its default, and is on the
        production allow-list; it normalises too, just below. */
     if (nextPhotos !== undefined) clean.photos = nextPhotos;
+    /* A PRICE THAT IS BEING CHANGED IS WHOLE DOLLARS (Batch 2.1). A copy priced
+       in cents before this rule keeps its price, and a correction of anything
+       else — or a form that sends the stored price back untouched — still
+       lands: only a NEW price has to be whole dollars above zero. */
+    if ("ask" in clean && clean.ask != null && clean.ask !== copy.ask && !wholeDollars(Number(clean.ask))) return refuse(R.invalidAmount);
     for (const k of ["ask", "cost"]) {
       if (clean[k] != null && !(validMoney(Number(clean[k])) && Number(clean[k]) >= 0)) return refuse(R.invalidAmount);
     }
@@ -2080,7 +2093,11 @@ const COMMANDS = {
     const gone = copyBlockedFor(state, o, a);
     if (gone) return refuse(gone);
     if (!turnFor(a, o, "final")) return refuse(R.notYourTurn);
-    if (!validMoney(amount)) return refuse(R.invalidAmount);
+    /* WHOLE DOLLARS (Batch 2.1). The final balance keeps its sign convention —
+       positive the Collector pays, negative the partner pays, zero is even —
+       and is now a whole number of dollars. Agreements already recorded keep
+       whatever they recorded. */
+    if (!Number.isSafeInteger(amount)) return refuse(R.invalidAmount);
     const deal = { ...D.emptyDeal(), ...(o.deal || {}), adjThread: (o.deal && o.deal.adjThread) || [] };
     if (deal.agreedAdj != null) return refuse(R.terminal);
     if (D.TRADE.dealAdjStanding(deal) === a.seat) return refuse(R.notYourTurn);
