@@ -519,8 +519,9 @@ describe("C. the shell: its sections, and counts that are row counts", () => {
     clickText(r, "Binders");
     assert(/haven't made a binder yet/.test(flat(r)), flat(r));
     /* And the collection view one press away has its own honest sentence. */
-    clickText(r, "All Cards");
-    assert(/Nothing has meaning yet/.test(flat(r)), flat(r));
+    /* RESTATED (Phase 6 P6-2): Your Cards sits on the Binders screen itself,
+       and its empty sentence says the two ways a card gains meaning. */
+    assert(/Cards you.re looking for or own will appear here/.test(flat(r)), flat(r));
     clickText(r, "Trusted Partners");
     assert(/no Trusted Partners yet/.test(flat(r)), flat(r));
     const all = flat(r);

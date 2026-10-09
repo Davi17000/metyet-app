@@ -53,7 +53,9 @@ const SURFACES = [
   ["client/browse/CardBrowser.jsx", 'br-art', 'br-plate'],
   ["client/collector/sections/Collection.jsx", 'mcs-group-art', 'mcs-art-plate'],
   ["client/collector/sections/TrustedPartners.jsx", 'mcs-has-art', 'mcs-art-plate'],
-  ["client/collector/sections/Binder.jsx", 'mcs-group-art', 'mcs-art-plate'],
+  /* RE-PINNED (Phase 6 P6-2): Binders draws Phase 6 tiles; the class that
+     carries their fixed card-shaped box is mcs-otile-art. Same primitive. */
+  ["client/collector/sections/Binder.jsx", 'mcs-otile-art', 'mcs-art-plate'],
 ];
 
 /* WHY NOTHING BELOW ASKS "WHAT DID THIS BATCH CHANGE" (Phase 5 C7.1).

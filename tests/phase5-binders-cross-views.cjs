@@ -299,33 +299,41 @@ describe("B. Search looks at what is already yours", () => {
       src.indexOf("const shown"))), "searching reached for a command");
   });
 
-  test("the box is the shell's, and a change of view empties it", () => {
-    /* RE-PINNED. This used to assert that the query SURVIVED a change of view,
-       on the reasoning that the box lives above the component. It does live
-       there — but carrying the text along meant pressing a chip could land on a
-       populated view showing "Nothing here matches", and opening a binder could
-       make a full binder look empty. Held above the views, so one box serves
-       all of them; emptied when the subject changes, because a filter the
-       person did not type for THIS view is a filter they did not ask for. Still
-       one `useState`, no storage, no URL. */
+  test("the box is the shell's: filters compose with it, a new place empties it", () => {
+    /* RE-PINNED AGAIN (Phase 6 P6-2). Search and the state filter are two
+       halves of one question in Phase 6 ("Primary cards matching mudkip"), so
+       changing the filter keeps what was typed and the result line says both.
+       What the earlier pin protected still holds where it applies: opening a
+       binder, or leaving one, is a change of SUBJECT, and the box is emptied —
+       a filter the person did not type for this place is one they did not ask
+       for. Still one useState, no storage, no URL. */
     const binder = code("client/collector/sections/Binder.jsx");
     assert(/useState\(""\)/.test(binder), "the query is not held above the views");
-    assert(/query=\{query\}/.test(binder), "the views are not given it");
+    assert(/query=\{query\}/.test(binder), "the opened binder is not given it");
     assert(!/localStorage|sessionStorage/.test(binder), "the query was persisted");
-    assert(/chooseView = \(id\) => \{[^}]*setQuery\(""\)/.test(binder),
-      "changing view carried the old query along");
+    assert(/onClick=\{\(\) => setLens\(id\)\}/.test(binder), "changing the filter touched the query");
+    assert(/setOpen\(b\.id\); setQuery\(""\)/.test(binder), "opening a binder carried the old query along");
+    assert(/setOpen\(null\); setQuery\(""\)/.test(binder), "leaving a binder carried the old query along");
   });
 });
 
 /* ============================== C. every job Your Cards did, preserved */
 describe("C. Nothing useful went with the tab", () => {
   test("[17][18] owned cards and their copies are still reachable", async () => {
+    /* RESTATED (Phase 6 P6-2). The five view chips became state filters (All ·
+       Primary · Secondary · PC · Trade / Sell) over Your Cards, which is on the
+       Binders screen itself; each Goal and copy is a tile, and a copy's facts
+       are reached through the Card Specification its tile opens. The rule this
+       test protects is unchanged. */
     const r = await showShell(FULL());
     await press(r, "Binders");
-    await press(r, "All Cards");
-    const shown = texts(r);
-    assert(/Charizard/.test(shown), "the owned card is unreachable: " + shown);
-    assert(/OFFERED-1/.test(shown) && /KEPT-1/.test(shown), "a copy is unreachable: " + shown);
+    const tiles = r.root.findAll((n) => n.type === "li" && String(n.props.className || "").includes("mcs-otile"));
+    const said = tiles.map((t) => instText(t).replace(/\s+/g, " "));
+    assert(said.some((t) => /Trade \/ Sell/.test(t) && /Charizard/.test(t)), "the offered copy has no tile: " + said);
+    assert(said.some((t) => /Owned/.test(t) && /Charizard/.test(t)), "the unsorted copy has no tile: " + said);
+    await TR.act(async () => { tiles[0].findAll((n) => n.type === "button")[0].props.onClick(); });
+    const certs = r.root.findAll((n) => n.type === "input").map((n) => n.props.value);
+    assert(certs.includes("OFFERED-1") && certs.includes("KEPT-1"), "a copy's cert is unreachable: " + certs);
   });
 
   test("every copy fact Your Cards showed is still shown", async () => {
@@ -353,28 +361,38 @@ describe("C. Nothing useful went with the tab", () => {
   });
 
   test("[19] offered copies are still reachable, under their own view", async () => {
+    /* RESTATED (Phase 6 P6-2). The five view chips became state filters (All ·
+       Primary · Secondary · PC · Trade / Sell) over Your Cards, which is on the
+       Binders screen itself; each Goal and copy is a tile, and a copy's facts
+       are reached through the Card Specification its tile opens. The rule this
+       test protects is unchanged. */
     const r = await showShell(FULL());
     await press(r, "Binders");
-    await press(r, "Trade/Sell");
-    const shown = texts(r);
-    assert(/OFFERED-1/.test(shown), "the offered copy is unreachable: " + shown);
-    assert(!/KEPT-1/.test(shown), "the view is not the offered ones");
+    await press(r, "Trade / Sell");
+    const results = r.root.findAll((n) => n.props && n.props["aria-label"] === "Your Cards")[0];
+    const shown = instText(results).replace(/\s+/g, " ");
+    assert(/1 Trade \/ Sell card/.test(shown) && /Trade \/ Sell/.test(shown), "the offered copy is unreachable: " + shown);
+    assert(!/Owned|Primary|Secondary/.test(shown.replace("1 Trade / Sell card", "")), "the view is not the offered ones: " + shown);
   });
 
   test("[20] the specification panel is still reachable from a card", async () => {
+    /* RESTATED (Phase 6 P6-2). The five view chips became state filters (All ·
+       Primary · Secondary · PC · Trade / Sell) over Your Cards, which is on the
+       Binders screen itself; each Goal and copy is a tile, and a copy's facts
+       are reached through the Card Specification its tile opens. The rule this
+       test protects is unchanged. */
     const r = await showShell(FULL());
     await press(r, "Binders");
-    await press(r, "All Cards");
-    const open = buttons(r).find((b) => instText(b).trim() === "Open");
-    assert(open, "no way into the panel: " + buttons(r).map(instText).join(" | "));
-    await press(r, "Open");
-    assert(/Where it belongs|Are you looking|binder/i.test(texts(r)),
-      "the panel did not open: " + texts(r));
+    const tile = r.root.findAll((n) => n.type === "button" && String(n.props.className || "").includes("mcs-otap"))[0];
+    assert(tile, "no way into the panel");
+    await TR.act(async () => { tile.props.onClick(); });
+    assert(/Where it belongs|Are you looking|binder/i.test(texts(r)), "the panel did not open: " + texts(r));
     /* And it is the SAME panel, not a second editing grammar. */
-    const src = code("client/collector/sections/Collection.jsx");
-    assert(/CardSpecification/.test(src), "a second editor appeared");
-    assert(!/addGoal|setCollectorCopyOffered|addBinderEntry/.test(src),
-      "the collection names a command");
+    for (const rel of ["client/collector/sections/Collection.jsx", "client/collector/sections/Binder.jsx"]) {
+      const src = code(rel);
+      assert(/CardSpecification/.test(src), "a second editor appeared in " + rel);
+      assert(!/addGoal|setCollectorCopyOffered|addBinderEntry/.test(src), rel + " names a command");
+    }
   });
 });
 
@@ -451,27 +469,24 @@ describe("E. Four facts, still four", () => {
     }
   });
 
-  test("[27][28] there is still no PC view, and silence is no longer labelled", () => {
-    const views = build("client/collector/sections/Collection.jsx").COLLECTION_VIEWS;
-    eq(views.map((v) => v.id).join(","), "binders,all,primary,secondary,trade",
-      "the view list changed");
-    for (const v of views) {
-      assert(!/\bPC\b|Personal Collection/i.test(v.label), `a PC view appeared: ${v.label}`);
-    }
+  test("[27][28] PC is a filter now, and silence is still not given a state", () => {
+    /* RESTATED (Phase 6 P6-2), AND THE FIRST HALF IS REVERSED ON PURPOSE.
+       "There is still no PC view" held because a view is a different question
+       from a fact, and nobody had asked for one. P6-2 asks for exactly that:
+       the four states the doctrine names (Primary · Secondary · PC · Trade /
+       Sell) are the Binders screen's filters, and the old chip list is gone.
+       The second half is unchanged and still asserted: a copy that stated
+       neither PC nor Trade / Sell is shown as Owned — a true fact — and is
+       never given a disposition it did not state, and "Not offered" still
+       reports nothing as an answer. */
+    const binder = code("client/collector/sections/Binder.jsx");
+    assert(/\["all", "All"\], \["primary", "Primary"\], \["secondary", "Secondary"\],\s*\["pc", "PC"\], \["trade", "Trade \/ Sell"\]/.test(binder),
+      "the filters are not the four states and All");
+    assert(/c\.offered === true \? "trade" : c\.keeping === true \? "pc" : "owned"/.test(binder),
+      "a copy's state is not read straight off what it stated");
+    assert(!("COLLECTION_VIEWS" in build("client/collector/sections/Collection.jsx")), "the chip list survived");
     const src = code("client/collector/sections/Collection.jsx");
-    assert(!/personal ?collection/i.test(src), "the file names a Personal Collection");
-    /* RE-PINNED, AND THE REASON IS THE POINT OF THE BATCH.
-
-       This used to require the words "Not offered" on a copy's row, because at
-       the time that was the honest thing to say: MetYet had no fact for "I am
-       keeping this", so the most it could report was that no offer existed.
-
-       PC is now a positive statement with its own command, so the old label has
-       become the dishonest one — it described a decision and an absence in the
-       same words. The row now says "Offered" or "Keeping" when somebody has
-       said one of them, and says NOTHING when nobody has. A view is still a
-       different question from a fact, and there is still no PC view. */
-    assert(!/Not offered/.test(src), "an absence is being reported as an answer again");
+    assert(!/Not offered/.test(src) && !/Not offered/.test(binder), "an absence is being reported as an answer again");
     assert(/keeping === true/.test(src) && /Keeping/.test(src),
       "a copy its owner is keeping cannot say so");
   });
@@ -658,15 +673,20 @@ describe("phase5 binders — the adversarial pass", () => {
 
   /* G5. Two live derivations of one fact gave two answers to it. */
   test("the library's count is the binder's own contents", async () => {
+    /* RESTATED (Phase 6 P6-2): the binder section opens before its rows show,
+       and an earlier filing counts once per card however many identical rows
+       name it. */
     const st = world({
       binders: [{ id: "bd1", collectorId: "casey", name: "Mine", createdAt: AT,
         archivedAt: null }],
       binderEntries: [{ binderId: "bd1", canonicalCardId: "cc-b", addedAt: AT },
         { binderId: "bd1", canonicalCardId: "cc-b", addedAt: AT },
         { binderId: "bd1", canonicalCardId: null, addedAt: AT }] });
-    const library = texts(await openBinders(st));
+    const r = await openBinders(st);
+    await tap(r, "Binders · 1");
+    const library = texts(r);
     assert(/1 card\b/.test(library),
-      "the library counted rows, not cards: " + library.slice(0, 200));
+      "the library counted rows, not cards: " + library.slice(0, 400));
     const inside = texts(await showView(st, { kind: "binder", binderId: "bd1" }));
     assert(/Mudkip/.test(inside), "the binder did not hold the card it counted");
   });
@@ -674,11 +694,11 @@ describe("phase5 binders — the adversarial pass", () => {
   /* G6. The catalogue was re-asked on every chip press; the names of cards do
      not change while somebody decides which tab to look at. */
   test("moving between views does not re-ask the catalogue", async () => {
+    /* RESTATED (Phase 6 P6-2): the presses are the state filters now. */
     let asks = 0;
     const counted = { describe: async (ids) => { asks += 1; return door.describe(ids); } };
     const r = await openBinders(FULL(), counted);
-    for (const label of ["All Cards", "Primary Goals", "Secondary Goals", "Trade/Sell",
-      "My Binders", "All Cards", "Trade/Sell", "All Cards"]) {
+    for (const label of ["Primary", "Secondary", "PC", "Trade / Sell", "All", "Primary", "Trade / Sell", "All"]) {
       await tap(r, label);
     }
     assert(asks <= 2, `${asks} catalogue requests for 8 presses over 3 cards`);
@@ -686,24 +706,38 @@ describe("phase5 binders — the adversarial pass", () => {
 
   /* G7. A search that followed you to a screen it could not filter. */
   test("the search box is only where it filters something", async () => {
+    /* RESTATED (Phase 6 P6-2): the screen's one box now filters what is on it
+       — Your Cards, Unfiled and the binders together — so it is always
+       somewhere it filters something, and it is exactly one box. */
     const r = await openBinders(FULL());
-    const boxes = () => r.root.findAllByType("input")
-      .filter((n) => n.props.type === "search");
-    eq(boxes().length, 0, "the binder library offered a search that does nothing");
-    await tap(r, "All Cards");
-    eq(boxes().length, 1, "a collection view lost its search box");
+    const boxes = () => r.root.findAllByType("input").filter((n) => n.props.type === "search");
+    eq(boxes().length, 1, "one box for the screen");
+    await TR.act(async () => { boxes()[0].props.onChange({ target: { value: "umbreon" } }); });
+    await settle(r);
+    assert(/1 card matching “umbreon”/.test(texts(r)), "it did not filter what is on screen: " + texts(r));
   });
 
-  test("a query does not survive a change of view", async () => {
+  test("a query does not survive a change of place", async () => {
+    /* RESTATED (Phase 6 P6-2): a FILTER change keeps the query (they compose);
+       opening a binder is a change of place, and the query does not follow. */
     const r = await openBinders(FULL());
-    await tap(r, "All Cards");
-    const box = r.root.findAllByType("input").find((n) => n.props.type === "search");
-    await TR.act(async () => { box.props.onChange({ target: { value: "mudkip" } }); });
+    const box = () => r.root.findAllByType("input").find((n) => n.props.type === "search");
+    await TR.act(async () => { box().props.onChange({ target: { value: "mudkip" } }); });
     await settle(r);
-    assert(/Mudkip/.test(texts(r)), "the query did not filter");
-    await tap(r, "Trade/Sell");
-    const after = r.root.findAllByType("input").find((n) => n.props.type === "search");
-    eq(after.props.value, "", "a stale query followed the person to another view");
+    await tap(r, "Primary");
+    eq(box().props.value, "mudkip", "the filter dropped what was typed");
+    await tap(r, "All");
+    await tap(r, "Binders · 1");
+    await settle(r);
+    const row = r.root.findAll((n) => n.type === "button" && /^Mudkips/.test(instText(n).trim()))[0];
+    assert(row, "no Mudkips binder row");
+    assert(/1 match/.test(instText(row)), "the closed binder's match count is not true: " + instText(row));
+    await TR.act(async () => { row.props.onClick(); });
+    const opener = r.root.findAll((n) => n.type === "button" && /^Open Mudkips/.test(instText(n).trim()))[0];
+    assert(opener, "no way into the binder");
+    await TR.act(async () => { opener.props.onClick(); });
+    await settle(r);
+    eq(box().props.value, "", "a stale query followed the person into a binder");
   });
 
   /* G8. The shipped client described a shape this batch removed. */

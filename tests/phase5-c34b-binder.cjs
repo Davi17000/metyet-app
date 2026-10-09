@@ -230,6 +230,60 @@ const press = async (r, label) => {
   await TR.act(async () => { b.props.onClick(); });
   await settle();
 };
+
+/* RESTATED NAVIGATION (Phase 6 P6-2). The library became the Phase 6 Binders
+   screen: "Binders · N" is a section (closed on arrival once a binder exists),
+   one binder opens in place, and "Open <name> — …" goes into it, where Rename,
+   Put away and Bring back live under its "•••" menu. Unfiled is a section of
+   its own, and Your Cards sits below. These walk that path; what each test
+   then asserts about the binder, its cards and the world is unchanged unless
+   the test says so. */
+const sectionNamed = (r, label) => r.root.findAll((n) => n.type === "section" && n.props["aria-label"] === label)[0] || null;
+const sectionSays = (r, label) => { const s = sectionNamed(r, label); return s ? instText(s).replace(/\s+/g, " ") : ""; };
+const cls = (n) => String((n.props && n.props.className) || "");
+const openLibrary = async (r) => {
+  const head = buttons(r).find((n) => cls(n).includes("mcs-sechead") && /^Binders · \d+/.test(instText(n).trim()));
+  if (head && head.props["aria-expanded"] === false) { await TR.act(async () => { head.props.onClick(); }); await settle(); }
+};
+const openBinder = async (r, name) => {
+  await openLibrary(r);
+  let row = buttons(r).find((n) => cls(n).includes("mcs-bhead") && instText(n).trim().startsWith(name));
+  if (!row) {
+    const away = buttons(r).find((n) => /^Show binders you've put away/.test(instText(n).trim()));
+    if (away) { await TR.act(async () => { away.props.onClick(); }); await settle(); }
+    row = buttons(r).find((n) => cls(n).includes("mcs-bhead") && instText(n).trim().startsWith(name));
+  }
+  assert(row, `no binder "${name}" among: ${buttons(r).map(instText).join(" | ")}`);
+  if (row.props["aria-expanded"] === false) { await TR.act(async () => { row.props.onClick(); }); await settle(); }
+  const go = buttons(r).find((n) => instText(n).trim().startsWith(`Open ${name}`));
+  assert(go, `no way into "${name}"`);
+  await TR.act(async () => { go.props.onClick(); });
+  await settle();
+};
+const manage = async (r, item) => {
+  const more = buttons(r).find((n) => /^Manage /.test(String(n.props["aria-label"] || "")));
+  assert(more, "no binder menu");
+  await TR.act(async () => { more.props.onClick(); }); await settle();
+  await press(r, item);
+};
+const tapTile = async (r, needle) => {
+  const tile = r.root.findAll((n) => n.type === "li" && cls(n).includes("mcs-otile"))
+    .find((n) => instText(n).includes(needle));
+  assert(tile, `no tile for "${needle}"`);
+  await TR.act(async () => { tile.findAll((n) => n.type === "button")[0].props.onClick(); });
+  await settle();
+};
+const binderRows = (r) => buttons(r).filter((n) => cls(n).includes("mcs-bhead")).map((n) => instText(n).replace(/\s+/g, " "));
+const backToLibrary = async (r) => { await press(r, "‹ Binders"); await openLibrary(r); };
+const unfiledCount = (r) => {
+  const head = buttons(r).find((n) => cls(n).includes("mcs-sechead") && /^Unfiled · /.test(instText(n).trim()));
+  const m = head && instText(head).match(/Unfiled · (\d+)/);
+  return m ? Number(m[1]) : null;
+};
+const openUnfiled = async (r) => {
+  const head = buttons(r).find((n) => cls(n).includes("mcs-sechead") && /^Unfiled · /.test(instText(n).trim()));
+  if (head && head.props["aria-expanded"] === false) { await TR.act(async () => { head.props.onClick(); }); await settle(); }
+};
 const typeInto = async (r, ariaLabel, value) => {
   const input = inputs(r).find((n) => n.props["aria-label"] === ariaLabel);
   assert(input, `no input "${ariaLabel}"`);
@@ -358,12 +412,14 @@ describe("A. the library", () => {
     /* And it says the two things a binder is NOT, in the same breath — this
        sentence is the whole distinction the batch rests on. */
     assert(/different thing from wanting it or owning it/i.test(said), said);
-    assert(findButton(r, "Make a binder"), "no way to make one");
+    /* RESTATED (P6-2): Phase 6's "+ New binder" opens the naming field. */
+    assert(findButton(r, "+ New binder"), "no way to make one");
   });
 
   test("making one, naming it, and a blank name refused before it is sent", async () => {
     const ctx = await world();
     const { r } = await screen(ctx);
+    await press(r, "+ New binder");  // RESTATED (P6-2): the field opens from the section
     /* Nothing is sent until there is something to send. */
     eq(findButton(r, "Make a binder").props.disabled, true, "a nameless binder was offerable");
     await typeInto(r, "New binder name", "   ");
@@ -373,7 +429,11 @@ describe("A. the library", () => {
     eq((await load(ctx)).binders.length, 1);
     eq((await load(ctx)).binders[0].name, "Mudkip Collection");
     assert(texts(r).includes("Mudkip Collection"), texts(r));
-    /* And the field is empty again, so the next one does not inherit a name. */
+    /* And the field is empty again, so the next one does not inherit a name.
+       RESTATED (P6-2): Phase 6 closes the field once the binder is made, so the
+       next "+ New binder" opens it empty. */
+    eq(inputs(r).find((n) => n.props["aria-label"] === "New binder name"), undefined, "the field stayed open");
+    await press(r, "+ New binder");
     eq(inputs(r).find((n) => n.props["aria-label"] === "New binder name").props.value, "");
   });
 
@@ -390,10 +450,14 @@ describe("A. the library", () => {
     await post(ctx.app, "casey", "setCollectorCopyOffered",
       { copyId: (await load(ctx)).collectorCopies[0].id, offered: true });
     const { r } = await screen(ctx);
-    const said = texts(r);
+    await openLibrary(r);
+    /* RESTATED (P6-2): the library is the binders section; Your Cards below it
+       is where owned copies are listed, as All Cards always was. The rows
+       themselves still carry a name and a count and nothing else. */
+    const said = sectionSays(r, "Your binders");
     assert(said.includes("Mudkip Collection"), said);
     assert(said.includes("2 cards"), said);
-    assert(!/own \d|\d owned|offering|offered|for trade/i.test(said),
+    assert(!/own \d|\d owned|offering|offered|for trade|Trade|PC|PSA/i.test(said),
       "ownership telemetry reached the library: " + said);
   });
 
@@ -413,11 +477,9 @@ describe("A. the library", () => {
     ];
     await ctx.repository.saveWorld(stored);
     const { r } = await screen(ctx);
-    /* Read from AFTER the view chips: the row says "My Binders · All Cards · …"
-       above the library, and an indexOf over the whole screen would find a chip
-       before it found a binder. */
-    const whole = texts(r);
-    const said = whole.slice(whole.indexOf("Your binders"));
+    await openLibrary(r);
+    /* RESTATED (P6-2): read the binders section itself. */
+    const said = sectionSays(r, "Your binders");
     const order = ["Third", "Second", "First"].map((n) => said.indexOf(n));
     assert(order.every((i) => i >= 0), said);
     assert(order[0] < order[1] && order[1] < order[2], "not newest first: " + said);
@@ -428,8 +490,8 @@ describe("A. the library", () => {
     await makeBinder(ctx.app, "casey", "First");
     await makeBinder(ctx.app, "casey", "Second");
     const { r } = await screen(ctx);
-    const whole = texts(r);
-    const said = whole.slice(whole.indexOf("Your binders"));
+    await openLibrary(r);
+    const said = sectionSays(r, "Your binders");
     assert(said.indexOf("First") < said.indexOf("Second"),
       "the same-day order is not the server's: " + said);
   });
@@ -441,7 +503,9 @@ describe("A. the library", () => {
     await want(ctx.app, "casey", made.mudkip, "secondary");
     await file(ctx, "casey", mine, made.mudkip);
     const { r } = await screen(ctx);
-    await press(r, "Rename");
+    /* RESTATED (P6-2): Rename lives in the binder's "•••" menu. */
+    await openBinder(r, "Mudkip Collection");
+    await manage(r, "Rename binder");
     await typeInto(r, "Binder name", "The Mudkips");
     await press(r, "Save name");
     const after = await load(ctx);
@@ -458,7 +522,8 @@ describe("A. the library", () => {
     const ctx = await world();
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
     const { r } = await screen(ctx);
-    await press(r, "Rename");
+    await openBinder(r, "Mudkip Collection");
+    await manage(r, "Rename binder");
     await typeInto(r, "Binder name", "Something Else");
     await press(r, "Cancel");
     eq((await load(ctx)).binders.find((b) => b.id === mine).name, "Mudkip Collection");
@@ -474,12 +539,16 @@ describe("B. put away", () => {
     const ctx = await world();
     await makeBinder(ctx.app, "casey", "Mudkip Collection");
     const { r } = await screen(ctx);
-    await press(r, "Put away");
+    /* RESTATED (P6-2): Put away lives in the binder's menu; back in the
+       library it is gone from the list and one control away. */
+    await openBinder(r, "Mudkip Collection");
+    await manage(r, "Put away");
     const after = await load(ctx);
     eq(after.binders.length, 1, "putting one away deleted it");
     assert(after.binders[0].archivedAt, "nothing was stamped");
-    const said = texts(r);
-    assert(!/Your binders[\s\S]*Mudkip Collection/.test(said.split("Show binders")[0] || said),
+    await backToLibrary(r);
+    const said = sectionSays(r, "Your binders");
+    assert(!/Mudkip Collection/.test(said.split("Show binders")[0] || said),
       "an archived binder is still in the library: " + said);
     assert(/Show binders you've put away \(1\)/.test(said), said);
   });
@@ -492,10 +561,15 @@ describe("B. put away", () => {
     await file(ctx, "casey", mine, made.mudkip);
     await post(ctx.app, "casey", "setBinderArchived", { binderId: mine, archived: true });
     const { r } = await screen(ctx);
-    assert(!findButton(r, "Bring back"), "an archived binder was showing without being asked for");
+    await openLibrary(r);
+    assert(!/Mudkip Collection/.test(sectionSays(r, "Your binders")),
+      "an archived binder was showing without being asked for");
+    /* RESTATED (P6-2): revealed by one control, opened, and brought back from
+       its menu. */
     await press(r, "Show binders you've put away");
-    assert(texts(r).includes("Put away"), texts(r));
-    await press(r, "Bring back");
+    assert(/Put away · 1 card/.test(sectionSays(r, "Your binders")), sectionSays(r, "Your binders"));
+    await openBinder(r, "Mudkip Collection");
+    await manage(r, "Bring back");
     const after = await load(ctx);
     eq(after.binders[0].archivedAt, null, "it did not come back");
     eq(after.binderEntries.length, 1, "its card did not survive the round trip");
@@ -551,7 +625,10 @@ describe("B. put away", () => {
     assert(!C.COMMAND_NAMES.some((n) => /^deleteBinder|^removeBinder$/.test(n)),
       "a binder delete appeared");
     const section = code("client/collector/sections/Binder.jsx");
-    assert(!/Delete|delete/.test(section), "the section offers a delete: ");
+    /* RESTATED (P6-2): the code (comments stripped) offers no delete; the JS
+       `delete` operator on a Set is not a binder delete, so it is excluded. */
+    assert(!/Delete|deleteBinder|removeBinder\b/.test(section.replace(/next\.delete\(/g, "")),
+      "the section offers a delete");
   });
 });
 
@@ -575,7 +652,7 @@ describe("C. inside a binder", () => {
     const ctx = await world();
     await filled(ctx);
     const { r } = await screen(ctx);
-    await press(r, "Mudkip Collection");
+    await openBinder(r, "Mudkip Collection");
     const said = texts(r);
     assert(said.includes("Mudkip"), said);
     assert(said.includes("Base"), said);
@@ -604,7 +681,7 @@ describe("C. inside a binder", () => {
        same reason as before. */
     await fileObj(ctx.app, "casey", mine, { goalId: g.id });
     const { r } = await screen(ctx);
-    await press(r, "Mudkip Collection");
+    await openBinder(r, "Mudkip Collection");
     const said = texts(r);
     assert(said.includes("Actively hunting"), said);
     eq((said.match(/Actively hunting|Keeping an eye out/g) || []).length, 1, said);
@@ -626,7 +703,7 @@ describe("C. inside a binder", () => {
     eq((await load(ctx)).binderEntries.length, 1, "and the card is filed the legacy way");
     eq(((await load(ctx)).binderMemberships || []).length, 0, "nothing filed the Goal");
     const { r } = await screen(ctx);
-    await press(r, "Mudkip Collection");
+    await openBinder(r, "Mudkip Collection");
     const said = texts(r);
     assert(!/Actively hunting|Keeping an eye out|Looking for/.test(said),
       `a legacy row was read as the Goal's home: ${said}`);
@@ -665,7 +742,7 @@ describe("C. inside a binder", () => {
     eq((await load(ctx)).goals.length, 0, "the goals are gone");
     eq((await load(ctx)).binderEntries.length, 1, "and the card is still filed");
     const { r } = await screen(ctx);
-    await press(r, "Mudkip Collection");
+    await openBinder(r, "Mudkip Collection");
     const said = texts(r);
     assert(said.includes("Charizard"), said);
     assert(!/Actively hunting|Keeping an eye out/.test(said), said);
@@ -711,7 +788,7 @@ describe("C. inside a binder", () => {
     /* ONE of the two is filed here. The other is the control. */
     await fileObj(ctx.app, "casey", mine, { collectorCopyId: owned[0].id });
     const { r } = await screen(ctx);
-    await press(r, "Mudkip Collection");
+    await openBinder(r, "Mudkip Collection");
     const said = texts(r);
     /* The filed one says what it is. */
     assert(said.includes(owned[0].grade), `the filed copy does not say which it is: ${said}`);
@@ -722,8 +799,10 @@ describe("C. inside a binder", () => {
       `a shelf count reached a binder: ${said}`);
     /* AND THE LIBRARY OUTSIDE IS UNTOUCHED, which is where the old rule still
        holds exactly as C3.4 wrote it. */
-    await press(r, "All binders");
-    const library = texts(r);
+    await backToLibrary(r);
+    /* RESTATED (P6-2): the library is the binder ROWS — a name and a count.
+       An opened binder shows what is IN it, which 3B-1 decided is not the shelf. */
+    const library = binderRows(r).join(" | ");
     assert(!/own \d|\d owned|offering|offered|for trade|PSA/i.test(library),
       `ownership telemetry reached the library: ${library}`);
   });
@@ -732,7 +811,7 @@ describe("C. inside a binder", () => {
     const ctx = await world();
     await makeBinder(ctx.app, "casey", "Mudkip Collection");
     const { r } = await screen(ctx);
-    await press(r, "Mudkip Collection");
+    await openBinder(r, "Mudkip Collection");
     const said = texts(r);
     assert(/Nothing in this binder yet/i.test(said), said);
     assert(/doesn't mean you want it or own it/i.test(said), said);
@@ -752,7 +831,7 @@ describe("C. inside a binder", () => {
     eq(entries.length, 2, "the same card in two binders is not two entries");
     eq(json(entries.map((e) => e.binderId).sort()), json([a, b].sort()));
     const { r } = await screen(ctx);
-    await press(r, "Favourites");
+    await openBinder(r, "Favourites");
     assert(texts(r).includes("1 card"), texts(r));
   });
 
@@ -760,8 +839,8 @@ describe("C. inside a binder", () => {
     const ctx = await world();
     await filled(ctx);
     const { r } = await screen(ctx);
-    await press(r, "Mudkip Collection");
-    await press(r, "Open");
+    await openBinder(r, "Mudkip Collection");
+    await press(r, "Open");  // the opened binder keeps production's object rows
     const said = texts(r);
     /* RE-PINNED (Batch 3B-1): the panel's card-level Binder question is gone,
        because a card is no longer the subject of organisation. The proof it
@@ -789,7 +868,7 @@ describe("C. inside a binder", () => {
     await file(ctx, "casey", mine, made.unlimited);
     const { r, calls } = await screen(ctx);
     const before = calls.describe;
-    await press(r, "Mudkip Collection");
+    await openBinder(r, "Mudkip Collection");
     assert(calls.describe - before <= 1,
       `three cards took ${calls.describe - before} requests`);
     eq(calls.ids[calls.ids.length - 1].length, 3, json(calls.ids));
@@ -801,82 +880,91 @@ describe("C. inside a binder", () => {
 describe("D. not in a binder yet", () => {
 
   test("a Goal in no binder is listed, with its priority", async () => {
+    /* RESTATED (Phase 6 P6-2): "Not in a binder yet" is the Unfiled section —
+       Goals AND copies with no home, derived on every render and never a
+       record. Its header says how many. */
     const ctx = await world();
     const made = await cards(ctx);
     await want(ctx.app, "casey", made.mudkip, "primary");
     await want(ctx.app, "casey", made.firstEdition, "secondary");
     const { r } = await screen(ctx);
-    const said = texts(r);
-    assert(said.includes("Not in a binder yet"), said);
-    assert(said.includes("2 cards"), said);
+    eq(unfiledCount(r), 2, "two Goals with no home");
+    await openUnfiled(r);
+    const said = sectionSays(r, "Unfiled");
     assert(said.includes("Mudkip") && said.includes("Charizard"), said);
-    assert(said.includes("Actively hunting"), said);
-    assert(said.includes("Keeping an eye out"), said);
+    assert(said.includes("Primary") && said.includes("Secondary"), said);
   });
 
   test("it is not a binder: no record, no membership, no count of one", async () => {
+    /* RESTATED (Phase 6 P6-2): "Not in a binder yet" is the Unfiled section —
+       Goals AND copies with no home, derived on every render and never a
+       record. Its header says how many. */
     const ctx = await world();
     const made = await cards(ctx);
     await want(ctx.app, "casey", made.mudkip, "primary");
     const { r } = await screen(ctx);
-    assert(texts(r).includes("Not in a binder yet"), texts(r));
+    eq(unfiledCount(r), 1, texts(r));
     const after = await load(ctx);
     eq(after.binders.length, 0, "a synthetic binder was persisted");
     eq(after.binderEntries.length, 0, "a synthetic membership was persisted");
     /* And the library above it still says there are none. */
     assert(/haven't made a binder yet/i.test(texts(r)), texts(r));
+    assert(/Binders · 0/.test(texts(r)), "Unfiled was counted as a binder");
   });
 
   test("filing it makes it leave, on the authoritative refresh", async () => {
+    /* RESTATED (Phase 6 P6-2): "Not in a binder yet" is the Unfiled section —
+       Goals AND copies with no home, derived on every render and never a
+       record. Its header says how many. */
     const ctx = await world();
     const made = await cards(ctx);
     await want(ctx.app, "casey", made.mudkip, "primary");
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
     const s = await screen(ctx);
-    assert(texts(s.r).includes("Not in a binder yet"), texts(s.r));
-    /* RE-PINNED (Batch 3B-1). Filing the CARD used to make the Goal leave this
-       list, which was the inference the batch removed: a card-level row is not
-       a Goal's home. Filing the GOAL is what settles it, and the card-level row
-       deliberately does NOT — asserted below, because that is the correction. */
+    eq(unfiledCount(s.r), 1, texts(s.r));
     await file(ctx, "casey", mine, made.mudkip);
     await s.refresh();
-    assert(texts(s.r).includes("Not in a binder yet"),
-      "a legacy row was read as the Goal's home: " + texts(s.r));
+    eq(unfiledCount(s.r), 1, "a legacy row was read as the Goal's home: " + texts(s.r));
     const g = await goalFor(ctx, made.mudkip);
     await fileObj(ctx.app, "casey", mine, { goalId: g.id });
     await s.refresh();
-    assert(!texts(s.r).includes("Not in a binder yet"),
-      "a filed Goal is still waiting: " + texts(s.r));
+    eq(unfiledCount(s.r), 0, "a filed Goal is still waiting: " + texts(s.r));
   });
 
   test("taking it out of its last active binder makes it come back", async () => {
+    /* RESTATED (Phase 6 P6-2): "Not in a binder yet" is the Unfiled section —
+       Goals AND copies with no home, derived on every render and never a
+       record. Its header says how many. */
     const ctx = await world();
     const made = await cards(ctx);
     const a = await makeBinder(ctx.app, "casey", "Mudkip Collection");
     const b = await makeBinder(ctx.app, "casey", "Favourites");
     await want(ctx.app, "casey", made.mudkip, "secondary");
-    /* RE-PINNED (Batch 3B-1), AND THE SHAPE OF THE TEST CHANGED WITH THE RULE.
-       A card could be in several binders at once, so "its LAST active binder"
-       was a real question. An OBJECT has one home or none, so there is no last
-       one to count down to: moving it from A to B leaves it filed, and taking
-       it out of B is what brings it back. Moving is one command, which is the
-       other half of the same fact. */
     const g = await goalFor(ctx, made.mudkip);
     await fileObj(ctx.app, "casey", a, { goalId: g.id });
     await want(ctx.app, "casey", made.mudkip, "primary");
     const s = await screen(ctx);
-    assert(!texts(s.r).includes("Not in a binder yet"), texts(s.r));
+    eq(unfiledCount(s.r), 0, texts(s.r));
     /* A move: still filed, and still exactly one row. */
     await fileObj(ctx.app, "casey", b, { goalId: g.id });
     await s.refresh();
-    assert(!texts(s.r).includes("Not in a binder yet"), "a move lost the home: " + texts(s.r));
+    eq(unfiledCount(s.r), 0, "a move lost the home: " + texts(s.r));
     eq((await load(ctx)).binderMemberships.length, 1, "a move made a second membership");
     await unfileObj(ctx.app, "casey", { goalId: g.id });
     await s.refresh();
-    assert(texts(s.r).includes("Not in a binder yet"), texts(s.r));
+    eq(unfiledCount(s.r), 1, texts(s.r));
   });
 
-  test("a Goal whose only binders are put away counts as unfiled", async () => {
+  test("a Goal whose only binder is put away is not hidden, and is not called Unfiled", async () => {
+    /* RESTATED (Phase 6 P6-2), AND THE RULE CHANGED ON PURPOSE.
+       What this protected: a Goal in a binder somebody has put away must not
+       disappear — the old library had no other place that would show it, so it
+       listed such a Goal as "not in a binder yet".
+       Why that answer changes: Phase 6's Your Cards shows every Goal and copy on
+       the same screen, each with its home, so nothing is hidden by a binder being
+       put away — and calling a Goal that HAS a home "Unfiled" would be untrue
+       (doctrine §3: Unfiled is the absence of a home). So it stays filed, and it
+       is shown in Your Cards as living in a binder that is put away. */
     const ctx = await world();
     const made = await cards(ctx);
     const mine = await makeBinder(ctx.app, "casey", "Mudkip Collection");
@@ -885,31 +973,33 @@ describe("D. not in a binder yet", () => {
     await fileObj(ctx.app, "casey", mine, { goalId: g.id });
     await want(ctx.app, "casey", made.mudkip, "primary");
     const s = await screen(ctx);
-    assert(!texts(s.r).includes("Not in a binder yet"), texts(s.r));
+    eq(unfiledCount(s.r), 0, texts(s.r));
     await post(ctx.app, "casey", "setBinderArchived", { binderId: mine, archived: true });
     await s.refresh();
-    assert(texts(s.r).includes("Not in a binder yet"),
-      "an archived binder still counted as a home: " + texts(s.r));
-    /* The membership itself is untouched — this is a question about the
-       binders a person is using, not about the record. Archiving evicts
-       nothing, which the domain has held since 3A. */
+    eq(unfiledCount(s.r), 0, "a Goal with a home was called Unfiled");
+    const yours = sectionSays(s.r, "Your Cards");
+    assert(/Secondary · in Mudkip Collection \(put away\)/.test(yours), "the Goal was hidden: " + yours);
+    /* The membership itself is untouched — archiving evicts nothing. */
     eq((await load(ctx)).binderMemberships.length, 1, "archiving unfiled something");
-    /* And bringing it back settles it again. */
     await post(ctx.app, "casey", "setBinderArchived", { binderId: mine, archived: false });
     await s.refresh();
-    assert(!texts(s.r).includes("Not in a binder yet"), texts(s.r));
+    assert(/Secondary · in Mudkip Collection/.test(sectionSays(s.r, "Your Cards"))
+      && !/put away/.test(sectionSays(s.r, "Your Cards")), sectionSays(s.r, "Your Cards"));
   });
 
   test("stopping looking removes it, because there is no Goal left", async () => {
+    /* RESTATED (Phase 6 P6-2): "Not in a binder yet" is the Unfiled section —
+       Goals AND copies with no home, derived on every render and never a
+       record. Its header says how many. */
     const ctx = await world();
     const made = await cards(ctx);
     await want(ctx.app, "casey", made.mudkip, "primary");
     const s = await screen(ctx);
-    assert(texts(s.r).includes("Not in a binder yet"), texts(s.r));
+    eq(unfiledCount(s.r), 1, texts(s.r));
     const goalId = (await load(ctx)).goals[0].id;
     await post(ctx.app, "casey", "removeGoal", { goalId });
     await s.refresh();
-    assert(!texts(s.r).includes("Not in a binder yet"), texts(s.r));
+    eq(unfiledCount(s.r), 0, texts(s.r));
   });
 
   test("clicking one opens the same Card Specification", async () => {
@@ -917,7 +1007,9 @@ describe("D. not in a binder yet", () => {
     const made = await cards(ctx);
     await want(ctx.app, "casey", made.mudkip, "primary");
     const { r } = await screen(ctx);
-    await press(r, "Open");
+    /* RESTATED (P6-2): the Goal's tile opens the panel. */
+    await openUnfiled(r);
+    await tapTile(r, "Mudkip");
     /* RE-PINNED (Batch 3B-1): the card-level Binder question is gone and the
        home control beside the hunt replaced it. */
     assert(/Are you looking for it\?/i.test(texts(r)), texts(r));
@@ -929,18 +1021,22 @@ describe("D. not in a binder yet", () => {
   });
 
   test("a legacy Goal that names no canonical card is not dressed up as one", async () => {
-    /* A pre-C2 Goal names `cardId` and nothing canonical. It cannot be
-       described, cannot be filed and cannot be specified, so it is not put in a
-       list whose every row promises all three. This is a deliberate
-       consequence of removing the Goals tab and is recorded as debt, not an
-       accident: nothing in production can create one. */
+    /* RESTATED (Phase 6 P6-2). It used to be kept out of the unfiled list,
+       whose every row promised a describable, openable card. On the Phase 6
+       screen every Goal is a tile, so it IS shown — by the name the legacy
+       catalogue gives it — and what is still refused is dressing it up: its
+       tile opens no Card Specification, because it names no canonical card. */
     const ctx = await world();
     const legacy = await load(ctx);
     legacy.catalog = [{ id: "k1", name: "An old card" }];
     legacy.goals = [{ id: "g-legacy", collectorId: "c1", cardId: "k1", tier: "primary" }];
     await ctx.repository.saveWorld(legacy);
     const { r } = await screen(ctx);
-    assert(!texts(r).includes("Not in a binder yet"), texts(r));
+    const yours = sectionSays(r, "Your Cards");
+    assert(/An old card/.test(yours), "a historical Goal vanished: " + yours);
+    const tile = r.root.findAll((n) => n.type === "li" && cls(n).includes("mcs-otile"))
+      .find((n) => instText(n).includes("An old card"));
+    eq(tile.findAll((n) => n.type === "button").length, 0, "a Goal with no canonical card offered to open one");
     /* And it is still there, untouched, for whatever reaches it next. */
     eq((await load(ctx)).goals.length, 1);
   });
@@ -971,7 +1067,7 @@ describe("E. add cards", () => {
     await makeBinder(ctx.app, "casey", "Mudkip Collection");
     const { r } = await shell(ctx);
     await press(r, "Binder");
-    await press(r, "Mudkip Collection");
+    await openBinder(r, "Mudkip Collection");
     await press(r, "Add cards");
     const said = texts(r);
     assert(/Adding to/.test(said), "no note about where they came from: " + said);
@@ -987,7 +1083,7 @@ describe("E. add cards", () => {
     const before = await load(ctx);
     const { r } = await shell(ctx);
     await press(r, "Binder");
-    await press(r, "Mudkip Collection");
+    await openBinder(r, "Mudkip Collection");
     await press(r, "Add cards");
     const during = await load(ctx);
     eq(json(during.binders), json(before.binders), "carrying a binder changed one");
@@ -1115,13 +1211,13 @@ describe("E. add cards", () => {
     await makeBinder(ctx.app, "casey", "Mudkip Collection");
     const { r } = await shell(ctx);
     await press(r, "Binder");
-    await press(r, "Mudkip Collection");
+    await openBinder(r, "Mudkip Collection");
     const before = await load(ctx);
     await press(r, "Add cards");
     await press(r, "Stop adding to it");
     eq(json(await load(ctx)), json(before), "the round trip wrote something");
     await press(r, "Binder");
-    await press(r, "Mudkip Collection");
+    await openBinder(r, "Mudkip Collection");
     assert(/Nothing in this binder yet/.test(texts(r)), texts(r));
   });
 
@@ -1136,7 +1232,7 @@ describe("E. add cards", () => {
     await makeBinder(ctx.app, "casey", "Mudkip Collection");
     const { r } = await shell(ctx);
     await press(r, "Binder");
-    await press(r, "Mudkip Collection");
+    await openBinder(r, "Mudkip Collection");
     await press(r, "Add cards");
     await press(r, "Binder");
     const said = texts(r);
@@ -1147,6 +1243,7 @@ describe("E. add cards", () => {
     await press(r, "Add cards");
     await press(r, "Stop adding to it");
     await press(r, "Binder");
+    await openLibrary(r);  // RESTATED (P6-2): the library section opens on demand
     assert(texts(r).includes("Favourites"), "it did not go back to the library: " + texts(r));
   });
 
@@ -1596,8 +1693,8 @@ describe("G. privacy", () => {
     await want(ctx.app, "casey", made.mudkip, "primary");
     const before = await load(ctx);
     const { r } = await screen(ctx);
-    await press(r, "Mudkip Collection");
-    await press(r, "All binders");
+    await openBinder(r, "Mudkip Collection");
+    await backToLibrary(r);  // RESTATED (P6-2): "‹ Binders"
     const after = await load(ctx);
     eq(json(after), json(before), "looking at a binder changed the world");
     eq((after.interests || []).length, 0, "an Interest appeared");
@@ -1646,14 +1743,14 @@ describe("H. the navigation", () => {
   });
 
   test("Goal priority is still reachable, through the experiences that compose it", async () => {
+    /* RESTATED (P6-2): the tile says the state ("Primary"); its panel still
+       offers both priorities by their intent words. */
     const ctx = await world();
     const made = await cards(ctx);
     await want(ctx.app, "casey", made.mudkip, "primary");
-    /* Binder, without any binder at all, still shows the Goal and its tier. */
     const { r } = await screen(ctx);
-    assert(texts(r).includes("Actively hunting"), texts(r));
-    /* And changing it is the panel's, which the row opens. */
-    await press(r, "Open");
+    assert(/Primary · Unfiled/.test(sectionSays(r, "Your Cards")), texts(r));
+    await tapTile(r, "Mudkip");
     assert(/Are you looking for it/i.test(texts(r)), texts(r));
     assert(/Actively hunting/.test(texts(r)) && /Keeping an eye out/.test(texts(r)), texts(r));
   });
@@ -1726,9 +1823,10 @@ describe("H. the navigation", () => {
       tier: "secondary", since: "2029-01-01" }];
     await ctx.repository.saveWorld(stored);
     const { r } = await screen(ctx);
-    assert(texts(r).includes("Not in a binder yet"), texts(r));
-    assert(texts(r).includes("Keeping an eye out"), texts(r));
-    await press(r, "Open");
+    /* RESTATED (P6-2): Unfiled, its state, and its tile opens the panel. */
+    eq(unfiledCount(r), 1, texts(r));
+    assert(/Secondary · Unfiled/.test(sectionSays(r, "Your Cards")), texts(r));
+    await tapTile(r, "Mudkip");
     /* RE-PINNED (Batch 3B-1), same reason. */
     assert(/Are you looking for it\?/i.test(texts(r)), texts(r));
     /* And saying which copy is wanted is still available to them. */

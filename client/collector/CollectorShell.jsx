@@ -404,10 +404,12 @@ const CSS = `
 .mcs-top { background:var(--panel); border-bottom:1px solid var(--line); padding:14px 16px;
   display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
 .mcs-brand { display:flex; align-items:center; gap:8px; }
-.mcs-mark { width:16px; height:16px; position:relative; display:block; flex:0 0 16px; }
-.mcs-mark i { position:absolute; width:10px; height:10px; border:1.5px solid #4E8C93; display:block; }
-.mcs-mark i:first-child { top:0; left:0; }
-.mcs-mark i:last-child { bottom:0; right:0; border-color:#0A1014; }
+/* Scoped to the brand (P6-2): .mcs-mark is also the card version chip, and
+   the unscoped 16px width squeezed every chip's text on top of the next. */
+.mcs-brand .mcs-mark { width:16px; height:16px; position:relative; display:block; flex:0 0 16px; }
+.mcs-brand .mcs-mark i { position:absolute; width:10px; height:10px; border:1.5px solid #4E8C93; display:block; }
+.mcs-brand .mcs-mark i:first-child { top:0; left:0; }
+.mcs-brand .mcs-mark i:last-child { bottom:0; right:0; border-color:#0A1014; }
 .mcs-word { font-family:var(--font-display); font-weight:700; font-size:15px; letter-spacing:-.01em; }
 .mcs-me { margin-left:auto; text-align:right; min-width:0; }
 .mcs-me .n { font-weight:600; font-size:13.5px; }
@@ -634,8 +636,81 @@ const CSS = `
 .mcs-toast.warn, .mcs-spec-conflict { background:var(--amber-bg); color:var(--amber);
   border:1px solid var(--amber-line); border-radius:10px; }
 
+/* ---- the Binders screen, Phase 6 (P6-2) ----
+   Search and state filters, then three disclosures: the binders (one opens in
+   place), Unfiled, and Your Cards. Tiles are the Collector's own Goals and
+   copies — a picture, then why it matters and where it lives. */
+.mcs-bcontrols { position:sticky; top:52px; z-index:4; background:var(--bg); margin:0 -16px;
+  padding:4px 16px 2px; }
+.mcs-bcontrols .mcs-find { padding:0; margin:0 0 8px; }
+.mcs-bcontrols .mcs-in { border-radius:12px; background:#FFF; font-size:16px; padding:9px 12px; }
+.mcs-lenses { padding:0; margin:0 0 8px; }
+.mcs-bsection { margin-top:10px; }
+.mcs-sechead { display:flex; align-items:baseline; gap:8px; width:100%; text-align:left; border:0;
+  background:none; padding:6px 0 10px 18px; position:relative; font-family:var(--font-display);
+  font-size:11.5px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); }
+.mcs-sechead::before { content:"▸"; position:absolute; left:0; top:4px; font-size:14px;
+  transition:transform .15s; }
+.mcs-sechead[aria-expanded="true"]::before { transform:rotate(90deg); }
+.mcs-sechead .mcs-bmatch { margin-left:auto; text-transform:none; letter-spacing:0; }
+.mcs-covers { display:flex; flex-direction:column; gap:10px; }
+.mcs-bcover { display:block; width:100%; text-align:left; border:1px solid var(--line); background:#FFF;
+  border-radius:16px; overflow:hidden; }
+.mcs-bcover.open { border-color:var(--t1); }
+.mcs-bhead { display:block; width:100%; text-align:left; border:0; background:none; position:relative;
+  padding:12px 12px 12px 30px; }
+.mcs-bhead::before { content:"▸"; position:absolute; left:12px; top:11px; color:var(--muted);
+  font-size:15px; transition:transform .15s; }
+.mcs-bcover.open .mcs-bhead::before { transform:rotate(90deg); }
+.mcs-bline { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+.mcs-bline b { font-size:15.5px; } .mcs-bline span { color:var(--faint); font-size:12.5px; }
+.mcs-bmatch { display:block; margin-top:3px; font-size:11.5px; color:var(--t1); font-weight:600; }
+.mcs-bbody { padding:0 10px 12px; }
+.mcs-openb { display:block; margin:8px 0 0; font-size:12.5px; }
+.mcs-newcover { text-align:center; color:var(--t1); font-weight:600; border-style:dashed; padding:12px; }
+.mcs-newb { margin:0; }
+.mcs-away { align-self:flex-start; font-size:12.5px; }
+.mcs-bempty { margin:0 0 10px; }
+.mcs-results { margin-top:14px; padding-top:12px; border-top:1px solid var(--line); }
+.mcs-rhead { margin:0 0 2px; font-family:var(--font-display); font-size:11.5px; font-weight:700;
+  letter-spacing:.07em; text-transform:uppercase; color:var(--muted); }
+.mcs-rcount { margin:0 0 8px; font-size:12px; color:var(--muted); font-weight:600; }
+/* the tiles: three across on a phone, as in Phase 6's library */
+.mcs-ogrid { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(3, 1fr);
+  gap:12px 8px; }
+.mcs-otile { display:flex; flex-direction:column; min-width:0; }
+.mcs-otap { display:block; width:100%; border:0; background:none; padding:0; text-align:left; }
+button.mcs-otap { cursor:pointer; }
+.mcs-otile-art { display:flex; align-items:center; justify-content:center; aspect-ratio:63/88; width:100%;
+  border-radius:8px; overflow:hidden; background:var(--line-soft); box-shadow:0 1px 2px rgba(10,16,20,.08); }
+.mcs-otile-art img { width:100%; height:100%; object-fit:cover; }
+.mcs-ometa { display:flex; flex-direction:column; gap:1px; margin-top:4px; min-width:0; }
+.mcs-ostate { font-size:10.5px; line-height:1.35; }
+.mcs-mk { display:inline-block; font-size:9.5px; font-weight:600; padding:0 6px; border-radius:999px;
+  border:1px solid currentColor; background:#FFF; }
+.mcs-mk-primary { color:var(--t1); } .mcs-mk-secondary { color:#3E6B8A; } .mcs-mk-pc { color:#5B4B8A; }
+.mcs-mk-trade { color:var(--amber); } .mcs-mk-owned, .mcs-mk-goal { color:var(--muted); }
+.mcs-mk-earlier { color:var(--faint); border-style:dashed; }
+.mcs-ohome { color:var(--text); font-weight:600; } .mcs-ohome.unf { color:var(--muted); font-weight:500; }
+.mcs-oq { font-size:10.5px; line-height:1.3; color:var(--muted); display:-webkit-box; -webkit-line-clamp:2;
+  -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere; }
+/* an opened binder: back, its name, add, and one quiet menu */
+.mcs-bview-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:4px 0 6px; }
+.mcs-bview-head .mcs-binder-name { padding:0; margin:0; flex:1 1 auto; min-width:0; }
+.mcs-back { font-weight:600; text-decoration:none; }
+.mcs-more { border:0; background:none; color:var(--muted); font-size:16px; letter-spacing:1px; padding:0 2px; }
+.mcs-menu { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 10px; }
+.mcs-ostatus { font-size:10.5px; font-weight:600; color:var(--t1); }
+.mcs-oconflict { font-size:10.5px; color:var(--amber); }
+.mcs-oview { align-self:flex-start; font-size:11px; padding:0; }
+.mcs-ofacts { display:flex; flex-direction:column; gap:2px; margin-top:4px; padding:6px 8px; border-radius:8px;
+  background:#FFF; border:1px solid var(--line); }
+.mcs-ofacts .mcs-fact { font-size:11px; }
+.mcs-bsum { margin:0 0 10px; font-size:12.5px; color:var(--muted); } .mcs-bsum b { color:var(--text); font-size:15px; }
+
 @media (min-width:600px) {
   .mcs-br-grid { grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); }
+  .mcs-ogrid { grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); }
 }
 
 /* a wide screen: the same four down the side, light */

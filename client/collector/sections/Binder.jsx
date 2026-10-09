@@ -1,4 +1,45 @@
 /* ============================================================================
+   PHASE 6 P6-2 — THE BINDERS SCREEN, IN THE PHASE 6 SHAPE
+   The frozen Phase 6 prototype (phase6-prototype-01 @ fca2c61, iteration 8E)
+   is the reference. One screen, top to bottom:
+
+     search · state filters      All · Primary · Secondary · PC · Trade / Sell
+     ▸ Binders · N               closed on arrival; one binder opens in place
+     ▸ Unfiled · N               closed on arrival; Goals and copies with no home
+     Your Cards                  every Goal and copy, with its state and home
+
+   WHAT A TILE IS. Every tile is ONE durable object the server sent — a Goal or
+   a CollectorCopy — never a catalogue card and never a derived record. Its
+   state is read straight off the row: a Goal's tier; a copy's `offered`
+   (Trade / Sell) or `keeping` (PC); a copy that has said neither is shown as
+   "Owned" and is never given a state it did not state. Its home is its one
+   membership, or none ("Unfiled", a UI value and not a binder).
+
+   THE FILTERS ARE THE OLD VIEW CHIPS, MADE ONE GRAMMAR. Production had five
+   mutually exclusive views (My Binders, All Cards, Primary, Secondary,
+   Trade/Sell) and no PC view. Phase 6 makes state a FILTER over everything on
+   the screen at once — binders, Unfiled and Your Cards narrow together — and
+   adds PC, which is one of the four states the doctrine names. Search and
+   filters change only what is seen: nothing is written, nothing is stored,
+   and the catalogue is never asked (that is Browse's job).
+
+   NOTHING IS HIDDEN. A Goal or copy in a binder that has been put away keeps
+   that home — it is not Unfiled — so it stays reachable in Your Cards,
+   labelled with the binder it is in and that the binder is put away. Rows
+   filed before Binders organised specific objects (legacy entries) are shown
+   inside their binder as earlier filings, read and removed only.
+
+   EVERY WRITE IS AN EXISTING ONE. Make, rename, put away and bring back are
+   single commands on a deliberate press; anything about a card opens the Card
+   Specification; an opened binder keeps production's Move and Remove on each
+   object. Press-and-hold filing is P6-3; the card sheet redesign is P6-4.
+   There is no delete, because the domain has none.
+
+   What follows is the earlier header, kept because its reasoning still holds
+   for the parts it describes.
+   ========================================================================== */
+
+/* ============================================================================
    BINDER — WHERE A CARD BELONGS (Phase 5 C3.4)
 
    A Collector's own named groupings of canonical cards. C3.1 built the concept
@@ -59,403 +100,455 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useCardDescriptions } from "../card-descriptions.js";
-import { Panel, Tag } from "../parts.jsx";
 import CardArt from "../../card-art.jsx";
 import CardSpecification from "../CardSpecification.jsx";
-import Collection, { COLLECTION_VIEWS } from "./Collection.jsx";
-import { rows, text, plural, tierIntent, tierLabel, byRecency } from "../present.js";
+import Collection from "./Collection.jsx";
+import { Fact } from "../parts.jsx";
+import { rows, text, plural, byRecency, indexById, cardTitle, criteriaLine, gradeLine,
+  statusLabel, isGraded, money, day, photoNote, gradeConflictLine } from "../present.js";
+
+const LENSES = Object.freeze([["all", "All"], ["primary", "Primary"], ["secondary", "Secondary"],
+  ["pc", "PC"], ["trade", "Trade / Sell"]]);
+const MEANING = Object.freeze({ primary: "Primary", secondary: "Secondary", pc: "PC",
+  trade: "Trade / Sell", owned: "Owned", goal: "Goal", earlier: "Earlier filing" });
+
+/* WHAT AN EMPTY STATE SAYS, per filter — production's own sentences, kept
+   (C2, C3.4b), and one for PC, which had no view before P6-2. */
+const EMPTY_FOR = Object.freeze({
+  all: "Cards you're looking for or own will appear here. Find one in Browse.",
+  primary: "You aren't actively hunting anything. A Primary Goal is a card you're chasing now; "
+    + "your Trusted Partners work from it.",
+  secondary: "Nothing on your watchlist. A Secondary Goal is a card you're keeping an eye out for "
+    + "rather than chasing.",
+  pc: "Nothing in your Personal Collection yet. PC is a copy you own and are keeping — your "
+    + "Trusted Partners don't see it.",
+  trade: "You're not offering any of your copies right now. Offering one is a separate choice "
+    + "from owning it — your Trusted Partners see only what you offer.",
+});
+
+/* The card a row names, as a key: canonical, legacy, or the copy itself. */
+const idText = (v) => (v == null ? "" : String(v));
+const cardKeyOf = (canonicalCardId, cardId, copyId = null) => (idText(canonicalCardId)
+  || (idText(cardId) ? `legacy:${idText(cardId)}` : idText(copyId) ? `copy:${idText(copyId)}` : null));
+
+/* WHY THIS THING MATTERS, read off the row (never inferred). */
+const goalMeaning = (g) => (g.tier === "primary" || g.tier === "secondary" ? g.tier : "goal");
+const copyMeaning = (c) => (c.offered === true ? "trade" : c.keeping === true ? "pc" : "owned");
+
+/* Every Goal and copy the server sent, each once, with its one home. */
+export function objectsOf(state) {
+  const binders = rows(state && state.binders);
+  const memberships = rows(state && state.binderMemberships);
+  const byId = new Map(binders.map((b) => [b.id, b]));
+  const homeOf = new Map();
+  for (const m of memberships) {
+    if (m.goalId) homeOf.set(`g:${m.goalId}`, m.binderId);
+    else if (m.collectorCopyId) homeOf.set(`c:${m.collectorCopyId}`, m.binderId);
+  }
+  const at = (key) => {
+    const homeId = homeOf.get(key) || null;
+    const b = homeId ? byId.get(homeId) || null : null;
+    return { homeId, homeName: b ? text(b.name) || "A binder" : null, homeAway: !!(b && b.archivedAt) };
+  };
+  return [
+    ...rows(state && state.goals).map((g) => ({ key: `g:${g.id}`, kind: "goal", thing: g,
+      cardKey: cardKeyOf(g.canonicalCardId, g.cardId), meaning: goalMeaning(g),
+      qual: criteriaLine(g.desired), at: g.secondarySince || g.createdAt || null, ...at(`g:${g.id}`) })),
+    ...rows(state && state.collectorCopies).map((c) => ({ key: `c:${c.id}`, kind: "copy", thing: c,
+      cardKey: cardKeyOf(c.canonicalCardId, c.cardId, c.id), meaning: copyMeaning(c),
+      qual: gradeLine(c), at: c.addedAt || null, ...at(`c:${c.id}`) })),
+  ];
+}
 
 export default function Binder({ state, onBrowseCards = null, onSpecify = null,
   onCreateBinder = null, onRenameBinder = null, onArchiveBinder = null,
   onAddCards = null, fillingBinder = null,
-  /* Handed down and passed straight through to the card list, which is where a
-     filed object's `Move` and `Remove from Binder` live. This section names no
-     command, as it never has. */
+  /* Handed down and passed straight through to the opened binder's object
+     rows, which is where Move and Remove from Binder live. This section names
+     no command, as it never has. */
   onFileObject = null, onUnfileObject = null }) {
   const binders = rows(state && state.binders);
   const entries = rows(state && state.binderEntries);
-  const goals = rows(state && state.goals);
-  /* WHAT IS FILED WHERE (Batch 3B-1). A membership names one Goal or one
-     CollectorCopy; `collectorCopies` is read for the same reason, because a
-     copy filed here is part of what this binder holds and the count has to see
-     the card it names. That is the C3.4 source guard being deliberately
-     reversed — see the header. */
-  const memberships = rows(state && state.binderMemberships);
-  const copies = rows(state && state.collectorCopies);
+  const catalog = indexById(state && state.catalog);
 
-  /* WHERE THEY WERE, WHEN THEY WERE SENT AWAY TO BROWSE. The shell remounts a
-     section when it changes, so coming back from "Add cards" would otherwise
-     land in the library rather than in the binder somebody is filling. The
-     shell is already holding that binder transiently for Browse's sake, so
-     this reads it rather than keeping a second memory: while a binder is being
-     filled, it is the binder this section opens on. It is not restoration and
-     there is nothing stored — stop filling, and this is null again. */
+  /* WHERE THEY WERE, WHEN THEY WERE SENT AWAY TO BROWSE (C3.4): while a binder
+     is being filled, it is the binder this section opens on. */
   const [open, setOpen] = useState(fillingBinder ? fillingBinder.binderId : null);
-  /* WHICH COLLECTION VIEW IS SHOWING, AND WHAT IS TYPED IN THE BOX. Both are
-     this section's own transient state: no command, no durable fact, and
-     nothing the server is told. Clearing the box restores the view exactly. */
-  const [collectionView, setCollectionView] = useState("binders");
+  /* Screen state only — none of it is written anywhere. */
   const [query, setQuery] = useState("");
+  const [lens, setLens] = useState("all");
+  /* Closed on arrival, as in Phase 6 — except when there are no binders yet:
+     then the section's content IS the sentence saying what a binder is and the
+     way to make one, and a closed header would hide both. */
+  const [sectionOpen, setSectionOpen] = useState(() => !binders.some((b) => !b.archivedAt));
+  const [expanded, setExpanded] = useState(null);
+  const [unfiledOpen, setUnfiledOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [making, setMaking] = useState(false);
   const [newName, setNewName] = useState("");
   const [renaming, setRenaming] = useState(null);  // { id, name }
+  const [manage, setManage] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState(null);
+  const [toast, setToast] = useState(null);
   const [specifying, setSpecifying] = useState(null);
+  /* A copy's own facts, opened in place from its tile ("Details", Phase 6's
+     tile link) — the facts Your Cards always showed, so none of them needs
+     the Card Specification to be read. Several may be open at once. */
+  const [peek, setPeek] = useState(() => new Set());
 
-  const active = useMemo(() => byRecency(binders.filter((b) => !b.archivedAt), "createdAt"),
-    [binders]);
-  const archived = useMemo(() => byRecency(binders.filter((b) => b.archivedAt), "archivedAt"),
-    [binders]);
-  /* ONE COUNT, ONE DERIVATION. This used to count raw rows while `Collection`
-     counted the cards it could actually name and de-duplicated them, so the
-     library could say "3 cards" over a binder that then opened showing one.
-     Two live derivations of one fact are two answers to it; this asks the
-     question `Collection` asks — how many distinct cards are filed here. */
-  /* HOW MANY CARDS OPENING THIS BINDER SHOWS, WHICH IS WHAT THE COUNT HAS
-     ALWAYS CLAIMED (Batch 3B-1).
+  const active = useMemo(() => byRecency(binders.filter((b) => !b.archivedAt), "createdAt"), [binders]);
+  const archived = useMemo(() => byRecency(binders.filter((b) => b.archivedAt), "archivedAt"), [binders]);
+  const objs = useMemo(() => byRecency(objectsOf(state), "at"), [state]);
+  /* Earlier filings: card-level rows from before object Binders. Shown inside
+     their binder only — history, never an object, never Unfiled. */
+  const earlierIn = (binderId) => [...new Map(entries.filter((e) => e.binderId === binderId)
+    .map((e) => [cardKeyOf(e.canonicalCardId, e.cardId), e])).values()]
+    .map((e) => ({ key: `e:${binderId}:${cardKeyOf(e.canonicalCardId, e.cardId)}`, kind: "earlier",
+      cardKey: cardKeyOf(e.canonicalCardId, e.cardId), meaning: "earlier", qual: null,
+      homeId: binderId, homeName: null, homeAway: false }))
+    .filter((o) => o.cardKey);
 
-     The axis stays the CARD. A binder now holds objects — a Goal and two of
-     three copies of one card are three things — but the Collector reads it
-     under card headings, so "2 cards" is still the honest number and still
-     equals what the binder opens showing. Counting objects instead would turn
-     this into the inventory metric the library has always refused.
-
-     Three sources, one set: the card each filed Goal names, the card each filed
-     copy names, and the card each legacy row names. */
-  const cardKeyOf = (canonicalCardId, cardId) => (canonicalCardId != null && canonicalCardId !== ""
-    ? String(canonicalCardId)
-    : cardId != null && cardId !== "" ? `legacy:${cardId}` : null);
-  const goalById = new Map(goals.map((g) => [g.id, g]));
-  const copyById = new Map(copies.map((c) => [c.id, c]));
-  const cardsIn = (binderId) => {
-    const out = new Set();
-    for (const m of memberships) {
-      if (m.binderId !== binderId) continue;
-      const thing = m.goalId ? goalById.get(m.goalId) : copyById.get(m.collectorCopyId);
-      const key = thing && cardKeyOf(thing.canonicalCardId, thing.cardId);
-      if (key) out.add(key);
-    }
-    for (const e of entries) {
-      if (e.binderId !== binderId) continue;
-      const key = cardKeyOf(e.canonicalCardId, e.cardId);
-      if (key) out.add(key);
-    }
-    return out;
-  };
-  const countOf = (binderId) => cardsIn(binderId).size;
-
-  /* DERIVED, EVERY RENDER: THE GOALS WITH NO HOME (Batch 3B-1 corrected this).
-
-     IT USED TO ANSWER THE WRONG QUESTION. The old derivation collected the
-     canonical cards named by every entry in an active binder and called a Goal
-     filed if its CARD was among them — so a Goal counted as filed because
-     somebody had once put that card in a binder, possibly before the Goal
-     existed and with no connection to it. That is the card-level answer
-     standing in for an object-level one, and it was wrong on the day it was
-     written; it simply had no better fact available.
-
-     Now there is one. A Goal is unfiled when THAT GOAL has no membership. A
-     legacy entry for the same card says nothing about it — not even when the
-     Goal is the only thing the entry could have meant.
-
-     ARCHIVED STILL DOES NOT COUNT, for the reason the header gives: a Goal in a
-     binder you have put away is a Goal you cannot see, so the list that exists
-     to surface forgotten Goals must surface it. */
-  const activeIds = new Set(active.map((b) => b.id));
-  const goalsWithHome = new Set(memberships
-    .filter((m) => m.goalId && activeIds.has(m.binderId))
-    .map((m) => m.goalId));
-  /* AND A GOAL THAT NAMES NO CANONICAL CARD STAYS OUT, as it always has. Every
-     row in this list promises a describable card and an Open that reaches the
-     specification panel, and a pre-C2 Goal naming only `cardId` can do neither
-     — it would render as "A card" over a button that opens nothing. 3B-1 makes
-     such a Goal FILEABLE for the first time (`fileObject` names the Goal, not
-     its card), which is a reason to revisit the list's promise and not a reason
-     to put an unopenable row in front of somebody. Recorded as debt, as it was:
-     nothing in production can create one. */
-  const unfiled = goals.filter((g) => g.canonicalCardId && !goalsWithHome.has(g.id));
-
-  const looking = open ? binders.find((b) => b.id === open) || null : null;
-
-  /* ONE REQUEST FOR THE IDS ON SCREEN, the way Goals has asked since Batch 7:
-     never one per row, never the legacy catalogue. */
-  /* ONLY THE UNFILED GOALS NOW. The cards inside a binder, and the cards in a
-     collection view, are described by `Collection` itself — asking for them
-     here as well would be two requests for one screen. This list is the one
-     thing this file still renders on its own. */
-  const shownIds = useMemo(() => [...new Set(unfiled.map((g) => g.canonicalCardId))],
-    [unfiled.map((g) => g.canonicalCardId).join(",")]);
+  /* ONE REQUEST FOR THE CARDS ON SCREEN, never one per tile — and only the
+     ones on screen: earlier filings are asked about when their binder is
+     opened, not on arrival, because a closed binder shows none of them. */
+  const searching = Boolean(text(query));
+  const activeIdsForSearch = new Set(binders.filter((b) => !b.archivedAt).map((b) => b.id));
+  /* ...and while a search is typed, the earlier filings of every active
+     binder too, so a closed binder's match count is true rather than "No
+     matches" over a card that simply has not been named yet. */
+  const shownEntries = entries.filter((e) => e.binderId === expanded || e.binderId === open
+    || (searching && activeIdsForSearch.has(e.binderId)));
+  const cardKeys = [...new Set([...objs.map((o) => o.cardKey), ...shownEntries.map((e) => cardKeyOf(e.canonicalCardId, e.cardId))]
+    .filter((k) => k && !k.startsWith("legacy:") && !k.startsWith("copy:")))];
   const cards = useCardDescriptions(onBrowseCards);
   const { described, describe } = cards;
-  useEffect(() => { describe(shownIds); }, [shownIds.join(","), describe]);
+  useEffect(() => { describe(cardKeys); }, [cardKeys.join(","), describe]);
 
-  const run = async (fn, what) => {
-    if (busy) return;
-    setBusy(true); setProblem(null);
+  /* SEARCH: what is already yours — name, set, number, version. */
+  const needle = text(query) ? text(query).toLowerCase() : null;
+  const nameOf = (o) => {
+    const known = described[o.cardKey];
+    if (known && known.cardName) return known.cardName;
+    const legacy = o.cardKey && o.cardKey.startsWith("legacy:") ? catalog.get(o.cardKey.slice(7)) : null;
+    return cardTitle(legacy) || (o.cardKey && o.cardKey.startsWith("copy:")
+      ? "A copy you haven't identified yet" : "Loading this card…");
+  };
+  const matches = (o) => {
+    if (!needle) return true;
+    const known = described[o.cardKey];
+    const legacy = o.cardKey && o.cardKey.startsWith("legacy:") ? catalog.get(o.cardKey.slice(7)) : null;
+    const hay = [known && known.cardName, known && known.expansionName,
+      known && known.collectorNumber && `#${known.collectorNumber}`, known && known.finish,
+      legacy && legacy.name, legacy && legacy.set, legacy && legacy.num]
+      .filter(Boolean).join(" ").toLowerCase();
+    return hay.includes(needle);
+  };
+  const inLens = (o) => lens === "all" || o.meaning === lens;
+  const filtering = Boolean(needle) || lens !== "all";
+  const visible = (list) => list.filter((o) => inLens(o) && matches(o));
+  const lensLabel = (LENSES.find(([id]) => id === lens) || [])[1];
+  const noMatch = (where) => (needle
+    ? `Nothing ${lens !== "all" ? `${lensLabel} ` : ""}${where} matches “${text(query)}”.`
+    : `No ${lensLabel} cards ${where}.`);
+
+  const run = async (fn, what, done = null) => {
+    if (busy) return false;
+    setBusy(true); setProblem(null); setToast(null);
     try {
       const answer = await fn();
       if (answer && answer.ok === false) {
-        setProblem(answer.refused === "name-required"
-          ? "A binder needs a name."
-          : `MetYet would not ${what}. Try again.`);
+        setProblem(answer.refused === "name-required" ? "A binder needs a name." : `MetYet would not ${what}. Try again.`);
+        return false;
       }
+      if (done) setToast(done);
+      return true;
     } catch (error) {
-      setProblem(`MetYet lost contact, so it cannot tell whether that worked. `
-        + "Check your binders before trying again.");
+      setProblem("MetYet lost contact, so it cannot tell whether that worked. Check your binders before trying again.");
+      return false;
     } finally { setBusy(false); }
   };
-
   const create = async () => {
     const name = newName.trim();
     if (!name || !onCreateBinder) return;
-    await run(() => onCreateBinder(name), "make that binder");
-    setNewName("");
+    if (await run(() => onCreateBinder(name), "make that binder", `Made “${name}”.`)) {
+      setNewName(""); setMaking(false); setSectionOpen(true);
+    }
   };
-
   const saveName = async () => {
     const name = (renaming && renaming.name || "").trim();
     if (!name || !onRenameBinder) return;
-    await run(() => onRenameBinder(renaming.id, name), "rename that binder");
-    setRenaming(null);
+    if (await run(() => onRenameBinder(renaming.id, name), "rename that binder", `Renamed to “${name}”.`)) setRenaming(null);
   };
+  const putAway = (b, away) => onArchiveBinder && run(() => onArchiveBinder(b.id, away),
+    away ? "put that binder away" : "bring that binder back",
+    away ? `Put “${text(b.name) || "the binder"}” away. Bring it back from Binders.` : `Brought “${text(b.name) || "the binder"}” back.`);
 
-  /* THE VIEW SELECTOR AND THE SEARCH BOX, shared by both branches below so the
-     two cannot drift apart. Selecting a collection view closes any open binder,
-     because they answer different questions and showing both at once would be
-     asking the person which one they are looking at. */
-  const chooseView = (id) => { setCollectionView(id); setOpen(null); setQuery(""); };
-  const searchable = Boolean(looking) || collectionView !== "binders";
-  const chrome = (
-    <>
-      <p className="mcs-views" role="group" aria-label="Collection views">
-        {COLLECTION_VIEWS.map((v) => (
-          <button key={v.id} type="button"
-            className={`mcs-view${(looking ? v.id === "binders" : collectionView === v.id)
-              ? "" : " quiet"}`}
-            aria-pressed={looking ? v.id === "binders" : collectionView === v.id}
-            onClick={() => chooseView(v.id)}>
-            {v.label}
-          </button>
+  const openCard = (o) => {
+    const known = described[o.cardKey];
+    return onSpecify && known ? () => setSpecifying(known) : null;
+  };
+  const where = (o, thisBinderId = null) => (thisBinderId && o.homeId === thisBinderId ? "This binder"
+    : o.homeName ? `in ${o.homeName}${o.homeAway ? " (put away)" : ""}` : "Unfiled");
+
+  /* ONE TILE: the art, then WHY it matters (state) and WHERE it lives (home). */
+  /* Render helpers, called as functions — not components defined inside the
+     render, which React would remount on every keystroke. */
+  const tile = (o, showHome = true) => {
+    const known = described[o.cardKey] || null;
+    const go = openCard(o);
+    const name = nameOf(o);
+    /* Identity first — name, number, set and version — then this object's own
+       grading or criteria. Never another object's. */
+    const line = [known && known.collectorNumber ? `${name} #${known.collectorNumber}` : name,
+      known && text(known.expansionName), known && known.finish, o.qual].filter(Boolean).join(" · ");
+    const art = <CardArt src={known && known.imageSmall} name={known && known.cardName}
+      wrap="mcs-otile-art" plate="mcs-art-plate" decorative />;
+    const copy = o.kind === "copy" ? o.thing : null;
+    /* THE SERVER'S STATUS, when it is not the ordinary one: a copy in a deal
+       says so on its tile, in the server's own word. */
+    const status = copy && copy.status && copy.status !== "available" ? statusLabel(copy.status) : null;
+    const peekable = Boolean(copy);
+    const peeking = peekable && peek.has(o.key);
+    const togglePeek = () => setPeek((held) => {
+      const next = new Set(held); if (next.has(o.key)) next.delete(o.key); else next.add(o.key); return next;
+    });
+    const conflict = copy ? gradeConflictLine(copy) : null;
+    return (
+      <li className="mcs-otile" key={o.key} data-key={o.key}>
+        {go ? (
+          <button type="button" className="mcs-otap" onClick={go}
+            aria-label={`${name}, ${MEANING[o.meaning]}, ${where(o)}`}>{art}</button>
+        ) : peekable ? (
+          <button type="button" className="mcs-otap" onClick={togglePeek}
+            aria-label={`${name}, ${MEANING[o.meaning]}, ${where(o)}`}>{art}</button>
+        ) : <span className="mcs-otap">{art}</span>}
+        <span className="mcs-ometa">
+          <span className="mcs-ostate">
+            <span className={`mcs-mk mcs-mk-${o.meaning}`}>{MEANING[o.meaning]}</span>
+            {showHome ? <span className={`mcs-ohome${o.homeId ? "" : " unf"}`}>{` · ${where(o)}`}</span> : null}
+          </span>
+          <span className="mcs-oq">{line}</span>
+          {status ? <span className="mcs-ostatus">{status}</span> : null}
+          {/* A COPY THAT DISAGREES WITH ITSELF SAYS SO (C3.3), on its tile. */}
+          {conflict ? <span className="mcs-oconflict">{`Says ${conflict}`}</span> : null}
+          {peekable ? (
+            <button type="button" className="mcs-linkish mcs-oview" aria-expanded={peeking}
+              onClick={togglePeek}>{peeking ? "Hide details" : "Details"}</button>
+          ) : null}
+          {peeking ? (
+            <span className="mcs-ofacts">
+              <Fact label={isGraded(copy) ? "Cert" : "Serial"} value={text(copy.cert)} />
+              <Fact label="Your reference value" value={money(copy.market)} />
+              <Fact label="Added" value={day(copy.addedAt)} />
+              <Fact label="Photos" value={photoNote(copy.photos)} />
+              <Fact label="Status" value={statusLabel(copy.status)} />
+            </span>
+          ) : null}
+        </span>
+      </li>
+    );
+  };
+  const grid = (list, showHome = true) => (
+    <ul className="mcs-ogrid">{list.map((o) => tile(o, showHome))}</ul>
+  );
+  const controls = (placeholder = "Search your cards") => (
+    <div className="mcs-bcontrols">
+      <p className="mcs-find">
+        <input className="mcs-in" type="search" value={query} placeholder={placeholder}
+          aria-label="Search your cards" onChange={(e) => setQuery(e.target.value)} />
+        {text(query) ? <button className="mcs-linkish" type="button" onClick={() => setQuery("")}>Clear</button> : null}
+      </p>
+      <p className="mcs-views mcs-lenses" role="group" aria-label="Show">
+        {LENSES.map(([id, label]) => (
+          <button key={id} type="button" className="mcs-view" aria-pressed={lens === id}
+            onClick={() => setLens(id)}>{label}</button>
         ))}
       </p>
-      {/* SEARCHES WHAT IS ALREADY YOURS, NOT THE CATALOGUE. It filters the view
-          on screen using descriptions that view already holds. Finding a card
-          MetYet has but you have said nothing about is Browse's job.
-
-          ONLY WHERE IT FILTERS SOMETHING. The library — your binders, by name —
-          is not a list of cards and this box never filtered it; rendering it
-          there offered a search that silently did nothing to what was on
-          screen. It appears with a collection view, and inside an opened binder
-          where it searches that binder's cards. */}
-      {searchable ? (
-      <p className="mcs-find">
-        <input className="mcs-in" type="search" value={query}
-          placeholder="Search your cards…" aria-label="Search your cards"
-          onChange={(e) => setQuery(e.target.value)} />
-        {text(query) ? (
-          <button className="mcs-linkish" type="button" onClick={() => setQuery("")}>Clear</button>
-        ) : null}
-      </p>
-      ) : null}
+    </div>
+  );
+  const feedback = () => (
+    <>
+      {problem ? <p className="mcs-add-problem" role="alert">{problem}</p> : null}
+      {toast && !problem ? <p className="mcs-toast" role="status">{toast}</p> : null}
     </>
   );
+  const spec = () => (specifying ? (
+    <div className="mcs-spec-scrim">
+      <CardSpecification card={specifying} context={specifying} state={state}
+        onCommit={onSpecify} onClose={() => setSpecifying(null)} />
+    </div>
+  ) : null);
+  const renameSheet = renaming ? (
+    <div className="mcs-sheet-scrim" role="dialog" aria-label="Rename binder">
+      <div className="mcs-sheet">
+        <strong>Rename binder</strong>
+        <input className="mcs-in" value={renaming.name} aria-label="Binder name" disabled={busy} autoFocus
+          onChange={(e) => setRenaming({ id: renaming.id, name: e.target.value })} />
+        <p className="mcs-goal-do">
+          <button className="mcs-go" type="button" disabled={busy || !renaming.name.trim()} onClick={saveName}>Save name</button>
+          <button className="mcs-go quiet" type="button" disabled={busy} onClick={() => setRenaming(null)}>Cancel</button>
+        </p>
+      </div>
+    </div>
+  ) : null;
 
-  /* ---------------------------------------------------------- A BINDER */
+  /* ---------------------------------------------------- AN OPENED BINDER */
+  const looking = open ? binders.find((b) => b.id === open) || null : null;
   if (looking) {
+    const inside = objs.filter((o) => o.homeId === looking.id);
+    const counts = LENSES.slice(1).map(([id, label]) => [label, inside.filter((o) => o.meaning === id).length])
+      .filter(([, n]) => n);
+    const unsorted = inside.filter((o) => o.meaning === "owned").length;
+    const earlier = earlierIn(looking.id).length;
     return (
       <>
-        {specifying ? (
-          <div className="mcs-spec-scrim">
-            <CardSpecification card={specifying} context={specifying} state={state}
-              onCommit={onSpecify} onClose={() => setSpecifying(null)} />
-          </div>
+        {spec()}
+        {renameSheet}
+        <div className="mcs-bview-head">
+          <button className="mcs-linkish mcs-back" type="button"
+            onClick={() => { setOpen(null); setQuery(""); setLens("all"); setManage(false); }}>‹ Binders</button>
+          <p className="mcs-binder-name">
+            {text(looking.name) || "A binder"}
+            {looking.archivedAt ? <span className="mcs-dim"> — put away</span> : null}
+          </p>
+          {!looking.archivedAt && onAddCards ? (
+            <button className="mcs-linkish" type="button"
+              onClick={() => onAddCards({ binderId: looking.id, name: looking.name })}>+ Add cards</button>
+          ) : null}
+          <button className="mcs-more" type="button" aria-label={`Manage ${text(looking.name) || "this binder"}`}
+            aria-expanded={manage} onClick={() => setManage((m) => !m)}>•••</button>
+        </div>
+        {manage ? (
+          <p className="mcs-menu" role="menu">
+            {onRenameBinder && !looking.archivedAt ? (
+              <button role="menuitem" type="button" className="mcs-go quiet" disabled={busy}
+                onClick={() => { setManage(false); setRenaming({ id: looking.id, name: text(looking.name) || "" }); }}>
+                Rename binder
+              </button>
+            ) : null}
+            {looking.archivedAt ? (
+              <button role="menuitem" type="button" className="mcs-go" disabled={busy}
+                onClick={() => { setManage(false); putAway(looking, false); }}>Bring back</button>
+            ) : (
+              <button role="menuitem" type="button" className="mcs-go quiet" disabled={busy}
+                onClick={() => { setManage(false); putAway(looking, true); }}>Put away</button>
+            )}
+          </p>
         ) : null}
-        <p className="mcs-binder-name">
-          {text(looking.name) || "A binder"}
-          {/* AND SAY WHEN IT IS PUT AWAY (Batch 3B-1 fixed this). An archived
-              binder opened in the same view as a live one, with nothing saying
-              so and a live "Add cards" button — which routed to a panel where
-              this binder could not be chosen at all, because nothing new may be
-              filed into one. The route is gone and the state is stated. */}
-          {looking.archivedAt ? <span className="mcs-dim"> — put away</span> : null}
+        {feedback()}
+        <p className="mcs-bsum" aria-label="What's here">
+          <b>{plural(inside.length + earlier, "card", "cards")}</b>
+          {counts.map(([label, n]) => <span key={label}>{` · ${n} ${label}`}</span>)}
+          {unsorted ? <span>{` · ${unsorted} not yet sorted`}</span> : null}
+          {earlier ? <span>{` · ${earlier} earlier ${earlier === 1 ? "filing" : "filings"}`}</span> : null}
         </p>
-        {chrome}
-        {/* ONE COMPONENT FOR EVERY LIST OF CARDS, so a binder's cards and a
-            collection view are read the same way and the copies a person owns
-            appear in both. */}
-        <Collection state={state} view={{ kind: "binder", binderId: looking.id }}
+        {controls(`Search ${text(looking.name) || "this binder"}`)}
+        <Collection state={state} view={{ kind: "binder", binderId: looking.id }} lens={lens}
           query={query} onBrowseCards={onBrowseCards} onSpecify={onSpecify} descriptions={cards}
           onFileObject={onFileObject} onUnfileObject={onUnfileObject} />
-        <p className="mcs-goal-do">
-          {looking.archivedAt ? (
-            <button className="mcs-go" type="button" disabled={busy}
-              onClick={() => onArchiveBinder && run(() => onArchiveBinder(looking.id, false),
-                "bring that binder back")}>
-              Bring back
-            </button>
-          ) : (
-            <button className="mcs-go" type="button" disabled={busy}
-              onClick={() => onAddCards && onAddCards({ binderId: looking.id, name: looking.name })}>
-              Add cards
-            </button>
-          )}
-          <button className="mcs-go quiet" type="button" onClick={() => { setOpen(null); setQuery(""); }}>
-            All binders
-          </button>
-        </p>
       </>
     );
   }
 
-  /* --------------------------------------------------------- THE LIBRARY */
-  return (
-    <>
-      {specifying ? (
-        <div className="mcs-spec-scrim">
-          <CardSpecification card={specifying} context={specifying} state={state}
-            onCommit={onSpecify} onClose={() => setSpecifying(null)} />
-        </div>
-      ) : null}
-
-      {chrome}
-      {collectionView !== "binders" ? (
-        <Collection state={state} view={{ kind: collectionView }} query={query}
-          onBrowseCards={onBrowseCards} onSpecify={onSpecify} descriptions={cards} />
-      ) : null}
-
-      {collectionView !== "binders" ? null : (
-      <>
-      <Panel
-        title="Your binders"
-        note={active.length ? plural(active.length, "binder", "binders") : null}
-        empty={active.length ? null
-          : "You haven't made a binder yet. A binder is your own grouping of cards — where a "
-            + "card belongs, which is a different thing from wanting it or owning it."}
-      >
-        {active.map((b) => (
-          <article className="mcs-binder" key={b.id}>
-            {renaming && renaming.id === b.id ? (
-              <p className="mcs-spec-new">
-                <input className="mcs-in" value={renaming.name} aria-label="Binder name"
-                  disabled={busy}
-                  onChange={(e) => setRenaming({ id: b.id, name: e.target.value })} />
-                <button className="mcs-go" type="button" disabled={busy || !renaming.name.trim()}
-                  onClick={saveName}>Save name</button>
-                <button className="mcs-go quiet" type="button" disabled={busy}
-                  onClick={() => setRenaming(null)}>Cancel</button>
-              </p>
-            ) : (
-              <div className="mcs-binder-head">
-                <button className="mcs-binder-open" type="button" onClick={() => { setOpen(b.id); setQuery(""); }}>
-                  <span className="mcs-rec-t">{text(b.name) || "A binder"}</span>
-                  <span className="mcs-rec-s">{plural(countOf(b.id), "card", "cards")}</span>
-                </button>
-                <span className="mcs-binder-do">
-                  <button className="mcs-linkish" type="button" disabled={busy}
-                    onClick={() => setRenaming({ id: b.id, name: text(b.name) || "" })}>
-                    Rename
-                  </button>
-                  <button className="mcs-linkish" type="button" disabled={busy}
-                    onClick={() => onArchiveBinder && run(() => onArchiveBinder(b.id, true),
-                      "put that binder away")}>
-                    Put away
-                  </button>
-                </span>
-              </div>
-            )}
-          </article>
-        ))}
-      </Panel>
-
-      <p className="mcs-spec-new">
-        <input className="mcs-in" value={newName} placeholder="New binder…"
-          aria-label="New binder name" disabled={busy}
-          onChange={(e) => setNewName(e.target.value)} />
-        <button className="mcs-go" type="button" disabled={busy || !newName.trim()}
-          onClick={create}>Make a binder</button>
-      </p>
-      {problem ? <p className="mcs-add-problem" role="alert">{problem}</p> : null}
-
-      {/* PUT AWAY, AND ONE PRESS FROM COMING BACK. */}
-      {archived.length ? (
-        <p className="mcs-filter">
-          <button className="mcs-go quiet" type="button" aria-pressed={showArchived}
-            onClick={() => setShowArchived((on) => !on)}>
-            {showArchived ? "Hide binders you've put away"
-              : `Show binders you've put away (${archived.length})`}
-          </button>
-        </p>
-      ) : null}
-      {showArchived ? (
-        <Panel title="Put away" note={plural(archived.length, "binder", "binders")}>
-          {archived.map((b) => (
-            <article className="mcs-binder" key={b.id}>
-              <div className="mcs-binder-head">
-                <button className="mcs-binder-open" type="button" onClick={() => { setOpen(b.id); setQuery(""); }}>
-                  <span className="mcs-rec-t">{text(b.name) || "A binder"}</span>
-                  <span className="mcs-rec-s">{plural(countOf(b.id), "card", "cards")}</span>
-                </button>
-                <span className="mcs-binder-do">
-                  <button className="mcs-linkish" type="button" disabled={busy}
-                    onClick={() => onArchiveBinder && run(() => onArchiveBinder(b.id, false),
-                      "bring that binder back")}>
-                    Bring back
-                  </button>
-                </span>
-              </div>
-            </article>
-          ))}
-        </Panel>
-      ) : null}
-
-      {/* NOT IN A BINDER YET — derived, never a record. */}
-      {unfiled.length ? (
-        <Panel title="Not in a binder yet" note={plural(unfiled.length, "card", "cards")}>
-          {unfiled.map((g) => {
-            const known = described[g.canonicalCardId];
-            return (
-              <CardRow key={g.id} known={known} goal={g} canonicalCardId={g.canonicalCardId}
-                onOpen={onSpecify && known ? () => setSpecifying(known) : null} />
-            );
-          })}
-        </Panel>
-      ) : null}
-      </>
-      )}
-    </>
-  );
-}
-
-/* ONE CARD, IN A BINDER OR WAITING TO BE IN ONE. Identity, and priority when
-   there is a Goal — and deliberately nothing about copies. */
-function CardRow({ known, goal, canonicalCardId, onOpen }) {
-  const title = (known && known.cardName)
-    || (canonicalCardId ? "Loading this card…" : "A card");
-  const sub = known
-    ? [text(known.expansionName), known.collectorNumber ? `#${known.collectorNumber}` : null]
-      .filter(Boolean).join(" · ") || null
-    : null;
-  return (
-    <article className="mcs-group">
-      <div className="mcs-group-head">
-        <CardArt src={known && known.imageSmall} name={known && known.cardName}
-          wrap="mcs-group-art" plate="mcs-art-plate" decorative />
-        <div className="mcs-rec-id">
-          <div className="mcs-rec-t">{title}</div>
-          {sub ? <div className="mcs-rec-s">{sub}</div> : null}
-          {goal ? (
-            <div className="mcs-rec-tags">
-              <Tag tone={goal.tier === "primary" ? "strong" : null}>
-                {tierIntent(goal.tier) || tierLabel(goal.tier)}
-              </Tag>
-            </div>
+  /* -------------------------------------------------------- THE HOME */
+  const shown = visible(objs);
+  const unfiledAll = objs.filter((o) => !o.homeId);
+  const unfiledShown = visible(unfiledAll);
+  const filedMatches = shown.filter((o) => o.homeId && active.some((b) => b.id === o.homeId)).length;
+  const matchWord = (n) => `${n} ${n === 1 ? "match" : "matches"}`;
+  const binderRow = (b, away = false) => {
+    const inside = [...objs.filter((o) => o.homeId === b.id), ...earlierIn(b.id)];
+    const here = visible(inside);
+    const isOpen = expanded === b.id;
+    return (
+      <div key={b.id} className={`mcs-bcover${isOpen ? " open" : ""}`} data-binder={b.id}>
+        <button type="button" className="mcs-bhead" aria-expanded={isOpen}
+          onClick={() => setExpanded(isOpen ? null : b.id)}>
+          <span className="mcs-bline"><b>{text(b.name) || "A binder"}</b>
+            <span>{away ? "Put away · " : ""}{plural(inside.length, "card", "cards")}</span></span>
+          {filtering && !isOpen && inside.length ? (
+            <span className="mcs-bmatch">{here.length ? matchWord(here.length) : "No matches"}</span>
           ) : null}
-        </div>
-        {onOpen ? (
-          <button className="mcs-go quiet" type="button" onClick={onOpen}>Open</button>
+        </button>
+        {isOpen ? (
+          <div className="mcs-bbody">
+            {here.length ? grid(here, false)
+              : <p className="mcs-dim">{inside.length ? noMatch(`in ${text(b.name) || "this binder"}`)
+                : `No cards in ${text(b.name) || "this binder"} yet.`}</p>}
+            {/* A new place starts unfiltered: a search typed for the whole
+                screen is not one the person asked of this binder. */}
+            <button type="button" className="mcs-linkish mcs-openb"
+              onClick={() => { setOpen(b.id); setQuery(""); setLens("all"); setManage(false); }}>
+              {away ? `Open ${text(b.name) || "this binder"} — bring it back ›`
+                : `Open ${text(b.name) || "this binder"} — add cards, rename, put away ›`}
+            </button>
+          </div>
         ) : null}
       </div>
-    </article>
+    );
+  };
+
+  return (
+    <>
+      {spec()}
+      {controls()}
+      {feedback()}
+
+      <section className="mcs-bsection" aria-label="Your binders">
+        <button type="button" className="mcs-sechead" aria-expanded={sectionOpen}
+          onClick={() => setSectionOpen((v) => !v)}>
+          <span>{`Binders · ${active.length}`}</span>
+          {filtering && !sectionOpen && filedMatches ? <span className="mcs-bmatch">{matchWord(filedMatches)}</span> : null}
+        </button>
+        {sectionOpen ? (
+          <div className="mcs-covers">
+            {active.length ? active.map((b) => binderRow(b))
+              : <p className="mcs-dim mcs-bempty">You haven&apos;t made a binder yet. A binder is your own grouping of cards — where a card belongs, which is a different thing from wanting it or owning it.</p>}
+            {making ? (
+              <p className="mcs-spec-new mcs-newb">
+                <input className="mcs-in" value={newName} placeholder="New binder…" aria-label="New binder name"
+                  disabled={busy} autoFocus onChange={(e) => setNewName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") create(); if (e.key === "Escape") setMaking(false); }} />
+                <button className="mcs-go" type="button" disabled={busy || !newName.trim()} onClick={create}>Make a binder</button>
+                <button className="mcs-go quiet" type="button" disabled={busy} onClick={() => { setMaking(false); setNewName(""); }}>Cancel</button>
+              </p>
+            ) : onCreateBinder ? (
+              <button type="button" className="mcs-bcover mcs-newcover" onClick={() => setMaking(true)}>+ New binder</button>
+            ) : null}
+            {archived.length ? (
+              <button type="button" className="mcs-linkish mcs-away" aria-pressed={showArchived}
+                onClick={() => setShowArchived((v) => !v)}>
+                {showArchived ? "Hide binders you've put away" : `Show binders you've put away (${archived.length})`}
+              </button>
+            ) : null}
+            {showArchived ? archived.map((b) => binderRow(b, true)) : null}
+          </div>
+        ) : null}
+      </section>
+
+      <section className={`mcs-bsection mcs-unfiled${unfiledOpen ? " open" : ""}`} aria-label="Unfiled">
+        <button type="button" className="mcs-sechead" aria-expanded={unfiledOpen}
+          onClick={() => setUnfiledOpen((v) => !v)}>
+          <span>{`Unfiled · ${filtering && unfiledAll.length
+            ? `${unfiledShown.length} of ${plural(unfiledAll.length, "card", "cards")}`
+            : plural(unfiledAll.length, "card", "cards")}`}</span>
+        </button>
+        {unfiledOpen ? (!unfiledAll.length ? <p className="mcs-dim mcs-bempty">Nothing is Unfiled.</p>
+          : unfiledShown.length ? grid(unfiledShown, false)
+            : <p className="mcs-dim mcs-bempty">{noMatch("Unfiled")}</p>) : null}
+      </section>
+
+      <section className="mcs-bsection mcs-results" aria-label="Your Cards">
+        <h2 className="mcs-rhead">Your Cards</h2>
+        {objs.length ? (
+          <p className="mcs-rcount" role="status">
+            {`${shown.length} ${lens !== "all" ? `${lensLabel} ` : ""}${shown.length === 1 ? "card" : "cards"}${needle ? ` matching “${text(query)}”` : ""}`}
+          </p>
+        ) : null}
+        {shown.length ? grid(shown)
+          : <p className="mcs-dim mcs-bempty">{needle && objs.length ? noMatch("of yours") : EMPTY_FOR[lens] || EMPTY_FOR.all}</p>}
+      </section>
+    </>
   );
 }

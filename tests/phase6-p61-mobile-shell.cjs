@@ -140,7 +140,9 @@ describe("C. nothing else moved", () => {
   test("no command, no section file and no shared component changed in this batch", () => {
     eq(EXPOSED_COMMANDS.length, 29, "the production door");
     const { execFileSync } = require("child_process");
-    const changed = execFileSync("git", ["diff", "--name-only", "79db6b5", "--", "client", "server", "domain", "persistence"],
+    /* Measured over P6-1's own commit, not against the working tree — a later
+       batch is allowed to change sections; P6-1 was not. */
+    const changed = execFileSync("git", ["diff", "--name-only", "79db6b5", "309ff7e", "--", "client", "server", "domain", "persistence"],
       { cwd: ROOT, encoding: "utf8" }).split("\n").filter(Boolean);
     eq(json(changed), json(["client/collector/CollectorShell.jsx"]), "only the shell");
   });

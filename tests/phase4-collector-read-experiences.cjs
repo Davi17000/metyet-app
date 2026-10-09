@@ -220,9 +220,22 @@ const show = (state, section = null) => {
 /* WHAT YOUR CARDS USED TO BE IS TWO PRESSES NOW (binders batch): the tab, then
    the collection view. Binders opens on the binder library, because a tab
    called Binders should show binders; the cards are one chip away. */
+/* RESTATED (Phase 6 P6-2). The five view chips became state filters over
+   Your Cards, which is on the Binders screen itself, and each tile opens its
+   own facts in place when it cannot open the Card Specification (a card MetYet
+   cannot name). So "the shelf" is: the tab, the filter, and every tile's facts
+   opened — the same facts these tests always read, from the same rows. */
+const VIEW_TO_FILTER = { "All Cards": "All", "Trade/Sell": "Trade / Sell", "Primary Goals": "Primary",
+  "Secondary Goals": "Secondary" };
 const showCollection = (state, view = "All Cards") => {
   const r = show(state, "Binders");
-  clickText(r, view);
+  const filter = VIEW_TO_FILTER[view] || view;
+  const b = r.root.findAll((n) => n.type === "button" && instText(n).trim() === filter)[0];
+  if (filter !== "All") { assert(b, `no filter "${filter}"`); TR.act(() => { b.props.onClick(); }); }
+  for (const t of r.root.findAll((n) => n.type === "button" && n.props["aria-expanded"] === false
+    && String(n.props.className || "").includes("mcs-oview"))) {
+    TR.act(() => { t.props.onClick(); });
+  }
   return r;
 };
 /* THE SECTION'S OWN TEXT, without the shell around it (C1). The navigation is
@@ -237,7 +250,9 @@ const sectionText = (r) => {
 
 /* The rendered text of ONE record block, found by something inside it. */
 const recordWith = (r, needle) => {
-  const a = r.root.findAll((n) => n.type === "article").find((n) => instText(n).includes(needle));
+  /* A tile (P6-2) is a record too: one Goal or one copy, on its own terms. */
+  const a = r.root.findAll((n) => n.type === "article" || (n.type === "li" && String(n.props.className || "").includes("mcs-otile")))
+    .find((n) => instText(n).includes(needle));
   assert(a, `no record containing "${needle}" — screen: ` + flat(r));
   return instText(a).replace(/\s+/g, " ");
 };
@@ -405,10 +420,13 @@ describe("B. Your Cards", () => {
        owning-versus-offering sentence moved to the view that is actually about
        offering. Both halves are still asserted, which is why this is not a
        loosening: the claim did not go, it went where it is true. */
+    /* RESTATED (Phase 6 P6-2). The empty Your Cards says the two ways a card
+       gains meaning — wanting it and owning it — and no longer "file it":
+       doctrine §3 holds that adding to a Binder is not a way of adding a card
+       to MetYet, which the Phase 6 wording follows. */
     const all = flat(showCollection(EMPTY));
-    assert(/Nothing has meaning yet/.test(all), all);
-    assert(/file it/i.test(all) && /want it/i.test(all) && /own/i.test(all),
-      "All Cards does not say the three ways a card gains meaning: " + all);
+    assert(/Cards you.re looking for or own will appear here/.test(all), all);
+    assert(/Find one in Browse/.test(all), "and where to start: " + all);
     assert(!/error|failed|unavailable/i.test(all), "empty reads as broken: " + all);
 
     const trade = flat(showCollection(EMPTY, "Trade/Sell"));

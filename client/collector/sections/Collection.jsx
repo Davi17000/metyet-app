@@ -72,33 +72,12 @@ import { rows, indexById, text, day, money, plural, cardTitle, cardSetLine,
   gradeLine, isGraded, gradeConflictLine, cardMarks, statusLabel, photoNote,
   tierIntent, tierLabel, byRecency, criteriaLine, copyLabels } from "../present.js";
 
-/* The four collection views, named once. Binders reads this to build its own
-   selector, so the two cannot disagree about what exists.
-
-   THERE IS STILL NO "PC" VIEW HERE, AND THAT IS NOW A CHOICE RATHER THAN A
-   LIMIT. A Personal Collection has a fact of its own at last — `keeping`, a
-   positive statement with its own command — so a sixth tab is finally possible.
-   It is not added here because nobody has asked for one: this batch was asked
-   to make the four states sayable and truthful, and a view is a different
-   question about how somebody wants to browse what they own. What `keeping`
-   does get is the thing it could not have before — a copy that says so on its
-   own row, in its own words, instead of hiding inside "Not offered". */
-export const COLLECTION_VIEWS = Object.freeze([
-  /* MY BINDERS IS FIRST AND IS THE DEFAULT, because a tab called Binders should
-     open on binders. It is not a collection view — selecting it shows the
-     library instead of a card list — but it belongs in the same row, because
-     these are five answers to one question: which of my cards am I looking at?
-
-     THEY ARE MUTUALLY EXCLUSIVE ON PURPOSE. Stacking a card list above the
-     binder library put ownership counts on the library screen, and this file's
-     neighbour has held since C3.4 that a binder is curation and must not
-     quietly become inventory. One screen, one question. */
-  { id: "binders", label: "My Binders" },
-  { id: "all", label: "All Cards" },
-  { id: "primary", label: "Primary Goals" },
-  { id: "secondary", label: "Secondary Goals" },
-  { id: "trade", label: "Trade/Sell" },
-]);
+/* THE FIVE VIEW CHIPS ARE GONE (Phase 6 P6-2). They became the Binders screen's
+   state filters — All · Primary · Secondary · PC · Trade / Sell — over every
+   Goal and copy, so this component is now composed only for an opened binder
+   (view.kind "binder", with an optional state filter). Its other kinds still
+   render, and are how the derivation tests prove each list is a pure function
+   of the projection. */
 
 /* THE GROUP KEY, AND WHY NOTHING IS ALLOWED TO FALL OUT OF IT.
 
@@ -132,7 +111,12 @@ const isCanonical = (key) => !isLegacy(key) && !isUnidentified(key);
 
 export default function Collection({ state, view = { kind: "all" }, query = "",
   onBrowseCards = null, onSpecify = null, descriptions = null,
-  onFileObject = null, onUnfileObject = null }) {
+  onFileObject = null, onUnfileObject = null,
+  /* THE STATE FILTER (Phase 6 P6-2), inside a binder only: "all", or one of
+     primary · secondary · pc · trade. It narrows which of the binder's OWN
+     objects are shown, read off each row exactly as the Binders screen reads
+     them; earlier filings are history and show only under "all". */
+  lens = "all" }) {
   const copies = rows(state && state.collectorCopies);
   const goals = rows(state && state.goals);
   const entries = rows(state && state.binderEntries);
@@ -384,10 +368,19 @@ export default function Collection({ state, view = { kind: "all" }, query = "",
     return hay.includes(needle);
   };
 
-  const shown = ordered.filter(matches);
   const kind = (view && view.kind) || "all";
   const tradeView = kind === "trade";
   const binderView = kind === "binder";
+  /* A card stays in a filtered binder only if one of its objects HERE is in
+     that state (P6-2); the same test the rows below apply. */
+  const lensKeeps = (key) => {
+    if (!binderView || !lens || lens === "all") return true;
+    const g = goalFor.get(key);
+    if (g && filedHere.goalIds.has(g.id) && g.tier === lens) return true;
+    return (copiesOfCard.get(key) || []).some((c) => filedHere.copyIds.has(c.id)
+      && (lens === "trade" ? c.offered === true : lens === "pc" ? c.offered !== true && c.keeping === true : false));
+  };
+  const shown = ordered.filter(matches).filter(lensKeeps);
   /* A BINDER SHOWED CARDS AND NOT INVENTORY, AND BATCH 3B-1 REVERSES THAT
      DELIBERATELY — BUT ONLY HERE, AND NOT THE PRINCIPLE BEHIND IT.
 
@@ -422,12 +415,16 @@ export default function Collection({ state, view = { kind: "all" }, query = "",
     ? (offeredCount === 0
       ? "You're not offering any of your copies yet."
       : `You're offering ${offeredCount} of ${plural(copies.length, "copy", "copies")}.`)
+    /* Inside a binder the Binders screen states its own count (P6-2, counting
+       the Goals and copies filed there); a second count of card headings
+       beside it would contradict it. */
+    : binderView ? null
     : shown.length ? plural(shown.length, "card", "cards") : null;
 
   const empty = ordered.length === 0
     ? EMPTY_FOR[(view && view.kind) || "all"] || EMPTY_FOR.all
     : shown.length === 0
-      ? `Nothing here matches “${text(query)}”.`
+      ? (text(query) ? `Nothing here matches “${text(query)}”.` : "Nothing in this binder is in that state.")
       : null;
 
   return (
@@ -449,7 +446,7 @@ export default function Collection({ state, view = { kind: "all" }, query = "",
         const legacy = isLegacy(key) ? catalog.get(key.slice(7)) : null;
         const goal = goalFor.get(key) || null;
         const mine = copiesOfCard.get(key) || [];
-        const listed = !withCopies ? []
+        const listedAll = !withCopies ? []
           : binderView ? mine.filter((c) => filedHere.copyIds.has(c.id))
             : tradeView ? mine.filter((c) => c.offered === true) : mine;
         /* AND THE GOAL, WHEN IT IS THIS GOAL THAT IS FILED HERE. Outside a
@@ -457,15 +454,21 @@ export default function Collection({ state, view = { kind: "all" }, query = "",
            it stays that. Inside one it has to be a statement about the thing:
            a Goal for this card that lives in another binder, or nowhere, is not
            part of what this binder holds. */
-        const goalHere = binderView ? (goal && filedHere.goalIds.has(goal.id) ? goal : null) : goal;
+        const goalFiled = binderView ? (goal && filedHere.goalIds.has(goal.id) ? goal : null) : goal;
+        const lensOn = binderView && lens && lens !== "all";
+        const goalHere = lensOn ? (goalFiled && goalFiled.tier === lens ? goalFiled : null) : goalFiled;
         /* THE LEGACY ROWS FOR THIS CARD IN THIS BINDER. History, shown as
            history: never an object, never moved, only removable — and removable
            from the panel rather than here, because the one card-level gesture
            left belongs beside the card it is about. */
-        const legacyHere = binderView
+        const legacyHere = binderView && !lensOn
           ? entries.filter((e) => e.binderId === binderId
             && groupIdOf(e.canonicalCardId, e.cardId, null) === key)
           : [];
+        const listed = lensOn
+          ? listedAll.filter((c) => (lens === "trade" ? c.offered === true : lens === "pc" ? c.offered !== true && c.keeping === true : false))
+          : listedAll;
+        if (lensOn && !goalHere && !listed.length) return null;
         const title = (known && known.cardName) || cardTitle(legacy)
           || (isUnidentified(key) ? "A copy you haven't identified yet"
             : isLegacy(key) ? "A card that isn't in your catalogue"
