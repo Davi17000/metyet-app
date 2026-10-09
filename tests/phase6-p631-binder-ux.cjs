@@ -115,7 +115,8 @@ describe("A. expand and collapse", () => {
       const tap = tile.findAll((n) => n.type === "button" && cls(n).includes("mcs-otap"))[0];
       assert(tap && typeof tap.props.onClick === "function", "the card does not open");
       assert(cls(tap).includes("holdable") && typeof tap.props.onPointerDown === "function", "the card cannot be held to file");
-      assert(tile.findAll((n) => n.type === "button" && /^Details$/.test(flat(n))).length === 1, "no Details");
+      /* RESTATED (P6-4): the tap itself opens the card's sheet — no Details link. */
+      eq(tap.props["aria-haspopup"], "dialog", "the tap does not open the card's sheet");
     }
     assert(/2 cards · 1 Primary · 1 PC/.test(flat(cover(r, "b-gen1"))), "what is here, in one line");
   });
@@ -123,8 +124,9 @@ describe("A. expand and collapse", () => {
     const { r } = await show();
     await openSection(r);
     await click(head(r, "b-gen1"));
-    await click(tilesIn(cover(r, "b-gen1"))[0].findAll((n) => n.type === "button")[0]);
-    assert(/Are you looking for it|Card Specification/i.test(flat(r.root)), "the card did not open");
+    await TR.act(async () => { tilesIn(cover(r, "b-gen1"))[0].findAll((n) => n.type === "button")[0].props.onClick({ preventDefault() {} }); });
+    await settle();
+    assert(dialog(r) && /^Card: Charizard/.test(dialog(r).props["aria-label"]), "the card did not open");
   });
   test("collapsing hides them again; one binder is open at a time", async () => {
     const { r } = await show();
@@ -210,55 +212,61 @@ describe("C. the tile is the card", () => {
     await click(head(r, "b-mud"));
     const early = tilesIn(cover(r, "b-mud")).find((li) => /Earlier filing/.test(flat(li)));
     assert(early, "the earlier filing is not shown");
-    eq(early.findAll((n) => n.type === "button" && /^Details$/.test(flat(n))).length, 0);
+    eq(early.findAll((n) => n.props && n.props["aria-haspopup"] === "dialog").length, 0, "history opens a card sheet");
     eq(early.findAll((n) => typeof n.props.onPointerDown === "function").length, 0, "history can be picked up");
   });
 });
 
 /* ============================================================== D */
-describe("D. Details, in one sheet", () => {
-  const openDetails = async (r) => {
+describe("D. the card's sheet (restated in P6-4 from P6-3.1's Details)", () => {
+  const openPc = async (r) => {
     await openSection(r);
     await click(head(r, "b-gen1"));
     const pc = tilesIn(cover(r, "b-gen1")).find((li) => /\bPC\b/.test(flat(li)));
-    await click(pc.findAll((n) => n.type === "button" && /^Details$/.test(flat(n)))[0]);
+    await TR.act(async () => { pc.findAll((n) => n.type === "button")[0].props.onClick({ preventDefault() {} }); }); await settle();
   };
-  test("a copy's facts: grade, cert, reference value, photos, status — writing nothing", async () => {
+  test("a copy's facts: grade at once; cert, value, photos, status on request — writing nothing", async () => {
     const { r, sent } = await show();
-    await openDetails(r);
+    await openPc(r);
     const d = dialog(r);
-    assert(d && /^Details: Charizard/.test(d.props["aria-label"]), "no sheet");
-    const t = flat(d);
-    for (const re of [/PSA 8/, /CERT-8/, /\$1,?200/, /Photos Front and back/, /Status Available/, /in Gen 1 Favorites/]) assert(re.test(t), `${re} missing: ${t}`);
+    assert(d && /^Card: Charizard/.test(d.props["aria-label"]), "no sheet");
+    assert(/Grade PSA 8/.test(flat(d)) && /In Gen 1 Favorites/.test(flat(d)), flat(d));
+    assert(!/CERT-8/.test(flat(d)), "technical facts are shown before they are asked for");
+    await click(btn(r, /^Copy details$/));
+    const t = flat(dialog(r));
+    for (const re of [/CERT-8/, /\$1,?200/, /Photos Front and back/, /Status Available/]) assert(re.test(t), `${re} missing: ${t}`);
     eq(sent.length, 0);
   });
   test("its Binder choice is the keyboard path to filing, and offers active binders only", async () => {
     const { r, sent } = await show();
-    await openDetails(r);
-    const pick = dialog(r).findAll((n) => n.type === "select")[0];
-    eq(pick.props["aria-label"], "Binder for Charizard");
-    eq(json(pick.findAll((n) => n.type === "option").map(flat)), json(["Unfiled", "Gen 1 Favorites", "Mudkip", LONG]));
-    await TR.act(async () => { pick.props.onChange({ target: { value: "b-mud" } }); }); await settle();
+    await openPc(r);
+    await click(btn(r, /^Move to another binder$/));
+    const group = r.root.findAll((n) => n.props && n.props.role === "group" && n.props["aria-label"] === "Binder for Charizard")[0];
+    eq(json(group.findAll((n) => n.type === "button" && n.props.className === "mcs-ochoice").map(flat)), json(["Mudkip", LONG]));
+    await click(btn(r, /^Mudkip$/));
     eq(json(sent), json([["fileObject", { binderId: "b-mud", collectorCopyId: "k-char" }]]), "one command, naming only the binder and the copy");
-    assert(/Charizard is filed in Mudkip/.test(flat(dialog(r))), "the answer is said where they are looking");
+    assert(/Charizard is filed in Mudkip/.test(flat(r.root)), "the answer is not said");
   });
-  test("Close and Escape close it; Open card opens the Card Specification", async () => {
+  test("Close and Escape close it; Open full card opens the Card Specification", async () => {
     const { r } = await show();
-    await openDetails(r);
-    await click(btn(r, /^Close$/));
+    await openPc(r);
+    await click(buttons(r).find((b) => b.props["aria-label"] === "Close"));
     eq(dialog(r), null);
-    await click(tilesIn(cover(r, "b-gen1")).find((li) => /\bPC\b/.test(flat(li))).findAll((n) => /^Details$/.test(flat(n)) && n.type === "button")[0]);
+    await TR.act(async () => { tilesIn(cover(r, "b-gen1")).find((li) => /\bPC\b/.test(flat(li))).findAll((n) => n.type === "button")[0].props.onClick({ preventDefault() {} }); });
+    await settle();
     await TR.act(async () => { dialog(r).props.onKeyDown({ key: "Escape" }); }); await settle();
     eq(dialog(r), null, "Escape");
-    await click(tilesIn(cover(r, "b-gen1")).find((li) => /\bPC\b/.test(flat(li))).findAll((n) => /^Details$/.test(flat(n)) && n.type === "button")[0]);
-    await click(btn(r, /^Open card$/));
-    assert(/Are you looking for it|Card Specification/i.test(flat(r.root)), "Open card did not open it");
+    await TR.act(async () => { tilesIn(cover(r, "b-gen1")).find((li) => /\bPC\b/.test(flat(li))).findAll((n) => n.type === "button")[0].props.onClick({ preventDefault() {} }); });
+    await settle();
+    await click(btn(r, /^Open full card/));
+    assert(/Are you looking for it|Card Specification/i.test(flat(r.root)), "Open full card did not open it");
   });
-  test("a Goal's Details says what it looks for", async () => {
+  test("a Goal's sheet says what it looks for", async () => {
     const { r } = await show();
     await openSection(r);
     await click(head(r, "b-gen1"));
-    await click(tilesIn(cover(r, "b-gen1")).find((li) => /Primary/.test(flat(li))).findAll((n) => n.type === "button" && /^Details$/.test(flat(n)))[0]);
+    await TR.act(async () => { tilesIn(cover(r, "b-gen1")).find((li) => /Primary/.test(flat(li))).findAll((n) => n.type === "button")[0].props.onClick({ preventDefault() {} }); });
+    await settle();
     assert(/Looking for PSA 9/.test(flat(dialog(r))), flat(dialog(r)));
   });
 });

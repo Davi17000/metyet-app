@@ -247,16 +247,22 @@ const openDetails = async () => { await settle(); };
    opens its sheet, reads the card and its facts (not the Binder choice, whose
    options name every binder), and closes it again — the same facts, from the
    same rows, read from where they are now shown. */
+/* RESTATED AGAIN (P6-4): a tap on the card opens its sheet (there is no
+   separate Details link), and the copy's secondary facts sit behind "Copy
+   details". The same facts, from the same rows; the state choices and the
+   binder controls are not read, for the same reason the Binder choice was not. */
 const sheetOf = (r, li) => {
-  const b = li.findAll((n) => n.type === "button" && String(n.props.className || "").includes("mcs-oview"))[0];
-  if (!b) return "";
-  TR.act(() => { b.props.onClick(); });
-  const d = r.root.findAll((n) => n.type === "div" && n.props.role === "dialog"
-    && /^Details/.test(String(n.props["aria-label"] || "")))[0];
-  if (!d) return "";
-  const t = d.findAll((n) => n.type === "div" && /mcs-detail-(head|facts)/.test(String(n.props.className || "")))
+  const b = li.findAll((n) => n.type === "button" && String(n.props.className || "").includes("mcs-otap"))[0];
+  if (!b || b.props["aria-haspopup"] !== "dialog") return "";
+  TR.act(() => { b.props.onClick({ preventDefault() {} }); });
+  const dlg = () => r.root.findAll((n) => n.type === "div" && n.props.role === "dialog"
+    && /^Card: /.test(String(n.props["aria-label"] || "")))[0];
+  if (!dlg()) return "";
+  const more = dlg().findAll((n) => n.type === "button" && String(n.props.className || "").includes("mcs-omore"))[0];
+  if (more && more.props["aria-expanded"] === false) TR.act(() => { more.props.onClick(); });
+  const t = dlg().findAll((n) => /^mcs-(oident|oconfig|oconflict|detail-facts)$/.test(String(n.props.className || "")))
     .map((n) => instText(n)).join(" ");
-  const close = d.findAll((n) => n.type === "button" && instText(n).trim() === "Close")[0];
+  const close = dlg().findAll((n) => n.type === "button" && n.props["aria-label"] === "Close")[0];
   if (close) TR.act(() => { close.props.onClick(); });
   return t;
 };
@@ -550,8 +556,12 @@ describe("E. the same specification capability, opened from the shelf", () => {
     const tile = r.root.findAll((n) => n.type === "li" && String(n.props.className || "").includes("mcs-otile"))
       .find((n) => instText(n).includes(needle));
     assert(tile, `no tile for ${needle}`);
-    await TR.act(async () => { tile.findAll((n) => n.type === "button")[0].props.onClick(); });
+    await TR.act(async () => { tile.findAll((n) => n.type === "button")[0].props.onClick({ preventDefault() {} }); });
     await settle();
+    /* RESTATED (P6-4): a tap opens the card's own sheet; the Card
+       Specification is its "Open full card". */
+    const full = r.root.findAll((n) => n.type === "button" && /^Open full card/.test(instText(n).trim()))[0];
+    if (full) { await TR.act(async () => { full.props.onClick(); }); await settle(); }
   };
 
   test("Open shows the card's current truth, and Cancel writes nothing", async () => {

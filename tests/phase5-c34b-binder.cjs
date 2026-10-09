@@ -314,8 +314,12 @@ const tapTile = async (r, needle) => {
   const tile = r.root.findAll((n) => n.type === "li" && cls(n).includes("mcs-otile"))
     .find((n) => instText(n).includes(needle));
   assert(tile, `no tile for "${needle}"`);
-  await TR.act(async () => { tile.findAll((n) => n.type === "button")[0].props.onClick(); });
+  await TR.act(async () => { tile.findAll((n) => n.type === "button")[0].props.onClick({ preventDefault() {} }); });
   await settle();
+  /* RESTATED (P6-4): a tap opens the card's own sheet; the Card Specification
+     these tests drive is its "Open full card". */
+  const full = buttons(r).find((n) => /^Open full card/.test(instText(n).trim()));
+  if (full) { await TR.act(async () => { full.props.onClick(); }); await settle(); }
 };
 const binderRows = (r) => buttons(r).filter((n) => cls(n).includes("mcs-bhead")).map((n) => instText(n).replace(/\s+/g, " "));
 /* RESTATED (P6-3.1): leaving a binder is closing it where it is. */

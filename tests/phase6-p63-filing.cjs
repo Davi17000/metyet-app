@@ -141,6 +141,14 @@ const pickUp = async (r, re) => {
   return b;
 };
 const button = (r, re) => r.root.findAll((n) => n.type === "button").find((b) => re.test(flat(b))) || null;
+/* P6-4: a tap (or Enter on the card's button) opens the card's own sheet,
+   where its binder is chosen from buttons — the keyboard path to filing. */
+const sheet = (r) => r.root.findAll((n) => n.props && n.props.role === "dialog" && /^Card: /.test(String(n.props["aria-label"] || "")))[0] || null;
+const openSheetFor = async (r, re) => {
+  await TR.act(async () => { art(tileFor(r, re)).props.onClick({ preventDefault() {} }); }); await settle();
+  assert(sheet(r), "the card sheet did not open");
+};
+const binderChoices = (r, name) => r.root.findAll((n) => n.props && n.props.role === "group" && n.props["aria-label"] === `Binder for ${name}`)[0] || null;
 
 /* ============================================================== A */
 describe("A. a tap opens; a hold files", () => {
@@ -149,7 +157,8 @@ describe("A. a tap opens; a hold files", () => {
     const b = art(tileFor(r, /Primary.*Charizard/));
     await down(b, "touch"); await upTile(b);
     await TR.act(async () => { b.props.onClick({ preventDefault() {} }); }); await settle();
-    assert(/Are you looking for it/.test(flat(r.root)), "the tap did not open the card");
+    /* RESTATED (P6-4): the card's own sheet, not the Card Specification. */
+    assert(sheet(r) && /^Card: Charizard/.test(sheet(r).props["aria-label"]), "the tap did not open the card");
     eq(layer(r), null, "a tap started filing");
     eq(sent.length, 0);
   });
@@ -290,34 +299,33 @@ describe("D. when it does not work", () => {
 describe("D2. one at a time, by every route", () => {
   test("two filings in the same instant send one command", async () => {
     const s = await show({ hold: true });
-    const t = tileFor(s.r, /PC.*Blastoise/);
-    const details = t.findAll((n) => n.type === "button" && /^Details$/.test(flat(n)))[0];
-    await TR.act(async () => { details.props.onClick(); }); await settle();
-    const pick = s.r.root.findAll((n) => n.type === "select" && n.props["aria-label"] === "Binder for Blastoise")[0];
-    await TR.act(async () => { pick.props.onChange({ target: { value: "b-mud" } }); pick.props.onChange({ target: { value: "b-gen1" } }); });
+    /* RESTATED (P6-4): the sheet's binder buttons, two pressed in one instant. */
+    await openSheetFor(s.r, /PC.*Blastoise/);
+    await TR.act(async () => { button(s.r, /^Put in a binder$/).props.onClick(); }); await settle();
+    const [one, two] = binderChoices(s.r, "Blastoise").findAll((n) => n.type === "button" && n.props.className === "mcs-ochoice");
+    await TR.act(async () => { one.props.onClick(); two.props.onClick(); });
     eq(s.sent.length, 1, "two commands left for one card at once");
     await TR.act(async () => { s.gates[0].resolve({ ok: true }); }); await settle();
   });
 });
 
 describe("E. the paths that need no gesture", () => {
-  test("Details: the Binder choice files and unfiles, by keyboard", async () => {
+  test("the card sheet's Binder choice files and unfiles, by keyboard", async () => {
+    /* RESTATED (P6-4): buttons in the card's sheet, not a select. */
     const { r, sent } = await show();
-    const t = tileFor(r, /PC.*Blastoise/);
-    const details = t.findAll((n) => n.type === "button" && /^Details$/.test(flat(n)))[0];
-    await TR.act(async () => { details.props.onClick(); }); await settle();
-    const pick = r.root.findAll((n) => n.type === "select" && n.props["aria-label"] === "Binder for Blastoise")[0];
-    assert(pick, "no Binder choice in Details");
-    eq(pick.props["aria-label"], "Binder for Blastoise");
-    eq(json(pick.findAll((n) => n.type === "option").map((o) => flat(o))), json(["Unfiled", "Gen 1", "Mudkips"]), "active binders only");
-    await TR.act(async () => { pick.props.onChange({ target: { value: "b-mud" } }); }); await settle();
+    await openSheetFor(r, /PC.*Blastoise/);
+    await TR.act(async () => { button(r, /^Put in a binder$/).props.onClick(); }); await settle();
+    const group = binderChoices(r, "Blastoise");
+    assert(group, "no Binder choice in the card sheet");
+    eq(json(group.findAll((n) => n.type === "button" && n.props.className === "mcs-ochoice").map(flat)), json(["Gen 1", "Mudkips"]), "active binders only");
+    await TR.act(async () => { button(r, /^Mudkips$/).props.onClick(); }); await settle();
     eq(json(sent), json([["fileObject", { binderId: "b-mud", collectorCopyId: "k-blas" }]]));
+    await TR.act(async () => { button(r, /^Take out of Mudkips$/).props.onClick(); }); await settle();
+    eq(json(sent[1]), json(["unfileObject", { collectorCopyId: "k-blas" }]));
   });
-  test("while a Details sheet is open, a hold behind it picks nothing up (P6-3.1)", async () => {
+  test("while a card sheet is open, a hold behind it picks nothing up (P6-3.1)", async () => {
     const { r, sent } = await show();
-    const t = tileFor(r, /PC.*Blastoise/);
-    await TR.act(async () => { t.findAll((n) => n.type === "button" && /^Details$/.test(flat(n)))[0].props.onClick(); });
-    await settle();
+    await openSheetFor(r, /PC.*Blastoise/);
     const b = art(tileFor(r, /Primary.*Charizard/));
     await down(b, "touch"); await TR.act(async () => { await sleep(500); });
     eq(layer(r), null, "a card was lifted from behind an open sheet");

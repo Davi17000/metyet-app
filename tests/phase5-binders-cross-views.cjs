@@ -335,7 +335,11 @@ describe("C. Nothing useful went with the tab", () => {
     const said = tiles.map((t) => instText(t).replace(/\s+/g, " "));
     assert(said.some((t) => /Trade \/ Sell/.test(t) && /Charizard/.test(t)), "the offered copy has no tile: " + said);
     assert(said.some((t) => /Owned/.test(t) && /Charizard/.test(t)), "the unsorted copy has no tile: " + said);
-    await TR.act(async () => { tiles[0].findAll((n) => n.type === "button")[0].props.onClick(); });
+    await TR.act(async () => { tiles[0].findAll((n) => n.type === "button")[0].props.onClick({ preventDefault() {} }); });
+    /* RESTATED (P6-4): the tile opens the card's sheet; the full card is one press on. */
+    const full = r.root.findAll((n) => n.type === "button" && /^Open full card/.test(instText(n).trim()))[0];
+    assert(full, "the card sheet offers no way to the full card");
+    await TR.act(async () => { full.props.onClick(); });
     const certs = r.root.findAll((n) => n.type === "input").map((n) => n.props.value);
     assert(certs.includes("OFFERED-1") && certs.includes("KEPT-1"), "a copy's cert is unreachable: " + certs);
   });

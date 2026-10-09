@@ -714,6 +714,61 @@ button.mcs-otap { cursor:pointer; }
 .mcs-ohome { color:var(--text); font-weight:600; } .mcs-ohome.unf { color:var(--muted); font-weight:500; }
 .mcs-oq { font-size:10.5px; line-height:1.3; color:var(--faint); overflow:hidden; text-overflow:ellipsis;
   white-space:nowrap; }
+/* THE CARD SHEET (P6-4) — mobile first: thumb-sized choices, the card on
+   top, one column, nothing technical until asked for. */
+.mcs-osheet { position:relative; max-height:92vh; gap:14px; padding-top:12px; }
+.mcs-x { position:absolute; top:8px; right:8px; width:44px; height:44px; border:0; border-radius:999px;
+  background:var(--line-soft); color:var(--text); font-size:16px; }
+.mcs-ohero { display:flex; justify-content:center; padding-top:6px; }
+.mcs-ohero-art { width:96px; aspect-ratio:63/88; display:flex; align-items:center; justify-content:center;
+  border-radius:10px; overflow:hidden; background:var(--line-soft); box-shadow:0 8px 22px rgba(10,16,20,.14); }
+.mcs-ohero-art img { width:100%; height:100%; object-fit:cover; }
+.mcs-oident { text-align:center; }
+.mcs-oident h2 { margin:0; font-family:var(--font-display); font-size:21px; }
+.mcs-oident p { margin:3px 0 0; color:var(--muted); font-size:13px; }
+.mcs-osect { display:flex; flex-direction:column; gap:8px; border-top:1px solid var(--line-soft); padding-top:12px; }
+.mcs-osect h3 { margin:0; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+.mcs-opair { display:flex; flex-direction:column; gap:5px; }
+.mcs-opair-t { font-size:12px; color:var(--faint); }
+.mcs-states { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.mcs-state { min-height:56px; display:flex; flex-direction:column; align-items:flex-start; justify-content:center;
+  gap:2px; text-align:left; padding:8px 12px; border:1.5px solid var(--line); border-radius:12px; background:#FFF;
+  color:var(--text); }
+.mcs-state b { font-size:15px; } .mcs-state span { font-size:12px; color:var(--muted); }
+.mcs-state.on { border-color:var(--t1); background:var(--t1-bg); }
+.mcs-state.on b { color:var(--t1); }
+.mcs-state.saving { border-style:dashed; border-color:var(--t1); }
+.mcs-state.across { background:transparent; border-style:dashed; opacity:.62; }
+.mcs-state.justset { box-shadow:0 0 0 3px rgba(23,102,110,.18); }
+.mcs-stateack { margin:0; min-height:18px; font-size:13px; color:var(--t1); font-weight:600; }
+.mcs-across { background:var(--line-soft); border-radius:12px; padding:10px 12px; font-size:13px; }
+.mcs-across p { margin:0 0 8px; }
+.mcs-oconfig { margin:0; display:flex; gap:8px; align-items:baseline; font-size:14px; }
+.mcs-oconfig span { color:var(--muted); font-size:12.5px; }
+.mcs-onote { margin:0; font-size:12.5px; }
+.mcs-ohome { margin:0; font-size:15px; font-weight:600; }
+.mcs-oacts { margin:0; display:flex; flex-wrap:wrap; gap:8px; }
+.mcs-oacts .mcs-go, .mcs-ochoice { min-height:44px; }
+.mcs-omove { display:flex; flex-direction:column; gap:6px; }
+.mcs-omove p { margin:0; font-size:12.5px; }
+.mcs-ochoice { text-align:left; padding:10px 14px; border:1px solid var(--line); border-radius:12px; background:#FFF;
+  font-size:15px; font-weight:600; color:var(--text); }
+.mcs-omore { align-self:flex-start; border:0; background:none; padding:6px 0; font-weight:600; color:var(--t1); font-size:14px; }
+.mcs-omore::before { content:"▸ "; } .mcs-omore[aria-expanded="true"]::before { content:"▾ "; }
+.mcs-ofull { align-self:flex-start; min-height:44px; }
+/* the confirmation bar: above the tab bar, above an open sheet, below a
+   filing in progress; only the bar itself takes touches */
+.mcs-snack-wrap { position:fixed; left:0; right:0; z-index:45; pointer-events:none; display:flex; justify-content:center;
+  padding:0 12px; bottom:calc(var(--tabbar-h) + 10px + env(safe-area-inset-bottom, 0px)); }
+.mcs-snack { pointer-events:auto; margin:0; display:flex; align-items:center; gap:12px; width:100%; max-width:480px;
+  background:var(--text); color:#FFF; border:0; border-radius:12px; padding:10px 8px 10px 14px; font-size:13.5px;
+  box-shadow:0 10px 26px rgba(10,16,20,.28); }
+.mcs-snack span { flex:1 1 auto; min-width:0; }
+.mcs-snack.mcs-toast { background:var(--text); color:#FFF; border:0; }
+.mcs-snack.warn { background:#5A3A06; color:#FFF; }
+.mcs-undo, .mcs-snack-x { flex:0 0 auto; min-height:40px; min-width:44px; border:0; border-radius:10px; background:rgba(255,255,255,.14);
+  color:#FFF; font-weight:700; padding:0 12px; }
+.mcs-undo:disabled { opacity:.5; }
 /* Details, as a sheet (P6-3.1) */
 .mcs-detail-head { display:flex; gap:12px; align-items:flex-start; }
 .mcs-detail-art { flex:0 0 84px; width:84px; aspect-ratio:63/88; display:flex; align-items:center; justify-content:center;
@@ -765,6 +820,8 @@ button.mcs-otap { cursor:pointer; }
 @media (min-width:600px) {
   .mcs-br-grid { grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); }
   .mcs-ogrid { grid-template-columns:repeat(auto-fill, minmax(132px, 152px)); gap:18px 14px; justify-content:start; }
+  .mcs-osheet { border-radius:var(--r-sheet); margin-bottom:24px; max-height:86vh; }
+  .mcs-ohero-art { width:132px; }
 }
 
 /* a wide screen: the same four down the side, light */
@@ -781,6 +838,10 @@ button.mcs-otap { cursor:pointer; }
      row-reverse put the Collector's on the right. */
   .mcs-body { flex-direction:row; }
   .mcs-hd { margin:0 -28px; padding:22px 28px 6px; }
+  /* no tab bar here: the confirmation sits at the foot of the window */
+  .mcs-snack-wrap { bottom:20px; justify-content:flex-start; padding-left:264px; }
+  /* clear of the card sheet, which opens as a panel on the right here */
+  .mcs-snack { max-width:min(480px, max(280px, calc(100vw - 760px))); }
   .mcs-ro, .mcs-joined { margin:12px 28px 0; }
   .mcs-sheet-scrim { align-items:stretch; justify-content:flex-end; }
   .mcs-spec-panel, .mcs-sheet { border-radius:0; border-left:1px solid var(--line); width:min(460px,100%);

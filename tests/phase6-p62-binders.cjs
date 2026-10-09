@@ -257,11 +257,13 @@ describe("D. tiles", () => {
       && /Base Set · holofoil$/.test(x.sub)), "the Goal's wanted grade: " + json(t));
   });
   test("a tile's picture opens the Card Specification", async () => {
+    /* RESTATED (P6-4): through the card's own sheet, one press on. */
     let r;
     const Spec = load("client/collector/CardSpecification.jsx").default;
     ({ r } = await show());
     const tile = tiles(section(r, "Your Cards"))[0];
-    await click(tile.findAll((n) => n.type === "button")[0]);
+    await TR.act(async () => { tile.findAll((n) => n.type === "button")[0].props.onClick({ preventDefault() {} }); }); await settle();
+    await click(btn(r, /^Open full card/));
     assert(r.root.findAll((n) => n.type === Spec).length === 1 || /Are you looking for it/.test(flat(r.root)), "the panel did not open");
   });
   test("a copy's Details opens its facts in one sheet, writing nothing", async () => {
@@ -270,13 +272,16 @@ describe("D. tiles", () => {
     const { r, sent } = await show();
     const ven = tiles(section(r, "Your Cards")).find((n) => /^Owned .*Venusaur/.test(caption(n)));
     assert(!/HIST-1/.test(flat(ven)) && !ven.findAll((n) => n.type === "select").length, "facts or a control under the tile");
-    await click(ven.findAll((n) => n.type === "button").find((b) => /Details/.test(flat(b))));
-    const sheet = r.root.findAll((n) => n.props.role === "dialog" && /^Details: Venusaur/.test(String(n.props["aria-label"] || "")))[0];
-    assert(sheet, "no Details sheet");
-    const t = flat(sheet);
+    /* RESTATED AGAIN (P6-4): the tap opens the card's sheet; its facts are
+       behind "Copy details". */
+    await TR.act(async () => { ven.findAll((n) => n.type === "button")[0].props.onClick({ preventDefault() {} }); }); await settle();
+    const sheet = () => r.root.findAll((n) => n.props.role === "dialog" && /^Card: Venusaur/.test(String(n.props["aria-label"] || "")))[0];
+    assert(sheet(), "no card sheet");
+    await click(btn(r, /^Copy details$/));
+    const t = flat(sheet());
     assert(/HIST-1/.test(t) && /\$40/.test(t), "the facts did not open: " + t);
     eq(sent.length, 0, "opening facts sent something");
-    await click(btn(r, /^Close$/));
+    await click(buttons(r).find((b) => b.props["aria-label"] === "Close"));
     assert(!r.root.findAll((n) => n.props.role === "dialog").length, "Close did not close it");
   });
 });
