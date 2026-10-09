@@ -983,7 +983,8 @@ describe("E. The boundaries this batch did not cross", () => {
     const mod = { exports: {} };
     new Function("module", "exports", "require", out.outputFiles[0].text)(mod, mod.exports, require);
     eq(mod.exports.SECTIONS.map((s) => s.label).join(" · "),
-      "Browse · Binders · Trusted Partners · Deal Flow", "the navigation moved");
+      /* RE-PINNED (Phase 6 P6-1): Deal Flow now precedes Trusted Partners. */
+      "Browse · Binders · Deal Flow · Trusted Partners", "the navigation moved");
   });
 });
 

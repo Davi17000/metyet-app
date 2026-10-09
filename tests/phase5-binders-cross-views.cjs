@@ -381,9 +381,10 @@ describe("C. Nothing useful went with the tab", () => {
 /* =========================================== D. the navigation */
 describe("D. Four destinations", () => {
   test("[22][23] primary navigation is exactly the four", () => {
-    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "browse,binder,partners,deal-flow");
+    /* RE-PINNED (Phase 6 P6-1): Deal Flow now precedes Trusted Partners. */
+    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "browse,binder,deal-flow,partners");
     eq(SHELL_MOD.SECTIONS.map((s) => s.label).join(" · "),
-      "Browse · Binders · Trusted Partners · Deal Flow");
+      "Browse · Binders · Deal Flow · Trusted Partners");
     assert(!SHELL_MOD.SECTIONS.some((s) => s.id === "my-cards"), "Your Cards is still a tab");
   });
 

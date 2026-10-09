@@ -1616,12 +1616,13 @@ describe("G. privacy", () => {
    Four sections, and what did not move. */
 describe("H. the navigation", () => {
 
-  test("production navigation is Browse · Binders · Trusted Partners · Deal Flow", () => {
+  test("production navigation is Browse · Binders · Deal Flow · Trusted Partners", () => {
     /* Deal Flow joined in the true-match batch. Your Cards stays until Binders
        can hold its cross-Binder views, so five tabs now and four later. */
-    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "browse,binder,partners,deal-flow");
+    /* RE-PINNED (Phase 6 P6-1): Deal Flow now precedes Trusted Partners. */
+    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "browse,binder,deal-flow,partners");
     eq(SHELL_MOD.SECTIONS.map((s) => s.label).join(" · "),
-      "Browse · Binders · Trusted Partners · Deal Flow");
+      "Browse · Binders · Deal Flow · Trusted Partners");
     const binder = SHELL_MOD.SECTIONS.find((s) => s.id === "binder");
     eq(binder.count, "binders", "Binder counts something other than binders");
     assert(typeof binder.view === "function", "Binder has no view");

@@ -466,7 +466,8 @@ describe("F. The transaction did not start", () => {
       D.REFUSE.criteriaMismatch, "a PSA 9 copy satisfied a PSA 10 goal");
     const SHELL = build("client/collector/CollectorShell.jsx");
     eq(SHELL.SECTIONS.map((s) => s.label).join(" · "),
-      "Browse · Binders · Trusted Partners · Deal Flow", "the Collector navigation moved");
+      /* RE-PINNED (Phase 6 P6-1): Deal Flow now precedes Trusted Partners. */
+      "Browse · Binders · Deal Flow · Trusted Partners", "the Collector navigation moved");
   });
 });
 

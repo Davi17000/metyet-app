@@ -594,7 +594,8 @@ describe("F. reachable at last, and what that did not change", () => {
        exactly the move C2 made when Trade Binder became Your Cards: one
        concept, one file, a third name, nothing deleted. */
     const ids = SHELL_MOD.SECTIONS.map((s) => s.id);
-    eq(ids.join(","), "browse,binder,partners,deal-flow", "the navigation is not the four");
+    /* RE-PINNED (Phase 6 P6-1): Deal Flow now precedes Trusted Partners. */
+    eq(ids.join(","), "browse,binder,deal-flow,partners", "the navigation is not the four");
     assert(!ids.includes("my-cards"), "Your Cards is still a destination");
     eq(SHELL_MOD.DEFERRED_SECTIONS.map((s) => s.id).join(","), "goals",
       "removing a tab must not quietly park it in the deferred list either");

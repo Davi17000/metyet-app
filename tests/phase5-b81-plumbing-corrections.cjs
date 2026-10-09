@@ -492,7 +492,8 @@ describe("E. Your Cards is not a place a Collector can go", () => {
        directions, which is the proof it is a real place and not a one-off.
        The claim is unchanged and is asserted the same way: every id in the list
        still has a live component, and Your Cards is still promoted. */
-    eq(mod.exports.SECTIONS.map((s) => s.id).join(","), "browse,binder,partners,deal-flow");
+    /* RE-PINNED (Phase 6 P6-1): Deal Flow now precedes Trusted Partners. */
+    eq(mod.exports.SECTIONS.map((s) => s.id).join(","), "browse,binder,deal-flow,partners");
     eq(mod.exports.DEFERRED_SECTIONS.map((s) => s.id).join(","), "goals",
       "something else is waiting — say so here");
     for (const waiting of mod.exports.DEFERRED_SECTIONS) {

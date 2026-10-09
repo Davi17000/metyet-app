@@ -938,9 +938,10 @@ describe("F. the boundaries hold", () => {
   });
 
   test("navigation is exactly what C3.4 left, on both seats", () => {
-    eq(COLLECTOR_SHELL.SECTIONS.map((s) => s.id).join(","), "browse,binder,partners,deal-flow");
+    /* RE-PINNED (Phase 6 P6-1): Deal Flow now precedes Trusted Partners. */
+    eq(COLLECTOR_SHELL.SECTIONS.map((s) => s.id).join(","), "browse,binder,deal-flow,partners");
     eq(COLLECTOR_SHELL.SECTIONS.map((s) => s.label).join(" · "),
-      "Browse · Binders · Trusted Partners · Deal Flow");
+      "Browse · Binders · Deal Flow · Trusted Partners");
     eq(COLLECTOR_SHELL.DEFERRED_SECTIONS.map((s) => s.id).join(","), "goals",
       "the deferral list moved");
     /* Goals is still not a destination, and Goals.jsx is still not deleted —

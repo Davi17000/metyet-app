@@ -726,7 +726,8 @@ describe("G. The boundary", () => {
   test("[44] the Collector still has exactly four destinations", () => {
     const SHELL = build("client/collector/CollectorShell.jsx");
     eq(SHELL.SECTIONS.map((s) => s.label).join(" · "),
-      "Browse · Binders · Trusted Partners · Deal Flow", "the navigation moved");
+      /* RE-PINNED (Phase 6 P6-1): Deal Flow now precedes Trusted Partners. */
+      "Browse · Binders · Deal Flow · Trusted Partners", "the navigation moved");
   });
 });
 

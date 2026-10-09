@@ -109,12 +109,9 @@ export const SECTIONS = Object.freeze([
      about them rather than about MetYet. It deliberately does not count the
      collection: "how organised am I" and "how much do I have" are different
      questions, and the views say their own numbers. */
-  { id: "binder", label: "Binders", count: "binders", view: Binder,
+  { id: "binder", label: "Binders", count: "binders", unit: ["binder", "binders"], view: Binder,
     title: "Binders",
     sub: "Your collection, and where each card belongs" },
-  { id: "partners", label: "Trusted Partners", count: "partners", view: TrustedPartners,
-    title: "Trusted Partners",
-    sub: "The shops you deal with" },
   /* WHAT YOUR SHOPS ACTUALLY HAVE (true-match batch). Last, because it is the
      end of the sentence the other four begin: find a card, say what you want,
      know who you deal with — and then, here, which of them has the thing you
@@ -131,8 +128,10 @@ export const SECTIONS = Object.freeze([
      row count of one collection and never something the shell reasoned its way
      to.
 
-     AND IT IS FOUR TABS. Browse, Binders, Trusted Partners, Deal Flow — the
-     approved navigation, now actually true. Deal Flow arrived while Your Cards
+     AND IT IS FOUR TABS. Browse, Binders, Deal Flow, Trusted Partners — the
+     approved navigation (reordered in Phase 6 P6-1: Deal Flow is where a
+     Collector acts, so it sits beside the two places they find and keep cards;
+     Trusted Partners, the network they act within, closes the row). Deal Flow arrived while Your Cards
      was still a tab of its own, because deleting Your Cards before Binders
      could hold what it did would have taken away the only way to see what you
      own to make a navigation diagram true early. Binders can hold it now: the
@@ -141,6 +140,11 @@ export const SECTIONS = Object.freeze([
   { id: "deal-flow", label: "Deal Flow", count: null, view: DealFlow,
     title: "Deal Flow",
     sub: "Which of your shops has the card you asked for" },
+  /* THE NETWORK (Phase 6 P6-1: last). The shops this Collector deals with —
+     reference rather than a place to act, so it follows Deal Flow. */
+  { id: "partners", label: "Trusted Partners", count: "partners", unit: ["partner", "partners"], view: TrustedPartners,
+    title: "Trusted Partners",
+    sub: "The shops you deal with" },
 ]);
 
 /* BUILT AND NOT YET REACHABLE — AND, AS OF C3.4, NOTHING IS.
@@ -181,14 +185,14 @@ const CSS = `
 .mcs { --bg:#F7F9FA; --panel:#FFF; --line:#DFE4EA; --line-soft:#EDF0F4; --text:#131922;
   --muted:#616B7A; --faint:#8B95A3; --t1:#0B5D66; --t1-bg:#E6F0F1; --amber:#9A6408;
   --amber-bg:#FBF3E3; --amber-line:#EBD9B4; --rail:#0A1014;
-  font-family:'Public Sans',system-ui,sans-serif; color:var(--text); font-size:14px;
+  font-family:var(--font-ui); color:var(--text); font-size:14px;
   line-height:1.5; background:var(--bg); min-height:100vh;
   display:flex; flex-direction:column; -webkit-font-smoothing:antialiased; }
 .mcs *,.mcs *::before,.mcs *::after { box-sizing:border-box; }
 .mcs button { font-family:inherit; font-size:inherit; cursor:pointer; }
 .mcs :focus-visible { outline:2px solid var(--t1); outline-offset:2px; }
 .mcs p { margin:0; }
-.mcs .disp { font-family:'Archivo',system-ui,sans-serif; }
+.mcs .disp { font-family:var(--font-display); }
 
 /* ---- browse: the doorways, the grid and the specification panel (C1) ---- */
 .mcs-br { display:flex; flex-direction:column; gap:10px; }
@@ -322,7 +326,7 @@ const CSS = `
 .mcs-view.quiet { color:var(--muted); font-weight:500; }
 .mcs-find { display:flex; gap:8px; align-items:center; margin:0 0 12px; padding:0 16px; }
 .mcs-find .mcs-in { flex:1 1 auto; min-width:0; }
-.mcs-binder-name { margin:0 0 10px; padding:0 16px; font-family:'Archivo', system-ui, sans-serif;
+.mcs-binder-name { margin:0 0 10px; padding:0 16px; font-family:var(--font-display);
   font-size:16px; font-weight:700; color:var(--text); }
 
 /* ---- deal flow: the copies your shops have (true-match batch) ----
@@ -404,11 +408,11 @@ const CSS = `
 .mcs-mark i { position:absolute; width:10px; height:10px; border:1.5px solid #4E8C93; display:block; }
 .mcs-mark i:first-child { top:0; left:0; }
 .mcs-mark i:last-child { bottom:0; right:0; border-color:#0A1014; }
-.mcs-word { font-family:'Archivo'; font-weight:700; font-size:15px; letter-spacing:-.01em; }
+.mcs-word { font-family:var(--font-display); font-weight:700; font-size:15px; letter-spacing:-.01em; }
 .mcs-me { margin-left:auto; text-align:right; min-width:0; }
 .mcs-me .n { font-weight:600; font-size:13.5px; }
 .mcs-me .r { color:var(--faint); font-size:10.5px; letter-spacing:.07em; text-transform:uppercase;
-  font-family:'Archivo'; font-weight:600; }
+  font-family:var(--font-display); font-weight:600; }
 .mcs-out { background:none; border:1px solid var(--line); color:var(--muted); border-radius:7px;
   padding:6px 11px; font-size:13px; }
 .mcs-out:hover { border-color:#B9C4CE; color:var(--text); }
@@ -424,7 +428,7 @@ const CSS = `
 
 .mcs-body { flex:1; display:flex; min-width:0; }
 .mcs-main { flex:1; min-width:0; padding:18px 16px 92px; }
-.mcs-h { font-family:'Archivo'; font-size:20px; font-weight:700; letter-spacing:-.02em; margin:0; }
+.mcs-h { font-family:var(--font-display); font-size:20px; font-weight:700; letter-spacing:-.02em; margin:0; }
 .mcs-sub { color:var(--muted); font-size:13.5px; margin-top:2px; }
 
 /* ---- panels and records ---- */
@@ -432,7 +436,7 @@ const CSS = `
   margin-top:16px; max-width:760px; overflow:hidden; }
 .mcs-ph { display:flex; align-items:baseline; gap:10px; padding:12px 16px;
   border-bottom:1px solid var(--line-soft); }
-.mcs-ph h2 { font-family:'Archivo'; font-size:10.5px; font-weight:700; letter-spacing:.09em;
+.mcs-ph h2 { font-family:var(--font-display); font-size:10.5px; font-weight:700; letter-spacing:.09em;
   text-transform:uppercase; color:var(--muted); margin:0; }
 .mcs-pnote { margin-left:auto; font-size:11.5px; color:var(--faint); }
 .mcs-empty { padding:22px 16px; color:var(--muted); max-width:58ch; }
@@ -487,7 +491,7 @@ const CSS = `
 
 .mcs-facts { display:flex; flex-wrap:wrap; gap:6px 18px; margin-top:10px; }
 .mcs-fact { display:flex; gap:6px; align-items:baseline; min-width:0; }
-.mcs-fact-l { font-family:'Archivo',system-ui,sans-serif; font-size:9.5px; letter-spacing:.07em;
+.mcs-fact-l { font-family:var(--font-display); font-size:9.5px; letter-spacing:.07em;
   text-transform:uppercase; color:var(--faint); font-weight:700; white-space:nowrap; }
 .mcs-fact-v { font-size:13px; font-variant-numeric:tabular-nums; }
 
@@ -514,7 +518,7 @@ const CSS = `
 .mcs-i { flex:1; background:none; border:0; color:#8C99A6; padding:11px 6px 13px;
   display:flex; flex-direction:column; align-items:center; gap:3px; }
 .mcs-i .l { font-size:11.5px; }
-.mcs-i .c { font-family:'Archivo'; font-weight:700; font-size:15px; line-height:1; }
+.mcs-i .c { font-family:var(--font-display); font-weight:700; font-size:15px; line-height:1; }
 .mcs-i.on { color:#FFF; }
 .mcs-i.on .c { color:#7FC2C9; }
 
@@ -529,6 +533,132 @@ const CSS = `
   .mcs-main { padding:24px 28px 40px; }
   .mcs-body { flex-direction:row-reverse; }
 }
+
+/* ==========================================================================
+   PHASE 6 VISUAL FOUNDATION (P6-1)
+   The frozen Phase 6 prototype (phase6-prototype-01 @ fca2c61) is the visual
+   and interaction reference; production's palette and type are kept. This
+   layer comes LAST on purpose: it restyles the classes the screens already
+   use, so no section changed its markup or behaviour to receive it.
+     tokens      the Phase 6 canvas and radii; the three tokens earlier rules
+                 used without ever defining (--ink, --accent, --dim); and font
+                 stacks that fall back to the system face, because production
+                 loads no web font and a bare 'Archivo' fell back to serif
+     header      the screen title stays in view as the screen scrolls
+     tab bar     light, label-first, a teal rule over the current tab; the
+                 count is a small badge; clears the iPhone home indicator
+     sidebar     the same four, light, from 860px
+     pills       one pill control for doorways, views and choices: white, and
+                 filled dark when pressed
+     grid        two columns on a phone, more as the screen widens
+     sheet       the bottom sheet: Phase 6 corners and a grab handle; a side
+                 panel on a wide screen. .mcs-sheet* names the primitive and
+                 shares every rule with the Card Specification sheet
+     feedback    acknowledgements are one rounded, quiet note (.mcs-toast,
+                 shared with the existing saved / filling / joined notes)
+   ========================================================================== */
+.mcs { --bg:#EEF1F4; --ink:var(--text); --accent:var(--t1); --dim:var(--faint);
+  --font-ui:'Public Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --font-display:'Archivo',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --r-card:12px; --r-sheet:18px; --tabbar-h:58px; }
+
+/* the top of a phone: compact */
+.mcs-top { padding:10px 16px; gap:10px; }
+.mcs-word { font-size:16px; }
+.mcs-me .n { font-size:13px; }
+.mcs-out { border-radius:10px; padding:6px 12px; }
+
+/* notices read as notes, not as a band across the screen */
+.mcs-ro, .mcs-joined { margin:12px 16px 0; border-radius:10px; padding:9px 12px;
+  font-size:12px; line-height:1.4; gap:4px 8px; }
+.mcs-ro { border:1px solid var(--amber-line); }
+.mcs-joined { border:1px solid #CFE3E5; }
+
+/* the screen: a sticky title, then its content */
+.mcs-main { padding:0 16px calc(var(--tabbar-h) + 32px + env(safe-area-inset-bottom, 0px)); }
+.mcs-hd { position:sticky; top:0; z-index:5; display:flex; align-items:baseline; gap:10px;
+  margin:0 -16px; padding:16px 16px 6px; background:var(--bg); }
+.mcs-h { font-size:22px; line-height:1.2; }
+.mcs-hd-count { margin-left:auto; color:var(--faint); font-size:12px; white-space:nowrap; }
+.mcs-sub { margin-top:0; font-size:13px; }
+/* Browse's controls sit inside a panel; give them the panel's own gutter. */
+.mcs-panel .mcs-br { padding:12px 16px 16px; }
+.mcs-panel { border-radius:14px; margin-top:14px; }
+
+/* the tab bar, Phase 6: light, label first, a rule over the current tab */
+.mcs-nav { background:#FFF; border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom, 0px); box-shadow:0 -6px 18px rgba(10,16,20,.05); }
+.mcs-i { color:var(--faint); font-weight:600; min-height:var(--tabbar-h); padding:9px 4px 11px;
+  justify-content:center; gap:4px; }
+.mcs-i .l { order:1; font-size:12px; line-height:1.15; text-align:center; }
+/* On a phone the tab bar is labels only, as in Phase 6: the count moves to the
+   screen's header. It is still in the markup, and is shown in the sidebar. */
+.mcs-i .c { display:none; order:2; font-family:var(--font-ui); font-size:10.5px; font-weight:700; line-height:1;
+  padding:2px 6px; border-radius:999px; background:var(--line-soft); color:var(--muted); }
+.mcs-i.on { color:var(--t1); box-shadow:inset 0 2px 0 var(--t1); }
+.mcs-i.on .c { background:var(--t1-bg); color:var(--t1); }
+
+/* pills: one control for doorways, collection views and two-way choices */
+.mcs-br-door, .mcs-view, .mcs-chip { border:1px solid var(--line); background:#FFF; color:var(--muted);
+  border-radius:999px; padding:6px 12px; font-size:12.5px; font-weight:600; white-space:nowrap; }
+.mcs-br-door.on, .mcs-view[aria-pressed="true"], .mcs-chip.on { background:var(--text);
+  border-color:var(--text); color:#FFF; }
+.mcs-view.quiet { font-weight:500; }
+.mcs-br-doors, .mcs-views { flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; padding-bottom:2px; }
+.mcs-br-doors::-webkit-scrollbar, .mcs-views::-webkit-scrollbar { display:none; }
+
+/* the card grid: two up on a phone */
+.mcs-br-grid { grid-template-columns:1fr 1fr; gap:14px 12px; }
+.mcs-br-card { border-radius:var(--r-card); padding:6px; box-shadow:0 1px 2px rgba(10,16,20,.05); }
+.mcs-br-art, .mcs-group-art { border-radius:8px; }
+.mcs-br-name { font-size:13.5px; }
+
+/* buttons: Phase 6 corners */
+.mcs-go, .mcs-br-page { border-radius:10px; }
+
+/* the bottom sheet (and its primitive) */
+.mcs-sheet-scrim { position:fixed; inset:0; z-index:30; display:flex; align-items:flex-end;
+  justify-content:center; }
+.mcs-sheet { background:var(--panel); width:100%; max-width:640px; max-height:88vh; overflow:auto;
+  display:flex; flex-direction:column; gap:16px; }
+.mcs-spec-scrim, .mcs-sheet-scrim { background:rgba(10,16,20,.32); }
+.mcs-spec-panel, .mcs-sheet { border-top:0; border-radius:var(--r-sheet) var(--r-sheet) 0 0;
+  padding:10px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+  box-shadow:0 -10px 30px rgba(10,16,20,.14); }
+.mcs-spec-panel::before, .mcs-sheet::before { content:""; flex:0 0 auto; display:block; width:36px;
+  height:4px; border-radius:999px; background:var(--line); margin:0 auto 2px; }
+
+/* feedback: one quiet, rounded note */
+.mcs-toast, .mcs-spec-saved, .mcs-filling { background:var(--t1-bg); color:var(--t1);
+  border:1px solid #CFE3E5; border-radius:10px; padding:9px 12px; font-size:12.5px; }
+.mcs-toast.warn, .mcs-spec-conflict { background:var(--amber-bg); color:var(--amber);
+  border:1px solid var(--amber-line); border-radius:10px; }
+
+@media (min-width:600px) {
+  .mcs-br-grid { grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); }
+}
+
+/* a wide screen: the same four down the side, light */
+@media (min-width:860px) {
+  .mcs-nav { background:var(--panel); border-top:0; border-right:1px solid var(--line);
+    box-shadow:none; padding:14px 10px; }
+  .mcs-i { min-height:0; color:var(--muted); box-shadow:none; justify-content:flex-start; padding:10px 12px; }
+  .mcs-i .l { font-size:13.5px; text-align:left; }
+  .mcs-i .c { display:inline-block; }
+  .mcs-i:hover { background:var(--line-soft); }
+  .mcs-i.on { color:var(--t1); background:var(--t1-bg); box-shadow:none; }
+  .mcs-main { padding:0 28px 40px; }
+  /* The sidebar on the left, where the Trusted Partner's is: the earlier
+     row-reverse put the Collector's on the right. */
+  .mcs-body { flex-direction:row; }
+  .mcs-hd { margin:0 -28px; padding:22px 28px 6px; }
+  .mcs-ro, .mcs-joined { margin:12px 28px 0; }
+  .mcs-sheet-scrim { align-items:stretch; justify-content:flex-end; }
+  .mcs-spec-panel, .mcs-sheet { border-radius:0; border-left:1px solid var(--line); width:min(460px,100%);
+    max-height:100vh; padding:16px; box-shadow:-10px 0 30px rgba(10,16,20,.10); }
+  .mcs-spec-panel::before, .mcs-sheet::before { display:none; }
+}
+
 `;
 
 export default function CollectorShell({ state, onSignOut, joined = null, onDismissJoined = null,
@@ -654,7 +784,19 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
           ))}
         </nav>
         <main className="mcs-main" key={section}>
-          <h1 className="mcs-h disp">{meta.title}</h1>
+          {/* THE SCREEN'S OWN HEADER (Phase 6 P6-1). The title stays in view
+              while the screen scrolls, as in the Phase 6 prototype; the line
+              under it scrolls away with the content it introduces. */}
+          <header className="mcs-hd">
+            <h1 className="mcs-h disp">{meta.title}</h1>
+            {/* The same row count the tab carries, in words (Phase 6 puts it
+                here, beside the title, and keeps the phone's tab bar to labels). */}
+            {meta.count && meta.unit ? (
+              <span className="mcs-hd-count">
+                {`${counts[meta.id]} ${counts[meta.id] === 1 ? meta.unit[0] : meta.unit[1]}`}
+              </span>
+            ) : null}
+          </header>
           <p className="mcs-sub">{meta.sub}</p>
           {/* Goals is the one section a person can change something from
               (Batch 7), so it is the one that receives callbacks. Every other

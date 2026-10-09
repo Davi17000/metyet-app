@@ -98,7 +98,8 @@ const PARTNER = "p-9k2m";
    product. Binders now holds those as derived views, so the scaffold comes
    down. The screen was not deleted either — `sections/Collection.jsx` is the
    component Binders composes. */
-const NAV = ["Browse", "Binders", "Trusted Partners", "Deal Flow"];
+/* RE-PINNED (Phase 6 P6-1): Deal Flow now precedes Trusted Partners. */
+const NAV = ["Browse", "Binders", "Deal Flow", "Trusted Partners"];
 const TP_NAV = ["Collector Network", "Inventory", "Opportunities"];
 
 /* ---------------------------------------------------- the real projection */
@@ -366,7 +367,8 @@ describe("C. the shell: its sections, and counts that are row counts", () => {
     const labels = buttons(r).map(instText).filter((s) => NAV.some((n) => s.includes(n)));
     eq(labels.length, NAV.length, "no section more, none fewer: " + labels.join(" | "));
     NAV.forEach((n, i) => assert(labels[i].includes(n), `section ${i} is not ${n}`));
-    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "browse,binder,partners,deal-flow");
+    /* RE-PINNED (Phase 6 P6-1): Deal Flow now precedes Trusted Partners. */
+    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "browse,binder,deal-flow,partners");
     /* SUPERSEDED AND RESTATED (Phase 5 C3.4).
        What this protected: that a section which could never hold anything was
        declared deferred rather than shown — Your Cards promised a Collector
