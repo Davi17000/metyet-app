@@ -148,6 +148,9 @@ describe("Goal lifecycle is derived, not stored", () => {
     openGoalMenu(r, live);
     const card = cls(r, "goal").find((n) => txt(n).includes(name));
     click(card.findAllByType("button").find((b) => /Stop negotiation|Cancel agreed deal/.test(txt(b))));
+    /* Batch 3B.1: a price-agreed deal asks why before it can be stopped. */
+    const why = r.root.findAll((n) => n.type === "input" && n.props["aria-label"] === "Reason for cancelling")[0];
+    if (why) TR.act(() => { why.props.onChange({ target: { value: "changed my mind" } }); });
     click(btn(r, "Stop negotiation") || btn(r, "Cancel deal"));
     const after = allGoals(r).find((n) => txt(n).includes(name));
     assert(txt(after).includes("Seeking"), "back to Seeking: " + txt(after).slice(0, 90));
@@ -1162,13 +1165,13 @@ describe("The Primary Goal surfaces real activity", () => {
 
   test("no active deal means no lifecycle bar at all", () => {
     const r = mk();
-    TR.act(() => { __store.get().actions.endOpportunity("o9", "collector", "2026-08-14"); });
+    TR.act(() => { __store.get().actions.endOpportunity("o9", "collector", "2026-08-14", "changed my mind"); });
     eq(byClassIn(rayquaza(r), "rc").length, 0, "no empty receipt treatment");
   });
 
   test("6/8. with no active deal, every matching partner is listed", () => {
     const r = mk();
-    TR.act(() => { __store.get().actions.endOpportunity("o9", "collector", "2026-08-14"); });
+    TR.act(() => { __store.get().actions.endOpportunity("o9", "collector", "2026-08-14", "changed my mind"); });
     const card = rayquaza(r);
     const rows = byClassIn(card, "gs-row");
     eq(rows.length, 3, "all three holders, not a summary");
@@ -1185,7 +1188,7 @@ describe("The Primary Goal surfaces real activity", () => {
 
   test("7/9. each partner is contactable, and contact creates no negotiation", () => {
     const r = mk();
-    TR.act(() => { __store.get().actions.endOpportunity("o9", "collector", "2026-08-14"); });
+    TR.act(() => { __store.get().actions.endOpportunity("o9", "collector", "2026-08-14", "changed my mind"); });
     const before = __store.get().get().opportunities.length;
     const rows = byClassIn(rayquaza(r), "gs-row");
     rows.forEach((n) => assert(n.findAllByType("button").some((b) => /^(Chat|Continue chatting)$/.test(txt(b).trim())),
@@ -1200,7 +1203,7 @@ describe("The Primary Goal surfaces real activity", () => {
 
   test("an existing conversation reads as continuing, not starting", () => {
     const r = mk();
-    TR.act(() => { __store.get().actions.endOpportunity("o9", "collector", "2026-08-14"); });
+    TR.act(() => { __store.get().actions.endOpportunity("o9", "collector", "2026-08-14", "changed my mind"); });
     click(byClassIn(rayquaza(r), "gs-row")[0].findAllByType("button")
       .find((b) => /^(Chat|Continue chatting)$/.test(txt(b).trim())));
     const ta = r.root.findAllByType("textarea")[0];
@@ -1597,6 +1600,12 @@ describe("Stopping a deal is deliberate", () => {
     click(byClassIn(ray(r), "goal-edit-b")[0]);
     click(ray(r).findAllByType("button").find((b) => /Stop negotiation|Cancel agreed deal/.test(txt(b))));
   };
+  /* Batch 3B.1: o9 has an agreed price, so stopping it asks why. */
+  const giveReason = (r) => {
+    const box = r.root.findAll((n) => n.type === "input" && n.props["aria-label"] === "Reason for cancelling")[0];
+    assert(box, "a price-agreed deal asks for a reason");
+    TR.act(() => { box.props.onChange({ target: { value: "changed my mind" } }); });
+  };
 
   test("15. it opens a confirmation before anything changes", () => {
     const r = mk();
@@ -1622,6 +1631,7 @@ describe("Stopping a deal is deliberate", () => {
     const r = mk();
     const oppsBefore = __store.get().get().opportunities.length;
     openStop(r);
+    giveReason(r);
     click(btn(r, "Stop negotiation"));
     const o = __store.get().get().opportunities.find((x) => x.id === "o9");
     assert(o.declined, "the canonical terminal flag is set");
@@ -1635,11 +1645,12 @@ describe("Stopping a deal is deliberate", () => {
   test("18. repeated confirmation causes no duplicate terminal effect", () => {
     const r = mk();
     openStop(r);
+    giveReason(r);
     click(btn(r, "Stop negotiation"));
     const after = JSON.stringify(__store.get().get().opportunities.find((x) => x.id === "o9"));
     /* Straight at the action, twice more. */
-    TR.act(() => { __store.get().actions.endOpportunity("o9", "collector", "2026-08-14"); });
-    TR.act(() => { __store.get().actions.endOpportunity("o9", "collector", "2026-08-14"); });
+    TR.act(() => { __store.get().actions.endOpportunity("o9", "collector", "2026-08-14", "changed my mind"); });
+    TR.act(() => { __store.get().actions.endOpportunity("o9", "collector", "2026-08-14", "changed my mind"); });
     eq(JSON.stringify(__store.get().get().opportunities.find((x) => x.id === "o9")), after,
       "a terminal opportunity is not re-terminated");
   });

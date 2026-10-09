@@ -709,15 +709,21 @@ describe("C. What a second press of Save does", () => {
 /* =============================================== D. what did not move */
 describe("D. What this batch did not touch", () => {
   test("[18] no transaction command became exposed, and the count is what it was", () => {
+    /* MARKET VALIDATION BATCH 3B opened the five price commands — opening an
+       offer, countering, accepting, declining and withdrawing — with the screens
+       that send them, so they left this list. Everything past an agreed price
+       (trade, values, the final balance, fulfilment, Pending) is still shut. */
     /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
        name; any other change to the size still fails here. */
-    eq(EXPOSED_COMMANDS.length, 24, "the production surface changed size");
+    /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
+       commands joined the door with the Deal Flow and Opportunities controls
+       that send them, each named in the allow-list; any other move still fails. */
+    eq(EXPOSED_COMMANDS.length, 29, "the production surface changed size");
     const { COMMAND_NAMES } = require("../domain/metyet-commands.js");
     const known = (n) => [...COMMAND_NAMES].includes(n);
-    for (const shut of ["startOpportunity", "proposePrice", "acceptPrice",
-      "proposeTradeSelection", "reviewTradeCard", "proposeMarketValue",
+    for (const shut of ["proposeTradeSelection", "reviewTradeCard", "proposeMarketValue",
       "acceptMarketValue", "acceptDeal", "proposeFinalBalance", "confirmHandoff",
-      "cancelOpportunity", "setCopyPending", "setInterest", "sendMessage"]) {
+      "setCopyPending", "setInterest", "sendMessage"]) {
       assert(known(shut), `${shut} is not a command, so this asserts nothing`);
       assert(!EXPOSED_COMMANDS.includes(shut), `${shut} was exposed`);
     }

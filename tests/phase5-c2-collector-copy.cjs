@@ -881,10 +881,18 @@ describe("H. the doors this batch opened, and no others", () => {
          evidence in a live deal, and it changes no price, availability or
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
+      /* AND THE FIVE MARKET VALIDATION BATCH 3B ADDED, with the controls that
+         send them: a Collector's "Make an offer", "Counter", "Accept" and
+         "Withdraw offer" in Deal Flow, and a shop's "Accept", "Counter" and
+         "Decline" in Opportunities. Agreeing a price and nothing past it. */
+      "startOpportunity", "proposePrice", "acceptPrice", "declineOffer", "cancelOpportunity",
     ].sort()), "the production surface is not what this batch declared");
     /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
        name; any other change to the size still fails here. */
-    eq(EXPOSED_COMMANDS.length, 24, "and nothing arrived unnamed");
+    /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
+       commands joined the door with the Deal Flow and Opportunities controls
+       that send them, each named in the allow-list; any other move still fails. */
+    eq(EXPOSED_COMMANDS.length, 29, "and nothing arrived unnamed");
   });
 
   test("every exposed name is a real command, and the client sends exactly these", () => {
@@ -944,11 +952,15 @@ describe("H. the doors this batch opened, and no others", () => {
   });
 
   test("no legacy or future command became reachable", async () => {
+    /* MARKET VALIDATION BATCH 3B opened the five price commands — opening an
+       offer, countering, accepting, declining and withdrawing — with the screens
+       that send them, so they left this list. Everything past an agreed price
+       (trade, values, the final balance, fulfilment, Pending) is still shut. */
     const ctx = await world();
     /* `addCopyPhotos` left this loop when photo fulfilment gave it a Trusted
        Partner surface — it is the only command that closes a photo request. */
     for (const name of ["resolveCardIdentity", "addBinderCopy", "updateBinderCopy",
-      "removeBinderCopy", "setInterest", "startOpportunity", "proposeTradeSelection",
+      "removeBinderCopy", "setInterest", "proposeTradeSelection",
       "markBinderReviewed"]) {
       assert(!EXPOSED_COMMANDS.includes(name), `${name} is exposed`);
       await closedOverHttp(ctx, "casey", name, {});

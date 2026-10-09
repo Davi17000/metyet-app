@@ -1042,7 +1042,10 @@ describe("G. whose shelf this is", () => {
     const { EXPOSED_COMMANDS } = require("../server/exposed-commands.js");
     /* RE-PINNED (Batch 3C-1): 25 → 24, `addBinderEntry` closed by name. Still
        nothing to do with importing a CSV, and any other move still fails. */
-    eq(EXPOSED_COMMANDS.length, 24, "C8 opened a production command: " + EXPOSED_COMMANDS.join(","));
+    /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
+       commands joined the door with the Deal Flow and Opportunities controls
+       that send them, each named in the allow-list; any other move still fails. */
+    eq(EXPOSED_COMMANDS.length, 29, "C8 opened a production command: " + EXPOSED_COMMANDS.join(","));
     /* 49 → 50 in Option B (`setCopyPending`), and → 51 in the four-state batch
        (`setCollectorCopyKept`). C8's claim is unchanged: C8 added no domain
        command, and the door it is really guarding — the allow-list above —

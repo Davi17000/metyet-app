@@ -101,7 +101,8 @@ const STEPS = {
   "plan-agreed": (s) => { const id = STEPS["plan-proposed"](s); ok(s.execute(C1, "confirmFulfillmentPlan", { oppId: id, at: AT })); return id; },
   "handed-off": (s) => { const id = STEPS["plan-agreed"](s); ok(s.execute(TP1, "confirmHandoff", { oppId: id, at: AT })); return id; },
   "completed": (s) => { const id = STEPS["handed-off"](s); ok(s.execute(C1, "confirmHandoff", { oppId: id, at: AT })); return id; },
-  "cancelled": (s) => { const id = STEPS["value-trade"](s); ok(s.execute(C1, "cancelOpportunity", { oppId: id, at: AT })); return id; },
+  /* Batch 3B.1: a price is agreed by Value Trade, so ending it says why. */
+  "cancelled": (s) => { const id = STEPS["value-trade"](s); ok(s.execute(C1, "cancelOpportunity", { oppId: id, reason: "changed my mind", at: AT })); return id; },
 };
 const at = (stage) => { const s = world(); const id = STEPS[stage](s); return { s, id, row: () => (opp(s, id).trade.cards[0] || {}).id }; };
 
@@ -122,7 +123,8 @@ const MATRIX = [
   { cmd: "requestFulfillmentRevision", stage: "plan-proposed", good: C1, wrong: TP1, outsider: C2, pay: (x) => ({ oppId: x.id, note: "Sunday" }) },
   { cmd: "confirmHandoff", stage: "plan-agreed", good: TP1, wrong: C1, outsider: TP2, pay: (x) => ({ oppId: x.id }) },
   { cmd: "confirmHandoff", stage: "handed-off", good: C1, wrong: TP1, outsider: C2, pay: (x) => ({ oppId: x.id }), label: "receipt" },
-  { cmd: "cancelOpportunity", stage: "value-trade", good: C1, wrong: null, outsider: C2, pay: (x) => ({ oppId: x.id }) },
+  /* Batch 3B.1: at Value Trade the price is agreed, so the reason is part of a good request. */
+  { cmd: "cancelOpportunity", stage: "value-trade", good: C1, wrong: null, outsider: C2, pay: (x) => ({ oppId: x.id, reason: "changed my mind" }) },
 ];
 /* Value-stage commands that need a prior move are covered separately below. */
 const OTHER_STAGE = { "agree-price": "deal", "select-trade": "value-trade", reserved: "deal",
@@ -373,7 +375,7 @@ describe("E. TP InventoryCopy commitment", () => {
   });
   test("cancellation releases the copy; completion makes it Sold", () => {
     const x = at("value-trade");
-    ok(x.s.execute(C1, "cancelOpportunity", { oppId: x.id }));
+    ok(x.s.execute(C1, "cancelOpportunity", { oppId: x.id, reason: "changed my mind" })); // Batch 3B.1: price agreed
     eq(D.inventoryCopyStatus("i1", x.s.get().opportunities, x.s.get().inventory), "available", "released");
     const y = at("completed");
     eq(D.inventoryCopyStatus("i1", y.s.get().opportunities, y.s.get().inventory), "sold");

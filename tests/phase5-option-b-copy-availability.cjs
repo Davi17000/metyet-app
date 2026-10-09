@@ -445,7 +445,8 @@ describe("E. What a partner may still change, and when", () => {
   test("[20] and release when the deal ends", () => {
     const st = world();
     const a = valued(st, A, "gA", "i1", 27);
-    okv(x(st, A, "cancelOpportunity", { oppId: a, at: AT }), "ended");
+    /* Batch 3B.1: the price is agreed, so ending it says why. */
+    okv(x(st, A, "cancelOpportunity", { oppId: a, reason: "changed my mind", at: AT }), "ended");
     okv(x(st, TP, "updateInventoryCopy", { invId: "i1", patch: { cert: "PSA-999" }, at: AT }),
       "the certificate is the shop's again");
   });
@@ -519,7 +520,8 @@ describe("G. Collector trade-copy exclusivity, unchanged", () => {
     const st = world();
     const a = valued(st, A, "gA", "i1", 27);
     okv(x(st, A, "proposeTradeSelection", { oppId: a, binderIds: ["kA1"], at: AT }), "offered");
-    okv(x(st, A, "cancelOpportunity", { oppId: a, at: AT }), "ended");
+    /* Batch 3B.1: the price is agreed, so ending it says why. */
+    okv(x(st, A, "cancelOpportunity", { oppId: a, reason: "changed my mind", at: AT }), "ended");
     eq(D.collectorCopyStatus("kA1", st.get().opportunities), "available", "released");
 
     const st2 = world();

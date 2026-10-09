@@ -300,7 +300,7 @@ describe("F. Behaviour is unchanged", () => {
     const o = oppAt("select-trade");
     const g = goalOf(o);
     const convs = S().conversations.length;
-    TR.act(() => { acts().endOpportunity(o.id, "collector", "2026-08-17"); });
+    TR.act(() => { acts().endOpportunity(o.id, "collector", "2026-08-17", "changed my mind"); }); /* Batch 3B.1: ending a price-agreed deal needs a reason. */
     eq(D.goalState(g.id, S().opportunities), "seeking", "the Goal returns to pursuit");
     eq(S().conversations.length, convs, "conversation history remains");
     assert(S().opportunities.find((x) => x.id === o.id).declined, "terminal record remains");

@@ -328,7 +328,7 @@ describe("F. Ending and completing", () => {
       cardId: o.cardId, by: "collector", text: "HISTORY", at: "2026-08-17" }); });
     const convs = S().conversations.length;
 
-    TR.act(() => { acts().endOpportunity(o.id, "collector", "2026-08-17"); });
+    TR.act(() => { acts().endOpportunity(o.id, "collector", "2026-08-17", "changed my mind"); }); /* Batch 3B.1: ending a price-agreed deal needs a reason. */
     let r; TR.act(() => { r = TR.create(React.createElement(App)); });
 
     const card = cardFor(r, g);

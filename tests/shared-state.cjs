@@ -383,7 +383,7 @@ describe("N. Failed negotiation unlocks the Goal", () => {
       cardId: "k1", invId: listed(st, "p2", "k1", 4200), listedPrice: 4200, amount: 3700, at: AT });
     st.actions.patchOpportunity(first, (o) => ({ ...o, agreedPrice: 3980 }));
 
-    st.actions.endOpportunity(first, "collector", AT);
+    st.actions.endOpportunity(first, "collector", AT, "changed my mind"); /* Batch 3B.1: ending a price-agreed deal needs a reason. */
 
     eq(st.get().opportunities.length, 1, "the failed deal is KEPT, not deleted");
     eq(st.get().opportunities[0].agreedPrice, 3980, "its agreed terms survive as history");

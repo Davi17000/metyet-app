@@ -141,7 +141,9 @@ describe("A. the browser cannot mint card identity, by any route", () => {
   test("an unexposed command and a command that does not exist are one answer", async () => {
     const ctx = await world();
     const unknown = await post(ctx.app, "casey", "dropEverything", {});
-    const unexposed = await post(ctx.app, "casey", "startOpportunity", {});
+    /* `startOpportunity` was this example until Market Validation Batch 3B
+       exposed it; `proposeTradeSelection` is still a real, unexposed command. */
+    const unexposed = await post(ctx.app, "casey", "proposeTradeSelection", {});
     eq(unknown.statusCode, 409);
     eq(unexposed.statusCode, unknown.statusCode);
     const strip = (r) => json({ ...r.json().error, requestId: null });

@@ -507,7 +507,10 @@ describe("D. all four deployed surfaces use it", () => {
     const { EXPOSED_COMMANDS } = require("../server/exposed-commands.js");
     /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
        name; any other change to the size still fails here. */
-    eq(EXPOSED_COMMANDS.length, 24, "the production door moved");
+    /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
+       commands joined the door with the Deal Flow and Opportunities controls
+       that send them, each named in the allow-list; any other move still fails. */
+    eq(EXPOSED_COMMANDS.length, 29, "the production door moved");
     /* 49 → 50 in Option B (`setCopyPending`), and → 51 in the four-state batch
        (`setCollectorCopyKept`). C7.1's claim is the door above, which has not
        moved for either: the first is written, tested and deliberately unexposed,

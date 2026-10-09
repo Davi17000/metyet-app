@@ -111,7 +111,7 @@ const partnerView = (partnerId = SELF_PARTNER) => {
         (c.binderId === binderId ? { ...c, inclusion } : c)) } })),
     complete: (oppId) => acts().patchOpportunity(oppId, (o) => ({
       ...o, stage: "completed", completedAt: "2026-08-14" })),
-    end: (oppId) => acts().endOpportunity(oppId, "partner", "2026-08-14"),
+    end: (oppId) => acts().endOpportunity(oppId, "partner", "2026-08-14", "Ended by the partner"), /* Batch 3B.1: ending a price-agreed deal needs a reason. */
   };
 };
 const cv = () => collectorView(st0(), SELF_COLLECTOR);

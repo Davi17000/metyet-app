@@ -350,6 +350,29 @@ const CSS = `
   align-items:center; margin-top:6px; }
 .mcs-df-state { font-size:11.5px; color:var(--dim); }
 .mcs-df-trouble { font-size:11.5px; color:var(--amber); }
+/* ---- making an offer, and the offer under its Goal (Batch 3B) ----
+   On the copy it is for, a full row under the copy's own controls; under the
+   Goal, a box above the copies. One column at every width. */
+.mcs-offer { flex-basis:100%; display:flex; flex-direction:column; gap:7px; margin:8px 0 2px;
+  padding:11px 12px; border:1px solid var(--line); border-radius:8px; }
+.mcs-offer-live { margin:0 16px 12px; }
+.mcs-offer-card { margin:0; font-size:13px; font-weight:600; color:var(--text); }
+.mcs-offer-terms { margin:0; font-size:12px; color:var(--muted); }
+.mcs-offer-status { margin:0; font-size:13px; font-weight:600; color:var(--text); }
+.mcs-offer-trail { margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:2px;
+  font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
+.mcs-offer-trail .mine { color:var(--text); }
+.mcs-offer-do, .mcs-offer-mode { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.mcs-offer-entry { display:flex; flex-direction:column; gap:8px; margin:0; }
+.mcs-offer-field { display:flex; align-items:center; gap:6px; max-width:220px; }
+.mcs-offer-field input { flex:1; min-width:0; padding:10px 12px; border:1px solid var(--line); border-radius:6px;
+  font-size:16px; font-variant-numeric:tabular-nums; }
+.mcs-offer-unit { color:var(--muted); font-weight:600; }
+.mcs-offer-line { margin:0; font-size:12px; color:var(--muted); }
+.mcs-offer-problem { margin:0; font-size:12px; color:var(--amber); }
+.mcs-chip { background:#FFF; border:1px solid var(--line); color:var(--muted); border-radius:999px;
+  padding:7px 12px; font-size:12.5px; }
+.mcs-chip.on { border-color:var(--accent); color:var(--text); font-weight:600; }
 /* THE THREE THINGS A PERSON CAN MEAN ABOUT ONE COPY. A row, because they are
    one question with three answers rather than three separate switches. */
 .mcs-disp { display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 0; }
@@ -512,6 +535,8 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
   onAddGoal = null, onSetPriority = null, onRemoveGoal = null, onBrowseCards = null,
   onSpecify = null, onCreateBinder = null, onRenameBinder = null,
   onInspect = null, onEndInspection = null, onRequestPhotos = null,
+  onOpenOffer = null, onCounterOffer = null, onAcceptOffer = null, onWithdrawOffer = null,
+  onRefresh = null,
   onArchiveBinder = null,
   /* WHERE A FILED THING GOES NEXT (Batch 3B-1). Bound at the entrance like
      every other command and handed down, so a section stays a surface that
@@ -604,7 +629,9 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
         {onAddGoal ? (
           <>
             <span>Your goals are yours to change — say what you&apos;re looking for and how hard.</span>
-            <span className="dim">Everything else here is read-only for now: trades and messages arrive later.</span>
+            <span className="dim">{onOpenOffer
+              ? "Offers are yours to make and answer in Deal Flow. Everything else here is read-only for now: trades and messages arrive later."
+              : "Everything else here is read-only for now: trades and messages arrive later."}</span>
           </>
         ) : (
           <>
@@ -661,7 +688,8 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
                          Value, Pending and everything downstream of them are
                          still real domain commands with no surface, and this
                          screen still stops at the line before a transaction. */
-                      ? { onBrowseCards, onInspect, onEndInspection, onRequestPhotos }
+                      ? { onBrowseCards, onInspect, onEndInspection, onRequestPhotos,
+                        onOpenOffer, onCounterOffer, onAcceptOffer, onWithdrawOffer, onRefresh }
                       : {})} />
         </main>
       </div>

@@ -290,7 +290,8 @@ function everyCommand(store, rec) {
   x(TP1, "acceptPrice", { oppId: k });
   x(C2, "chooseCashOnly", { oppId: k });
   step("chooseCashOnly", { opp: opp(k) });
-  x(C2, "cancelOpportunity", { oppId: k });
+  /* Batch 3B.1: the price is agreed, so ending it says why. */
+  x(C2, "cancelOpportunity", { oppId: k, reason: "changed my mind" });
   step("cancelOpportunity", { opp: opp(k) });
 
   /* Market Validation Batch 2: an opening the partner declines. The cancelled

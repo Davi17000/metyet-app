@@ -425,10 +425,105 @@ describe("J. counters: whole dollars, or a share of the price captured at the op
 
 /* ============================================================== K */
 describe("K. no production door yet", () => {
-  test("no negotiation command is on the production allow-list", () => {
+  /* RESTATED (Batch 3B). Batch 2 asserted none of the five was exposed; 3B
+     exposed exactly those five, with the screens that send them. What is still
+     true and still asserted: nothing past an agreed price joined them. */
+  test("the price commands are on the production allow-list, and nothing past them", () => {
     for (const c of ["startOpportunity", "proposePrice", "acceptPrice", "declineOffer", "cancelOpportunity"]) {
+      assert(EXPOSED_COMMANDS.includes(c), `${c} is not on the production allow-list`);
+    }
+    for (const c of ["proposeTradeSelection", "chooseCashOnly", "proposeMarketValue", "acceptMarketValue",
+      "acceptDeal", "proposeFinalBalance", "proposeFulfillment", "confirmHandoff", "setCopyPending"]) {
       assert(!EXPOSED_COMMANDS.includes(c), `${c} reached the production allow-list`);
     }
+  });
+});
+
+/* ============================================================== L */
+/* ENDING A DEAL (Batch 3B.1). Withdrawal, decline and ending after a price are
+   three different things with three different doors:
+     price open   Collector withdraws (cancelOpportunity, no reason needed)
+                  partner declines (declineOffer) — and may NOT cancel instead
+     price agreed either may end it (cancelOpportunity) with a non-blank reason
+     both final   the same, and the outcome reads "cancelled"                  */
+describe("L. ending a deal: withdrawal, decline, and ending after a price", () => {
+  const BAD = [undefined, null, "", "   ", "\n\t", 42, true, {}, ["why"]];
+  const agreedDeal = () => {
+    const st = world();
+    const o = okv(x(st, A, "startOpportunity", { goalId: "gA", invId: "i1", amount: 28 }), "open");
+    okv(x(st, TP, "acceptPrice", { oppId: o }), "agree");
+    return { st, o };
+  };
+  test("before a price: the Collector withdraws with no reason — ended, by the Collector", () => {
+    const st = world();
+    const o = okv(x(st, A, "startOpportunity", { goalId: "gA", invId: "i1", amount: 28 }), "open");
+    okv(x(st, A, "cancelOpportunity", { oppId: o }), "withdraw");
+    const r = opp(st, o);
+    eq([r.outcome, r.endedBy, r.endedStage, r.endedReason, r.agreedPrice].join("|"), "ended|collector|agree-price||", "a withdrawal");
+  });
+  test("before a price: the partner declines — declined, and cancelling instead is refused", () => {
+    const st = world();
+    const o = okv(x(st, A, "startOpportunity", { goalId: "gA", invId: "i1", amount: 28 }), "open");
+    okv(x(st, TP, "proposePrice", { oppId: o, amount: 30 }), "even after countering");
+    const before = JSON.stringify(st.get());
+    for (const reason of [undefined, "not this one"]) {
+      nov(x(st, TP, "cancelOpportunity", { oppId: o, reason }), "not-owner", `partner cancel, reason ${JSON.stringify(reason)}`);
+    }
+    eq(JSON.stringify(st.get()), before, "nothing written by either refusal");
+    okv(x(st, TP, "declineOffer", { oppId: o }), "the partner's door");
+    eq(opp(st, o).outcome, "declined", "declined, not ended");
+  });
+  test("after a price: either may end it with a reason, which is kept trimmed", () => {
+    for (const [who, seat] of [[A, "collector"], [TP, "tp"]]) {
+      const { st, o } = agreedDeal();
+      okv(x(st, who, "cancelOpportunity", { oppId: o, reason: "  card was damaged  " }), `${seat} ends it`);
+      const r = opp(st, o);
+      eq([r.outcome, r.endedBy, r.endedStage, r.endedReason, r.agreedPrice].join("|"),
+        `ended|${seat}|select-trade|card was damaged|28`, `${seat}: ended, with why, terms kept`);
+    }
+  });
+  test("after a price: a missing, blank or non-string reason is refused, and nothing is written", () => {
+    for (const who of [A, TP]) {
+      const { st, o } = agreedDeal();
+      const before = JSON.stringify(st.get());
+      for (const reason of BAD) {
+        nov(x(st, who, "cancelOpportunity", { oppId: o, ...(reason === undefined ? {} : { reason }) }),
+          "reason-required", `reason ${JSON.stringify(reason)}`);
+      }
+      eq(JSON.stringify(st.get()), before, "nothing written");
+    }
+  });
+  test("declining is not a way around it once a price is agreed", () => {
+    const { st, o } = agreedDeal();
+    nov(x(st, TP, "declineOffer", { oppId: o, reason: "no" }), "wrong-stage", "decline after agreement");
+  });
+  test("nobody else may end it, reason or not", () => {
+    const st = world();
+    const o = okv(x(st, A, "startOpportunity", { goalId: "gA", invId: "i1", amount: 28 }), "open");
+    for (const [who, label] of [[B, "another Collector"], [TP2, "another partner"]]) {
+      nov(x(st, who, "cancelOpportunity", { oppId: o, reason: "because" }), "not-participant", label);
+    }
+    okv(x(st, TP, "acceptPrice", { oppId: o }), "agree");
+    for (const [who, label] of [[B, "another Collector"], [TP2, "another partner"]]) {
+      nov(x(st, who, "cancelOpportunity", { oppId: o, reason: "because" }), "not-participant", label + ", after a price");
+    }
+  });
+  test("ending releases the Goal and the copy; an ended deal takes no further ending", () => {
+    const { st, o } = agreedDeal();
+    nov(x(st, A, "startOpportunity", { goalId: "gA", invId: "i2", amount: 31 }), "already-negotiating", "held while it lives");
+    okv(x(st, A, "cancelOpportunity", { oppId: o, reason: "changed my mind" }), "ended");
+    eq(D.goalState("gA", st.get().opportunities), "seeking", "the Goal is free");
+    eq(D.inventoryCopyStatus("i1", st.get().opportunities, st.get().inventory), "available", "the copy is free");
+    okv(x(st, A, "startOpportunity", { goalId: "gA", invId: "i2", amount: 31 }), "and a new offer may open");
+    nov(x(st, TP, "cancelOpportunity", { oppId: o, reason: "again" }), "terminal", "no second ending");
+  });
+  test("after both final agreements: still a reason, and it reads as cancelled", () => {
+    const { st, o } = agreedDeal();
+    okv(x(st, A, "chooseCashOnly", { oppId: o }), "cash only");
+    okv(x(st, TP, "acceptDeal", { oppId: o }), "partner final"); okv(x(st, A, "acceptDeal", { oppId: o }), "collector final");
+    nov(x(st, TP, "cancelOpportunity", { oppId: o, reason: "  " }), "reason-required", "blank");
+    okv(x(st, TP, "cancelOpportunity", { oppId: o, reason: "card lost in transit" }), "with a reason");
+    eq([opp(st, o).outcome, opp(st, o).endedStage].join("|"), "cancelled|fulfillment", "cancelled after agreement");
   });
 });
 

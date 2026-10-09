@@ -227,8 +227,27 @@ function ownReadPosition(out, seat) {
    submit a package in one step, so canonical state normally never holds an
    unsubmitted one — but a record that does must not reach the partner. */
 const submittedRows = (o) => (o.trade && o.trade.submitted === true ? list(o.trade.cards) : []);
+/* WHERE A DEAL STANDS, DECIDED HERE (Market Validation, Batch 3B / 3B.1).
+   The domain has one turn engine, `D.nextActor`, and named lifecycle
+   predicates; the screens must not grow second copies of either. So each
+   participant's copy of a deal carries the answers:
+     seat       who acts next (`tp`, `collector`, or null when nobody does)
+     reason     the turn engine's own word for why
+     amount     the price on the table when the move is a price, else null
+     active     D.isActive — not ended, not completed
+     priceOpen  D.priceUnresolved — live and still agreeing a price
+   Both participants already know everything these are computed from — they
+   are read from the full record BEFORE the partner's view hides an
+   unsubmitted trade, and say nothing about what is in the trade. */
+const withTurn = (out, o) => {
+  const t = D.nextActor(o);
+  out.turn = { seat: D.seatOfActor(t.actor), reason: t.reason,
+    amount: t.reason === "price" && typeof t.amount === "number" ? t.amount : null,
+    active: D.isActive(o), priceOpen: D.priceUnresolved(o) };
+  return out;
+};
 const opportunityForPartner = (o) => {
-  const out = clone(o);
+  const out = withTurn(clone(o), o);
   if (out.trade && out.trade.submitted !== true) out.trade = { ...out.trade, cards: [] };
   return ownReadPosition(out, "tp");
 };
@@ -467,7 +486,7 @@ function projectForCollector(state, me) {
     interests: list(state.interests)
       .filter((x) => myCopyIds.has(x.binderId) && related(x.partnerId))
       .map((x) => pick(x, INTEREST_FOR_COLLECTOR)),
-    opportunities: opportunities.map((o) => ownReadPosition(omit(o, OPPORTUNITY_PARTNER_PRIVATE), "collector")),
+    opportunities: opportunities.map((o) => ownReadPosition(withTurn(omit(o, OPPORTUNITY_PARTNER_PRIVATE), o), "collector")),
     conversations: clone(conversations),
     activity: [],                                          // D-4: partner-private
     photoRequests: clone(photoRequests),

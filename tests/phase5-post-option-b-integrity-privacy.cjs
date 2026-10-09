@@ -237,7 +237,8 @@ describe("A. What a partner may still restate about a card in a live deal", () =
     const a = valued(st, A, "gA", 26);
     nov(x(st, TP, "updateInventoryCopy", { invId: "i1", patch: { grade: "PSA 10" }, at: AT }),
       D.REFUSE.copyCommitted, "closed while somebody is pricing against it");
-    okv(x(st, A, "cancelOpportunity", { oppId: a, at: AT }), "the deal ends");
+    /* Batch 3B.1: the price is agreed, so ending it says why. */
+    okv(x(st, A, "cancelOpportunity", { oppId: a, reason: "changed my mind", at: AT }), "the deal ends");
     okv(x(st, TP, "updateInventoryCopy", { invId: "i1", patch: { grade: "PSA 10" }, at: AT }),
       "and the shop owns its own card again");
     eq(copyOf(st).grade, "PSA 10", "the correction landed");

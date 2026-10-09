@@ -29,9 +29,20 @@
    that names none — which is most of them before a price is agreed — shows
    none, rather than picking a copy of the same card that looks right.
 
-   NOTHING HERE ACTS. No stage button, no negotiation control, no disabled
-   affordance pretending to be one. Every action migrates later through
-   authenticated POST /api/commands, and until it does, this screen reads.
+   ONE THING HERE ACTS, AND IT IS THE PRICE (Market Validation, Batch 3B).
+   Until this batch nothing here acted. Now a Collector's offer is something a
+   shop answers: Accept, Counter (in dollars or a percentage of the price that
+   was listed when the offer opened — available even when that price was
+   Firm) or Decline. Those three, and only while the server says it is the
+   shop's move on a price. Every later stage still reads: no stage button and
+   no disabled affordance pretending to be one.
+
+   ORGANISED BY WHO MOVES NEXT. A deal waiting on THIS shop's answer to a
+   price is in Ready to coordinate, ahead of the shelf overlaps — it is the
+   most actionable thing on the page. Everything else live stays in In
+   progress, each row saying plainly whose turn it is. Whose turn is the
+   server's (`turn`, projected from the domain's one turn engine); this file
+   reads it and never works it out.
 
    ---------------------------------------------------------------------------
    AND NOW THE PART THAT COMES BEFORE ANY OF THAT (Phase 5 Batch 8).
@@ -60,12 +71,15 @@
 
 import React, { useEffect, useState } from "react";
 import { Panel, Record, Fact, Tag } from "../parts.jsx";
+import { OfferEntry, PriceHistory, useSender, statusLine, termsLine, priceOnTable, viewerSeat,
+  isUnresolved, isLiveDeal, myPriceMove, dollars, isEndedDeal, cardLine } from "../../negotiation.jsx";
 import { rows, indexById, text, day, money, plural, cardTitle, cardSetLine,
   gradeLine, stageLabel, isKnownStage, tierLabel, supplyLine, byRecency } from "../present.js";
 
 const COMPLETED = "completed";
 
-export default function Opportunities({ state, onBrowseCards = null }) {
+export default function Opportunities({ state, onBrowseCards = null,
+  onCounterOffer = null, onAcceptOffer = null, onDeclineOffer = null, onRefresh = null }) {
   const all = rows(state && state.opportunities);
   const catalog = indexById(state && state.catalog);
   const goals = indexById(state && state.goals);
@@ -83,21 +97,39 @@ export default function Opportunities({ state, onBrowseCards = null }) {
     if (copy.invId != null) copies.set(copy.invId, copy);
   }
 
-  const live = byRecency(all.filter((o) => o.stage !== COMPLETED), "updated");
-  const done = byRecency(all.filter((o) => o.stage === COMPLETED), "completedAt", "updated");
+  /* Ended deals (declined or withdrawn) are not in progress; they are history
+     and sit with the completed ones. */
+  /* `o.stage !== COMPLETED` is this screen's own pre-Batch-3B grouping, kept
+     as it was: it is a label comparison against one canonical value, and it
+     is what lets a stage this build has never seen survive in In progress.
+     Ended deals (the server's own outcome flag) join the finished ones. Who
+     moves next is the server's `turn`, read by name. */
+  const me = viewerSeat(state);
+  const live = byRecency(all.filter((o) => o.stage !== COMPLETED && !isEndedDeal(o)), "updated");
+  const yourMove = live.filter((o) => myPriceMove(o, me));
+  const waiting = live.filter((o) => !myPriceMove(o, me));
+  const done = byRecency(all.filter((o) => o.stage === COMPLETED || isEndedDeal(o)), "completedAt", "updated");
 
   /* READY TO COORDINATE — the server's overlaps, minus the ones already being
      worked. A discovery names the Goal it came from; a live deal names the Goal
      it is for. Where those are the same Goal and the same collector, the deal
      is the truer statement and the discovery would only repeat it. */
   const working = new Set(live.map((o) => `${o.goalId}::${o.partnerId}`));
+  /* The last thing said about each deal, kept here rather than in the row: an
+     answer that finds the deal already moved re-reads the server, and the deal
+     can land in a different panel with the message still owed. */
+  const [said, setSaid] = useState({});
+  const sayAbout = (oppId) => (key, message) => setSaid((held) => ({ ...held, [oppId]: message }));
   const ready = rows(state && state.discoveries).filter((d) => !working.has(d.key));
 
   /* WHAT EACH ONE IS, ASKED FOR ONCE. The ids are in this projection already;
      the names are not, and a row that cannot say which card it is about is a
      row a person cannot act on. One request for the set — never one per row,
      and never the catalogue. */
-  const readyIds = [...new Set(ready.map((d) => d.canonicalCardId).filter(Boolean))];
+  /* Batch 3B: and the cards the deals below are about, so an offer names the
+     exact card and version it is for. Still one request for the set. */
+  const readyIds = [...new Set([...ready.map((d) => d.canonicalCardId),
+    ...all.map((o) => o.canonicalCardId)].filter(Boolean))];
   const [named, setNamed] = useState({});
   useEffect(() => {
     if (!onBrowseCards || !readyIds.length) return undefined;
@@ -147,17 +179,23 @@ export default function Opportunities({ state, onBrowseCards = null }) {
     const known = isKnownStage(o.stage);
     const grade = gradeLine(card);
     const subtitle = [cardSetLine(card), grade].filter(Boolean).join(" · ") || null;
+    /* A deal on a catalogue card names it from the catalogue's description,
+       with this copy's own grade; a legacy one keeps the line above. */
+    const exact = !card && o.canonicalCardId
+      ? [cardLine(named[o.canonicalCardId] || null), copy ? gradeLine(copy) : null].filter(Boolean).join(" · ") || null
+      : null;
 
     return (
       <Record
         key={o.id}
         title={who.get(o.collectorId) || "A collector outside your network"}
-        subtitle={cardTitle(card) ? `${cardTitle(card)}${subtitle ? ` — ${subtitle}` : ""}` : subtitle}
+        subtitle={exact || (cardTitle(card) ? `${cardTitle(card)}${subtitle ? ` — ${subtitle}` : ""}` : subtitle)}
         tags={
           <>
             <Tag tone={known ? "strong" : "unknown"}>{stageLabel(o.stage)}</Tag>
             {known ? null : <Tag>not a stage this version knows</Tag>}
             {goal ? <Tag>{tierLabel(goal.tier)}</Tag> : null}
+            {turnTag(o)}
           </>
         }
         note={text(goal && goal.note)}
@@ -173,28 +211,46 @@ export default function Opportunities({ state, onBrowseCards = null }) {
             <Fact label="Completed" value={day(o.completedAt)} mono />
           </>
         }
-      />
+      >
+        {isUnresolved(o) || isEndedDeal(o) ? (
+          <PriceBlock deal={o} me={me} collector={who.get(o.collectorId) || "The collector"}
+            onCounterOffer={onCounterOffer} onAcceptOffer={onAcceptOffer}
+            onDeclineOffer={onDeclineOffer} onRefresh={onRefresh} report={sayAbout(o.id)} note={said[o.id] || null} />
+        ) : null}
+        {said[o.id] && !(isUnresolved(o) || isEndedDeal(o))
+          ? <p className="tps-offer-problem tps-offer-said" role="status">{said[o.id]}</p> : null}
+      </Record>
     );
+  };
+  /* Whose turn, in two words. Only for live deals; a finished one has none. */
+  const turnTag = (o) => {
+    if (!isLiveDeal(o) || !o.turn.seat) return null;
+    if (me && o.turn.seat === me) return <Tag tone="strong">Your move</Tag>;
+    return <Tag>{`Waiting for ${who.get(o.collectorId) || "the collector"}`}</Tag>;
   };
 
   return (
     <>
-      {ready.length ? (
+      {ready.length || yourMove.length ? (
         <Panel title="Ready to coordinate"
-          note={plural(ready.length, "card", "cards")}>
+          note={[yourMove.length ? plural(yourMove.length, "offer to answer", "offers to answer") : null,
+            ready.length ? plural(ready.length, "card", "cards") : null].filter(Boolean).join(" · ")}>
+          {yourMove.map(line)}
           {ready.map(overlap)}
         </Panel>
       ) : null}
 
       <Panel
         title="In progress"
-        note={live.length ? plural(live.length, "opportunity", "opportunities") : null}
-        empty={live.length ? null
-          : (all.length
+        note={waiting.length ? plural(waiting.length, "opportunity", "opportunities") : null}
+        empty={waiting.length ? null
+          : (yourMove.length
+            ? "Nothing else in progress — the offers above are waiting on you."
+            : all.length
             ? "Nothing in progress. Everything you've coordinated is complete."
             : "Nothing in progress yet. An opportunity begins from a collector's goal.")}
       >
-        {live.map(line)}
+        {waiting.map(line)}
       </Panel>
 
       {done.length ? (
@@ -203,5 +259,56 @@ export default function Opportunities({ state, onBrowseCards = null }) {
         </Panel>
       ) : null}
     </>
+  );
+}
+
+/* ------------------------------------------------------------ THE PRICE
+   Where an offer stands, how it got here, and — only when the server says it
+   is this shop's move on a price — Accept, Counter or Decline. Counter is
+   always there on the shop's move, including on a copy listed Firm on Price:
+   Firm binds the Collector's OPENING, not the shop's reply. */
+function PriceBlock({ deal, me, collector, onCounterOffer, onAcceptOffer, onDeclineOffer, onRefresh,
+  report = null, note = null }) {
+  const sender = useSender(onRefresh, report);
+  const [countering, setCountering] = useState(false);
+  const myMove = myPriceMove(deal, me);
+  const onTable = priceOnTable(deal);
+  const busy = !!sender.busy;
+  return (
+    <div className="tps-offer" aria-label="Price">
+      <p className="tps-offer-terms">{termsLine(deal)}</p>
+      <p className="tps-offer-status" role="status">{statusLine(deal, me, collector)}</p>
+      <PriceHistory cls="tps" deal={deal} seat={me} other={collector} />
+      {isUnresolved(deal) && myMove ? (
+        countering ? (
+          <OfferEntry cls="tps" verb="Send counter" busy={busy}
+            listed={typeof deal.listedPrice === "number" && deal.listedPrice > 0 ? deal.listedPrice : null}
+            onCancel={() => { sender.clear(); setCountering(false); }}
+            onSubmit={async (price) => {
+              if (await sender.send(`counter:${deal.id}`, () => onCounterOffer(deal.id, price))) setCountering(false);
+            }} />
+        ) : (
+          <div className="tps-offer-do">
+            {onTable != null && onAcceptOffer ? (
+              <button type="button" className="tps-go" disabled={busy}
+                onClick={() => sender.send(`accept:${deal.id}`, () => onAcceptOffer(deal.id))}>
+                {sender.busy === `accept:${deal.id}` ? "Accepting…" : `Accept ${dollars(onTable)}`}
+              </button>
+            ) : null}
+            {onCounterOffer ? (
+              <button type="button" className="tps-go quiet" disabled={busy}
+                onClick={() => { sender.clear(); setCountering(true); }}>Counter</button>
+            ) : null}
+            {onDeclineOffer ? (
+              <button type="button" className="tps-go quiet" disabled={busy}
+                onClick={() => sender.send(`decline:${deal.id}`, () => onDeclineOffer(deal.id))}>
+                {sender.busy === `decline:${deal.id}` ? "Declining…" : "Decline"}
+              </button>
+            ) : null}
+          </div>
+        )
+      ) : null}
+      {sender.trouble || note ? <p className="tps-offer-problem" role="status">{sender.trouble || note}</p> : null}
+    </div>
   );
 }

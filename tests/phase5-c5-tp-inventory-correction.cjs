@@ -193,7 +193,10 @@ describe("A. the door opened by exactly two", () => {
   test("the allow-list, and the two C5 itself added", async () => {
     /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
        name; any other change to the size still fails here. */
-    eq(EXPOSED_COMMANDS.length, 24, "the production surface is not the size C5 intended");
+    /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
+       commands joined the door with the Deal Flow and Opportunities controls
+       that send them, each named in the allow-list; any other move still fails. */
+    eq(EXPOSED_COMMANDS.length, 29, "the production surface is not the size C5 intended");
     for (const name of ["updateInventoryCopy", "removeInventoryCopy"]) {
       assert(EXPOSED_COMMANDS.includes(name), `${name} is not offered`);
     }
@@ -206,6 +209,10 @@ describe("A. the door opened by exactly two", () => {
   });
 
   test("no dormant command came through the same door", async () => {
+    /* MARKET VALIDATION BATCH 3B opened the five price commands — opening an
+       offer, countering, accepting, declining and withdrawing — with the screens
+       that send them, so they left this list. Everything past an agreed price
+       (trade, values, the final balance, fulfilment, Pending) is still shut. */
     const ctx = await world();
     /* The deal lifecycle, the legacy catalogue writer, and the two inventory
        commands C5 did NOT ship. Each is a real command and each is refused
@@ -215,8 +222,8 @@ describe("A. the door opened by exactly two", () => {
        Trusted Partner one. That was recorded here as a gap rather than a
        decision — the only command that FULFILS a photo request, with no screen
        to send it from — and closing it is what that batch was for. */
-    for (const name of ["startOpportunity", "proposePrice", "acceptPrice", "acceptDeal",
-      "confirmHandoff", "cancelOpportunity", "sendMessage", "reachOut", "setInterest",
+    for (const name of ["acceptDeal",
+      "confirmHandoff", "sendMessage", "reachOut", "setInterest",
       "resolveCardIdentity", "inviteCollector"]) {
       assert(COMMAND_NAMES.has ? COMMAND_NAMES.has(name) : [...COMMAND_NAMES].includes(name),
         `${name} is not a command, so this test is asserting nothing`);
@@ -248,8 +255,12 @@ describe("A. the door opened by exactly two", () => {
        guard has now fired three times for three different right reasons — which
        is the whole point of measuring the delta against the file as dc2fd25
        actually had it rather than against a literal. */
-    eq(json(added.sort()), json(["addCopyPhotos", "endReview", "fileObject", "removeInventoryCopy",
-      "requestPhotos", "reviewCopy", "setCollectorCopyKept", "unfileObject", "updateInventoryCopy"]),
+    /* …and the five Market Validation Batch 3B opened with the price controls
+       that send them — the fourth time this guard fired for a declared reason. */
+    eq(json(added.sort()), json(["acceptPrice", "addCopyPhotos", "cancelOpportunity", "declineOffer",
+      "endReview", "fileObject", "proposePrice", "removeInventoryCopy",
+      "requestPhotos", "reviewCopy", "setCollectorCopyKept", "startOpportunity", "unfileObject",
+      "updateInventoryCopy"]),
       "a door was opened that no batch declared");
     /* RE-PINNED (Batch 3C-1): exactly one door somebody else opened has been
        closed — `addBinderEntry`, by 3C-1, after 3B-1 removed its last caller —

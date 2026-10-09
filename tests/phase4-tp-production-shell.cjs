@@ -334,12 +334,13 @@ describe("B. the shell is the product, and all of it is the server's data", () =
        Inventory; Batch 2 added inviting a collector, which belongs on the
        Collector Network because that is what a network grows from. Naming the
        exact list is what keeps that growth deliberate — a section that quietly
-       acquires a write has to come through here. Opportunities is still read
-       only, and that is the assertion with teeth. */
+       acquires a write has to come through here.
+       MARKET VALIDATION BATCH 3B IS THAT DECISION FOR OPPORTUNITIES: a shop
+       now answers a Collector's offer there (Accept, Counter, Decline). It is
+       the last of the three, so every section writes — and the list is still
+       named exactly, so a fourth section cannot arrive writable unnoticed. */
     eq(SHELL_MOD.SECTIONS.filter((s) => s.writes).map((s) => s.id).join(","),
-      "collectors,inventory");
-    assert(!SHELL_MOD.SECTIONS.find((s) => s.id === "opportunities").writes,
-      "Opportunities acquired a write without a decision");
+      "collectors,inventory,opportunities");
   });
 
   test("the counts beside each section are the projection's own rows", () => {
@@ -487,10 +488,14 @@ describe("C. nothing is invented — not identity, not rules, not content", () =
     assert(!/Invite a collector|Withdraw/.test(flat(r)),
       "an invitation control was offered with no way to send it: " + flat(r));
 
-    /* A section nothing can be changed from still says so. Opportunities is the
-       one left, and the notice belongs to it rather than to the shell. */
+    /* A section nothing can be changed from used to say so, and Opportunities
+       was the one left. Since Batch 3B it is where a shop answers an offer, so
+       a blanket "read-only" there would be false — and what this test protects
+       still holds: handed no callback, it offers no control. */
     clickText(r, "Opportunities");
-    assert(/Read-only for now/.test(flat(r)), "a read section does not say it is read-only");
+    assert(!/Read-only for now/.test(flat(r)), "Opportunities still claims to be read-only");
+    assert(!buttons(r).some((b) => /^(Accept|Counter|Decline)/.test(instText(b).trim())),
+      "a price control was offered with no callback to send it: " + flat(r));
 
     /* Inventory is where the shop is reached from, so it does not carry a
        notice contradicting what can be done there.

@@ -18,9 +18,13 @@
                  HTTP request: the route's authenticate → actor step is not
                  exercised for these five here (it is shared by every command
                  and covered by the server suites).
-   Nothing here is described as a full HTTP integration test of the five
-   commands, because the product does not yet offer them over HTTP.
-     A. the door          HTTP: the five are refused today, and write nothing
+   Nothing in B–I is described as a full HTTP integration test of the five.
+   RESTATED (Batch 3B): the five are now on the allow-list, with the Deal Flow
+   and Opportunities controls that send them, so section A now runs them over
+   real HTTP end to end — the step this suite could not take when it was
+   written. The rest still runs on the persistence path it describes, and the
+   UI-to-server round trip is market-validation-b3b's.
+     A. the door          HTTP: the five run through it; nothing past them does
      B. negotiation       PERSISTENCE: open, accept, counter, decline, withdraw
      C. Firm and dollars  PERSISTENCE: Firm, whole dollars, percentages
      D. one offer         PERSISTENCE: across partners; released on end
@@ -123,25 +127,49 @@ async function market(ctx, { ask = 120, firm = false, silverAsk = 125 } = {}) {
 }
 
 /* ============================================================== A */
-describe("A. HTTP — the door stays shut for all five, and refuses cleanly", () => {
-  test("none of the five is on the allow-list", () => {
-    for (const c of FIVE) assert(!EXPOSED_COMMANDS.includes(c), `${c} was exposed`);
-  });
-  test("each one, sent over HTTP by a real account, answers 409 command-unavailable and writes nothing", async () => {
-    const ctx = await world(); const m = await market(ctx);
-    const o = await ok(ctx, "casey", "startOpportunity", { goalId: m.gA, invId: m.i1, amount: 100 });
-    const before = json(await stored(ctx));
-    const sends = [["casey", "startOpportunity", { goalId: m.gY, invId: m.i3, amount: 150 }],
-      ["north", "proposePrice", { oppId: o, amount: 115 }], ["north", "acceptPrice", { oppId: o }],
-      ["north", "declineOffer", { oppId: o }], ["casey", "cancelOpportunity", { oppId: o }]];
-    for (const [who, command, payload] of sends) {
-      const res = await post(ctx.app, who, command, payload);
-      eq(res.statusCode, 409, `${command} status`);
-      eq(res.json().error.refused, "command-unavailable", `${command} refusal`);
-      assert(!JSON.stringify(res.json()).includes("p1") && !JSON.stringify(res.json()).includes(o), `${command}'s refusal names nothing`);
+describe("A. HTTP — the five go through the door; nothing past them does", () => {
+  test("all five are on the allow-list (Batch 3B); the trade and settlement are not", () => {
+    for (const c of FIVE) assert(EXPOSED_COMMANDS.includes(c), `${c} is not exposed`);
+    for (const c of ["proposeTradeSelection", "chooseCashOnly", "acceptDeal", "proposeFinalBalance"]) {
+      assert(!EXPOSED_COMMANDS.includes(c), `${c} was exposed`);
     }
-    eq(json(await stored(ctx)), before, "and the world is byte-identical");
   });
+  test("each one runs over real HTTP as its own seat, and a wrong seat is refused by the domain", async () => {
+    const ctx = await world(); const m = await market(ctx);
+    const body = async (res) => { eq(res.statusCode, 200, res.body); return res.json(); };
+    const said = (res) => `${res.statusCode}|${(res.json().error || {}).refused || res.body}`;
+    const o = (await body(await post(ctx.app, "casey", "startOpportunity", { goalId: m.gA, invId: m.i1, amount: 100 }))).value;
+    await body(await post(ctx.app, "north", "proposePrice", { oppId: o, amount: 115 }));
+    const viewed = await body(await post(ctx.app, "casey", "proposePrice", { oppId: o, percent: 0.9 }));
+    eq(viewed.state.opportunities.find((x) => x.id === o).priceThread[2].amount, 108, "the reply carries the new projection");
+    const wrong = await post(ctx.app, "silver", "acceptPrice", { oppId: o });
+    eq(said(wrong), "409|not-participant", "another shop, over HTTP");
+    await body(await post(ctx.app, "north", "acceptPrice", { oppId: o }));
+    eq((await oppIn(ctx, o)).agreedPrice, 108, "agreed over HTTP");
+    const o2 = (await body(await post(ctx.app, "casey", "startOpportunity", { goalId: m.gY, invId: m.i3, amount: 150 }))).value;
+    await body(await post(ctx.app, "north", "declineOffer", { oppId: o2 }));
+    eq((await oppIn(ctx, o2)).outcome, "declined", "declined over HTTP");
+    const o3 = (await body(await post(ctx.app, "jordan", "startOpportunity", { goalId: m.gJ, invId: m.i4, amount: 100 }))).value;
+    await body(await post(ctx.app, "jordan", "cancelOpportunity", { oppId: o3 }));
+    eq((await oppIn(ctx, o3)).outcome, "ended", "withdrawn over HTTP");
+    /* THE CANCELLATION CONTRACT, UNCHANGED BY OPENING THE DOOR. A reason is
+       required only after BOTH FINAL agreements: the deal is taken there on
+       the persistence path (those commands are not exposed), and the
+       reasonless cancel the Withdraw control would send is then refused over
+       HTTP. Between an agreed price and final agreement the domain asks for no
+       reason — pinned in the next test, so changing it is a decision. */
+    await ok(ctx, "casey", "chooseCashOnly", { oppId: o });
+    await ok(ctx, "north", "acceptDeal", { oppId: o }); await ok(ctx, "casey", "acceptDeal", { oppId: o });
+    const late = await post(ctx.app, "casey", "cancelOpportunity", { oppId: o });
+    eq(said(late), "409|reason-required", "no reasonless ending after final agreement");
+    const held = await oppIn(ctx, o);
+    eq([held.stage, held.declined === true].join("|"), "fulfillment|false", "and the deal stands");
+  });
+  /* REPLACED (Batch 3B.1). This test pinned the old rule — after an agreed
+     price, either participant could end the deal with no reason — as a gap
+     for a product decision. The decision is made: a reason is now required
+     from an agreed price on, and the partner may not cancel an open offer.
+     Section J asserts the new rule over HTTP. */
   test("an unauthenticated request is refused before the door", async () => {
     const ctx = await world();
     const res = await ctx.app.inject({ method: "POST", url: "/api/commands", payload: { command: "acceptPrice", payload: { oppId: "x" } } });
@@ -411,7 +439,9 @@ describe("H. refusals — PERSISTENCE codes, and what they do not reveal", () =>
     eq(res.statusCode, 409, "409");
     const allowed = new Set(["code", "message", "refused", "requestId"]);
     for (const k of Object.keys(b.error)) assert(allowed.has(k), `unexpected field in a refusal: ${k}`);
-    eq(b.error.refused, "command-unavailable", "the code, and nothing about the deal");
+    /* Since Batch 3B the command is exposed, so the domain answers — and its
+       answer is a code, naming nothing that exists. */
+    eq(b.error.refused, "not-found", "the code, and nothing about the deal");
     eq(b.error.code, "command_refused", "the standard code");
   });
 });
@@ -432,6 +462,81 @@ describe("I. PERSISTENCE — after agreement, the existing Deal Flow carries on 
     eq([r.stage, D.finalBalance(r)].join("|"), "fulfillment|104", "agreed and on to fulfilment");
     await no(ctx, "casey", "cancelOpportunity", { oppId: o }, "reason-required", "after final agreement a reason is still required");
     await no(ctx, "north", "declineOffer", { oppId: o }, "wrong-stage", "and decline is not a way around it");
+  });
+});
+
+/* ============================================================== J */
+describe("J. HTTP + PERSISTENCE — ending a deal (Batch 3B.1)", () => {
+  const said = (res) => `${res.statusCode}|${(res.json().error || {}).refused || "ok"}`;
+  const opened = async (ctx, m) => {
+    const res = await post(ctx.app, "casey", "startOpportunity", { goalId: m.gA, invId: m.i1, amount: 110 });
+    eq(res.statusCode, 200, res.body); return res.json().value;
+  };
+  test("before a price: the Collector withdraws over HTTP; the partner's cancel is refused and its decline lands", async () => {
+    const ctx = await world(); const m = await market(ctx);
+    const a = await opened(ctx, m);
+    eq(said(await post(ctx.app, "casey", "cancelOpportunity", { oppId: a })), "200|ok", "withdrawn, no reason");
+    eq([(await oppIn(ctx, a)).outcome, (await oppIn(ctx, a)).endedBy].join("|"), "ended|collector", "a withdrawal");
+    const b = await opened(ctx, m);
+    const before = json(await stored(ctx));
+    for (const reason of [undefined, "not for me"]) {
+      eq(said(await post(ctx.app, "north", "cancelOpportunity", { oppId: b, ...(reason ? { reason } : {}) })),
+        "409|not-owner", `partner cancel ${reason ? "with" : "without"} a reason`);
+    }
+    eq(json(await stored(ctx)), before, "nothing written");
+    eq(said(await post(ctx.app, "north", "declineOffer", { oppId: b })), "200|ok", "the partner's door");
+    eq((await oppIn(ctx, b)).outcome, "declined", "declined");
+  });
+  test("after a price: malformed reasons are refused cleanly over HTTP, a real one ends it", async () => {
+    const ctx = await world(); const m = await market(ctx);
+    const o = await opened(ctx, m);
+    eq(said(await post(ctx.app, "north", "acceptPrice", { oppId: o })), "200|ok", "agreed");
+    const before = json(await stored(ctx));
+    for (const who of ["casey", "north"]) {
+      for (const reason of [undefined, null, "", "   ", 7, false, { text: "x" }, ["x"]]) {
+        eq(said(await post(ctx.app, who, "cancelOpportunity", { oppId: o, ...(reason === undefined ? {} : { reason }) })),
+          "409|reason-required", `${who}, reason ${JSON.stringify(reason)}`);
+      }
+    }
+    eq(json(await stored(ctx)), before, "nothing written by any of them");
+    eq(said(await post(ctx.app, "north", "cancelOpportunity", { oppId: o, reason: " card damaged " })), "200|ok", "ended with a reason");
+    const r = await oppIn(ctx, o);
+    eq([r.outcome, r.endedBy, r.endedStage, r.endedReason, r.agreedPrice].join("|"), "ended|tp|select-trade|card damaged|110", "recorded");
+  });
+  test("nobody else may end it over HTTP, reason or not", async () => {
+    const ctx = await world(); const m = await market(ctx);
+    const o = await opened(ctx, m);
+    eq(said(await post(ctx.app, "silver", "cancelOpportunity", { oppId: o, reason: "because" })), "409|not-participant", "another shop");
+    eq(said(await post(ctx.app, "jordan", "cancelOpportunity", { oppId: o, reason: "because" })), "409|not-participant", "another Collector");
+    eq(said(await post(ctx.app, "silver", "declineOffer", { oppId: o })), "409|not-participant", "another shop's decline");
+    const res = await ctx.app.inject({ method: "POST", url: "/api/commands", payload: { command: "cancelOpportunity", payload: { oppId: o } } });
+    eq(res.statusCode, 401, "no account at all");
+    eq((await oppIn(ctx, o)).declined, false, "still live");
+  });
+  test("ending persists across a reload and releases the Goal and copy for a new offer", async () => {
+    const ctx = await world(); const m = await market(ctx);
+    const o = await opened(ctx, m);
+    await post(ctx.app, "north", "acceptPrice", { oppId: o });
+    eq(said(await post(ctx.app, "casey", "cancelOpportunity", { oppId: o, reason: "changed my mind" })), "200|ok", "ended");
+    const repository = createWorldRepository(ctx.db);
+    const app2 = createApp({ repository, catalog: ctx.catalog, accounts: ctx.accounts, verifier: ctx.verifier, runtime: ctx.runtime });
+    const seen = (await view(app2, "casey")).opportunities.find((x) => x.id === o);
+    eq([seen.outcome, seen.endedReason, seen.turn.active].join("|"), "ended|changed my mind|false", "a new process reads the same ending");
+    const again = await post(app2, "casey", "startOpportunity", { goalId: m.gA, invId: m.i2, amount: 120 });
+    eq(again.statusCode, 200, "the Goal is free for a new offer, at another shop: " + again.body);
+    const back = await post(app2, "casey", "startOpportunity", { goalId: m.gA, invId: m.i1, amount: 120 });
+    eq(said(back), "409|already-negotiating", "one live offer per card still holds — the freed copy is not the issue");
+    eq((await stored({ repository })).opportunities.length, 2, "history kept: two records");
+  });
+  test("after both final agreements: a reason is still required, and the outcome is cancelled", async () => {
+    const ctx = await world(); const m = await market(ctx);
+    const o = await opened(ctx, m);
+    await post(ctx.app, "north", "acceptPrice", { oppId: o });
+    await ok(ctx, "casey", "chooseCashOnly", { oppId: o });
+    await ok(ctx, "north", "acceptDeal", { oppId: o }); await ok(ctx, "casey", "acceptDeal", { oppId: o });
+    eq(said(await post(ctx.app, "casey", "cancelOpportunity", { oppId: o, reason: " " })), "409|reason-required", "blank");
+    eq(said(await post(ctx.app, "casey", "cancelOpportunity", { oppId: o, reason: "moving abroad" })), "200|ok", "with a reason");
+    eq((await oppIn(ctx, o)).outcome, "cancelled", "cancelled after final agreement");
   });
 });
 

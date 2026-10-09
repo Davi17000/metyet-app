@@ -53,7 +53,7 @@ import { savePartnerProfile, openCollectorInvitation, revokeCollectorInvitation,
   fileObjectInBinder, unfileObjectFromBinder,
   inspectCopy, endInspection, requestCopyPhotos, provideCopyPhotos, setCopyKept,
   renameBinder, setBinderArchived,
-  refreshView } from "../commands.js";
+  refreshView, openOffer, counterOffer, acceptOffer, declineOffer, withdrawOffer } from "../commands.js";
 
 /* Identity is read in exactly one place — client/actor.js — and re-exported
    here because this module's own tests have always asked it that question.
@@ -283,6 +283,15 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
   const onInspect = useMemo(() => (store ? inspectCopy(store) : null), [store]);
   const onEndInspection = useMemo(() => (store ? endInspection(store) : null), [store]);
   const onRequestPhotos = useMemo(() => (store ? requestCopyPhotos(store) : null), [store]);
+  /* Market Validation (Batch 3B): the five price moves, bound once. Each seat's
+     shell hands on only its own — the Collector opens, counters, accepts and
+     withdraws; the shop counters, accepts and declines. The server checks the
+     seat regardless. */
+  const onOpenOffer = useMemo(() => (store ? openOffer(store) : null), [store]);
+  const onCounterOffer = useMemo(() => (store ? counterOffer(store) : null), [store]);
+  const onAcceptOffer = useMemo(() => (store ? acceptOffer(store) : null), [store]);
+  const onDeclineOffer = useMemo(() => (store ? declineOffer(store) : null), [store]);
+  const onWithdrawOffer = useMemo(() => (store ? withdrawOffer(store) : null), [store]);
   const onRenameBinder = useMemo(() => (store ? renameBinder(store) : null), [store]);
   const onArchiveBinder = useMemo(() => (store ? setBinderArchived(store) : null), [store]);
   /* WHERE A FILED THING GOES NEXT (Batch 3B-1). The Binder view's `Move` and
@@ -711,6 +720,7 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
       onBrowseCards, onAddGoal, onSetPriority, onRemoveGoal, onSpecify,
       onCreateBinder, onRenameBinder, onArchiveBinder, onFileObject, onUnfileObject,
       onInspect, onEndInspection, onRequestPhotos,
+      onOpenOffer, onCounterOffer, onAcceptOffer, onDeclineOffer, onWithdrawOffer,
       /* Phase 5 Batch 3A. Who they just joined, so the shell can greet them by
          it once. It is read from the server's own reply, it is cleared the
          moment they do anything else, and it grants nothing. */

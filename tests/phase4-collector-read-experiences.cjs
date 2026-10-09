@@ -348,6 +348,33 @@ describe("A. Goals — and the one place coordination appears", () => {
     assert(!/stage\s*===|stage\s*!==|STAGE_IX/.test(bare), "the shell compares stages");
   });
 
+  /* EXTENDED (Market Validation Batch 3B.1). Deal Flow renders a negotiation
+     through client/negotiation.jsx, which the Collector bundle ships, so the
+     rule above follows the code there rather than stopping at the folder.
+     Everything a screen ACTS on is the server's projected `turn` (whose move,
+     the price on the table, and the domain's own `active` / `priceOpen`).
+     ONE deliberate, named exception: `threadOf` opens the price history to
+     SHOW it — the list, and whether the last price was an offer or a counter,
+     for the wording. It decides no control and no amount. */
+  test("the shared negotiation code reconstructs no lifecycle either", () => {
+    const bare = code("client/negotiation.jsx");
+    assert(!/\.trade\b|\.deal\b|\.fulfillment\b|isNegotiating|turnFor|nextActor|STAGE_IX/.test(bare),
+      "the negotiation module opens structures or a turn engine of its own");
+    assert(!/stage\s*===|stage\s*!==|\.stage\b/.test(bare), "the negotiation module reads or compares stages");
+    assert(!/["'`](tp|collector|partner)["'`]/.test(bare), "the negotiation module names a seat");
+    const reads = bare.match(/priceThread/g) || [];
+    eq(reads.length, 1, "the price history is opened somewhere other than threadOf");
+    assert(/const threadOf = \(deal\) => \{\s*const thread = deal \? deal\.priceThread : null;/.test(bare),
+      "the one read of the history is not threadOf");
+    for (const field of ["seat", "reason", "amount", "active", "priceOpen"]) {
+      assert(new RegExp(`turnOf\\(deal\\)\\.${field}|t\\.${field}`).test(bare), `the turn's ${field} is not what is read`);
+    }
+    /* And the screens that use it do not open the history themselves. */
+    for (const rel of ["client/collector/sections/DealFlow.jsx", "client/tp/sections/Opportunities.jsx"]) {
+      assert(!/priceThread|nextActor|turnFor/.test(code(rel)), `${rel} reads the negotiation itself`);
+    }
+  });
+
   test("there is no Collector Opportunities product", () => {
     const r = show(FULL);
     const labels = buttons(r).map(instText);

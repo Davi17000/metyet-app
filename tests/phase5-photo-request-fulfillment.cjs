@@ -402,9 +402,16 @@ describe("F. The transaction did not start", () => {
   });
 
   test("[22] the allow-list grew by exactly one, and the transaction is shut", () => {
+    /* MARKET VALIDATION BATCH 3B opened the five price commands — opening an
+       offer, countering, accepting, declining and withdrawing — with the screens
+       that send them, so they left this list. Everything past an agreed price
+       (trade, values, the final balance, fulfilment, Pending) is still shut. */
     /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
        name; any other change to the size still fails here. */
-    eq(EXPOSED_COMMANDS.length, 24, "the production surface is not the size this batch declared");
+    /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
+       commands joined the door with the Deal Flow and Opportunities controls
+       that send them, each named in the allow-list; any other move still fails. */
+    eq(EXPOSED_COMMANDS.length, 29, "the production surface is not the size this batch declared");
     assert(EXPOSED_COMMANDS.includes("addCopyPhotos"), "the shop has no way to answer");
     /* EVERY NAME HERE IS A REAL COMMAND, checked the way `phase5-c5` checks it:
        an adversarial run found `reviewCopy2` in this list — not a command
@@ -412,9 +419,8 @@ describe("F. The transaction did not start", () => {
     const { COMMAND_NAMES } = require("../domain/metyet-commands.js");
     const known = COMMAND_NAMES.has ? (n) => COMMAND_NAMES.has(n)
       : (n) => [...COMMAND_NAMES].includes(n);
-    for (const shut of ["startOpportunity", "proposePrice", "acceptPrice", "acceptMarketValue",
-      "acceptDeal", "proposeTradeSelection", "setCopyPending", "cancelOpportunity",
-      "proposeFulfillment", "confirmHandoff", "sendMessage", "setInterest",
+    for (const shut of ["acceptMarketValue",
+      "acceptDeal", "proposeTradeSelection", "setCopyPending", "proposeFulfillment", "confirmHandoff", "sendMessage", "setInterest",
       "markBinderReviewed"]) {
       assert(known(shut), `${shut} is not a command, so this line asserts nothing`);
       assert(!EXPOSED_COMMANDS.includes(shut), `${shut} was exposed`);
@@ -899,8 +905,12 @@ describe("I. Over HTTP, against the real server", () => {
   });
 
   test("[49] the transaction is still unreachable from a browser", async () => {
+    /* MARKET VALIDATION BATCH 3B opened the five price commands — opening an
+       offer, countering, accepting, declining and withdrawing — with the screens
+       that send them, so they left this list. Everything past an agreed price
+       (trade, values, the final balance, fulfilment, Pending) is still shut. */
     const { app } = await served();
-    for (const shut of ["startOpportunity", "proposePrice", "acceptPrice", "acceptDeal",
+    for (const shut of ["acceptDeal",
       "setCopyPending", "proposeTradeSelection", "confirmHandoff", "sendMessage"]) {
       const res = await send(app, "north", shut, {});
       eq(res.statusCode, 409, `${shut} reached the domain`);

@@ -561,8 +561,12 @@ describe("F. no mutation, no demo, no prototype, no diagnostics", () => {
     /* Batch 6 added the third: a Trusted Partner can now add a copy of a card
        they own, which is Inventory's own work. The shell declares `inventory`
        writable and always did. A FOURTH still fails here. */
+    /* Market Validation Batch 3B added the fourth deliberately: a shop counters
+       an offer from Opportunities, typing a price into the entry box both seats
+       share (client/negotiation.jsx). A FIFTH still fails here. */
     const WITH_FORMS = ["client/tp/sections/Profile.jsx",
-      "client/tp/sections/CollectorNetwork.jsx", "client/tp/sections/Inventory.jsx"];
+      "client/tp/sections/CollectorNetwork.jsx", "client/tp/sections/Inventory.jsx",
+      "client/tp/sections/Opportunities.jsx"];
     for (const rel of TP_FILES) {
       if (WITH_FORMS.includes(rel)) continue;
       assert(!/onSubmit|onChange|<input|<textarea/.test(code(rel)), `${rel} grew a way to type`);
@@ -572,7 +576,8 @@ describe("F. no mutation, no demo, no prototype, no diagnostics", () => {
        browser both seats now share, and a `<form>` went with it. So the rule is
        stated as what it protects: a file that may write has a way to type,
        whether it renders the inputs itself or composes something that does. */
-    const SHARED_FORM = { "client/tp/sections/Inventory.jsx": "client/browse/CardBrowser.jsx" };
+    const SHARED_FORM = { "client/tp/sections/Inventory.jsx": "client/browse/CardBrowser.jsx",
+      "client/tp/sections/Opportunities.jsx": "client/negotiation.jsx" };
     for (const rel of WITH_FORMS) {
       const own = /onSubmit|<input|<select/.test(code(rel));
       const shared = SHARED_FORM[rel] && /onSubmit/.test(code(SHARED_FORM[rel]))
@@ -582,7 +587,7 @@ describe("F. no mutation, no demo, no prototype, no diagnostics", () => {
     /* And each of those sections is one the shell declares can write: a form
        with no declared write is a surface claiming more than the build does. */
     const writable = SHELL_MOD.SECTIONS.filter((s) => s.writes).map((s) => s.id).sort().join(",");
-    eq(writable, "collectors,inventory", "the writable sections moved without the forms");
+    eq(writable, "collectors,inventory,opportunities", "the writable sections moved without the forms");
     /* Inventory renders that component rather than repeating it: there is one
        profile implementation in this product, and moving where it is reached
        from did not make a second. */

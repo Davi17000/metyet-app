@@ -353,7 +353,7 @@ describe("M/N. Completion and failure derive Goal state", () => {
     const o = S(r).opportunities.find((x) => x.collectorId === CASEY && x.goalId
       && D.isNegotiating(x));
     const n = S(r).opportunities.length;
-    TR.act(() => { store(r).actions.endOpportunity(o.id, "partner", "2026-08-14"); });
+    TR.act(() => { store(r).actions.endOpportunity(o.id, "partner", "2026-08-14", "Ended by the partner"); }); /* Batch 3B.1: ending a price-agreed deal needs a reason. */
     eq(S(r).opportunities.length, n, "the failed deal is KEPT as history");
 
     switchTo(r, "Collector");

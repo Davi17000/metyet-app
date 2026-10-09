@@ -134,7 +134,7 @@ describe("A. Availability is derived from the deals themselves", () => {
     const { o } = offering(w, ["b1"]);
     w.st.actions.reviewTradeCards({ oppId: o, decision: "accepted", at: AT });
     eq(stateOf(w, "b1"), "in-deal", "committed while the deal lives");
-    w.st.actions.endOpportunity(o, "collector", AT);
+    w.st.actions.endOpportunity(o, "collector", AT, "changed my mind"); /* Batch 3B.1: ending a price-agreed deal needs a reason. */
     eq(stateOf(w, "b1"), "available", "and free once it does not");
   });
 
@@ -192,7 +192,7 @@ describe("B. Trusted Partners is a relationship, not a CRM", () => {
 
   test("an ended deal is history, not an active goal", () => {
     const { w, o } = related();
-    w.st.actions.endOpportunity(o, "collector", AT);
+    w.st.actions.endOpportunity(o, "collector", AT, "changed my mind"); /* Batch 3B.1: ending a price-agreed deal needs a reason. */
     const rel = w.view().partnerRelationship("nl");
     eq(rel.active.length, 0, "it is over");
     eq(rel.history.length, 1, "and recorded");

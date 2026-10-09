@@ -2202,13 +2202,27 @@ const COMMANDS = {
   },
 
   /* ------------------------------------------------------------ cancellation */
-  /* Either participant, before Completed. After both final agreements a reason
-     is required. Nothing is deleted and no term is rewritten. */
+  /* ENDING A DEAL, BY WHO AND WHEN (Market Validation Batch 3B.1). Nothing is
+     deleted and no term is rewritten; who ended it, when, at which stage and
+     why are recorded beside it.
+       While the price is unresolved — Agree on Price, nothing agreed — this is
+         the COLLECTOR WITHDRAWING an offer, and needs no reason. The partner's
+         "no" at that point is `declineOffer`, a distinct outcome, so a partner
+         is refused here (`not-owner`, as `declineOffer` refuses a Collector).
+       Once a price is agreed, either participant may end the deal, and must
+         say why: a non-blank string reason, or `reason-required`.
+       After both final agreements the same holds, and the outcome is
+         "cancelled" rather than "ended", exactly as before.
+     A deal from before Market Validation that never reached a price keeps its
+     old rule: either participant, no reason. */
   cancelOpportunity(state, a, { oppId, reason }, ctx) {
     const at = ctx.at;
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
+    if (D.priceUnresolved(o) && a.seat === "tp") return refuse(R.notOwner);
     const why = typeof reason === "string" ? reason.trim() : "";
+    const priceAgreed = typeof o.agreedPrice === "number";
+    if (priceAgreed && !why) return refuse(R.reasonRequired);
     const agreed = D.finalAgreementGiven(o);
     if (agreed && !why) return refuse(R.reasonRequired);
     return done(withOpp(state, oppId, (x) => ({ ...x, declined: true, endedBy: a.seat,

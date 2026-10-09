@@ -20,7 +20,18 @@
    This file renders what was already in the browser; it adds no field, asks for
    no new read and sends no command.
 
-   QUALIFICATION, AND NOTHING PAST IT (this batch). The screen kept no controls
+   MAKING AN OFFER (Market Validation, Batch 3B). Past qualification there is
+   now one more step, and only one: agreeing what a copy is worth. A copy a
+   PRIMARY Goal matches may carry "Make an offer"; the offer opens inline on
+   that copy and names the shop, the price they listed and whether it is Firm;
+   once it is sent, the deal sits under the Goal it came from with where it
+   stands and whose move it is. Every rule is the server's — this screen shows
+   `turn`, `priceThread` and the captured terms it was sent, and the controls
+   for the Collector's own move and nothing else. After a price is agreed the
+   screen says so and what comes next, and offers no way to withdraw: ending
+   an agreed deal is a different decision this batch does not build.
+
+   QUALIFICATION, AND NOTHING PAST IT (Phase 5). The screen kept no controls
    at all while Inspect and Request Photos were unexposed, because a greyed-out
    button is the product promising something it has not built. They are exposed
    now, so they are here — and nothing else is. There is still no offer, no
@@ -62,12 +73,16 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { Panel, Record, Fact, Tag } from "../parts.jsx";
+import { OfferEntry, PriceHistory, useSender, statusLine, termsLine, priceOnTable, viewerSeat,
+  isUnresolved, myPriceMove, dollars, isLiveDeal, isEndedDeal, cardLine } from "../../negotiation.jsx";
 import CardArt from "../../card-art.jsx";
 import { rows, text, money, plural, gradeLine, gradeProblem, gradeConflictLine,
-  photoNote, tierIntent, tierLabel, criteriaLine } from "../present.js";
+  photoNote, tierIntent, tierLabel, criteriaLine, stageLabel } from "../present.js";
 
 export default function DealFlow({ state, onBrowseCards = null,
-  onInspect = null, onEndInspection = null, onRequestPhotos = null }) {
+  onInspect = null, onEndInspection = null, onRequestPhotos = null,
+  onOpenOffer = null, onCounterOffer = null, onAcceptOffer = null, onWithdrawOffer = null,
+  onRefresh = null }) {
   const goals = rows(state && state.goals);
   const partners = rows(state && state.partners);
   const inventory = rows(state && state.inventory);
@@ -118,6 +133,30 @@ export default function DealFlow({ state, onBrowseCards = null,
     }
   };
   const discoveries = rows(state && state.discoveries);
+
+  /* THIS COLLECTOR'S OWN DEALS, by the Goal each one is for. The projection
+     sends only their own. The live one (if any) is what the Goal shows; with
+     none live, the most recent that ended is said once, quietly, so an offer
+     that was declined does not simply vanish. */
+  const deals = rows(state && state.opportunities);
+  /* Who is looking, as the server stated it. */
+  const me = viewerSeat(state);
+  const liveFor = new Map();
+  const endedFor = new Map();
+  for (const o of deals) {
+    if (o.goalId == null) continue;
+    if (isLiveDeal(o)) liveFor.set(o.goalId, o);
+    else if (isEndedDeal(o)) {
+      const held = endedFor.get(o.goalId);
+      if (!held || String(o.updated || "") > String(held.updated || "")) endedFor.set(o.goalId, o);
+    }
+  }
+  /* One offer panel open at a time, on the copy it is for. What the server
+     said about it is kept against the GOAL: a re-read after a refusal can take
+     the copy off the screen, and the message must not go with it. */
+  const [composing, setComposing] = useState(null);
+  const [offerSaid, setOfferSaid] = useState(null);
+  const offer = useSender(onRefresh, (key, message) => setOfferSaid(message ? { key, message } : null));
 
   const partnerName = new Map();
   for (const p of partners) if (p.id != null) partnerName.set(p.id, text(p.name));
@@ -233,6 +272,12 @@ export default function DealFlow({ state, onBrowseCards = null,
             && (openReview.has(c.invId) || openRequest.has(c.invId)))
           .map((c) => ({ partnerId: c.partnerId, copy: c, closed: true }));
         const shown = [...copies, ...alsoQualifying];
+        const live = liveFor.get(goal.id) || null;
+        const ended = live ? null : endedFor.get(goal.id) || null;
+        /* An offer may open from a Primary Goal with nothing already live on
+           it — the server holds one active offer per exact card, and a Goal is
+           one exact card, so a live deal here is that offer. */
+        const canOffer = !!onOpenOffer && goal.tier === "primary" && !live;
         const title = (card && card.cardName) || "Loading this card…";
         const sub = card
           ? [text(card.expansionName), card.collectorNumber ? `#${card.collectorNumber}` : null]
@@ -261,6 +306,19 @@ export default function DealFlow({ state, onBrowseCards = null,
                 </div>
               </div>
             </div>
+
+            {live ? (
+              <LiveDeal deal={live} me={me} card={card} shop={partnerName.get(live.partnerId) || "your shop"}
+                copy={copyById.get(live.invId) || null} sender={offer}
+                onCounterOffer={onCounterOffer} onAcceptOffer={onAcceptOffer}
+                onWithdrawOffer={onWithdrawOffer} />
+            ) : ended ? (
+              <p className="mcs-df-none">{statusLine(ended, me, partnerName.get(ended.partnerId) || "The shop")}</p>
+            ) : null}
+
+            {offerSaid && offerSaid.key.startsWith(`open:${goal.id}:`) ? (
+              <p className="mcs-df-none mcs-df-trouble" role="status">{offerSaid.message}</p>
+            ) : null}
 
             {shown.length === 0 ? (
               <p className="mcs-df-none">
@@ -344,7 +402,37 @@ export default function DealFlow({ state, onBrowseCards = null,
                         ) : null}
                         {photographed && answered
                           ? <span className="mcs-df-state">Photos arrived</span> : null}
+
+                        {/* MAKE AN OFFER, on the copy it is about. */}
+                        {canOffer && !closed && composing !== copy.invId ? (
+                          <button type="button" className="mcs-go"
+                            disabled={!!offer.busy}
+                            onClick={() => { offer.clear(); setOfferSaid(null); setComposing(copy.invId); }}>
+                            Make an offer
+                          </button>
+                        ) : null}
                       </span>
+                      {canOffer && !closed && composing === copy.invId ? (
+                        <div className="mcs-offer">
+                          {cardLine(card) ? <p className="mcs-offer-card">{cardLine(card)}</p> : null}
+                          <p className="mcs-offer-terms">
+                            {`${partnerName.get(partnerId) || "This shop"} · `
+                              + `${dollars(copy.ask) ? `Proposed Market Price ${dollars(copy.ask)}` : "No price listed"}`
+                              + ` · ${copy.firmOnPrice === true ? "Firm on Price" : "Open to Offers"}`
+                              + `${gradeLine(copy) ? ` · ${gradeLine(copy)}` : ""}`}
+                          </p>
+                          <OfferEntry cls="mcs" busy={!!offer.busy}
+                            listed={typeof copy.ask === "number" && copy.ask > 0 ? copy.ask : null}
+                            fixed={copy.firmOnPrice === true && typeof copy.ask === "number" && copy.ask > 0
+                              ? Math.round(copy.ask) : null}
+                            onCancel={() => { offer.clear(); setOfferSaid(null); setComposing(null); }}
+                            onSubmit={async (price) => {
+                              const sent = await offer.send(`open:${goal.id}:${copy.invId}`,
+                                () => onOpenOffer(goal.id, copy.invId, price));
+                              if (sent) setComposing(null);
+                            }} />
+                        </div>
+                      ) : null}
                     </li>
                   );
                 })}
@@ -354,5 +442,62 @@ export default function DealFlow({ state, onBrowseCards = null,
         );
       })}
     </Panel>
+  );
+}
+
+/* ----------------------------------------------------------------- A LIVE DEAL
+   Under the Goal it is for: the shop, the copy, the captured terms, where it
+   stands, how the price got here, and — when the server says it is the
+   Collector's move — Accept, Counter and Withdraw. While the shop is replying,
+   the Collector may still withdraw. After agreement there are no controls:
+   what comes next is the next stage, and it is said in words. */
+function LiveDeal({ deal, me, card, shop, copy, sender, onCounterOffer, onAcceptOffer, onWithdrawOffer }) {
+  const [countering, setCountering] = useState(false);
+  const unresolved = isUnresolved(deal);
+  const myMove = myPriceMove(deal, me);
+  const onTable = priceOnTable(deal);
+  const busy = !!sender.busy;
+  return (
+    <div className="mcs-offer mcs-offer-live" aria-label="Your offer">
+      {cardLine(card) ? <p className="mcs-offer-card">{cardLine(card)}</p> : null}
+      <p className="mcs-offer-terms">
+        {[shop, copy ? gradeLine(copy) : null, copy && text(copy.cert) ? `Cert ${text(copy.cert)}` : null, termsLine(deal)]
+          .filter(Boolean).join(" · ")}
+      </p>
+      <p className="mcs-offer-status" role="status">
+        {statusLine(deal, me, shop, stageLabel(deal.stage))}
+      </p>
+      <PriceHistory cls="mcs" deal={deal} seat={me} other={shop} />
+      {unresolved ? (
+        countering ? (
+          <OfferEntry cls="mcs" verb="Send counter" busy={busy}
+            listed={typeof deal.listedPrice === "number" && deal.listedPrice > 0 ? deal.listedPrice : null}
+            onCancel={() => { sender.clear(); setCountering(false); }}
+            onSubmit={async (price) => {
+              if (await sender.send(`counter:${deal.id}`, () => onCounterOffer(deal.id, price))) setCountering(false);
+            }} />
+        ) : (
+          <div className="mcs-offer-do">
+            {myMove && onTable != null && onAcceptOffer ? (
+              <button type="button" className="mcs-go" disabled={busy}
+                onClick={() => sender.send(`accept:${deal.id}`, () => onAcceptOffer(deal.id))}>
+                {sender.busy === `accept:${deal.id}` ? "Accepting…" : `Accept ${dollars(onTable)}`}
+              </button>
+            ) : null}
+            {myMove && onCounterOffer ? (
+              <button type="button" className="mcs-go quiet" disabled={busy}
+                onClick={() => { sender.clear(); setCountering(true); }}>Counter</button>
+            ) : null}
+            {onWithdrawOffer ? (
+              <button type="button" className="mcs-go quiet" disabled={busy}
+                onClick={() => sender.send(`withdraw:${deal.id}`, () => onWithdrawOffer(deal.id))}>
+                {sender.busy === `withdraw:${deal.id}` ? "Withdrawing…" : "Withdraw offer"}
+              </button>
+            ) : null}
+          </div>
+        )
+      ) : null}
+      {sender.trouble ? <p className="mcs-df-trouble" role="status">{sender.trouble}</p> : null}
+    </div>
   );
 }

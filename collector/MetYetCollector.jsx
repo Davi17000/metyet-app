@@ -2596,10 +2596,19 @@ function SimulateTP({ o, st }) {
         text: "Sounds good — let me know.", oppId: o.id, at: AT });
       did("Message sent");
     }]);
-    actions.push([st.dealAgreed(o) ? "Cancel the agreed deal" : "End the deal", () => {
-      A.endOpportunity(o.id, "partner", AT);
-      did("Ended");
-    }]);
+    /* Batch 3B.1: while the price is open the partner declines; once a price
+       is agreed, ending needs a reason, so the partner here gives one. */
+    if (D.priceUnresolved(o)) {
+      actions.push(["Decline the offer", () => {
+        A.declineOffer(o.id, null);
+        did("Declined");
+      }]);
+    } else {
+      actions.push([st.dealAgreed(o) ? "Cancel the agreed deal" : "End the deal", () => {
+        A.endOpportunity(o.id, "partner", AT, "Ended by the partner");
+        did("Ended");
+      }]);
+    }
   }
 
   return (
@@ -2720,9 +2729,12 @@ function DealChat({ o, partnerId, cardId, st, bare, embedded, headless, composer
 /* Ending a deal is deliberate. Opening this changes nothing; only the explicit
    destructive action calls the canonical endOpportunity. The wording follows the
    canonical distinction the Trusted Partner already makes: a mutually agreed
-   deal is CANCELLED, an unagreed one is simply STOPPED. */
+   deal is CANCELLED, an unagreed one is simply STOPPED. Since Batch 3B.1 a
+   reason is required as soon as a PRICE is agreed — before that, stopping is
+   withdrawing an offer and needs none. */
 function StopDeal({ o, st, onClose }) {
   const agreed = st.dealAgreed(o);
+  const needsReason = agreed || typeof o.agreedPrice === "number";
   const partner = st.partnerById(o.partnerId);
   const [busy, setBusy] = useState(false);
   const [reason, setReason] = useState("");
@@ -2735,7 +2747,7 @@ function StopDeal({ o, st, onClose }) {
         <button className="btn" style={{ flex: 1 }} onClick={onClose}>
           {agreed ? "Keep the deal" : "Keep negotiating"}
         </button>
-        <button className="btn danger" disabled={busy || (agreed && !reason.trim())}
+        <button className="btn danger" disabled={busy || (needsReason && !reason.trim())}
           onClick={() => { if (busy) return; setBusy(true); st.endNegotiation(o.id, reason.trim() || null); onClose(); }}>
           {agreed ? "Cancel deal" : "Stop negotiation"}
         </button>
@@ -2748,9 +2760,9 @@ function StopDeal({ o, st, onClose }) {
              ${them} is kept. The card goes back on your list, so you can pick it up with
              another partner whenever you like.`}
       </div>
-      {agreed && (
+      {needsReason && (
         <label className="fld" style={{ display: "block", marginTop: 14 }}>
-          <span>Why are you cancelling? (required)</span>
+          <span>{agreed ? "Why are you cancelling? (required)" : "Why are you stopping? (required)"}</span>
           <input className="inp" value={reason} onChange={(e) => setReason(e.target.value)}
             aria-label="Reason for cancelling" />
         </label>
@@ -5760,6 +5772,8 @@ export function partnerDemo(store) {
     sendMessage: ({ collectorId, partnerId, cardId, text }) =>
       lg(store.execute(partnerSimActor(partnerId), "sendMessage", { collectorId, cardId, text, at: AT })),
     endOpportunity: (oppId, by, at, reason) => on(oppId, "cancelOpportunity", { reason }),
+    /* Batch 3B.1: the partner's "no" to an offer whose price is still open. */
+    declineOffer: (oppId, reason) => on(oppId, "declineOffer", { reason }),
   };
 }
 

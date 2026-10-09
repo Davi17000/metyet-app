@@ -1377,7 +1377,10 @@ describe("I. A capability with a surface, at last", () => {
       assert(EXPOSED_COMMANDS.includes(name),
         `${name} is not reachable, so no control can press it: ${EXPOSED_COMMANDS.join(",")}`);
     }
-    eq(EXPOSED_COMMANDS.length, 24, `the production surface is ${EXPOSED_COMMANDS.join(",")}`);
+    /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
+       commands joined the door with the Deal Flow and Opportunities controls
+       that send them, each named in the allow-list; any other move still fails. */
+    eq(EXPOSED_COMMANDS.length, 29, `the production surface is ${EXPOSED_COMMANDS.join(",")}`);
     /* RE-PINNED (Batch 3C-1): THE CARD-LEVEL PAIR IS NO LONGER A PAIR. 3B-1
        kept `addBinderEntry` open for one release so a browser tab opened before
        that deploy kept working; that release shipped (`b658e7e`), the release
@@ -1478,13 +1481,17 @@ describe("I. A capability with a surface, at last", () => {
       "the door and the client disagree about what the product offers");
     /* RE-PINNED (Batch 3C-1): 25 → 24, both sides at once — `fileCardInBinder`
        left with the door it sent through. */
-    eq(sent.size, 24, `the client can send ${sent.size}`);
+    /* RE-PINNED (Market Validation Batch 3B): 24 → 29, both sides at once —
+       the five price bindings arrived with the screens that call them. */
+    eq(sent.size, 29, `the client can send ${sent.size}`);
     /* AND EVERY ONE OF THEM IS IMPORTED BY SOMETHING. This is the half the
        exact-set guard cannot see: a binding nothing imports satisfies it while
        being dead, which is what 3A's two thunks were. */
     const importers = require("fs").readFileSync(
       path.join(ROOT, "client/sign-in/SignIn.jsx"), "utf8");
-    for (const fn of ["fileObjectInBinder", "unfileObjectFromBinder"]) {
+    for (const fn of ["fileObjectInBinder", "unfileObjectFromBinder",
+      /* Market Validation Batch 3B's five, imported and bound where the others are. */
+      "openOffer", "counterOffer", "acceptOffer", "declineOffer", "withdrawOffer"]) {
       assert(new RegExp(fn).test(importers), `${fn} is exported and imported by nothing`);
     }
   });

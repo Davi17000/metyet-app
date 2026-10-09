@@ -75,7 +75,7 @@ export const SECTIONS = Object.freeze([
     sub: "Who you're serving, and what you know about them" },
   { id: "inventory", label: "Inventory", title: "Inventory", writes: true,
     sub: "What you have and how it connects to collector demand" },
-  { id: "opportunities", label: "Opportunities", title: "Opportunities",
+  { id: "opportunities", label: "Opportunities", title: "Opportunities", writes: true,
     sub: "What you're actively coordinating, and what's waiting at each stage" },
 ]);
 
@@ -292,6 +292,31 @@ const CSS = `
 .tps-problem { margin:0 16px 14px; padding:9px 11px; background:var(--amber-bg);
   border:1px solid var(--amber-line); border-radius:5px; color:var(--amber); max-width:70ch; }
 .tps-aside { color:var(--faint); font-size:12px; max-width:70ch; }
+/* ---- the price: an offer, where it stands, and the shop's move (Batch 3B) ----
+   Inside the opportunity's own record. Buttons are the form buttons above in
+   two weights, and everything wraps, so a phone gets one column. */
+.tps-offer { margin:0 16px 15px; padding:11px 12px; border:1px solid var(--line); border-radius:6px;
+  display:flex; flex-direction:column; gap:7px; max-width:70ch; }
+.tps-offer-terms { margin:0; font-size:12px; color:var(--muted); }
+.tps-offer-status { margin:0; font-size:13px; font-weight:600; color:var(--text); }
+.tps-offer-trail { margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:2px;
+  font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
+.tps-offer-trail .mine { color:var(--text); }
+.tps-offer-do, .tps-offer-mode { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.tps-offer-entry { display:flex; flex-direction:column; gap:8px; margin:0; }
+.tps-offer-field { display:flex; align-items:center; gap:6px; max-width:220px; }
+.tps-offer-field input { flex:1; min-width:0; padding:8px 10px; border:1px solid var(--line); border-radius:5px;
+  font-size:14px; font-variant-numeric:tabular-nums; }
+.tps-offer-unit { color:var(--muted); font-weight:600; }
+.tps-offer-line { margin:0; font-size:12px; color:var(--muted); }
+.tps-offer-problem { margin:0; font-size:12px; color:var(--amber); }
+.tps-chip { background:#FFF; border:1px solid var(--line); color:var(--muted); border-radius:999px;
+  padding:5px 11px; font-size:12px; }
+.tps-chip.on { border-color:var(--t1); color:var(--t1); font-weight:600; }
+.tps-go { background:var(--t1); border:1px solid var(--t1); color:#FFF; border-radius:5px;
+  padding:8px 15px; font-weight:600; font-size:13px; }
+.tps-go.quiet { background:#FFF; border-color:var(--line); color:var(--muted); font-weight:400; }
+.tps-go:disabled { opacity:.6; cursor:default; }
 
 /* ---- a phone ---- */
 @media (max-width:860px) {
@@ -313,7 +338,8 @@ const CSS = `
 export default function TrustedPartnerShell({ state, onSignOut, onSaveProfile = null,
   onInvite = null, onRevokeInvite = null, onRefresh = null,
   onAddCopy = null, onEditCopy = null, onRetireCopy = null, onBrowseCards = null,
-  onProvidePhotos = null }) {
+  onProvidePhotos = null,
+  onCounterOffer = null, onAcceptOffer = null, onDeclineOffer = null }) {
   const [section, setSection] = useState(SECTIONS[0].id);
 
   const who = describeActor(state);
@@ -333,11 +359,14 @@ export default function TrustedPartnerShell({ state, onSignOut, onSaveProfile = 
      overlaps the server sent name cards by id, and a card nobody can read the
      name of is not something a Trusted Partner can go and look on the shelf
      for. It is a way to ASK WHAT A CARD IS CALLED — not a way to write, and
-     the section is handed no command, exactly as before. */
+     the section is handed no command, exactly as before.
+     Batch 3B hands it three, and only three: the shop's answers to a price
+     (Accept, Counter, Decline), plus a re-read for when an answer finds the
+     deal has already moved. */
   const extra = meta.id === "inventory"
     ? { onSaveProfile, onAddCopy, onEditCopy, onRetireCopy, onBrowseCards, onProvidePhotos }
     : meta.id === "collectors" ? { onInvite, onRevokeInvite, onRefresh, onBrowseCards }
-      : meta.id === "opportunities" ? { onBrowseCards }
+      : meta.id === "opportunities" ? { onBrowseCards, onCounterOffer, onAcceptOffer, onDeclineOffer, onRefresh }
         : null;
 
   return (

@@ -1368,10 +1368,12 @@ const outcomeLabel = (o) => {
   const where = STAGE_LABEL[o.endedStage || o.archivedFrom || o.stage];
   if (o.outcome === "cancelled") return `Cancelled during ${where}`;
   if (o.outcome === "ended") return `Ended during ${where}`;
+  if (o.outcome === "declined") return `Declined during ${where}`;   // the partner's "no" to an open offer (Batch 3B.1)
   return `archived from ${where}`;                 // records closed before this existed
 };
 
-/* Optional, never required: a deal can always be stopped without giving a reason. */
+/* Suggested reasons. Optional while a price is still open; required once a price
+   is agreed (Batch 3B.1), when an ended deal keeps why it ended. */
 const END_REASONS = ["Couldn\u2019t agree on terms", "Changed my mind",
   "Card is no longer available", "Collector is no longer interested", "Other"];
 
@@ -3011,6 +3013,12 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
     }
     const who = by === "tp" ? "You" : collector(o.collectorId).short;
     if (action === "decline") {
+      /* Batch 3B.1: while the price is open, the partner's "no" is a decline
+         and the Collector's is a withdrawal — two commands, two outcomes. */
+      if (by === "tp") {
+        return act(actor, "declineOffer", { oppId },
+          () => `You declined the offer on ${cardShort(card(o.cardId))}`);
+      }
       return act(actor, "cancelOpportunity", { oppId },
         () => `${who} stopped pursuing ${cardShort(card(o.cardId))}`);
     }
@@ -3076,13 +3084,20 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
       () => `Chose cash only, no trade — ${cardShort(card(o.cardId))}`);
   };
 
-  /* Either participant may cancel before completion. After both final agreements
-     a reason is required, and history shows it as cancelled after agreement. */
+  /* ENDING A DEAL (Batch 3B.1). While the price is open the partner declines
+     (`declineOffer`) and the Collector withdraws; once a price is agreed either
+     may end the deal, with a reason; after both final agreements history shows
+     it as cancelled after agreement. */
   const dealMutuallyAgreed = (o) => SharedID.finalAgreementGiven(o);
+  const priceAgreed = (o) => !!o && typeof o.agreedPrice === "number";
 
   const endOpportunity = (oppId, by, reason) => {
     const o = oppOf(oppId);
     if (!o) return null;
+    if (by === "tp" && SharedID.priceUnresolved(o)) {
+      return act(seatActor(o, by), "declineOffer", { oppId, reason: reason || null },
+        () => `You declined the offer on ${cardShort(card(o.cardId))}${reason ? ` — ${reason}` : ""}`);
+    }
     return act(seatActor(o, by), "cancelOpportunity", { oppId, reason: reason || null }, (n) => {
       const who = by === "tp" ? "You" : collector(o.collectorId).short;
       const verb = n.outcome === "cancelled" ? "cancelled the agreed deal" : "ended the deal";
@@ -3090,10 +3105,13 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
     });
   };
 
-  const collectorStopPursuing = (oppId) => {
+  /* The Collector walking away. Before a price is agreed this is a withdrawal
+     and needs no reason; after, the domain requires one (Batch 3B.1) and the
+     screen asks for it through the End deal dialog. */
+  const collectorStopPursuing = (oppId, reason = null) => {
     const o = oppOf(oppId);
     if (!o) return null;
-    return act(asCollector(o.collectorId), "cancelOpportunity", { oppId },
+    return act(asCollector(o.collectorId), "cancelOpportunity", { oppId, ...(reason ? { reason } : {}) },
       () => `${collector(o.collectorId).short} stopped pursuing ${cardShort(card(o.cardId))} — archived from ${STAGE_LABEL[o.stage]}`);
   };
 
@@ -3350,7 +3368,7 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
     threads, threadFor, sendMessage, hasConversation,
     collectorPromoteGoal, collectorConfirmGoal, collectorMakeOffer, priceRespond,
     tradeAddCard, tradeRemoveCard, submitPackageForReview, tpReviewInclusion, draftRows,
-    endOpportunity, dealMutuallyAgreed,
+    endOpportunity, dealMutuallyAgreed, priceAgreed,
     collectorChooseCash, collectorStopPursuing, marketAction, percentAction, collectorWithdrawCard, dealAgree, dealAdjust, proposeFulfillment, collectorConfirmPlan, collectorRequestPlanRevision, confirmHandoff,
     inviteCollector, logActivity,
     relationshipWith, inNetwork, invitations, counterparties, boundCopyOf,
@@ -3408,7 +3426,7 @@ export default function MetYet({ store: injectedStore, partnerId = SELF_PARTNER 
       {modal?.type === "outreach" && <OutreachModal ctx={ctx} cardId={modal.cardId} collectorId={modal.collectorId} tier={modal.tier} />}
       {modal?.type === "invite" && <InviteModal ctx={ctx} />}
       {modal?.type === "archive" && <ArchiveModal ctx={ctx} invId={modal.invId} />}
-      {modal?.type === "endDeal" && <EndDealModal ctx={ctx} oppId={modal.oppId} />}
+      {modal?.type === "endDeal" && <EndDealModal ctx={ctx} oppId={modal.oppId} by={modal.by || "tp"} />}
       {toast && <div className="toast">{toast}</div>}
     </div>
   );
@@ -4999,7 +5017,7 @@ function SelectTradeReview({ ctx, opp }) {
 }
 
 function TradeTable({ ctx, opp }) {
-  const { collector, collectorChooseCash, collectorStopPursuing, setDrawer, setNav } = ctx;
+  const { collector, collectorChooseCash, setModal, setDrawer, setNav } = ctx;
   const cards = tradeCards(opp);
   const col = collector(opp.collectorId);
 
@@ -5053,7 +5071,7 @@ function TradeTable({ ctx, opp }) {
           </div>
           <div className="vt-actions">
             <button className="btn sm pri" onClick={() => collectorChooseCash(opp.id)}>Continue as cash only</button>
-            <button className="btn sm dgr" onClick={() => collectorStopPursuing(opp.id)}>Stop pursuing</button>
+            <button className="btn sm dgr" onClick={() => setModal({ type: "endDeal", oppId: opp.id, by: "collector" })}>Stop pursuing</button>
           </div>
         </SimBlock>
       ) : (
@@ -5591,6 +5609,7 @@ function DealMenu({ ctx, opp, col }) {
   const [open, setOpen] = useState(false);
   if (!opp || isTerminal(opp)) return null;         // completed and ended records offer neither
   const cancelling = dealMutuallyAgreed(opp);
+  const declining = SharedID.priceUnresolved(opp);  // the partner's "no" to an open offer
 
   return (
     <span className="dm">
@@ -5601,7 +5620,7 @@ function DealMenu({ ctx, opp, col }) {
         <span className="dm-pop" role="menu">
           <button role="menuitem" className="dm-item"
             onClick={() => { setOpen(false); setModal({ type: "endDeal", oppId: opp.id }); }}>
-            {cancelling ? "Cancel agreed deal" : "End deal"}
+            {cancelling ? "Cancel agreed deal" : declining ? "Decline offer" : "End deal"}
           </button>
         </span>
       </>)}
@@ -5610,26 +5629,33 @@ function DealMenu({ ctx, opp, col }) {
 }
 
 /* Ending a negotiation is a normal outcome, not an error, so the confirmation is
-   restrained and the safe choice is the default. The optional reason is a second,
-   fully skippable step — nothing is required to stop a deal. */
-function EndDealModal({ ctx, oppId }) {
-  const { opps, collector, setModal, endOpportunity, dealMutuallyAgreed } = ctx;
+   restrained and the safe choice is the default. The reason is a second step:
+   optional while a price is still open (the partner declining an offer), and
+   REQUIRED once a price is agreed (Batch 3B.1) — an agreed deal keeps why it
+   ended in its history. `by` is whose hand ends it: the partner from the deal
+   menu, or the Collector stopping a price-agreed deal. */
+function EndDealModal({ ctx, oppId, by = "tp" }) {
+  const { opps, collector, setModal, endOpportunity, dealMutuallyAgreed, priceAgreed } = ctx;
   const opp = opps.find((o) => o.id === oppId);
   const [step, setStep] = useState("confirm");
   const [reason, setReason] = useState("");
   if (!opp) return null;
   const col = collector(opp.collectorId);
   const cancelling = dealMutuallyAgreed(opp);
+  const required = priceAgreed(opp);
+  const declining = !required && by === "tp" && SharedID.priceUnresolved(opp);
 
-  const finish = (why) => { endOpportunity(opp.id, "tp", why || null); setModal(null); };
+  const finish = (why) => { endOpportunity(opp.id, by, why || null); setModal(null); };
 
   if (step === "reason") {
     return (
       <Modal title={cancelling ? "Why are you cancelling?" : "Why did it end?"}
-        sub={cancelling ? "Required — an agreed deal keeps its reason in history." : "Optional — this is only for your own history."}
-        onClose={() => (cancelling ? setStep("confirm") : finish(null))}
+        sub={cancelling ? "Required — an agreed deal keeps its reason in history."
+          : required ? "Required — once a price is agreed, ending the deal keeps its reason in history."
+            : "Optional — this is only for your own history."}
+        onClose={() => (required ? setStep("confirm") : finish(null))}
         footer={<>
-          {!cancelling && <button className="btn" onClick={() => finish(null)}>Skip</button>}
+          {!required && <button className="btn" onClick={() => finish(null)}>Skip</button>}
           <button className="btn pri" disabled={!reason} onClick={() => finish(reason)}>Save</button>
         </>}>
         <div className="dm-reasons">
@@ -5644,17 +5670,19 @@ function EndDealModal({ ctx, oppId }) {
 
   return (
     <Modal
-      title={cancelling ? "Cancel this agreed deal?" : `End this deal with ${col.short}?`}
+      title={cancelling ? "Cancel this agreed deal?" : declining ? `Decline ${col.short}'s offer?`
+        : `End this deal with ${col.short}?`}
       onClose={() => setModal(null)}
       footer={<>
         <button className="btn" onClick={() => setModal(null)}>{cancelling ? "Keep deal" : "Keep working"}</button>
-        <button className="btn pri" onClick={() => setStep("reason")}>{cancelling ? "Cancel deal" : "End deal"}</button>
+        <button className="btn pri" onClick={() => setStep("reason")}>{cancelling ? "Cancel deal" : declining ? "Decline offer" : "End deal"}</button>
       </>}>
       <div style={{ fontSize: 12.5, lineHeight: 1.5 }}>
         {cancelling
           ? <>You and {col.short} already agreed to this deal. Cancelling will stop fulfillment,
               but the agreement and cancellation will remain in history.</>
-          : <>The deal will stop here. Everything agreed so far will be kept in the opportunity history.</>}
+          : declining ? <>The offer will be declined. What was offered stays in the opportunity history.</>
+            : <>The deal will stop here. Everything agreed so far will be kept in the opportunity history.</>}
       </div>
     </Modal>
   );

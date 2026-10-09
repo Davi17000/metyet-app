@@ -162,7 +162,7 @@ describe("B. What may and may not change", () => {
   test("it becomes editable again once the deal ends", () => {
     const w = world();
     const { o } = committed(w);
-    w.st.actions.endOpportunity(o, "collector", AT);
+    w.st.actions.endOpportunity(o, "collector", AT, "changed my mind"); /* Batch 3B.1: ending a price-agreed deal needs a reason. */
     edit(w, "b1", { cert: "PSA 999" });
     eq(w.copy("b1").cert, "PSA 999", "the constraint follows the deal");
   });

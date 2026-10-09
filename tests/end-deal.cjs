@@ -15,11 +15,14 @@ const openMenu = (r) => { click(menuBtn(r)); return byClass(r, "dm-item").map(te
 const stageWork = (r) => byClass(r, "ws-stagework")[0];
 const terms = (r) => (text(stageWork(r))
   .match(/Listed price\S{0,14}|Agreed price\S{0,14}|Total trade value\S{0,14}/g) || []).join("|");
-/* Walk the two-step flow: confirm, then skip or save a reason. */
+/* Walk the two-step flow: confirm, then skip or save a reason.
+   RESTATED (Market Validation Batch 3B.1). At Agree on Price the partner's exit
+   is "Decline offer" (`declineOffer`, reason optional); once a price is agreed
+   it is "End deal" and a reason is REQUIRED — there is no Skip. */
 const endDeal = (r, reason) => {
   click(menuBtn(r));
   click(byClass(r, "dm-item")[0]);
-  const go = btns(r, "").find((b) => /^(End deal|Cancel deal)$/.test(text(b).trim()));
+  const go = btns(r, "").find((b) => /^(End deal|Cancel deal|Decline offer)$/.test(text(b).trim()));
   assert(go, "the confirm action");
   click(go);
   if (reason) {
@@ -68,9 +71,11 @@ describe("1. The exit is persistent but subordinate", () => {
 });
 
 describe("2. End deal before mutual agreement", () => {
-  test("the action reads End deal through the active flow", () => {
-    for (const [who, stage] of [["James Rivera", "Agree on Price"], ["Alex Trinh", "Select Trade"],
-      ["Hiro Tanaka", "Value Trade"], ["Nina Alvarez", "Deal"]]) {
+  /* RESTATED (Batch 3B.1): while the price is open the partner DECLINES the
+     offer; from an agreed price on, the partner ENDS the deal. */
+  test("the action reads Decline offer at Agree on Price and End deal after it", () => {
+    eq(openMenu(atStage("James Rivera", "Agree on Price")).join(","), "Decline offer", "Agree on Price offers Decline offer");
+    for (const [who, stage] of [["Alex Trinh", "Select Trade"], ["Hiro Tanaka", "Value Trade"], ["Nina Alvarez", "Deal"]]) {
       eq(openMenu(atStage(who, stage)).join(","), "End deal", stage + " offers End deal");
     }
   });
@@ -80,11 +85,17 @@ describe("2. End deal before mutual agreement", () => {
     click(menuBtn(r));
     click(byClass(r, "dm-item")[0]);
     const t = text(byClass(r, "modal")[0]);
-    assert(t.includes("End this deal with James R.?"), "title names the collector: " + t.slice(0, 60));
-    assert(t.includes("Everything agreed so far will be kept in the opportunity history."), "reassuring body");
+    assert(t.includes("Decline James R.'s offer?"), "title names the collector: " + t.slice(0, 60));
+    assert(t.includes("What was offered stays in the opportunity history."), "reassuring body");
     assert(t.includes("Keep working"), "the safe action is offered first");
     const actions = byClass(r, "modal")[0].findAllByType("button").map((b) => text(b).trim());
-    assert(actions.includes("Keep working") && actions.includes("End deal"), "both choices: " + actions);
+    assert(actions.includes("Keep working") && actions.includes("Decline offer"), "both choices: " + actions);
+    const later = atStage("Alex Trinh", "Select Trade");
+    click(menuBtn(later));
+    click(byClass(later, "dm-item")[0]);
+    const u = text(byClass(later, "modal")[0]);
+    assert(u.includes("End this deal with Alex T.?"), "after a price, it is ending a deal: " + u.slice(0, 60));
+    assert(u.includes("Everything agreed so far will be kept in the opportunity history."), "reassuring body");
   });
 
   test("Keep working leaves the deal untouched", () => {
@@ -102,7 +113,7 @@ describe("2. End deal before mutual agreement", () => {
     const r = atStage("Hiro Tanaka", "Value Trade");
     const before = terms(r);
     const rows = figureRows(r);
-    endDeal(r);
+    endDeal(r, "Changed my mind");                    // a price is agreed: the reason is required
     eq(terms(r), before, "price and trade value unchanged");
     eq(figureRows(r), rows, "and every trade card, market value and percentage");
     eq(byClass(r, "vt-act").length, 0, "with no live decision left on the ended record");
@@ -112,7 +123,7 @@ describe("2. End deal before mutual agreement", () => {
     const r = atStage("James Rivera", "Agree on Price");
     endDeal(r);
     eq(byClass(r, "dm-btn").length, 0, "the exit disappears once the record is terminal");
-    assert(allText(r).includes("ended the deal during Agree on Price"), "and it is recorded");
+    assert(allText(r).includes("declined the offer on"), "and it is recorded, as a decline");
   });
 
   test("4. it leaves the active counts and Needs you", () => {
@@ -131,16 +142,17 @@ describe("2. End deal before mutual agreement", () => {
     endDeal(r, "Changed my mind");
     click(btn(r, "Collector profile"));
     click(btns(r, "History")[0]);
-    assert(allText(r).includes("ended the deal"), "the outcome is in the collector's history");
+    assert(allText(r).includes("declined the offer"), "the outcome is in the collector's history");
   });
 });
 
+/* RESTATED (Batch 3B.1): optional on a decline, required once a price is agreed. */
 describe("4. Optional reason", () => {
   test("the reason step is offered but skippable", () => {
     const r = atStage("James Rivera", "Agree on Price");
     click(menuBtn(r));
     click(byClass(r, "dm-item")[0]);
-    click(btns(r, "").find((b) => text(b).trim() === "End deal"));
+    click(btns(r, "").find((b) => text(b).trim() === "Decline offer"));
     const reasons = byClass(r, "dm-reasons")[0].findAllByType("button").map(text);
     eq(reasons.length, 5, "five suggestions: " + reasons.join(" | "));
     assert(reasons.includes("Changed my mind"), "including the expected options");
@@ -157,15 +169,29 @@ describe("4. Optional reason", () => {
   test("a chosen reason is recorded with the outcome", () => {
     const r = atStage("James Rivera", "Agree on Price");
     endDeal(r, "Changed my mind");
-    assert(allText(r).includes("ended the deal during Agree on Price — Changed my mind"),
-      "reason kept alongside the stage it ended in");
+    assert(allText(r).includes("declined the offer on") && allText(r).includes("— Changed my mind"),
+      "reason kept alongside the decline");
+  });
+
+  test("once a price is agreed the reason is required: no Skip, and Save needs one", () => {
+    const r = atStage("Alex Trinh", "Select Trade");
+    click(menuBtn(r));
+    click(byClass(r, "dm-item")[0]);
+    click(btns(r, "").find((b) => text(b).trim() === "End deal"));
+    eq(btns(r, "Skip").length, 0, "no way to end it without saying why");
+    assert(allText(r).includes("Required — once a price is agreed"), "and it says so");
+    eq(btns(r, "Save")[0].props.disabled, true, "nothing to save yet");
+    click(byClass(r, "dm-reasons")[0].findAllByType("button")[0]);
+    click(btns(r, "Save")[0]);
+    eq(byClass(r, "dm-btn").length, 0, "with a reason, it ends");
+    assert(allText(r).includes("ended the deal during Select Trade — "), "recorded with its reason");
   });
 
   test("Save is unavailable until a reason is picked", () => {
     const r = atStage("James Rivera", "Agree on Price");
     click(menuBtn(r));
     click(byClass(r, "dm-item")[0]);
-    click(btns(r, "").find((b) => text(b).trim() === "End deal"));
+    click(btns(r, "").find((b) => text(b).trim() === "Decline offer"));
     eq(btns(r, "Save")[0].props.disabled, true, "nothing to save yet");
     click(byClass(r, "dm-reasons")[0].findAllByType("button")[0]);
     eq(btns(r, "Save")[0].props.disabled, false, "enabled once chosen");
@@ -209,14 +235,23 @@ describe("5. Cancel after mutual agreement", () => {
     assert(!/Fulfillment\s*3/.test(text(fulfil)), "it left the fulfillment count: " + text(fulfil));
   });
 
-  test("the two outcomes read differently in history", () => {
+  /* RESTATED (Batch 3B.1): three outcomes, each in its own words. */
+  test("the outcomes read differently in history", () => {
     const a = atStage("James Rivera", "Agree on Price");
     endDeal(a);
     click(btnExact(a, "Opportunities22"));
     const rowA = byClass(a, "lc-row").find((n) => String(n.props.className).includes("n-archived"));
     click(rowA.findAllByType("button")[0]);
-    assert(text(byClass(a, "lc-open")[0]).includes("Ended during Agree on Price"),
-      "ended reads as ended");
+    assert(text(byClass(a, "lc-open")[0]).includes("Declined during Agree on Price"),
+      "a declined offer reads as declined");
+
+    const e = atStage("Alex Trinh", "Select Trade");
+    endDeal(e, "Changed my mind");
+    click(btnExact(e, "Opportunities22"));
+    const rowE = byClass(e, "lc-row").find((n) => String(n.props.className).includes("n-archived"));
+    click(rowE.findAllByType("button")[0]);
+    assert(text(byClass(e, "lc-open")[0]).includes("Ended during Select Trade"),
+      "an ended deal reads as ended");
 
     const b = atStage("Hiro Tanaka", "Fulfillment");
     endDeal(b, CANCEL_REASON);
@@ -276,13 +311,13 @@ describe("9. Upstream chapters are never reopened", () => {
     const r = atStage("Hiro Tanaka", "Value Trade");
     const row = figureRows(r);
     assert(/\$\d/.test(row), "there are settled figures to preserve");
-    endDeal(r);
+    endDeal(r, "Changed my mind");                    // a price is agreed: the reason is required
     eq(figureRows(r), row, "market values and percentages are byte-identical");
   });
 
   test("the stage it ended in is retained", () => {
     const r = atStage("Hiro Tanaka", "Value Trade");
-    endDeal(r);
+    endDeal(r, "Changed my mind");                    // a price is agreed: the reason is required
     assert(allText(r).includes("during Value Trade"), "where it stopped is part of the record");
   });
 });

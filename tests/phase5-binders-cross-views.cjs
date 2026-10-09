@@ -493,6 +493,10 @@ describe("E. Four facts, still four", () => {
 /* ============================== F. the boundary this batch did not cross */
 describe("F. What did not move", () => {
   test("[39] the production allow-list is unchanged", () => {
+    /* MARKET VALIDATION BATCH 3B opened the five price commands — opening an
+       offer, countering, accepting, declining and withdrawing — with the screens
+       that send them, so they left this list. Everything past an agreed price
+       (trade, values, the final balance, fulfilment, Pending) is still shut. */
     /* THE TRANSACTION IS WHAT MUST STAY CLOSED, and it is. `reviewCopy`,
        `endReview` and `requestPhotos` left this loop when the qualification
        batch gave them a surface; everything that settles a value, reserves a
@@ -503,10 +507,11 @@ describe("F. What did not move", () => {
        and settles nothing. */
     /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
        name; any other change to the size still fails here. */
-    eq(EXPOSED_COMMANDS.length, 24, "a command was exposed that no batch declared");
-    for (const closed of ["startOpportunity", "proposePrice", "acceptPrice",
-      "acceptMarketValue", "acceptDeal", "setCopyPending", "cancelOpportunity",
-      "proposeFulfillment", "confirmHandoff"]) {
+    /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
+       commands joined the door with the Deal Flow and Opportunities controls
+       that send them, each named in the allow-list; any other move still fails. */
+    eq(EXPOSED_COMMANDS.length, 29, "a command was exposed that no batch declared");
+    for (const closed of ["acceptMarketValue", "acceptDeal", "setCopyPending", "proposeFulfillment", "confirmHandoff"]) {
       assert(!EXPOSED_COMMANDS.includes(closed), `${closed} was exposed`);
     }
   });

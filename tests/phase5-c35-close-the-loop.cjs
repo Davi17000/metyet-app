@@ -823,10 +823,18 @@ describe("F. the boundaries hold", () => {
          evidence in a live deal, and it changes no price, availability or
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
+      /* AND THE FIVE MARKET VALIDATION BATCH 3B ADDED, with the controls that
+         send them: a Collector's "Make an offer", "Counter", "Accept" and
+         "Withdraw offer" in Deal Flow, and a shop's "Accept", "Counter" and
+         "Decline" in Opportunities. Agreeing a price and nothing past it. */
+      "startOpportunity", "proposePrice", "acceptPrice", "declineOffer", "cancelOpportunity",
     ].sort()), "C3.5 changed the production surface");
     /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
        name; any other change to the size still fails here. */
-    eq(EXPOSED_COMMANDS.length, 24);
+    /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
+       commands joined the door with the Deal Flow and Opportunities controls
+       that send them, each named in the allow-list; any other move still fails. */
+    eq(EXPOSED_COMMANDS.length, 29);
     /* 49 → 50 in Option B (`setCopyPending`). What this line guards is the
        door above, which has not moved: the new command is not exposed.
        51 → 53 in Batch 3A (`fileObject`, `unfileObject`), and this time the
@@ -857,11 +865,15 @@ describe("F. the boundaries hold", () => {
   });
 
   test("the deal lifecycle is still shut, and so is everything C3.5 might have wanted", async () => {
+    /* MARKET VALIDATION BATCH 3B opened the five price commands — opening an
+       offer, countering, accepting, declining and withdrawing — with the screens
+       that send them, so they left this list. Everything past an agreed price
+       (trade, values, the final balance, fulfilment, Pending) is still shut. */
     const ctx = await world();
     /* `reviewCopy`, `endReview` and `requestPhotos` left this list when the
          qualification batch gave them a surface in Deal Flow. What must stay shut
          is the TRANSACTION, and it is still shut. */
-      for (const name of ["startOpportunity", "proposePrice", "acceptPrice", "acceptDeal",
+      for (const name of ["acceptDeal",
       "setInterest", "sendMessage", "reachOut", "markBinderReviewed"]) {
       assert(!EXPOSED_COMMANDS.includes(name), `${name} is exposed`);
       eq((await post(ctx.app, "casey", name, {})).json().error.refused,

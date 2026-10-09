@@ -44,10 +44,11 @@
    the demo is not, and would be a much larger batch wearing this one's name.
 
    WHEN A COMMAND JOINS THIS LIST. When the product grows a surface that sends
-   it. The negotiation commands — `startOpportunity`, `proposePrice`,
-   `acceptPrice` and the rest of the deal lifecycle — are written, tested and
-   deliberately absent from this list, because no screen sends them yet. They
-   arrive here in the batch that gives them one.
+   it. Market Validation's five — `startOpportunity`, `proposePrice`,
+   `acceptPrice`, `declineOffer` and `cancelOpportunity` — arrived in Batch 3B
+   with the Deal Flow and Opportunities controls that send them. The rest of
+   the deal lifecycle (trade, values, the final balance, fulfilment) is still
+   written, tested and deliberately absent: no screen sends it yet.
    ========================================================================== */
 
 /* THIS FILE REQUIRES NOTHING, and that is deliberate. It holds names, not
@@ -223,6 +224,22 @@ const EXPOSED_COMMANDS = Object.freeze([
   "reviewCopy",                  // Collector → Deal Flow, "Inspect"
   "endReview",                   // Collector → Deal Flow, "Done inspecting"
   "requestPhotos",               // Collector → Deal Flow, "Request photos"
+  /* MARKET VALIDATION (Batch 3B). Agreeing what one exact copy is worth, and
+     nothing past that. Every rule — who may open, whose turn it is, Firm on
+     Price, whole dollars, one active offer per card — is the domain's; this
+     only says the product now has a way to send them.
+     `cancelOpportunity` IS SENT ONLY AS "WITHDRAW OFFER", with no reason, and
+     only while the price is unresolved. Its domain rule (Batch 3B.1) is what
+     governs anything else sent through this door: while the price is open
+     only the Collector may use it (a partner is refused — its "no" is
+     `declineOffer`); once a price is agreed either participant may, but only
+     with a non-blank reason (`reason-required`). No screen sends that yet —
+     there is no End Deal control. */
+  "startOpportunity",            // Collector → Deal Flow, "Make an offer"
+  "proposePrice",                // Collector → Deal Flow / TP → Opportunities, "Counter"
+  "acceptPrice",                 // Collector → Deal Flow / TP → Opportunities, "Accept"
+  "declineOffer",                // TP → Opportunities, "Decline"
+  "cancelOpportunity",           // Collector → Deal Flow, "Withdraw offer"
 ]);
 
 /* ONE ANSWER FOR TWO QUESTIONS, ON PURPOSE. A command that does not exist and a

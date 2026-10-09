@@ -318,7 +318,10 @@ describe("B. identity comes from the projection, and nowhere else", () => {
     assert(!shown.includes("Attacker") && !shown.includes("attacker@example.com"), shown);
     assert(looksLikeCollectorShell(r), "a prop changed the product: " + shown);
 
-    for (const rel of [...COLLECTOR_FILES, "client/production-app.jsx", "client/actor.js"]) {
+    /* EXTENDED (Market Validation Batch 3B.1): the negotiation module both
+       seats render with is Collector code too, so it is held to the same rule
+       — it may not name a seat any more than a section may. */
+    for (const rel of [...COLLECTOR_FILES, "client/production-app.jsx", "client/actor.js", "client/negotiation.jsx"]) {
       const bare = code(rel);
       assert(!/localStorage|sessionStorage|indexedDB|document\.cookie/.test(bare), `${rel} reads storage`);
       assert(!/location\.(search|hash|pathname|href)|URLSearchParams/.test(bare), `${rel} reads the URL`);

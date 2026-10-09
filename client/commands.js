@@ -519,3 +519,58 @@ export function provideCopyPhotos(target) {
     ...(faces && faces.back !== undefined ? { back: faces.back } : {}),
   });
 }
+
+/* ------------------------------------- MARKET VALIDATION (Batch 3B)
+   AGREEING WHAT ONE EXACT COPY IS WORTH. A Collector opens with an offer on a
+   copy their Primary Goal matches; the shop accepts, counters or declines; the
+   Collector accepts, counters or withdraws. Five commands, and every rule about
+   them — who may send which, whose turn it is, Firm on Price, whole dollars,
+   one active offer per card — is the server's. These only carry the words.
+
+   A PRICE IS DOLLARS OR A PERCENTAGE, NEVER BOTH. `price` is `{ amount }` (a
+   whole number of dollars) or `{ percent }` (a fraction of the price the shop
+   listed when the offer opened, e.g. 0.9). Whichever one the person used is
+   the only one sent: the server resolves a percentage to whole dollars and
+   records both, so nothing here rounds anything.
+
+   THE ACTOR IS NOT IN THE PAYLOAD, and neither is the shop: the server reads
+   the seat from the session and the shop from the copy.
+
+   `withdrawOffer` SENDS NO REASON, ON PURPOSE. It is the Collector taking back
+   an offer that was never agreed, and Deal Flow offers it only then. Ending a
+   deal after the price is agreed is a different decision with its own screen,
+   which this batch does not build. (The server requires a reason for that
+   from the moment a price is agreed, Batch 3B.1.) */
+const priceOf = (price) => (price && price.percent !== undefined
+  ? { percent: price.percent } : { amount: price ? price.amount : undefined });
+
+export function openOffer(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("openOffer: the production store is required");
+  }
+  return (goalId, invId, price) => target.execute("startOpportunity", { goalId, invId, ...priceOf(price) });
+}
+export function counterOffer(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("counterOffer: the production store is required");
+  }
+  return (oppId, price) => target.execute("proposePrice", { oppId, ...priceOf(price) });
+}
+export function acceptOffer(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("acceptOffer: the production store is required");
+  }
+  return (oppId) => target.execute("acceptPrice", { oppId });
+}
+export function declineOffer(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("declineOffer: the production store is required");
+  }
+  return (oppId) => target.execute("declineOffer", { oppId });
+}
+export function withdrawOffer(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("withdrawOffer: the production store is required");
+  }
+  return (oppId) => target.execute("cancelOpportunity", { oppId });
+}

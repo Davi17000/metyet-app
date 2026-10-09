@@ -95,6 +95,10 @@ const isActive = (o) => !isTerminal(o);
 /* Structured negotiation = past the intent stages. A goal at Primary Goal is
    not being negotiated; it is merely wanted. */
 const isNegotiating = (o) => isActive(o) && STAGE_IX[o.stage] >= STAGE_IX["agree-price"];
+/* Market Validation is still open: a live deal that has not agreed a price.
+   Named here so the projection can carry the answer and no screen has to work
+   it out from a stage (Batch 3B.1). */
+const priceUnresolved = (o) => isActive(o) && o.stage === "agree-price";
 
 /* ------------------------------------------------------- GOAL STATE (DERIVED)
 
@@ -1084,7 +1088,7 @@ module.exports = {
   identityKey, isRaw, sameIdentity,
   INVITATION_DAYS, invitationExpiry, invitationOpen,
   STAGES, STAGE_IX, STAGE_LABEL,
-  isEnded, isCompleted, isTerminal, isActive, isNegotiating,
+  isEnded, isCompleted, isTerminal, isActive, isNegotiating, priceUnresolved,
   activeOppForGoal, goalState, priceProposal, wholeDollarPrice,
   acceptedTradeCards, cardSettled, tradeValueOf, tradeValueAt, totalTradeValue,
   calculatedBalance, finalBalance,

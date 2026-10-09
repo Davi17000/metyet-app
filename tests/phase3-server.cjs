@@ -493,16 +493,20 @@ describe("E. the command endpoint", () => {
      through the real stack, and that the partner's trade % never crosses to
      the Collector — are asserted exactly as before, the second one still over
      HTTP. The steps are also proved closed at the boundary. */
+  /* RESTATED AGAIN IN MARKET VALIDATION BATCH 3B. Agreeing the price is now
+     something the product sends, so the first two steps run THROUGH THE DOOR,
+     over HTTP, as each seat; the trade steps after them are still unexposed and
+     still proved shut at the boundary before they run past it. */
   test("a full deal runs through the API, seat by seat", async () => {
     const { app, repository } = await serve();
-    await closedOverHttp(app, SUBJECTS.casey, "startOpportunity",
-      { goalId: "g1", invId: "i1", amount: 900 });
-    const started = await direct(repository, ACTORS.casey, "startOpportunity",
-      { goalId: "g1", invId: "i1", amount: 900 });
-    eq(started.ok, true, JSON.stringify(started.refused));
-    const oppId = started.value;
+    const opened = await send(app, SUBJECTS.casey,
+      { command: "startOpportunity", payload: { goalId: "g1", invId: "i1", amount: 900 } });
+    eq(opened.statusCode, 200, "the Collector opens over HTTP: " + opened.body);
+    const oppId = opened.json().value;
+    const accepted = await send(app, SUBJECTS.northline, { command: "acceptPrice", payload: { oppId } });
+    eq(accepted.statusCode, 200, "the partner accepts over HTTP: " + accepted.body);
+    await closedOverHttp(app, SUBJECTS.casey, "proposeTradeSelection", { oppId, binderIds: ["b1"] });
     const steps = [
-      [ACTORS.northline, "acceptPrice", { oppId }],
       [ACTORS.casey, "proposeTradeSelection", { oppId, binderIds: ["b1"] }],
       [ACTORS.northline, "reviewTradeCard", { oppId, decision: "accepted" }],
     ];
@@ -597,11 +601,17 @@ describe("F. authority cannot be claimed by a request", () => {
     eq(alsoExposed.json().error.refused, "not-owner");
     const cases = [
       [ACTORS.casey, SUBJECTS.casey, "updateInventoryCopy", { invId: "i1", patch: { ask: 1 } }, "not-owner", true],
-      [ACTORS.dana, SUBJECTS.dana, "startOpportunity", { goalId: "g1", invId: "i1", amount: 900 }, "not-owner", false],
+      /* Offered since Market Validation Batch 3B, so asked where a browser asks. */
+      [ACTORS.dana, SUBJECTS.dana, "startOpportunity", { goalId: "g1", invId: "i1", amount: 900 }, "not-owner", true],
       [ACTORS.second, SUBJECTS.second, "markBinderReviewed", { collectorId: "c2" }, "no-relationship", false],
     ];
     for (const [actor, subject, command, payload, refused, offered] of cases) {
       if (!offered) await closedOverHttp(app, subject, command, payload);
+      else {
+        const res = await send(app, subject, { command, payload });
+        eq(res.statusCode, 409, `${command} over HTTP`);
+        eq(res.json().error.refused, refused, `${command} over HTTP`);
+      }
       const res = await direct(repository, actor, command, payload);
       eq(res.ok, false, command);
       eq(res.refused, refused, command);

@@ -90,7 +90,7 @@ const dealWith = (w, end) => {
     w.st.actions.patchOpportunity(o, (x) => ({ ...x, stage: "completed",
       completedAt: "2026-08-18" }));
   } else if (end === "ended") {
-    w.st.actions.endOpportunity(o, "collector", "2026-08-18");
+    w.st.actions.endOpportunity(o, "collector", "2026-08-18", "changed my mind"); /* Batch 3B.1: ending a price-agreed deal needs a reason. */
   }
   return o;
 };

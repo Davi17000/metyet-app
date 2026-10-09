@@ -622,12 +622,17 @@ describe("F. The screen, and the door it sends through", () => {
 
   test("[38] and the screen stops where the transaction starts", () => {
     const src = codeOf("client/collector/sections/DealFlow.jsx");
+    /* RESTATED (Market Validation Batch 3B). Deal Flow now goes one step past
+       qualification — agreeing a price, "Make an offer" — through callbacks it
+       is handed, never by naming a command. What it still stops before is
+       everything after an agreed price: market values, Pending, the trade. */
     for (const gone of ["startOpportunity", "acceptPrice", "acceptMarketValue", "setCopyPending",
-      "Market Value", "Make an offer", "Agree a price"]) {
+      "Market Value", "Agree a price"]) {
       assert(!src.includes(gone), `Deal Flow grew ${gone}`);
     }
-    /* And the only three it can send are the qualification ones. */
-    for (const prop of ["onInspect", "onEndInspection", "onRequestPhotos"]) {
+    /* The qualification three, and the Collector's four price moves. */
+    for (const prop of ["onInspect", "onEndInspection", "onRequestPhotos",
+      "onOpenOffer", "onCounterOffer", "onAcceptOffer", "onWithdrawOffer"]) {
       assert(src.includes(prop), `Deal Flow lost ${prop}`);
     }
   });
@@ -636,20 +641,26 @@ describe("F. The screen, and the door it sends through", () => {
 /* ============================================= G. what did not move */
 describe("G. The boundary", () => {
   test("[39] the allow-list grew by exactly the three with a surface", () => {
+    /* MARKET VALIDATION BATCH 3B opened the five price commands — opening an
+       offer, countering, accepting, declining and withdrawing — with the screens
+       that send them, so they left this list. Everything past an agreed price
+       (trade, values, the final balance, fulfilment, Pending) is still shut. */
     /* RE-PINNED by photo fulfilment, which added the fourth: `addCopyPhotos`,
        the only command that closes a photo request. This batch's own three are
        still asserted below, and the transaction set is still shut. */
     /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
        name; any other change to the size still fails here. */
-    eq(EXPOSED_COMMANDS.length, 24, "the production surface is not the size this batch declared");
+    /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
+       commands joined the door with the Deal Flow and Opportunities controls
+       that send them, each named in the allow-list; any other move still fails. */
+    eq(EXPOSED_COMMANDS.length, 29, "the production surface is not the size this batch declared");
     assert(EXPOSED_COMMANDS.includes("addCopyPhotos"),
       "the shop lost its way to answer a request");
     for (const open of ["reviewCopy", "endReview", "requestPhotos"]) {
       assert(EXPOSED_COMMANDS.includes(open), `${open} has a control but no door`);
     }
-    for (const shut of ["startOpportunity", "proposePrice", "acceptPrice", "acceptMarketValue",
-      "acceptDeal", "proposeTradeSelection", "setCopyPending", "cancelOpportunity",
-      "proposeFulfillment", "confirmHandoff", "sendMessage", "setInterest"]) {
+    for (const shut of ["acceptMarketValue",
+      "acceptDeal", "proposeTradeSelection", "setCopyPending", "proposeFulfillment", "confirmHandoff", "sendMessage", "setInterest"]) {
       assert(!EXPOSED_COMMANDS.includes(shut), `${shut} was exposed`);
     }
     eq(new Set(EXPOSED_COMMANDS).size, EXPOSED_COMMANDS.length, "a command is listed twice");
@@ -965,11 +976,15 @@ describe("I. Over HTTP, against the real server", () => {
   });
 
   test("[57] the transaction is still unreachable from a browser", async () => {
+    /* MARKET VALIDATION BATCH 3B opened the five price commands — opening an
+       offer, countering, accepting, declining and withdrawing — with the screens
+       that send them, so they left this list. Everything past an agreed price
+       (trade, values, the final balance, fulfilment, Pending) is still shut. */
     const { app } = await served();
     /* `addCopyPhotos` is reachable since photo fulfilment; it is exercised as a
        Trusted Partner in that batch's own suite. What must stay unreachable
        from any browser is the transaction. */
-    for (const shut of ["startOpportunity", "proposePrice", "acceptPrice", "acceptDeal",
+    for (const shut of ["acceptDeal",
       "setCopyPending", "proposeTradeSelection", "confirmHandoff",
       "sendMessage", "setInterest"]) {
       const res = await send(app, "casey", shut, {});
