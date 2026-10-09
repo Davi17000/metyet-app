@@ -706,6 +706,32 @@ button.mcs-otap { cursor:pointer; }
 .mcs-ofacts { display:flex; flex-direction:column; gap:2px; margin-top:4px; padding:6px 8px; border-radius:8px;
   background:#FFF; border:1px solid var(--line); }
 .mcs-ofacts .mcs-fact { font-size:11px; }
+/* ---- filing (P6-3): pick a card up, put it where it belongs ---- */
+.mcs-otap.holdable { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+.mcs-otap.holdable img { -webkit-user-drag:none; pointer-events:none; }
+.mcs-otile.lifted { opacity:.28; }
+.mcs-otile.filing { opacity:.6; }
+.mcs-otile.landed .mcs-otile-art { animation:mcs-landed 1.2s ease-out; }
+@keyframes mcs-landed { 0% { transform:scale(1.06); box-shadow:0 0 0 3px var(--t1); } 100% { transform:none; } }
+.mcs-filing { position:fixed; inset:0; z-index:60; background:rgba(245,247,249,.95); display:flex;
+  flex-direction:column; padding:14px 16px calc(16px + env(safe-area-inset-bottom, 0px)); touch-action:none;
+  -webkit-user-select:none; user-select:none; }
+.mcs-fhead { margin-bottom:10px; } .mcs-fhead b { display:block; font-size:16px; }
+.mcs-fhead span { color:var(--muted); font-size:12px; }
+.mcs-dests { display:flex; flex-direction:column; gap:8px; overflow:auto; flex:1; max-width:520px; width:100%; margin:0 auto; }
+.mcs-dest { border:1.5px solid var(--line); background:#FFF; border-radius:14px; padding:14px; min-height:52px;
+  display:flex; flex-direction:column; justify-content:center; cursor:pointer;
+  transition:background .08s, border-color .08s, transform .08s; }
+.mcs-dest b { font-size:15px; } .mcs-dest span { font-size:11.5px; color:var(--faint); }
+.mcs-dest.over { border-color:var(--t1); background:var(--t1-bg); transform:scale(1.015); }
+.mcs-dest.off { opacity:.45; border-style:dashed; cursor:default; }
+.mcs-dest.cancel { margin-top:auto; text-align:center; align-items:center; background:#F4F6F8; }
+.mcs-dest.cancel.over { background:#E9EDF1; border-color:var(--muted); }
+.mcs-ghost { position:fixed; width:92px; transform:translate(-50%,-60%) rotate(-3deg) scale(1.04); pointer-events:none;
+  z-index:61; filter:drop-shadow(0 12px 18px rgba(10,16,20,.35)); }
+.mcs-undo { margin-left:8px; font-weight:600; }
+.mcs-ohomeset { margin-top:4px; } .mcs-ohomeset select { font-size:13px; padding:6px 8px; }
+.mcs-viewmode { padding:0; margin:0 0 10px; }
 .mcs-bsum { margin:0 0 10px; font-size:12.5px; color:var(--muted); } .mcs-bsum b { color:var(--text); font-size:15px; }
 
 @media (min-width:600px) {
@@ -888,7 +914,7 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
                 fillingBinder, onDoneFilling: () => setFillingBinder(null) }
               : meta.id === "binder"
                   ? { onSpecify, onBrowseCards, onCreateBinder, onRenameBinder,
-                    onArchiveBinder, fillingBinder, onFileObject, onUnfileObject,
+                    onArchiveBinder, fillingBinder, onFileObject, onUnfileObject, onRefresh,
                     onAddCards: (into) => { setFillingBinder(into); setSection("browse"); } }
                   : meta.id === "partners"
                     /* Trusted Partners asks the catalog what the cards a shop

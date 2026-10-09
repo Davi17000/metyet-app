@@ -320,6 +320,8 @@ describe("F. an opened binder", () => {
     const { r } = await show();
     await openGen1(r);
     assert(/2 cards · 1 Primary · 1 PC/.test(flat(r.root)), flat(r.root));
+    /* P6-3: tiles by default; the List keeps production's rows. */
+    await click(btn(r, /^List$/));
     assert(r.root.findAll((n) => n.type === "select" && /^Move /.test(String(n.props["aria-label"] || ""))).length === 2, "Move lost");
     assert(buttons(r).filter((b) => /^Remove from Binder$/.test(flat(b))).length === 2, "Remove lost");
   });
@@ -327,6 +329,8 @@ describe("F. an opened binder", () => {
     const { r } = await show();
     await openGen1(r);
     await click(btn(r, /^PC$/));
+    eq(json(tileTexts(r.root).map((x) => x.split(" ")[0])), json(["PC"]), "tiles: only the PC copy");
+    await click(btn(r, /^List$/));
     const t = flat(r.root);
     assert(/Keeping/.test(t) && !/Looking for/.test(t), "the PC filter kept the Goal: " + t);
     await click(btn(r, /^Trade \/ Sell$/));

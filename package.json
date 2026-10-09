@@ -29,7 +29,8 @@
     "previews": "node build-preview.mjs && node build-preview-unified.mjs",
     "verify": "npm run build && npm test && npm run prod && npm run smoke && npm run previews",
     "ux:mobile-review": "node harness/mobile-ux-review.cjs",
-    "ux:mobile-review:assert": "node harness/mobile-ux-review.cjs --assert-only"
+    "ux:mobile-review:assert": "node harness/mobile-ux-review.cjs --assert-only",
+    "ux:filing-browser": "node harness/phase6-filing-browser.cjs"
   },
   "dependencies": {
     "esbuild": "^0.28.2",

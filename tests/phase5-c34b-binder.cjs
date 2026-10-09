@@ -259,6 +259,10 @@ const openBinder = async (r, name) => {
   assert(go, `no way into "${name}"`);
   await TR.act(async () => { go.props.onClick(); });
   await settle();
+  /* RESTATED (Phase 6 P6-3): an opened binder shows tiles first; these tests
+     read production's object rows, which are its List view, unchanged. */
+  const list = buttons(r).find((n) => instText(n).trim() === "List");
+  if (list) { await TR.act(async () => { list.props.onClick(); }); await settle(); }
 };
 const manage = async (r, item) => {
   const more = buttons(r).find((n) => /^Manage /.test(String(n.props["aria-label"] || "")));
@@ -1036,7 +1040,11 @@ describe("D. not in a binder yet", () => {
     assert(/An old card/.test(yours), "a historical Goal vanished: " + yours);
     const tile = r.root.findAll((n) => n.type === "li" && cls(n).includes("mcs-otile"))
       .find((n) => instText(n).includes("An old card"));
-    eq(tile.findAll((n) => n.type === "button").length, 0, "a Goal with no canonical card offered to open one");
+    /* RESTATED (P6-3): the tile has Details now — its facts and its Binder
+       choice — but its picture still opens no Card Specification. */
+    await TR.act(async () => { tile.findAll((n) => n.type === "button")[0].props.onClick(); });
+    await settle();
+    assert(!/Are you looking for it\?/.test(texts(r)), "a Goal with no canonical card offered to open one");
     /* And it is still there, untouched, for whatever reaches it next. */
     eq((await load(ctx)).goals.length, 1);
   });
