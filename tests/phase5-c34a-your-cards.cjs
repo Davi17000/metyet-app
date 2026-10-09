@@ -171,6 +171,8 @@ const texts = (r) => {
     }
   };
   walk(r.toJSON());
+  /* and each tile's Details sheet (P6-3.1), read in turn */
+  for (const li of tileNodes(r)) out.push(sheetOf(r, li));
   return out.join(" ").replace(/\s+/g, " ");
 };
 const buttons = (r) => r.root.findAll((n) => n.type === "button");
@@ -239,15 +241,29 @@ const doorFor = (ctx) => {
    copy's facts open in place from its "Details" link, and the old view chips
    are state filters. These helpers reach the same rows these tests always
    read; what each test asserts about them is unchanged unless it says so. */
-const openDetails = async (r) => {
-  for (const b of r.root.findAll((n) => n.type === "button" && n.props["aria-expanded"] === false
-    && String(n.props.className || "").includes("mcs-oview"))) {
-    await TR.act(async () => { b.props.onClick(); });
-  }
-  await settle();
+const openDetails = async () => { await settle(); };
+/* RESTATED (Phase 6 P6-3.1): a tile's facts now live in its Details SHEET,
+   one tile at a time, not opened in place beneath it. Reading a tile's record
+   opens its sheet, reads the card and its facts (not the Binder choice, whose
+   options name every binder), and closes it again — the same facts, from the
+   same rows, read from where they are now shown. */
+const sheetOf = (r, li) => {
+  const b = li.findAll((n) => n.type === "button" && String(n.props.className || "").includes("mcs-oview"))[0];
+  if (!b) return "";
+  TR.act(() => { b.props.onClick(); });
+  const d = r.root.findAll((n) => n.type === "div" && n.props.role === "dialog"
+    && /^Details/.test(String(n.props["aria-label"] || "")))[0];
+  if (!d) return "";
+  const t = d.findAll((n) => n.type === "div" && /mcs-detail-(head|facts)/.test(String(n.props.className || "")))
+    .map((n) => instText(n)).join(" ");
+  const close = d.findAll((n) => n.type === "button" && instText(n).trim() === "Close")[0];
+  if (close) TR.act(() => { close.props.onClick(); });
+  return t;
 };
-const tilesOf = (r) => r.root.findAll((n) => n.type === "li" && String(n.props.className || "").includes("mcs-otile"))
-  .map((n) => instText(n).replace(/\s+/g, " "));
+const tileNodes = (r) => r.root.findAll((n) => n.type === "li" && String(n.props.className || "").includes("mcs-otile"));
+
+/* each tile with its Details sheet's facts (P6-3.1) */
+const tilesOf = (r) => tileNodes(r).map((n) => `${instText(n)} ${sheetOf(r, n)}`.replace(/\s+/g, " "));
 
 /* ============================================================== A */
 describe("A. a card you own is called what the catalog calls it", () => {

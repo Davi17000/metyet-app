@@ -232,12 +232,28 @@ const showCollection = (state, view = "All Cards") => {
   const filter = VIEW_TO_FILTER[view] || view;
   const b = r.root.findAll((n) => n.type === "button" && instText(n).trim() === filter)[0];
   if (filter !== "All") { assert(b, `no filter "${filter}"`); TR.act(() => { b.props.onClick(); }); }
-  for (const t of r.root.findAll((n) => n.type === "button" && n.props["aria-expanded"] === false
-    && String(n.props.className || "").includes("mcs-oview"))) {
-    TR.act(() => { t.props.onClick(); });
-  }
   return r;
 };
+/* RESTATED (Phase 6 P6-3.1): a tile's facts now live in its Details SHEET,
+   one tile at a time, not opened in place beneath it. Reading a tile's record
+   opens its sheet, reads the card and its facts (not the Binder choice, whose
+   options name every binder), and closes it again — the same facts, from the
+   same rows, read from where they are now shown. */
+const sheetOf = (r, li) => {
+  const b = li.findAll((n) => n.type === "button" && String(n.props.className || "").includes("mcs-oview"))[0];
+  if (!b) return "";
+  TR.act(() => { b.props.onClick(); });
+  const d = r.root.findAll((n) => n.type === "div" && n.props.role === "dialog"
+    && /^Details/.test(String(n.props["aria-label"] || "")))[0];
+  if (!d) return "";
+  const t = d.findAll((n) => n.type === "div" && /mcs-detail-(head|facts)/.test(String(n.props.className || "")))
+    .map((n) => instText(n)).join(" ");
+  const close = d.findAll((n) => n.type === "button" && instText(n).trim() === "Close")[0];
+  if (close) TR.act(() => { close.props.onClick(); });
+  return t;
+};
+const tileNodes = (r) => r.root.findAll((n) => n.type === "li" && String(n.props.className || "").includes("mcs-otile"));
+
 /* THE SECTION'S OWN TEXT, without the shell around it (C1). The navigation is
    on screen in every section, so an assertion about what a SECTION says has to
    be made of the section — otherwise a nav label is read as the section's own
@@ -251,10 +267,11 @@ const sectionText = (r) => {
 /* The rendered text of ONE record block, found by something inside it. */
 const recordWith = (r, needle) => {
   /* A tile (P6-2) is a record too: one Goal or one copy, on its own terms. */
-  const a = r.root.findAll((n) => n.type === "article" || (n.type === "li" && String(n.props.className || "").includes("mcs-otile")))
-    .find((n) => instText(n).includes(needle));
+  const a = r.root.findAll((n) => n.type === "article").map((n) => instText(n))
+    .concat(tileNodes(r).map((n) => `${instText(n)} ${sheetOf(r, n)}`))
+    .find((t) => t.includes(needle));
   assert(a, `no record containing "${needle}" — screen: ` + flat(r));
-  return instText(a).replace(/\s+/g, " ");
+  return a.replace(/\s+/g, " ");
 };
 const records = (r) => r.root.findAll((n) => n.type === "article")
   .map((n) => instText(n).replace(/\s+/g, " "));

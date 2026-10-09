@@ -111,8 +111,14 @@ const textOf = (n) => (typeof n === "string" ? n : !n || !n.children ? "" : n.ch
 const flat = (n) => textOf(n).replace(/\s+/g, " ").trim();
 const cls = (n) => String((n.props && n.props.className) || "");
 const yourCards = (r) => r.root.findAll((n) => n.type === "section" && n.props["aria-label"] === "Your Cards")[0];
+/* A tile, found by its STATE and its card — read state first so the
+   matchers do not depend on the caption's layout (P6-3.1 put the name first). */
+const caption = (n) => {
+  const mk = n.findAll((m) => cls(m).includes("mcs-mk"))[0];
+  return `${mk ? flat(mk) : ""} ${flat(n.findAll((m) => cls(m).includes("mcs-ometa"))[0])}`;
+};
 const tileFor = (r, re, root = yourCards(r)) => root.findAll((n) => n.type === "li" && cls(n).includes("mcs-otile"))
-  .find((n) => re.test(flat(n.findAll((m) => cls(m).includes("mcs-ometa"))[0])));
+  .find((n) => re.test(caption(n)));
 const art = (tile) => tile.findAll((n) => n.type === "button" && cls(n).includes("mcs-otap"))[0];
 const layer = (r) => r.root.findAll((n) => n.props && n.props["aria-label"] === "Where should this go?")[0] || null;
 const down = async (btn, type = "touch", x = 10, y = 10) => {
@@ -307,6 +313,17 @@ describe("E. the paths that need no gesture", () => {
     await TR.act(async () => { pick.props.onChange({ target: { value: "b-mud" } }); }); await settle();
     eq(json(sent), json([["fileObject", { binderId: "b-mud", collectorCopyId: "k-blas" }]]));
   });
+  test("while a Details sheet is open, a hold behind it picks nothing up (P6-3.1)", async () => {
+    const { r, sent } = await show();
+    const t = tileFor(r, /PC.*Blastoise/);
+    await TR.act(async () => { t.findAll((n) => n.type === "button" && /^Details$/.test(flat(n)))[0].props.onClick(); });
+    await settle();
+    const b = art(tileFor(r, /Primary.*Charizard/));
+    await down(b, "touch"); await TR.act(async () => { await sleep(500); });
+    eq(layer(r), null, "a card was lifted from behind an open sheet");
+    await upTile(b);
+    eq(sent.length, 0);
+  });
   test("Undo puts it back where it was, with the same commands", async () => {
     const { r, sent } = await show();
     await pickUp(r, /Primary.*Charizard/);
@@ -334,15 +351,20 @@ describe("E. the paths that need no gesture", () => {
     eq(sent.length, 1);
     assert(!button(r, /^Undo$/), "an undo into a put-away binder was promised");
   });
-  test("an opened binder: tiles first, and the List keeps Move and Remove", async () => {
+  test("an expanded binder: its cards at once, and Move & Remove from its menu", async () => {
+    /* RESTATED (P6-3.1): no second screen — a binder opens in place, and the
+       list with Move and Remove is one item in its "•••" menu. */
     const { r } = await show();
     const sec = r.root.findAll((n) => cls(n).includes("mcs-sechead") && /^Binders/.test(flat(n)))[0];
     await TR.act(async () => { sec.props.onClick(); }); await settle();
     const row = r.root.findAll((n) => n.type === "button" && cls(n).includes("mcs-bhead") && /^Gen 1/.test(flat(n)))[0];
     await TR.act(async () => { row.props.onClick(); }); await settle();
-    await TR.act(async () => { button(r, /^Open Gen 1/).props.onClick(); }); await settle();
-    assert(r.root.findAll((n) => n.type === "li" && cls(n).includes("mcs-otile")).length === 1, "not tiles");
-    await TR.act(async () => { button(r, /^List$/).props.onClick(); }); await settle();
+    const binders = r.root.findAll((n) => n.type === "section" && n.props["aria-label"] === "Your binders")[0];
+    eq(binders.findAll((n) => n.type === "li" && cls(n).includes("mcs-otile")).length, 1, "its card is not there at once");
+    assert(!button(r, /^Open Gen 1/), "a second step to open it survived");
+    const more = r.root.findAll((n) => n.type === "button" && n.props["aria-label"] === "Manage Gen 1")[0];
+    await TR.act(async () => { more.props.onClick(); }); await settle();
+    await TR.act(async () => { button(r, /^Move & remove \(list\)$/).props.onClick(); }); await settle();
     assert(button(r, /^Remove from Binder$/), "Remove lost");
   });
 });

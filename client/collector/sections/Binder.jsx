@@ -290,29 +290,32 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
 
   /* WHERE THEY WERE, WHEN THEY WERE SENT AWAY TO BROWSE (C3.4): while a binder
      is being filled, it is the binder this section opens on. */
-  const [open, setOpen] = useState(fillingBinder ? fillingBinder.binderId : null);
+  /* P6-3.1: there is no separate binder screen any more — a binder is opened
+     IN PLACE, so returning from "Add cards" lands with that binder open. */
+  const filling = fillingBinder ? fillingBinder.binderId : null;
   /* Screen state only — none of it is written anywhere. */
   const [query, setQuery] = useState("");
   const [lens, setLens] = useState("all");
   /* Closed on arrival, as in Phase 6 — except when there are no binders yet:
      then the section's content IS the sentence saying what a binder is and the
      way to make one, and a closed header would hide both. */
-  const [sectionOpen, setSectionOpen] = useState(() => !binders.some((b) => !b.archivedAt));
-  const [expanded, setExpanded] = useState(null);
+  const [sectionOpen, setSectionOpen] = useState(() => Boolean(filling) || !binders.some((b) => !b.archivedAt));
+  const [expanded, setExpanded] = useState(filling);
   const [unfiledOpen, setUnfiledOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [making, setMaking] = useState(false);
   const [newName, setNewName] = useState("");
   const [renaming, setRenaming] = useState(null);  // { id, name }
-  const [manage, setManage] = useState(false);
+  /* The one binder whose quiet "•••" menu is open, if any (P6-3.1). */
+  const [menuFor, setMenuFor] = useState(null);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState(null);
   const [toast, setToast] = useState(null);
   const [specifying, setSpecifying] = useState(null);
-  /* A copy's own facts, opened in place from its tile ("Details", Phase 6's
-     tile link) — the facts Your Cards always showed, so none of them needs
-     the Card Specification to be read. Several may be open at once. */
-  const [peek, setPeek] = useState(() => new Set());
+  /* A Goal's or copy's own facts, in a sheet (P6-3.1) rather than under the
+     tile: the facts Your Cards always showed, its Binder choice, and a way
+     into the Card Specification. One at a time. */
+  const [detailKey, setDetailKey] = useState(null);
   /* FILING (P6-3): the card being carried, the one being filed (one at a
      time — a second gesture while a command is out is ignored), and the one
      that just landed. The ref is the guard, because two drops in one instant
@@ -327,9 +330,9 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
     const t = setTimeout(() => setLandedKey(null), 1400);
     return () => clearTimeout(t);
   }, [landedKey]);
-  /* An opened binder shows tiles (Phase 6) or production's list rows, where
-     every copy fact and Move / Remove sit in full. */
-  const [binderView, setBinderView] = useState("tiles");
+  /* A binder shown as production's list rows instead of tiles — every copy
+     fact and Move / Remove in full, from the binder's menu (P6-3.1). */
+  const [listFor, setListFor] = useState(null);
 
   const active = useMemo(() => byRecency(binders.filter((b) => !b.archivedAt), "createdAt"), [binders]);
   const archived = useMemo(() => byRecency(binders.filter((b) => b.archivedAt), "archivedAt"), [binders]);
@@ -351,7 +354,7 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
   /* ...and while a search is typed, the earlier filings of every active
      binder too, so a closed binder's match count is true rather than "No
      matches" over a card that simply has not been named yet. */
-  const shownEntries = entries.filter((e) => e.binderId === expanded || e.binderId === open
+  const shownEntries = entries.filter((e) => e.binderId === expanded
     || (searching && activeIdsForSearch.has(e.binderId)));
   const cardKeys = [...new Set([...objs.map((o) => o.cardKey), ...shownEntries.map((e) => cardKeyOf(e.canonicalCardId, e.cardId))]
     .filter((k) => k && !k.startsWith("legacy:") && !k.startsWith("copy:")))];
@@ -455,7 +458,7 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
   };
   const undo = (u) => { const o = objs.find((x) => x.key === u.key); if (o) fileTo(o, u.to, true); };
   const hold = useHold((o, origin) => {
-    if (!filable(o) || specifying || filingRef.current) return;
+    if (!filable(o) || specifying || detailKey || renaming || filingRef.current) return;
     setHeld({ o, origin });
   });
   const dropOn = (d) => {
@@ -478,86 +481,55 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
   const where = (o, thisBinderId = null) => (thisBinderId && o.homeId === thisBinderId ? "This binder"
     : o.homeName ? `in ${o.homeName}${o.homeAway ? " (put away)" : ""}` : "Unfiled");
 
-  /* ONE TILE: the art, then WHY it matters (state) and WHERE it lives (home). */
-  /* Render helpers, called as functions — not components defined inside the
-     render, which React would remount on every keystroke. */
+
+  /* ONE TILE (P6-3.1): the picture first and largest; then the card's name
+     and number; then why it matters (state) beside its own grade or wanted
+     grade; then, quietly, where it lives, its set and version. Everything else
+     — cert, value, photos, status, its Binder choice — is one tap away in
+     Details, never laid out under every card. Render helpers are called as
+     functions, not components defined inside the render (which React would
+     remount on every keystroke). */
   const tile = (o, showHome = true) => {
     const known = described[o.cardKey] || null;
     const go = openCard(o);
     const name = nameOf(o);
-    /* Identity first — name, number, set and version — then this object's own
-       grading or criteria. Never another object's. */
-    const line = [known && known.collectorNumber ? `${name} #${known.collectorNumber}` : name,
-      known && text(known.expansionName), known && known.finish, o.qual].filter(Boolean).join(" · ");
+    const num = known && known.collectorNumber ? `#${known.collectorNumber}` : null;
+    const sub = [showHome ? where(o) : null, known && text(known.expansionName), known && known.finish]
+      .filter(Boolean).join(" · ");
     const art = <CardArt src={known && known.imageSmall} name={known && known.cardName}
       wrap="mcs-otile-art" plate="mcs-art-plate" decorative />;
     const copy = o.kind === "copy" ? o.thing : null;
     /* THE SERVER'S STATUS, when it is not the ordinary one: a copy in a deal
        says so on its tile, in the server's own word. */
     const status = copy && copy.status && copy.status !== "available" ? statusLabel(copy.status) : null;
-    const goal = o.kind === "goal" ? o.thing : null;
-    const peekable = Boolean(copy || goal);
+    /* A COPY THAT DISAGREES WITH ITSELF SAYS SO (C3.3), on its tile. */
+    const conflict = copy ? gradeConflictLine(copy) : null;
+    const detailable = o.kind === "goal" || o.kind === "copy";
     const canFile = filable(o);
     const tapProps = canFile ? hold.handlers(o) : {};
     const tap = (fn) => (e) => { if (canFile && hold.swallowClick()) { e.preventDefault(); return; } fn(); };
-    const peeking = peekable && peek.has(o.key);
-    const togglePeek = () => setPeek((held) => {
-      const next = new Set(held); if (next.has(o.key)) next.delete(o.key); else next.add(o.key); return next;
-    });
-    const conflict = copy ? gradeConflictLine(copy) : null;
+    const press = go || (detailable ? () => setDetailKey(o.key) : null);
     return (
       <li className={`mcs-otile${held && held.o.key === o.key ? " lifted" : ""}${filingKey === o.key ? " filing" : ""}${landedKey === o.key ? " landed" : ""}`}
         key={o.key} data-key={o.key} data-home={o.homeId || "unfiled"}>
-        {go ? (
-          <button type="button" className={`mcs-otap${canFile ? " holdable" : ""}`} onClick={tap(go)} {...tapProps}
+        {press ? (
+          <button type="button" className={`mcs-otap${canFile ? " holdable" : ""}`} onClick={tap(press)} {...tapProps}
             title={canFile ? "Tap to open · press and hold to file" : undefined}
-            aria-label={`${name}, ${MEANING[o.meaning]}, ${where(o)}`}>{art}</button>
-        ) : peekable ? (
-          <button type="button" className={`mcs-otap${canFile ? " holdable" : ""}`} onClick={tap(togglePeek)} {...tapProps}
             aria-label={`${name}, ${MEANING[o.meaning]}, ${where(o)}`}>{art}</button>
         ) : <span className="mcs-otap">{art}</span>}
         <span className="mcs-ometa">
+          <span className="mcs-oname">{name}{num ? <span className="mcs-onum">{` ${num}`}</span> : null}</span>
           <span className="mcs-ostate">
             <span className={`mcs-mk mcs-mk-${o.meaning}`}>{MEANING[o.meaning]}</span>
-            {showHome ? <span className={`mcs-ohome${o.homeId ? "" : " unf"}`}>{` · ${where(o)}`}</span> : null}
+            {o.qual ? <span className="mcs-oqual">{o.qual}</span> : null}
           </span>
-          <span className="mcs-oq">{line}</span>
+          {sub ? <span className="mcs-oq">{sub}</span> : null}
           {status ? <span className="mcs-ostatus">{status}</span> : null}
-          {/* A COPY THAT DISAGREES WITH ITSELF SAYS SO (C3.3), on its tile. */}
           {conflict ? <span className="mcs-oconflict">{`Says ${conflict}`}</span> : null}
-          {peekable ? (
-            <button type="button" className="mcs-linkish mcs-oview" aria-expanded={peeking}
-              onClick={togglePeek}>{peeking ? "Hide details" : "Details"}</button>
-          ) : null}
           {filingKey === o.key ? <span className="mcs-ostatus" role="status">Filing…</span> : null}
-          {peeking ? (
-            <span className="mcs-ofacts">
-              {copy ? (
-                <>
-                  <Fact label={isGraded(copy) ? "Cert" : "Serial"} value={text(copy.cert)} />
-                  <Fact label="Your reference value" value={money(copy.market)} />
-                  <Fact label="Added" value={day(copy.addedAt)} />
-                  <Fact label="Photos" value={photoNote(copy.photos)} />
-                  <Fact label="Status" value={statusLabel(copy.status)} />
-                </>
-              ) : (
-                <Fact label="Looking for" value={criteriaLine(goal && goal.desired) || "any grade or condition"} />
-              )}
-              {/* THE SAME FILING, WITHOUT A GESTURE (P6-3): keyboard and
-                  screen-reader path to the same two commands. */}
-              {canFile ? (
-                <label className="mcs-field mcs-ohomeset">
-                  <span>Binder</span>
-                  <select value={o.homeId || ""} disabled={!!filingKey}
-                    aria-label={`Binder for ${name}`}
-                    onChange={(e) => fileTo(o, e.target.value || null)}>
-                    <option value="">Unfiled</option>
-                    {o.homeId && o.homeAway ? <option value={o.homeId} disabled>{`${o.homeName} (put away)`}</option> : null}
-                    {active.map((b) => <option key={b.id} value={b.id}>{text(b.name) || "A binder"}</option>)}
-                  </select>
-                </label>
-              ) : null}
-            </span>
+          {detailable ? (
+            <button type="button" className="mcs-linkish mcs-oview" aria-haspopup="dialog"
+              onClick={() => setDetailKey(o.key)}>Details</button>
           ) : null}
         </span>
       </li>
@@ -566,6 +538,73 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
   const grid = (list, showHome = true) => (
     <ul className="mcs-ogrid">{list.map((o) => tile(o, showHome))}</ul>
   );
+
+  /* DETAILS (P6-3.1): one Goal or copy, in a sheet. Every fact a copy row
+     always showed, what a Goal looks for, the Binder choice (the keyboard path
+     to filing), and the Card Specification one press further. */
+  const detailsSheet = () => {
+    const o = detailKey ? objs.find((x) => x.key === detailKey) || null : null;
+    if (!o) return null;
+    const known = described[o.cardKey] || null;
+    const name = nameOf(o);
+    const copy = o.kind === "copy" ? o.thing : null;
+    const goal = o.kind === "goal" ? o.thing : null;
+    const go = openCard(o);
+    const conflict = copy ? gradeConflictLine(copy) : null;
+    const close = () => setDetailKey(null);
+    return (
+      <div className="mcs-sheet-scrim" role="dialog" aria-label={`Details: ${name}`}
+        onClick={(e) => { if (e.target === e.currentTarget) close(); }}
+        onKeyDown={(e) => { if (e.key === "Escape") close(); }}>
+        <div className="mcs-sheet mcs-detail">
+          <div className="mcs-detail-head">
+            <CardArt src={known && known.imageSmall} name={known && known.cardName}
+              wrap="mcs-detail-art" plate="mcs-art-plate" decorative />
+            <div className="mcs-detail-id">
+              <strong>{name}{known && known.collectorNumber ? ` #${known.collectorNumber}` : ""}</strong>
+              <span className="mcs-dim">{[known && text(known.expansionName), known && known.finish].filter(Boolean).join(" · ")}</span>
+              <span className="mcs-ostate">
+                <span className={`mcs-mk mcs-mk-${o.meaning}`}>{MEANING[o.meaning]}</span>
+                <span className="mcs-dim">{` · ${where(o)}`}</span>
+              </span>
+            </div>
+          </div>
+          <div className="mcs-detail-facts">
+            {copy ? (
+              <>
+                <Fact label="Grade" value={o.qual} />
+                {conflict ? <Fact label="Says" value={conflict} /> : null}
+                <Fact label={isGraded(copy) ? "Cert" : "Serial"} value={text(copy.cert)} />
+                <Fact label="Your reference value" value={money(copy.market)} />
+                <Fact label="Added" value={day(copy.addedAt)} />
+                <Fact label="Photos" value={photoNote(copy.photos)} />
+                <Fact label="Status" value={statusLabel(copy.status)} />
+              </>
+            ) : (
+              <Fact label="Looking for" value={criteriaLine(goal && goal.desired) || "any grade or condition"} />
+            )}
+          </div>
+          {filable(o) ? (
+            <label className="mcs-field mcs-ohomeset">
+              <span>Binder</span>
+              <select value={o.homeId || ""} disabled={!!filingKey} aria-label={`Binder for ${name}`}
+                onChange={(e) => fileTo(o, e.target.value || null)}>
+                <option value="">Unfiled</option>
+                {o.homeId && o.homeAway ? <option value={o.homeId} disabled>{`${o.homeName} (put away)`}</option> : null}
+                {active.map((b) => <option key={b.id} value={b.id}>{text(b.name) || "A binder"}</option>)}
+              </select>
+            </label>
+          ) : null}
+          {feedback()}
+          <p className="mcs-goal-do">
+            {go ? <button className="mcs-go" type="button" onClick={() => { close(); go(); }}>Open card</button> : null}
+            <button className="mcs-go quiet" type="button" onClick={close} autoFocus>Close</button>
+          </p>
+        </div>
+      </div>
+    );
+  };
+
   const controls = (placeholder = "Search your cards") => (
     <div className="mcs-bcontrols">
       <p className="mcs-find">
@@ -613,7 +652,8 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
       <div className="mcs-sheet">
         <strong>Rename binder</strong>
         <input className="mcs-in" value={renaming.name} aria-label="Binder name" disabled={busy} autoFocus
-          onChange={(e) => setRenaming({ id: renaming.id, name: e.target.value })} />
+          onChange={(e) => setRenaming({ id: renaming.id, name: e.target.value })}
+          onKeyDown={(e) => { if (e.key === "Enter") saveName(); if (e.key === "Escape") setRenaming(null); }} />
         <p className="mcs-goal-do">
           <button className="mcs-go" type="button" disabled={busy || !renaming.name.trim()} onClick={saveName}>Save name</button>
           <button className="mcs-go quiet" type="button" disabled={busy} onClick={() => setRenaming(null)}>Cancel</button>
@@ -622,111 +662,91 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
     </div>
   ) : null;
 
-  /* ---------------------------------------------------- AN OPENED BINDER */
-  const looking = open ? binders.find((b) => b.id === open) || null : null;
-  if (looking) {
-    const inside = objs.filter((o) => o.homeId === looking.id);
-    const counts = LENSES.slice(1).map(([id, label]) => [label, inside.filter((o) => o.meaning === id).length])
-      .filter(([, n]) => n);
-    const unsorted = inside.filter((o) => o.meaning === "owned").length;
-    const earlier = earlierIn(looking.id).length;
-    return (
-      <>
-        {spec()}
-        {renameSheet}
-        <div className="mcs-bview-head">
-          <button className="mcs-linkish mcs-back" type="button"
-            onClick={() => { setOpen(null); setQuery(""); setLens("all"); setManage(false); }}>‹ Binders</button>
-          <p className="mcs-binder-name">
-            {text(looking.name) || "A binder"}
-            {looking.archivedAt ? <span className="mcs-dim"> — put away</span> : null}
-          </p>
-          {!looking.archivedAt && onAddCards ? (
-            <button className="mcs-linkish" type="button"
-              onClick={() => onAddCards({ binderId: looking.id, name: looking.name })}>+ Add cards</button>
-          ) : null}
-          <button className="mcs-more" type="button" aria-label={`Manage ${text(looking.name) || "this binder"}`}
-            aria-expanded={manage} onClick={() => setManage((m) => !m)}>•••</button>
-        </div>
-        {manage ? (
-          <p className="mcs-menu" role="menu">
-            {onRenameBinder && !looking.archivedAt ? (
-              <button role="menuitem" type="button" className="mcs-go quiet" disabled={busy}
-                onClick={() => { setManage(false); setRenaming({ id: looking.id, name: text(looking.name) || "" }); }}>
-                Rename binder
-              </button>
-            ) : null}
-            {looking.archivedAt ? (
-              <button role="menuitem" type="button" className="mcs-go" disabled={busy}
-                onClick={() => { setManage(false); putAway(looking, false); }}>Bring back</button>
-            ) : (
-              <button role="menuitem" type="button" className="mcs-go quiet" disabled={busy}
-                onClick={() => { setManage(false); putAway(looking, true); }}>Put away</button>
-            )}
-          </p>
-        ) : null}
-        {feedback()}
-        <p className="mcs-bsum" aria-label="What's here">
-          <b>{plural(inside.length + earlier, "card", "cards")}</b>
-          {counts.map(([label, n]) => <span key={label}>{` · ${n} ${label}`}</span>)}
-          {unsorted ? <span>{` · ${unsorted} not yet sorted`}</span> : null}
-          {earlier ? <span>{` · ${earlier} earlier ${earlier === 1 ? "filing" : "filings"}`}</span> : null}
-        </p>
-        {controls(`Search ${text(looking.name) || "this binder"}`)}
-        <p className="mcs-views mcs-viewmode" role="group" aria-label="Show as">
-          {[["tiles", "Tiles"], ["list", "List"]].map(([id, label]) => (
-            <button key={id} type="button" className="mcs-view" aria-pressed={binderView === id}
-              onClick={() => setBinderView(id)}>{label}</button>
-          ))}
-        </p>
-        {binderView === "tiles" ? (() => {
-          const here = visible([...inside, ...earlierIn(looking.id)]);
-          return here.length ? grid(here, false)
-            : <p className="mcs-dim mcs-bempty">{inside.length + earlier
-              ? (needle ? noMatch(`in ${text(looking.name) || "this binder"}`) : "Nothing in this binder is in that state.")
-              : "Nothing in this binder yet. A binder is where a card belongs — it doesn't mean you want it or own it."}</p>;
-        })() : (
-          <Collection state={state} view={{ kind: "binder", binderId: looking.id }} lens={lens}
-            query={query} onBrowseCards={onBrowseCards} onSpecify={onSpecify} descriptions={cards}
-            onFileObject={onFileObject} onUnfileObject={onUnfileObject} />
-        )}
-        {filingLayer()}
-      </>
-    );
-  }
-
-  /* -------------------------------------------------------- THE HOME */
+  /* -------------------------------------------------------- THE SCREEN */
   const shown = visible(objs);
   const unfiledAll = objs.filter((o) => !o.homeId);
   const unfiledShown = visible(unfiledAll);
   const filedMatches = shown.filter((o) => o.homeId && active.some((b) => b.id === o.homeId)).length;
   const matchWord = (n) => `${n} ${n === 1 ? "match" : "matches"}`;
+
+  /* A BINDER, OPENED IN PLACE (P6-3.1). Collapsed: its name, its count, and a
+     turn-down. Open: its cards at once, fully interactive — tap, Details,
+     press and hold — with what is in it summed up in one line, and a quiet
+     "•••" holding everything that manages it. There is no second screen to go
+     to: the binder you opened IS the binder. */
   const binderRow = (b, away = false) => {
-    const inside = [...objs.filter((o) => o.homeId === b.id), ...earlierIn(b.id)];
-    const here = visible(inside);
+    const inside = objs.filter((o) => o.homeId === b.id);
+    const earlierFiled = earlierIn(b.id);
+    const all = [...inside, ...earlierFiled];
+    const here = visible(all);
     const isOpen = expanded === b.id;
+    const named = text(b.name) || "A binder";
+    const counts = LENSES.slice(1).map(([id, label]) => [label, inside.filter((o) => o.meaning === id).length])
+      .filter(([, n]) => n);
+    const unsorted = inside.filter((o) => o.meaning === "owned").length;
+    const menuOpen = isOpen && menuFor === b.id;
+    const act = (fn) => () => { setMenuFor(null); fn(); };
     return (
       <div key={b.id} className={`mcs-bcover${isOpen ? " open" : ""}`} data-binder={b.id}>
-        <button type="button" className="mcs-bhead" aria-expanded={isOpen}
-          onClick={() => setExpanded(isOpen ? null : b.id)}>
-          <span className="mcs-bline"><b>{text(b.name) || "A binder"}</b>
-            <span>{away ? "Put away · " : ""}{plural(inside.length, "card", "cards")}</span></span>
-          {filtering && !isOpen && inside.length ? (
-            <span className="mcs-bmatch">{here.length ? matchWord(here.length) : "No matches"}</span>
+        <div className="mcs-bhead-row">
+          <button type="button" className="mcs-bhead" aria-expanded={isOpen}
+            onClick={() => { setExpanded(isOpen ? null : b.id); setMenuFor(null); setListFor(null); }}>
+            <span className="mcs-bline"><b>{named}</b>
+              <span>{away ? "Put away · " : ""}{plural(all.length, "card", "cards")}</span></span>
+            {filtering && !isOpen && all.length ? (
+              <span className="mcs-bmatch">{here.length ? matchWord(here.length) : "No matches"}</span>
+            ) : null}
+          </button>
+          {isOpen ? (
+            <button className="mcs-more" type="button" aria-label={`Manage ${named}`} aria-haspopup="menu"
+              aria-expanded={menuOpen} onClick={() => setMenuFor(menuOpen ? null : b.id)}>•••</button>
           ) : null}
-        </button>
+        </div>
+        {menuOpen ? (
+          <div className="mcs-bmenu" role="menu" aria-label={`Manage ${named}`}>
+            {!away && onRenameBinder ? (
+              <button role="menuitem" type="button" disabled={busy}
+                onClick={act(() => setRenaming({ id: b.id, name: text(b.name) || "" }))}>Rename binder</button>
+            ) : null}
+            <button role="menuitem" type="button" onClick={act(() => setListFor(listFor === b.id ? null : b.id))}>
+              {listFor === b.id ? "Show as cards" : "Move & remove (list)"}
+            </button>
+            {onArchiveBinder ? (away ? (
+              <button role="menuitem" type="button" disabled={busy} onClick={act(() => putAway(b, false))}>Bring back</button>
+            ) : (
+              <button role="menuitem" type="button" disabled={busy} onClick={act(() => putAway(b, true))}>Put away</button>
+            )) : null}
+          </div>
+        ) : null}
         {isOpen ? (
           <div className="mcs-bbody">
-            {here.length ? grid(here, false)
-              : <p className="mcs-dim">{inside.length ? noMatch(`in ${text(b.name) || "this binder"}`)
-                : `No cards in ${text(b.name) || "this binder"} yet.`}</p>}
-            {/* A new place starts unfiltered: a search typed for the whole
-                screen is not one the person asked of this binder. */}
-            <button type="button" className="mcs-linkish mcs-openb"
-              onClick={() => { setOpen(b.id); setQuery(""); setLens("all"); setManage(false); }}>
-              {away ? `Open ${text(b.name) || "this binder"} — bring it back ›`
-                : `Open ${text(b.name) || "this binder"} — add cards, rename, put away ›`}
-            </button>
+            {all.length || (!away && onAddCards) ? (
+              <div className="mcs-btools">
+                {all.length ? (
+                  <p className="mcs-bsum" aria-label="What's here">
+                    <b>{plural(all.length, "card", "cards")}</b>
+                    {counts.map(([label, n]) => <span key={label}>{` · ${n} ${label}`}</span>)}
+                    {unsorted ? <span>{` · ${unsorted} not yet sorted`}</span> : null}
+                    {earlierFiled.length ? <span>{` · ${earlierFiled.length} earlier ${earlierFiled.length === 1 ? "filing" : "filings"}`}</span> : null}
+                  </p>
+                ) : <span />}
+                {!away && onAddCards ? (
+                  <button type="button" className="mcs-linkish mcs-badd"
+                    onClick={() => onAddCards({ binderId: b.id, name: b.name })}>+ Add cards</button>
+                ) : null}
+              </div>
+            ) : null}
+            {listFor === b.id ? (
+              <Collection state={state} view={{ kind: "binder", binderId: b.id }} lens={lens}
+                query={query} onBrowseCards={onBrowseCards} onSpecify={onSpecify} descriptions={cards}
+                onFileObject={onFileObject} onUnfileObject={onUnfileObject} />
+            ) : here.length ? grid(here, false) : all.length ? (
+              <p className="mcs-dim mcs-bempty">{needle ? noMatch(`in ${named}`) : "Nothing in this binder is in that state."}</p>
+            ) : (
+              <p className="mcs-dim mcs-bempty">
+                Nothing in this binder yet. A binder is where a card belongs — it doesn&apos;t mean you want it or own it.
+              </p>
+            )}
           </div>
         ) : null}
       </div>
@@ -734,10 +754,12 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
   };
 
   return (
-    <>
+    <div className="mcs-binders">
       {spec()}
+      {renameSheet}
+      {detailsSheet()}
       {controls()}
-      {feedback()}
+      {detailKey ? null : feedback()}
 
       <section className="mcs-bsection" aria-label="Your binders">
         <button type="button" className="mcs-sechead" aria-expanded={sectionOpen}
@@ -758,7 +780,7 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
                 <button className="mcs-go quiet" type="button" disabled={busy} onClick={() => { setMaking(false); setNewName(""); }}>Cancel</button>
               </p>
             ) : onCreateBinder ? (
-              <button type="button" className="mcs-bcover mcs-newcover" onClick={() => setMaking(true)}>+ New binder</button>
+              <button type="button" className="mcs-newcover" onClick={() => setMaking(true)}>+ New binder</button>
             ) : null}
             {archived.length ? (
               <button type="button" className="mcs-linkish mcs-away" aria-pressed={showArchived}
@@ -794,6 +816,6 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
           : <p className="mcs-dim mcs-bempty">{needle && objs.length ? noMatch("of yours") : EMPTY_FOR[lens] || EMPTY_FOR.all}</p>}
       </section>
       {filingLayer()}
-    </>
+    </div>
   );
 }

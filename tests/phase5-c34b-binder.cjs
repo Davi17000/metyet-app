@@ -198,20 +198,50 @@ const instText = (node) => {
 };
 /* The Binder section is a FRAGMENT — the panel and its scrim are siblings — so
    `toJSON()` is an array, not a node. Every walk here handles both. */
+/* RESTATED (Phase 6 P6-3.1): a binder used to open as a screen of its own,
+   so what a test read after opening one was that binder alone. It now opens
+   in place, on the screen that also holds Unfiled, Your Cards and the other
+   binders — so while a test is "inside" a binder (openBinder until
+   backToLibrary), what it reads is that binder plus the screen's own
+   messages, sheets and panels: what the old binder screen showed. Nothing is
+   read more widely than before, so no presence assertion is made easier. */
+let inside = null;
+let scoped = false;  // inside a binder that is, right now, open
+const scopeFor = (r) => {
+  scoped = inside !== null && r.root.findAll((n) => cls(n).includes("mcs-bcover") && cls(n).includes("open")
+    && n.props["data-binder"] === inside).length > 0;
+};
+const outsideTheBinder = (n) => scoped && n && n.props && (
+  (n.type === "section" && /^(Your Cards|Unfiled)$/.test(String(n.props["aria-label"] || "")))
+  || (String(n.props.className || "").includes("mcs-bcover") && n.props["data-binder"] !== inside)
+  || (n.type === "button" && String(n.props.className || "").includes("mcs-sechead"))
+  || (n.type === "button" && /mcs-(newcover|away)/.test(String(n.props.className || ""))));
 const texts = (r) => {
   const out = [];
   const walk = (n) => {
     if (Array.isArray(n)) { n.forEach(walk); return; }
     if (typeof n === "string" || typeof n === "number") { out.push(String(n)); return; }
-    if (!n || n.type === "style") return;
+    if (!n || n.type === "style" || outsideTheBinder(n)) return;
     for (const c of n.children || []) walk(c);
   };
+  scopeFor(r);
   walk(r.toJSON());
   return out.join(" ").replace(/\s+/g, " ");
 };
 const buttons = (r) => r.root.findAll((n) => n.type === "button");
 const inputs = (r) => r.root.findAll((n) => n.type === "input");
-const images = (r) => r.root.findAll((n) => n.type === "img").map((n) => n.props.src);
+const images = (r) => {
+  const out = [];
+  const walk = (n) => {
+    if (Array.isArray(n)) { n.forEach(walk); return; }
+    if (!n || typeof n !== "object" || outsideTheBinder(n)) return;
+    if (n.type === "img") out.push(n.props.src);
+    for (const c of n.children || []) walk(c);
+  };
+  scopeFor(r);
+  walk(r.toJSON());
+  return out;
+};
 /* A press starts real work — a command over HTTP, then an authoritative
    re-read, then the component's own state settling after both. That is more
    than a couple of ticks, so this waits long enough for the whole chain rather
@@ -239,6 +269,17 @@ const press = async (r, label) => {
    then asserts about the binder, its cards and the world is unchanged unless
    the test says so. */
 const sectionNamed = (r, label) => r.root.findAll((n) => n.type === "section" && n.props["aria-label"] === label)[0] || null;
+/* RESTATED (P6-3.1): a tile now leads with the card, then its state; its home
+   is in the quiet line under. This rebuilds the "state · home" each test
+   reads, from each tile's OWN two fields — never across tiles. */
+const cardsSay = (r) => {
+  const s = sectionNamed(r, "Your Cards");
+  return s ? s.findAll((n) => n.type === "li" && cls(n).includes("mcs-otile")).map((li) => {
+    const mk = li.findAll((n) => cls(n).includes("mcs-mk"))[0];
+    const oq = li.findAll((n) => cls(n).split(" ").includes("mcs-oq"))[0];
+    return `${mk ? instText(mk).trim() : ""} · ${oq ? instText(oq).trim() : ""}`;
+  }).join(" | ") : "";
+};
 const sectionSays = (r, label) => { const s = sectionNamed(r, label); return s ? instText(s).replace(/\s+/g, " ") : ""; };
 const cls = (n) => String((n.props && n.props.className) || "");
 const openLibrary = async (r) => {
@@ -255,14 +296,13 @@ const openBinder = async (r, name) => {
   }
   assert(row, `no binder "${name}" among: ${buttons(r).map(instText).join(" | ")}`);
   if (row.props["aria-expanded"] === false) { await TR.act(async () => { row.props.onClick(); }); await settle(); }
-  const go = buttons(r).find((n) => instText(n).trim().startsWith(`Open ${name}`));
-  assert(go, `no way into "${name}"`);
-  await TR.act(async () => { go.props.onClick(); });
-  await settle();
-  /* RESTATED (Phase 6 P6-3): an opened binder shows tiles first; these tests
-     read production's object rows, which are its List view, unchanged. */
-  const list = buttons(r).find((n) => instText(n).trim() === "List");
-  if (list) { await TR.act(async () => { list.props.onClick(); }); await settle(); }
+  /* RESTATED (Phase 6 P6-3.1): there is no second screen — expanding the
+     binder IS opening it. These tests read production's object rows, which
+     are its "Move & remove (list)" view, unchanged, from the binder's menu. */
+  assert(!buttons(r).some((n) => instText(n).trim().startsWith(`Open ${name}`)), "a second step to open it survived");
+  const card = r.root.findAll((n) => cls(n).includes("mcs-bcover") && cls(n).includes("open"))[0];
+  inside = card ? card.props["data-binder"] : null;
+  await manage(r, "Move & remove (list)");
 };
 const manage = async (r, item) => {
   const more = buttons(r).find((n) => /^Manage /.test(String(n.props["aria-label"] || "")));
@@ -278,7 +318,13 @@ const tapTile = async (r, needle) => {
   await settle();
 };
 const binderRows = (r) => buttons(r).filter((n) => cls(n).includes("mcs-bhead")).map((n) => instText(n).replace(/\s+/g, " "));
-const backToLibrary = async (r) => { await press(r, "‹ Binders"); await openLibrary(r); };
+/* RESTATED (P6-3.1): leaving a binder is closing it where it is. */
+const backToLibrary = async (r) => {
+  const row = buttons(r).find((n) => cls(n).includes("mcs-bhead") && n.props["aria-expanded"] === true);
+  if (row) { await TR.act(async () => { row.props.onClick(); }); await settle(); }
+  inside = null;
+  await openLibrary(r);
+};
 const unfiledCount = (r) => {
   const head = buttons(r).find((n) => cls(n).includes("mcs-sechead") && /^Unfiled · /.test(instText(n).trim()));
   const m = head && instText(head).match(/Unfiled · (\d+)/);
@@ -318,6 +364,7 @@ const doorFor = (ctx) => {
    callbacks — so every press in this file goes through the production door and
    comes back as a fresh authoritative projection, exactly as the shell does. */
 async function screen(ctx, token = "casey", extra = {}) {
+  inside = null;
   const { calls, door } = doorFor(ctx);
   const specified = [];
   let r;
@@ -981,14 +1028,14 @@ describe("D. not in a binder yet", () => {
     await post(ctx.app, "casey", "setBinderArchived", { binderId: mine, archived: true });
     await s.refresh();
     eq(unfiledCount(s.r), 0, "a Goal with a home was called Unfiled");
-    const yours = sectionSays(s.r, "Your Cards");
+    const yours = cardsSay(s.r);
     assert(/Secondary · in Mudkip Collection \(put away\)/.test(yours), "the Goal was hidden: " + yours);
     /* The membership itself is untouched — archiving evicts nothing. */
     eq((await load(ctx)).binderMemberships.length, 1, "archiving unfiled something");
     await post(ctx.app, "casey", "setBinderArchived", { binderId: mine, archived: false });
     await s.refresh();
-    assert(/Secondary · in Mudkip Collection/.test(sectionSays(s.r, "Your Cards"))
-      && !/put away/.test(sectionSays(s.r, "Your Cards")), sectionSays(s.r, "Your Cards"));
+    assert(/Secondary · in Mudkip Collection/.test(cardsSay(s.r))
+      && !/put away/.test(cardsSay(s.r)), cardsSay(s.r));
   });
 
   test("stopping looking removes it, because there is no Goal left", async () => {
@@ -1757,7 +1804,7 @@ describe("H. the navigation", () => {
     const made = await cards(ctx);
     await want(ctx.app, "casey", made.mudkip, "primary");
     const { r } = await screen(ctx);
-    assert(/Primary · Unfiled/.test(sectionSays(r, "Your Cards")), texts(r));
+    assert(/Primary · Unfiled/.test(cardsSay(r)), texts(r));
     await tapTile(r, "Mudkip");
     assert(/Are you looking for it/i.test(texts(r)), texts(r));
     assert(/Actively hunting/.test(texts(r)) && /Keeping an eye out/.test(texts(r)), texts(r));
@@ -1833,7 +1880,7 @@ describe("H. the navigation", () => {
     const { r } = await screen(ctx);
     /* RESTATED (P6-2): Unfiled, its state, and its tile opens the panel. */
     eq(unfiledCount(r), 1, texts(r));
-    assert(/Secondary · Unfiled/.test(sectionSays(r, "Your Cards")), texts(r));
+    assert(/Secondary · Unfiled/.test(cardsSay(r)), texts(r));
     await tapTile(r, "Mudkip");
     /* RE-PINNED (Batch 3B-1), same reason. */
     assert(/Are you looking for it\?/i.test(texts(r)), texts(r));

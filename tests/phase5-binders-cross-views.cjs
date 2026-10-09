@@ -299,7 +299,7 @@ describe("B. Search looks at what is already yours", () => {
       src.indexOf("const shown"))), "searching reached for a command");
   });
 
-  test("the box is the shell's: filters compose with it, a new place empties it", () => {
+  test("the box is the shell's: filters compose with it, and a binder opened in place keeps it", () => {
     /* RE-PINNED AGAIN (Phase 6 P6-2). Search and the state filter are two
        halves of one question in Phase 6 ("Primary cards matching mudkip"), so
        changing the filter keeps what was typed and the result line says both.
@@ -312,8 +312,12 @@ describe("B. Search looks at what is already yours", () => {
     assert(/query=\{query\}/.test(binder), "the opened binder is not given it");
     assert(!/localStorage|sessionStorage/.test(binder), "the query was persisted");
     assert(/onClick=\{\(\) => setLens\(id\)\}/.test(binder), "changing the filter touched the query");
-    assert(/setOpen\(b\.id\); setQuery\(""\)/.test(binder), "opening a binder carried the old query along");
-    assert(/setOpen\(null\); setQuery\(""\)/.test(binder), "leaving a binder carried the old query along");
+    /* RESTATED (Phase 6 P6-3.1): there is no separate binder screen any
+       more, so there is no change of place to empty the box. A binder opens
+       IN PLACE under a row that has just said "1 match" — emptying the box as
+       it opens would hide the very match the row promised. The query is not
+       stored anywhere new: still one useState, never set by opening. */
+    assert(!/setExpanded\([^)]*\);[^\n]*setQuery/.test(binder), "opening a binder in place threw the query away");
   });
 });
 
@@ -717,9 +721,11 @@ describe("phase5 binders — the adversarial pass", () => {
     assert(/1 card matching “umbreon”/.test(texts(r)), "it did not filter what is on screen: " + texts(r));
   });
 
-  test("a query does not survive a change of place", async () => {
-    /* RESTATED (Phase 6 P6-2): a FILTER change keeps the query (they compose);
-       opening a binder is a change of place, and the query does not follow. */
+  test("a query is kept as a binder opens in place, and the binder shows its matches", async () => {
+    /* RESTATED (Phase 6 P6-2): a FILTER change keeps the query (they compose).
+       RESTATED AGAIN (P6-3.1): opening a binder is no longer a change of
+       place — it opens where it is — so the query stays, and what the
+       closed row counted is exactly what the open binder shows. */
     const r = await openBinders(FULL());
     const box = () => r.root.findAllByType("input").find((n) => n.props.type === "search");
     await TR.act(async () => { box().props.onChange({ target: { value: "mudkip" } }); });
@@ -733,11 +739,15 @@ describe("phase5 binders — the adversarial pass", () => {
     assert(row, "no Mudkips binder row");
     assert(/1 match/.test(instText(row)), "the closed binder's match count is not true: " + instText(row));
     await TR.act(async () => { row.props.onClick(); });
-    const opener = r.root.findAll((n) => n.type === "button" && /^Open Mudkips/.test(instText(n).trim()))[0];
-    assert(opener, "no way into the binder");
-    await TR.act(async () => { opener.props.onClick(); });
     await settle(r);
-    eq(box().props.value, "", "a stale query followed the person into a binder");
+    assert(!r.root.findAll((n) => n.type === "button" && /^Open Mudkips/.test(instText(n).trim())).length,
+      "a second step to open the binder survived");
+    eq(box().props.value, "mudkip", "opening the binder in place threw away what was typed");
+    const open = r.root.findAll((n) => String(n.props.className || "").includes("mcs-bcover")
+      && String(n.props.className || "").includes("open"))[0];
+    assert(open, "the binder did not open");
+    eq(open.findAll((n) => n.type === "li" && String(n.props.className || "").includes("mcs-otile")).length, 1,
+      "the open binder does not show the one match its row counted");
   });
 
   /* G8. The shipped client described a shape this batch removed. */

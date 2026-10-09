@@ -100,9 +100,13 @@ const btn = (r, re) => buttons(r).find((b) => re.test(flat(b))) || null;
 const click = async (b) => { assert(b, "no such control"); await TR.act(async () => { b.props.onClick(); }); await settle(); };
 const section = (r, label) => r.root.findAll((n) => n.type === "section" && n.props["aria-label"] === label)[0] || null;
 const tiles = (root) => root.findAll((n) => n.type === "li" && cls(n).includes("mcs-otile"));
-/* A tile's caption — state · home, identity, facts — without the picture's
-   plate, which repeats the card's name when there is no picture. */
-const caption = (tile) => flat(tile.findAll((n) => cls(n).includes("mcs-ometa"))[0]);
+/* A tile's caption, STATE FIRST, then the rest of its words — without the
+   picture's plate, which repeats the card's name when there is no picture.
+   RESTATED (P6-3.1): the tile now leads with the card's name, so the state is
+   read from its own badge and put first, keeping these matchers about the
+   tile's facts rather than their layout. */
+const part = (tile, name) => { const n = tile.findAll((m) => cls(m).split(" ").includes(name))[0]; return n ? flat(n) : ""; };
+const caption = (tile) => `${part(tile, "mcs-mk")} ${flat(tile.findAll((n) => cls(n).includes("mcs-ometa"))[0])}`.trim();
 const tileTexts = (root) => tiles(root).map(caption);
 const sechead = (r, re) => buttons(r).find((b) => cls(b).includes("mcs-sechead") && re.test(flat(b)));
 const type = async (r, value) => {
@@ -241,10 +245,16 @@ describe("D. tiles", () => {
     assert(/Mudkip/.test(flat(section(r, "Your Cards"))), "a card with no picture lost its name");
   });
   test("identity on every tile: name, number, set, version — then its own grading", async () => {
+    /* RESTATED (P6-3.1): the brief's hierarchy — name and number first, then
+       state beside its own (or wanted) grade, then set and version quietly —
+       each read from its own place on ONE tile. */
     const { r } = await show();
-    const t = tileTexts(section(r, "Your Cards"));
-    assert(t.some((x) => /Charizard #4 · Base Set · holofoil · PSA 8/.test(x)), json(t));
-    assert(t.some((x) => /Charizard #4 · Base Set · holofoil · PSA 9/.test(x)), "the Goal's wanted grade: " + json(t));
+    const t = tiles(section(r, "Your Cards")).map((n) => ({ name: part(n, "mcs-oname"), state: part(n, "mcs-mk"),
+      grade: part(n, "mcs-oqual"), sub: part(n, "mcs-oq") }));
+    assert(t.some((x) => x.name === "Charizard #4" && x.state === "PC" && x.grade === "PSA 8"
+      && /Base Set · holofoil$/.test(x.sub)), json(t));
+    assert(t.some((x) => x.name === "Charizard #4" && x.state === "Primary" && x.grade === "PSA 9"
+      && /Base Set · holofoil$/.test(x.sub)), "the Goal's wanted grade: " + json(t));
   });
   test("a tile's picture opens the Card Specification", async () => {
     let r;
@@ -254,13 +264,20 @@ describe("D. tiles", () => {
     await click(tile.findAll((n) => n.type === "button")[0]);
     assert(r.root.findAll((n) => n.type === Spec).length === 1 || /Are you looking for it/.test(flat(r.root)), "the panel did not open");
   });
-  test("a copy's Details opens its facts in place, writing nothing", async () => {
+  test("a copy's Details opens its facts in one sheet, writing nothing", async () => {
+    /* RESTATED (P6-3.1): Details is a compact sheet, not facts and a Binder
+       control laid out under the tile. */
     const { r, sent } = await show();
     const ven = tiles(section(r, "Your Cards")).find((n) => /^Owned .*Venusaur/.test(caption(n)));
+    assert(!/HIST-1/.test(flat(ven)) && !ven.findAll((n) => n.type === "select").length, "facts or a control under the tile");
     await click(ven.findAll((n) => n.type === "button").find((b) => /Details/.test(flat(b))));
-    const t = flat(ven);
+    const sheet = r.root.findAll((n) => n.props.role === "dialog" && /^Details: Venusaur/.test(String(n.props["aria-label"] || "")))[0];
+    assert(sheet, "no Details sheet");
+    const t = flat(sheet);
     assert(/HIST-1/.test(t) && /\$40/.test(t), "the facts did not open: " + t);
     eq(sent.length, 0, "opening facts sent something");
+    await click(btn(r, /^Close$/));
+    assert(!r.root.findAll((n) => n.props.role === "dialog").length, "Close did not close it");
   });
 });
 
@@ -279,8 +296,9 @@ describe("E. making and managing binders, through the callbacks handed in", () =
   test("rename and put away from the binder's menu; bring back from the put-away list", async () => {
     const { r, sent } = await show();
     await click(sechead(r, /^Binders/));
+    /* RESTATED (P6-3.1): managed from the expanded binder's own menu. */
     await click(buttons(r).find((b) => cls(b).includes("mcs-bhead") && /^Gen 1/.test(flat(b))));
-    await click(btn(r, /^Open Gen 1 Favorites/));
+    assert(!btn(r, /^Open Gen 1 Favorites/), "a second step to open it survived");
     await click(buttons(r).find((b) => /^Manage /.test(String(b.props["aria-label"] || ""))));
     await click(btn(r, /^Rename binder$/));
     const box = r.root.findAll((n) => n.type === "input" && n.props["aria-label"] === "Binder name")[0];
@@ -289,11 +307,9 @@ describe("E. making and managing binders, through the callbacks handed in", () =
     await click(buttons(r).find((b) => /^Manage /.test(String(b.props["aria-label"] || ""))));
     await click(btn(r, /^Put away$/));
     eq(json(sent), json([["renameBinder", "b-gen1", "Kanto"], ["setBinderArchived", "b-gen1", true]]));
-    await click(btn(r, /^‹ Binders$/));
     await click(btn(r, /^Show binders you've put away/));
     await click(buttons(r).find((b) => cls(b).includes("mcs-bhead") && /^Old Trades/.test(flat(b))));
-    await click(btn(r, /^Open Old Trades — bring it back/));
-    await click(buttons(r).find((b) => /^Manage /.test(String(b.props["aria-label"] || ""))));
+    await click(buttons(r).find((b) => b.props["aria-label"] === "Manage Old Trades"));
     await click(btn(r, /^Bring back$/));
     eq(json(sent[2]), json(["setBinderArchived", "b-old", false]));
   });
@@ -311,17 +327,23 @@ describe("E. making and managing binders, through the callbacks handed in", () =
 
 /* ============================================================== F */
 describe("F. an opened binder", () => {
+  /* RESTATED (P6-3.1): opening is expanding, in place; production's rows with
+     Move and Remove are its menu's "Move & remove (list)". */
   const openGen1 = async (r) => {
     await click(sechead(r, /^Binders/));
     await click(buttons(r).find((b) => cls(b).includes("mcs-bhead") && /^Gen 1/.test(flat(b))));
-    await click(btn(r, /^Open Gen 1 Favorites/));
   };
+  const asList = async (r) => {
+    await click(buttons(r).find((b) => /^Manage /.test(String(b.props["aria-label"] || ""))));
+    await click(btn(r, /^Move & remove \(list\)$/));
+  };
+  const gen1 = (r) => r.root.findAll((n) => cls(n).includes("mcs-bcover") && n.props["data-binder"] === "b-gen1")[0];
   test("says what is here in one line, and keeps Move and Remove on each object", async () => {
     const { r } = await show();
     await openGen1(r);
     assert(/2 cards · 1 Primary · 1 PC/.test(flat(r.root)), flat(r.root));
-    /* P6-3: tiles by default; the List keeps production's rows. */
-    await click(btn(r, /^List$/));
+    /* P6-3: tiles by default; the list keeps production's rows. */
+    await asList(r);
     assert(r.root.findAll((n) => n.type === "select" && /^Move /.test(String(n.props["aria-label"] || ""))).length === 2, "Move lost");
     assert(buttons(r).filter((b) => /^Remove from Binder$/.test(flat(b))).length === 2, "Remove lost");
   });
@@ -329,19 +351,24 @@ describe("F. an opened binder", () => {
     const { r } = await show();
     await openGen1(r);
     await click(btn(r, /^PC$/));
-    eq(json(tileTexts(r.root).map((x) => x.split(" ")[0])), json(["PC"]), "tiles: only the PC copy");
-    await click(btn(r, /^List$/));
-    const t = flat(r.root);
+    eq(json(tileTexts(gen1(r)).map((x) => x.split(" ")[0])), json(["PC"]), "tiles: only the PC copy");
+    await asList(r);
+    const t = flat(gen1(r));
     assert(/Keeping/.test(t) && !/Looking for/.test(t), "the PC filter kept the Goal: " + t);
     await click(btn(r, /^Trade \/ Sell$/));
     assert(/Nothing in this binder is in that state/.test(flat(r.root)), flat(r.root));
   });
-  test("entering and leaving a binder starts it unfiltered", async () => {
+  test("a binder opened in place keeps the screen's search and filter, and says when nothing matches", async () => {
+    /* RESTATED (P6-3.1): this used to start a binder unfiltered, because
+       opening one was going somewhere else. It now opens where it is, under a
+       row that has just said how many of its cards match — so the search and
+       filter stay, and the binder shows exactly that. */
     const { r } = await show();
     await type(r, "venusaur"); await click(btn(r, /^Secondary$/));
     await openGen1(r);
-    eq(r.root.findAll((n) => n.type === "input" && n.props.type === "search")[0].props.value, "", "the query followed");
-    eq(btn(r, /^All$/).props["aria-pressed"], true, "the filter followed");
+    eq(r.root.findAll((n) => n.type === "input" && n.props.type === "search")[0].props.value, "venusaur", "the query was dropped");
+    eq(btn(r, /^Secondary$/).props["aria-pressed"], true, "the filter was dropped");
+    assert(/Nothing Secondary in Gen 1 Favorites matches “venusaur”/.test(flat(gen1(r))), flat(gen1(r)));
   });
 });
 

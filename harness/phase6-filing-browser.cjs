@@ -218,6 +218,69 @@ describe("touch, at phone width", () => {
   });
 });
 
+/* P6-3.1: a binder opens IN PLACE, and its cards are the same cards — the
+   same size as everywhere else, held and dropped the same way. */
+describe("an expanded binder (P6-3.1)", () => {
+  const expand = async (page, name) => {
+    const sec = page.locator("button.mcs-sechead", { hasText: /^Binders/ });
+    if ((await sec.getAttribute("aria-expanded")) === "false") await sec.click();
+    const row = page.locator("button.mcs-bhead", { hasText: name });
+    if ((await row.getAttribute("aria-expanded")) === "false") await row.click();
+    await page.waitForTimeout(400);
+    return page.locator(".mcs-bcover.open");
+  };
+  test("a card dragged out of an expanded binder files — in the database", async () => {
+    await before();
+    const { page, context, errors } = await open();
+    const open1 = await expand(page, "Gen 1");
+    eq(await page.locator("button", { hasText: /^Open Gen 1/ }).count(), 0, "a second step to open it");
+    /* By now the mouse tests have filed Blastoise in Gen 1 (and the touch
+       test has taken Charizard out). */
+    eq(await homeOf("collectorCopyId", ctx.ids.copy), ctx.ids.gen1, "the fixture's copy is not in Gen 1");
+    const art = open1.locator("li.mcs-otile").filter({ hasText: /Blastoise/ }).locator("button.mcs-otap");
+    eq(await art.count(), 1, "its card is not there at once");
+    const from = await centre(art);
+    await page.mouse.move(from.x, from.y); await page.mouse.down();
+    await page.mouse.move(from.x + 30, from.y + 10, { steps: 4 });
+    const to = await centre(page.locator("[data-dest]").filter({ hasText: "Favourites" }));
+    await page.mouse.move(to.x, to.y, { steps: 8 }); await page.mouse.up(); await page.waitForTimeout(900);
+    eq(await homeOf("collectorCopyId", ctx.ids.copy), ctx.ids.mud, "not filed");
+    assert(await page.locator("text=Blastoise is filed in Favourites.").count(), "no confirmation");
+    eq(errors.length, 0, errors.join(" | ")); await context.close();
+  });
+  for (const [width, height] of [[390, 844], [768, 1024], [1280, 860], [1920, 1080]]) {
+    test(`at ${width}px: one card size, no stretching, no sideways scroll`, async () => {
+      await before();
+      const { page, context, errors } = await open({ width, height });
+      const opened = await expand(page, "Favourites");
+      const inBinder = await opened.locator("li.mcs-otile").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().width)));
+      const inCards = await page.locator("section[aria-label='Your Cards'] li.mcs-otile").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().width)));
+      assert(inBinder.length >= 1, "the binder's cards are not shown");
+      const all = [...inBinder, ...inCards];
+      assert(Math.max(...all) - Math.min(...all) <= 1, `card sizes differ: ${all}`);
+      if (width >= 768) assert(Math.max(...all) <= 152, `a card was stretched to ${Math.max(...all)}px`);
+      const art = await opened.locator("li.mcs-otile .mcs-otile-art").first().boundingBox();
+      assert(art.height > art.width, "the artwork is not the tile's dominant, card-shaped part");
+      eq(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, "sideways scroll");
+      eq(errors.length, 0, errors.join(" | ")); await context.close();
+    });
+  }
+  test("Details at phone width: one sheet, its Binder choice and Close in reach", async () => {
+    await before();
+    const { page, context } = await open({ width: 390, height: 844 });
+    const opened = await expand(page, "Favourites");
+    await opened.locator("li.mcs-otile button.mcs-oview").first().click(); await page.waitForTimeout(300);
+    for (const loc of [page.locator("[role=dialog] select"), page.locator("[role=dialog] button", { hasText: /^Close$/ })]) {
+      const c = await centre(loc);
+      assert(c.y < 844, "out of reach below the screen");
+      eq(await page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y).closest("[role=dialog]"), c), true, "covered");
+    }
+    await page.keyboard.press("Escape"); await page.waitForTimeout(200);
+    eq(await page.locator("[role=dialog]").count(), 0, "Escape did not close it");
+    await context.close();
+  });
+});
+
 if (!chromium) {
   console.log("SKIPPED: Playwright is not installed.");
 } else {
