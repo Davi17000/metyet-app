@@ -1013,7 +1013,15 @@ describe("G. what the product says", () => {
     /* A CHECKLIST LINE WITH TWO PRINTINGS ASKS WHICH, and the count only ever
        appeared once one was chosen — so stopping here would assert the absence
        of something that was never going to be present. Choose one. */
-    await pressText("unlimited");
+    /* RESTATED (P6-F3A Stage 1): the Phase 6 card asks "Which version?" in
+       the prototype's words — the unlimited printing is plain "Holo", First
+       Edition is "Holo · First Edition" — and its "Add to MetYet" opens this
+       same panel for the version chosen. */
+    const unlimited = r.root.findAll((n) => n.type === "button")
+      .find((n) => /mcs-cd-choice/.test(n.props.className || "") && texts(n).join("").trim() === "Holo");
+    assert(unlimited, "no unlimited version to choose");
+    await TR.act(async () => { unlimited.props.onClick(); });
+    await pressText("Add to MetYet");
     const shown = texts(r.root).join(" ");
     /* The panel is open AND past the chooser: these two strings belong to the
        section the count used to sit in. Without them this test proves nothing,

@@ -292,7 +292,7 @@ export default function Discover({ state, browse = null, browsing, onBrowsing, o
               <li key={row.cardContextId}>
                 <button type="button" className={`mcs-dcell${chosenId === row.cardContextId ? " on" : ""}`} disabled={opening}
                   aria-label={`${row.cardName}, ${[row.expansionName, row.collectorNumber ? `#${row.collectorNumber}` : null].filter(Boolean).join(" ")}`}
-                  onClick={() => onChoose(row)}>
+                  onClick={() => onChoose(row, cards.items, [summary, needle ? `“${needle}”` : null].filter(Boolean).join(" · ") || "Browse")}>
                   <CardArt src={row.imageSmall} name={row.cardName} wrap="mcs-dcell-art" plate="mcs-art-plate" decorative
                     card={{ key: row.cardContextId, set: row.expansionName, number: row.collectorNumber }} />
                   <span className="mcs-dcap"><span>{row.expansionName}</span><span>{row.collectorNumber ? `#${row.collectorNumber}` : ""}</span></span>

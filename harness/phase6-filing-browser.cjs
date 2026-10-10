@@ -450,7 +450,8 @@ describe("Browse (P6-F2)", () => {
       const wide = () => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
       /* the landing: the Pokédex */
       await page.locator(".mcs-dtile").first().waitFor();
-      eq(await page.locator(".mcs-dtile").count(), 4, "the Pokédex");
+      /* 5 since P6-F3A: the review world also holds Mudkip (#258), the Stage 1 reference card */
+      eq(await page.locator(".mcs-dtile").count(), 5, "the Pokédex");
       eq(await wide(), true, "sideways scroll on the landing");
       const tabs = await page.locator("nav[aria-label=Collector] button").evaluateAll((els) => els.map((e) => e.textContent.trim()));
       assert(tabs.join(" ").includes("Browse") && tabs.length === 4, "four tabs: " + tabs);
@@ -460,10 +461,16 @@ describe("Browse (P6-F2)", () => {
       await page.locator(".mcs-dcell").first().waitFor();
       eq(await page.locator(".mcs-dcell").count(), 2, "Pikachu's two cards");
       eq(await wide(), true, "sideways scroll on results");
-      /* a card → the production card → back to the same cards */
+      /* a card → the Phase 6 card, full screen (P6-F3A) → ‹ back to the same cards */
       await tap(page.locator(".mcs-dcell", { has: page.locator("text=Jungle") }).first());
-      await page.locator("text=Are you looking for it?").waitFor({ timeout: 4000 });
-      await tap(page.locator("button", { hasText: /^Cancel$/ }).first());
+      await page.locator(".mcs-cd").waitFor({ timeout: 4000 });
+      await page.waitForTimeout(400); /* the prototype's .22s rise */
+      const box = await page.locator(".mcs-cd").boundingBox();
+      const vp = page.viewportSize();
+      eq(json([Math.round(box.x), Math.round(box.y), Math.round(box.width), Math.round(box.height)]), json([0, 0, vp.width, vp.height]), "the card is not full screen");
+      eq((await page.locator(".mcs-cd-back").textContent()).trim(), "‹ Pikachu", "the card does not name where it came from");
+      eq(await wide(), true, "sideways scroll on the card");
+      await tap(page.locator(".mcs-cd-back"));
       await page.waitForTimeout(300);
       eq(await page.locator(".mcs-dchip", { hasText: "Pokémon: Pikachu" }).count(), 1, "the context was lost");
       eq(await page.locator(".mcs-dcell").count(), 2, "the cards were lost");

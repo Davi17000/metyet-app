@@ -62,10 +62,38 @@ const store = createProductionStore({ api: createApiClient({ baseUrl: location.o
 createRoot(document.getElementById("root")).render(<SignIn session={session} store={store} />);
 `;
 
+/* ============================================================================
+   REVIEW-ONLY ARTWORK EXCEPTION (founder-approved, P6-F3A Stage 1)
+   The frozen Phase 6 prototype shows real card pictures from runtime URLs; its
+   README calls that a prototype-only exception with no rights established.
+   For LOCAL VISUAL REVIEW ONLY, the same picture of ONE card — Mudkip, Ruby &
+   Sapphire #60, the prototype's own URLs — is written into that card's
+   existing image fields in THIS FILE'S THROWAWAY, IN-MEMORY review database.
+   It lives here and nowhere else: not in client/, server/, persistence/,
+   domain/ or app-src/; not in the catalogue importer; not in any build
+   (tests/phase6-f3a-card-detail.cjs fails if that changes). No commercial-use
+   permission is assumed, nothing is downloaded, cached, proxied or bundled.
+   ========================================================================== */
+const REVIEW_ARTWORK = Object.freeze([
+  { set: "Ruby & Sapphire", number: "60",
+    imageSmall: "https://assets.tcgdex.net/en/ex/ex1/60/low.webp",
+    imageLarge: "https://assets.tcgdex.net/en/ex/ex1/60/high.webp" },
+]);
+async function applyReviewArtwork(db) {
+  await db.transaction(async (tx) => {
+    for (const a of REVIEW_ARTWORK) {
+      await tx.query(`update metyet_catalog.canonical_cards k set image_small = $1, image_large = $2
+        from metyet_catalog.card_contexts c join metyet_catalog.expansions e on e.expansion_id = c.expansion_id
+        where k.card_context_id = c.card_context_id and e.name = $3 and c.collector_number = $4`,
+      [a.imageSmall, a.imageLarge, a.set, a.number]);
+    }
+  });
+}
+
 /* THE REVIEW STORY used by the P6-3 / P6-4 checks and `review:mobile`:
    two binders, two Goals, two copies. A different story (the fidelity
    harness's copy of the prototype's own preset) is passed as `seed`. */
-async function reviewSeed({ card, post }) {
+async function reviewSeed({ card, post, catalog, expansion }) {
   const BASE = { code: "b1", name: "Base Set", printedTotal: 102 };
   const char = await card("4", "Charizard", "holofoil", BASE, [6]);
   const blas = await card("2", "Blastoise", "holofoil", BASE, [9]);
@@ -79,6 +107,15 @@ async function reviewSeed({ card, post }) {
   const pika = await card("58", "Pikachu", "non_holo", BASE, [25]);
   /* P6-F2: a second set, so Browse has more than one of anything */
   await card("25", "Pikachu", "non_holo", { code: "jungle", name: "Jungle", printedTotal: 64 }, [25]);
+  /* P6-F3A: Mudkip, Ruby & Sapphire #60 — the prototype's Stage 1 reference
+     card, with its two real printings (Normal, Reverse Holo) — and #59 beside
+     it, so the card's ‹ › have somewhere to go. Pictures: REVIEW_ARTWORK. */
+  const RS = { code: "ex1", name: "Ruby & Sapphire", printedTotal: 109 };
+  for (const [n, artist] of [["59", "Atsuko Nishida"], ["60", "Ken Sugimori"]]) {
+    const { cardContextId } = await catalog.putCardContext({ game: "pokemon", expansionId: await expansion(RS.code, RS.name, RS.printedTotal),
+      collectorNumber: n, cardName: "Mudkip", artist, rarity: "Common", pokedexNumbers: [258] });
+    for (const finish of ["non_holo", "reverse_holofoil"]) await catalog.putCanonicalCard({ cardContextId, finish });
+  }
   /* and a long set name, which is what pushes a two-column grid sideways */
   await card("4", "Charizard", "holofoil", { code: "mcd15", name: "McDonald's Collection 2015 Anniversary Edition", printedTotal: 12 }, [6]);
   const goal2 = await post("addGoal", { canonicalCardId: ven, tier: "secondary", desired: { grade: "PSA 9" } });
@@ -127,7 +164,8 @@ async function serve({ port = 0, seed = reviewSeed, collectorName = "Casey" } = 
     if (res.statusCode !== 200) throw new Error(`${command}: ${res.body}`);
     return res.json().value;
   };
-  const ids = await seed({ card, post, catalog, db });
+  const ids = await seed({ card, post, catalog, db, expansion });
+  await applyReviewArtwork(db);
   const build = async (contents) => (await esbuild.build({ stdin: { contents, resolveDir: ROOT, loader: "jsx" }, bundle: true,
     write: false, format: "iife", jsx: "automatic", logLevel: "silent", define: { "process.env.NODE_ENV": '"production"' } })).outputFiles[0].text;
   const bundle = await build(ENTRY);
@@ -202,4 +240,4 @@ async function signIn(page, url) {
   await page.waitForSelector("nav[aria-label=Collector]");
 }
 
-module.exports = { serve, reviewSeed, PHONE, signIn, ROOT };
+module.exports = { serve, reviewSeed, PHONE, signIn, ROOT, REVIEW_ARTWORK };

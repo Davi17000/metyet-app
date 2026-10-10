@@ -314,11 +314,23 @@ describe("G. discovery is not collecting", () => {
     eq(s.specify.length, 0, "a durable step was sent by browsing");
     assert(s.calls.every(([k]) => ["pokemon", "find", "expansions", "artists", "describe"].includes(k)), json(s.calls.map(([k]) => k)));
   });
-  test("opening a card is the existing production card (version, then the Card Specification) — no second card UI", async () => {
+  /* RESTATED (P6-F3A Stage 1). F2 kept production's card (version, then the
+     Card Specification) as an interim, scheduled for P6-F3 (B20). Stage 1
+     replaces it with the Phase 6 full-screen card; its "Add to MetYet" reaches
+     the same Card Specification, so there is still ONE card UI and one save
+     path — and Discover itself still draws no card and writes nothing. */
+  test("opening a card is the Phase 6 card, whose Add reaches the Card Specification — no second card UI", async () => {
     const s = await show();
     await type(s, "eevee");
     await press(s, s.r.root.findAll((n) => n.type === "button" && /^Eevee, /.test(n.props["aria-label"] || ""))[0]);
-    assert(/Are you looking for it\?/.test(flat(s.r.root)), "not the Card Specification");
+    assert(s.r.root.findAll((n) => n.props && n.props.className === "mcs-cd").length === 1, "not the Phase 6 card");
+    assert(!/Are you looking for it\?/.test(flat(s.r.root)), "the old form opened straight from the grid");
+    const add = s.r.root.findAll((n) => n.type === "button" && /mcs-cd-add/.test(n.props.className || ""))[0];
+    if (add.props["aria-disabled"] === true) {
+      await press(s, s.r.root.findAll((n) => n.type === "button" && /mcs-cd-choice/.test(n.props.className || ""))[0]);
+    }
+    await press(s, s.r.root.findAll((n) => n.type === "button" && /mcs-cd-add/.test(n.props.className || ""))[0]);
+    assert(/Are you looking for it\?/.test(flat(s.r.root)), "Add did not reach the Card Specification");
     eq(s.specify.length, 0, "opening wrote something");
     const src = fs.readFileSync(path.join(ROOT, "client/browse/Discover.jsx"), "utf8");
     assert(!/CardSpecification|CardDetail|addGoal|addCollectorCopy|onSpecify/.test(src), "Discover grew its own card detail or a write");

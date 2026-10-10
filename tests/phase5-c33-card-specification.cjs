@@ -954,9 +954,23 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
     return { r, calls, state };
   };
 
+  /* RESTATED (P6-F3A Stage 1): a card from Browse opens as the Phase 6
+     full-screen card; its "Add to MetYet" opens this panel (until Stage 2), so
+     reaching the panel is one step longer and nothing past it changed. */
+  const addFromCard = async (r) => {
+    assert(texts(r).includes("Add to MetYet"), "the Phase 6 card did not open: " + texts(r));
+    await press(r, "Add to MetYet");
+  };
+  const backToBrowse = async (r) => {
+    const b = buttons(r).find((n) => /mcs-cd-back/.test(n.props.className || ""));
+    assert(b, "the card has no way back: " + texts(r));
+    await TR.act(async () => { b.props.onClick(); });
+    await settle(r);
+  };
   const openCard = async (r, name) => {
     await typeInto(r, "mcs-br-q", name);
     await press(r, name);
+    await addFromCard(r);
   };
 
   test("a card nobody has said anything about opens honestly empty", async () => {
@@ -1106,9 +1120,11 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
     assert(gridNames(r).includes("Mudkip"), "the grid did not fill");
 
     await press(r, "Mudkip");
+    await addFromCard(r);
     await press(r, "Cancel");
+    await backToBrowse(r);
     await press(r, "Mudkip");
-    await press(r, "Cancel");
+    await backToBrowse(r);
 
     eq(calls.find, afterSearch,
       "the catalog was asked again — the grid remounted, and a person's place with it");
@@ -1139,14 +1155,20 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
     /* RESTATED (P6-F2): the Phase 6 discovery screen is the grid's container. */
     const grid = classes.findIndex((c) => c.split(" ").includes("mcs-disc"));
     const sheet = classes.findIndex((c) => c.split(" ").includes("mcs-spec-scrim"));
+    /* P6-F3A: and the Phase 6 card the panel is opened from, by the same rule. */
+    const card = classes.findIndex((c) => c.split(" ").includes("mcs-cd"));
     assert(grid >= 0, "the grid is not rendered");
     assert(sheet >= 0, "the sheet is not rendered");
+    assert(card >= 0, "the card is not rendered");
     assert(grid < sheet, "the sheet is rendered above the grid and would push it down the page");
+    assert(grid < card, "the card is rendered above the grid and would push it down the page");
 
     /* And it is taken out of flow by the stylesheet rather than by luck. */
     const css = read("client/collector/CollectorShell.jsx");
     assert(/\.mcs-spec-scrim\s*\{[^}]*position:fixed/.test(css.replace(/\s+/g, " ").replace(/ \{/g, "{")),
       "the sheet is not out of flow");
+    assert(/\.mcs-cd\s*\{[^}]*position:fixed/.test(css.replace(/\s+/g, " ").replace(/ \{/g, "{")),
+      "the card is not out of flow");
     /* NO SCROLL RESTORATION WAS BUILT, and none should have been: there is
        nothing to restore when nothing moves. (P6-F2: opening and closing a card
        still moves nothing. client/browse/Discover.jsx does keep each VIEW's

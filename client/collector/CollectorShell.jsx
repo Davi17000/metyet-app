@@ -838,6 +838,8 @@ button.mcs-otap { cursor:pointer; }
      row-reverse put the Collector's on the right. */
   .mcs-body { flex-direction:row; }
   .mcs-hd { margin:0 -28px; padding:22px 28px 6px; }
+  /* the card (P6-F3A), in a phone-width column: the prototype is a phone */
+  .mcs-cd-hd, .mcs-cd-scroll, .mcs-cd-dock { width:100%; max-width:560px; margin:0 auto; box-sizing:border-box; }
   /* the account bar and banner are on screen here (P6-F1): no phone controls */
   .mcs .mcs-acct, .mcs .mcs-scope { display:none; }   /* .mcs: outranks the base rules, which come later */
   /* no tab bar here: the confirmation sits at the foot of the window */
@@ -992,6 +994,68 @@ button.mcs-otap { cursor:pointer; }
 @media (min-width:600px) {
   .mcs-dtiles, .mcs-dgrid { grid-template-columns:repeat(auto-fill, minmax(150px, 180px)); justify-content:start; }
 }
+
+/* ============================================================================
+   P6-F3A — THE CARD, FROM THE PROTOTYPE (fca2c61 index.html: .detail L78–81,
+   .hd.over L34, .back L33, .stepper L36/123, .minihead L35, .hero L82,
+   .art.size-hero L59, .art.real L168–169, .imgnote L189, .ident L83,
+   .remembered L84–86, .q L88, .choice L94–96/173, .wrap L93, .cannot L172,
+   .established L87, .spacer L100, .dock L101, .hint L102, .add L103–106).
+   The prototype's card sits over its whole phone, tab bar included; so does
+   this one — above the tab bar, below the Card Specification and the bar.
+   ========================================================================== */
+.mcs-cd { position:fixed; inset:0; z-index:28; background:var(--panel); display:flex; flex-direction:column;
+  animation:mcs-cd-rise .22s ease-out; }
+@keyframes mcs-cd-rise { from { transform:translateY(16px); } to { transform:none; } }
+.mcs-cd-hd { display:flex; align-items:center; gap:10px; padding:14px 16px 8px; border-bottom:1px solid transparent; }
+.mcs-cd-back { border:0; background:none; color:var(--t1); padding:0; font-weight:600; font-size:14px; min-width:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mcs-cd-mini { display:flex; align-items:center; gap:7px; min-width:0; animation:mcs-cd-reveal .2s ease-out; }
+.mcs-cd-mini b { font-size:14px; white-space:nowrap; } .mcs-cd-mini > span { color:var(--muted); font-size:12px; white-space:nowrap; }
+.mcs-cd-step { margin-left:auto; display:flex; align-items:center; gap:8px; opacity:.55; }
+.mcs-cd-step:hover { opacity:1; }
+.mcs-cd-step button { border:1px solid var(--line); background:#FFF; border-radius:8px; width:28px; height:28px; color:var(--text);
+  font-size:14px; line-height:1; padding:0; }
+.mcs-cd-step button:disabled { opacity:.3; }
+.mcs-cd-scroll { flex:1; overflow-y:auto; padding:0 18px; }
+.mcs-cd-hero { padding:4px 0 12px; }
+.mcs-cd-frame { position:relative; display:block; width:72%; margin:0 auto; }
+.mcs-cd-art.hero { display:flex; flex-direction:column; width:100%; aspect-ratio:63/88; overflow:hidden;
+  border-radius:4.5%/3.3%; box-shadow:0 1px 3px rgba(0,0,0,.25); }
+.mcs-cd-art.hero:not(.mcs-cardph) { background:#1B2430; }
+/* the prototype's sheen (index.html .sheen L67–70) */
+.mcs-cd-sheen { position:absolute; inset:0; pointer-events:none; mix-blend-mode:soft-light; background-size:250% 250%;
+  border-radius:4.5%/3.3%; animation:mcs-cd-sheen 6s ease-in-out infinite; }
+.mcs-cd-frame.holo .mcs-cd-sheen { background-image:linear-gradient(115deg,transparent 20%,rgba(255,120,200,.75) 35%,rgba(120,220,255,.8) 50%,rgba(255,240,120,.75) 65%,transparent 80%); }
+.mcs-cd-frame.rev .mcs-cd-sheen { background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.45) 0 6px,transparent 6px 14px);
+  -webkit-mask:linear-gradient(#000,#000) content-box,linear-gradient(#000,#000); -webkit-mask-composite:xor; mask-composite:exclude; padding:6%; }
+@keyframes mcs-cd-sheen { 0%,100% { background-position:0% 0%; } 50% { background-position:100% 100%; } }
+.mcs-cd-art img { display:block; width:100%; height:100%; object-fit:cover; }
+.mcs .mcs-cd-art.hero.mcs-cardph { border-radius:14px; font-size:18px; }
+.mcs-cd-art.mini { display:flex; width:26px; flex:0 0 26px; aspect-ratio:63/88; overflow:hidden; border-radius:3px; }
+.mcs .mcs-cd-art.mini.mcs-cardph { padding:2px; border-radius:3px; }
+.mcs-cd-art.mini .mcs-cardph-top, .mcs-cd-art.mini .mcs-cardph-foot, .mcs-cd-art.mini .mcs-cardph-none { display:none; }
+.mcs-cd p.mcs-cd-imgnote { text-align:center; color:var(--faint); font-size:11.5px; margin:-6px 0 10px; }
+.mcs-cd-ident h2 { margin:0; font-size:22px; font-family:inherit; }
+.mcs-cd-ident p { margin:2px 0 10px; color:var(--muted); font-size:14px; }
+.mcs-cd-remembered { background:var(--t1-bg); border-radius:12px; padding:10px 12px; margin:6px 0 14px; }
+.mcs-cd-remembered h4 { margin:0 0 4px; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--t1); }
+.mcs-cd-remembered ul { margin:0; padding-left:16px; } .mcs-cd-remembered li { font-size:13px; }
+.mcs-cd-q { margin:6px 0 18px; } .mcs-cd-q h3 { margin:0 0 8px; font-size:15px; }
+.mcs-cd-wrap { display:flex; flex-wrap:wrap; gap:8px; }
+.mcs-cd-choice { text-align:left; border:1.5px solid var(--line); background:#FFF; border-radius:12px; padding:10px 12px;
+  transition:border-color .15s, background .15s; color:var(--text); }
+.mcs-cd-choice b { display:block; font-size:14px; }
+.mcs-cd-choice.on { border-color:var(--t1); background:var(--t1-bg); }
+.mcs-cd p.mcs-cd-cannot { margin:0 0 8px; color:var(--muted); }
+.mcs-cd p.mcs-cd-established { color:var(--muted); font-size:13px; margin:4px 0 14px; }
+.mcs-cd-spacer { height:20px; }
+.mcs-cd-dock { border-top:1px solid var(--line); padding:10px 16px calc(16px + env(safe-area-inset-bottom, 0px)); background:#FFF; }
+.mcs-cd p.mcs-cd-hint { margin:0 0 8px; text-align:center; font-size:13px; color:var(--t1); } .mcs-cd p.mcs-cd-hint.quiet { color:var(--faint); }
+.mcs-cd-add { width:100%; padding:15px; border-radius:14px; border:0; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+  background:#E6EAEE; color:#9AA3AE; font-size:14px; transition:background .25s, color .25s, transform .25s, box-shadow .25s; }
+.mcs-cd-add.ready { background:var(--t1); color:#FFF; box-shadow:0 6px 16px rgba(11,93,102,.28); }
+@keyframes mcs-cd-reveal { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
 `;
 
 /* THE NOTICE HAS TO BE TRUE, AND BATCH 7 CHANGED WHAT IS TRUE. Goals can now

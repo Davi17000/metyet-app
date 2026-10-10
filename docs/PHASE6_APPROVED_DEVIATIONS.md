@@ -22,6 +22,7 @@
 | A10 | **Interim:** Set and Artist rows show a fan of three *drawn* placeholder cards (prototype: three real card faces) | No approved artwork | Founder, P6-F2 D4 (provisional — not a permanent design decision) |
 | A11 | **Interim:** Artists are listed alphabetically (prototype: the artists with the most cards first) | Production's artist list | Founder, P6-F2 D4 (provisional) |
 | A12 | Browse's Pokédex, card-number search and in-set numeric order come from three read-only catalogue capabilities (`GET /api/pokemon`; `number=` and numeric-aware ordering on `/api/card-contexts`) | The prototype computed them from a bundled dataset production must not have | Founder, P6-F2 D1–D3 |
+| A13 | **Review-only artwork exception (local review, one card).** The local review world (`harness/phase6-world.cjs`, in-memory) and the fidelity harness put the prototype's own picture of **Mudkip — Ruby & Sapphire #60** into that card's existing catalogue image fields. Nothing that ships names a provider; a test fails if one does (`tests/phase6-f3a-card-detail.cjs` F). No rights are assumed | Visual fidelity cannot be judged on placeholders | Founder, P6-F3A Stage 1 (Option B) |
 
 ## B. Unresolved — awaiting founder decision
 
@@ -46,10 +47,17 @@
 | B17 | Card order **across** sets | By set code (D3 left cross-set order unchanged); prototype: older sets first | P6-F2 | A one-line ordering change; awaits a decision |
 | B18 | Placeholder foot shows the card's number, not "number/set total" | Card rows do not carry the set's printed total | P6-F2 | Cosmetic; one more field on the card reply |
 | B19 | "Not recordable yet" is not marked on grid cards (prototype marks cards with no printing MetYet can record) | Production says so when the card is opened | P6-F2 | Needs a printing count on the card reply |
-| B20 | Card selected from Browse opens the production version picker and Card Specification sheet (prototype: full-screen card with ‹ context, previous / next, guided questions) | — | P6-F2 | **P6-F3** (founder D5/D6): one shared full-screen card for Browse and Binders, with Pokémon / Set / Artist pivots |
+| B20 | ~~Card selected from Browse opens the production version picker and Card Specification sheet~~ | **Stage 1 of P6-F3A:** Browse opens the Phase 6 full-screen card (‹ context, ‹ › through the results, 72 % hero, identity, MetYet remembers, Which version?, pinned Add). Binders still opens its own sheet (B6) | — | Awaiting founder approval of Stage 1 |
+| B21 | **Stage 1 interim:** the card's guided questions (meaning, raw/graded, importance) are not drawn; "Add to MetYet" opens the existing Card Specification for the chosen version, and the dock says "For now, Add opens MetYet's current card form." | Nothing on the card writes | P6-F3A S1 | **Stage 2** |
+| B22 | Card identity says "60", not "60/109" | Card replies carry no set printed total (as B18) | P6-F3A S1 | One more field on the card reply |
+| B23 | Without the Stage 2 questions, a card page is short, so on a 390 × 844 phone it does not scroll far enough (300 px, the prototype's rule) for the header to carry the card. The behaviour is present and proven on a 390 × 460 window | — | P6-F3A S1 | Resolves itself with Stage 2 |
+| B24 | **Venusaur — card-level artwork.** The prototype attaches a picture to the CARD; production stores pictures only on a recordable printing (`canonical_cards.image_*`), so a card whose only printings are not recordable has no picture | — | P6-F3A S1 | **Catalogue decision, not solved here.** Where a card-level picture would live, and under what rights |
+| B25 | **Venusaur — unavailable printings.** The prototype lists printings MetYet cannot record yet (dashed, "Not available in MetYet yet", e.g. Venusaur's quarantined Holo and 1st Edition stamp). Production has no read of a card's quarantined source mappings, so they are not shown; a card with none recordable says "MetYet can't record this card yet." | — | P6-F3A S1 | **Catalogue decision, not solved here.** Needs a per-card read of unrecorded printings |
+| B26 | Previous / next order across sets follows B17 (set code), so Mudkip #60's neighbour differs from the prototype's | — | P6-F3A S1 | Follows B17 |
 
 ## C. Unavoidable comparison differences (not product decisions)
 
 - The prototype's screen is 370 × 800 inside its drawn bezel; production's is 390 × 844. Tiles are wider by that ratio.
 - Placeholder colours derive from each app's own card ids, so the same card is a different hue in each.
-- The prototype's provider artwork has no production equivalent (A5); the harness also captures the prototype with its card images blocked, which is the like-for-like.
+- The prototype's provider artwork has no production equivalent (A5); the harness also captures the prototype with its card images blocked, which is the like-for-like. For Mudkip R&S #60 only, both sides show the same picture (A13).
+- The two worlds' catalogues differ in which other Mudkip cards exist, so the cards beside #60 differ (and see B26).

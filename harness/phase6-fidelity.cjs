@@ -344,8 +344,8 @@ async function run() {
       bm.results = await measureBrowse(page, side);
       await page.locator(B.cell).first().tap(); await sleep(900);
       await shot("b04-card-selected");
-      if (side === "prod") { const c = page.locator("button", { hasText: /^Cancel$/ }).first(); if (await c.count()) await c.tap(); }
-      else await page.locator(".phone .detail button.back").tap();
+      /* both sides now close the card the prototype's way (P6-F3A) */
+      await page.locator(side === "prod" ? ".mcs-cd-back" : ".phone .detail button.back").tap();
       await sleep(500);
       await shot("b05-back");
       await page.locator(B.clearAll).tap(); await sleep(300);
@@ -367,6 +367,69 @@ async function run() {
       results[tag] = { ...(results[tag] || {}), browse: bm, browseErrors: errors };
       await context.close();
     }
+    /* 2c. THE CARD (P6-F3A): Mudkip, Ruby & Sapphire #60 — WITH its picture on
+       both sides (the prototype as shipped; production through the review-only
+       artwork exception in phase6-world.cjs). */
+    const CARD = {
+      proto: { cell: () => ".phone .grid .cell", scroll: ".phone .detail-scroll", choice: ".phone .detail .choice", back: ".phone .detail button.back",
+        m: { header: ".phone .detail .hd", back: ".phone .detail .back", hero: ".phone .detail .hero .art", ident: ".phone .detail .ident", h2: ".phone .detail .ident h2",
+          versions: ".phone .detail .q", dock: ".phone .detail .dock", add: ".phone .detail .add" } },
+      prod: { cell: () => "button.mcs-dcell", scroll: ".mcs-cd-scroll", choice: ".mcs-cd-choice", back: ".mcs-cd-back",
+        m: { header: ".mcs-cd-hd", back: ".mcs-cd-back", hero: ".mcs-cd-art.hero", ident: ".mcs-cd-ident", h2: ".mcs-cd-ident h2",
+          versions: ".mcs-cd-q", dock: ".mcs-cd-dock", add: ".mcs-cd-add" } },
+    };
+    for (const [side, tag] of [["proto", "proto-art"], ["prod", "prod"]]) {
+      const S = SIDES[side]; const C = CARD[side];
+      const context = await browser.newContext({ ...PHONE }); const page = await context.newPage();
+      const errors = []; page.on("pageerror", (e) => errors.push(e.message));
+      const shot = async (name) => { await sleep(450); await page.screenshot({ path: path.join(OUT, `${tag}-${name}.png`), clip: await S.screen(page) }); };
+      if (side === "prod") await signIn(page, prod.url);
+      else { await page.goto(proto.url); await page.waitForSelector(".phone"); await page.locator(".controls button", { hasText: /^Returning Collector$/ }).click(); await sleep(300); }
+      await S.tab(page, "Browse").tap(); await sleep(600);
+      const dex = page.locator(`${BROWSE[side].tile}[data-dex='258']`); await dex.scrollIntoViewIfNeeded(); await dex.tap(); await sleep(900);
+      const cell = page.locator(C.cell()).filter({ hasText: side === "prod" ? undefined : "#60" })
+        .filter(side === "prod" ? { has: page.locator("img") } : { hasText: "Ruby & Sapphire" }).first();
+      const target = side === "prod" ? page.locator("button.mcs-dcell[aria-label='Mudkip, Ruby & Sapphire #60']") : cell;
+      await target.scrollIntoViewIfNeeded(); await sleep(300);
+      await shot("c00-browse-before");
+      const browseY = await page.evaluate(() => [window.scrollY, (document.querySelector(".phone .screen") || {}).scrollTop || 0]);
+      await target.tap(); await sleep(1200);
+      await shot("c01-open");
+      const loaded = await page.evaluate(() => [...document.querySelectorAll("img")].filter((i) => /ex1\/60/.test(i.currentSrc || i.src))
+        .map((i) => ({ src: i.currentSrc || i.src, ok: i.complete && i.naturalWidth > 0, w: i.naturalWidth })));
+      const cm = await page.evaluate(({ sel, screen }) => { const o = {}; for (const [k, q] of Object.entries(sel)) { const e = document.querySelector(q); if (!e) { o[k] = null; continue; }
+        const b = e.getBoundingClientRect(); o[k] = { top: Math.round(b.top - screen.y), left: Math.round(b.left - screen.x), w: Math.round(b.width), h: Math.round(b.height),
+          font: getComputedStyle(e).fontSize }; } return o; }, { sel: C.m, screen: await S.screen(page) });
+      const rev = page.locator(C.choice, { hasText: "Reverse Holo" }).first();
+      if (await rev.count()) { await rev.scrollIntoViewIfNeeded(); await rev.tap(); } await shot("c03-version-chosen");
+      /* the header carries the card once the picture scrolls away — when the page is long enough to scroll */
+      await page.locator(C.scroll).evaluate((e) => e.scrollTo(0, e.scrollHeight)); await shot("c02-scrolled-collapsed");
+      await page.locator(C.scroll).evaluate((e) => e.scrollTo(0, 0)); await sleep(200);
+      await page.locator("[aria-label='Next card']").tap(); await sleep(1100); await shot("c04-next");
+      await page.locator("[aria-label='Previous card']").tap(); await sleep(1100); await shot("c05-previous");
+      await page.locator(C.back).tap(); await sleep(700); await shot("c06-back-to-browse");
+      const browseYAfter = await page.evaluate(() => [window.scrollY, (document.querySelector(".phone .screen") || {}).scrollTop || 0]);
+      results[tag] = { ...(results[tag] || {}), card: { measures: cm, images: loaded, scrollBefore: browseY, scrollAfter: browseYAfter }, cardErrors: errors };
+      await context.close();
+    }
+
+    /* 2d. production only: the collapsing header. Until Stage 2's questions
+       are drawn, Mudkip's page fits an 844-pt screen and never scrolls, so the
+       header is shown doing it on a SHORTER window (390 × 460) — labelled so. */
+    {
+      const context = await browser.newContext({ ...PHONE, viewport: { width: 390, height: 460 } }); const page = await context.newPage();
+      await signIn(page, prod.url);
+      await page.locator("nav button", { hasText: /^Browse$/ }).first().tap().catch(async () => { await SIDES.prod.tab(page, "Browse").tap(); }); await sleep(600);
+      const dex = page.locator(`${BROWSE.prod.tile}[data-dex='258']`); await dex.scrollIntoViewIfNeeded(); await dex.tap(); await sleep(900);
+      const t = page.locator("button.mcs-dcell[aria-label='Mudkip, Ruby & Sapphire #60']"); await t.scrollIntoViewIfNeeded(); await t.tap(); await sleep(1200);
+      const before = await page.locator(".mcs-cd-mini").count();
+      await page.locator(".mcs-cd-scroll").evaluate((e) => e.scrollTo(0, e.scrollHeight)); await sleep(500);
+      const after = await page.locator(".mcs-cd-mini").count();
+      await page.screenshot({ path: path.join(OUT, "prod-c02b-collapsed-short-phone.png") });
+      results.prod = { ...(results.prod || {}), collapse: { before, after } };
+      await context.close();
+    }
+
     /* production only: a slow catalogue, then an unreachable one */
     for (const [name, handler] of [["b12-loading", async (r) => { await sleep(4000); r.continue(); }], ["b13-error", (r) => r.abort()]]) {
       const context = await browser.newContext({ ...PHONE }); const page = await context.newPage();
@@ -379,8 +442,11 @@ async function run() {
     }
 
     /* 3. side by side, 1 CSS px = 1 px, aligned at the top of each screen */
-    const SCREENS = [["b01-landing", "Browse — landing (Pokédex)"], ["b02-gen3", "Browse — Gen 3"], ["b03-pokemon-cards", "Browse — Pokémon: Mudkip"],
-      ["b04-card-selected", "Browse — card selected (production: version, then the Card Specification; full-screen is P6-F3)"], ["b05-back", "Browse — back"],
+    const SCREENS = [["c00-browse-before", "Card — Browse, Pokémon: Mudkip, before opening"], ["c01-open", "Card — Mudkip R&S #60, just opened"],
+      ["c02-scrolled-collapsed", "Card — scrolled: the header carries the card"], ["c03-version-chosen", "Card — Reverse Holo chosen"],
+      ["c04-next", "Card — next ›"], ["c05-previous", "Card — ‹ previous"], ["c06-back-to-browse", "Card — back to the same Browse"],
+      ["b01-landing", "Browse — landing (Pokédex)"], ["b02-gen3", "Browse — Gen 3"], ["b03-pokemon-cards", "Browse — Pokémon: Mudkip"],
+      ["b04-card-selected", "Browse — card selected (the Phase 6 card, P6-F3A)"], ["b05-back", "Browse — back"],
       ["b06-sets", "Browse — Sets"], ["b07-suggestions", "Browse — search suggestions"], ["b08-set-cards", "Browse — a set's cards"],
       ["b09-artists", "Browse — Artists"], ["b10-artist-cards", "Browse — an artist's cards"], ["b11-empty", "Browse — nothing matches"],
       ["b12-loading", "Browse — loading (production only)"], ["b13-error", "Browse — catalogue unreachable (production only)"],
@@ -426,6 +492,17 @@ ${full ? `<details><summary>Full page</summary><div style="display:flex;gap:18px
     fs.writeFileSync(path.join(OUT, "metrics.json"), JSON.stringify({ prototype: FROZEN, production: prod.build, notes, results: Object.fromEntries(Object.entries(results).map(([k, v]) => [k, v.metrics])) }, null, 2));
     console.log(`\nPhase 6 fidelity — prototype ${FROZEN} vs production ${prod.build.commit}${prod.build.dirty ? "+changes" : ""}`);
     for (const r of rows) console.log(`  ${String(r[0]).padEnd(24)} ${String(r[1]).padEnd(14)} ${r[2]}`);
+    const PC = results["proto-art"].card; const QC = results.prod.card;
+    if (PC && QC) {
+      console.log("  — Card (Mudkip R&S #60) —");
+      for (const k of Object.keys(PC.measures)) {
+        const f = (m) => (m ? `${m.top}/${m.left} ${m.w}×${m.h} ${m.font}` : "—");
+        console.log(`  ${k.padEnd(24)} ${f(PC.measures[k]).padEnd(26)} ${f(QC.measures[k])}`);
+      }
+      console.log(`  picture loaded            ${JSON.stringify(PC.images.map((i) => i.ok))}  ${JSON.stringify(QC.images.map((i) => i.ok))}`);
+      console.log(`  header collapse (prod, 390×460): mini-card ${JSON.stringify(results.prod.collapse)}`);
+      console.log(`  browse scroll kept        ${JSON.stringify(PC.scrollBefore)}→${JSON.stringify(PC.scrollAfter)}  ${JSON.stringify(QC.scrollBefore)}→${JSON.stringify(QC.scrollAfter)}`);
+    }
     if (bRows.length) { console.log("  — Browse —"); for (const r of bRows) console.log(`  ${String(r[0]).padEnd(24)} ${String(r[1]).padEnd(14)} ${r[2]}`); }
     console.log(`  first card: production ${delta == null ? "n/a" : `${delta >= 0 ? "+" : ""}${delta}px`} from the prototype`);
     console.log(`\n  open file://${path.join(OUT, "index.html")}`);
