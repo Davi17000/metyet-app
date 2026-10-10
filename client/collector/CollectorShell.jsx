@@ -727,6 +727,21 @@ ${STATE_CSS}
 .mcs-state[data-st].on b { color:var(--st-ink); }
 .mcs-cd-choice[data-st].on { border-color:var(--st); background:var(--st-tint); }
 .mcs-cd-choice[data-st].on b { color:var(--st-ink); }
+/* A SAVED CARD'S PAGE (P6-F4 B2B): CardDetail's structure, plus where it lives,
+   its details, and a quiet way to remove it */
+.mcs-snack-wrap.over-page { bottom:calc(132px + env(safe-area-inset-bottom, 0px)); }
+.mcs-ce .mcs-ce-home { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.mcs-ce .mcs-ce-home b { font-size:15px; }
+.mcs-ce .mcs-ce-home .mcs-go { min-height:44px; min-width:96px; }
+.mcs-ce p.mcs-ce-note { margin:8px 0 0; font-size:12.5px; }
+.mcs-ce .mcs-ce-field { display:flex; flex-direction:column; gap:4px; margin:0 0 10px; font-size:12.5px; color:var(--muted); }
+.mcs-ce .mcs-ce-field .mcs-in { font-size:16px; border-radius:12px; padding:9px 12px; }
+.mcs-ce p.mcs-ce-facts { margin:0; font-size:12.5px; color:var(--muted); }
+.mcs-ce .mcs-ce-remove { margin:4px 0 0; }
+.mcs-ce .mcs-ce-remove .mcs-linkish { color:var(--muted); font-size:13px; }
+.mcs-ce .mcs-ce-confirm { border:1px solid var(--amber-line); background:var(--amber-bg); border-radius:12px; padding:10px 12px;
+  display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.mcs-ce .mcs-ce-confirm p { flex-basis:100%; margin:0; font-size:13px; color:var(--text); }
 .mcs-mk-earlier { color:var(--faint); border-style:dashed; }
 .mcs-ohome { color:var(--text); font-weight:600; } .mcs-ohome.unf { color:var(--muted); font-weight:500; }
 .mcs-oq { font-size:10.5px; line-height:1.3; color:var(--muted); overflow:hidden;

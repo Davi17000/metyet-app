@@ -54,10 +54,10 @@ const STATE = () => ({
     { id: "g-char", collectorId: ME, canonicalCardId: "cc-char", tier: "primary", desired: { grade: "PSA 9" }, createdAt: `${AT}5` },
     { id: "g-mud", collectorId: ME, canonicalCardId: "cc-mud", tier: "secondary", desired: { grade: "PSA 10" }, createdAt: `${AT}5` }],
   collectorCopies: [
-    { id: "k-char", collectorId: ME, canonicalCardId: "cc-char", grading: { state: "graded", label: "PSA 8" }, cert: "CERT-8",
+    { id: "k-char", collectorId: ME, canonicalCardId: "cc-char", grade: "PSA 8", grading: { state: "graded", label: "PSA 8" }, cert: "CERT-8",
       market: 1200, photos: { front: "https://img.example.invalid/f.png", back: "https://img.example.invalid/b.png" }, keeping: true, offered: false, status: "available", addedAt: `${AT}6` },
-    { id: "k-blas", collectorId: ME, canonicalCardId: "cc-blas", grading: { state: "raw", label: "Raw · Near Mint" }, keeping: true, offered: false, status: "available", addedAt: `${AT}6` },
-    { id: "k-pika", collectorId: ME, canonicalCardId: "cc-old", grading: { state: "graded", label: "PSA 7" }, offered: true, status: "committed", addedAt: `${AT}6` }],
+    { id: "k-blas", collectorId: ME, canonicalCardId: "cc-blas", grade: "Raw", condition: "Near Mint", grading: { state: "raw", label: "Raw · Near Mint" }, keeping: true, offered: false, status: "available", addedAt: `${AT}6` },
+    { id: "k-pika", collectorId: ME, canonicalCardId: "cc-old", grade: "PSA 7", grading: { state: "graded", label: "PSA 7" }, offered: true, status: "committed", addedAt: `${AT}6` }],
   binderMemberships: [
     { id: "m1", binderId: "b-gen1", goalId: "g-char" },
     { id: "m2", binderId: "b-gen1", collectorCopyId: "k-char" },
@@ -126,7 +126,7 @@ describe("A. expand and collapse", () => {
     await click(head(r, "b-gen1"));
     await TR.act(async () => { tilesIn(cover(r, "b-gen1"))[0].findAll((n) => n.type === "button")[0].props.onClick({ preventDefault() {} }); });
     await settle();
-    assert(dialog(r) && /^Card: Charizard/.test(dialog(r).props["aria-label"]), "the card did not open");
+    assert(dialog(r) && /^Your (Goal|copy): Charizard/.test(dialog(r).props["aria-label"]), "the card did not open");
   });
   test("collapsing hides them again; one binder is open at a time", async () => {
     const { r } = await show();
@@ -227,16 +227,20 @@ describe("D. the card's sheet (restated in P6-4 from P6-3.1's Details)", () => {
     const pc = tilesIn(cover(r, "b-gen1")).find((li) => /\bPC\b/.test(flat(li)));
     await TR.act(async () => { pc.findAll((n) => n.type === "button")[0].props.onClick({ preventDefault() {} }); }); await settle();
   };
-  test("a copy's facts: grade at once; cert, value, photos, status on request — writing nothing", async () => {
+  /* RESTATED (P6-F4 B2B): the saved card's page shows its grade selected and
+     where it lives at once, and — by the founder's decision — its certificate
+     and value as editable fields in Copy details, with photos and status. */
+  test("a copy's facts: grade at once; cert, value, photos, status in Copy details — writing nothing", async () => {
     const { r, sent } = await show();
     await openPc(r);
     const d = dialog(r);
-    assert(d && /^Card: Charizard/.test(d.props["aria-label"]), "no sheet");
-    assert(/Grade PSA 8/.test(flat(d)) && /In Gen 1 Favorites/.test(flat(d)), flat(d));
-    assert(!/CERT-8/.test(flat(d)), "technical facts are shown before they are asked for");
-    await click(btn(r, /^Copy details$/));
-    const t = flat(dialog(r));
-    for (const re of [/CERT-8/, /\$1,?200/, /Photos Front and back/, /Status Available/]) assert(re.test(t), `${re} missing: ${t}`);
+    assert(d && /^Your copy: Charizard/.test(d.props["aria-label"]), "no page");
+    const pressed = d.findAll((n) => n.type === "button" && n.props["aria-pressed"] === true).map(flat);
+    assert(pressed.includes("Graded") && pressed.includes("PSA 8") && /In Gen 1 Favorites/.test(flat(d)), flat(d));
+    const [cert, value] = d.findAll((n) => n.type === "input").map((n) => n.props.value);
+    eq(cert, "CERT-8"); eq(Number(value), 1200);
+    const facts = flat(d.findAll((n) => n.props && n.props.className === "mcs-ce-facts")[0]);
+    for (const re of [/Front and back/, /Available/]) assert(re.test(facts), `${re} missing: ${facts}`);
     eq(sent.length, 0);
   });
   test("its Binder choice is the keyboard path to filing, and offers active binders only", async () => {
@@ -250,19 +254,14 @@ describe("D. the card's sheet (restated in P6-4 from P6-3.1's Details)", () => {
     eq(json(sent), json([["fileObject", { binderId: "b-mud", collectorCopyId: "k-char" }]]), "one command, naming only the binder and the copy");
     assert(/Charizard is filed in Mudkip/.test(flat(r.root)), "the answer is not said");
   });
-  test("Close and Escape close it; Open full card opens the Card Specification", async () => {
+  /* SUPERSEDED IN PART (P6-F4 B2B): the founder removed "Open full card" — the
+     page itself edits the record. ‹ Binders closes it (Escape: tests/phase6-f4-b2b-card-edit.cjs). */
+  test("‹ Binders closes it, and there is no way back to the old form", async () => {
     const { r } = await show();
     await openPc(r);
-    await click(buttons(r).find((b) => b.props["aria-label"] === "Close"));
+    assert(!btn(r, /^Open full card/) && !btn(r, /Goal details|Copy details/), "an administrative entry point survived");
+    await click(btn(r, /^‹ Binders$/));
     eq(dialog(r), null);
-    await TR.act(async () => { tilesIn(cover(r, "b-gen1")).find((li) => /\bPC\b/.test(flat(li))).findAll((n) => n.type === "button")[0].props.onClick({ preventDefault() {} }); });
-    await settle();
-    await TR.act(async () => { dialog(r).props.onKeyDown({ key: "Escape" }); }); await settle();
-    eq(dialog(r), null, "Escape");
-    await TR.act(async () => { tilesIn(cover(r, "b-gen1")).find((li) => /\bPC\b/.test(flat(li))).findAll((n) => n.type === "button")[0].props.onClick({ preventDefault() {} }); });
-    await settle();
-    await click(btn(r, /^Open full card/));
-    assert(/Are you looking for it|Card Specification/i.test(flat(r.root)), "Open full card did not open it");
   });
   test("a Goal's sheet says what it looks for", async () => {
     const { r } = await show();
@@ -270,7 +269,9 @@ describe("D. the card's sheet (restated in P6-4 from P6-3.1's Details)", () => {
     await click(head(r, "b-gen1"));
     await TR.act(async () => { tilesIn(cover(r, "b-gen1")).find((li) => /Primary/.test(flat(li))).findAll((n) => n.type === "button")[0].props.onClick({ preventDefault() {} }); });
     await settle();
-    assert(/Looking for PSA 9/.test(flat(dialog(r))), flat(dialog(r)));
+    /* RESTATED (P6-F4 B2B): what it looks for is SELECTED, ready to change */
+    const pressed = dialog(r).findAll((n) => n.type === "button" && n.props["aria-pressed"] === true).map(flat);
+    assert(pressed.includes("Graded") && pressed.includes("PSA 9") && pressed.some((t) => /^Primary/.test(t)), json(pressed));
   });
 });
 

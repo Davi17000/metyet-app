@@ -64,7 +64,7 @@ export const GRADES = ["PSA 10", "PSA 9", "PSA 8", "PSA 7", "PSA 6", "PSA 5", "P
 export const CONDITIONS = ["Near Mint", "Lightly Played", "Moderately Played", "Heavily Played", "Damaged"];
 
 /* The prototype's qualText. */
-const qualText = (d) => (!d ? "" : d.grade && d.grade !== "Raw" ? d.grade
+export const qualText = (d) => (!d ? "" : d.grade && d.grade !== "Raw" ? d.grade
   : d.condition ? `Raw · ${d.condition}` : d.grade === "Raw" ? "Raw" : "");
 
 /* What MetYet knows about one printing (prototype knownFor), from this
@@ -177,7 +177,7 @@ export function ackFor(card, a, siblings = []) {
 
 /* `st`: one of the four collecting states, worn in the shared visual language
    (states.jsx) — only on the tier and disposition choices that ARE those states. */
-function Choice({ on, onClick, title, sub, disabled, extra, st }) {
+export function Choice({ on, onClick, title, sub, disabled, extra, st }) {
   return (
     <button type="button" className={`mcs-cd-choice${on ? " on" : ""}${extra ? ` ${extra}` : ""}`} aria-pressed={!!on}
       disabled={disabled} onClick={onClick} data-st={st || undefined}>
@@ -186,7 +186,7 @@ function Choice({ on, onClick, title, sub, disabled, extra, st }) {
     </button>
   );
 }
-function Section({ id, title, focus, children }) {
+export function Section({ id, title, focus, children }) {
   return (
     <section className={`mcs-cd-q mcs-cd-reveal${focus === id ? " nudge" : ""}`} data-q={id}>
       {title ? <h3>{title}</h3> : null}

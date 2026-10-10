@@ -318,10 +318,8 @@ const tapTile = async (r, needle) => {
   assert(tile, `no tile for "${needle}"`);
   await TR.act(async () => { tile.findAll((n) => n.type === "button")[0].props.onClick({ preventDefault() {} }); });
   await settle();
-  /* RESTATED (P6-4): a tap opens the card's own sheet; the Card Specification
-     these tests drive is its "Open full card". */
-  const full = buttons(r).find((n) => /^Open full card/.test(instText(n).trim()));
-  if (full) { await TR.act(async () => { full.props.onClick(); }); await settle(); }
+  /* RESTATED (P6-4, then P6-F4 B2B): a tap opens the saved card's own
+     full-screen page, which edits it in place ("Open full card" is gone). */
 };
 const binderRows = (r) => buttons(r).filter((n) => cls(n).includes("mcs-bhead")).map((n) => instText(n).replace(/\s+/g, " "));
 /* RESTATED (P6-3.1): leaving a binder is closing it where it is. */
@@ -1059,7 +1057,9 @@ describe("D. not in a binder yet", () => {
     eq(unfiledCount(s.r), 0, texts(s.r));
   });
 
-  test("clicking one opens the same Card Specification", async () => {
+  /* RESTATED (P6-F4 B2B): the Goal's tile opens ITS page — the hunt, already
+     chosen, and where it lives — and there is still one specification file. */
+  test("clicking one opens its own page, on what it already says", async () => {
     const ctx = await world();
     const made = await cards(ctx);
     await want(ctx.app, "casey", made.mudkip, "primary");
@@ -1069,8 +1069,10 @@ describe("D. not in a binder yet", () => {
     await tapTile(r, "Mudkip");
     /* RE-PINNED (Batch 3B-1): the card-level Binder question is gone and the
        home control beside the hunt replaced it. */
-    assert(/Are you looking for it\?/i.test(texts(r)), texts(r));
-    assert(/Unfiled/.test(texts(r)), texts(r));
+    assert(/How important is this one\?/i.test(texts(r)), texts(r));
+    assert(/Binder Unfiled/.test(texts(r)), texts(r));
+    const primary = buttons(r).find((n) => n.props["data-st"] === "primary");
+    eq(primary && primary.props["aria-pressed"], true, "the page did not open on the Goal's tier");
     /* The same panel, which is the same file — there is no second one. */
     const files = fs.readdirSync(path.join(ROOT, "client", "collector"));
     eq(files.filter((f) => /Specification/i.test(f)).length, 1,
@@ -1812,8 +1814,9 @@ describe("H. the navigation", () => {
     const { r } = await screen(ctx);
     assert(/Primary · Unfiled/.test(cardsSay(r)), texts(r));
     await tapTile(r, "Mudkip");
-    assert(/Are you looking for it/i.test(texts(r)), texts(r));
-    assert(/Actively hunting/.test(texts(r)) && /Keeping an eye out/.test(texts(r)), texts(r));
+    /* RESTATED (P6-F4 B2B): both priorities on the Goal's own page, Primary chosen */
+    const tiers = buttons(r).filter((n) => n.props["data-st"] === "primary" || n.props["data-st"] === "secondary");
+    eq(json(tiers.map((n) => [n.props["data-st"], n.props["aria-pressed"]])), json([["primary", true], ["secondary", false]]));
   });
 
   test("a Goal remains a durable independent fact, untouched by any of this", async () => {
@@ -1888,8 +1891,10 @@ describe("H. the navigation", () => {
     eq(unfiledCount(r), 1, texts(r));
     assert(/Secondary · Unfiled/.test(cardsSay(r)), texts(r));
     await tapTile(r, "Mudkip");
-    /* RE-PINNED (Batch 3B-1), same reason. */
-    assert(/Are you looking for it\?/i.test(texts(r)), texts(r));
+    /* RESTATED (P6-F4 B2B): its page opens EMPTY on criteria — never Raw, never a grade — and on its tier */
+    const pressed = buttons(r).filter((n) => n.props["aria-pressed"] === true).map((n) => instText(n).trim());
+    assert(!pressed.includes("Raw") && !pressed.includes("Graded"), "criteria were invented: " + pressed);
+    assert(pressed.some((t) => /^Secondary/.test(t)), "the tier is not shown: " + pressed);
     /* And saying which copy is wanted is still available to them. */
     eq((await post(ctx.app, "casey", "updateGoalCriteria",
       { goalId: "g-old", desired: { grade: "PSA 9" } })).statusCode, 200);

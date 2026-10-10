@@ -243,19 +243,31 @@ const showCollection = (state, view = "All Cards") => {
    separate Details link), and the copy's secondary facts sit behind "Copy
    details". The same facts, from the same rows; the state choices and the
    binder controls are not read, for the same reason the Binder choice was not. */
+/* RESTATED AGAIN (P6-F4 B2B): a tap opens the saved card's full-screen page.
+   The same facts, from the same rows, read from where the page shows them:
+   its identity and version, the grading it holds (the SELECTED choices only),
+   a contradiction if the copy has one, its certificate and reference value
+   (now editable fields — read as their values, the value as the screen's own
+   money format), and when it was added, its photos and its status. */
+const MONEY = (() => { try { return require("esbuild").buildSync({ entryPoints: [require("path").join(__dirname, "..", "client/collector/present.js")],
+  bundle: true, format: "cjs", write: false, logLevel: "silent" }); } catch (e) { return null; } })();
+const present = (() => { const mod = { exports: {} }; new Function("module", "exports", "require", MONEY.outputFiles[0].text)(mod, mod.exports, require); return mod.exports; })();
 const sheetOf = (r, li) => {
   const b = li.findAll((n) => n.type === "button" && String(n.props.className || "").includes("mcs-otap"))[0];
   if (!b || b.props["aria-haspopup"] !== "dialog") return "";
   TR.act(() => { b.props.onClick({ preventDefault() {} }); });
   const dlg = () => r.root.findAll((n) => n.type === "div" && n.props.role === "dialog"
-    && /^Card: /.test(String(n.props["aria-label"] || "")))[0];
+    && /^Your (Goal|copy): /.test(String(n.props["aria-label"] || "")))[0];
   if (!dlg()) return "";
-  const more = dlg().findAll((n) => n.type === "button" && String(n.props.className || "").includes("mcs-omore"))[0];
-  if (more && more.props["aria-expanded"] === false) TR.act(() => { more.props.onClick(); });
-  const t = dlg().findAll((n) => /^mcs-(oident|oconfig|oconflict|detail-facts)$/.test(String(n.props.className || "")))
-    .map((n) => instText(n)).join(" ");
-  const close = dlg().findAll((n) => n.type === "button" && n.props["aria-label"] === "Close")[0];
-  if (close) TR.act(() => { close.props.onClick(); });
+  const page = dlg();
+  const read = (re) => page.findAll((n) => re.test(String(n.props.className || ""))).map((n) => instText(n));
+  const chosen = page.findAll((n) => n.type === "button" && n.props["aria-pressed"] === true && !n.props["data-st"]).map((n) => instText(n));
+  const inputs = page.findAll((n) => n.type === "input");
+  const cert = inputs[0] ? `Cert ${inputs[0].props.value}` : "";
+  const value = inputs[1] && inputs[1].props.value !== "" ? `Your reference value ${present.money(Number(inputs[1].props.value))}` : "";
+  const t = [...read(/^mcs-cd-ident$/), ...read(/^mcs-cd-established$/), ...chosen, ...read(/^mcs-oconflict$/), cert, value, ...read(/^mcs-ce-facts$/)].join(" ");
+  const back = page.findAll((n) => n.type === "button" && n.props.className === "mcs-cd-back")[0];
+  if (back) TR.act(() => { back.props.onClick(); });
   return t;
 };
 const tileNodes = (r) => r.root.findAll((n) => n.type === "li" && String(n.props.className || "").includes("mcs-otile"));

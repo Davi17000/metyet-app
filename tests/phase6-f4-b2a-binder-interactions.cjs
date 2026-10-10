@@ -128,7 +128,7 @@ const tileFor = (r, re) => tiles(r).find((li) => re.test(flat(li)));
 const buttons = (r) => r.root.findAll((n) => n.type === "button");
 const btn = (r, re) => buttons(r).find((b) => re.test(flat(b))) || null;
 const press = async (b) => { assert(b, "no such control"); await TR.act(async () => { b.props.onClick({ preventDefault() {} }); }); await settle(); };
-const sheet = (r) => r.root.findAll((n) => n.props && n.props.role === "dialog" && /^Card: /.test(String(n.props["aria-label"] || "")))[0] || null;
+const sheet = (r) => r.root.findAll((n) => n.props && n.props.role === "dialog" && /^(Card|Your (Goal|copy)): /.test(String(n.props["aria-label"] || "")))[0] || null;
 const chooser = (r) => r.root.findAll((n) => n.props && n.props.role === "dialog" && n.props["aria-label"] === "Where should this go?" && cls(n).includes("mcs-choose"))[0] || null;
 const prompt = (r) => r.root.findAll((n) => n.props && n.props.role === "dialog" && n.props["aria-label"] === "New binder")[0] || null;
 const dest = (r, id) => chooser(r).findAll((n) => n.type === "button" && n.props["data-dest"] === id)[0];
@@ -138,7 +138,7 @@ const typeName = async (r, v) => {
   await TR.act(async () => { input.props.onChange({ target: { value: v } }); });
 };
 const writes = (sent) => sent.filter(([k]) => k !== "step").map(([k]) => k);
-const snackText = (r) => { const s = r.root.findAll((n) => cls(n) === "mcs-snack-wrap")[0]; return s ? flat(s) : ""; };
+const snackText = (r) => { const s = r.root.findAll((n) => cls(n).split(" ").includes("mcs-snack-wrap"))[0]; return s ? flat(s) : ""; };
 const openCovers = (r) => r.root.findAll((n) => n.props && n.props["data-binder"] && cls(n).split(" ").includes("open")).map((n) => n.props["data-binder"]);
 
 /* ============================================================== A */
@@ -202,9 +202,10 @@ describe("A. one visual language for the four states", () => {
     assert(!tileFor(r, /Raw · Damaged/).findAll((n) => n.props && n.props["data-collecting"]).length, "an unsorted copy wears a state");
     assert(tileFor(r, /Charizard/).findAll((n) => n.props && n.props["data-state-icon"] === "primary").length === 1, "no icon on the chip");
     await openCard(r, /Charizard/);
+    /* RESTATED (P6-F4 B2B): the saved card's page offers the record's own pair, in the shared language */
     const states = sheet(r).findAll((n) => n.type === "button" && n.props["data-st"]);
-    eq(json(states.map((b) => [b.props["data-st"], flat(b)])), json([["primary", "Primary Actively hunting"], ["secondary", "Secondary Interested"],
-      ["pc", "PC A keeper"], ["trade", "Trade / Sell Available for trade or sale"]]));
+    eq(json(states.map((b) => [b.props["data-st"], flat(b)])), json([["primary", "Primary I'm actively looking for this."],
+      ["secondary", "Secondary I'm interested in this card."]]));
     assert(states.every((b) => b.findAll((n) => n.props && n.props["data-state-icon"] === b.props["data-st"]).length === 1), "a state button has no icon");
   });
   test("Browse markers and the Phase 6 card's choices read the same mapping", () => {

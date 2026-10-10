@@ -103,9 +103,9 @@ import { useCardDescriptions } from "../card-descriptions.js";
 import CardArt from "../../card-art.jsx";
 import CardSpecification from "../CardSpecification.jsx";
 import { versionLabel } from "../CardDetail.jsx";
-import { STATE_STYLE, StateChip, StateIcon } from "../states.jsx";
+import { StateChip } from "../states.jsx";
+import CardEdit from "../CardEdit.jsx";
 import Collection from "./Collection.jsx";
-import { Fact } from "../parts.jsx";
 import { rows, text, plural, byRecency, indexById, cardTitle, criteriaLine, gradeLine,
   statusLabel, isGraded, money, day, photoNote, gradeConflictLine } from "../present.js";
 
@@ -269,30 +269,6 @@ const FILING_REFUSED = Object.freeze({
 });
 const STALE_REFUSALS = new Set(["not-found", "binder-archived"]);
 
-/* THE FOUR STATES, IN THE TWO PAIRS THE DOMAIN ACTUALLY HAS (P6-4).
-   Primary and Secondary are a GOAL's tier — a card you are looking for — and
-   change with `updateGoalTier`. PC and Trade / Sell are an OWNED COPY's
-   disposition and change with `setCollectorCopyKept` / `setCollectorCopyOffered`.
-   A Goal and a copy are different objects: there is no command that turns one
-   into the other, and composing one (add, file, remove) could half-succeed and
-   deletes a record — so the sheet never does it. A tap across the pairs
-   explains instead, and points at the full card, where a copy can be recorded
-   or a Goal started beside this one. */
-/* Labels and messages are the shared language's (states.jsx, P6-F4 B2A). */
-const STATE_PAIRS = Object.freeze([
-  { kind: "goal", title: "Looking for it", states: ["primary", "secondary"].map((m) => [m, STATE_STYLE[m].label, STATE_STYLE[m].message]) },
-  { kind: "copy", title: "Own it", states: ["pc", "trade"].map((m) => [m, STATE_STYLE[m].label, STATE_STYLE[m].message]) },
-]);
-const ACROSS = Object.freeze({
-  goal: "PC and Trade / Sell describe a copy you own. This is a card you're looking for, and MetYet won't turn it into a copy. If you've got one, record it from the full card — this Goal stays until you remove it.",
-  copy: "Primary and Secondary are Goals — cards you're looking for. This is a copy you own, and MetYet won't turn it into a Goal. To look for another copy, start a Goal from the full card.",
-});
-/* What the server's refusal means for a state change, in a sentence. */
-const STATE_REFUSED = Object.freeze({
-  "goal-locked": "This Goal is part of an active deal, so it stays Primary until that deal ends. Nothing was changed.",
-  "not-found": "This has changed since the screen was drawn. The latest is shown now; nothing was changed.",
-  "not-owner": "That isn't yours to change.",
-});
 /* How long a confirmation stays before it gets out of the way. Move and Remove
    stay permanently available in the card sheet and the binder list. */
 const TOAST_MS = 6000;
@@ -372,17 +348,9 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
      tile: the facts Your Cards always showed, its Binder choice, and a way
      into the Card Specification. One at a time. */
   const [detailKey, setDetailKey] = useState(null);
-  /* THE CARD SHEET (P6-4): a state change in flight (one at a time, guarded by
-     a ref for the same reason filing is), its confirmation once the server has
-     answered, a tap across the pairs being explained, the binder list, and the
-     card's secondary facts — each shown only when asked for. */
-  const [changing, setChanging] = useState(null);   // { key, to }
-  const changingRef = useRef(null);
-  const [stateAck, setStateAck] = useState(null);   // { key, to }
-  const [across, setAcross] = useState(null);       // key of the object whose cross-pair tap is explained
-  const [stateProblem, setStateProblem] = useState(null);
-  const [moving, setMoving] = useState(false);       // the Move chooser is open for the sheet's card
-  const [moreOpen, setMoreOpen] = useState(false);
+  /* THE SAVED CARD'S PAGE (P6-F4 B2B, CardEdit) keeps its own answers; here
+     is only whether its Move chooser is open. */
+  const [moving, setMoving] = useState(false);       // the Move chooser is open for the open card
   /* + NEW BINDER WHILE MOVING (P6-F4 B2A): the card waiting for its new
      binder's name, and what the name prompt says while it works. */
   const [naming, setNaming] = useState(null);       // { key, name, busy, problem }
@@ -392,7 +360,7 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
      the state from before the first re-rendered (the same guard filing uses). */
   const creatingRef = useRef(false);
   const openSheet = (key) => {
-    setDetailKey(key); setAcross(null); setStateProblem(null); setStateAck(null); setMoving(false); setMoreOpen(false);
+    setDetailKey(key); setMoving(false); setProblem(null);   // an old warning is about something else
   };
   /* FILING (P6-3): the card being carried, the one being filed (one at a
      time — a second gesture while a command is out is ignored), and the one
@@ -409,11 +377,6 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
     const t = setTimeout(() => setToast(null), TOAST_MS);
     return () => clearTimeout(t);
   }, [toast]);
-  useEffect(() => {
-    if (!stateAck) return undefined;
-    const t = setTimeout(() => setStateAck(null), 2500);
-    return () => clearTimeout(t);
-  }, [stateAck]);
   /* The landed highlight is a moment, not a state: it clears itself. */
   useEffect(() => {
     if (!landedKey) return undefined;
@@ -515,7 +478,7 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
   const filable = (o) => (o.kind === "goal" || o.kind === "copy") && !!onFileObject && !!onUnfileObject;
   const binderName = (id) => { const b = binders.find((x) => x.id === id); return b ? text(b.name) || "A binder" : null; };
   const fileTo = async (o, dest, undoing = false, made = null) => {
-    if (filingRef.current || changingRef.current || !filable(o)) return false;
+    if (filingRef.current || !filable(o)) return false;
     /* `made`: { binderId, name } when the destination is a binder this move
        just created. A failure then says the binder exists and offers to try
        the MOVE again into it — never to make it again. */
@@ -629,43 +592,20 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
 
   /* A CARD THAT IS GONE ON RE-READ takes its sheet with it — and the reason
      moves to the bar, so the sheet never just vanishes unexplained. */
+  /* (A card its owner has just removed, from its own page, goes quietly: that
+     is the outcome they asked for, and the bar says so instead.) */
+  const removingRef = useRef(null);
   useEffect(() => {
     if (!detailKey || objs.some((x) => x.key === detailKey)) return;
-    setDetailKey(null);
-    setProblem(stateProblem || "That card has changed elsewhere and is no longer here. The latest is shown.");
-    setStateProblem(null);
-  }, [objs, detailKey, stateProblem]);
-
-  /* ONE STATE CHANGE, ONE EXISTING COMMAND, SAID WHEN THE SERVER HAS ANSWERED.
-     Only within a pair; never across it (see STATE_PAIRS). */
-  const pairOf = (m) => (m === "primary" || m === "secondary" ? "goal" : "copy");
-  const changeState = async (o, to) => {
-    setAcross(null); setStateProblem(null);
-    if (pairOf(to) !== o.kind) { setStateAck(null); setAcross(o.key); return false; }
-    if (to === o.meaning || changingRef.current || filingRef.current || !onSpecify) return false;
-    const step = o.kind === "goal" ? { kind: "how-hard", goalId: o.thing.id, tier: to }
-      : to === "pc" ? { kind: "keeping", copyId: o.thing.id, keeping: true }
-        : { kind: "offering", copyId: o.thing.id, offered: true };
-    changingRef.current = o.key; setChanging({ key: o.key, to }); setStateAck(null);
-    try {
-      const answer = await onSpecify(step, o.thing.canonicalCardId || null);
-      if (answer && answer.ok === false) {
-        setStateProblem(STATE_REFUSED[answer.refused] || "MetYet would not make that change. Nothing was changed.");
-        if (STALE_REFUSALS.has(answer.refused) && onRefresh) { try { await onRefresh(); } catch (e) { /* said already */ } }
-        return false;
-      }
-      setStateAck({ key: o.key, to });
-      return true;
-    } catch (error) {
-      setStateProblem("MetYet lost contact, so it can't tell whether that changed. The latest is shown — check before trying again.");
-      if (onRefresh) { try { await onRefresh(); } catch (e) { /* said already */ } }
-      return false;
-    } finally {
-      changingRef.current = null; setChanging(null);
+    setDetailKey(null); setMoving(false);
+    if (removingRef.current && removingRef.current.key === detailKey) {
+      setToast({ text: removingRef.current.said, undo: null }); removingRef.current = null; return;
     }
-  };
+    setProblem("That card has changed elsewhere and is no longer here. The latest is shown.");
+  }, [objs, detailKey]);
+
   const hold = useHold((o, origin) => {
-    if (!filable(o) || specifying || detailKey || renaming || filingRef.current || changingRef.current) return;
+    if (!filable(o) || specifying || detailKey || renaming || filingRef.current) return;
     setHeld({ o, origin });
   });
   /* ONE DESTINATION, WHICHEVER WAY IT WAS CHOSEN — carried (press and
@@ -745,7 +685,6 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
           {status ? <span className="mcs-ostatus">{status}</span> : null}
           {conflict ? <span className="mcs-oconflict">{`Says ${conflict}`}</span> : null}
           {filingKey === o.key ? <span className="mcs-ostatus" role="status">Filing…</span> : null}
-          {changing && changing.key === o.key ? <span className="mcs-ostatus" role="status">Saving…</span> : null}
         </span>
       </li>
     );
@@ -754,125 +693,27 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
     <ul className="mcs-ogrid">{list.map((o) => tile(o, showHome))}</ul>
   );
 
-  /* THE CARD SHEET (P6-4, from Phase 6's object sheet). One Goal or copy:
-     the card, then what it is to you (four states, in the two pairs the
-     domain has), then where it lives, then — only when asked — its facts and
-     the full card. Nothing changes until a choice is tapped, and nothing is
-     said to have changed until the server has answered. */
-  const detailsSheet = () => {
+  /* A SAVED CARD, FULL SCREEN (P6-F4 B2B): one Goal or copy, by its own id,
+     opened on its saved answers (CardEdit). Its Move is Batch 2A's chooser;
+     its saves and removals are the steps the entrance already maps. */
+  const cardEdit = () => {
     const o = detailKey ? objs.find((x) => x.key === detailKey) || null : null;
-    if (!o) return null;
-    const known = described[o.cardKey] || null;
-    const name = nameOf(o);
-    const copy = o.kind === "copy" ? o.thing : null;
-    const goal = o.kind === "goal" ? o.thing : null;
-    const go = openCard(o);
-    const conflict = copy ? gradeConflictLine(copy) : null;
+    if (!o || (o.kind !== "goal" && o.kind !== "copy")) return null;
     const close = () => { setDetailKey(null); setMoving(false); };
-    const busyNow = !!changing || !!filingKey;
-    const ident = [known && text(known.expansionName), known && known.collectorNumber ? `#${known.collectorNumber}` : null,
-      known && known.finish ? versionLabel(known) : null].filter(Boolean).join(" · ");
-    const ack = stateAck && stateAck.key === o.key && o.meaning === stateAck.to ? stateAck.to : null;
+    const save = onSpecify ? (step, id) => {
+      if (step.kind === "stop-looking" || step.kind === "forget-copy") {
+        removingRef.current = { key: o.key, said: step.kind === "stop-looking" ? `Stopped looking for ${nameOf(o)}.` : `Removed this copy of ${nameOf(o)}.` };
+      }
+      return Promise.resolve(onSpecify(step, id)).then((answer) => {
+        if (answer && answer.ok === false) removingRef.current = null;   // refused: nothing is going
+        return answer;
+      });
+    } : null;
     return (
-      <div className="mcs-sheet-scrim mcs-osheet-scrim" role="dialog" aria-modal="true" aria-label={`Card: ${name}`}
-        onClick={(e) => { if (e.target === e.currentTarget) close(); }}
-        onKeyDown={(e) => { if (e.key === "Escape") close(); }}>
-        <div className="mcs-sheet mcs-osheet">
-          <button type="button" className="mcs-x" aria-label="Close" onClick={close} autoFocus>✕</button>
-          <div className="mcs-ohero">
-            <CardArt src={known && known.imageSmall} name={known && known.cardName}
-              wrap="mcs-ohero-art" plate="mcs-art-plate" decorative card={phOf(o, known)} />
-          </div>
-          <div className="mcs-oident">
-            <h2>{name}</h2>
-            {ident ? <p>{ident}</p> : null}
-          </div>
-
-          <section className="mcs-osect" aria-label="What is this card to you?">
-            <h3>What is this card to you?</h3>
-            {STATE_PAIRS.map((pair) => (
-              <div key={pair.kind} className={`mcs-opair${pair.kind === o.kind ? "" : " other"}`}>
-                <span className="mcs-opair-t">{pair.title}</span>
-                <div className="mcs-states" role="group" aria-label={pair.title}>
-                  {pair.states.map(([m, label, sub]) => {
-                    const on = o.meaning === m;
-                    const saving = changing && changing.key === o.key && changing.to === m;
-                    const mine = pair.kind === o.kind;
-                    return (
-                      <button key={m} type="button" data-meaning={m} data-st={m}
-                        className={`mcs-state${on ? " on" : ""}${saving ? " saving" : ""}${ack === m ? " justset" : ""}${mine ? "" : " across"}`}
-                        aria-pressed={on} aria-disabled={!mine || busyNow ? true : undefined}
-                        onClick={() => (busyNow ? null : changeState(o, m))}>
-                        <span className="mcs-chead"><StateIcon kind={m} size={14} /><b>{label}</b></span>
-                        <span>{saving ? "Saving…" : sub}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-            {o.meaning === "owned" ? (
-              <p className="mcs-dim mcs-onote">You haven&apos;t said yet whether you&apos;re keeping this copy or open to moving it.</p>
-            ) : null}
-            <p className={`mcs-stateack${ack ? " on" : ""}`} role="status" aria-live="polite">{ack ? `✓ Now ${MEANING[ack]}` : ""}</p>
-            {stateProblem ? <p className="mcs-add-problem" role="alert">{stateProblem}</p> : null}
-            {across === o.key ? (
-              <div className="mcs-across" role="note">
-                <p>{ACROSS[o.kind]}</p>
-                <p className="mcs-goal-do">
-                  {go ? <button className="mcs-go" type="button" onClick={() => { close(); go(); }}>Open full card</button> : null}
-                  <button className="mcs-go quiet" type="button" onClick={() => setAcross(null)}>OK</button>
-                </p>
-              </div>
-            ) : null}
-            <p className="mcs-oconfig"><span>{goal ? "Looking for" : "Grade"}</span>
-              <b>{goal ? criteriaLine(goal.desired) || "Any grade or condition" : o.qual || "Not stated"}</b></p>
-            {conflict ? <p className="mcs-oconflict">{`Says ${conflict}`}</p> : null}
-          </section>
-
-          {filable(o) ? (
-            <section className="mcs-osect" aria-label="Binder">
-              <h3>Binder</h3>
-              <p className="mcs-ohome">
-                {o.homeId ? `In ${o.homeName}${o.homeAway ? " (put away)" : ""}` : "Unfiled"}
-                {filingKey === o.key ? <span className="mcs-dim" role="status">{" · Filing…"}</span> : null}
-              </p>
-              {/* ONE OBVIOUS MOVE (P6-F4 B2A): every destination — another
-                  binder, Unfiled, or a new binder — is in its chooser. */}
-              <p className="mcs-oacts">
-                <button type="button" className="mcs-go mcs-omove-btn" disabled={busyNow} aria-haspopup="dialog"
-                  aria-expanded={moving} onClick={() => setMoving(true)}>Move</button>
-              </p>
-              <p className="mcs-dim mcs-onote">A binder is where it belongs. Moving it doesn&apos;t change what it is to you.</p>
-            </section>
-          ) : null}
-
-          <section className="mcs-osect">
-            <button type="button" className="mcs-omore" aria-expanded={moreOpen} onClick={() => setMoreOpen((v) => !v)}>
-              {copy ? "Copy details" : "Goal details"}
-            </button>
-            {moreOpen ? (
-              <div className="mcs-detail-facts">
-                {copy ? (
-                  <>
-                    <Fact label={isGraded(copy) ? "Cert" : "Serial"} value={text(copy.cert)} />
-                    <Fact label="Your reference value" value={money(copy.market)} />
-                    <Fact label="Added" value={day(copy.addedAt)} />
-                    <Fact label="Photos" value={photoNote(copy.photos)} />
-                    <Fact label="Status" value={statusLabel(copy.status)} />
-                  </>
-                ) : (
-                  <Fact label="Looking for" value={criteriaLine(goal && goal.desired) || "any grade or condition"} />
-                )}
-              </div>
-            ) : null}
-            {go ? (
-              <button type="button" className="mcs-linkish mcs-ofull" onClick={() => { close(); go(); }}>
-                Open full card — grade, copies, and more ›</button>
-            ) : null}
-          </section>
-        </div>
-      </div>
+      <CardEdit key={o.key} kind={o.kind} thing={o.thing} known={described[o.cardKey] || null}
+        homeName={o.homeName} homeAway={o.homeAway} busy={!!filingKey} onClose={close} onSave={save}
+        onMove={filable(o) ? () => setMoving(true) : null} onRefresh={onRefresh}
+        onRemoved={(said) => { removingRef.current = null; close(); setToast({ text: said, undo: null }); }} />
     );
   };
 
@@ -896,7 +737,8 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
      there without opening anything — and gone after a few seconds. A
      problem stays until it is dismissed or the next action. */
   const feedback = () => (problem || toast ? (
-    <div className="mcs-snack-wrap">
+    /* over a card's page, the bar rises above the page's own dock (P6-F4 B2B) */
+    <div className={`mcs-snack-wrap${detailKey ? " over-page" : ""}`}>
       {problem ? (
         <p className="mcs-snack warn" role="alert">
           <span>{typeof problem === "string" ? problem : problem.text}</span>
@@ -1070,7 +912,7 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
     <div className="mcs-binders">
       {spec()}
       {renameSheet}
-      {detailsSheet()}
+      {cardEdit()}
       {controls()}
       {feedback()}
 

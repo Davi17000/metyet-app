@@ -1,5 +1,10 @@
 /* ============================================================================
    PHASE 6 P6-4 — THE FOUR-STATE CARD SHEET, AND A LIGHTER CONFIRMATION
+   RESTATED (P6-F4 Batch 2B): the bottom sheet is now the full-screen saved-card
+   page (client/collector/CardEdit.jsx). Every claim below is made of that page.
+   Two are SUPERSEDED by the founder's 2B brief and say so where they stand:
+   a tap no longer saves at once (Save Changes does, sending only what changed),
+   and a Goal or copy CAN now be removed from its page, behind a confirmation.
    Reference: phase6-prototype-01 @ fca2c61 (ObjectSheet, iteration 8C).
    A tap on a Goal or copy opens ITS sheet: the card, what it is to you, where
    it lives, and — only when asked — its facts and the full card.
@@ -54,9 +59,9 @@ const STATE = () => ({
     { id: "g-char", collectorId: ME, canonicalCardId: "cc-char", tier: "primary", desired: { grade: "PSA 9" }, createdAt: `${AT}5` },
     { id: "g-ven", collectorId: ME, canonicalCardId: "cc-ven", tier: "secondary", createdAt: `${AT}5` }],
   collectorCopies: [
-    { id: "k-char", collectorId: ME, canonicalCardId: "cc-char", grading: { state: "graded", label: "PSA 8" }, keeping: true, offered: false, status: "available", cert: "C-8", addedAt: `${AT}6` },
-    { id: "k-pika", collectorId: ME, canonicalCardId: "cc-pika", grading: { state: "graded", label: "PSA 7" }, offered: true, status: "available", addedAt: `${AT}6` },
-    { id: "k-ven", collectorId: ME, canonicalCardId: "cc-ven", grading: { state: "graded", label: "PSA 6" }, offered: false, status: "available", addedAt: `${AT}6` }],
+    { id: "k-char", collectorId: ME, canonicalCardId: "cc-char", grade: "PSA 8", grading: { state: "graded", label: "PSA 8" }, keeping: true, offered: false, status: "available", cert: "C-8", addedAt: `${AT}6` },
+    { id: "k-pika", collectorId: ME, canonicalCardId: "cc-pika", grade: "PSA 7", grading: { state: "graded", label: "PSA 7" }, offered: true, status: "available", addedAt: `${AT}6` },
+    { id: "k-ven", collectorId: ME, canonicalCardId: "cc-ven", grade: "PSA 6", grading: { state: "graded", label: "PSA 6" }, offered: false, status: "available", addedAt: `${AT}6` }],
   binderMemberships: [
     { id: "m1", binderId: "b-gen1", goalId: "g-char" },
     { id: "m2", binderId: "b-gen1", collectorCopyId: "k-char" }],
@@ -68,6 +73,10 @@ const door = { describe: async (ids) => ({ cards: ids.map((id) => CARDS[id]).fil
 /* THE LIVE PROJECTION: what a confirmed command would leave, as the store
    would re-read it. Refusals and lost contact leave it exactly as it was. */
 const applyStep = (s, step) => {
+  if (step.kind === "wanted-copy") return { ...s, goals: s.goals.map((g) => (g.id === step.goalId ? { ...g, desired: step.desired } : g)) };
+  if (step.kind === "correct-copy") return { ...s, collectorCopies: s.collectorCopies.map((c) => (c.id === step.copyId ? { ...c, ...step.patch } : c)) };
+  if (step.kind === "stop-looking") return { ...s, goals: s.goals.filter((g) => g.id !== step.goalId), binderMemberships: s.binderMemberships.filter((m) => m.goalId !== step.goalId) };
+  if (step.kind === "forget-copy") return { ...s, collectorCopies: s.collectorCopies.filter((c) => c.id !== step.copyId), binderMemberships: s.binderMemberships.filter((m) => m.collectorCopyId !== step.copyId) };
   if (step.kind === "how-hard") return { ...s, goals: s.goals.map((g) => (g.id === step.goalId ? { ...g, tier: step.tier } : g)) };
   if (step.kind === "keeping") return { ...s, collectorCopies: s.collectorCopies.map((c) => (c.id === step.copyId ? { ...c, keeping: true, offered: false } : c)) };
   if (step.kind === "offering") return { ...s, collectorCopies: s.collectorCopies.map((c) => (c.id === step.copyId ? { ...c, offered: true, keeping: false } : c)) };
@@ -120,9 +129,13 @@ const yourCards = (r) => r.root.findAll((n) => n.type === "section" && n.props["
 const tileOf = (r, state, name) => yourCards(r).findAll((n) => n.type === "li" && cls(n).includes("mcs-otile"))
   /* RESTATED (P6-F4 B1): the card's name now leads the identity line (mcs-oq), after its state */
   .find((li) => flat(li.findAll((n) => /\bmcs-mk\b/.test(cls(n)))[0]) === state && new RegExp(`^${name}`).test(flat(li.findAll((n) => cls(n) === "mcs-oq")[0])));
-const sheet = (r) => r.root.findAll((n) => n.props && n.props.role === "dialog" && /^Card: /.test(String(n.props["aria-label"] || "")))[0] || null;
-const choice = (r, m) => sheet(r).findAll((n) => n.type === "button" && n.props["data-meaning"] === m)[0];
-const snack = (r) => r.root.findAll((n) => cls(n) === "mcs-snack-wrap")[0] || null;
+/* RESTATED (P6-F4 B2B): the saved card's full-screen page; its state choices
+   are the record's own pair, marked with the shared state language (data-st). */
+const sheet = (r) => r.root.findAll((n) => n.props && n.props.role === "dialog" && /^Your (Goal|copy): /.test(String(n.props["aria-label"] || "")))[0] || null;
+const choice = (r, m) => (sheet(r).findAll((n) => n.type === "button" && n.props["data-st"] === m)[0] || null);
+const saveBtn = (r) => sheet(r).findAll((n) => n.type === "button" && cls(n).includes("mcs-cd-add"))[0];
+const save = async (r) => { await TR.act(async () => { saveBtn(r).props.onClick(); }); await settle(); };
+const snack = (r) => r.root.findAll((n) => cls(n).split(" ").includes("mcs-snack-wrap"))[0] || null;
 /* RESTATED (P6-F4 B2A): the sheet's binder controls are ONE "Move", whose
    chooser holds every destination — another binder, Unfiled, + New binder.
    The same commands; the claims below are unchanged. */
@@ -133,40 +146,44 @@ const open = async (r, state, name) => {
   assert(t, `no ${state} ${name} tile`);
   await TR.act(async () => { t.findAll((n) => n.type === "button")[0].props.onClick({ preventDefault() {} }); });
   await settle();
-  assert(sheet(r), "the card sheet did not open");
+  assert(sheet(r), "the card's page did not open");
 };
 const steps = (sent) => sent.filter(([k]) => k === "step").map(([, s]) => s);
 
 /* ============================================================== A */
 describe("A. a Goal: Primary and Secondary", () => {
-  test("the sheet opens on the Goal's tier, in the 'Looking for it' pair", async () => {
+  test("the page opens on the Goal's saved tier and wanted grade; only its own pair is offered", async () => {
     const { r, sent } = await show();
     await open(r, "Primary", "Charizard");
     eq(choice(r, "primary").props["aria-pressed"], true);
     eq(choice(r, "secondary").props["aria-pressed"], false);
-    for (const m of ["pc", "trade"]) eq(choice(r, m).props["aria-pressed"], false, `${m} claimed for a Goal`);
-    assert(/Looking for PSA 9/.test(flat(sheet(r))), "the wanted grade is not shown");
-    /* RESTATED (P6-F4 B1): the version in a collector's words, never the internal value */
-    assert(/Charizard/.test(flat(sheet(r))) && /Base Set · #4 · Holo/.test(flat(sheet(r))) && !/holofoil/.test(flat(sheet(r))), "the card's identity");
+    for (const m of ["pc", "trade"]) eq(choice(r, m), null, `${m} offered on a Goal`);
+    const pressed = sheet(r).findAll((n) => n.type === "button" && n.props["aria-pressed"] === true).map(flat);
+    assert(pressed.includes("Graded") && pressed.includes("PSA 9"), "the wanted grade is not selected: " + pressed);
+    assert(/Charizard/.test(flat(sheet(r))) && /Base Set · 4/.test(flat(sheet(r))) && /Holo — the version you saved/.test(flat(sheet(r))) && !/holofoil/.test(flat(sheet(r))), "the card's identity");
     eq(sent.length, 0, "opening wrote something");
   });
-  test("Secondary: one updateGoalTier step; said only after the answer; the tile follows", async () => {
+  test("Secondary: one updateGoalTier step, on Save; said only after the answer; the tile follows", async () => {
+    /* SUPERSEDED IN PART (P6-F4 B2B): a tap chooses; Save Changes sends. */
     const s = await show({ hold: true });
     await open(s.r, "Primary", "Charizard");
-    await TR.act(async () => { choice(s.r, "secondary").props.onClick(); });
+    await press(choice(s.r, "secondary"));
+    eq(steps(s.sent).length, 0, "choosing sent something");
+    await TR.act(async () => { saveBtn(s.r).props.onClick(); });
     eq(json(steps(s.sent)), json([{ kind: "how-hard", goalId: "g-char", tier: "secondary" }]));
-    assert(/Saving…/.test(flat(choice(s.r, "secondary"))), "no pending state");
+    assert(/Saving…/.test(flat(saveBtn(s.r))), "no pending state");
     assert(!/✓/.test(flat(sheet(s.r))), "success claimed before the answer");
-    eq(choice(s.r, "primary").props["aria-pressed"], true, "the new state shown before the server agreed");
     await TR.act(async () => { s.gates[0].resolve({ ok: true }); }); await settle();
     eq(choice(s.r, "secondary").props["aria-pressed"], true);
-    assert(/✓ Now Secondary/.test(flat(sheet(s.r))), "no acknowledgement");
+    assert(/✓ Saved — how important it is\./.test(flat(sheet(s.r))), "no acknowledgement: " + flat(sheet(s.r)));
     assert(tileOf(s.r, "Secondary", "Charizard"), "the tile did not follow the server");
   });
-  test("tapping the current state sends nothing", async () => {
+  test("the current state chosen again: nothing to save", async () => {
     const { r, sent } = await show();
     await open(r, "Primary", "Charizard");
     await press(choice(r, "primary"));
+    eq(saveBtn(r).props["aria-disabled"], true, "a no-op offered to save");
+    await save(r);
     eq(sent.length, 0);
   });
 });
@@ -176,8 +193,8 @@ describe("B. a copy: PC and Trade / Sell", () => {
   test("PC → Trade / Sell is setCollectorCopyOffered; back is setCollectorCopyKept", async () => {
     const { r, sent } = await show();
     await open(r, "PC", "Charizard");
-    await press(choice(r, "trade"));
-    await press(choice(r, "pc"));
+    await press(choice(r, "trade")); await save(r);
+    await press(choice(r, "pc")); await save(r);
     eq(json(steps(sent)), json([{ kind: "offering", copyId: "k-char", offered: true }, { kind: "keeping", copyId: "k-char", keeping: true }]));
     eq(choice(r, "pc").props["aria-pressed"], true);
   });
@@ -185,46 +202,43 @@ describe("B. a copy: PC and Trade / Sell", () => {
     const { r, sent } = await show();
     await open(r, "Owned", "Venusaur");
     eq(choice(r, "pc").props["aria-pressed"], false); eq(choice(r, "trade").props["aria-pressed"], false);
-    assert(/haven't said yet whether you're keeping this copy/.test(flat(sheet(r))), flat(sheet(r)));
-    await press(choice(r, "pc"));
+    await press(choice(r, "pc")); await save(r);
     eq(json(steps(sent)), json([{ kind: "keeping", copyId: "k-ven", keeping: true }]));
-    assert(/✓ Now PC/.test(flat(sheet(r))));
+    assert(/✓ Saved — Personal collection\./.test(flat(sheet(r))));
   });
-  test("a copy's grade is shown at once; technical facts wait until asked", async () => {
+  test("a copy's grade is selected at once; its certificate is in Copy details", async () => {
+    /* RESTATED (P6-F4 B2B): the founder brought certificate and value onto the page, editable */
     const { r } = await show();
     await open(r, "PC", "Charizard");
-    assert(/Grade PSA 8/.test(flat(sheet(r))));
-    assert(!/C-8/.test(flat(sheet(r))), "cert shown before it was asked for");
-    await press(btn(r, /^Copy details$/));
-    assert(/C-8/.test(flat(sheet(r))));
+    const pressed = sheet(r).findAll((n) => n.type === "button" && n.props["aria-pressed"] === true).map(flat);
+    assert(pressed.includes("Graded") && pressed.includes("PSA 8"), pressed);
+    const cert = sheet(r).findAll((n) => n.type === "input")[0];
+    eq(cert.props.value, "C-8");
   });
 });
 
 /* ============================================================== C */
 describe("C. a Goal is never turned into a copy, nor a copy into a Goal", () => {
-  test("on a Goal, PC and Trade / Sell send nothing and say why", async () => {
+  test("on a Goal, PC and Trade / Sell are not offered, and the page says why", async () => {
     const { r, sent } = await show();
     await open(r, "Primary", "Charizard");
-    for (const m of ["pc", "trade"]) {
-      eq(choice(r, m).props["aria-disabled"], true, `${m} looks available on a Goal`);
-      await press(choice(r, m));
-      assert(/describe a copy you own.*won't turn it into a copy/.test(flat(sheet(r))), flat(sheet(r)));
-    }
-    eq(sent.length, 0, "a cross-pair tap wrote something");
-    assert(btn(r, /^Open full card$/), "no way on to record a copy");
+    eq(choice(r, "pc"), null); eq(choice(r, "trade"), null);
+    assert(/This is a card you're looking for\. If you own one, add it from Browse — this Goal stays\./.test(flat(sheet(r))), flat(sheet(r)));
+    eq(sent.length, 0);
   });
-  test("on a copy, Primary and Secondary send nothing and say why", async () => {
+  test("on a copy, Primary and Secondary are not offered, and the page says why", async () => {
     const { r, sent } = await show();
     await open(r, "Trade / Sell", "Pikachu");
-    await press(choice(r, "primary"));
-    await press(choice(r, "secondary"));
+    eq(choice(r, "primary"), null); eq(choice(r, "secondary"), null);
+    assert(/This is a copy you own\. To look for another, start a Goal from Browse\./.test(flat(sheet(r))), flat(sheet(r)));
     eq(sent.length, 0);
-    assert(/Primary and Secondary are Goals.*won't turn it into a Goal/.test(flat(sheet(r))), flat(sheet(r)));
   });
-  test("the sheet holds no removal, conversion, or record-making step", () => {
-    const src = fs.readFileSync(path.join(ROOT, "client/collector/sections/Binder.jsx"), "utf8");
-    const kinds = [...src.matchAll(/kind: "([a-z-]+)"/g)].map((m) => m[1]).filter((k) => !["goal", "copy", "earlier", "binder"].includes(k));
-    eq(json([...new Set(kinds)].sort()), json(["how-hard", "keeping", "offering"]), "the sheet's steps");
+  test("the page's steps: changes to the same record, and removal — never conversion or record-making", () => {
+    /* SUPERSEDED IN PART (P6-F4 B2B): removal (stop-looking, forget-copy) is now on the page, behind a confirmation */
+    const src = fs.readFileSync(path.join(ROOT, "client/collector/CardEdit.jsx"), "utf8");
+    const kinds = [...src.matchAll(/kind: "([a-z-]+)"/g)].map((m) => m[1]);
+    eq(json([...new Set(kinds)].sort()), json(["correct-copy", "forget-copy", "how-hard", "keeping", "offering", "stop-looking", "wanted-copy"]), "the page's steps");
+    assert(!/start-looking|record-copy/.test(src), "the page can make a record");
   });
 });
 
@@ -233,7 +247,7 @@ describe("D. state and binder are independent", () => {
   test("changing state sends no filing and moves nothing", async () => {
     const { r, sent } = await show();
     await open(r, "Primary", "Charizard");
-    await press(choice(r, "secondary"));
+    await press(choice(r, "secondary")); await save(r);
     eq(sent.filter(([k]) => k !== "step").length, 0, "a state change filed something");
     assert(!("binderId" in steps(sent)[0]), "a state step named a binder");
     assert(/In Gen 1/.test(flat(sheet(r))), "the home moved with the state");
@@ -254,7 +268,7 @@ describe("D. state and binder are independent", () => {
     await press(btn(r, /^Move$/));
     await press(btn(r, /^Unfiled Take it out of Gen 1$/));
     eq(json(sent), json([["unfileObject", { goalId: "g-char" }]]));
-    assert(/Unfiled/.test(flat(sheet(r).findAll((n) => cls(n) === "mcs-ohome")[0])));
+    assert(/Unfiled/.test(flat(sheet(r))));
     eq(choice(r, "primary").props["aria-pressed"], true);
   });
   test("put-away binders are not offered as a destination", async () => {
@@ -271,62 +285,65 @@ describe("E. refusals are said, never claimed", () => {
   test("goal-locked: the reason, the old state kept, no ✓, no re-read needed", async () => {
     const { r, refreshes } = await show({ answer: () => ({ ok: false, refused: "goal-locked" }) });
     await open(r, "Primary", "Charizard");
-    await press(choice(r, "secondary"));
-    assert(/part of an active deal, so it stays Primary/.test(flat(sheet(r))), flat(sheet(r)));
-    eq(choice(r, "primary").props["aria-pressed"], true);
+    await press(choice(r, "secondary")); await save(r);
+    assert(/Nothing was saved: how hard you're looking could not be saved/.test(flat(sheet(r))), flat(sheet(r)));
+    assert(/active deal/i.test(flat(sheet(r))), "the reason is not said: " + flat(sheet(r)));
     assert(!/✓/.test(flat(sheet(r))));
     eq(refreshes.length, 0);
+    assert(tileOf(r, "Primary", "Charizard"), "the refused change reached the tile");
   });
   test("not-found (stale): said, and the screen re-reads", async () => {
     const { r, refreshes } = await show({ answer: () => ({ ok: false, refused: "not-found" }) });
     await open(r, "PC", "Charizard");
-    await press(choice(r, "trade"));
-    assert(/changed since the screen was drawn/.test(flat(sheet(r))));
+    await press(choice(r, "trade")); await save(r);
+    assert(/Nothing was saved/.test(flat(sheet(r))));
     eq(refreshes.length, 1, "a stale screen was not re-read");
-    eq(choice(r, "pc").props["aria-pressed"], true);
   });
   test("lost contact: said honestly, and re-read", async () => {
     const { r, refreshes } = await show({ answer: () => "throw" });
     await open(r, "PC", "Charizard");
-    await press(choice(r, "trade"));
+    await press(choice(r, "trade")); await save(r);
     assert(/lost contact/.test(flat(sheet(r))) && !/✓/.test(flat(sheet(r))));
     eq(refreshes.length, 1);
   });
-  test("a card that vanished on re-read closes its sheet rather than show a ghost", async () => {
+  test("a card that vanished on re-read closes its page rather than show a ghost", async () => {
     const { r } = await show({ answer: () => ({ ok: false, refused: "not-found" }),
       onRefresh: (s) => ({ ...s, collectorCopies: s.collectorCopies.filter((c) => c.id !== "k-char"),
         binderMemberships: s.binderMemberships.filter((m) => m.collectorCopyId !== "k-char") }) });
     await open(r, "PC", "Charizard");
-    await press(choice(r, "trade"));
-    eq(sheet(r), null, "the sheet still shows a card the server no longer has");
-    assert(/changed since the screen was drawn/.test(flat(snack(r))), "the sheet vanished without saying why");
+    await press(choice(r, "trade")); await save(r);
+    eq(sheet(r), null, "the page still shows a card the server no longer has");
+    assert(/changed elsewhere and is no longer here/.test(flat(snack(r))), "the page vanished without saying why");
   });
 });
 
 /* ============================================================== F */
 describe("F. one change at a time", () => {
-  test("two taps in one instant send one command", async () => {
+  test("two Saves in one instant send one command", async () => {
     const s = await show({ hold: true });
     await open(s.r, "PC", "Charizard");
-    await TR.act(async () => { choice(s.r, "trade").props.onClick(); choice(s.r, "trade").props.onClick(); });
+    await press(choice(s.r, "trade"));
+    await TR.act(async () => { saveBtn(s.r).props.onClick(); saveBtn(s.r).props.onClick(); });
     eq(steps(s.sent).length, 1, "a duplicate submission");
     await TR.act(async () => { s.gates[0].resolve({ ok: true }); }); await settle();
   });
-  test("while a state change is out, nothing can be filed and no other state is sent", async () => {
+  test("while a save is out, nothing can be filed and nothing else is sent", async () => {
     const s = await show({ hold: true });
     await open(s.r, "PC", "Charizard");
-    await TR.act(async () => { choice(s.r, "trade").props.onClick(); });
-    assert(btn(s.r, /^Move$/).props.disabled, "Move offered during a change");
-    await TR.act(async () => { choice(s.r, "pc").props.onClick(); });
+    await press(choice(s.r, "trade"));
+    await TR.act(async () => { saveBtn(s.r).props.onClick(); });
+    assert(btn(s.r, /^Move$/).props.disabled, "Move offered during a save");
     eq(s.sent.length, 1);
     await TR.act(async () => { s.gates[0].resolve({ ok: true }); }); await settle();
   });
-  test("while a filing is out, no state change is sent", async () => {
+  test("while a filing is out, nothing can be saved", async () => {
     const s = await show({ hold: true });
     await open(s.r, "PC", "Charizard");
     await press(btn(s.r, /^Move$/));
     await TR.act(async () => { btn(s.r, /^Mudkips$/).props.onClick(); });
     await TR.act(async () => { choice(s.r, "trade").props.onClick(); });
+    eq(saveBtn(s.r).props["aria-disabled"], true, "Save offered while a filing is out");
+    await TR.act(async () => { saveBtn(s.r).props.onClick(); });
     eq(json(s.sent.map(([k]) => k)), json(["fileObject"]));
     await TR.act(async () => { s.gates[0].resolve({ ok: true }); }); await settle();
   });
@@ -334,27 +351,27 @@ describe("F. one change at a time", () => {
 
 /* ============================================================== G */
 describe("G. confirmation: compact, at the foot, with Undo", () => {
-  test("after a filing from the sheet, the bar says it and offers Undo — outside the sheet", async () => {
+  test("after a filing from the page, the bar says it and offers Undo — outside the page", async () => {
     const { r, sent } = await show();
     await open(r, "PC", "Charizard");
     await press(btn(r, /^Move$/));
     await press(btn(r, /^Mudkips$/));
     const bar = snack(r);
     assert(bar && /Charizard is filed in Mudkips/.test(flat(bar)), "no confirmation bar");
-    assert(!sheet(r).findAll((n) => cls(n) === "mcs-snack-wrap").length, "the confirmation is inside the sheet");
+    assert(!sheet(r).findAll((n) => cls(n).split(" ").includes("mcs-snack-wrap")).length, "the confirmation is inside the page");
     await press(buttons(r).find((b) => cls(b) === "mcs-undo"));
     eq(json(sent[1]), json(["fileObject", { binderId: "b-gen1", collectorCopyId: "k-char" }]), "undo is the same command, backwards");
     assert(/Put back/.test(flat(snack(r))));
     assert(!buttons(r).some((b) => cls(b) === "mcs-undo"), "an undo of an undo");
   });
-  test("Undo without opening anything: after a drag-free filing elsewhere, the bar is on the screen itself", async () => {
+  test("Undo without the page: after a filing, the bar stays on the screen itself", async () => {
     const { r } = await show();
     await open(r, "Owned", "Venusaur");
     await press(btn(r, /^Move$/));
     await press(btn(r, /^Gen 1$/));
-    await press(buttons(r).find((b) => b.props["aria-label"] === "Close"));
+    await press(sheet(r).findAll((n) => n.type === "button" && cls(n) === "mcs-cd-back")[0]);
     eq(sheet(r), null);
-    assert(buttons(r).some((b) => cls(b) === "mcs-undo"), "Undo needs the sheet open");
+    assert(buttons(r).some((b) => cls(b) === "mcs-undo"), "Undo needs the page open");
   });
   test("Undo pressed twice in one instant sends one command", async () => {
     const s = await show();
@@ -395,43 +412,42 @@ describe("G. confirmation: compact, at the foot, with Undo", () => {
     eq(snack(r), null, "the confirmation stayed");
     assert(btn(r, /^Move$/), "Move is gone with it");
   });
-  test("the bar sits above the tab bar and an open sheet, below a filing; only it takes touches", () => {
+  test("the bar sits above the tab bar and the card page, below a filing; only it takes touches", () => {
     let r;
     TR.act(() => { r = TR.create(React.createElement(Shell, { state: { ...STATE(), collectors: [{ id: ME, name: "C" }] }, onSignOut() {} })); });
     const css = r.root.findAll((n) => n.type === "style").map((n) => n.children.join("")).join("\n");
     assert(/\.mcs-snack-wrap \{ position:fixed; left:0; right:0; z-index:45; pointer-events:none;[^}]*bottom:calc\(var\(--tabbar-h\) \+ 10px \+ env\(safe-area-inset-bottom, 0px\)\);/.test(css), "not above the tab bar");
     assert(/\.mcs-snack \{ pointer-events:auto;/.test(css), "the bar does not take its own touches");
-    assert(/\.mcs-sheet-scrim \{ position:fixed; inset:0; z-index:30;/.test(css) && /\.mcs-filing \{ position:fixed; inset:0; z-index:60;/.test(css), "layering");
+    assert(/\.mcs-cd \{ position:fixed; inset:0; z-index:28;/.test(css) && /\.mcs-filing \{ position:fixed; inset:0; z-index:60;/.test(css), "layering");
   });
 });
 
 /* ============================================================== H */
 describe("H. accessibility and shape", () => {
-  test("a modal dialog named for the card, Close first and focused, Escape closes", async () => {
+  /* (Escape is tested with a window stand-in in tests/phase6-f4-b2b-card-edit.cjs) */
+  test("a modal dialog named for the record; ‹ Binders first, and it closes the page", async () => {
     const { r } = await show();
     await open(r, "PC", "Charizard");
     eq(sheet(r).props["aria-modal"], "true");
-    const close = buttons(r).find((b) => b.props["aria-label"] === "Close");
-    eq(close.props.autoFocus, true);
-    await TR.act(async () => { sheet(r).props.onKeyDown({ key: "Escape" }); }); await settle();
+    eq(sheet(r).props["aria-label"], "Your copy: Charizard");
+    const first = sheet(r).findAll((n) => n.type === "button")[0];
+    eq(flat(first), "‹ Binders");
+    await TR.act(async () => { first.props.onClick(); }); await settle();
     eq(sheet(r), null);
   });
-  test("the four states are two labelled groups of pressed/unpressed buttons", async () => {
+  test("the state choices are pressed/unpressed buttons of the record's own pair", async () => {
     const { r } = await show();
     await open(r, "PC", "Charizard");
-    const groups = sheet(r).findAll((n) => n.props.role === "group").map((g) => g.props["aria-label"]);
-    eq(json(groups.slice(0, 2)), json(["Looking for it", "Own it"]));
-    for (const m of ["primary", "secondary", "pc", "trade"]) assert(typeof choice(r, m).props["aria-pressed"] === "boolean", m);
+    for (const m of ["pc", "trade"]) assert(typeof choice(r, m).props["aria-pressed"] === "boolean", m);
   });
-  test("thumb-sized: state choices 56px, Close and binder choices 44px", () => {
+  test("thumb-sized: Move and the binder destinations 44px or more", () => {
     let r;
     TR.act(() => { r = TR.create(React.createElement(Shell, { state: { ...STATE(), collectors: [{ id: ME, name: "C" }] }, onSignOut() {} })); });
     const css = r.root.findAll((n) => n.type === "style").map((n) => n.children.join("")).join("\n");
-    assert(/\.mcs-state \{ min-height:56px;/.test(css));
-    assert(/\.mcs-x \{[^}]*width:44px; height:44px;/.test(css));
-    assert(/\.mcs-oacts \.mcs-go, \.mcs-ochoice \{ min-height:44px; \}/.test(css));
+    assert(/\.mcs-ce \.mcs-ce-home \.mcs-go \{ min-height:44px;/.test(css), "Move is not thumb-sized");
+    assert(/\.mcs-dest \{[^}]*min-height:52px;/.test(css), "destinations are not thumb-sized");
   });
-  test("an earlier filing opens the full card, not an object sheet", async () => {
+  test("an earlier filing opens the full card, not an object page", async () => {
     const st = STATE(); st.binderEntries = [{ binderId: "b-mud", canonicalCardId: "cc-pika", addedAt: `${AT}1` }];
     const { r } = await show({ state: st });
     eq(r.root.findAll((n) => n.type === "li" && cls(n).includes("mcs-otile") && /Earlier filing/.test(flat(n))).length, 0, "history in Your Cards");
@@ -440,13 +456,14 @@ describe("H. accessibility and shape", () => {
 
 /* ============================================================== I */
 describe("I. boundaries", () => {
-  test("the section still names no command; the sheet uses the step words it was handed", () => {
-    const src = fs.readFileSync(path.join(ROOT, "client/collector/sections/Binder.jsx"), "utf8");
+  test("the section still names no command; the page uses the step words it was handed", () => {
     const { EXPOSED_COMMANDS } = require("../server/exposed-commands.js");
     eq(EXPOSED_COMMANDS.length, 29, "the production door is unchanged");
-    /* the same rule P6-2 holds: no command as a string the code could send */
-    for (const c of EXPOSED_COMMANDS) assert(!new RegExp(`["']${c}["']`).test(src), `Binder names ${c}`);
-    assert(/onSpecify\(step, o\.thing\.canonicalCardId \|\| null\)/.test(src), "state changes do not go through the bound steps");
+    for (const f of ["client/collector/sections/Binder.jsx", "client/collector/CardEdit.jsx"]) {
+      const src = fs.readFileSync(path.join(ROOT, f), "utf8");
+      for (const c of EXPOSED_COMMANDS) assert(!new RegExp(`["']${c}["']`).test(src), `${f} names ${c}`);
+    }
+    assert(/onSave\(step, thing\.canonicalCardId \|\| null\)/.test(fs.readFileSync(path.join(ROOT, "client/collector/CardEdit.jsx"), "utf8")), "changes do not go through the bound steps");
   });
 });
 

@@ -64,10 +64,10 @@ const STATE = () => ({
     { id: "g-mud", collectorId: ME, canonicalCardId: "cc-mud", tier: "primary", desired: { grade: "PSA 10" }, createdAt: `${AT}5` },
     { id: "g-ven", collectorId: ME, canonicalCardId: "cc-ven", tier: "secondary", desired: { grade: "PSA 9" }, createdAt: `${AT}5` }],
   collectorCopies: [
-    { id: "k-char", collectorId: ME, canonicalCardId: "cc-char", grading: { state: "graded", label: "PSA 8" }, keeping: true, offered: false, status: "available", addedAt: `${AT}6` },
-    { id: "k-blas", collectorId: ME, canonicalCardId: "cc-blas", grading: { state: "raw", label: "Raw · Near Mint" }, keeping: true, offered: false, status: "available", addedAt: `${AT}6` },
-    { id: "k-pika", collectorId: ME, canonicalCardId: "cc-old", grading: { state: "graded", label: "PSA 7" }, offered: true, status: "committed", addedAt: `${AT}6` },
-    { id: "k-ven", collectorId: ME, canonicalCardId: "cc-ven", grading: { state: "graded", label: "PSA 6" }, offered: false, status: "available", cert: "HIST-1", market: 40, addedAt: `${AT}6` }],
+    { id: "k-char", collectorId: ME, canonicalCardId: "cc-char", grade: "PSA 8", grading: { state: "graded", label: "PSA 8" }, keeping: true, offered: false, status: "available", addedAt: `${AT}6` },
+    { id: "k-blas", collectorId: ME, canonicalCardId: "cc-blas", grade: "Raw", condition: "Near Mint", grading: { state: "raw", label: "Raw · Near Mint" }, keeping: true, offered: false, status: "available", addedAt: `${AT}6` },
+    { id: "k-pika", collectorId: ME, canonicalCardId: "cc-old", grade: "PSA 7", grading: { state: "graded", label: "PSA 7" }, offered: true, status: "committed", addedAt: `${AT}6` },
+    { id: "k-ven", collectorId: ME, canonicalCardId: "cc-ven", grade: "PSA 6", grading: { state: "graded", label: "PSA 6" }, offered: false, status: "available", cert: "HIST-1", market: 40, addedAt: `${AT}6` }],
   binderMemberships: [
     { id: "m1", binderId: "b-gen1", goalId: "g-char" },
     { id: "m2", binderId: "b-gen1", collectorCopyId: "k-char" },
@@ -258,17 +258,20 @@ describe("D. tiles", () => {
     assert(!/holofoil/.test(flat(section(r, "Your Cards"))), "an internal finish value reached a tile");
     const tile = tiles(section(r, "Your Cards")).find((n) => part(n, "mcs-oq") === "Charizard #4 · Holo · PSA 8");
     await TR.act(async () => { tile.findAll((n) => n.type === "button")[0].props.onClick({ preventDefault() {} }); }); await settle();
-    assert(/Base Set · #4 · Holo/.test(flat(r.root)), "the set is not on the card sheet: " + flat(r.root));
+    /* (P6-F4 B2B: the card's page — set and number, then its version) */
+    assert(/Base Set · 4/.test(flat(r.root)) && /Holo — the version you saved/.test(flat(r.root)), "the set is not on the card's page: " + flat(r.root));
   });
-  test("a tile's picture opens the Card Specification", async () => {
-    /* RESTATED (P6-4): through the card's own sheet, one press on. */
+  /* RESTATED (P6-4, then P6-F4 B2B): a tile's picture opens the saved card's
+     full-screen page, which edits it in place; the Card Specification is no
+     longer reached from a Goal or copy (the founder removed "Open full card"). */
+  test("a tile's picture opens the saved card's page, not the Card Specification", async () => {
     let r;
     const Spec = load("client/collector/CardSpecification.jsx").default;
     ({ r } = await show());
     const tile = tiles(section(r, "Your Cards"))[0];
     await TR.act(async () => { tile.findAll((n) => n.type === "button")[0].props.onClick({ preventDefault() {} }); }); await settle();
-    await click(btn(r, /^Open full card/));
-    assert(r.root.findAll((n) => n.type === Spec).length === 1 || /Are you looking for it/.test(flat(r.root)), "the panel did not open");
+    assert(r.root.findAll((n) => n.props && n.props.role === "dialog" && /^Your (Goal|copy): /.test(String(n.props["aria-label"] || ""))).length === 1, "the page did not open");
+    eq(r.root.findAll((n) => n.type === Spec).length, 0, "the old form opened");
   });
   test("a copy's Details opens its facts in one sheet, writing nothing", async () => {
     /* RESTATED (P6-3.1): Details is a compact sheet, not facts and a Binder
@@ -276,16 +279,15 @@ describe("D. tiles", () => {
     const { r, sent } = await show();
     const ven = tiles(section(r, "Your Cards")).find((n) => /^Owned .*Venusaur/.test(caption(n)));
     assert(!/HIST-1/.test(flat(ven)) && !ven.findAll((n) => n.type === "select").length, "facts or a control under the tile");
-    /* RESTATED AGAIN (P6-4): the tap opens the card's sheet; its facts are
-       behind "Copy details". */
+    /* RESTATED AGAIN (P6-4, then P6-F4 B2B): the tap opens the card's page;
+       its certificate and value are in Copy details, as editable fields. */
     await TR.act(async () => { ven.findAll((n) => n.type === "button")[0].props.onClick({ preventDefault() {} }); }); await settle();
-    const sheet = () => r.root.findAll((n) => n.props.role === "dialog" && /^Card: Venusaur/.test(String(n.props["aria-label"] || "")))[0];
-    assert(sheet(), "no card sheet");
-    await click(btn(r, /^Copy details$/));
-    const t = flat(sheet());
-    assert(/HIST-1/.test(t) && /\$40/.test(t), "the facts did not open: " + t);
+    const sheet = () => r.root.findAll((n) => n.props.role === "dialog" && /^Your copy: Venusaur/.test(String(n.props["aria-label"] || "")))[0];
+    assert(sheet(), "no card page");
+    const [cert, value] = sheet().findAll((n) => n.type === "input").map((n) => n.props.value);
+    assert(cert === "HIST-1" && Number(value) === 40, "the facts are not there: " + json([cert, value]));
     eq(sent.length, 0, "opening facts sent something");
-    await click(buttons(r).find((b) => b.props["aria-label"] === "Close"));
+    await click(btn(r, /^‹ Binders$/));
     assert(!r.root.findAll((n) => n.props.role === "dialog").length, "Close did not close it");
   });
 });

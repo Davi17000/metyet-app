@@ -63,8 +63,8 @@ const STATE = () => ({
     { id: "b-old", collectorId: ME, name: "Old", createdAt: "2030-01-01", archivedAt: "2030-01-04" }],
   goals: [{ id: "g-char", collectorId: ME, canonicalCardId: "cc-char", tier: "primary", desired: { grade: "PSA 9" }, createdAt: "2030-01-05" }],
   collectorCopies: [
-    { id: "k-mud", collectorId: ME, canonicalCardId: "cc-mud", grading: { state: "graded", label: "PSA 10" }, offered: true, status: "available", addedAt: "2030-01-06" },
-    { id: "k-blas", collectorId: ME, canonicalCardId: "cc-blas", grading: { state: "raw", label: "Raw · Near Mint" }, keeping: true, offered: false, status: "available", addedAt: "2030-01-07" }],
+    { id: "k-mud", collectorId: ME, canonicalCardId: "cc-mud", grade: "PSA 10", grading: { state: "graded", label: "PSA 10" }, offered: true, status: "available", addedAt: "2030-01-06" },
+    { id: "k-blas", collectorId: ME, canonicalCardId: "cc-blas", grade: "Raw", condition: "Near Mint", grading: { state: "raw", label: "Raw · Near Mint" }, keeping: true, offered: false, status: "available", addedAt: "2030-01-07" }],
   binderMemberships: [{ id: "m1", binderId: "b-gen1", goalId: "g-char" }],
   binderEntries: [{ binderId: "b-mud", canonicalCardId: "cc-blas", addedAt: "2030-01-01" }],
   catalog: [], partners: [], relationships: [], inventory: [], opportunities: [], discoveries: [],
@@ -143,7 +143,7 @@ const pickUp = async (r, re) => {
 const button = (r, re) => r.root.findAll((n) => n.type === "button").find((b) => re.test(flat(b))) || null;
 /* P6-4: a tap (or Enter on the card's button) opens the card's own sheet,
    where its binder is chosen from buttons — the keyboard path to filing. */
-const sheet = (r) => r.root.findAll((n) => n.props && n.props.role === "dialog" && /^Card: /.test(String(n.props["aria-label"] || "")))[0] || null;
+const sheet = (r) => r.root.findAll((n) => n.props && n.props.role === "dialog" && /^(Card|Your (Goal|copy)): /.test(String(n.props["aria-label"] || "")))[0] || null;
 const openSheetFor = async (r, re) => {
   await TR.act(async () => { art(tileFor(r, re)).props.onClick({ preventDefault() {} }); }); await settle();
   assert(sheet(r), "the card sheet did not open");
@@ -160,8 +160,8 @@ describe("A. a tap opens; a hold files", () => {
     const b = art(tileFor(r, /Primary.*Charizard/));
     await down(b, "touch"); await upTile(b);
     await TR.act(async () => { b.props.onClick({ preventDefault() {} }); }); await settle();
-    /* RESTATED (P6-4): the card's own sheet, not the Card Specification. */
-    assert(sheet(r) && /^Card: Charizard/.test(sheet(r).props["aria-label"]), "the tap did not open the card");
+    /* RESTATED (P6-4, then P6-F4 B2B): the saved card's own page, not the Card Specification. */
+    assert(sheet(r) && /^Your Goal: Charizard/.test(sheet(r).props["aria-label"]), "the tap did not open the card");
     eq(layer(r), null, "a tap started filing");
     eq(sent.length, 0);
   });

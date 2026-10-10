@@ -46,8 +46,8 @@ describe("mouse", () => {
     const was = await homeOf("goalId", ctx.ids.goal);
     await tileArt(page, /Charizard/).click();
     await page.waitForTimeout(500);
-    /* RESTATED (P6-4): the card's own sheet. */
-    assert(await page.locator("[role=dialog][aria-label='Card: Charizard']").count(), "the card did not open");
+    /* RESTATED (P6-4, then P6-F4 B2B): the saved card's own page. */
+    assert(await page.locator("[role=dialog][aria-label='Your Goal: Charizard']").count(), "the card did not open");
     eq(await page.locator("[aria-label='Where should this go?']").count(), 0, "a click started filing");
     eq(await homeOf("goalId", ctx.ids.goal), was, "a click filed something");
     eq(errors.length, 0, errors.join(" | ")); await context.close();
@@ -198,14 +198,14 @@ describe("an expanded binder (P6-3.1)", () => {
       eq(errors.length, 0, errors.join(" | ")); await context.close();
     });
   }
-  test("the card sheet at phone width: its binder choice and Close in reach", async () => {
-    /* RESTATED (P6-4): a tap opens the card's sheet; Details is gone. */
+  /* RESTATED (P6-4, then P6-F4 B2B): the saved card's full-screen page — Move and ‹ Binders in reach */
+  test("the card page at phone width: Move and ‹ Binders in reach; Escape closes", async () => {
     await before();
     const { page, context } = await open({ width: 390, height: 844 });
     const opened = await expand(page, "Favourites");
     await opened.locator("li.mcs-otile button.mcs-otap").first().click(); await page.waitForTimeout(300);
     for (const loc of [page.locator("[role=dialog] button", { hasText: /^Move$/ }),
-      page.locator("[role=dialog] button[aria-label=Close]")]) {
+      page.locator("[role=dialog] button.mcs-cd-back")]) {
       await loc.scrollIntoViewIfNeeded();
       const c = await centre(loc);
       assert(c.y < 844, "out of reach below the screen");
@@ -233,7 +233,9 @@ describe("mobile, through the real front door (P6-4)", () => {
   };
   const card = (page, re) => page.locator("section[aria-label='Your Cards'] li.mcs-otile").filter({ hasText: re }).locator("button.mcs-otap");
   const tapCard = async (page, re) => { await card(page, re).scrollIntoViewIfNeeded(); await card(page, re).tap(); await page.waitForTimeout(350); };
-  const state = (page, m) => page.locator(`[role=dialog] button[data-meaning=${m}]`);
+  /* RESTATED (P6-F4 B2B): the page's state choices, saved with Save changes */
+  const state = (page, m) => page.locator(`[role=dialog] button[data-st=${m}]`);
+  const saveChanges = async (page) => { await page.locator("[role=dialog] button.mcs-cd-add").tap(); await page.locator("[role=dialog] .mcs-cd-hint.ack").waitFor({ timeout: 4000 }); };
   const goalOf = async (id) => (await ctx.world()).goals.find((g) => g.id === id) || null;
   const copyOf = async (id) => (await ctx.world()).collectorCopies.find((c) => c.id === id) || null;
   const touch = (cdp, type, x, y) => cdp.send("Input.dispatchTouchEvent",
@@ -243,12 +245,14 @@ describe("mobile, through the real front door (P6-4)", () => {
     await before();
     const { page, context, errors } = await phone();
     await tapCard(page, /Venusaur/);
-    assert(await page.locator("[role=dialog][aria-label='Card: Venusaur']").count(), "a tap did not open the card");
+    assert(await page.locator("[role=dialog][aria-label='Your Goal: Venusaur']").count(), "a tap did not open the card");
     eq(await page.locator("[aria-label='Where should this go?']").count(), 0, "a tap started filing");
     eq(await state(page, "secondary").getAttribute("aria-pressed"), "true", "it did not open on its tier");
     const home = await homeOf("goalId", ctx.ids.goal2);
     await state(page, "primary").tap();
-    await page.locator("text=✓ Now Primary").waitFor({ timeout: 4000 });
+    eq(await page.locator("[role=dialog] button.mcs-cd-add").getAttribute("aria-disabled"), "false");
+    eq((await goalOf(ctx.ids.goal2)).tier, "secondary", "choosing saved something before Save");
+    await saveChanges(page);
     eq((await goalOf(ctx.ids.goal2)).tier, "primary", "not saved");
     eq(await homeOf("goalId", ctx.ids.goal2), home, "its binder moved");
     eq(await state(page, "primary").getAttribute("aria-pressed"), "true");
@@ -260,7 +264,7 @@ describe("mobile, through the real front door (P6-4)", () => {
     await tapCard(page, /Pikachu/);
     eq(await state(page, "trade").getAttribute("aria-pressed"), "true");
     await state(page, "pc").tap();
-    await page.locator("text=✓ Now PC").waitFor({ timeout: 4000 });
+    await saveChanges(page);
     const c = await copyOf(ctx.ids.copy2);
     eq([c.keeping === true, c.offered === true].join(), "true,false", "not saved as PC");
     eq(errors.length, 0, errors.join(" | ")); await context.close();
@@ -270,7 +274,7 @@ describe("mobile, through the real front door (P6-4)", () => {
     const { page, context, errors } = await phone();
     await tapCard(page, /Pikachu/);
     await state(page, "trade").tap();
-    await page.locator("text=✓ Now Trade / Sell").waitFor({ timeout: 4000 });
+    await saveChanges(page);
     eq(await homeOf("collectorCopyId", ctx.ids.copy2), ctx.ids.mud, "the state change moved its binder");
     /* RESTATED (P6-F4 B2A): Move, then the destination in its chooser */
     await page.locator("[role=dialog] button", { hasText: /^Move$/ }).tap();
@@ -278,7 +282,7 @@ describe("mobile, through the real front door (P6-4)", () => {
     await page.waitForTimeout(900);
     eq(await homeOf("collectorCopyId", ctx.ids.copy2), ctx.ids.gen1, "not moved");
     eq((await copyOf(ctx.ids.copy2)).offered, true, "the move changed its state");
-    assert(await page.locator("[role=dialog] .mcs-ohome", { hasText: "In Gen 1" }).count(), "the sheet did not follow");
+    assert(await page.locator("[role=dialog] .mcs-ce-home", { hasText: "In Gen 1" }).count(), "the page did not follow");
     eq(errors.length, 0, errors.join(" | ")); await context.close();
   });
   test("D. hold, drag, release; the bar confirms above the tab bar; Undo without opening the card", async () => {
@@ -310,13 +314,15 @@ describe("mobile, through the real front door (P6-4)", () => {
     await before();
     const { page, context, errors } = await phone();
     await tapCard(page, /Venusaur/);
-    await ctx.post("removeGoal", { goalId: ctx.ids.goal2 });   // changed elsewhere, behind the open sheet
+    await ctx.post("removeGoal", { goalId: ctx.ids.goal2 });   // changed elsewhere, behind the open page
+    /* RESTATED (P6-F4 B2B): chosen, then Save changes; the refusal re-reads, and a Goal that is gone takes its page with it */
     await state(page, "secondary").tap();
+    await page.locator("[role=dialog] button.mcs-cd-add").tap();
     await page.waitForTimeout(1200);
-    eq(await page.locator("text=✓ Now Secondary").count(), 0, "success shown for a refused change");
+    eq(await page.locator("text=✓ Saved").count(), 0, "success shown for a refused change");
     eq(await goalOf(ctx.ids.goal2), null);
-    eq(await page.locator("[role=dialog][aria-label='Card: Venusaur']").count(), 0, "the sheet still shows a Goal the server no longer has");
-    assert(await page.locator(".mcs-snack.warn", { hasText: "changed since the screen was drawn" }).count(), "the refusal was not said");
+    eq(await page.locator("[role=dialog][aria-label='Your Goal: Venusaur']").count(), 0, "the page still shows a Goal the server no longer has");
+    assert(await page.locator(".mcs-snack.warn", { hasText: "changed elsewhere and is no longer here" }).count(), "the refusal was not said");
     eq(await page.locator("section[aria-label='Your Cards'] li.mcs-otile").filter({ hasText: /Venusaur/ }).count(), 0, "the screen was not re-read");
     eq(errors.length, 0, errors.join(" | ")); await context.close();
   });
@@ -686,6 +692,47 @@ describe("Move and + New binder through production (P6-F4 B2A)", () => {
     eq(await homeOfGoal(), target.id, "Undo did not put it back");
     eq((await ctx.world()).binders.filter((b) => b.name === "Keepers").length, 1, "Undo removed the binder");
     eq(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "sideways scroll");
+    eq(errors.length, 0, errors.join(" | "));
+    await context.close();
+  });
+});
+
+/* P6-F4 BATCH 2B — LAST, BECAUSE IT WRITES. A saved card edited in place,
+   through the real front door, server and database. */
+describe("a saved card, edited in place (P6-F4 B2B)", () => {
+  /* (a Goal's tier, edited and saved through the real server: "A. a Goal" above) */
+  test("a copy's condition and certificate: only those change; the same record, the same binder", async () => {
+    await before();
+    const api = async (u) => (await fetch(ctx.url + u, { headers: { authorization: "Bearer casey" } })).json();
+    const rs60 = (await api("api/card-contexts?pokedex=258")).contexts.find((c) => c.collectorNumber === "60");
+    const normal = (await api(`api/card-contexts/${rs60.cardContextId}`)).canonicalCards.find((c) => c.finish === "non_holo").canonicalCardId;
+    const copyId = await ctx.post("addCollectorCopy", { copy: { canonicalCardId: normal, grade: "Raw", condition: "Near Mint", keeping: true, cert: "OLD-1" } });
+    const binder = (await ctx.world()).binders.find((b) => !b.archivedAt);
+    await ctx.post("fileObject", { binderId: binder.id, collectorCopyId: copyId });
+    const before0 = (await ctx.world()).collectorCopies.find((c) => c.id === copyId);
+    const context = await browser.newContext({ ...PHONE }); const page = await context.newPage();
+    const errors = []; page.on("pageerror", (e) => errors.push(e.message));
+    const commands = []; page.on("request", (r) => { if (r.url().includes("/api/commands")) commands.push(JSON.parse(r.postData() || "{}").command); });
+    await signIn(page, ctx.url);
+    await page.tap("nav[aria-label=Collector] button:has-text('Binders')"); await page.waitForTimeout(500);
+    const tile = page.locator("section[aria-label='Your Cards'] li.mcs-otile").filter({ hasText: /Mudkip #60 · Normal · Raw · Near Mint/ }).filter({ hasText: /^PC/ }).first().locator("button.mcs-otap");
+    await tile.scrollIntoViewIfNeeded(); await tile.tap(); await page.waitForTimeout(500);
+    const dlg = page.locator("[role=dialog][aria-label='Your copy: Mudkip']");
+    await dlg.waitFor();
+    const pressedNow = async () => dlg.locator("button[aria-pressed=true] b").allInnerTexts();
+    eq(JSON.stringify(await pressedNow()), JSON.stringify(["Raw", "Near Mint", "Personal collection"]), "not preselected from the record");
+    eq(await dlg.locator("button.mcs-cd-add").getAttribute("aria-disabled"), "true", "Save offered with nothing changed");
+    await dlg.locator("button.mcs-cd-choice", { has: page.locator("b", { hasText: /^Lightly Played$/ }) }).tap();
+    await dlg.locator("input").first().fill("NEW-2");
+    await dlg.locator("button.mcs-cd-add").tap();
+    await dlg.locator(".mcs-cd-hint.ack").waitFor({ timeout: 4000 });
+    const after = (await ctx.world()).collectorCopies.find((c) => c.id === copyId);
+    eq(JSON.stringify([after.id, after.canonicalCardId, after.grade, after.condition, after.cert, after.keeping, after.offered === true]),
+      JSON.stringify([copyId, normal, "Raw", "Lightly Played", "NEW-2", true, false]), "not saved as asked");
+    eq(after.addedAt, before0.addedAt, "the record was replaced");
+    eq(((await ctx.memberships()).find((m) => m.collectorCopyId === copyId) || {}).binderId, binder.id, "the binder moved");
+    eq(JSON.stringify(commands), JSON.stringify(["updateCollectorCopy"]), "unexpected commands: " + JSON.stringify(commands));
+    eq(JSON.stringify(await pressedNow()), JSON.stringify(["Raw", "Lightly Played", "Personal collection"]), "the page did not refresh from the projection");
     eq(errors.length, 0, errors.join(" | "));
     await context.close();
   });

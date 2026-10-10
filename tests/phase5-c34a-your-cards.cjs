@@ -251,19 +251,31 @@ const openDetails = async () => { await settle(); };
    separate Details link), and the copy's secondary facts sit behind "Copy
    details". The same facts, from the same rows; the state choices and the
    binder controls are not read, for the same reason the Binder choice was not. */
+/* RESTATED AGAIN (P6-F4 B2B): a tap opens the saved card's full-screen page.
+   The same facts, from the same rows, read from where the page shows them:
+   its identity and version, the grading it holds (the SELECTED choices only),
+   a contradiction if the copy has one, its certificate and reference value
+   (now editable fields — read as their values, the value as the screen's own
+   money format), and when it was added, its photos and its status. */
+const MONEY = (() => { try { return require("esbuild").buildSync({ entryPoints: [require("path").join(__dirname, "..", "client/collector/present.js")],
+  bundle: true, format: "cjs", write: false, logLevel: "silent" }); } catch (e) { return null; } })();
+const present = (() => { const mod = { exports: {} }; new Function("module", "exports", "require", MONEY.outputFiles[0].text)(mod, mod.exports, require); return mod.exports; })();
 const sheetOf = (r, li) => {
   const b = li.findAll((n) => n.type === "button" && String(n.props.className || "").includes("mcs-otap"))[0];
   if (!b || b.props["aria-haspopup"] !== "dialog") return "";
   TR.act(() => { b.props.onClick({ preventDefault() {} }); });
   const dlg = () => r.root.findAll((n) => n.type === "div" && n.props.role === "dialog"
-    && /^Card: /.test(String(n.props["aria-label"] || "")))[0];
+    && /^Your (Goal|copy): /.test(String(n.props["aria-label"] || "")))[0];
   if (!dlg()) return "";
-  const more = dlg().findAll((n) => n.type === "button" && String(n.props.className || "").includes("mcs-omore"))[0];
-  if (more && more.props["aria-expanded"] === false) TR.act(() => { more.props.onClick(); });
-  const t = dlg().findAll((n) => /^mcs-(oident|oconfig|oconflict|detail-facts)$/.test(String(n.props.className || "")))
-    .map((n) => instText(n)).join(" ");
-  const close = dlg().findAll((n) => n.type === "button" && n.props["aria-label"] === "Close")[0];
-  if (close) TR.act(() => { close.props.onClick(); });
+  const page = dlg();
+  const read = (re) => page.findAll((n) => re.test(String(n.props.className || ""))).map((n) => instText(n));
+  const chosen = page.findAll((n) => n.type === "button" && n.props["aria-pressed"] === true && !n.props["data-st"]).map((n) => instText(n));
+  const inputs = page.findAll((n) => n.type === "input");
+  const cert = inputs[0] ? `Cert ${inputs[0].props.value}` : "";
+  const value = inputs[1] && inputs[1].props.value !== "" ? `Your reference value ${present.money(Number(inputs[1].props.value))}` : "";
+  const t = [...read(/^mcs-cd-ident$/), ...read(/^mcs-cd-established$/), ...chosen, ...read(/^mcs-oconflict$/), cert, value, ...read(/^mcs-ce-facts$/)].join(" ");
+  const back = page.findAll((n) => n.type === "button" && n.props.className === "mcs-cd-back")[0];
+  if (back) TR.act(() => { back.props.onClick(); });
   return t;
 };
 const tileNodes = (r) => r.root.findAll((n) => n.type === "li" && String(n.props.className || "").includes("mcs-otile"));
@@ -558,10 +570,8 @@ describe("E. the same specification capability, opened from the shelf", () => {
     assert(tile, `no tile for ${needle}`);
     await TR.act(async () => { tile.findAll((n) => n.type === "button")[0].props.onClick({ preventDefault() {} }); });
     await settle();
-    /* RESTATED (P6-4): a tap opens the card's own sheet; the Card
-       Specification is its "Open full card". */
-    const full = r.root.findAll((n) => n.type === "button" && /^Open full card/.test(instText(n).trim()))[0];
-    if (full) { await TR.act(async () => { full.props.onClick(); }); await settle(); }
+    /* RESTATED (P6-4, then P6-F4 B2B): a tap opens the saved card's own page,
+       which edits it in place ("Open full card" is gone). */
   };
 
   test("Open shows the card's current truth, and Cancel writes nothing", async () => {
@@ -573,18 +583,20 @@ describe("E. the same specification capability, opened from the shelf", () => {
     const sent = [];
     const r = await shelf(ctx, async (step) => { sent.push(step); return { ok: true }; });
 
-    await openTile(r, "Mudkip");
-    const shown = texts(r);
-    /* RE-PINNED (Batch 3B-1): the panel no longer asks a card-level Binder
-       question, because a card is no longer the subject of organisation. The
-       proof it opened is the question it still asks. */
-    assert(/Are you looking for it\?/.test(shown), "the panel did not open: " + shown);
-    assert(/Are you looking for it\?/.test(shown), "the panel is a different one: " + shown);
-    /* It opened on what the Collector already said. */
-    const keeping = buttons(r).find((b) => instText(b).trim() === "Keeping an eye out");
-    eq(keeping.props["aria-pressed"], true, "the panel did not open on the current tier");
+    /* RESTATED (P6-F4 B2B): the Goal's tile opens ITS page, on what it already says */
+    await openTile(r, "Secondary");
+    await settle();
+    const pageOf = () => r.root.findAll((n) => n.props && n.props.role === "dialog" && /^Your Goal: Mudkip/.test(String(n.props["aria-label"] || "")))[0];
+    const page = pageOf();
+    /* (the failure message is built only on failure: texts() opens each tile's page to read it) */
+    if (!page) assert(false, "the page did not open: " + texts(r));
+    const pressed = r.root.findAll((n) => n.type === "button" && n.props["aria-pressed"] === true).map((n) => instText(n).trim());
+    assert(pressed.includes("Graded") && pressed.includes("PSA 9"), "the page did not open on the wanted grade: " + pressed);
+    eq(r.root.findAll((n) => n.type === "button" && n.props["data-st"] === "secondary")[0].props["aria-pressed"], true, "the page did not open on the current tier");
 
-    await press(r, "Cancel");
+    const back = r.root.findAll((n) => n.type === "button" && n.props.className === "mcs-cd-back")[0];
+    await TR.act(async () => { back.props.onClick(); }); await settle();
+    eq(r.root.findAll((n) => n.props && n.props.role === "dialog" && /^Your Goal: /.test(String(n.props["aria-label"] || ""))).length, 0, "it did not close");
     eq(sent.length, 0, "opening or closing the panel sent a command");
     eq(json(await load(ctx)), before, "opening or closing the panel wrote something");
   });
