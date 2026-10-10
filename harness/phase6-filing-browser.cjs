@@ -521,6 +521,89 @@ describe("Browse (P6-F2)", () => {
   });
 });
 
+/* P6-F3A STAGE 2 — LAST, BECAUSE IT WRITES. The Phase 6 card's own questions,
+   through the real sign-in, store, server, commands and projection. */
+describe("the Phase 6 card saves through production (P6-F3A Stage 2)", () => {
+  test("a PC copy and a Primary Goal on Mudkip R&S #60: exact printing, no binder, remembered on reopening; a refusal claims nothing", async () => {
+    await before();
+    const context = await browser.newContext({ ...PHONE }); const page = await context.newPage();
+    const errors = []; page.on("pageerror", (e) => errors.push(e.message));
+    const commands = []; page.on("request", (r) => { if (r.url().includes("/api/commands")) commands.push(JSON.parse(r.postData() || "{}").command); });
+    await signIn(page, ctx.url);
+    /* the two printings, by the catalogue's own ids */
+    const api = async (u) => (await fetch(ctx.url + u, { headers: { authorization: "Bearer casey" } })).json();
+    const rs60 = (await api("api/card-contexts?pokedex=258")).contexts.find((c) => c.collectorNumber === "60");
+    const printings = (await api(`api/card-contexts/${rs60.cardContextId}`)).canonicalCards;
+    const normal = printings.find((c) => c.finish === "non_holo").canonicalCardId;
+    const reverse = printings.find((c) => c.finish === "reverse_holofoil").canonicalCardId;
+    const w0 = await ctx.world();
+    const choose = async (...titles) => { for (const t of titles) {
+      await page.locator(".mcs-cd-choice", { has: page.locator("b", { hasText: new RegExp(`^${t.replace(/[/]/g, "\\/")}$`) }) }).first().tap();
+      await page.waitForTimeout(120);
+    } };
+    const openSixty = async () => {
+      const cell = page.locator("button.mcs-dcell[aria-label='Mudkip, Ruby & Sapphire #60']");
+      await cell.scrollIntoViewIfNeeded(); await cell.tap(); await page.locator(".mcs-cd").waitFor(); await page.waitForTimeout(400);
+    };
+    await page.locator("nav[aria-label=Collector] button", { hasText: "Browse" }).tap();
+    await page.locator(".mcs-dtile[data-dex='258']").tap();
+    await page.locator(".mcs-dchip", { hasText: "Pokémon: Mudkip" }).waitFor();
+
+    /* 1. I own it · PC · Raw · Near Mint, on the Reverse Holo */
+    await openSixty();
+    await choose("Reverse Holo", "I own it", "Personal collection", "Raw", "Near Mint");
+    eq(commands.length, 0, "answering wrote something");
+    const dock = await page.locator(".mcs-cd-dock").boundingBox();
+    eq(Math.round(dock.y + dock.height), 844, "the dock is not pinned to the bottom");
+    await page.locator(".mcs-cd-add").tap();
+    await page.locator(".mcs-cd-add.added").waitFor();
+    eq((await page.locator(".mcs-cd-hint.ack").innerText()).trim(), "Personal collection ✓ · Raw · Near Mint · Reverse Holo");
+    await page.locator(".mcs-d-ack").waitFor();
+    eq(await page.locator(".mcs-cd").count(), 0, "the card did not return to Browse");
+    eq(await page.locator(".mcs-dchip", { hasText: "Pokémon: Mudkip" }).count(), 1, "the Browse context was lost");
+    let w = await ctx.world();
+    const copy = w.collectorCopies.filter((c) => !w0.collectorCopies.some((x) => x.id === c.id));
+    eq(copy.length, 1, "not exactly one new copy");
+    eq(json([copy[0].canonicalCardId, copy[0].grade, copy[0].condition, copy[0].keeping, copy[0].offered]), json([reverse, "Raw", "Near Mint", true, false]));
+    eq(w.goals.length, w0.goals.length, "a copy made a Goal");
+    eq(w.binderMemberships.some((m) => m.collectorCopyId === copy[0].id), false, "the copy was filed");
+
+    /* 2. reopened: the projection has it */
+    await openSixty();
+    assert((await page.locator(".mcs-cd-remembered").innerText()).includes("Reverse Holo · You own it · Personal collection · Raw · Near Mint"),
+      await page.locator(".mcs-cd-remembered").innerText());
+    await page.screenshot({ path: "artifacts/f3a-stage2-remembered.png" }).catch(() => {});
+
+    /* 3. I'm looking for it · Graded · PSA 10 · Primary, on the Normal */
+    await choose("Normal", "I'm looking for it", "Graded", "PSA 10", "Primary");
+    await page.locator(".mcs-cd-add").tap();
+    await page.locator(".mcs-d-ack").waitFor();
+    w = await ctx.world();
+    const goal = w.goals.filter((g) => !w0.goals.some((x) => x.id === g.id));
+    eq(goal.length, 1, "not exactly one new Goal");
+    eq(json([goal[0].canonicalCardId, goal[0].tier, goal[0].desired]), json([normal, "primary", { grade: "PSA 10" }]));
+    eq(w.collectorCopies.length, w0.collectorCopies.length + 1, "a Goal made a copy");
+    eq(w.binderMemberships.some((m) => m.goalId === goal[0].id), false, "the Goal was filed");
+
+    /* 4. a genuine refusal: the same Goal arrives from elsewhere while the card is open */
+    await openSixty();
+    await choose("Reverse Holo", "I'm looking for it", "Raw", "Lightly Played", "Secondary");
+    await ctx.post("addGoal", { canonicalCardId: reverse, tier: "primary", desired: { grade: "PSA 9" } });
+    await page.locator(".mcs-cd-add").tap();
+    await page.locator(".mcs-cd-hint.problem").waitFor();
+    eq((await page.locator(".mcs-cd-hint.problem").innerText()).trim(), "Nothing was saved: the goal could not be saved — That card is already on your list.");
+    eq(await page.locator(".mcs-cd-add.added").count(), 0, "a refusal was shown as success");
+    await page.waitForTimeout(1200);
+    eq(await page.locator(".mcs-cd").count(), 1, "a refused card left as if added");
+    w = await ctx.world();
+    eq(w.goals.filter((g) => g.canonicalCardId === reverse).length, 1, "the refused Goal was written");
+    eq(json(commands), json(["addCollectorCopy", "addGoal", "addGoal"]), "unexpected commands: " + json(commands));
+    eq(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "sideways scroll");
+    eq(errors.length, 0, errors.join(" | "));
+    await context.close();
+  });
+});
+
 if (!chromium) {
   console.log("SKIPPED: Playwright is not installed.");
 } else {

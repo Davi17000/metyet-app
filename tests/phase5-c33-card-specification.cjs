@@ -951,26 +951,40 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
       r = TR.create(React.createElement(SHELL,
         { state, onSignOut() {}, onSpecify, onBrowseCards: door }));
     });
+    r.panelProps = { state, onSpecify, door };
     return { r, calls, state };
   };
 
-  /* RESTATED (P6-F3A Stage 1): a card from Browse opens as the Phase 6
-     full-screen card; its "Add to MetYet" opens this panel (until Stage 2), so
-     reaching the panel is one step longer and nothing past it changed. */
-  const addFromCard = async (r) => {
-    assert(texts(r).includes("Add to MetYet"), "the Phase 6 card did not open: " + texts(r));
-    await press(r, "Add to MetYet");
+  /* RESTATED (P6-F3A Stage 2). Browse used to be this panel's door. From
+     Stage 2 a card from Browse opens the Phase 6 card, whose own questions end
+     in one command (tests/phase6-f3a-card-detail.cjs); the panel is now opened
+     by Binders and by Browse when it is filling a binder. What this section
+     proves is about the PANEL — what it shows when it opens, and that nothing
+     before Save writes — so it opens the panel itself, with exactly the props
+     Browse handed it: the card the catalogue read returns, its context, the
+     Collector's projection, and the same onCommit. Every assertion after
+     opening is unchanged. The two Browse-specific claims below are restated on
+     the Phase 6 card and on the binder-filling door. */
+  const openCard = async (r, name) => {
+    const { state, onSpecify, door } = r.panelProps;
+    const found = (await door.find(`query=${encodeURIComponent(name)}`)).contexts
+      .filter((c) => c.cardName === name);
+    eq(found.length, 1, `one ${name} in the catalogue`);
+    const read = await door.read(found[0].cardContextId);
+    const printings = read.canonicalCards;
+    eq(printings.length, 1, `${name} has one printing`);
+    const context = { ...found[0], ...read, cards: printings };
+    await TR.act(async () => {
+      r.update(React.createElement(SPEC.default, { card: printings[0], context, state,
+        onCommit: onSpecify, onClose() {} }));
+    });
+    await settle(r);
   };
   const backToBrowse = async (r) => {
     const b = buttons(r).find((n) => /mcs-cd-back/.test(n.props.className || ""));
     assert(b, "the card has no way back: " + texts(r));
     await TR.act(async () => { b.props.onClick(); });
     await settle(r);
-  };
-  const openCard = async (r, name) => {
-    await typeInto(r, "mcs-br-q", name);
-    await press(r, name);
-    await addFromCard(r);
   };
 
   test("a card nobody has said anything about opens honestly empty", async () => {
@@ -1119,9 +1133,9 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
     const afterSearch = calls.find;
     assert(gridNames(r).includes("Mudkip"), "the grid did not fill");
 
+    /* RESTATED (P6-F3A): the Phase 6 card, opened, answered and closed twice. */
     await press(r, "Mudkip");
-    await addFromCard(r);
-    await press(r, "Cancel");
+    await press(r, "I own it");
     await backToBrowse(r);
     await press(r, "Mudkip");
     await backToBrowse(r);
@@ -1138,8 +1152,25 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
   test("the sheet is rendered after the grid and out of flow, so nothing moves behind it", async () => {
     const ctx = await world();
     await cards(ctx);
-    const { r } = await browsing(ctx, async () => ({ ok: true }));
-    await openCard(r, "Mudkip");
+    /* RESTATED (P6-F3A Stage 2): the one place Browse still opens this sheet
+       is while filling a binder, so that is the door used — and the Phase 6
+       card it is opened from is held to the same rule. */
+    const binderId = (await post(ctx.app, "casey", "createBinder", { name: "Mudkip Collection" })).json().value;
+    const state = await view(ctx.app, "casey");
+    const { door } = doorFor(ctx);
+    const BROWSE = build("client/collector/sections/Browse.jsx");
+    let session = BROWSE.newBrowseSession();
+    let r;
+    const draw = async () => TR.act(async () => {
+      const el = React.createElement(BROWSE.default, { state, session, onSession: (next) => { session = next; draw(); },
+        onSpecify: async () => ({ ok: true }), onBrowseCards: door, fillingBinder: { binderId, name: "Mudkip Collection" } });
+      if (r) r.update(el); else r = TR.create(el);
+    });
+    await draw();
+    await typeInto(r, "mcs-br-q", "Mudkip");
+    await press(r, "Mudkip");
+    await press(r, "Add to MetYet");
+    assert(texts(r).includes("Are you looking for it?"), "filling a binder did not reach the panel: " + texts(r));
 
     /* ORDER IS THE MECHANISM. A panel inserted BEFORE the grid pushes it down
        the page while the window's scroll offset stays put, which is exactly the

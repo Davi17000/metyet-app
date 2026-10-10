@@ -840,6 +840,7 @@ button.mcs-otap { cursor:pointer; }
   .mcs-hd { margin:0 -28px; padding:22px 28px 6px; }
   /* the card (P6-F3A), in a phone-width column: the prototype is a phone */
   .mcs-cd-hd, .mcs-cd-scroll, .mcs-cd-dock { width:100%; max-width:560px; margin:0 auto; box-sizing:border-box; }
+  .mcs-d-ack { left:auto; right:24px; bottom:20px; max-width:420px; }
   /* the account bar and banner are on screen here (P6-F1): no phone controls */
   .mcs .mcs-acct, .mcs .mcs-scope { display:none; }   /* .mcs: outranks the base rules, which come later */
   /* no tab bar here: the confirmation sits at the foot of the window */
@@ -1055,6 +1056,30 @@ button.mcs-otap { cursor:pointer; }
 .mcs-cd-add { width:100%; padding:15px; border-radius:14px; border:0; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
   background:#E6EAEE; color:#9AA3AE; font-size:14px; transition:background .25s, color .25s, transform .25s, box-shadow .25s; }
 .mcs-cd-add.ready { background:var(--t1); color:#FFF; box-shadow:0 6px 16px rgba(11,93,102,.28); }
+/* Stage 2 — the questions (prototype index.html .reveal L89, .nudge L90, .row/.col
+   L91–92, .choice span/.known L95–97, .choice:disabled L173, .add.pop L106,
+   .add.added L157, .hint.ack L158, .toast.float L162–164, .cell.just L160–161) */
+.mcs-cd-reveal { animation:mcs-cd-reveal .28s ease-out; }
+.mcs-cd-q.nudge { animation:mcs-cd-nudge 1.1s ease-out; border-radius:12px; }
+@keyframes mcs-cd-nudge { 0% { box-shadow:0 0 0 0 rgba(11,93,102,0); } 30% { box-shadow:0 0 0 6px rgba(11,93,102,.18); } 100% { box-shadow:0 0 0 0 rgba(11,93,102,0); } }
+.mcs-cd-row { display:flex; gap:8px; } .mcs-cd-row .mcs-cd-choice { flex:1; }
+.mcs-cd-col { display:flex; flex-direction:column; gap:8px; }
+.mcs-cd-choice span { display:block; color:var(--muted); font-size:12.5px; }
+/* the prototype's body line-height (1.45), which its buttons inherit and a browser's buttons reset */
+.mcs-cd-choice { line-height:1.45; }
+.mcs-cd-choice.known { border-style:dashed; background:#F7F9FA; cursor:default; }
+.mcs-cd-choice:disabled { opacity:.55; cursor:not-allowed; border-style:dashed; }
+.mcs-cd-add.pop { transform:translateY(-2px) scale(1.015); }
+.mcs-cd-add.added { background:#1F6F4A; color:#FFF; box-shadow:0 6px 16px rgba(31,111,74,.25); }
+.mcs-cd p.mcs-cd-hint.ack { color:#1F6F4A; font-weight:600; }
+.mcs-cd p.mcs-cd-hint.problem { color:var(--amber); }
+.mcs-d-ack { position:fixed; left:12px; right:12px; bottom:calc(var(--tabbar-h, 0px) + 10px + env(safe-area-inset-bottom, 0px)); z-index:27;
+  margin:0; padding:10px 12px; text-align:left; background:var(--t1-bg); color:var(--t1); border:1px solid #CFE3E5; border-radius:10px;
+  font-size:12.5px; box-shadow:0 8px 20px rgba(10,16,20,.12); animation:mcs-cd-reveal .25s ease-out; }
+.mcs-d-ack b { color:var(--t1); } .mcs-d-ack span { color:var(--muted); font-size:12px; }
+.mcs-d-ack .mcs-d-ack-value { display:block; margin:3px 0 0; color:var(--text); font-size:12.5px; }
+.mcs-dcell.just { animation:mcs-d-just 2.4s ease-out; }
+@keyframes mcs-d-just { 0% { box-shadow:0 0 0 0 rgba(11,93,102,0); } 15% { box-shadow:0 0 0 5px rgba(11,93,102,.35); } 100% { box-shadow:0 0 0 0 rgba(11,93,102,0); } }
 @keyframes mcs-cd-reveal { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
 `;
 

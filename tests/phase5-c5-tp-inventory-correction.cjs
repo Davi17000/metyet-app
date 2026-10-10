@@ -1013,23 +1013,24 @@ describe("G. what the product says", () => {
     /* A CHECKLIST LINE WITH TWO PRINTINGS ASKS WHICH, and the count only ever
        appeared once one was chosen — so stopping here would assert the absence
        of something that was never going to be present. Choose one. */
-    /* RESTATED (P6-F3A Stage 1): the Phase 6 card asks "Which version?" in
-       the prototype's words — the unlimited printing is plain "Holo", First
-       Edition is "Holo · First Edition" — and its "Add to MetYet" opens this
-       same panel for the version chosen. */
+    /* RESTATED (P6-F3A): the Phase 6 card asks "Which version?" in the
+       prototype's words — the unlimited printing is plain "Holo", First Edition
+       is "Holo · First Edition" — and then its own questions. */
     const unlimited = r.root.findAll((n) => n.type === "button")
       .find((n) => /mcs-cd-choice/.test(n.props.className || "") && texts(n).join("").trim() === "Holo");
     assert(unlimited, "no unlimited version to choose");
     await TR.act(async () => { unlimited.props.onClick(); });
-    await pressText("Add to MetYet");
+    await TR.act(async () => {});
     const shown = texts(r.root).join(" ");
-    /* The panel is open AND past the chooser: these two strings belong to the
-       section the count used to sit in. Without them this test proves nothing,
-       which is how the first draft of it managed to pass while stopping early. */
-    assert(/Are you looking for it\?/.test(shown), "the panel did not reach the goal section: "
+    /* The card is open AND past the chooser: these strings belong to the
+       questions the count used to sit beside (P6-F3A Stage 2: the card's own
+       goal and copy questions, where the panel's two sections were). Without
+       them this test proves nothing, which is how the first draft of it managed
+       to pass while stopping early. */
+    assert(/What does this card mean to you\?/.test(shown), "the card did not reach its questions: "
       + shown.slice(0, 500));
-    assert(/Do you have one\?/.test(shown), "the panel did not reach the copies section: "
-      + shown.slice(0, 500));
+    assert(/I'm looking for it/.test(shown), "the card did not reach the goal question: " + shown.slice(0, 500));
+    assert(/I own it/.test(shown), "the card did not reach the copy question: " + shown.slice(0, 500));
     assert(!/of your Trusted Partners ha[sv]e? this/.test(shown),
       "the count is still rendered from Browse: " + shown.slice(0, 500));
   });

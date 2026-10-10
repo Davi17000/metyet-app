@@ -413,6 +413,78 @@ async function run() {
       await context.close();
     }
 
+    /* 2e. STAGE 2 (P6-F3A): the guided questions on Mudkip R&S #60, the same
+       taps on both sides, each shot with the newest question scrolled into
+       view. s12 (a refused save) has no prototype reference: the prototype
+       cannot be refused — it alerts a defect — so it is production only. */
+    const FLOW = [
+      ["s01-open", []], ["s02-printing", ["Reverse Holo"]], ["s03-looking", ["I'm looking for it"]],
+      ["s04-raw-condition", ["Raw", "Near Mint"]], ["s05-primary", ["Primary"]], ["s06-secondary", ["Secondary"]],
+      ["s07-own", ["I own it"]], ["s08-pc", ["Personal collection"]], ["s09-graded", ["Graded", "PSA 9"]],
+      ["s10-trade", ["Trade / Sell"]],
+    ];
+    const DETAIL = { proto: { root: ".phone .detail", scroll: ".phone .detail-scroll", choice: ".phone .detail .choice", add: ".phone .detail .add", back: ".phone .detail button.back",
+        remembered: ".phone .detail .remembered" },
+      prod: { root: ".mcs-cd", scroll: ".mcs-cd-scroll", choice: ".mcs-cd-choice", add: ".mcs-cd-add", back: ".mcs-cd-back", remembered: ".mcs-cd-remembered" } };
+    results.stage2 = {};
+    for (const [side, tag] of [["proto", "proto-art"], ["prod", "prod"]]) {
+      const S = SIDES[side]; const D = DETAIL[side];
+      const context = await browser.newContext({ ...PHONE }); const page = await context.newPage();
+      const errors = []; page.on("pageerror", (e) => errors.push(e.message));
+      page.on("dialog", (d) => { errors.push(`dialog: ${d.message()}`); d.dismiss(); });
+      const shot = async (name, where = "bottom") => {
+        await sleep(350);
+        /* tapping a choice into view can scroll the prototype's drawn phone itself; put it back */
+        await page.evaluate(({ root, y }) => { for (let e = document.querySelector(root); e && e.closest(".phone"); e = e.parentElement) e.scrollTop = 0;
+          window.scrollTo(0, y); }, { root: D.root, y: windowY });
+        if (where === "bottom") await page.locator(D.scroll).evaluate((e) => e.scrollTo(0, e.scrollHeight));
+        else if (where === "top") await page.locator(D.scroll).evaluate((e) => e.scrollTo(0, 0));
+        await sleep(350);
+        await page.screenshot({ path: path.join(OUT, `${tag}-${name}.png`), clip: await S.screen(page) });
+      };
+      const choose = async (t) => {
+        const c = page.locator(D.choice, { has: page.locator("b", { hasText: new RegExp(`^${t.replace(/[/]/g, "\\/")}$`) }) }).first();
+        await c.scrollIntoViewIfNeeded(); await c.tap(); await sleep(150);
+      };
+      let windowY = 0;
+      const openSixty = async () => {
+        const t = side === "prod" ? page.locator("button.mcs-dcell[aria-label='Mudkip, Ruby & Sapphire #60']")
+          : page.locator(".phone .grid .cell").filter({ hasText: "#60" }).filter({ hasText: "Ruby & Sapphire" }).first();
+        await t.scrollIntoViewIfNeeded(); await t.tap(); await sleep(1200);
+        windowY = await page.evaluate(() => window.scrollY);
+      };
+      if (side === "prod") await signIn(page, prod.url);
+      else { await page.goto(proto.url); await page.waitForSelector(".phone"); await page.locator(".controls button", { hasText: /^Returning Collector$/ }).click(); await sleep(300); }
+      await S.tab(page, "Browse").tap(); await sleep(600);
+      const dex = page.locator(`${BROWSE[side].tile}[data-dex='258']`); await dex.scrollIntoViewIfNeeded(); await dex.tap(); await sleep(900);
+      await openSixty();
+      for (const [name, taps] of FLOW) { for (const t of taps) await choose(t); await shot(name); }
+      await shot("s10b-trade-top", "top");
+      /* 11. the save */
+      await page.locator(D.add).tap(); await sleep(250);
+      await page.evaluate((y) => window.scrollTo(0, y), windowY); await page.screenshot({ path: path.join(OUT, `${tag}-s11-saved-on-card.png`), clip: await S.screen(page) });
+      await sleep(1400);
+      await page.evaluate((y) => window.scrollTo(0, y), windowY); await page.screenshot({ path: path.join(OUT, `${tag}-s11b-saved-back-in-browse.png`), clip: await S.screen(page) });
+      /* 13. reopened: remembered */
+      await openSixty();
+      const remembered = await page.locator(D.remembered).innerText().catch(() => "");
+      await shot("s13-reopened-remembers", "top");
+      /* 12. production only: a genuine server refusal — the same Goal arrives from elsewhere */
+      if (side === "prod") {
+        await choose("Normal"); await choose("I'm looking for it"); await choose("Graded"); await choose("PSA 10"); await choose("Primary");
+        const r60 = (await (await fetch(prod.url + "api/card-contexts?pokedex=258", { headers: { authorization: "Bearer casey" } })).json()).contexts.find((c) => c.collectorNumber === "60" && c.expansionName === "Ruby & Sapphire");
+        const normal = (await (await fetch(prod.url + `api/card-contexts/${r60.cardContextId}`, { headers: { authorization: "Bearer casey" } })).json()).canonicalCards.find((c) => c.finish === "non_holo").canonicalCardId;
+        await prod.post("addGoal", { canonicalCardId: normal, tier: "secondary", desired: { grade: "PSA 9" } });
+        await page.locator(D.add).tap(); await sleep(800);
+        await page.evaluate((y) => window.scrollTo(0, y), windowY); await page.screenshot({ path: path.join(OUT, `${tag}-s12-refused.png`), clip: await S.screen(page) });
+      }
+      /* 14. back to the same Browse */
+      await page.locator(D.back).tap(); await sleep(700);
+      await page.evaluate((y) => window.scrollTo(0, y), windowY); await page.screenshot({ path: path.join(OUT, `${tag}-s14-back-to-browse.png`), clip: await S.screen(page) });
+      results.stage2[tag] = { remembered, errors };
+      await context.close();
+    }
+
     /* 2d. production only: the collapsing header. Until Stage 2's questions
        are drawn, Mudkip's page fits an 844-pt screen and never scrolls, so the
        header is shown doing it on a SHORTER window (390 × 460) — labelled so. */
@@ -500,6 +572,7 @@ ${full ? `<details><summary>Full page</summary><div style="display:flex;gap:18px
         console.log(`  ${k.padEnd(24)} ${f(PC.measures[k]).padEnd(26)} ${f(QC.measures[k])}`);
       }
       console.log(`  picture loaded            ${JSON.stringify(PC.images.map((i) => i.ok))}  ${JSON.stringify(QC.images.map((i) => i.ok))}`);
+      if (results.stage2) for (const [k, v] of Object.entries(results.stage2)) console.log(`  stage 2 ${k.padEnd(10)} remembered: ${JSON.stringify(v.remembered)} errors: ${JSON.stringify(v.errors)}`);
       console.log(`  header collapse (prod, 390×460): mini-card ${JSON.stringify(results.prod.collapse)}`);
       console.log(`  browse scroll kept        ${JSON.stringify(PC.scrollBefore)}→${JSON.stringify(PC.scrollAfter)}  ${JSON.stringify(QC.scrollBefore)}→${JSON.stringify(QC.scrollAfter)}`);
     }

@@ -56,7 +56,7 @@
    they already own.
    ========================================================================== */
 
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import CardSpecification from "../CardSpecification.jsx";
 import CardDetail from "../CardDetail.jsx";
 import Discover, { newBrowseSession } from "../../browse/Discover.jsx";
@@ -67,23 +67,40 @@ export { newBrowseSession };
 
 export default function Browse({ state, session, onSession, onSpecify = null,
   onBrowseCards = null, fillingBinder = null, onDoneFilling = null, onCount = null }) {
-  /* P6-F3A Stage 1: a card opens as the Phase 6 full-screen CardDetail. Its
+  /* P6-F3A: a card opens as the Phase 6 full-screen CardDetail. Its
      neighbours are the Browse results it was opened from, so ‹ › walk them.
-     "Add to MetYet" opens the existing Card Specification for the chosen
-     version — today's save path, until Stage 2 ports the guided questions. */
+     Its own questions end in one command (Stage 2); after the server says yes
+     it returns here, as the prototype does, with a note and the card marked.
+
+     ARRIVING FROM A BINDER'S "+ Add cards" (Phase 5 C3.4) IS THE ONE
+     EXCEPTION. That door promises the card lands in that binder, and the Phase
+     6 card has no binder question (prototype Iteration 2: "where it belongs is
+     a separate job, done in Binders"). Rather than drop the promise or invent
+     a binder step, this mode keeps Stage 1's behaviour: Add opens the existing
+     Card Specification with the binder already ticked. Awaiting a founder
+     decision (docs/PHASE6_APPROVED_DEVIATIONS.md B27). */
   const [context, setContext] = useState(null);      // the card being shown: row + its printings
   const [nav, setNav] = useState(null);              // { list, index, label } — where it was opened from
-  const [specifying, setSpecifying] = useState(null); // the exact canonical card, in the current form
+  const [specifying, setSpecifying] = useState(null); // filling a binder only: the exact canonical card
   const [problem, setProblem] = useState(null);
   const [opening, setOpening] = useState(false);
+  const [note, setNote] = useState(null);            // the prototype's acknowledgement, back on Browse
+  const [justId, setJustId] = useState(null);        // the card just added, marked in the grid
+  const [addedOnce, setAddedOnce] = useState(false); // "Add to MetYet wakes up as you answer." until the first Add
   const reading = useRef(0);
+
+  useEffect(() => {
+    if (!note) return undefined;
+    const t = setTimeout(() => setNote(null), 4500);
+    return () => clearTimeout(t);
+  }, [note]);
 
   const close = () => { setContext(null); setNav(null); setSpecifying(null); setProblem(null); };
 
   const show = async (row, list, label) => {
     if (!onBrowseCards || opening) return;
     const ticket = ++reading.current;
-    setOpening(true); setProblem(null); setSpecifying(null);
+    setOpening(true); setProblem(null); setSpecifying(null); setNote(null);
     try {
       const answer = await onBrowseCards.read(row.cardContextId);
       if (ticket !== reading.current) return;
@@ -101,6 +118,16 @@ export default function Browse({ state, session, onSession, onSpecify = null,
     if (!nav) return;
     const next = nav.list[nav.index + d];
     if (next) show(next, nav.list, nav.label);
+  };
+  /* After the server said yes and the card held its beat: Browse, exactly where
+     it was, with the prototype's note and the card marked. */
+  const added = (ack) => {
+    const id = context && context.cardContextId;
+    const card = context ? [text(context.cardName), context.collectorNumber ? `#${context.collectorNumber}` : null].filter(Boolean).join(" ") : "";
+    close();
+    setAddedOnce(true);
+    setNote({ ...ack, card });
+    setJustId(id);
   };
 
   return (
@@ -125,14 +152,21 @@ export default function Browse({ state, session, onSession, onSpecify = null,
           nothing behind it: the results, their order and the page's scroll
           are simply still there when the card closes. */}
       <Discover state={state} browse={onBrowseCards} browsing={session || newBrowseSession()} onBrowsing={onSession}
-        onChoose={open} chosenId={context && context.cardContextId} busy={opening} onCount={onCount} />
+        onChoose={open} chosenId={context && context.cardContextId} justId={justId} busy={opening} onCount={onCount} />
       {problem ? <p className="mcs-add-problem" role="alert">{problem}</p> : null}
+      {note && !context ? (
+        <button type="button" className="mcs-d-ack" role="status" onClick={() => setNote(null)}>
+          <b>{note.head}</b> <span>{[note.card, note.facts].filter(Boolean).join(" · ")}</span>
+          <span className="mcs-d-ack-value">{note.value}</span>
+        </button>
+      ) : null}
 
       {context ? (
         <CardDetail key={context.cardContextId} context={context} state={state}
           backLabel={(nav && nav.label) || "Browse"} position={nav ? nav.index : 0} total={nav ? nav.list.length : 1}
           onStep={nav && nav.list.length > 1 ? step : null} onClose={close}
-          onAdd={onSpecify ? (card) => setSpecifying(card) : null} />
+          onSave={fillingBinder ? null : onSpecify} onAdded={added} wakeHint={!addedOnce}
+          onForm={fillingBinder && onSpecify ? (card) => setSpecifying(card) : null} />
       ) : null}
       {context && specifying ? (
         <div className="mcs-spec-scrim">

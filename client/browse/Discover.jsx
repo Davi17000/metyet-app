@@ -93,7 +93,7 @@ function Markers({ m }) {
   return <span className="mcs-dmarks">{chips.map(([t, c]) => <span key={t} className={`mcs-mk mcs-mk-${c}`}>{t}</span>)}</span>;
 }
 
-export default function Discover({ state, browse = null, browsing, onBrowsing, onChoose, chosenId = null, busy: opening = false, onCount = null }) {
+export default function Discover({ state, browse = null, browsing, onBrowsing, onChoose, chosenId = null, justId = null, busy: opening = false, onCount = null }) {
   const S = browsing;
   /* THE SESSION IS HANDED BACK AS A VALUE, as CardBrowser always has, so any
      host's setter works. Updates are computed from the latest session this
@@ -290,7 +290,7 @@ export default function Discover({ state, browse = null, browsing, onBrowsing, o
           <ul className="mcs-dgrid">
             {cards.items.map((row) => (
               <li key={row.cardContextId}>
-                <button type="button" className={`mcs-dcell${chosenId === row.cardContextId ? " on" : ""}`} disabled={opening}
+                <button type="button" className={`mcs-dcell${chosenId === row.cardContextId ? " on" : ""}${justId === row.cardContextId ? " just" : ""}`} disabled={opening}
                   aria-label={`${row.cardName}, ${[row.expansionName, row.collectorNumber ? `#${row.collectorNumber}` : null].filter(Boolean).join(" ")}`}
                   onClick={() => onChoose(row, cards.items, [summary, needle ? `“${needle}”` : null].filter(Boolean).join(" · ") || "Browse")}>
                   <CardArt src={row.imageSmall} name={row.cardName} wrap="mcs-dcell-art" plate="mcs-art-plate" decorative

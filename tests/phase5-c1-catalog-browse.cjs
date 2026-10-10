@@ -377,31 +377,30 @@ describe("C. the Collector: browse, specify, commit", () => {
     return r;
   };
 
-  /* RESTATED (P6-F3A Stage 1): a card from Browse opens as the Phase 6
-     full-screen card. Until Stage 2 ports the guided questions, its "Add to
-     MetYet" opens the same Card Specification these tests always drove — so
-     each journey below gains exactly one step, and every claim after it is
-     unchanged. */
+  /* RESTATED (P6-F3A Stage 2): a card from Browse opens as the Phase 6
+     full-screen card and is SAID there — the prototype's questions, then one
+     "Add to MetYet". The claims below are C1's: one command, at the end,
+     naming the exact canonical card, with the tier and the copy wanted. */
+  const answer = async (r, ...labels) => {
+    for (const label of labels) {
+      const b = buttons(r).find((n) => /mcs-cd-choice/.test(n.props.className || "")
+        && (n.findAll((x) => x.type === "b")[0] || { children: [] }).children.join("") === label);
+      assert(b, `the card does not offer "${label}": ` + texts(r));
+      await TR.act(async () => { b.props.onClick(); });
+      await settle(r);
+    }
+  };
   const add = async (r) => {
     const b = buttons(r).find((n) => instText(n).trim() === "Add to MetYet");
     assert(b, "the card has no Add to MetYet: " + texts(r));
     assert(b.props["aria-disabled"] === false, "Add to MetYet is not ready: " + texts(r));
     await press(r, "Add to MetYet");
   };
-
-  /* The panel's want control plus Save, which is what "says they are looking for
-     it" means from C3.3 onwards. A canonical Goal states which copy it wants, so
-     stating one is part of the flow rather than an extra step. */
-  const sayWanted = async (r, label, grade = "PSA 9") => {
-    await press(r, label);
-    const select = r.root.findAll((n) => n.type === "label")
-      .find((n) => instText(n).includes("Grade wanted"));
-    assert(select, "the panel did not ask which copy is wanted");
-    const el = select.findAll((n) => n.type === "select")[0];
-    await TR.act(async () => { el.props.onChange({ target: { value: grade } }); });
-    await settle(r);
-    await press(r, "Save");
+  const lookingFor = async (r, tier, grade = "PSA 9") => {
+    await answer(r, "I'm looking for it", "Graded", grade, tier);
+    await add(r);
   };
+
 
   /* SUPERSEDED BY C3.3 AND RESTATED. What this protected: that a person finds a
      card by browsing, opens it, says they are looking for it, and ONE command
@@ -428,8 +427,8 @@ describe("C. the Collector: browse, specify, commit", () => {
     assert(texts(r).includes("Base Set"), "the card did not open: " + texts(r));
     /* One printing is not a choice, so there is nothing to ask. */
     assert(texts(r).includes("Holo — the only version of this card."), texts(r));
-    await add(r);
-    await sayWanted(r, "Actively hunting");
+    eq(sent.length, 0, "opening the card wrote something");
+    await lookingFor(r, "Primary");
 
     eq(sent.length, 1, "one command, and only at the end");
     /* The panel speaks its own words — a Collector surface may not name a
@@ -455,16 +454,19 @@ describe("C. the Collector: browse, specify, commit", () => {
     await typeInto(r, "mcs-br-q", "Blastoise");
     assert(!buttons(r).some((n) => (n.props["aria-label"] || "") === "Add Blastoise"), "a `+` survived");
     await press(r, "Blastoise");
-    await add(r);
     const viaCard = texts(r);
-    assert(viaCard.includes("Are you looking for it?"), "the card did not open specification: " + viaCard);
+    /* RESTATED (P6-F3A Stage 2): where the `+` led is now the card's own question. */
+    assert(viaCard.includes("What does this card mean to you? I'm looking for it"), "the card does not ask: " + viaCard);
   });
 
   test("a card with several printings asks which, and will not commit until told", async () => {
     const ctx = await world();
     const made = await shelfOfCards(ctx);
     const sent = [];
-    const r = await browsing(ctx, async (p) => { sent.push(p); return { ok: true }; });
+    /* the card id is captured too: C1's last line used to read
+       `sent[0].canonicalCardId || …`, which could not fail when the panel sent
+       the step alone. */
+    const r = await browsing(ctx, async (p, canonicalCardId) => { sent.push({ ...p, canonicalCardId }); return { ok: true }; });
     await typeInto(r, "mcs-br-q", "Charizard");
     await press(r, "Charizard");
     const shown = texts(r);
@@ -477,19 +479,18 @@ describe("C. the Collector: browse, specify, commit", () => {
     const ready = buttons(r).find((n) => instText(n).trim() === "Add to MetYet");
     assert(ready && ready.props["aria-disabled"] === true, "Add was offered before a version was chosen");
     await press(r, "Add to MetYet");
-    assert(!/Are you looking for it\?/.test(texts(r)), "an unchosen version reached the form");
+    eq(sent.length, 0, "an unchosen version was sent");
+    assert(/Which version is it\?/.test(texts(r)), "the muted Add did not point at the question: " + texts(r));
 
     /* And nothing else is offered until it is answered: C1 asserted this by
        finding a disabled commit button, which is a stronger statement when the
        controls are not rendered at all. */
-    assert(!/Are you looking for it\?/.test(shown),
+    assert(!/What does this card mean to you\?/.test(shown),
       "it offered to specify a card before knowing which printing: " + shown);
-    await press(r, "Holo · First Edition");
-    await add(r);
-    await sayWanted(r, "Actively hunting");
+    await answer(r, "Holo · First Edition");
+    await lookingFor(r, "Primary");
     eq(sent.length, 1);
-    eq(sent[0].canonicalCardId || made.charizard.cards[0], made.charizard.cards[0],
-      "the printing that was chosen");
+    eq(sent[0].canonicalCardId, made.charizard.cards[0], "the printing that was chosen");
   });
 
   test("Secondary is the same road to the same kind of record", async () => {
@@ -500,8 +501,7 @@ describe("C. the Collector: browse, specify, commit", () => {
         { canonicalCardId, tier: step.tier, desired: step.desired })).json());
     await typeInto(r, "mcs-br-q", "Blastoise");
     await press(r, "Blastoise");
-    await add(r);
-    await sayWanted(r, "Keeping an eye out");
+    await lookingFor(r, "Secondary");
     const goals = (await ctx.repository.loadWorld()).goals;
     eq(goals.length, 1);
     eq(goals[0].tier, "secondary", "keeping an eye out is still explicit demand");
@@ -542,26 +542,24 @@ describe("C. the Collector: browse, specify, commit", () => {
     const made = await shelfOfCards(ctx);
     await post(ctx.app, "casey", "addGoal",
       { canonicalCardId: made.blastoise.cards[0], tier: "primary", desired: { grade: "PSA 9" } });
-    const r = await browsing(ctx, async () => ({ ok: true }));
+    const sent = [];
+    const r = await browsing(ctx, async (p) => { sent.push(p); return { ok: true }; });
     await typeInto(r, "mcs-br-q", "Blastoise");
     await press(r, "Blastoise");
     /* RESTATED (C3.3). C1 answered "you already want this" by refusing to offer
-       the control again, which was right when the panel could do one thing. The
-       panel now opens on CURRENT TRUTH: the want it already holds is the one
-       selected, so there is nothing to add twice — and the person can still
-       change it, which they could not before. That is a stronger property than
-       a hidden button, and it is what is asserted.
-       P6-F3A: the Phase 6 card says it first, in "MetYet remembers". */
+       the control again; C3.3's panel opened on the want it already held.
+       RESTATED AGAIN (P6-F3A Stage 2), as the prototype does it: the card says
+       so in "MetYet remembers", and where "I'm looking for it" would be there is
+       "You're looking for it" — not a choice — so there is nothing to add twice.
+       Changing how hard is a Binders job (the four-state sheet). */
     assert(/MetYet remembers Holo · Looking for it · Primary · PSA 9/.test(texts(r)), texts(r));
-    await add(r);
     const shown = texts(r);
-    assert(shown.includes("Are you looking for it?"), shown);
-    const hunting = buttons(r).find((b) => instText(b).trim() === "Actively hunting");
-    assert(hunting && hunting.props["aria-pressed"] === true,
-      "the panel did not open on what the Collector already said: " + shown);
-    /* And Save has nothing to do, because nothing has been changed yet. */
-    const save = buttons(r).find((b) => instText(b).trim() === "Save");
-    assert(save && save.props.disabled, "an unchanged card offered to write something");
+    assert(/You're looking for it Primary · PSA 9 · Not in a binder/.test(shown), shown);
+    assert(!/I'm looking for it/.test(shown), "it offered to ask again: " + shown);
+    const addNow = buttons(r).find((b) => instText(b).trim() === "Add to MetYet");
+    eq(addNow.props["aria-disabled"], true, "an unchanged card offered to write something");
+    await press(r, "Add to MetYet");
+    eq(sent.length, 0, "a second goal was sent");
   });
 });
 
