@@ -60,6 +60,7 @@
 import React, { useState } from "react";
 import { describeActor } from "../actor.js";
 import { rows } from "./present.js";
+import { STATE_CSS } from "./states.jsx";
 import { newBrowseSession } from "./sections/Browse.jsx";
 import Browse from "./sections/Browse.jsx";
 import Binder from "./sections/Binder.jsx";
@@ -713,8 +714,19 @@ button.mcs-otap { cursor:pointer; }
 .mcs-oqual { font-size:11px; color:var(--text); }
 .mcs-mk { display:inline-block; font-size:9.5px; font-weight:600; padding:0 6px; border-radius:999px;
   border:1px solid currentColor; background:#FFF; }
-.mcs-mk-primary { color:var(--t1); } .mcs-mk-secondary { color:#3E6B8A; } .mcs-mk-pc { color:#5B4B8A; }
-.mcs-mk-trade { color:var(--amber); } .mcs-mk-owned, .mcs-mk-goal { color:var(--muted); }
+.mcs-mk-owned, .mcs-mk-goal { color:var(--muted); }
+/* THE FOUR STATES (P6-F4 B2A): one mapping, client/collector/states.jsx —
+   the icon and outline in the state's colour, its label in a darker ink of the
+   same hue on a faint tint. */
+${STATE_CSS}
+.mcs-mk.mcs-st { display:inline-flex; align-items:center; gap:3px; color:var(--st-ink); border-color:var(--st);
+  background:var(--st-tint); }
+.mcs-st .mcs-sticon, [data-st] .mcs-sticon { color:var(--st); flex:0 0 auto; }
+.mcs-state .mcs-chead, .mcs-cd-choice .mcs-chead { display:flex; align-items:center; gap:6px; color:inherit; font-size:inherit; }
+.mcs-state[data-st].on { border-color:var(--st); background:var(--st-tint); }
+.mcs-state[data-st].on b { color:var(--st-ink); }
+.mcs-cd-choice[data-st].on { border-color:var(--st); background:var(--st-tint); }
+.mcs-cd-choice[data-st].on b { color:var(--st-ink); }
 .mcs-mk-earlier { color:var(--faint); border-style:dashed; }
 .mcs-ohome { color:var(--text); font-weight:600; } .mcs-ohome.unf { color:var(--muted); font-weight:500; }
 .mcs-oq { font-size:10.5px; line-height:1.3; color:var(--muted); overflow:hidden;
@@ -819,6 +831,15 @@ button.mcs-otap { cursor:pointer; }
 .mcs-dest.off { opacity:.45; border-style:dashed; cursor:default; }
 .mcs-dest.cancel { margin-top:auto; text-align:center; align-items:center; background:#F4F6F8; }
 .mcs-dest.cancel.over { background:#E9EDF1; border-color:var(--muted); }
+/* + New binder, as a destination (prototype .dest.new) */
+.mcs-dest.new { border-style:dashed; color:var(--t1); }
+/* the Move chooser: the same destinations, as buttons (P6-F4 B2A) */
+.mcs-choose .mcs-dest { text-align:left; font:inherit; color:var(--text); cursor:pointer; display:flex; flex-direction:column; }
+.mcs-choose .mcs-dest.new { color:var(--t1); }
+.mcs-choose .mcs-dest:disabled { cursor:default; }
+.mcs-choose .mcs-dest:not(:disabled):active { border-color:var(--t1); background:var(--t1-bg); }
+.mcs-newbin-scrim { z-index:65; }
+.mcs-omove-btn { min-width:96px; }
 .mcs-ghost { position:fixed; width:92px; transform:translate(-50%,-60%) rotate(-3deg) scale(1.04); pointer-events:none;
   z-index:61; filter:drop-shadow(0 12px 18px rgba(10,16,20,.35)); }
 .mcs-undo { margin-left:8px; font-weight:600; }

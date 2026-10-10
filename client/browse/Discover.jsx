@@ -7,6 +7,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import CardArt from "../card-art.jsx";
 import { useCardDescriptions } from "../collector/card-descriptions.js";
+import { StateChip } from "../collector/states.jsx";
 
 const rows = (v) => (Array.isArray(v) ? v : []);
 const text = (v) => (typeof v === "string" && v.trim() ? v.trim() : null);
@@ -90,7 +91,8 @@ function Markers({ m }) {
   if (m.tradeSell) chips.push([m.tradeSell > 1 ? `Trade / Sell ×${m.tradeSell}` : "Trade / Sell", "trade"]);
   if (m.owned) chips.push([m.owned > 1 ? `Owned ×${m.owned}` : "Owned", "owned"]);
   if (!chips.length) return null;
-  return <span className="mcs-dmarks">{chips.map(([t, c]) => <span key={t} className={`mcs-mk mcs-mk-${c}`}>{t}</span>)}</span>;
+  /* the four states in their one visual language (P6-F4 B2A); Owned stays neutral */
+  return <span className="mcs-dmarks">{chips.map(([t, c]) => <StateChip key={t} kind={c} label={t} />)}</span>;
 }
 
 export default function Discover({ state, browse = null, browsing, onBrowsing, onChoose, chosenId = null, justId = null, busy: opening = false, onCount = null }) {

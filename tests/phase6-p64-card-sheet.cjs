@@ -123,6 +123,10 @@ const tileOf = (r, state, name) => yourCards(r).findAll((n) => n.type === "li" &
 const sheet = (r) => r.root.findAll((n) => n.props && n.props.role === "dialog" && /^Card: /.test(String(n.props["aria-label"] || "")))[0] || null;
 const choice = (r, m) => sheet(r).findAll((n) => n.type === "button" && n.props["data-meaning"] === m)[0];
 const snack = (r) => r.root.findAll((n) => cls(n) === "mcs-snack-wrap")[0] || null;
+/* RESTATED (P6-F4 B2A): the sheet's binder controls are ONE "Move", whose
+   chooser holds every destination — another binder, Unfiled, + New binder.
+   The same commands; the claims below are unchanged. */
+const chooser = (r) => r.root.findAll((n) => n.props && n.props.role === "dialog" && n.props["aria-label"] === "Where should this go?")[0] || null;
 const press = async (b) => { assert(b, "no such control"); await TR.act(async () => { b.props.onClick(); }); await settle(); };
 const open = async (r, state, name) => {
   const t = tileOf(r, state, name);
@@ -237,8 +241,8 @@ describe("D. state and binder are independent", () => {
   test("moving binders sends one fileObject and no state", async () => {
     const { r, sent } = await show();
     await open(r, "PC", "Charizard");
-    await press(btn(r, /^Move to another binder$/));
-    assert(/It will move from Gen 1/.test(flat(sheet(r))));
+    await press(btn(r, /^Move$/));
+    assert(/now in Gen 1/.test(flat(chooser(r))), "the chooser does not say where it is now");
     await press(btn(r, /^Mudkips$/));
     eq(json(sent), json([["fileObject", { binderId: "b-mud", collectorCopyId: "k-char" }]]));
     eq(choice(r, "pc").props["aria-pressed"], true, "the state moved with the binder");
@@ -247,7 +251,8 @@ describe("D. state and binder are independent", () => {
   test("taking it out of its binder: unfileObject only; Unfiled is said", async () => {
     const { r, sent } = await show();
     await open(r, "Primary", "Charizard");
-    await press(btn(r, /^Take out of Gen 1$/));
+    await press(btn(r, /^Move$/));
+    await press(btn(r, /^Unfiled Take it out of Gen 1$/));
     eq(json(sent), json([["unfileObject", { goalId: "g-char" }]]));
     assert(/Unfiled/.test(flat(sheet(r).findAll((n) => cls(n) === "mcs-ohome")[0])));
     eq(choice(r, "primary").props["aria-pressed"], true);
@@ -255,8 +260,8 @@ describe("D. state and binder are independent", () => {
   test("put-away binders are not offered as a destination", async () => {
     const { r } = await show();
     await open(r, "Owned", "Venusaur");
-    await press(btn(r, /^Put in a binder$/));
-    const names = sheet(r).findAll((n) => n.type === "button" && n.props.className === "mcs-ochoice").map(flat);
+    await press(btn(r, /^Move$/));
+    const names = chooser(r).findAll((n) => n.type === "button" && String(n.props["data-dest"] || "").startsWith("b:")).map(flat);
     eq(json(names), json(["Gen 1", "Mudkips"]));
   });
 });
@@ -311,7 +316,7 @@ describe("F. one change at a time", () => {
     const s = await show({ hold: true });
     await open(s.r, "PC", "Charizard");
     await TR.act(async () => { choice(s.r, "trade").props.onClick(); });
-    assert(btn(s.r, /^Move to another binder$/).props.disabled, "Move offered during a change");
+    assert(btn(s.r, /^Move$/).props.disabled, "Move offered during a change");
     await TR.act(async () => { choice(s.r, "pc").props.onClick(); });
     eq(s.sent.length, 1);
     await TR.act(async () => { s.gates[0].resolve({ ok: true }); }); await settle();
@@ -319,7 +324,7 @@ describe("F. one change at a time", () => {
   test("while a filing is out, no state change is sent", async () => {
     const s = await show({ hold: true });
     await open(s.r, "PC", "Charizard");
-    await press(btn(s.r, /^Move to another binder$/));
+    await press(btn(s.r, /^Move$/));
     await TR.act(async () => { btn(s.r, /^Mudkips$/).props.onClick(); });
     await TR.act(async () => { choice(s.r, "trade").props.onClick(); });
     eq(json(s.sent.map(([k]) => k)), json(["fileObject"]));
@@ -332,7 +337,7 @@ describe("G. confirmation: compact, at the foot, with Undo", () => {
   test("after a filing from the sheet, the bar says it and offers Undo — outside the sheet", async () => {
     const { r, sent } = await show();
     await open(r, "PC", "Charizard");
-    await press(btn(r, /^Move to another binder$/));
+    await press(btn(r, /^Move$/));
     await press(btn(r, /^Mudkips$/));
     const bar = snack(r);
     assert(bar && /Charizard is filed in Mudkips/.test(flat(bar)), "no confirmation bar");
@@ -345,7 +350,7 @@ describe("G. confirmation: compact, at the foot, with Undo", () => {
   test("Undo without opening anything: after a drag-free filing elsewhere, the bar is on the screen itself", async () => {
     const { r } = await show();
     await open(r, "Owned", "Venusaur");
-    await press(btn(r, /^Put in a binder$/));
+    await press(btn(r, /^Move$/));
     await press(btn(r, /^Gen 1$/));
     await press(buttons(r).find((b) => b.props["aria-label"] === "Close"));
     eq(sheet(r), null);
@@ -354,7 +359,7 @@ describe("G. confirmation: compact, at the foot, with Undo", () => {
   test("Undo pressed twice in one instant sends one command", async () => {
     const s = await show();
     await open(s.r, "PC", "Charizard");
-    await press(btn(s.r, /^Move to another binder$/));
+    await press(btn(s.r, /^Move$/));
     await press(btn(s.r, /^Mudkips$/));
     const u = buttons(s.r).find((b) => cls(b) === "mcs-undo");
     await TR.act(async () => { u.props.onClick(); u.props.onClick(); }); await settle();
@@ -364,7 +369,7 @@ describe("G. confirmation: compact, at the foot, with Undo", () => {
     let n = 0;
     const { r } = await show({ answer: () => (n++ === 0 ? { ok: true } : { ok: false, refused: "binder-archived" }) });
     await open(r, "PC", "Charizard");
-    await press(btn(r, /^Move to another binder$/));
+    await press(btn(r, /^Move$/));
     await press(btn(r, /^Mudkips$/));
     await press(buttons(r).find((b) => cls(b) === "mcs-undo"));
     assert(/put away/.test(flat(snack(r))) && !/Put back/.test(flat(r.root)), flat(snack(r)));
@@ -372,7 +377,7 @@ describe("G. confirmation: compact, at the foot, with Undo", () => {
   test("Undo into a binder put away since it was offered: nothing sent, said why", async () => {
     const s = await show();
     await open(s.r, "PC", "Charizard");
-    await press(btn(s.r, /^Move to another binder$/));
+    await press(btn(s.r, /^Move$/));
     await press(btn(s.r, /^Mudkips$/));
     await s.commit((st) => ({ ...st, binders: st.binders.map((b) => (b.id === "b-gen1" ? { ...b, archivedAt: "2030-02-01" } : b)) }));
     await settle();
@@ -383,12 +388,12 @@ describe("G. confirmation: compact, at the foot, with Undo", () => {
   test("the bar gets out of the way after a few seconds; Move stays", async () => {
     const { r } = await show();
     await open(r, "PC", "Charizard");
-    await press(btn(r, /^Move to another binder$/));
+    await press(btn(r, /^Move$/));
     await press(btn(r, /^Mudkips$/));
     assert(snack(r));
     await TR.act(async () => { await sleep(6200); });
     eq(snack(r), null, "the confirmation stayed");
-    assert(btn(r, /^Move to another binder$/), "Move is gone with it");
+    assert(btn(r, /^Move$/), "Move is gone with it");
   });
   test("the bar sits above the tab bar and an open sheet, below a filing; only it takes touches", () => {
     let r;

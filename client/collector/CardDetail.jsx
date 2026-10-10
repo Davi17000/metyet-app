@@ -37,6 +37,7 @@ import React, { useEffect, useRef, useState } from "react";
 import CardArt from "../card-art.jsx";
 import { rows, text, gradeLine, criteriaLine } from "./present.js";
 import { explain } from "./CardSpecification.jsx";
+import { StateIcon } from "./states.jsx";
 
 /* The prototype's version words (fixtures.js FINISH_NAMES), plus what else
    makes a production printing different, said only when it is not the usual. */
@@ -174,11 +175,14 @@ export function ackFor(card, a, siblings = []) {
     value: "MetYet remembered this one. Only you can see it." };
 }
 
-function Choice({ on, onClick, title, sub, disabled, extra }) {
+/* `st`: one of the four collecting states, worn in the shared visual language
+   (states.jsx) — only on the tier and disposition choices that ARE those states. */
+function Choice({ on, onClick, title, sub, disabled, extra, st }) {
   return (
     <button type="button" className={`mcs-cd-choice${on ? " on" : ""}${extra ? ` ${extra}` : ""}`} aria-pressed={!!on}
-      disabled={disabled} onClick={onClick}>
-      <b>{title}</b>{sub ? <span>{sub}</span> : null}
+      disabled={disabled} onClick={onClick} data-st={st || undefined}>
+      {st ? <span className="mcs-chead"><StateIcon kind={st} size={14} /><b>{title}</b></span> : <b>{title}</b>}
+      {sub ? <span>{sub}</span> : null}
     </button>
   );
 }
@@ -379,16 +383,16 @@ export default function CardDetail({ context, state, backLabel = "Browse", posit
         {described(a) && a.intent === "looking" && !existingGoal ? (
           <Section id="priority" title="How important is this one?" focus={focus}>
             <div className="mcs-cd-col">
-              <Choice on={a.priority === "primary"} title="Primary" sub="I'm actively looking for this." onClick={() => choose("priority", "primary")} />
-              <Choice on={a.priority === "secondary"} title="Secondary" sub="I'd act on the right opportunity." onClick={() => choose("priority", "secondary")} />
+              <Choice st="primary" on={a.priority === "primary"} title="Primary" sub="I'm actively looking for this." onClick={() => choose("priority", "primary")} />
+              <Choice st="secondary" on={a.priority === "secondary"} title="Secondary" sub="I'm interested in this card." onClick={() => choose("priority", "secondary")} />
             </div>
           </Section>
         ) : null}
         {described(a) && a.intent === "own" ? (
           <Section id="disposition" title="What's this card to you?" focus={focus}>
             <div className="mcs-cd-col">
-              <Choice on={a.disposition === "pc"} title="Personal collection" sub="I'm keeping this one." onClick={() => choose("disposition", "pc")} />
-              <Choice on={a.disposition === "trade"} title="Trade / Sell" sub="I'd consider moving it." onClick={() => choose("disposition", "trade")} />
+              <Choice st="pc" on={a.disposition === "pc"} title="Personal collection" sub="I'm keeping this one." onClick={() => choose("disposition", "pc")} />
+              <Choice st="trade" on={a.disposition === "trade"} title="Trade / Sell" sub="I'd consider moving it." onClick={() => choose("disposition", "trade")} />
             </div>
           </Section>
         ) : null}

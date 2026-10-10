@@ -204,7 +204,7 @@ describe("an expanded binder (P6-3.1)", () => {
     const { page, context } = await open({ width: 390, height: 844 });
     const opened = await expand(page, "Favourites");
     await opened.locator("li.mcs-otile button.mcs-otap").first().click(); await page.waitForTimeout(300);
-    for (const loc of [page.locator("[role=dialog] button", { hasText: /^(Move to another binder|Put in a binder)$/ }),
+    for (const loc of [page.locator("[role=dialog] button", { hasText: /^Move$/ }),
       page.locator("[role=dialog] button[aria-label=Close]")]) {
       await loc.scrollIntoViewIfNeeded();
       const c = await centre(loc);
@@ -272,8 +272,9 @@ describe("mobile, through the real front door (P6-4)", () => {
     await state(page, "trade").tap();
     await page.locator("text=✓ Now Trade / Sell").waitFor({ timeout: 4000 });
     eq(await homeOf("collectorCopyId", ctx.ids.copy2), ctx.ids.mud, "the state change moved its binder");
-    await page.locator("[role=dialog] button", { hasText: /^Move to another binder$/ }).tap();
-    await page.locator("[role=dialog] button.mcs-ochoice", { hasText: /^Gen 1$/ }).tap();
+    /* RESTATED (P6-F4 B2A): Move, then the destination in its chooser */
+    await page.locator("[role=dialog] button", { hasText: /^Move$/ }).tap();
+    await page.locator("[role=dialog][aria-label='Where should this go?'] button.mcs-dest", { hasText: /^Gen 1$/ }).tap();
     await page.waitForTimeout(900);
     eq(await homeOf("collectorCopyId", ctx.ids.copy2), ctx.ids.gen1, "not moved");
     eq((await copyOf(ctx.ids.copy2)).offered, true, "the move changed its state");
@@ -611,6 +612,79 @@ describe("the Phase 6 card saves through production (P6-F3A Stage 2)", () => {
     w = await ctx.world();
     eq(w.goals.filter((g) => g.canonicalCardId === reverse).length, 1, "the refused Goal was written");
     eq(json(commands), json(["addCollectorCopy", "addGoal", "addGoal"]), "unexpected commands: " + json(commands));
+    eq(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "sideways scroll");
+    eq(errors.length, 0, errors.join(" | "));
+    await context.close();
+  });
+});
+
+/* P6-F4 BATCH 2A — LAST, BECAUSE IT WRITES. Move, through the real front
+   door, server and database: into a binder; then + New binder, whose first
+   filing the REAL server refuses (the request is pointed at a binder that does
+   not exist), so the made binder is kept and "Try moving again" completes it. */
+describe("Move and + New binder through production (P6-F4 B2A)", () => {
+  test("Move into a binder; + New binder with a refused move, kept, and Try moving again — one binder, filed once", async () => {
+    await before();
+    const context = await browser.newContext({ ...PHONE }); const page = await context.newPage();
+    const errors = []; page.on("pageerror", (e) => errors.push(e.message));
+    const commands = []; page.on("request", (r) => { if (r.url().includes("/api/commands")) commands.push(JSON.parse(r.postData() || "{}").command); });
+    await signIn(page, ctx.url);
+    await page.tap("nav[aria-label=Collector] button:has-text('Binders')"); await page.waitForTimeout(500);
+    const tile = page.locator("section[aria-label='Your Cards'] li.mcs-otile").filter({ hasText: /Charizard/ }).first().locator("button.mcs-otap");
+    const goal = (await ctx.world()).goals.find((g) => g.canonicalCardId) ;
+    const homeOfGoal = async () => ((await ctx.memberships()).find((m) => m.goalId === goal.id) || {}).binderId || null;
+    const w0 = await ctx.world();
+    /* 1. Move: one obvious button, its chooser, a binder */
+    await tile.scrollIntoViewIfNeeded(); await tile.tap(); await page.waitForTimeout(350);
+    await page.locator("[role=dialog] button", { hasText: /^Move$/ }).tap();
+    const chooser = page.locator("[role=dialog][aria-label='Where should this go?']");
+    await chooser.waitFor();
+    eq(commands.length, 0, "opening the chooser wrote something");
+    const from = await homeOfGoal();
+    const target = w0.binders.find((b) => !b.archivedAt && b.id !== from);
+    await page.screenshot({ path: "artifacts/f4-b2a-move-chooser.png" }).catch(() => {});
+    await chooser.locator("button.mcs-dest", { hasText: new RegExp(`^${target.name}$`) }).tap();
+    await page.locator(".mcs-snack", { hasText: `is filed in ${target.name}` }).waitFor();
+    eq(await homeOfGoal(), target.id, "not moved");
+    eq(await page.locator(`.mcs-bcover.open[data-binder='${target.id}']`).count(), 1, "the destination is not open");
+    /* 2. + New binder, the first filing refused by the real server */
+    let pointed = false;
+    await page.route("**/api/commands", async (route) => {
+      const body = JSON.parse(route.request().postData() || "{}");
+      if (body.command === "fileObject" && !pointed) {
+        pointed = true;
+        return route.continue({ postData: JSON.stringify({ ...body, payload: { ...body.payload, binderId: "b-does-not-exist" } }) });
+      }
+      return route.continue();
+    });
+    await page.locator("[role=dialog] button", { hasText: /^Move$/ }).tap();
+    await chooser.locator("button.mcs-dest", { hasText: /^\+ New binder$/ }).tap();
+    await page.locator("[role=dialog][aria-label='New binder'] input").fill("Keepers");
+    await page.screenshot({ path: "artifacts/f4-b2a-new-binder-name.png" }).catch(() => {});
+    await page.locator("[role=dialog][aria-label='New binder'] button", { hasText: /^Create & move$/ }).tap();
+    await page.locator(".mcs-snack.warn", { hasText: /Made “Keepers”, but Charizard couldn't be moved into it/ }).waitFor();
+    await page.screenshot({ path: "artifacts/f4-b2a-partial-success.png" }).catch(() => {});
+    let w = await ctx.world();
+    const keepers = w.binders.filter((b) => b.name === "Keepers");
+    eq(keepers.length, 1, "the made binder was not kept");
+    eq(await homeOfGoal(), target.id, "a refused move moved it");
+    eq(await page.locator(".mcs-snack", { hasText: /is filed in Keepers/ }).count(), 0, "success claimed after a refusal");
+    /* 3. Try moving again: only the move, into the binder already made */
+    await page.locator(".mcs-snack button", { hasText: /^Try moving again$/ }).tap();
+    await page.locator(".mcs-snack", { hasText: /Charizard is filed in Keepers/ }).waitFor();
+    await page.screenshot({ path: "artifacts/f4-b2a-retried.png" }).catch(() => {});
+    w = await ctx.world();
+    eq(w.binders.filter((b) => b.name === "Keepers").length, 1, "Try moving again made a second binder");
+    eq(await homeOfGoal(), keepers[0].id, "not moved into the made binder");
+    eq(json(commands), json(["fileObject", "createBinder", "fileObject", "fileObject"]), "unexpected commands: " + json(commands));
+    eq(w.goals.length, w0.goals.length, "a move made or removed a Goal");
+    eq(w.collectorCopies.length, w0.collectorCopies.length, "a move made or removed a copy");
+    eq(json(w.goals.find((g) => g.id === goal.id).tier), json(goal.tier), "a move changed the Goal's tier");
+    /* 4. Undo, after the confirmed move */
+    await page.locator(".mcs-snack button.mcs-undo").tap();
+    await page.locator(".mcs-snack", { hasText: /Put back/ }).waitFor();
+    eq(await homeOfGoal(), target.id, "Undo did not put it back");
+    eq((await ctx.world()).binders.filter((b) => b.name === "Keepers").length, 1, "Undo removed the binder");
     eq(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "sideways scroll");
     eq(errors.length, 0, errors.join(" | "));
     await context.close();

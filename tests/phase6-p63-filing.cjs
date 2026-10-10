@@ -191,13 +191,14 @@ describe("A. a tap opens; a hold files", () => {
     await down(b, "mouse", 10, 10); await moveTile(b, 30, 10);
     assert(layer(r), "a mouse drag did not pick the card up");
   });
-  test("the lifted tile is marked; the destinations are the active binders, Unfiled, and Cancel", async () => {
+  /* RESTATED (P6-F4 B2A): + New binder joins the destinations (B11 resolved) */
+  test("the lifted tile is marked; the destinations are the active binders, Unfiled, + New binder and Cancel", async () => {
     const { r } = await show();
     await pickUp(r, /Primary.*Charizard/);
     assert(cls(tileFor(r, /Primary.*Charizard/)).includes("lifted"), "the tile was not marked lifted");
     const dests = layer(r).findAll((n) => n.props && n.props["data-dest"]).map((n) => [n.props["data-dest"], flat(n), n.props["aria-disabled"] || ""]);
     eq(json(dests), json([["b:b-gen1", "Gen 1 Current binder", "true"], ["b:b-mud", "Mudkips", ""],
-      ["unfiled", "Unfiled Take it out of Gen 1", ""], ["cancel", "Cancel Put it back", ""]]), "destinations");
+      ["unfiled", "Unfiled Take it out of Gen 1", ""], ["new", "+ New binder", ""], ["cancel", "Cancel Put it back", ""]]), "destinations");
   });
 });
 
@@ -322,10 +323,10 @@ describe("D. when it does not work", () => {
 describe("D2. one at a time, by every route", () => {
   test("two filings in the same instant send one command", async () => {
     const s = await show({ hold: true });
-    /* RESTATED (P6-4): the sheet's binder buttons, two pressed in one instant. */
+    /* RESTATED (P6-4, then P6-F4 B2A): the Move chooser's binder buttons, two pressed in one instant. */
     await openSheetFor(s.r, /PC.*Blastoise/);
-    await TR.act(async () => { button(s.r, /^Put in a binder$/).props.onClick(); }); await settle();
-    const [one, two] = binderChoices(s.r, "Blastoise").findAll((n) => n.type === "button" && n.props.className === "mcs-ochoice");
+    await TR.act(async () => { button(s.r, /^Move$/).props.onClick(); }); await settle();
+    const [one, two] = binderChoices(s.r, "Blastoise").findAll((n) => n.type === "button" && String(n.props["data-dest"] || "").startsWith("b:"));
     await TR.act(async () => { one.props.onClick(); two.props.onClick(); });
     eq(s.sent.length, 1, "two commands left for one card at once");
     await TR.act(async () => { s.gates[0].resolve({ ok: true }); }); await settle();
@@ -337,13 +338,15 @@ describe("E. the paths that need no gesture", () => {
     /* RESTATED (P6-4): buttons in the card's sheet, not a select. */
     const { r, sent } = await show();
     await openSheetFor(r, /PC.*Blastoise/);
-    await TR.act(async () => { button(r, /^Put in a binder$/).props.onClick(); }); await settle();
+    await TR.act(async () => { button(r, /^Move$/).props.onClick(); }); await settle();
     const group = binderChoices(r, "Blastoise");
     assert(group, "no Binder choice in the card sheet");
-    eq(json(group.findAll((n) => n.type === "button" && n.props.className === "mcs-ochoice").map(flat)), json(["Gen 1", "Mudkips"]), "active binders only");
+    eq(json(group.findAll((n) => n.type === "button" && String(n.props["data-dest"] || "").startsWith("b:")).map(flat)), json(["Gen 1", "Mudkips"]), "active binders only");
     await TR.act(async () => { button(r, /^Mudkips$/).props.onClick(); }); await settle();
     eq(json(sent), json([["fileObject", { binderId: "b-mud", collectorCopyId: "k-blas" }]]));
-    await TR.act(async () => { button(r, /^Take out of Mudkips$/).props.onClick(); }); await settle();
+    /* RESTATED (P6-F4 B2A): Unfiled is a destination in the Move chooser */
+    await TR.act(async () => { button(r, /^Move$/).props.onClick(); }); await settle();
+    await TR.act(async () => { button(r, /^Unfiled Take it out of Mudkips$/).props.onClick(); }); await settle();
     eq(json(sent[1]), json(["unfileObject", { collectorCopyId: "k-blas" }]));
   });
   test("while a card sheet is open, a hold behind it picks nothing up (P6-3.1)", async () => {

@@ -242,9 +242,10 @@ describe("D. the card's sheet (restated in P6-4 from P6-3.1's Details)", () => {
   test("its Binder choice is the keyboard path to filing, and offers active binders only", async () => {
     const { r, sent } = await show();
     await openPc(r);
-    await click(btn(r, /^Move to another binder$/));
+    /* RESTATED (P6-F4 B2A): one Move; its chooser lists the binders (the current one marked, not offered) */
+    await click(btn(r, /^Move$/));
     const group = r.root.findAll((n) => n.props && n.props.role === "group" && n.props["aria-label"] === "Binder for Charizard")[0];
-    eq(json(group.findAll((n) => n.type === "button" && n.props.className === "mcs-ochoice").map(flat)), json(["Mudkip", LONG]));
+    eq(json(group.findAll((n) => n.type === "button" && String(n.props["data-dest"] || "").startsWith("b:") && !n.props.disabled).map(flat)), json(["Mudkip", LONG]));
     await click(btn(r, /^Mudkip$/));
     eq(json(sent), json([["fileObject", { binderId: "b-mud", collectorCopyId: "k-char" }]]), "one command, naming only the binder and the copy");
     assert(/Charizard is filed in Mudkip/.test(flat(r.root)), "the answer is not said");

@@ -312,7 +312,8 @@ describe("E. guided configuration (Stage 2)", () => {
     assert(/In what condition\? Near Mint Lightly Played Moderately Played Heavily Played Damaged/.test(flat(r)), flat(r));
     eq(addButton(r).props["aria-disabled"], true, "Add woke before the condition");
     await pick(r, "Lightly Played", "I'm looking for it");
-    assert(/How important is this one\? Primary I'm actively looking for this\. Secondary I'd act on the right opportunity\./.test(flat(r)), flat(r));
+    /* RESTATED (P6-F4 B2A): Secondary is "I'm interested in this card." — genuine interest, no urgency */
+    assert(/How important is this one\? Primary I'm actively looking for this\. Secondary I'm interested in this card\./.test(flat(r)), flat(r));
     eq(addButton(r).props["aria-disabled"], true, "Add woke before the tier");
     await pick(r, "Primary");
     eq(addButton(r).props["aria-disabled"], false);
