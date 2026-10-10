@@ -129,12 +129,38 @@ async function serve({ port = 0, seed = reviewSeed, collectorName = "Casey" } = 
   const appBundle = await build(APP_ENTRY);
   const page = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0"><div id="root"></div><script src="/main.js"></script></body></html>';
   const appPage = page.replace("/main.js", "/app.js");
+  /* THE PHONE IN ANY BROWSER (P6-F1 review fix). Opened in an ordinary
+     desktop window, /app is — correctly — the desktop layout. /phone frames
+     the very same /app at 390 × 844, so the layout is the phone's in any
+     browser. It is a frame around the product, not a change to it: no touch
+     emulation (the mouse stands in for a finger) — the launcher's window is
+     the emulated one. */
+  const phonePage = `<!doctype html><html><head><meta charset="utf-8"><title>MetYet — phone review</title>
+<style>body{margin:0;background:#E4E8EC;font:13px system-ui;color:#3A4450;display:flex;flex-direction:column;align-items:center;gap:10px;padding:18px}
+.f{width:390px;height:844px;border:0;border-radius:28px;background:#fff;box-shadow:0 0 0 10px #0A1014,0 20px 50px rgba(10,16,20,.25)}
+p{margin:0;max-width:430px;text-align:center}</style></head><body>
+<p><b>MetYet — phone review</b> · 390 × 844 · production-connected</p>
+<iframe class="f" src="/app" title="MetYet at phone size"></iframe>
+<p>A phone-sized frame in a desktop browser: the layout is the phone's; the mouse stands in for a finger. For touch emulation use the window opened by <code>npm run review:mobile</code>. Neither is Safari on a real iPhone.</p>
+</body></html>`;
+  /* What the launcher's own emulated window can report about itself. */
+  const hooks = {};
   const build_ = { ...buildOf(), startedAt: new Date().toISOString() };
   const server = http.createServer(async (req, res) => {
     if (req.url === "/__review") {
       res.writeHead(200, { "content-type": "application/json" });
       return res.end(JSON.stringify({ kind: "metyet-mobile-review", ...build_ }));
     }
+    if (req.url === "/__review/session" || req.url === "/__review/screenshot.png") {
+      const fn = req.url.endsWith(".png") ? hooks.screenshot : hooks.session;
+      if (!fn) { res.writeHead(404, { "content-type": "application/json" }); return res.end(JSON.stringify({ error: "no emulated window is attached to this server" })); }
+      try {
+        const out = await fn();
+        res.writeHead(200, { "content-type": req.url.endsWith(".png") ? "image/png" : "application/json" });
+        return res.end(req.url.endsWith(".png") ? out : JSON.stringify(out, null, 2));
+      } catch (e) { res.writeHead(500, { "content-type": "application/json" }); return res.end(JSON.stringify({ error: e.message })); }
+    }
+    if (req.url === "/phone" || req.url.startsWith("/phone?")) { res.writeHead(200, { "content-type": "text/html" }); return res.end(phonePage); }
     if (req.url.startsWith("/api/")) {
       const chunks = []; for await (const c of req) chunks.push(c);
       const body = Buffer.concat(chunks);
@@ -150,7 +176,7 @@ async function serve({ port = 0, seed = reviewSeed, collectorName = "Casey" } = 
   const memberships = async () => (await repository.loadWorld()).binderMemberships || [];
   const world = async () => repository.loadWorld();
   return { url: `http://127.0.0.1:${server.address().port}/`, server, memberships, world, post,
-    ids, build: build_ };
+    ids, build: build_, hooks };
 }
 
 

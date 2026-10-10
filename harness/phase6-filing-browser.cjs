@@ -383,11 +383,29 @@ describe("mobile shell (P6-F1)", () => {
     await before();
     const { page, context } = await phone();
     const tiles = await page.locator("section[aria-label='Your Cards'] li.mcs-otile").count();
-    eq(await page.locator("section[aria-label='Your Cards'] li.mcs-otile .mcs-ph").count(), tiles, "a tile is not the drawn card");
-    const art = await box(page, "section[aria-label='Your Cards'] .mcs-ph");
+    eq(await page.locator("section[aria-label='Your Cards'] li.mcs-otile .mcs-cardph").count(), tiles, "a tile is not the drawn card");
+    const art = await box(page, "section[aria-label='Your Cards'] .mcs-cardph");
     assert(Math.abs(art.height / art.width - 88 / 63) < 0.03, "not card-shaped");
-    eq(await page.evaluate(() => getComputedStyle(document.querySelector(".mcs-ph")).backgroundImage.startsWith("linear-gradient")), true, "not the coloured card face");
+    eq(await page.evaluate(() => getComputedStyle(document.querySelector(".mcs-cardph")).backgroundImage.startsWith("linear-gradient")), true, "not the coloured card face");
     await context.close();
+  });
+  test("panel heads stay panel heads — Browse, Deal Flow and Trusted Partners (P6-F1 review fix)", async () => {
+    await before();
+    for (const opts of [{ ...PHONE }, { viewport: { width: 1280, height: 860 } }]) {
+      const context = await browser.newContext(opts);
+      const page = await context.newPage();
+      await signIn(page, ctx.url);
+      for (const tab of ["Browse", "Deal Flow", "Trusted Partners"]) {
+        await page.locator("nav[aria-label=Collector] button", { hasText: tab }).click(); await page.waitForTimeout(300);
+        for (const h of await page.locator("header.mcs-ph").all()) {
+          const b = await h.boundingBox();
+          const bg = await h.evaluate((e) => getComputedStyle(e).backgroundImage);
+          assert(b.height < 80, `${tab} at ${opts.viewport.width}px: a panel head is ${Math.round(b.height)}px tall`);
+          assert(!/gradient/.test(bg), `${tab} at ${opts.viewport.width}px: a panel head wears the card face`);
+        }
+      }
+      await context.close();
+    }
   });
   test("the notice: none on Binders; one line on Deal Flow; the account sheet has it all, and Sign out signs out", async () => {
     await before();

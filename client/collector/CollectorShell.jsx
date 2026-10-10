@@ -858,26 +858,28 @@ button.mcs-otap { cursor:pointer; }
    prototype's own, named where they come from; production-only needs (four
    tabs, 16px search text) are recorded in docs/PHASE6_APPROVED_DEVIATIONS.md.
    ========================================================================== */
-/* the no-picture card, ported from the prototype's .art (every width) */
-.mcs .mcs-ph { --h:200; --h2:180; position:relative; display:flex; flex-direction:column; align-items:stretch;
+/* the no-picture card, ported from the prototype's .art (every width). Named
+   mcs-cardph: .mcs-ph is the shell's PANEL HEAD (parts.jsx), and sharing the
+   name turned every panel head into a card (found in review, fixed before P6-F2). */
+.mcs .mcs-cardph { --h:200; --h2:180; position:relative; display:flex; flex-direction:column; align-items:stretch;
   justify-content:flex-start; aspect-ratio:63/88; border-radius:9px; overflow:hidden; padding:6%;
   background:linear-gradient(160deg,hsl(var(--h) 55% 62%),hsl(var(--h2) 50% 45%));
   box-shadow:0 1px 2px rgba(0,0,0,.18), inset 0 0 0 3px hsl(48 70% 72%); color:#0B1620; font-size:13px; line-height:1.2; }
-.mcs-ph-top { display:flex; justify-content:space-between; gap:4px; font-size:.8em; min-width:0; }
-.mcs-ph-top b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.mcs-ph-window { flex:1; margin:6% 0; border-radius:4px; display:flex; align-items:center; justify-content:center;
+.mcs-cardph-top { display:flex; justify-content:space-between; gap:4px; font-size:.8em; min-width:0; }
+.mcs-cardph-top b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mcs-cardph-window { flex:1; margin:6% 0; border-radius:4px; display:flex; align-items:center; justify-content:center;
   background:radial-gradient(circle at 50% 35%,hsl(var(--h2) 70% 88%),hsl(var(--h) 45% 70%)); box-shadow:inset 0 0 0 2px rgba(0,0,0,.12); }
-.mcs-ph-pose { width:86%; } .mcs-ph-pose .body { fill:hsl(var(--h) 70% 52%); } .mcs-ph-pose .fin { fill:hsl(var(--h) 75% 40%); }
-.mcs-ph-pose .eye { fill:#0B1620; } .mcs-ph-pose .cheek { fill:hsl(28 90% 60%); } .mcs-ph-pose .shadow { fill:rgba(0,0,0,.15); }
-.mcs-ph-pose.p1 { transform:scaleX(-1); } .mcs-ph-pose.p2 { transform:rotate(-8deg); } .mcs-ph-pose.p3 { transform:scale(.8) translateY(6px); }
-.mcs-ph-pose.p4 { transform:scaleX(-1) rotate(6deg); }
-.mcs-ph-foot { display:flex; justify-content:space-between; gap:4px; font-size:.68em; opacity:.85; min-width:0; }
-.mcs-ph-foot span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.mcs-ph-none { position:absolute; left:8%; right:8%; bottom:16%; text-align:center; font-size:.62em; color:rgba(11,22,32,.65);
+.mcs-cardph-pose { width:86%; } .mcs-cardph-pose .body { fill:hsl(var(--h) 70% 52%); } .mcs-cardph-pose .fin { fill:hsl(var(--h) 75% 40%); }
+.mcs-cardph-pose .eye { fill:#0B1620; } .mcs-cardph-pose .cheek { fill:hsl(28 90% 60%); } .mcs-cardph-pose .shadow { fill:rgba(0,0,0,.15); }
+.mcs-cardph-pose.p1 { transform:scaleX(-1); } .mcs-cardph-pose.p2 { transform:rotate(-8deg); } .mcs-cardph-pose.p3 { transform:scale(.8) translateY(6px); }
+.mcs-cardph-pose.p4 { transform:scaleX(-1) rotate(6deg); }
+.mcs-cardph-foot { display:flex; justify-content:space-between; gap:4px; font-size:.68em; opacity:.85; min-width:0; }
+.mcs-cardph-foot span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mcs-cardph-none { position:absolute; left:8%; right:8%; bottom:16%; text-align:center; font-size:.62em; color:rgba(11,22,32,.65);
   background:rgba(255,255,255,.6); border-radius:4px; padding:1px 0; }
 /* the card sheet's picture is still P6-4's 96px (its rebuild is P6-F2): the
    placeholder's type scales to it rather than overflowing */
-.mcs .mcs-ohero-art.mcs-ph { font-size:11.5px; padding:6px; }  /* 6% of its own 96px: a % pads by the PARENT's width */
+.mcs .mcs-ohero-art.mcs-cardph { font-size:11.5px; padding:6px; }  /* 6% of its own 96px: a % pads by the PARENT's width */
 
 /* the account button and sheet; the one-line notice (phone only, see below) */
 .mcs-acct { flex:0 0 auto; width:44px; height:44px; margin:-8px -8px -8px 0; border:0; background:none; padding:6px;

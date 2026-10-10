@@ -65,7 +65,24 @@ const here = () => {
 };
 
 /* ------------------------------------------------- a phone window */
-async function openPhone(url) {
+/* The emulated window is a second instance of the SAME Google Chrome app the
+   reviewer uses every day — same name, same Dock icon — so it can open behind
+   their own windows (P6-F1 review: exactly what happened). Bring THAT process
+   forward, by its process id; macOS may refuse, and that is said, not hidden. */
+function bringForward(browserPid) {
+  if (process.platform !== "darwin" || !browserPid) return false;
+  try {
+    execFileSync("osascript", ["-e", `tell application "System Events" to set frontmost of (first process whose unix id is ${browserPid}) to true`], { stdio: "ignore", timeout: 4000 });
+    return true;
+  } catch (e) { return false; }
+}
+const chromePidUnder = (parent) => {
+  try {
+    return execFileSync("ps", ["-axo", "pid=,ppid=,comm="], { encoding: "utf8" }).split("\n").map((l) => l.trim().split(/\s+/))
+      .filter(([pid, ppid, ...c]) => Number(ppid) === parent && /Google Chrome$/.test(c.join(" "))).map(([pid]) => Number(pid))[0] || null;
+  } catch (e) { return null; }
+};
+async function openPhone(url, hooks = null) {
   let chromium = null;
   try { ({ chromium } = require("playwright")); } catch (e) { chromium = null; }
   if (!chromium) { say(["", "Playwright is not installed, so no phone window can be opened.", `Open ${url} in a browser's device mode instead.`]); return null; }
@@ -75,7 +92,23 @@ async function openPhone(url) {
   const page = await context.newPage();
   await page.goto(url);
   await page.bringToFront();
-  return browser;
+  const forward = bringForward(chromePidUnder(process.pid));
+  /* The window reports on itself, through the review server, so what it is
+     actually doing can be checked — and photographed — from outside. */
+  if (hooks) {
+    hooks.session = async () => ({ url: page.url(), ...(await page.evaluate(() => ({ innerWidth, innerHeight, devicePixelRatio,
+      maxTouchPoints: navigator.maxTouchPoints, pointerCoarse: matchMedia("(pointer: coarse)").matches,
+      phoneLayout: !matchMedia("(min-width:860px)").matches, userAgent: navigator.userAgent }))), broughtForward: forward });
+    hooks.screenshot = () => page.screenshot();
+  }
+  return { browser, forward };
+}
+
+function tellWindow(forward) {
+  say(["  A phone-sized Chrome window is open, emulating an iPhone (390 × 844, touch). It is not Safari on a real iPhone.",
+    forward ? "  It has been brought to the front."
+      : "  It may be BEHIND your other windows: it is a second Google Chrome — look for a second Chrome icon in the Dock, or use the phone address above.",
+    "  Close that window, or press Ctrl-C here, to stop.", ""]);
 }
 
 async function main() {
@@ -86,8 +119,9 @@ async function main() {
     const mine = here();
     if (there.commit && there.commit === mine) {
       say([`A MetYet mobile review is already running at ${url} (build ${there.commit}, started ${there.startedAt}).`,
-        noBrowser ? "Open that address, or run without --no-browser for a phone window onto it." : "Opening another phone window onto it."]);
-      if (!noBrowser) { const b = await openPhone(url); if (b) b.on("disconnected", () => process.exit(0)); }
+        `In any browser, the phone layout:   http://127.0.0.1:${port}/phone`,
+        noBrowser ? "Or run without --no-browser for an emulated phone window onto it." : "Opening another emulated phone window onto it."]);
+      if (!noBrowser) { const o = await openPhone(url); if (o) { tellWindow(o.forward); o.browser.on("disconnected", () => process.exit(0)); } }
       return;
     }
     say([`Port ${port} already has a MetYet mobile review running, from ${there.commit ? `build ${there.commit}` : "an older build"} — this checkout is ${mine || "unknown"}.`,
@@ -107,12 +141,14 @@ async function main() {
     }
     throw e;
   }
-  say(["", "MetYet mobile review", `  ${url}`, "  Sign in with any email address and any code.",
-    "  The window is Chrome emulating an iPhone (390 × 844, touch). It is not Safari on a real iPhone.",
-    "  Close the window, or press Ctrl-C here, to stop.", ""]);
+  const phoneUrl = `http://127.0.0.1:${port}/phone`;
+  say(["", "MetYet mobile review — build " + (ctx.build.commit || "unknown") + (ctx.build.dirty ? " (with uncommitted changes)" : ""),
+    "  Sign in with any email address and any code.",
+    `  In any browser, the phone layout:   ${phoneUrl}`,
+    `  (Don't open ${url} in your everyday browser window — at desktop width that is, correctly, the desktop layout.)`, ""]);
   if (noBrowser) return;  // keep serving
-  const browser = await openPhone(url);
-  if (browser) browser.on("disconnected", () => { ctx.server.close(); process.exit(0); });
+  const opened = await openPhone(url, ctx.hooks);
+  if (opened) { tellWindow(opened.forward); opened.browser.on("disconnected", () => { ctx.server.close(); process.exit(0); }); }
 }
 
 /* ------------------------------------------------- --shots */

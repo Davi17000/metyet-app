@@ -155,8 +155,8 @@ describe("D. the prototype's placeholder, in the shared card picture", () => {
   const draw = (props) => { let r; TR.act(() => { r = TR.create(React.createElement(CardArt, { wrap: "w", plate: "p", ...props })); }); return r; };
   test("no picture: a drawn card — name, figure, set, number, 'No picture yet'", () => {
     const r = draw({ name: "Mudkip", card: { key: "cc-1", set: "Ruby & Sapphire", number: "60" } });
-    const root = r.root.findAll((n) => n.props && String(n.props.className || "").split(" ").includes("mcs-ph"))[0];
-    assert(root && /^w mcs-ph$/.test(root.props.className), "not the card-shaped placeholder");
+    const root = r.root.findAll((n) => n.props && String(n.props.className || "").split(" ").includes("mcs-cardph"))[0];
+    assert(root && /^w mcs-cardph$/.test(root.props.className), "not the card-shaped placeholder");
     eq(flat(root), "Mudkip ◆ Ruby & Sapphire 60 No picture yet");
     assert(root.findAll((n) => n.type === "svg").length === 1, "no figure");
     eq(root.props.role, "img"); eq(root.props["aria-label"], "Mudkip");
@@ -177,16 +177,28 @@ describe("D. the prototype's placeholder, in the shared card picture", () => {
     const img = r.root.findAll((n) => n.type === "img")[0];
     assert(img, "the approved image was replaced");
     TR.act(() => { img.props.onError(); });
-    assert(r.root.findAll((n) => n.props && String(n.props.className || "").split(" ").includes("mcs-ph")).length === 1, "a broken image left nothing");
+    assert(r.root.findAll((n) => n.props && String(n.props.className || "").split(" ").includes("mcs-cardph")).length === 1, "a broken image left nothing");
   });
   test("without `card`, every other surface draws exactly as before", () => {
     eq(flat(draw({ name: "Mudkip" }).root), "Mudkip");
-    assert(!draw({ name: "Mudkip" }).root.findAll((n) => n.props && /mcs-ph/.test(String(n.props.className || ""))).length);
+    assert(!draw({ name: "Mudkip" }).root.findAll((n) => n.props && /mcs-cardph/.test(String(n.props.className || ""))).length);
+  });
+  test("its class names are its own: no other part of the client uses them", () => {
+    /* FOUND IN REVIEW: the placeholder was first named .mcs-ph — already the
+       shell's PANEL HEAD (parts.jsx) — and every panel head became a card. */
+    const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]));
+    const users = walk(path.join(ROOT, "client")).filter((f) => /\.jsx?$/.test(f) && !/CollectorShell\.jsx$/.test(f))
+      .filter((f) => /mcs-cardph/.test(fs.readFileSync(f, "utf8"))).map((f) => path.relative(ROOT, f));
+    eq(json(users), json(["client/card-art.jsx"]), "the placeholder's class is used elsewhere");
+    const c = css();
+    const panelHead = c.match(/(^|\n)[^{}\n]*\.mcs-ph\b[^{]*\{/g) || [];
+    assert(panelHead.every((sel) => !/mcs-ph(?!-)\b[^{]*\{[^}]*aspect-ratio/.test(sel)), "the panel head picked up the card shape");
+    assert(!/\.mcs \.mcs-ph\s*\{/.test(c), "a card rule targets the panel head");
   });
   test("the Binders tiles, the card sheet and the lifted card all ask for it", () => {
     const src = fs.readFileSync(path.join(ROOT, "client/collector/sections/Binder.jsx"), "utf8");
     eq((src.match(/card=\{phOf\(/g) || []).length, 3);
-    assert(/\.mcs \.mcs-ph \{ --h:200; --h2:180;[^}]*inset 0 0 0 3px hsl\(48 70% 72%\)/.test(css()), "not the prototype's card face");
+    assert(/\.mcs \.mcs-cardph \{ --h:200; --h2:180;[^}]*inset 0 0 0 3px hsl\(48 70% 72%\)/.test(css()), "not the prototype's card face");
   });
 });
 

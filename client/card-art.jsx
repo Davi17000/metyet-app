@@ -73,10 +73,10 @@ function Placeholder({ wrap, label, card, decorative }) {
   const h = hash(card.key || label || "");
   const a11y = decorative ? { "aria-hidden": "true" } : label ? { role: "img", "aria-label": label } : {};
   return (
-    <span className={`${wrap} mcs-ph`} style={{ "--h": h % 360, "--h2": (h >> 9) % 360 }} {...a11y}>
-      <span className="mcs-ph-top"><b>{label || ""}</b><span aria-hidden="true">◆</span></span>
-      <span className="mcs-ph-window">
-        <svg viewBox="0 0 100 70" className={`mcs-ph-pose p${h % 5}`} aria-hidden="true" focusable="false">
+    <span className={`${wrap} mcs-cardph`} style={{ "--h": h % 360, "--h2": (h >> 9) % 360 }} {...a11y}>
+      <span className="mcs-cardph-top"><b>{label || ""}</b><span aria-hidden="true">◆</span></span>
+      <span className="mcs-cardph-window">
+        <svg viewBox="0 0 100 70" className={`mcs-cardph-pose p${h % 5}`} aria-hidden="true" focusable="false">
           <ellipse cx="50" cy="60" rx="34" ry="5" className="shadow" />
           <path className="body" d="M22 50 C20 30 40 18 55 22 C70 26 80 38 76 50 C72 60 30 62 22 50Z" />
           <path className="fin" d="M50 22 C46 8 60 4 66 12 C60 14 56 18 55 22Z" />
@@ -84,8 +84,8 @@ function Placeholder({ wrap, label, card, decorative }) {
           <path className="cheek" d="M30 40 l-9 -4 l2 8 l-9 1 l9 4Z" />
         </svg>
       </span>
-      <span className="mcs-ph-foot"><span>{text(card.set) || ""}</span><span>{text(card.number) || ""}</span></span>
-      <span className="mcs-ph-none">No picture yet</span>
+      <span className="mcs-cardph-foot"><span>{text(card.set) || ""}</span><span>{text(card.number) || ""}</span></span>
+      <span className="mcs-cardph-none">No picture yet</span>
     </span>
   );
 }
