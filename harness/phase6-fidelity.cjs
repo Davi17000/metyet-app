@@ -88,6 +88,32 @@ async function prototypeData(url) {
     data: JSON.parse(execFileSync("git", ["show", `${FROZEN}:${PROTO_DIR}/data/tcgdex-fixture.json`], { cwd: ROOT, encoding: "utf8", maxBuffer: 64 << 20 })) };
 }
 
+/* ----------------------------------- the prototype's catalogue, in production
+   The SAME cards the prototype browses — its sets, card contexts (name, number,
+   artist, Pokédex numbers) and printings — written straight into the review
+   database's catalogue tables, WITHOUT images (production has no approved
+   source). Ids are the prototype's own, so its preset can name them. This is a
+   review fixture in a throwaway database; production's catalogue arrives only
+   through `catalog:import`. */
+async function importCatalogue(db, data, notes) {
+  const sets = data.sets.map((x) => ({ id: x.code, code: x.code, name: x.name, series: x.series || null, release: x.releaseDate || null, total: x.printedTotal || null }));
+  const contexts = data.contexts.map((c) => ({ id: c.id, set: c.setCode, n: String(c.number), name: c.name, artist: c.artist || null, rarity: c.rarity || null, dex: c.dexId || [] }));
+  const printings = data.printings.map((p) => ({ id: p.id, ctx: p.contextId, finish: (p.dims && p.dims.finish) || "non_holo" }));
+  await db.transaction(async (tx) => {
+    await tx.query(`insert into metyet_catalog.expansions (expansion_id, game, code, natural_key, name, series, release_date, printed_total)
+      select id, 'pokemon', code, 'proto:' || id, name, series, release, total from jsonb_to_recordset($1::jsonb)
+      as x(id text, code text, name text, series text, release text, total int) on conflict do nothing`, [JSON.stringify(sets)]);
+    await tx.query(`insert into metyet_catalog.card_contexts (card_context_id, expansion_id, collector_number, card_name, natural_key, artist, rarity, pokedex_numbers)
+      select id, "set", n, name, 'proto:' || id, artist, rarity, dex from jsonb_to_recordset($1::jsonb)
+      as x(id text, "set" text, n text, name text, artist text, rarity text, dex jsonb)
+      where exists (select 1 from metyet_catalog.expansions e where e.expansion_id = x."set") on conflict do nothing`, [JSON.stringify(contexts)]);
+    await tx.query(`insert into metyet_catalog.canonical_cards (canonical_card_id, card_context_id, print_run, finish, language, natural_key)
+      select id, ctx, 'unlimited', finish, 'en', 'proto:' || id from jsonb_to_recordset($1::jsonb) as x(id text, ctx text, finish text)
+      where exists (select 1 from metyet_catalog.card_contexts c where c.card_context_id = x.ctx) on conflict do nothing`, [JSON.stringify(printings)]);
+  });
+  notes.push(`catalogue: the prototype's own ${sets.length.toLocaleString()} sets, ${contexts.length.toLocaleString()} cards, ${printings.length.toLocaleString()} printings — loaded into the review database without images`);
+}
+
 /* ------------------------------------------ the prototype's preset, in production */
 function seedFrom(world, data, notes) {
   const printing = new Map(data.printings.map((p) => [p.id, p]));
@@ -98,12 +124,10 @@ function seedFrom(world, data, notes) {
     if (!p || !c || !s) { notes.push(`unresolved printing ${cp}`); return null; }
     return { name: c.name, number: c.number, finish: p.dims.finish, set: { code: s.code, name: s.name, printedTotal: s.printedTotal || null } };
   };
-  return async ({ card, post }) => {
-    const made = new Map();
-    const canonical = async (cp) => {
-      if (!made.has(cp)) { const id = identity(cp); made.set(cp, id ? await card(id.number, id.name, id.finish, id.set) : null); }
-      return made.get(cp);
-    };
+  return async ({ post, db }) => {
+    await importCatalogue(db, data, notes);
+    /* the preset names printings by the prototype's ids, which are now the catalogue's */
+    const canonical = async (cp) => (identity(cp) ? cp : null);
     const byTime = (a, b) => String(a.at).localeCompare(String(b.at));
     const binderId = new Map();
     for (const b of [...world.binders].map((x) => ({ ...x, at: x.createdAt })).sort(byTime)) {
@@ -169,6 +193,29 @@ const SIDES = {
     dest: (p) => p.locator("[data-dest^='b:']:not(.off)").first(),
   },
 };
+
+const BROWSE = {
+  proto: { tabs: ".phone .tabs button", gen: ".phone .filters.gens button", tile: ".phone .tile", cell: ".phone .grid .cell",
+    clearAll: ".phone .chips .clearall", search: ".phone .narrow.unified input", suggestion: ".phone .suggestions button",
+    m: { title: ".phone .hd h1", search: ".phone .narrow.unified input", tabs: ".phone .tabs", gens: ".phone .filters.gens",
+      firstTile: ".phone .tiles .tile", tileArt: ".phone .tiles .tile .art", firstCell: ".phone .grid .cell", cellArt: ".phone .grid .cell .art" } },
+  prod: { tabs: ".mcs-dtabs button", gen: ".mcs-dgens button", tile: ".mcs-dtile", cell: ".mcs-dcell",
+    clearAll: ".mcs-dchip.clearall", search: ".mcs-dsearch-in", suggestion: ".mcs-dsugg button",
+    m: { title: ".mcs-hd h1", search: ".mcs-dsearch-in", tabs: ".mcs-dtabs", gens: ".mcs-dgens",
+      firstTile: ".mcs-dtile", tileArt: ".mcs-dtile-art", firstCell: ".mcs-dcell", cellArt: ".mcs-dcell-art" } },
+};
+async function measureBrowse(page, side) {
+  const screen = await SIDES[side].screen(page);
+  return page.evaluate(({ sel, screen }) => {
+    const out = {};
+    for (const [k, q] of Object.entries(sel)) {
+      const e = document.querySelector(q); if (!e) { out[k] = null; continue; }
+      const b = e.getBoundingClientRect(); out[k] = { top: Math.round(b.top - screen.y), w: Math.round(b.width), h: Math.round(b.height) };
+    }
+    out.overflowX = document.documentElement.scrollWidth > window.innerWidth;
+    return out;
+  }, { sel: BROWSE[side].m, screen });
+}
 
 async function measure(page, side) {
   const s = SIDES[side];
@@ -275,8 +322,69 @@ async function run() {
       await context.close();
     }
 
+    /* 2b. BROWSE, every journey (P6-F2) — the same catalogue on both sides */
+    for (const [side, variant] of [["proto", "placeholders"], ["proto", "art"], ["prod", "app"]]) {
+      const S = SIDES[side];
+      const context = await browser.newContext({ ...PHONE });
+      if (variant === "placeholders") await context.route((u) => !u.href.startsWith(proto.url), (r) => r.abort());
+      const page = await context.newPage();
+      const errors = []; page.on("pageerror", (e) => errors.push(e.message));
+      const tag = side === "prod" ? "prod" : `proto-${variant}`;
+      const B = BROWSE[side];
+      const shot = async (name) => { await sleep(350); await page.screenshot({ path: path.join(OUT, `${tag}-${name}.png`), clip: await S.screen(page) }); };
+      if (side === "prod") await signIn(page, prod.url);
+      else { await page.goto(proto.url); await page.waitForSelector(".phone"); await page.locator(".controls button", { hasText: /^Returning Collector$/ }).click(); await sleep(300); }
+      await S.tab(page, "Browse").tap(); await sleep(700);
+      await shot("b01-landing");
+      const bm = { landing: await measureBrowse(page, side) };
+      await page.locator(B.gen, { hasText: "Gen 3" }).first().tap(); await sleep(500);
+      await shot("b02-gen3");
+      const dex = page.locator(`${B.tile}[data-dex='258']`); await dex.scrollIntoViewIfNeeded(); await dex.tap(); await sleep(800);
+      await shot("b03-pokemon-cards");
+      bm.results = await measureBrowse(page, side);
+      await page.locator(B.cell).first().tap(); await sleep(900);
+      await shot("b04-card-selected");
+      if (side === "prod") { const c = page.locator("button", { hasText: /^Cancel$/ }).first(); if (await c.count()) await c.tap(); }
+      else await page.locator(".phone .detail button.back").tap();
+      await sleep(500);
+      await shot("b05-back");
+      await page.locator(B.clearAll).tap(); await sleep(300);
+      await page.locator(B.tabs, { hasText: "Sets" }).tap(); await sleep(700);
+      await shot("b06-sets");
+      await page.locator(B.search).fill("ruby"); await sleep(900);
+      await shot("b07-suggestions");
+      await page.locator(B.suggestion, { hasText: "Ruby & Sapphire" }).first().tap(); await sleep(900);
+      await shot("b08-set-cards");
+      await page.locator(B.clearAll).tap(); await sleep(300);
+      await page.locator(B.tabs, { hasText: "Artists" }).tap(); await sleep(700);
+      await shot("b09-artists");
+      await page.locator(B.search).fill("nishida"); await sleep(900);
+      await page.locator(B.suggestion, { hasText: "Nishida" }).first().tap(); await sleep(900);
+      await shot("b10-artist-cards");
+      await page.locator(B.clearAll).tap(); await sleep(300);
+      await page.locator(B.search).fill("zzzzq"); await sleep(900);
+      await shot("b11-empty");
+      results[tag] = { ...(results[tag] || {}), browse: bm, browseErrors: errors };
+      await context.close();
+    }
+    /* production only: a slow catalogue, then an unreachable one */
+    for (const [name, handler] of [["b12-loading", async (r) => { await sleep(4000); r.continue(); }], ["b13-error", (r) => r.abort()]]) {
+      const context = await browser.newContext({ ...PHONE }); const page = await context.newPage();
+      await signIn(page, prod.url);
+      await context.route((u) => /\/api\/(pokemon|card-contexts|expansions|artists)/.test(u.href), handler);
+      await SIDES.prod.tab(page, "Browse").tap(); await sleep(400);
+      await page.locator(BROWSE.prod.search).fill("mudkip"); await sleep(name === "b12-loading" ? 600 : 1500);
+      await page.screenshot({ path: path.join(OUT, `prod-${name}.png`) });
+      await context.close();
+    }
+
     /* 3. side by side, 1 CSS px = 1 px, aligned at the top of each screen */
-    const SCREENS = [["01-browse", "Browse (baseline — P6-5 not implemented)", true], ["02-binders-home", "Binders home", true],
+    const SCREENS = [["b01-landing", "Browse — landing (Pokédex)"], ["b02-gen3", "Browse — Gen 3"], ["b03-pokemon-cards", "Browse — Pokémon: Mudkip"],
+      ["b04-card-selected", "Browse — card selected (production: version, then the Card Specification; full-screen is P6-F3)"], ["b05-back", "Browse — back"],
+      ["b06-sets", "Browse — Sets"], ["b07-suggestions", "Browse — search suggestions"], ["b08-set-cards", "Browse — a set's cards"],
+      ["b09-artists", "Browse — Artists"], ["b10-artist-cards", "Browse — an artist's cards"], ["b11-empty", "Browse — nothing matches"],
+      ["b12-loading", "Browse — loading (production only)"], ["b13-error", "Browse — catalogue unreachable (production only)"],
+      ["02-binders-home", "Binders home", true],
       ["03-expanded-binder", "Expanded binder", true], ["04-tiles", "Card tiles and placeholders"], ["05-card-detail", "Card detail"],
       ["06-filing-chooser", "Filing chooser"], ["07-filing-confirmation", "Filing confirmation"]];
     const P = results["proto-placeholders"].metrics.bindersHome; const Q = results.prod.metrics.bindersHome;
@@ -286,6 +394,13 @@ async function run() {
       ["tab bar height", P.nav && P.nav.h, Q.nav && Q.nav.h], ["tab labels on one line", P.navLabels.every((l) => l.lines <= 1), Q.navLabels.every((l) => l.lines <= 1)],
       ["sideways scroll", P.overflowX, Q.overflowX]];
     const delta = Q.firstCard && P.firstCard ? Q.firstCard.top - P.firstCard.top : null;
+    const PB = results["proto-placeholders"].browse; const QB = results.prod.browse;
+    const bRows = PB && QB ? [
+      ...["title", "search", "tabs", "gens", "firstTile"].map((k) => [`landing ${k} top`, PB.landing[k] && PB.landing[k].top, QB.landing[k] && QB.landing[k].top]),
+      ["landing tile art w × h", PB.landing.tileArt && `${PB.landing.tileArt.w} × ${PB.landing.tileArt.h}`, QB.landing.tileArt && `${QB.landing.tileArt.w} × ${QB.landing.tileArt.h}`],
+      ["results first card top", PB.results.firstCell && PB.results.firstCell.top, QB.results.firstCell && QB.results.firstCell.top],
+      ["results card art w × h", PB.results.cellArt && `${PB.results.cellArt.w} × ${PB.results.cellArt.h}`, QB.results.cellArt && `${QB.results.cellArt.w} × ${QB.results.cellArt.h}`],
+      ["sideways scroll", PB.landing.overflowX || PB.results.overflowX, QB.landing.overflowX || QB.results.overflowX]] : [];
     const html = `<!doctype html><meta charset="utf-8"><title>Phase 6 fidelity — ${stamp}</title>
 <body style="font:14px system-ui;margin:20px;color:#131922">
 <h1 style="margin:0 0 6px">Phase 6 fidelity — prototype ${FROZEN} vs production ${prod.build.commit}${prod.build.dirty ? " (uncommitted changes)" : ""}</h1>
@@ -294,13 +409,16 @@ async function run() {
 <table border="1" cellpadding="5" style="border-collapse:collapse"><tr><th></th><th>Prototype (placeholders)</th><th>Production</th></tr>
 ${rows.map((r) => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join("")}</table>
 <p><b>First card: production ${delta == null ? "n/a" : `${delta >= 0 ? "+" : ""}${delta}px`} from the prototype.</b></p>
+<h2>Browse, measured from the top of each screen</h2>
+<table border="1" cellpadding="5" style="border-collapse:collapse"><tr><th></th><th>Prototype (placeholders)</th><th>Production</th></tr>
+${bRows.map((r) => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join("")}</table>
 <h2>Recorded differences</h2><ul>${notes.map((n) => `<li>${n}</li>`).join("")}
 <li>Card artwork: production has no approved image source; "prototype (art)" is the frozen prototype as shipped, "prototype (placeholders)" blocks its card images at the network so it draws its own placeholders — the like-for-like.</li>
 <li>Placeholder colours come from each app's own card ids, so the same card is a different hue in each.</li>
 <li>Production has four tabs (approved deviation); the prototype two.</li>
 <li>Page errors — prototype: ${results["proto-art"].errors.length + results["proto-placeholders"].errors.length}; production: ${results.prod.errors.length}</li></ul>
 ${SCREENS.map(([k, t, full]) => `<h2>${t}</h2><div style="display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap">
-${["proto-art", "proto-placeholders", "prod"].map((tg) => `<figure style="margin:0"><figcaption><b>${{ "proto-art": "Prototype (as shipped)", "proto-placeholders": "Prototype (placeholders)", prod: "Production" }[tg]}</b></figcaption>
+${["proto-art", "proto-placeholders", "prod"].filter((tg) => fs.existsSync(path.join(OUT, `${tg}-${k}.png`))).map((tg) => `<figure style="margin:0"><figcaption><b>${{ "proto-art": "Prototype (as shipped)", "proto-placeholders": "Prototype (placeholders)", prod: "Production" }[tg]}</b></figcaption>
 <img src="${tg}-${k}.png" style="width:${tg === "prod" ? 390 : 370}px;border:1px solid #ccc"></figure>`).join("")}</div>
 ${full ? `<details><summary>Full page</summary><div style="display:flex;gap:18px;align-items:flex-start">${["proto-placeholders", "prod"].map((tg) => `<img src="${tg}-${k}-full.png" style="width:${tg === "prod" ? 390 : 390}px;border:1px solid #ccc">`).join("")}</div></details>` : ""}`).join("\n")}
 </body>`;
@@ -308,6 +426,7 @@ ${full ? `<details><summary>Full page</summary><div style="display:flex;gap:18px
     fs.writeFileSync(path.join(OUT, "metrics.json"), JSON.stringify({ prototype: FROZEN, production: prod.build, notes, results: Object.fromEntries(Object.entries(results).map(([k, v]) => [k, v.metrics])) }, null, 2));
     console.log(`\nPhase 6 fidelity — prototype ${FROZEN} vs production ${prod.build.commit}${prod.build.dirty ? "+changes" : ""}`);
     for (const r of rows) console.log(`  ${String(r[0]).padEnd(24)} ${String(r[1]).padEnd(14)} ${r[2]}`);
+    if (bRows.length) { console.log("  — Browse —"); for (const r of bRows) console.log(`  ${String(r[0]).padEnd(24)} ${String(r[1]).padEnd(14)} ${r[2]}`); }
     console.log(`  first card: production ${delta == null ? "n/a" : `${delta >= 0 ? "+" : ""}${delta}px`} from the prototype`);
     console.log(`\n  open file://${path.join(OUT, "index.html")}`);
     if (process.argv.includes("--strict") && (delta == null || Math.abs(delta) > 16 || Q.overflowX)) process.exitCode = 1;
@@ -318,4 +437,11 @@ ${full ? `<details><summary>Full page</summary><div style="display:flex;gap:18px
   }
 }
 
-run().catch((e) => { console.error(`fidelity harness failed: ${e.message.split("\n")[0]}`); process.exit(1); });
+if (require.main === module) run().catch((e) => {
+  console.error(`fidelity harness failed: ${e.message.split("\n")[0]}`);
+  const at = String(e.stack || "").split("\n").find((l) => /phase6-(fidelity|world)\.cjs/.test(l));
+  if (at) console.error(`  at ${at.trim()}`);
+  process.exit(1);
+});
+
+module.exports = { seedFrom, prototypeData, startPrototype };

@@ -57,13 +57,15 @@
    ========================================================================== */
 
 import React, { useState } from "react";
-import CardBrowser from "../../browse/CardBrowser.jsx";
-import { Panel } from "../parts.jsx";
 import CardSpecification from "../CardSpecification.jsx";
+import Discover, { newBrowseSession } from "../../browse/Discover.jsx";
 import { rows, text } from "../present.js";
 
+/* The session the shell keeps (P6-F2): Browse's own, defined beside it. */
+export { newBrowseSession };
+
 export default function Browse({ state, session, onSession, onSpecify = null,
-  onBrowseCards = null, fillingBinder = null, onDoneFilling = null }) {
+  onBrowseCards = null, fillingBinder = null, onDoneFilling = null, onCount = null }) {
   const [context, setContext] = useState(null);      // the card context being specified
   const [chosen, setChosen] = useState(null);        // the exact canonical card
   const [problem, setProblem] = useState(null);
@@ -103,7 +105,7 @@ export default function Browse({ state, session, onSession, onSpecify = null,
   const versions = rows(context && context.cards);
 
   return (
-    <Panel title="Browse" note={null}>
+    <div className="mcs-browse">
       {/* WHICH BINDER IS BEING FILLED, QUIETLY (Phase 5 C3.4). Somebody arrived
           here from a binder and is adding cards to it; the panel will tick that
           binder for them, and they can untick it. It is a note about where they
@@ -123,8 +125,9 @@ export default function Browse({ state, session, onSession, onSpecify = null,
           its sibling and is rendered AFTER it, out of flow, so opening one
           moves nothing behind it. That ordering is the whole of Browse
           preservation: there is no state to save and none to restore. */}
-      <CardBrowser browse={onBrowseCards} prefix="mcs" session={session} onSession={onSession}
-        onChoose={open} chosenId={context && context.cardContextId} busy={opening} />
+      <Discover state={state} browse={onBrowseCards} browsing={session || newBrowseSession()} onBrowsing={onSession}
+        onChoose={open} chosenId={context && context.cardContextId} busy={opening} onCount={onCount} />
+      {problem && !context ? <p className="mcs-add-problem" role="alert">{problem}</p> : null}
 
       {context ? (
         <div className="mcs-spec-scrim">
@@ -183,6 +186,6 @@ export default function Browse({ state, session, onSession, onSpecify = null,
           )}
         </div>
       ) : null}
-    </Panel>
+    </div>
   );
 }

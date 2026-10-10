@@ -841,7 +841,9 @@ describe("F. nothing acts, nothing mutates, nothing forbidden is imported", () =
        "What works today", both of which only open the account sheet */
     const chrome = new Set(buttons(r).filter((x) => /^Account: /.test(String(x.props["aria-label"] || ""))).map((x) => instText(x).trim()));
     const own = browsing.filter((l) => !NAV.some((n) => l.includes(n)) && l !== "Sign out" && l !== "What works today" && !chrome.has(l));
-    eq(own.join(","), "Pokémon,Set,Artist", "Browse grew a control: " + own.join(" | "));
+    /* RESTATED (P6-F2): the Phase 6 doorways and the generation filter's "All"
+       (with no catalogue here there are no generations to add). */
+    eq(own.join(","), "Pokémon,Sets,Artists,All", "Browse grew a control: " + own.join(" | "));
     const bare = COLLECTOR_FILES.map(code).join("\n");
     /* Binder entries, interests and invitations are still nobody's to write
        from here; each moves with its own batch. */

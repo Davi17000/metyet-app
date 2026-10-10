@@ -193,8 +193,12 @@ const settle = async () => {
     await TR.act(async () => { await new Promise((done) => setTimeout(done, 0)); });
   }
 };
+/* RESTATED (Phase 6 P6-F2): a Phase 6 grid card names itself in its accessible
+   name ("Mudkip, Ruby & Sapphire #60") — the picture carries the name visually. */
 const findButton = (r, label) => buttons(r).find((n) => instText(n).trim() === label
-  || instText(n).includes(label) || (n.props["aria-label"] || "") === label);
+  || instText(n).includes(label) || (n.props["aria-label"] || "") === label
+  || (n.props["aria-label"] || "").startsWith(`${label}, `));
+const gridNames = (r) => buttons(r).map((n) => n.props["aria-label"] || "").filter((l) => /, /.test(l)).join(" | ");
 const press = async (r, label) => {
   const b = findButton(r, label);
   assert(b, `no button "${label}" among: ${buttons(r).map(instText).join(" | ")}`);
@@ -203,7 +207,11 @@ const press = async (r, label) => {
   await settle();
 };
 const typeInto = async (r, id, value) => {
-  const input = r.root.findAll((n) => n.type === "input").find((n) => n.props.id === id);
+  /* RESTATED (Phase 6 P6-F2): the old "Pokémon or card name" field
+     (mcs-br-q) is the Phase 6 search field now; typing a name finds the card
+     exactly as before. */
+  const input = r.root.findAll((n) => n.type === "input").find((n) => n.props.id === id
+    || (id === "mcs-br-q" && n.props["aria-label"] === "Search"));
   assert(input, `no input ${id}`);
   await TR.act(async () => { input.props.onChange({ target: { value } }); });
   await settle();
@@ -1095,8 +1103,7 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
     const { r, calls } = await browsing(ctx, async () => ({ ok: true }));
     await typeInto(r, "mcs-br-q", "Mudkip");
     const afterSearch = calls.find;
-    const gridText = texts(r);
-    assert(gridText.includes("Mudkip"), "the grid did not fill");
+    assert(gridNames(r).includes("Mudkip"), "the grid did not fill");
 
     await press(r, "Mudkip");
     await press(r, "Cancel");
@@ -1105,10 +1112,10 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
 
     eq(calls.find, afterSearch,
       "the catalog was asked again — the grid remounted, and a person's place with it");
-    assert(texts(r).includes("Mudkip"), "the results are gone after a round trip");
+    assert(gridNames(r).includes("Mudkip"), "the results are gone after a round trip");
     /* The search box still holds what was typed: the session lives above the
-       section and nothing here rewrites it. */
-    const input = r.root.findAll((n) => n.type === "input").find((n) => n.props.id === "mcs-br-q");
+       section and nothing here rewrites it. (P6-F2: the Phase 6 search field.) */
+    const input = r.root.findAll((n) => n.type === "input").find((n) => n.props["aria-label"] === "Search");
     eq(input.props.value, "Mudkip", "the browsing session was rewritten");
   });
 
@@ -1129,7 +1136,8 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
       (n.children || []).forEach(walk);
     };
     walk(r.toJSON());
-    const grid = classes.findIndex((c) => c.split(" ").includes("mcs-br"));
+    /* RESTATED (P6-F2): the Phase 6 discovery screen is the grid's container. */
+    const grid = classes.findIndex((c) => c.split(" ").includes("mcs-disc"));
     const sheet = classes.findIndex((c) => c.split(" ").includes("mcs-spec-scrim"));
     assert(grid >= 0, "the grid is not rendered");
     assert(sheet >= 0, "the sheet is not rendered");
@@ -1140,7 +1148,10 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
     assert(/\.mcs-spec-scrim\s*\{[^}]*position:fixed/.test(css.replace(/\s+/g, " ").replace(/ \{/g, "{")),
       "the sheet is not out of flow");
     /* NO SCROLL RESTORATION WAS BUILT, and none should have been: there is
-       nothing to restore when nothing moves. */
+       nothing to restore when nothing moves. (P6-F2: opening and closing a card
+       still moves nothing. client/browse/Discover.jsx does keep each VIEW's
+       scroll — the Pokédex, a set's cards — for moving BETWEEN views, as the
+       Phase 6 prototype does; that is a different problem and not this one.) */
     assert(!/scrollTo|scrollTop|scrollIntoView|scrollY|scrollRestoration/.test(code("client/collector/sections/Browse.jsx")
       + code("client/collector/CardSpecification.jsx") + code("client/collector/CollectorShell.jsx")),
     "scroll-restoration machinery was built for a problem that was removed instead");

@@ -659,13 +659,19 @@ describe("E. navigation, session and loading", () => {
     const apiCalls = () => calls.filter((c) => c.url.startsWith(APP)).length;
     const worldReads = () => calls.filter((c) => c.url.startsWith(APP)
       && c.url.includes("/api/view")).length;
-    eq(apiCalls(), 1, "one call, on arrival");
+    /* RESTATED (Phase 6 P6-F2): the landing is the visual Pokédex, so arrival
+       is one world read AND one page of it — exactly two, still bounded, and
+       still nothing more for moving around (or coming back to Browse). */
+    const pokedexReads = () => calls.filter((c) => c.url.startsWith(APP) && c.url.includes("/api/pokemon")).length;
+    eq(apiCalls(), 2, "one world read and one Pokédex page, on arrival");
     eq(worldReads(), 1, "one read, on arrival");
+    eq(pokedexReads(), 1, "one Pokédex page, on arrival");
 
     clickText(r, "Trusted Partners"); await flush(r);
     clickText(r, "Binders"); await flush(r);
+    clickText(r, "Browse"); await flush(r);
 
-    eq(apiCalls(), 1, "moving around asked the server again");
+    eq(apiCalls(), 2, "moving around asked the server again");
     eq(worldReads(), 1, "moving around asked the server for the world again");
     assert(calls.every((c) => !c.url.includes("/api/commands")),
       "moving around sent a command");
@@ -767,8 +773,9 @@ describe("F. no demo, no prototype, no store, no domain", () => {
     eq(labels.length, NAV.length + 3, "an extra control appeared: " + labels.join(" | "));
     assert(labels.some((l) => l.includes("Sign out")));
     /* And Browse's own controls are Browse's, named so a reader can see them. */
+    /* RESTATED (P6-F2): the Phase 6 doorways — Pokémon, Sets, Artists. */
     const browsing = buttons(show(REAL)).map(instText);
-    eq(browsing.filter((l) => ["Pokémon", "Set", "Artist"].includes(l.trim())).length, 3,
+    eq(browsing.filter((l) => ["Pokémon", "Sets", "Artists"].includes(l.trim())).length, 3,
       "the doorways changed: " + browsing.join(" | "));
   });
 

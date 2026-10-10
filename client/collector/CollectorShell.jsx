@@ -60,7 +60,7 @@
 import React, { useState } from "react";
 import { describeActor } from "../actor.js";
 import { rows } from "./present.js";
-import { EMPTY_SESSION } from "../browse/CardBrowser.jsx";
+import { newBrowseSession } from "./sections/Browse.jsx";
 import Browse from "./sections/Browse.jsx";
 import Binder from "./sections/Binder.jsx";
 import Goals from "./sections/Goals.jsx";
@@ -925,6 +925,73 @@ button.mcs-otap { cursor:pointer; }
   .mcs-i { flex:1 1 auto; min-height:0; padding:12px 4px 14px; }
   .mcs-i .l { font-size:13px; line-height:20px; white-space:nowrap; }
 }
+
+/* ============================================================================
+   P6-F2 — BROWSE, FROM THE PROTOTYPE (fca2c61 index.html: .narrow.unified,
+   .chips, .suggestions, .tabs, .gens/.filters, .tiles, .rows/.rowbtn/.fan,
+   .grid/.cell/.cap, .markers, .more, .empty). Values are the prototype's; the
+   search text is 16px (register B3: iPhone Safari zooms below 16px).
+   ========================================================================== */
+/* the account button sits at the right edge whether or not a count is there */
+.mcs-hd .mcs-acct { margin-left:auto; }
+.mcs-hd .mcs-hd-count + .mcs-acct { margin-left:0; }
+
+.mcs-browse { max-width:1040px; }
+.mcs-dsearch { position:relative; margin:4px 0 12px; }
+.mcs-dsearch-in { width:100%; box-sizing:border-box; padding:11px 34px 11px 14px; border:1px solid var(--t1); border-radius:12px;
+  background:#FFF; font-size:16px; color:var(--text); font-family:inherit; }
+.mcs-dclear { position:absolute; right:6px; top:50%; transform:translateY(-50%); border:0; background:none; font-size:18px;
+  color:var(--muted); width:36px; height:36px; }
+.mcs-dchips { display:flex; flex-wrap:wrap; gap:6px; margin:-4px 0 12px; }
+.mcs-dchip { border:1px solid var(--t1); background:var(--t1-bg); color:var(--t1); border-radius:999px; padding:5px 10px;
+  font-size:12.5px; font-weight:600; }
+.mcs-dchip.clearall { border-color:var(--line); background:#FFF; color:var(--muted); font-weight:500; }
+.mcs-dsugg { list-style:none; margin:-4px 0 12px; padding:0; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+.mcs-dsugg li + li { border-top:1px solid var(--line-soft); }
+.mcs-dsugg button { width:100%; text-align:left; border:0; background:#FFF; padding:9px 12px; display:flex; gap:6px; align-items:baseline;
+  color:var(--text); font-size:14px; }
+.mcs-dsugg .sk { color:var(--faint); font-size:11.5px; width:52px; flex:none; }
+.mcs-dsugg .sn { margin-left:auto; color:var(--faint); font-size:11.5px; white-space:nowrap; }
+.mcs-dtabs { display:flex; gap:6px; margin-bottom:14px; }
+.mcs-dtabs button { flex:1; padding:9px 0; border:1px solid var(--line); border-radius:999px; background:#FFF; font-weight:600;
+  color:var(--muted); font-size:14px; }
+.mcs-dtabs button.on { background:var(--text); color:#FFF; border-color:var(--text); }
+.mcs-dgens { display:flex; gap:6px; overflow-x:auto; padding:2px 0 10px; margin:-2px 0 10px; scrollbar-width:none; }
+.mcs-dgens::-webkit-scrollbar { display:none; }
+.mcs-dgens button { white-space:nowrap; padding:6px 11px; border-radius:999px; border:1px solid var(--line); background:#FFF;
+  font-size:12.5px; font-weight:600; color:var(--muted); }
+.mcs-dgens button.on { background:var(--text); color:#FFF; border-color:var(--text); }
+.mcs-dtiles { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:14px; }
+.mcs-dtile { border:0; background:none; padding:0; text-align:left; width:100%; color:var(--text); }
+.mcs-dtile b { display:block; margin-top:6px; font-size:15px; }
+.mcs-dtile > span:last-child { color:var(--faint); font-size:12px; }
+.mcs-dtile-art, .mcs-dcell-art { display:flex; align-items:center; justify-content:center; aspect-ratio:63/88; width:100%;
+  border-radius:9px; overflow:hidden; background:var(--line-soft); }
+.mcs-dtile-art img, .mcs-dcell-art img { width:100%; height:100%; object-fit:cover; }
+.mcs-drows { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px; }
+.mcs-drow { display:flex; gap:14px; align-items:center; width:100%; text-align:left; border:1px solid var(--line); background:#FFF;
+  border-radius:14px; padding:10px; color:var(--text); }
+.mcs-drow-t { display:flex; flex-direction:column; min-width:0; }
+.mcs-drow-t b { font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mcs-drow-t span { color:var(--faint); font-size:12px; }
+.mcs-dfan { display:flex; flex:0 0 auto; }
+.mcs-dfan-art { width:56px; flex:0 0 56px; margin-right:-26px; aspect-ratio:63/88; display:flex; border-radius:6px; overflow:hidden; }
+.mcs-dfan-art:last-child { margin-right:0; }
+.mcs .mcs-dfan-art.mcs-cardph { padding:3px; border-radius:6px; }
+.mcs-dfan .mcs-cardph-top, .mcs-dfan .mcs-cardph-foot, .mcs-dfan .mcs-cardph-none { display:none; }
+.mcs-dgrid { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:14px 12px; }
+.mcs-dcell { border:0; background:none; padding:0; text-align:left; width:100%; border-radius:12px; color:var(--text); }
+.mcs-dcell.on { outline:2px solid var(--t1); outline-offset:3px; }
+.mcs-dcap { display:flex; justify-content:space-between; gap:6px; color:var(--faint); font-size:11.5px; margin-top:5px; }
+.mcs-dcap span:first-child { min-width:0; }   /* wraps, as the prototype's caption does */
+.mcs-dcap span:last-child { white-space:nowrap; }
+.mcs-dmarks { display:flex; flex-wrap:wrap; gap:4px; margin-top:5px; }
+.mcs-dmarks .mcs-mk { font-size:10.5px; }
+.mcs-dmore { display:block; width:100%; border:0; background:none; text-align:center; color:var(--faint); font-size:12px; margin:14px 0; min-height:44px; }
+.mcs-dempty { color:var(--faint); font-size:12.5px; margin-top:18px; text-align:center; }
+@media (min-width:600px) {
+  .mcs-dtiles, .mcs-dgrid { grid-template-columns:repeat(auto-fill, minmax(150px, 180px)); justify-content:start; }
+}
 `;
 
 /* THE NOTICE HAS TO BE TRUE, AND BATCH 7 CHANGED WHAT IS TRUE. Goals can now
@@ -977,7 +1044,10 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
      empty search box. It holds a doorway, what was typed, which set or artist
      is open, the page and the rows — and nothing durable: it is gone when the
      tab is closed, which is exactly what a browsing session should be. */
-  const [browseSession, setBrowseSession] = useState(EMPTY_SESSION);
+  const [browseSession, setBrowseSession] = useState(newBrowseSession);
+  /* How many cards Browse is showing, for the count beside its title (P6-F2,
+     as the prototype puts it); null when it is showing the doorways. */
+  const [browseCount, setBrowseCount] = useState(null);
   /* WHICH BINDER IS BEING FILLED, IF ONE IS (Phase 5 C3.4). "Add cards" in a
      binder sends a person to Browse, and this is the note they carry: a binder
      id and its name, held here for the same reason the browsing session is —
@@ -1096,6 +1166,8 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
               <span className="mcs-hd-count">
                 {`${counts[meta.id]} ${counts[meta.id] === 1 ? meta.unit[0] : meta.unit[1]}`}
               </span>
+            ) : meta.id === "browse" && browseCount != null ? (
+              <span className="mcs-hd-count">{`${browseCount.toLocaleString()} ${browseCount === 1 ? "card" : "cards"}`}</span>
             ) : null}
             <button type="button" className="mcs-acct" aria-haspopup="dialog"
               aria-label={`Account: ${who.name || "Your account"}`} onClick={() => setAccountOpen(true)}>
@@ -1122,7 +1194,7 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
           <View state={state} {...(meta.id === "goals"
             ? { onAddGoal, onSetPriority, onRemoveGoal, onBrowseCards }
             : meta.id === "browse"
-              ? { onSpecify, onBrowseCards, session: browseSession, onSession: setBrowseSession,
+              ? { onSpecify, onBrowseCards, session: browseSession, onSession: setBrowseSession, onCount: setBrowseCount,
                 fillingBinder, onDoneFilling: () => setFillingBinder(null) }
               : meta.id === "binder"
                   ? { onSpecify, onBrowseCards, onCreateBinder, onRenameBinder,

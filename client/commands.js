@@ -438,6 +438,8 @@ export function browseCards(target) {
        it and still does not. */
     expansions: (query) => target.findCards(query, "expansions"),
     artists: (query) => target.findCards(query, "artists"),
+    /* The Pokédex (P6-F2): which Pokémon the catalogue has cards of. */
+    pokemon: (query) => target.findCards(query, "pokemon"),
   };
 }
 

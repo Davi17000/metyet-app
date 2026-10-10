@@ -19,6 +19,9 @@
 | A7 | No Goal-free offers | Domain rule; separate future decision | Founder, Batch 1; reaffirmed P6-F1 |
 | A8 | Existing permissions and authorization unchanged | Production authority | Founder, every brief |
 | A9 | A binder opens in place, with no separate "Open …" screen (prototype: "Open Mudkip — add cards, rename, delete ›") | Founder: no two navigation steps for one binder | Founder, P6-3.1 brief |
+| A10 | **Interim:** Set and Artist rows show a fan of three *drawn* placeholder cards (prototype: three real card faces) | No approved artwork | Founder, P6-F2 D4 (provisional — not a permanent design decision) |
+| A11 | **Interim:** Artists are listed alphabetically (prototype: the artists with the most cards first) | Production's artist list | Founder, P6-F2 D4 (provisional) |
+| A12 | Browse's Pokédex, card-number search and in-set numeric order come from three read-only catalogue capabilities (`GET /api/pokemon`; `number=` and numeric-aware ordering on `/api/card-contexts`) | The prototype computed them from a bundled dataset production must not have | Founder, P6-F2 D1–D3 |
 
 ## B. Unresolved — awaiting founder decision
 
@@ -35,9 +38,15 @@
 | B9 | Expanded binder: cards on the page under the row (prototype: inside the bordered binder cover) | — | P6-3.1 brief | **Scheduled for P6-F2** |
 | B10 | Filing confirmation: dark bar (prototype: light teal note) | — | P6-4 | **Scheduled for P6-F2** |
 | B11 | Filing chooser has no "+ New binder" destination | — | P6-3 | Would need two commands that can half-succeed |
-| B12 | Browse is production's form-based Browse | — | inherited | **P6-5** (image-first Browse) |
+| B12 | ~~Browse is production's form-based Browse~~ | **Resolved in P6-F2** — the Phase 6 discovery screen | — | See B15–B19 for what remains |
 | B13 | Desktop layout (sidebar, side-panel sheet) | — | P6-1 | The prototype specified only a phone |
 | B14 | Fonts | Archivo / Public Sans named but not loaded, so the system face renders (as in the prototype) | P6-1 | Loading web fonts adds an external host |
+| B15 | Search breadth | The grid searches card **names and numbers**; set and artist names are reached through their **suggestions** (prototype: one search matched names, numbers, set and artist names at once). When only a suggestion matches, the empty grid points to it | P6-F2 | A combined search would need another catalogue change |
+| B16 | Suggestion counts | The catalogue's own totals, not narrowed to the chips already chosen (prototype: counts within what is on screen) | P6-F2 | Would need counts per constraint from the server |
+| B17 | Card order **across** sets | By set code (D3 left cross-set order unchanged); prototype: older sets first | P6-F2 | A one-line ordering change; awaits a decision |
+| B18 | Placeholder foot shows the card's number, not "number/set total" | Card rows do not carry the set's printed total | P6-F2 | Cosmetic; one more field on the card reply |
+| B19 | "Not recordable yet" is not marked on grid cards (prototype marks cards with no printing MetYet can record) | Production says so when the card is opened | P6-F2 | Needs a printing count on the card reply |
+| B20 | Card selected from Browse opens the production version picker and Card Specification sheet (prototype: full-screen card with ‹ context, previous / next, guided questions) | — | P6-F2 | **P6-F3** (founder D5/D6): one shared full-screen card for Browse and Binders, with Pokémon / Set / Artist pivots |
 
 ## C. Unavoidable comparison differences (not product decisions)
 

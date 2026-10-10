@@ -433,6 +433,87 @@ describe("mobile shell (P6-F1)", () => {
   });
 });
 
+/* P6-F2: BROWSE, the Phase 6 discovery screen, through the real front door and
+   the real catalogue, at four widths. Nothing it does may send a command. */
+describe("Browse (P6-F2)", () => {
+  const SIZES = [["390 (phone)", { ...PHONE }], ["360 (narrow phone)", { ...PHONE, viewport: { width: 360, height: 780 } }],
+    ["768 (tablet)", { viewport: { width: 768, height: 1024 }, hasTouch: true }], ["1280 (desktop)", { viewport: { width: 1280, height: 860 } }]];
+  for (const [label, opts] of SIZES) {
+    test(`at ${label}: Pokédex → a Pokémon's cards → a card → back; a set; artists; search by name and number`, async () => {
+      await before();
+      const context = await browser.newContext(opts);
+      const page = await context.newPage();
+      const errors = []; page.on("pageerror", (e) => errors.push(e.message));
+      const commands = []; page.on("request", (r) => { if (r.url().includes("/api/commands")) commands.push(r.url()); });
+      await signIn(page, ctx.url);
+      const tap = (loc) => (opts.hasTouch ? loc.tap() : loc.click());
+      const wide = () => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
+      /* the landing: the Pokédex */
+      await page.locator(".mcs-dtile").first().waitFor();
+      eq(await page.locator(".mcs-dtile").count(), 4, "the Pokédex");
+      eq(await wide(), true, "sideways scroll on the landing");
+      const tabs = await page.locator("nav[aria-label=Collector] button").evaluateAll((els) => els.map((e) => e.textContent.trim()));
+      assert(tabs.join(" ").includes("Browse") && tabs.length === 4, "four tabs: " + tabs);
+      /* a Pokémon → its cards */
+      await tap(page.locator(".mcs-dtile[data-dex='25']"));
+      await page.locator(".mcs-dchip", { hasText: "Pokémon: Pikachu" }).waitFor();
+      await page.locator(".mcs-dcell").first().waitFor();
+      eq(await page.locator(".mcs-dcell").count(), 2, "Pikachu's two cards");
+      eq(await wide(), true, "sideways scroll on results");
+      /* a card → the production card → back to the same cards */
+      await tap(page.locator(".mcs-dcell", { has: page.locator("text=Jungle") }).first());
+      await page.locator("text=Are you looking for it?").waitFor({ timeout: 4000 });
+      await tap(page.locator("button", { hasText: /^Cancel$/ }).first());
+      await page.waitForTimeout(300);
+      eq(await page.locator(".mcs-dchip", { hasText: "Pokémon: Pikachu" }).count(), 1, "the context was lost");
+      eq(await page.locator(".mcs-dcell").count(), 2, "the cards were lost");
+      /* a long set name in a two-column grid stays inside the screen */
+      await tap(page.locator(".mcs-dchip.clearall"));
+      await tap(page.locator(".mcs-dtile[data-dex='6']"));
+      await page.locator(".mcs-dcell", { has: page.locator("text=Anniversary") }).first().waitFor();
+      eq(await wide(), true, "a long set name pushed the grid sideways");
+      /* a set */
+      await tap(page.locator(".mcs-dchip.clearall"));
+      await tap(page.locator(".mcs-dtabs button", { hasText: "Sets" }));
+      await page.locator(".mcs-drow").first().waitFor();
+      await tap(page.locator(".mcs-drow", { hasText: "Jungle" }));
+      await page.locator(".mcs-dchip", { hasText: "Set: Jungle" }).waitFor();
+      await page.locator(".mcs-dcell").first().waitFor();
+      eq(await page.locator(".mcs-dcell").count(), 1);
+      /* artists */
+      await tap(page.locator(".mcs-dchip.clearall"));
+      await tap(page.locator(".mcs-dtabs button", { hasText: "Artists" }));
+      await page.locator(".mcs-drow", { hasText: "Ken Sugimori" }).waitFor();
+      /* search: a name, then a number */
+      await page.locator(".mcs-dsearch-in").fill("pika");
+      await page.locator(".mcs-dsugg", { hasText: "Pikachu" }).waitFor();
+      await page.locator(".mcs-dcell").first().waitFor();
+      eq(await page.locator(".mcs-dcell").count(), 2, "name search");
+      await page.locator(".mcs-dsearch-in").fill("25");
+      await page.waitForTimeout(600);
+      eq(json(await page.locator(".mcs-dcell").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")))), json(["Pikachu, Jungle #25"]));
+      eq(commands.length, 0, "browsing sent a command");
+      eq(errors.length, 0, errors.join(" | "));
+      await context.close();
+    });
+  }
+  test("all four tabs still render after Browse's styles (phone)", async () => {
+    await before();
+    const context = await browser.newContext({ ...PHONE }); const page = await context.newPage();
+    const errors = []; page.on("pageerror", (e) => errors.push(e.message));
+    await signIn(page, ctx.url);
+    for (const tab of ["Browse", "Binders", "Deal Flow", "Trusted Partners"]) {
+      await page.locator("nav[aria-label=Collector] button", { hasText: tab }).tap(); await page.waitForTimeout(300);
+      eq(await page.locator(".mcs-hd h1").innerText(), tab);
+      eq(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${tab} scrolls sideways`);
+      const acct = await page.locator("button.mcs-acct").boundingBox();
+      assert(acct.x + acct.width >= 390 - 20, `${tab}: the account button is not at the right edge (${acct.x})`);
+    }
+    eq(errors.length, 0, errors.join(" | "));
+    await context.close();
+  });
+});
+
 if (!chromium) {
   console.log("SKIPPED: Playwright is not installed.");
 } else {

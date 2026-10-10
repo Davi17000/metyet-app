@@ -66,16 +66,21 @@ createRoot(document.getElementById("root")).render(<SignIn session={session} sto
    two binders, two Goals, two copies. A different story (the fidelity
    harness's copy of the prototype's own preset) is passed as `seed`. */
 async function reviewSeed({ card, post }) {
-  const char = await card("4", "Charizard", "holofoil");
-  const blas = await card("2", "Blastoise", "holofoil");
+  const BASE = { code: "b1", name: "Base Set", printedTotal: 102 };
+  const char = await card("4", "Charizard", "holofoil", BASE, [6]);
+  const blas = await card("2", "Blastoise", "holofoil", BASE, [9]);
   const gen1 = await post("createBinder", { name: "Gen 1" });
   const mud = await post("createBinder", { name: "Favourites" });
   const goal = await post("addGoal", { canonicalCardId: char, tier: "primary", desired: { grade: "PSA 9" } });
   await post("fileObject", { binderId: gen1, goalId: goal });
   const copy = await post("addCollectorCopy", { copy: { canonicalCardId: blas, grade: "PSA 8", keeping: true } });
   /* P6-4: a Secondary Goal (Unfiled) and a Trade / Sell copy (in Favourites). */
-  const ven = await card("15", "Venusaur", "holofoil");
-  const pika = await card("58", "Pikachu", "non_holo");
+  const ven = await card("15", "Venusaur", "holofoil", BASE, [3]);
+  const pika = await card("58", "Pikachu", "non_holo", BASE, [25]);
+  /* P6-F2: a second set, so Browse has more than one of anything */
+  await card("25", "Pikachu", "non_holo", { code: "jungle", name: "Jungle", printedTotal: 64 }, [25]);
+  /* and a long set name, which is what pushes a two-column grid sideways */
+  await card("4", "Charizard", "holofoil", { code: "mcd15", name: "McDonald's Collection 2015 Anniversary Edition", printedTotal: 12 }, [6]);
   const goal2 = await post("addGoal", { canonicalCardId: ven, tier: "secondary", desired: { grade: "PSA 9" } });
   const copy2 = await post("addCollectorCopy", { copy: { canonicalCardId: pika, grade: "PSA 7", offered: true } });
   await post("fileObject", { binderId: mud, collectorCopyId: copy2 });
@@ -114,15 +119,15 @@ async function serve({ port = 0, seed = reviewSeed, collectorName = "Casey" } = 
     return expansions.get(code);
   };
   await expansion("b1", "Base Set", 102);
-  const card = async (n, name, finish, set = { code: "b1", name: "Base Set", printedTotal: 102 }) => (await catalog.putCanonicalCard({ finish,
+  const card = async (n, name, finish, set = { code: "b1", name: "Base Set", printedTotal: 102 }, dex = []) => (await catalog.putCanonicalCard({ finish,
     cardContextId: (await catalog.putCardContext({ game: "pokemon", expansionId: await expansion(set.code, set.name, set.printedTotal),
-      collectorNumber: n, cardName: name, artist: "A", rarity: "Rare" })).cardContextId })).canonicalCardId;
+      collectorNumber: n, cardName: name, artist: "Ken Sugimori", rarity: "Rare", pokedexNumbers: dex })).cardContextId })).canonicalCardId;
   const post = async (command, payload) => {
     const res = await app.inject({ method: "POST", url: "/api/commands", headers: { authorization: "Bearer casey" }, payload: { command, payload } });
     if (res.statusCode !== 200) throw new Error(`${command}: ${res.body}`);
     return res.json().value;
   };
-  const ids = await seed({ card, post, catalog });
+  const ids = await seed({ card, post, catalog, db });
   const build = async (contents) => (await esbuild.build({ stdin: { contents, resolveDir: ROOT, loader: "jsx" }, bundle: true,
     write: false, format: "iife", jsx: "automatic", logLevel: "silent", define: { "process.env.NODE_ENV": '"production"' } })).outputFiles[0].text;
   const bundle = await build(ENTRY);

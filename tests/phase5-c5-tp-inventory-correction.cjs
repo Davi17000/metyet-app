@@ -994,10 +994,12 @@ describe("G. what the product says", () => {
         { state, onSignOut() {}, onSpecify: async () => ({ ok: true }), onBrowseCards: door }));
     });
     const typeInto = async (id, value) => {
-      const input = r.root.findAll((n) => n.type === "input").find((n) => n.props.id === id);
+      /* RESTATED (Phase 6 P6-F2): mcs-br-q is the Phase 6 search field now. */
+      const input = r.root.findAll((n) => n.type === "input").find((n) => n.props.id === id
+        || (id === "mcs-br-q" && n.props["aria-label"] === "Search"));
       assert(input, `no input ${id}`);
       await TR.act(async () => { input.props.onChange({ target: { value } }); });
-      await TR.act(async () => {});
+      for (let i = 0; i < 4; i += 1) await TR.act(async () => { await new Promise((res) => setTimeout(res, 0)); });
     };
     const pressText = async (label) => {
       const b = r.root.findAll((n) => n.type === "button")

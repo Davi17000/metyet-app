@@ -318,15 +318,22 @@ describe("C. the Collector: browse, specify, commit", () => {
       await TR.act(async () => { await new Promise((done) => setTimeout(done, 0)); });
     }
   };
+  /* RESTATED (Phase 6 P6-F2): a Phase 6 grid card names itself in its
+     accessible name — the picture carries the name visually. */
   const press = async (r, label) => {
     const b = buttons(r).find((n) => instText(n).trim() === label
-      || instText(n).includes(label) || (n.props["aria-label"] || "") === label);
+      || instText(n).includes(label) || (n.props["aria-label"] || "") === label
+      || (n.props["aria-label"] || "").startsWith(`${label}, `));
     assert(b, `no button "${label}" among: ${buttons(r).map(instText).join(" | ")}`);
     await TR.act(async () => { b.props.onClick(); });
     await settle(r);
   };
   const typeInto = async (r, id, value) => {
-    const input = r.root.findAll((n) => n.type === "input").find((n) => n.props.id === id);
+    /* RESTATED (Phase 6 P6-F2): the old "Pokémon or card name" field
+       (mcs-br-q) is the Phase 6 search field now; typing a name finds the card
+       exactly as before. */
+    const input = r.root.findAll((n) => n.type === "input").find((n) => n.props.id === id
+      || (id === "mcs-br-q" && n.props["aria-label"] === "Search"));
     assert(input, `no input ${id}`);
     await TR.act(async () => { input.props.onChange({ target: { value } }); });
     await settle(r);
@@ -403,7 +410,7 @@ describe("C. the Collector: browse, specify, commit", () => {
     };
     const r = await browsing(ctx, onSpecify);
     await typeInto(r, "mcs-br-q", "Blastoise");
-    assert(texts(r).includes("Blastoise"), "the grid did not fill: " + texts(r));
+    assert(buttons(r).some((n) => /^Blastoise, /.test(n.props["aria-label"] || "")), "the grid did not fill: " + texts(r));
 
     await press(r, "Blastoise");
     assert(texts(r).includes("Base Set"), "the card did not open: " + texts(r));
@@ -424,22 +431,18 @@ describe("C. the Collector: browse, specify, commit", () => {
     eq(json(goals[0].desired), json({ grade: "PSA 9" }), "and it says which copy");
   });
 
-  test("the `+` and the card reach the same place", async () => {
+  test("the card is the one way in, and it reaches the same place the `+` did", async () => {
+    /* RESTATED (Phase 6 P6-F2): the Phase 6 grid has no `+` on its cards; the
+       card itself opens the card, which is where the `+` always led — so no
+       way of saying anything was lost, only a second door to it. */
     const ctx = await world();
     await shelfOfCards(ctx);
     const r = await browsing(ctx, async () => ({ ok: true }));
     await typeInto(r, "mcs-br-q", "Blastoise");
-    /* The fast path. */
-    await press(r, "Add Blastoise");
-    const viaPlus = texts(r);
-    assert(viaPlus.includes("Are you looking for it?"),
-      "`+` did not open specification: " + viaPlus);
-    await press(r, "Cancel");
-    /* And the slow one. */
+    assert(!buttons(r).some((n) => (n.props["aria-label"] || "") === "Add Blastoise"), "a `+` survived");
     await press(r, "Blastoise");
     const viaCard = texts(r);
-    assert(viaCard.includes("Are you looking for it?"), "the card did not open specification");
-    eq(viaPlus, viaCard, "the two ways in show different things");
+    assert(viaCard.includes("Are you looking for it?"), "the card did not open specification: " + viaCard);
   });
 
   test("a card with several printings asks which, and will not commit until told", async () => {
@@ -571,7 +574,8 @@ describe("D. cancel, and everything short of the last button", () => {
     };
     const Browse = load("client/collector/sections/Browse.jsx").default;
     const state = (await get(ctx.app, "casey", "/api/view")).json().state;
-    let session = load("client/browse/CardBrowser.jsx").EMPTY_SESSION;
+    /* RESTATED (P6-F2): the Collector's Browse session is Discover's own. */
+    let session = load("client/collector/sections/Browse.jsx").newBrowseSession();
     let r;
     const door = {
       find: async (q) => ctx.catalog.findCardContexts(
@@ -593,11 +597,12 @@ describe("D. cancel, and everything short of the last button", () => {
       });
     };
     await draw();
-    const input = r.root.findAll((n) => n.type === "input").find((n) => n.props.id === "mcs-br-q");
+    /* RESTATED (P6-F2): the Phase 6 search field, and the card itself (no `+`). */
+    const input = r.root.findAll((n) => n.type === "input").find((n) => n.props["aria-label"] === "Search");
     await TR.act(async () => { input.props.onChange({ target: { value: "Blastoise" } }); });
-    await draw();
+    for (let i = 0; i < 6; i += 1) { await TR.act(async () => { await new Promise((res) => setTimeout(res, 0)); }); await draw(); }
     const card = r.root.findAll((n) => n.type === "button")
-      .find((b) => (b.props["aria-label"] || "") === "Add Blastoise");
+      .find((b) => /^Blastoise, /.test(b.props["aria-label"] || ""));
     await TR.act(async () => { card.props.onClick(); });
     const cancel = r.root.findAll((n) => n.type === "button")
       .find((b) => (b.children || []).join("") === "Cancel");
@@ -668,12 +673,16 @@ describe("E. the Trusted Partner: the same browser, a different ending", () => {
     eq(copy.grade, "PSA 9");
   });
 
-  test("both seats browse the same catalog through the same component", () => {
+  test("both seats browse the same catalog — the TP through CardBrowser, the Collector through Phase 6 Discover", () => {
+    /* RESTATED (Phase 6 P6-F2): the Collector's Browse is the Phase 6
+       discovery screen (client/browse/Discover.jsx) — founder-approved — and
+       the Trusted Partner keeps CardBrowser unchanged. Both are catalogue
+       browsing, both live in client/browse/, and both read the catalogue
+       through the same `browseCards` binding and nothing else. */
     const shared = "client/browse/CardBrowser.jsx";
     assert(fs.existsSync(path.join(ROOT, shared)), "there is no shared browser");
-    for (const rel of ["client/collector/sections/Browse.jsx", "client/tp/sections/Inventory.jsx"]) {
-      assert(/CardBrowser/.test(code(rel)), `${rel} does not use it`);
-    }
+    assert(/CardBrowser/.test(code("client/tp/sections/Inventory.jsx")), "the TP's Inventory does not use it");
+    assert(/from "\.\.\/\.\.\/browse\/Discover\.jsx"/.test(code("client/collector/sections/Browse.jsx")), "the Collector's Browse does not use Discover");
     /* And neither seat kept its own. The duplicated picker is gone from the
        Collector's Goals section too. */
     const goals = code("client/collector/sections/Goals.jsx");
@@ -707,7 +716,8 @@ describe("F. the browsing session", () => {
   });
 
   test("the Collector's session lives above the section, so leaving and coming back keeps it", () => {
-    assert(/const \[browseSession, setBrowseSession\] = useState\(EMPTY_SESSION\)/.test(SHELL),
+    /* RESTATED (P6-F2): the session is Discover's own shape, made by its factory. */
+    assert(/const \[browseSession, setBrowseSession\] = useState\(newBrowseSession\)/.test(SHELL),
       "the session is not held above the section");
     assert(/session: browseSession, onSession: setBrowseSession/.test(SHELL),
       "the session is not handed to Browse");

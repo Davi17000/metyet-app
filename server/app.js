@@ -363,6 +363,7 @@ function createApp({
         expansion: q.expansion,
         artist: q.artist,
         pokedex: q.pokedex,
+        number: q.number,
         page: q.page,
         pageSize: q.pageSize,
       });
@@ -372,7 +373,7 @@ function createApp({
          — a browse is a read, and a read leaves no record anywhere. The door
          and how many rows came back; never the words they typed. */
       const doorway = q.pokedex ? "pokemon" : q.expansion || q.expansionId ? "set"
-        : q.artist ? "artist" : q.query ? "name" : "all";
+        : q.artist ? "artist" : q.query ? "name" : q.number ? "number" : "all";
       request.log.info({ ...actorLog(request.metyet.actor), doorway, results: total }, "browse");
       return { contexts, page, pageSize, total };
     });
@@ -385,6 +386,14 @@ function createApp({
     app.get("/api/expansions", { preHandler: authenticate }, async (request) => {
       const q = request.query || {};
       return catalog.findExpansions({ query: q.query, page: q.page, pageSize: q.pageSize });
+    });
+
+    /* THE POKÉDEX (P6-F2, D1): which Pokémon the catalogue has cards of, by
+       National Pokédex number, with a name, a count and one picture. Read-only,
+       authenticated, MetYet's own vocabulary — the same as its two siblings. */
+    app.get("/api/pokemon", { preHandler: authenticate }, async (request) => {
+      const q = request.query || {};
+      return catalog.findPokemon({ query: q.query, generation: q.generation, page: q.page, pageSize: q.pageSize });
     });
 
     app.get("/api/artists", { preHandler: authenticate }, async (request) => {
