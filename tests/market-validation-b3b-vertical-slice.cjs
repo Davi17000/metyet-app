@@ -453,7 +453,11 @@ describe("F. who may act, and who sees what", () => {
     await casey.refresh();
     const data = json(casey.store.get());
     for (const secret of ["tradeRate", "\"cost\"", "0.7"]) assert(!data.includes(secret), `the Collector received ${secret}`);
-    for (const secret of ["$61", "$77", "70%"]) assert(!flat(casey).includes(secret), `the Collector is shown ${secret}`);
+    /* What the Collector is SHOWN: the rendered text, not the stylesheet that
+       ships with it (P6-F1: the ported placeholder's colours are written
+       "hsl(… 70% …)", which is a colour, not a trade rate). */
+    const shownText = (n) => (typeof n === "string" ? n : !n || !n.children || n.type === "style" ? "" : n.children.map(shownText).join(" "));
+    for (const secret of ["$61", "$77", "70%"]) assert(!shownText(casey.r.root).includes(secret), `the Collector is shown ${secret}`);
   });
   test("[11] the turn is the server's: a Collector cannot accept their own offer, even by request", async () => {
     const ctx = await world(); const { casey, o } = await opened(ctx, "120");

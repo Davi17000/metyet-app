@@ -59,7 +59,38 @@ const text = (v) => (typeof v === "string" && v.trim() ? v.trim() : null);
    thing already announced, so it is hidden from assistive tech rather than
    read out twice. Browse leaves it false, because in a grid of pictures the
    plate IS the identification and nothing else names the card. */
-export default function CardArt({ src = null, name = "", wrap, plate, decorative = false }) {
+/* THE PHASE 6 PLACEHOLDER (P6-F1), ported from the frozen prototype's own
+   no-picture card (fca2c61, main.jsx CardArt; index.html .art): card-shaped,
+   coloured, with the card's name across the top, a simple drawn figure in the
+   window, its set and number along the foot, and "No picture yet". It is a
+   DRAWING, not artwork — no image, URL or provider — so it needs no image
+   rights. A caller opts in by passing `card` ({ key, set, number }); the
+   colour and pose come from `key`, the same 31-hash the prototype uses, so a
+   card always looks the same. Anything MetYet does not know is left blank
+   rather than guessed. */
+const hash = (s) => { let h = 0; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; };
+function Placeholder({ wrap, label, card, decorative }) {
+  const h = hash(card.key || label || "");
+  const a11y = decorative ? { "aria-hidden": "true" } : label ? { role: "img", "aria-label": label } : {};
+  return (
+    <span className={`${wrap} mcs-ph`} style={{ "--h": h % 360, "--h2": (h >> 9) % 360 }} {...a11y}>
+      <span className="mcs-ph-top"><b>{label || ""}</b><span aria-hidden="true">◆</span></span>
+      <span className="mcs-ph-window">
+        <svg viewBox="0 0 100 70" className={`mcs-ph-pose p${h % 5}`} aria-hidden="true" focusable="false">
+          <ellipse cx="50" cy="60" rx="34" ry="5" className="shadow" />
+          <path className="body" d="M22 50 C20 30 40 18 55 22 C70 26 80 38 76 50 C72 60 30 62 22 50Z" />
+          <path className="fin" d="M50 22 C46 8 60 4 66 12 C60 14 56 18 55 22Z" />
+          <circle className="eye" cx="62" cy="36" r="3.4" />
+          <path className="cheek" d="M30 40 l-9 -4 l2 8 l-9 1 l9 4Z" />
+        </svg>
+      </span>
+      <span className="mcs-ph-foot"><span>{text(card.set) || ""}</span><span>{text(card.number) || ""}</span></span>
+      <span className="mcs-ph-none">No picture yet</span>
+    </span>
+  );
+}
+
+export default function CardArt({ src = null, name = "", wrap, plate, decorative = false, card = null }) {
   const url = text(src);
   const label = text(name);
 
@@ -80,6 +111,7 @@ export default function CardArt({ src = null, name = "", wrap, plate, decorative
 
   /* No picture, or one that would not load. The wrapper is drawn either way —
      it carries the tile's shape, so nothing on the row moves. */
+  if (card) return <Placeholder wrap={wrap} label={label} card={card} decorative={decorative} />;
   return (
     <span className={wrap}>
       {label

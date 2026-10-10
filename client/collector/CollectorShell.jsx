@@ -838,6 +838,8 @@ button.mcs-otap { cursor:pointer; }
      row-reverse put the Collector's on the right. */
   .mcs-body { flex-direction:row; }
   .mcs-hd { margin:0 -28px; padding:22px 28px 6px; }
+  /* the account bar and banner are on screen here (P6-F1): no phone controls */
+  .mcs .mcs-acct, .mcs .mcs-scope { display:none; }   /* .mcs: outranks the base rules, which come later */
   /* no tab bar here: the confirmation sits at the foot of the window */
   .mcs-snack-wrap { bottom:20px; justify-content:flex-start; padding-left:264px; }
   /* clear of the card sheet, which opens as a panel on the right here */
@@ -849,7 +851,108 @@ button.mcs-otap { cursor:pointer; }
   .mcs-spec-panel::before, .mcs-sheet::before { display:none; }
 }
 
+
+/* ============================================================================
+   P6-F1 — THE PHASE 6 PHONE, RESTORED (fidelity recovery)
+   Reference: the frozen prototype (fca2c61) index.html. Values below are the
+   prototype's own, named where they come from; production-only needs (four
+   tabs, 16px search text) are recorded in docs/PHASE6_APPROVED_DEVIATIONS.md.
+   ========================================================================== */
+/* the no-picture card, ported from the prototype's .art (every width) */
+.mcs .mcs-ph { --h:200; --h2:180; position:relative; display:flex; flex-direction:column; align-items:stretch;
+  justify-content:flex-start; aspect-ratio:63/88; border-radius:9px; overflow:hidden; padding:6%;
+  background:linear-gradient(160deg,hsl(var(--h) 55% 62%),hsl(var(--h2) 50% 45%));
+  box-shadow:0 1px 2px rgba(0,0,0,.18), inset 0 0 0 3px hsl(48 70% 72%); color:#0B1620; font-size:13px; line-height:1.2; }
+.mcs-ph-top { display:flex; justify-content:space-between; gap:4px; font-size:.8em; min-width:0; }
+.mcs-ph-top b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mcs-ph-window { flex:1; margin:6% 0; border-radius:4px; display:flex; align-items:center; justify-content:center;
+  background:radial-gradient(circle at 50% 35%,hsl(var(--h2) 70% 88%),hsl(var(--h) 45% 70%)); box-shadow:inset 0 0 0 2px rgba(0,0,0,.12); }
+.mcs-ph-pose { width:86%; } .mcs-ph-pose .body { fill:hsl(var(--h) 70% 52%); } .mcs-ph-pose .fin { fill:hsl(var(--h) 75% 40%); }
+.mcs-ph-pose .eye { fill:#0B1620; } .mcs-ph-pose .cheek { fill:hsl(28 90% 60%); } .mcs-ph-pose .shadow { fill:rgba(0,0,0,.15); }
+.mcs-ph-pose.p1 { transform:scaleX(-1); } .mcs-ph-pose.p2 { transform:rotate(-8deg); } .mcs-ph-pose.p3 { transform:scale(.8) translateY(6px); }
+.mcs-ph-pose.p4 { transform:scaleX(-1) rotate(6deg); }
+.mcs-ph-foot { display:flex; justify-content:space-between; gap:4px; font-size:.68em; opacity:.85; min-width:0; }
+.mcs-ph-foot span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mcs-ph-none { position:absolute; left:8%; right:8%; bottom:16%; text-align:center; font-size:.62em; color:rgba(11,22,32,.65);
+  background:rgba(255,255,255,.6); border-radius:4px; padding:1px 0; }
+/* the card sheet's picture is still P6-4's 96px (its rebuild is P6-F2): the
+   placeholder's type scales to it rather than overflowing */
+.mcs .mcs-ohero-art.mcs-ph { font-size:11.5px; padding:6px; }  /* 6% of its own 96px: a % pads by the PARENT's width */
+
+/* the account button and sheet; the one-line notice (phone only, see below) */
+.mcs-acct { flex:0 0 auto; width:44px; height:44px; margin:-8px -8px -8px 0; border:0; background:none; padding:6px;
+  display:inline-flex; align-items:center; justify-content:center; align-self:center; }
+.mcs-acct span { width:30px; height:30px; border-radius:999px; background:var(--t1-bg); color:var(--t1);
+  font-weight:700; font-size:13px; display:inline-flex; align-items:center; justify-content:center; }
+.mcs-acct-sheet { gap:14px; }
+.mcs-acct-who { display:flex; align-items:center; gap:12px; }
+.mcs-acct-who > span:last-child { display:flex; flex-direction:column; }
+.mcs-acct-big { width:44px; height:44px; border-radius:999px; background:var(--t1-bg); color:var(--t1); font-weight:700;
+  font-size:18px; display:inline-flex; align-items:center; justify-content:center; }
+.mcs-acct-scope { display:flex; flex-direction:column; gap:6px; font-size:13px; color:var(--text); }
+.mcs-acct-scope .dim { color:var(--muted); }
+.mcs-scope { margin:0 0 10px; font-size:12px; color:var(--muted); }
+
+@media (max-width:859px) {
+  /* the phone panel is white (prototype .phone); #EEF1F4 was its STAGE */
+  .mcs { --bg:#FFF; --tabbar-h:47px; }
+  /* no account bar and no banner on the phone: the account button and the
+     one-line notice carry them */
+  .mcs-top, .mcs-ro { display:none; }
+  /* the screen title (prototype .hd: 22px, 18px above, 10px below) */
+  .mcs-hd { padding:14px 16px 8px; align-items:center; }
+  .mcs-at-browse > .mcs-sub, .mcs-at-binder > .mcs-sub { display:none; }
+  /* search and filters (prototype .library .narrow / .lenses / .filters) */
+  .mcs-bcontrols { top:52px; padding:0 16px; }
+  .mcs-bcontrols .mcs-find { margin:0 0 8px; }
+  .mcs-bcontrols .mcs-in { background:#F7F9FA; border:1px solid var(--line); border-radius:12px; padding:5px 11px; }
+  .mcs-lenses { margin:0; padding:0 0 8px; gap:6px; }
+  .mcs-lenses .mcs-view { padding:5px 10px; font-size:12px; }
+  /* the disclosures (prototype .sechead / .unfhead / .unfiled) */
+  .mcs-bsection { margin-top:0; }
+  .mcs-unfiled { margin-top:8px; }
+  .mcs-bsection.mcs-results { margin-top:14px; }
+  .mcs-sechead { padding:4px 0 10px 18px; font-family:inherit; font-size:11px; font-weight:600; letter-spacing:.06em; }
+  .mcs-sechead::before { top:2px; }
+  .mcs-rhead { font-family:inherit; font-size:11px; letter-spacing:.06em; }
+  /* the grid (prototype .library .grid, .otile) */
+  .mcs-ogrid { gap:10px 8px; }
+  .mcs-otile { padding:4px; }
+  /* the tab bar (prototype .tabbar: 12px / 14px, labels on one line) — four
+     tabs, each as wide as its label needs, the rest shared */
+  .mcs-i { flex:1 1 auto; min-height:0; padding:12px 4px 14px; }
+  .mcs-i .l { font-size:13px; line-height:20px; white-space:nowrap; }
+}
 `;
+
+/* THE NOTICE HAS TO BE TRUE, AND BATCH 7 CHANGED WHAT IS TRUE. Goals can now
+   be set, changed and removed from here, so a blanket "read-only" would be a
+   lie — and "Goals … arrive in a later release" doubly so. What is still
+   read-only is everything else, and the notice says which. IT ONLY SAYS SO
+   WHEN IT CAN: handed no callback, this shell can change nothing, and
+   claiming otherwise would be the same lie in the other direction.
+   ONE WORDING, THREE PLACES (P6-F1): the banner on a wide screen, the account
+   sheet on a phone, and — shortened, never changed — the one-line note. */
+function scopeNotice(onAddGoal, onOpenOffer) {
+  return onAddGoal ? (
+    <>
+      <span>Your goals are yours to change — say what you&apos;re looking for and how hard.</span>
+      <span className="dim">{onOpenOffer
+        ? "Offers are yours to make and answer in Deal Flow. Everything else here is read-only for now: trades and messages arrive later."
+        : "Everything else here is read-only for now: trades and messages arrive later."}</span>
+    </>
+  ) : (
+    <>
+      <span>Read-only for now — everything here is what MetYet holds for you.</span>
+      <span className="dim">Goals, trades and messages arrive in a later release.</span>
+    </>
+  );
+}
+/* The phone's one line, for the screens it is true of. */
+function scopeLine(sectionId, onAddGoal) {
+  if (!onAddGoal) return "Read-only for now — everything here is what MetYet holds for you.";
+  return sectionId === "deal-flow" || sectionId === "partners" ? "Trades and messages arrive later." : null;
+}
 
 export default function CollectorShell({ state, onSignOut, joined = null, onDismissJoined = null,
   onAddGoal = null, onSetPriority = null, onRemoveGoal = null, onBrowseCards = null,
@@ -887,6 +990,11 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
   const [fillingBinder, setFillingBinder] = useState(null);
 
   const who = describeActor(state);
+  /* THE ACCOUNT, ON A PHONE (P6-F1). The Phase 6 phone has no account bar:
+     the screen is the collection. Who is signed in, what this release can
+     and cannot do, and Sign out move into one sheet behind a small button in
+     the screen's own header — one tap away, never in the way. */
+  const [accountOpen, setAccountOpen] = useState(false);
   /* Row counts of collections the SERVER scoped to this Collector. Nothing
      here decides what any of them mean — which is why there is no
      opportunities count: "active" is a judgement, and it is the server's. */
@@ -937,29 +1045,30 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
         </div>
       ) : null}
 
-      {/* THE NOTICE HAS TO BE TRUE, AND BATCH 7 CHANGED WHAT IS TRUE. Goals can
-          now be set, changed and removed from here, so a blanket "read-only"
-          would be a lie — and "Goals … arrive in a later release" doubly so.
-          What is still read-only is everything else, and the notice says which.
+      {/* The notice (see scopeNotice). On a phone it moves to the account
+          sheet and, where it applies, one line under the screen title. */}
+      <div className="mcs-ro" role="note">{scopeNotice(onAddGoal, onOpenOffer)}</div>
 
-          IT ONLY SAYS SO WHEN IT CAN. Handed no callback, this shell can change
-          nothing, and claiming otherwise would be the same lie in the other
-          direction. */}
-      <div className="mcs-ro" role="note">
-        {onAddGoal ? (
-          <>
-            <span>Your goals are yours to change — say what you&apos;re looking for and how hard.</span>
-            <span className="dim">{onOpenOffer
-              ? "Offers are yours to make and answer in Deal Flow. Everything else here is read-only for now: trades and messages arrive later."
-              : "Everything else here is read-only for now: trades and messages arrive later."}</span>
-          </>
-        ) : (
-          <>
-            <span>Read-only for now — everything here is what MetYet holds for you.</span>
-            <span className="dim">Goals, trades and messages arrive in a later release.</span>
-          </>
-        )}
-      </div>
+      {accountOpen ? (
+        <div className="mcs-sheet-scrim" role="dialog" aria-modal="true" aria-label="Account"
+          onClick={(e) => { if (e.target === e.currentTarget) setAccountOpen(false); }}
+          onKeyDown={(e) => { if (e.key === "Escape") setAccountOpen(false); }}>
+          <div className="mcs-sheet mcs-acct-sheet">
+            <div className="mcs-acct-who">
+              <span className="mcs-acct-big" aria-hidden="true">{(who.name || "?").trim().charAt(0).toUpperCase()}</span>
+              <span><strong>{who.name || "Your account"}</strong><span className="mcs-dim">Collector</span></span>
+            </div>
+            <div className="mcs-acct-scope" role="note">
+              <strong>What works today</strong>
+              {scopeNotice(onAddGoal, onOpenOffer)}
+            </div>
+            <p className="mcs-goal-do">
+              <button className="mcs-go" type="button" onClick={onSignOut}>Sign out</button>
+              <button className="mcs-go quiet" type="button" autoFocus onClick={() => setAccountOpen(false)}>Close</button>
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       <div className="mcs-body">
         <nav className="mcs-nav" aria-label="Collector">
@@ -973,7 +1082,7 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
             </button>
           ))}
         </nav>
-        <main className="mcs-main" key={section}>
+        <main className={`mcs-main mcs-at-${meta.id}`} key={section}>
           {/* THE SCREEN'S OWN HEADER (Phase 6 P6-1). The title stays in view
               while the screen scrolls, as in the Phase 6 prototype; the line
               under it scrolls away with the content it introduces. */}
@@ -986,8 +1095,20 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
                 {`${counts[meta.id]} ${counts[meta.id] === 1 ? meta.unit[0] : meta.unit[1]}`}
               </span>
             ) : null}
+            <button type="button" className="mcs-acct" aria-haspopup="dialog"
+              aria-label={`Account: ${who.name || "Your account"}`} onClick={() => setAccountOpen(true)}>
+              <span aria-hidden="true">{(who.name || "?").trim().charAt(0).toUpperCase()}</span>
+            </button>
           </header>
           <p className="mcs-sub">{meta.sub}</p>
+          {/* WHAT DOES NOT WORK YET, SAID WHERE IT MATTERS (P6-F1). On a phone
+              the full notice lives in the account sheet; a screen whose
+              features are limited says so in one line. Binders and Browse
+              need none when Goals can be changed — everything there works. */}
+          {scopeLine(meta.id, onAddGoal) ? (
+            <p className="mcs-scope">{scopeLine(meta.id, onAddGoal)}{" "}
+              <button type="button" className="mcs-linkish" onClick={() => setAccountOpen(true)}>What works today</button></p>
+          ) : null}
           {/* Goals is the one section a person can change something from
               (Batch 7), so it is the one that receives callbacks. Every other
               section is handed the projection and nothing else. */}

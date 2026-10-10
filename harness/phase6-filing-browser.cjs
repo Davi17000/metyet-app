@@ -19,6 +19,7 @@ const { describe, test, assert, eq, run } = require("../tests/run.cjs");
 let chromium = null;
 try { ({ chromium } = require("playwright")); } catch (e) { chromium = null; }
 const { serve, PHONE, signIn } = require("./phase6-world.cjs");
+const json = (v) => JSON.stringify(v);
 
 let ctx = null; let browser = null;
 const before = async () => {
@@ -306,6 +307,111 @@ describe("mobile, through the real front door (P6-4)", () => {
     assert(await page.locator(".mcs-snack.warn", { hasText: "changed since the screen was drawn" }).count(), "the refusal was not said");
     eq(await page.locator("section[aria-label='Your Cards'] li.mcs-otile").filter({ hasText: /Venusaur/ }).count(), 0, "the screen was not re-read");
     eq(errors.length, 0, errors.join(" | ")); await context.close();
+  });
+});
+
+/* P6-F1: THE PHONE IS THE PROTOTYPE'S PHONE — through the real front door, on
+   an emulated iPhone. Positions are measured from the top of the screen; the
+   prototype's own numbers come from `npm run review:fidelity`. */
+describe("mobile shell (P6-F1)", () => {
+  const phone = async () => {
+    const context = await browser.newContext({ ...PHONE });
+    const page = await context.newPage();
+    const errors = []; page.on("pageerror", (e) => errors.push(e.message));
+    await signIn(page, ctx.url);
+    await page.locator("nav[aria-label=Collector] button", { hasText: "Binders" }).tap();
+    await page.waitForTimeout(500);
+    return { page, context, errors };
+  };
+  const box = (page, q) => page.locator(q).first().boundingBox();
+  test("the viewport is the phone: 390 × 844 at 3×, touch", async () => {
+    await before();
+    const { page, context } = await phone();
+    eq(json(await page.evaluate(() => [innerWidth, innerHeight, devicePixelRatio, navigator.maxTouchPoints > 0])), json([390, 844, 3, true]));
+    await context.close();
+  });
+  test("no account bar and no banner above the collection; the title is at the top", async () => {
+    await before();
+    const { page, context, errors } = await phone();
+    eq(await page.locator(".mcs-top").isVisible(), false, "the account bar is on the phone");
+    eq(await page.locator(".mcs-ro").isVisible(), false, "the banner is on the phone");
+    eq(await page.evaluate(() => getComputedStyle(document.querySelector(".mcs")).backgroundColor), "rgb(255, 255, 255)", "the phone is not the prototype's white panel");
+    const title = await box(page, ".mcs-hd h1");
+    assert(title.y <= 24, `the title starts ${title.y}px down`);
+    /* nothing tall sits between the top of the screen and the search box */
+    const search = await box(page, ".mcs-bcontrols input");
+    assert(search.y <= 60, `the search box starts ${search.y}px down (prototype: 54)`);
+    eq(errors.length, 0, errors.join(" | ")); await context.close();
+  });
+  test("the collection is immediately visible: the first card is on screen, above the tab bar", async () => {
+    await before();
+    const { page, context } = await phone();
+    const card = await box(page, "section[aria-label='Your Cards'] li.mcs-otile");
+    const nav = await box(page, "nav[aria-label=Collector]");
+    assert(card.y <= 300, `the first card starts at ${card.y}px (prototype: 268)`);
+    assert(card.y + 60 < nav.y, "the first card is hidden behind the tab bar");
+    await context.close();
+  });
+  test("four tabs on one line each, at least 44px tall, fixed to the bottom", async () => {
+    await before();
+    const { page, context } = await phone();
+    const tabs = await page.locator("nav[aria-label=Collector] button").evaluateAll((els) => els.map((e) => {
+      const l = e.querySelector(".l"); const r = document.createRange(); r.selectNodeContents(l);
+      const lines = new Set([...r.getClientRects()].filter((x) => x.width > 0).map((x) => Math.round(x.top))).size;
+      const b = e.getBoundingClientRect(); return { text: l.textContent, lines, h: Math.round(b.height), clipped: l.scrollWidth > l.clientWidth + 1 };
+    }));
+    eq(tabs.map((t) => t.text).join(" · "), "Browse · Binders · Deal Flow · Trusted Partners");
+    for (const t of tabs) { eq(t.lines, 1, `${t.text} wraps`); assert(t.h >= 44, `${t.text} is ${t.h}px tall`); eq(t.clipped, false, `${t.text} is clipped`); }
+    const nav = await box(page, "nav[aria-label=Collector]");
+    eq(Math.round(nav.y + nav.height), 844, "the tab bar is not at the bottom");
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)); await page.waitForTimeout(200);
+    const nav2 = await box(page, "nav[aria-label=Collector]");
+    eq(Math.round(nav2.y), Math.round(nav.y), "the tab bar scrolled away");
+    await context.close();
+  });
+  test("nothing is hidden behind the tab bar, and nothing scrolls sideways", async () => {
+    await before();
+    const { page, context } = await phone();
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)); await page.waitForTimeout(250);
+    const last = await page.locator("section[aria-label='Your Cards'] li.mcs-otile").last().boundingBox();
+    const nav = await box(page, "nav[aria-label=Collector]");
+    assert(last.y + last.height <= nav.y, `the last card ends at ${last.y + last.height}, under the tab bar at ${nav.y}`);
+    eq(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "sideways scroll");
+    await context.close();
+  });
+  test("every card without an approved picture is the prototype's drawn card", async () => {
+    await before();
+    const { page, context } = await phone();
+    const tiles = await page.locator("section[aria-label='Your Cards'] li.mcs-otile").count();
+    eq(await page.locator("section[aria-label='Your Cards'] li.mcs-otile .mcs-ph").count(), tiles, "a tile is not the drawn card");
+    const art = await box(page, "section[aria-label='Your Cards'] .mcs-ph");
+    assert(Math.abs(art.height / art.width - 88 / 63) < 0.03, "not card-shaped");
+    eq(await page.evaluate(() => getComputedStyle(document.querySelector(".mcs-ph")).backgroundImage.startsWith("linear-gradient")), true, "not the coloured card face");
+    await context.close();
+  });
+  test("the notice: none on Binders; one line on Deal Flow; the account sheet has it all, and Sign out signs out", async () => {
+    await before();
+    const { page, context } = await phone();
+    eq(await page.locator(".mcs-scope").count(), 0, "Binders carries a notice");
+    await page.locator("nav[aria-label=Collector] button", { hasText: "Deal Flow" }).tap(); await page.waitForTimeout(300);
+    const line = await box(page, ".mcs-scope");
+    assert(line && line.height <= 40, "the Deal Flow notice is not one compact line");
+    await page.locator("button.mcs-acct").tap();
+    const sheet = page.locator("[role=dialog][aria-label=Account]");
+    assert(/Casey/.test(await sheet.innerText()) && /trades and messages arrive later/.test(await sheet.innerText()), "the account sheet");
+    await sheet.locator("button", { hasText: /^Sign out$/ }).tap();
+    await page.locator("#metyet-email").waitFor({ timeout: 4000 });
+    await context.close();
+  });
+  test("desktop is unchanged: the account bar and the banner are still there", async () => {
+    await before();
+    const context = await browser.newContext({ viewport: { width: 1280, height: 860 } });
+    const page = await context.newPage();
+    await signIn(page, ctx.url);
+    eq(await page.locator(".mcs-top").isVisible(), true);
+    eq(await page.locator(".mcs-ro").isVisible(), true);
+    eq(await page.locator("button.mcs-acct").isVisible(), false);
+    await context.close();
   });
 });
 

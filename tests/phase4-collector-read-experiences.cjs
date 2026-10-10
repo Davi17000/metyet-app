@@ -601,7 +601,13 @@ describe("C. Trusted Partners", () => {
   test("no invitation, acceptance or relationship control exists", () => {
     const r = show(FULL, "Trusted Partners");
     const labels = buttons(r).map(instText);
-    eq(labels.length, NAV.length + 1, "an extra control appeared: " + labels.join(" | "));
+    /* RESTATED (P6-F1): on a phone the account bar became one account button
+       in the screen header, and the release notice a "What works today" link —
+       both open the account sheet and change nothing. They are named here, so
+       the count is still exact and any OTHER new control still fails. */
+    eq(buttons(r).filter((b) => /^Account: /.test(String(b.props["aria-label"] || ""))).length, 1, "no account button");
+    eq(labels.filter((l) => l.trim() === "What works today").length, 1, "no notice link");
+    eq(labels.length, NAV.length + 3, "an extra control appeared: " + labels.join(" | "));
     /* CONTROLS are what this forbids. "accepted" is the relationship STATUS the
        server sent, rendered as a tag — banning the substring flagged the
        projection's own word, which is data. So: no control carries an action
@@ -820,7 +826,9 @@ describe("F. nothing acts, nothing mutates, nothing forbidden is imported", () =
     const r = show(FULL);
     for (const s of ["Trusted Partners"]) {
       clickText(r, s);
-      eq(buttons(r).map(instText).length, NAV.length + 1, "an extra control appeared in " + s);
+      /* + the account button and "What works today" (P6-F1), both read-only */
+      eq(buttons(r).filter((b) => /^Account: /.test(String(b.props["aria-label"] || "")) || instText(b).trim() === "What works today").length, 2, "the account controls in " + s);
+      eq(buttons(r).map(instText).length, NAV.length + 3, "an extra control appeared in " + s);
     }
     /* A deferred Goals, handed no callbacks, still offers nothing to press. */
     eq(buttons(show(FULL, "Goals")).length, 0, "a deferred section offered a control");
@@ -828,7 +836,11 @@ describe("F. nothing acts, nothing mutates, nothing forbidden is imported", () =
     const browsing = buttons(r).map(instText).map((l) => l.trim());
     /* A nav button carries its count ("2 Goals"), so it is matched by the label
        it contains rather than by equality. */
-    const own = browsing.filter((l) => !NAV.some((n) => l.includes(n)) && l !== "Sign out");
+    /* the shell's chrome is excluded by name: nav, Sign out, and (P6-F1) the
+       account button — whose visible text is the Collector's initial — and
+       "What works today", both of which only open the account sheet */
+    const chrome = new Set(buttons(r).filter((x) => /^Account: /.test(String(x.props["aria-label"] || ""))).map((x) => instText(x).trim()));
+    const own = browsing.filter((l) => !NAV.some((n) => l.includes(n)) && l !== "Sign out" && l !== "What works today" && !chrome.has(l));
     eq(own.join(","), "Pokémon,Set,Artist", "Browse grew a control: " + own.join(" | "));
     const bare = COLLECTOR_FILES.map(code).join("\n");
     /* Binder entries, interests and invitations are still nobody's to write

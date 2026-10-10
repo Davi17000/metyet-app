@@ -580,6 +580,10 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
     const known = described[o.cardKey];
     return onSpecify && known ? () => setSpecifying(known) : null;
   };
+  /* The Phase 6 placeholder's facts for one card (P6-F1): only what the
+     catalogue described; nothing guessed. */
+  const phOf = (o, known) => ({ key: o.cardKey, set: known && known.expansionName,
+    number: known && known.collectorNumber ? String(known.collectorNumber) : null });
   const where = (o, thisBinderId = null) => (thisBinderId && o.homeId === thisBinderId ? "This binder"
     : o.homeName ? `in ${o.homeName}${o.homeAway ? " (put away)" : ""}` : "Unfiled");
 
@@ -599,7 +603,7 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
     const sub = [showHome ? where(o) : null, known && text(known.expansionName), known && known.finish]
       .filter(Boolean).join(" · ");
     const art = <CardArt src={known && known.imageSmall} name={known && known.cardName}
-      wrap="mcs-otile-art" plate="mcs-art-plate" decorative />;
+      wrap="mcs-otile-art" plate="mcs-art-plate" decorative card={phOf(o, known)} />;
     const copy = o.kind === "copy" ? o.thing : null;
     /* THE SERVER'S STATUS, when it is not the ordinary one: a copy in a deal
        says so on its tile, in the server's own word. */
@@ -669,7 +673,7 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
           <button type="button" className="mcs-x" aria-label="Close" onClick={close} autoFocus>✕</button>
           <div className="mcs-ohero">
             <CardArt src={known && known.imageSmall} name={known && known.cardName}
-              wrap="mcs-ohero-art" plate="mcs-art-plate" decorative />
+              wrap="mcs-ohero-art" plate="mcs-art-plate" decorative card={phOf(o, known)} />
           </div>
           <div className="mcs-oident">
             <h2>{name}</h2>
@@ -826,7 +830,7 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
     <FilingLayer origin={held.origin} dests={destsFor(held.o)} onDrop={dropOn} onCancel={() => setHeld(null)}
       label={`${nameOf(held.o)} · ${MEANING[held.o.meaning]} · now ${held.o.homeId ? `in ${held.o.homeName}` : "Unfiled"}`}
       art={<CardArt src={heldKnown && heldKnown.imageSmall} name={nameOf(held.o)}
-        wrap="mcs-otile-art" plate="mcs-art-plate" decorative />} />
+        wrap="mcs-otile-art" plate="mcs-art-plate" decorative card={phOf(held.o, heldKnown)} />} />
   ) : null);
   const renameSheet = renaming ? (
     <div className="mcs-sheet-scrim" role="dialog" aria-label="Rename binder">

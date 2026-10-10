@@ -756,8 +756,15 @@ describe("F. no demo, no prototype, no store, no domain", () => {
        section with controls INSIDE it (three doorways and a search), so the
        count is taken where the shell's chrome is the whole of what is on
        screen: a section that offers nothing of its own. */
-    const labels = buttons(show(REAL, "Trusted Partners")).map(instText);
-    eq(labels.length, NAV.length + 1, "an extra control appeared: " + labels.join(" | "));
+    const shown = buttons(show(REAL, "Trusted Partners"));
+    const labels = shown.map(instText);
+    /* RESTATED (P6-F1): on a phone the account bar became one account button
+       in the screen header, and the release notice a "What works today" link —
+       both open the account sheet and change nothing. They are named here, so
+       the count is still exact and any OTHER new control still fails. */
+    eq(shown.filter((b) => /^Account: /.test(String(b.props["aria-label"] || ""))).length, 1, "no account button");
+    eq(labels.filter((l) => l.trim() === "What works today").length, 1, "no notice link");
+    eq(labels.length, NAV.length + 3, "an extra control appeared: " + labels.join(" | "));
     assert(labels.some((l) => l.includes("Sign out")));
     /* And Browse's own controls are Browse's, named so a reader can see them. */
     const browsing = buttons(show(REAL)).map(instText);
