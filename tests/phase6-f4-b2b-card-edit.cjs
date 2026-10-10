@@ -114,6 +114,9 @@ const inputs = (r) => page(r).findAll((n) => n.type === "input");
 const type = async (el, v) => { await TR.act(async () => { el.props.onChange({ target: { value: v } }); }); };
 const steps = (sent) => sent.map(([s]) => s);
 
+/* RESTATED (P6-F4 B2B.1): what it means comes FIRST on the page, so a page's
+   selected answers read state, then grading; a copy's states are "PC" and
+   "Trade / Sell" in the shared language. */
 /* ============================================================== A */
 describe("A. the record's own saved answers, already chosen", () => {
   test("a Goal: its version, Raw · Near Mint, Primary, and its binder", async () => {
@@ -122,7 +125,7 @@ describe("A. the record's own saved answers, already chosen", () => {
     eq(page(r).props["aria-label"], "Your Goal: Mudkip");
     assert(/Ruby & Sapphire · 60 · Ken Sugimori/.test(flat(page(r))), flat(page(r)));
     assert(/Reverse Holo — the version you saved\./.test(flat(page(r))));
-    eq(json(pressed(r)), json(["Raw", "Near Mint", "Primary"]));
+    eq(json(pressed(r)), json(["Primary", "Raw", "Near Mint"]));
     assert(/Binder In Mudkips/.test(flat(page(r))));
     eq(saveBtn(r).props["aria-disabled"], true, "Save offered with nothing changed");
     eq(sent.length, 0, "opening wrote something");
@@ -135,11 +138,11 @@ describe("A. the record's own saved answers, already chosen", () => {
   test("two copies of one card open as themselves: each its own grading, state, cert and value", async () => {
     const { r } = await show();
     await open(r, /PC.*Charizard/);
-    eq(json(pressed(r)), json(["Graded", "PSA 8", "Personal collection"]));
+    eq(json(pressed(r)), json(["PC", "Graded", "PSA 8"]));
     eq(json(inputs(r).map((i) => i.props.value)), json(["CERT-A", "300"]));
     await tap(page(r).findAll((n) => cls(n) === "mcs-cd-back")[0]);
     await open(r, /Trade \/ Sell.*Charizard/);
-    eq(json(pressed(r)), json(["Raw", "Lightly Played", "Trade / Sell"]));
+    eq(json(pressed(r)), json(["Trade / Sell", "Raw", "Lightly Played"]));
     eq(json(inputs(r).map((i) => i.props.value)), json(["SER-B", ""]));
   });
 });
@@ -154,7 +157,7 @@ describe("B. Save changes sends only what changed", () => {
     await save(s.r);
     eq(json(steps(s.sent)), json([{ kind: "how-hard", goalId: "g-mud", tier: "secondary" }]));
     eq(s.sent[0][1], "cc-mud-r", "the exact card");
-    eq(json(pressed(s.r)), json(["Raw", "Near Mint", "Secondary"]), "the configuration was reset");
+    eq(json(pressed(s.r)), json(["Secondary", "Raw", "Near Mint"]), "the configuration was reset");
     assert(/✓ Saved — how important it is\./.test(flat(page(s.r))));
     eq(json(s.live.binderMemberships), json(STATE().binderMemberships), "the binder moved");
     eq(saveBtn(s.r).props["aria-disabled"], true, "Save stays ready after the change is saved");
@@ -165,13 +168,13 @@ describe("B. Save changes sends only what changed", () => {
     await tap(choice(s.r, "Lightly Played"));
     await save(s.r);
     eq(json(steps(s.sent)), json([{ kind: "wanted-copy", goalId: "g-mud", desired: { grade: "Raw", condition: "Lightly Played" } }]));
-    eq(json(pressed(s.r)), json(["Raw", "Lightly Played", "Primary"]), "the state was reset");
+    eq(json(pressed(s.r)), json(["Primary", "Raw", "Lightly Played"]), "the state was reset");
   });
   test("Raw → Graded clears only the condition, asks for a grade, then saves both with the tier untouched", async () => {
     const s = await show();
     await open(s.r, /Mudkip/);
     await tap(choice(s.r, "Graded"));
-    eq(json(pressed(s.r)), json(["Graded", "Primary"]), "the tier was cleared with the condition");
+    eq(json(pressed(s.r)), json(["Primary", "Graded"]), "the tier was cleared with the condition");
     eq(saveBtn(s.r).props["aria-disabled"], true, "a graded Goal with no grade offered to save");
     assert(/Which grade is it\?/.test(flat(page(s.r))));
     await tap(choice(s.r, "PSA 10"));
@@ -184,7 +187,7 @@ describe("B. Save changes sends only what changed", () => {
     await tap(choice(s.r, "Trade / Sell"));
     await save(s.r);
     eq(json(steps(s.sent)), json([{ kind: "offering", copyId: "k-a", offered: true }]));
-    eq(json(pressed(s.r)), json(["Graded", "PSA 8", "Trade / Sell"]));
+    eq(json(pressed(s.r)), json(["Trade / Sell", "Graded", "PSA 8"]));
   });
   test("a copy's grade, cert and value together are ONE correct-copy patch, naming only what changed", async () => {
     const s = await show();
@@ -224,6 +227,54 @@ describe("B. Save changes sends only what changed", () => {
   });
 });
 
+/* ============================================================== B.1 */
+describe("B.1 an owned copy's state, both ways (P6-F4 B2B.1)", () => {
+  const backTo = async (r) => { await tap(page(r).findAll((n) => cls(n) === "mcs-cd-back")[0]); };
+  test("the state question comes first, right under the card, with both choices", async () => {
+    const { r } = await show();
+    await open(r, /PC.*Charizard/);
+    const qs = page(r).findAll((n) => n.props && n.props["data-q"]).map((n) => n.props["data-q"]);
+    eq(qs[0], "state", "what it means is not the first question: " + json(qs));
+    const st = page(r).findAll((n) => n.props && n.props["data-q"] === "state")[0];
+    assert(/^What does this card mean to you\?/.test(flat(st)), flat(st));
+    eq(json(st.findAll((n) => n.type === "button").map((b) => [b.props["data-st"], flat(b), b.props["aria-pressed"]])),
+      json([["pc", "PC A keeper", true], ["trade", "Trade / Sell Available for trade or sale", false]]));
+  });
+  test("PC → Trade / Sell → Save → reopen: Trade / Sell is selected; grade, cert, value and binder unchanged", async () => {
+    const s = await show();
+    await open(s.r, /PC.*Charizard/);
+    await tap(choice(s.r, "Trade / Sell")); await save(s.r);
+    eq(json(steps(s.sent)), json([{ kind: "offering", copyId: "k-a", offered: true }]));
+    await backTo(s.r);
+    await open(s.r, /Trade \/ Sell.*Charizard #4 · Holo · PSA 8/);
+    eq(json(pressed(s.r)), json(["Trade / Sell", "Graded", "PSA 8"]));
+    eq(json(inputs(s.r).map((i) => i.props.value)), json(["CERT-A", "300"]));
+    const k = s.live.collectorCopies.find((c) => c.id === "k-a");
+    eq(json([k.grade, k.cert, k.market, k.offered, k.keeping]), json(["PSA 8", "CERT-A", 300, true, false]));
+    eq(json(s.live.binderMemberships), json(STATE().binderMemberships));
+  });
+  test("Trade / Sell → PC → Save → reopen: PC is selected; the other copy of the card is untouched", async () => {
+    const s = await show();
+    await open(s.r, /Trade \/ Sell.*Charizard/);
+    await tap(choice(s.r, "PC")); await save(s.r);
+    eq(json(steps(s.sent)), json([{ kind: "keeping", copyId: "k-b", keeping: true }]));
+    await backTo(s.r);
+    await open(s.r, /PC.*Charizard #4 · Holo · Raw/);
+    eq(json(pressed(s.r)), json(["PC", "Raw", "Lightly Played"]));
+    const other = s.live.collectorCopies.find((c) => c.id === "k-a");
+    eq(json([other.keeping, other.offered]), json([true, false]), "the other copy changed");
+  });
+  test("a refused state change claims nothing, and reopening shows the server's state", async () => {
+    const s = await show({ answer: () => ({ ok: false, refused: "copy-committed" }) });
+    await open(s.r, /PC.*Charizard/);
+    await tap(choice(s.r, "Trade / Sell")); await save(s.r);
+    assert(!/✓/.test(flat(page(s.r))) && /Nothing was saved/.test(flat(page(s.r))), flat(page(s.r)));
+    await backTo(s.r);
+    await open(s.r, /PC.*Charizard/);
+    eq(choice(s.r, "PC").props["aria-pressed"], true, "the refused state is shown as saved");
+  });
+});
+
 /* ============================================================== D */
 describe("D. a record's version is its identity", () => {
   test("the version is shown, never offered as a choice; Browse is where another version is recorded", async () => {
@@ -258,7 +309,7 @@ describe("E. refusals and partial saves", () => {
     await tap(choice(s.r, "Secondary")); await save(s.r);
     assert(/Nothing was saved: how hard you're looking could not be saved/.test(flat(page(s.r))), flat(page(s.r)));
     assert(!/✓/.test(flat(page(s.r))));
-    eq(json(pressed(s.r)), json(["Raw", "Near Mint", "Secondary"]), "the answer was lost");
+    eq(json(pressed(s.r)), json(["Secondary", "Raw", "Near Mint"]), "the answer was lost");
   });
   test("two changes, the second refused: says exactly what was saved and what was not", async () => {
     const s = await show({ answer: (step) => (step.kind === "how-hard" ? { ok: false, refused: "goal-locked" } : { ok: true }) });
@@ -268,7 +319,7 @@ describe("E. refusals and partial saves", () => {
     eq(json(steps(s.sent).map((x) => x.kind)), json(["wanted-copy", "how-hard"]));
     assert(/which copy you want was saved\. But how hard you're looking could not be saved/.test(flat(page(s.r))), flat(page(s.r)));
     assert(!/✓/.test(flat(page(s.r))), "a partial save claimed success");
-    eq(json(pressed(s.r)), json(["Raw", "Lightly Played", "Primary"]), "the page does not show what is actually saved");
+    eq(json(pressed(s.r)), json(["Primary", "Raw", "Lightly Played"]), "the page does not show what is actually saved");
   });
   test("lost contact: said, nothing claimed", async () => {
     const s = await show({ answer: () => "throw" });

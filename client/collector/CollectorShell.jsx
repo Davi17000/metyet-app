@@ -730,6 +730,8 @@ ${STATE_CSS}
 /* A SAVED CARD'S PAGE (P6-F4 B2B): CardDetail's structure, plus where it lives,
    its details, and a quiet way to remove it */
 .mcs-snack-wrap.over-page { bottom:calc(132px + env(safe-area-inset-bottom, 0px)); }
+/* the record's own pair, side by side and thumb-sized (B2B.1) */
+.mcs-ce .mcs-ce-pair .mcs-cd-choice { min-height:64px; }
 .mcs-ce .mcs-ce-home { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .mcs-ce .mcs-ce-home b { font-size:15px; }
 .mcs-ce .mcs-ce-home .mcs-go { min-height:44px; min-width:96px; }

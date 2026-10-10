@@ -37,6 +37,7 @@ import CardArt from "../card-art.jsx";
 import { text, day, photoNote, statusLabel, isGraded, gradeConflictLine } from "./present.js";
 import { explain } from "./CardSpecification.jsx";
 import { versionLabel, GRADES, CONDITIONS, Choice, Section } from "./CardDetail.jsx";
+import { STATE_STYLE } from "./states.jsx";
 
 /* WHAT IS SAVED, read off the record — never inferred from the card. */
 export function savedOf(kind, thing) {
@@ -177,9 +178,11 @@ export default function CardEdit({ kind, thing, known, homeName = null, homeAway
   const version = known && known.finish ? versionLabel(known) : null;
   const imageShown = known ? known.imageLarge || known.imageSmall || null : null;
   const pair = kind === "goal" ? ["primary", "secondary"] : ["pc", "trade"];
-  const SUB = { primary: "I'm actively looking for this.", secondary: "I'm interested in this card.",
-    pc: "I'm keeping this one.", trade: "I'd consider moving it." };
-  const TITLE = { primary: "Primary", secondary: "Secondary", pc: "Personal collection", trade: "Trade / Sell" };
+  /* The shared language (states.jsx): its labels; its messages, with the
+     Secondary sentence the founder approved for this page. */
+  const TITLE = Object.fromEntries(Object.entries(STATE_STYLE).map(([k, st]) => [k, st.label]));
+  const SUB = { ...Object.fromEntries(Object.entries(STATE_STYLE).map(([k, st]) => [k, st.message])),
+    secondary: "I'm interested in this card." };
   const field = kind === "goal" ? "tier" : "disposition";
   const copy = kind === "copy" ? thing : null;
 
@@ -199,6 +202,21 @@ export default function CardEdit({ kind, thing, known, homeName = null, homeAway
           <h2>{name}</h2>
           {ident ? <p>{ident}</p> : null}
         </div>
+
+        {/* WHAT IT MEANS — FIRST, AND IN REACH (P6-F4 B2B.1). On a phone this sat
+            below the version and a ten-button grade grid, beneath the fold
+            (y 848 on an 844-pt screen); it is the change a Collector makes most,
+            so it comes straight after the card, both choices side by side. */}
+        <Section id="state" title="What does this card mean to you?">
+          <div className="mcs-cd-row mcs-ce-pair" role="group" aria-label="What does this card mean to you?">
+            {pair.map((m) => (
+              <Choice key={m} st={m} on={a[field] === m} title={TITLE[m]} sub={SUB[m]} disabled={saving} onClick={() => set(field, m)} />
+            ))}
+          </div>
+          <p className="mcs-cd-cannot mcs-ce-note">{kind === "goal"
+            ? "This is a card you're looking for. If you own one, add it from Browse — this Goal stays."
+            : "This is a copy you own. To look for another, start a Goal from Browse."}</p>
+        </Section>
 
         <Section id="print" title="Version">
           <p className="mcs-cd-established">{version ? `${version} — the version you saved.` : "The version you saved."}
@@ -223,17 +241,6 @@ export default function CardEdit({ kind, thing, known, homeName = null, homeAway
             <div className="mcs-cd-wrap">{GRADES.map((g) => <Choice key={g} on={a.grade === g} title={g} disabled={saving} onClick={() => set("grade", g)} />)}</div>
           </Section>
         ) : null}
-
-        <Section id="state" title={kind === "goal" ? "How important is this one?" : "What's this card to you?"}>
-          <div className="mcs-cd-col">
-            {pair.map((m) => (
-              <Choice key={m} st={m} on={a[field] === m} title={TITLE[m]} sub={SUB[m]} disabled={saving} onClick={() => set(field, m)} />
-            ))}
-          </div>
-          <p className="mcs-cd-cannot mcs-ce-note">{kind === "goal"
-            ? "This is a card you're looking for. If you own one, add it from Browse — this Goal stays."
-            : "This is a copy you own. To look for another, start a Goal from Browse."}</p>
-        </Section>
 
         <Section id="home" title="Binder">
           <div className="mcs-ce-home">

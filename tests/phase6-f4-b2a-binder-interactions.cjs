@@ -204,7 +204,8 @@ describe("A. one visual language for the four states", () => {
     await openCard(r, /Charizard/);
     /* RESTATED (P6-F4 B2B): the saved card's page offers the record's own pair, in the shared language */
     const states = sheet(r).findAll((n) => n.type === "button" && n.props["data-st"]);
-    eq(json(states.map((b) => [b.props["data-st"], flat(b)])), json([["primary", "Primary I'm actively looking for this."],
+    /* (B2B.1: the shared messages, with the founder's Secondary sentence) */
+    eq(json(states.map((b) => [b.props["data-st"], flat(b)])), json([["primary", "Primary Actively hunting"],
       ["secondary", "Secondary I'm interested in this card."]]));
     assert(states.every((b) => b.findAll((n) => n.props && n.props["data-state-icon"] === b.props["data-st"]).length === 1), "a state button has no icon");
   });

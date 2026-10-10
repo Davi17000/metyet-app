@@ -720,7 +720,7 @@ describe("a saved card, edited in place (P6-F4 B2B)", () => {
     const dlg = page.locator("[role=dialog][aria-label='Your copy: Mudkip']");
     await dlg.waitFor();
     const pressedNow = async () => dlg.locator("button[aria-pressed=true] b").allInnerTexts();
-    eq(JSON.stringify(await pressedNow()), JSON.stringify(["Raw", "Near Mint", "Personal collection"]), "not preselected from the record");
+    eq(JSON.stringify(await pressedNow()), JSON.stringify(["PC", "Raw", "Near Mint"]), "not preselected from the record");
     eq(await dlg.locator("button.mcs-cd-add").getAttribute("aria-disabled"), "true", "Save offered with nothing changed");
     await dlg.locator("button.mcs-cd-choice", { has: page.locator("b", { hasText: /^Lightly Played$/ }) }).tap();
     await dlg.locator("input").first().fill("NEW-2");
@@ -732,7 +732,58 @@ describe("a saved card, edited in place (P6-F4 B2B)", () => {
     eq(after.addedAt, before0.addedAt, "the record was replaced");
     eq(((await ctx.memberships()).find((m) => m.collectorCopyId === copyId) || {}).binderId, binder.id, "the binder moved");
     eq(JSON.stringify(commands), JSON.stringify(["updateCollectorCopy"]), "unexpected commands: " + JSON.stringify(commands));
-    eq(JSON.stringify(await pressedNow()), JSON.stringify(["Raw", "Lightly Played", "Personal collection"]), "the page did not refresh from the projection");
+    eq(JSON.stringify(await pressedNow()), JSON.stringify(["PC", "Raw", "Lightly Played"]), "the page did not refresh from the projection");
+    eq(errors.length, 0, errors.join(" | "));
+    await context.close();
+  });
+});
+
+/* P6-F4 BATCH 2B.1 — LAST, BECAUSE IT WRITES. An owned copy's PC ↔ Trade / Sell,
+   in reach on a phone, both ways, saved and reopened. */
+describe("an owned copy's state, both ways, in reach (P6-F4 B2B.1)", () => {
+  test("PC → Trade / Sell and back: both choices on screen at 390 × 844; saved; reopened selected; nothing else changes", async () => {
+    await before();
+    const copyId = ctx.ids.copy;
+    const context = await browser.newContext({ ...PHONE }); const page = await context.newPage();
+    const errors = []; page.on("pageerror", (e) => errors.push(e.message));
+    const commands = []; page.on("request", (r) => { if (r.url().includes("/api/commands")) commands.push(JSON.parse(r.postData() || "{}").command); });
+    await signIn(page, ctx.url);
+    await page.tap("nav[aria-label=Collector] button:has-text('Binders')"); await page.waitForTimeout(500);
+    const was = (await ctx.world()).collectorCopies.find((c) => c.id === copyId);
+    const home = ((await ctx.memberships()).find((m) => m.collectorCopyId === copyId) || {}).binderId || null;
+    const openIt = async () => {
+      const t = page.locator(`section[aria-label='Your Cards'] li.mcs-otile[data-key='c:${copyId}'] button.mcs-otap`);
+      await t.scrollIntoViewIfNeeded(); await t.tap(); await page.locator("[role=dialog].mcs-ce").waitFor(); await page.waitForTimeout(400);
+    };
+    const pressedNow = () => page.locator("[role=dialog].mcs-ce [data-q=state] button[aria-pressed=true]").getAttribute("data-st");
+    const flip = async (to) => {
+      await openIt();
+      /* both choices in view, above the dock, with no scrolling */
+      const dock = await page.locator("[role=dialog].mcs-ce .mcs-cd-dock").boundingBox();
+      for (const st of ["pc", "trade"]) {
+        const b = await page.locator(`[role=dialog].mcs-ce [data-q=state] button[data-st=${st}]`).boundingBox();
+        assert(b.y >= 0 && b.y + b.height <= dock.y, `${st} is not on screen above the dock (${Math.round(b.y)}–${Math.round(b.y + b.height)}, dock at ${Math.round(dock.y)})`);
+      }
+      await page.screenshot({ path: `artifacts/f4-b2b1-before-${to}.png` }).catch(() => {});
+      await page.locator(`[role=dialog].mcs-ce [data-q=state] button[data-st=${to}]`).tap();
+      await page.locator("[role=dialog].mcs-ce button.mcs-cd-add").tap();
+      await page.locator("[role=dialog].mcs-ce .mcs-cd-hint.ack").waitFor({ timeout: 4000 });
+      await page.locator("[role=dialog].mcs-ce .mcs-cd-back").tap(); await page.waitForTimeout(400);
+      await openIt();
+      eq(await pressedNow(), to, `reopened, ${to} is not selected`);
+      await page.screenshot({ path: `artifacts/f4-b2b1-reopened-${to}.png` }).catch(() => {});
+      await page.locator("[role=dialog].mcs-ce .mcs-cd-back").tap(); await page.waitForTimeout(300);
+    };
+    eq(was.keeping === true ? "pc" : "trade", "pc", "the fixture copy is not PC");
+    await flip("trade");
+    let c = (await ctx.world()).collectorCopies.find((x) => x.id === copyId);
+    eq(JSON.stringify([c.offered === true, c.keeping === true, c.grade, c.condition || null, c.cert || null, c.canonicalCardId]),
+      JSON.stringify([true, false, was.grade, was.condition || null, was.cert || null, was.canonicalCardId]), "not saved as Trade / Sell alone");
+    await flip("pc");
+    c = (await ctx.world()).collectorCopies.find((x) => x.id === copyId);
+    eq(JSON.stringify([c.offered === true, c.keeping === true]), JSON.stringify([false, true]), "not saved as PC");
+    eq(((await ctx.memberships()).find((m) => m.collectorCopyId === copyId) || {}).binderId || null, home, "the binder moved");
+    eq(JSON.stringify(commands), JSON.stringify(["setCollectorCopyOffered", "setCollectorCopyKept"]), "unexpected commands: " + JSON.stringify(commands));
     eq(errors.length, 0, errors.join(" | "));
     await context.close();
   });

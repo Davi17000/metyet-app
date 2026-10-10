@@ -1069,7 +1069,7 @@ describe("D. not in a binder yet", () => {
     await tapTile(r, "Mudkip");
     /* RE-PINNED (Batch 3B-1): the card-level Binder question is gone and the
        home control beside the hunt replaced it. */
-    assert(/How important is this one\?/i.test(texts(r)), texts(r));
+    assert(/What does this card mean to you\?/i.test(texts(r)), texts(r));
     assert(/Binder Unfiled/.test(texts(r)), texts(r));
     const primary = buttons(r).find((n) => n.props["data-st"] === "primary");
     eq(primary && primary.props["aria-pressed"], true, "the page did not open on the Goal's tier");
