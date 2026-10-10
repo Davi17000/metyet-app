@@ -118,7 +118,8 @@ const buttons = (r) => r.root.findAll((n) => n.type === "button");
 const btn = (r, re) => buttons(r).find((b) => re.test(flat(b))) || null;
 const yourCards = (r) => r.root.findAll((n) => n.type === "section" && n.props["aria-label"] === "Your Cards")[0];
 const tileOf = (r, state, name) => yourCards(r).findAll((n) => n.type === "li" && cls(n).includes("mcs-otile"))
-  .find((li) => flat(li.findAll((n) => /\bmcs-mk\b/.test(cls(n)))[0]) === state && new RegExp(`^${name}`).test(flat(li.findAll((n) => cls(n) === "mcs-oname")[0])));
+  /* RESTATED (P6-F4 B1): the card's name now leads the identity line (mcs-oq), after its state */
+  .find((li) => flat(li.findAll((n) => /\bmcs-mk\b/.test(cls(n)))[0]) === state && new RegExp(`^${name}`).test(flat(li.findAll((n) => cls(n) === "mcs-oq")[0])));
 const sheet = (r) => r.root.findAll((n) => n.props && n.props.role === "dialog" && /^Card: /.test(String(n.props["aria-label"] || "")))[0] || null;
 const choice = (r, m) => sheet(r).findAll((n) => n.type === "button" && n.props["data-meaning"] === m)[0];
 const snack = (r) => r.root.findAll((n) => cls(n) === "mcs-snack-wrap")[0] || null;
@@ -141,7 +142,8 @@ describe("A. a Goal: Primary and Secondary", () => {
     eq(choice(r, "secondary").props["aria-pressed"], false);
     for (const m of ["pc", "trade"]) eq(choice(r, m).props["aria-pressed"], false, `${m} claimed for a Goal`);
     assert(/Looking for PSA 9/.test(flat(sheet(r))), "the wanted grade is not shown");
-    assert(/Charizard/.test(flat(sheet(r))) && /Base Set · #4 · holofoil/.test(flat(sheet(r))), "the card's identity");
+    /* RESTATED (P6-F4 B1): the version in a collector's words, never the internal value */
+    assert(/Charizard/.test(flat(sheet(r))) && /Base Set · #4 · Holo/.test(flat(sheet(r))) && !/holofoil/.test(flat(sheet(r))), "the card's identity");
     eq(sent.length, 0, "opening wrote something");
   });
   test("Secondary: one updateGoalTier step; said only after the answer; the tile follows", async () => {

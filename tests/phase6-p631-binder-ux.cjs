@@ -178,23 +178,25 @@ describe("B. no second step", () => {
 
 /* ============================================================== C */
 describe("C. the tile is the card", () => {
-  test("picture first, then name and number, then state beside its own grade", async () => {
+  /* RESTATED (P6-F4 B1): P6-3.1 put the name first; the founder's B1 brief
+     adopts the prototype's caption order instead — state, then the card's
+     identity (name and number · version · its own grade). */
+  test("picture first, then state, then name, number, version and its own grade", async () => {
     const { r } = await show();
     await openSection(r);
     await click(head(r, "b-gen1"));
     const t = tilesIn(cover(r, "b-gen1")).map((li) => {
       const kids = li.children.filter((c) => typeof c !== "string").map((c) => cls(c));
       const meta = li.findAll((n) => cls(n) === "mcs-ometa")[0];
-      return { order: kids, first: meta.children.filter((c) => typeof c !== "string").map((c) => cls(c))[0],
-        name: flat(li.findAll((n) => cls(n) === "mcs-oname")[0]), state: flat(li.findAll((n) => /\bmcs-mk\b/.test(cls(n)))[0]),
-        grade: flat(li.findAll((n) => cls(n) === "mcs-oqual")[0]) };
+      return { order: kids, first: meta.children.filter((c) => typeof c !== "string").map((c) => cls(c)),
+        state: flat(li.findAll((n) => /\bmcs-mk\b/.test(cls(n)))[0]), ident: flat(li.findAll((n) => cls(n) === "mcs-oq")[0]) };
     });
     for (const x of t) {
       assert(/mcs-otap/.test(x.order[0]), "the picture is not first: " + json(x));
-      eq(x.first, "mcs-oname", "the name is not first under the picture");
+      eq(x.first.slice(0, 2).join(","), "mcs-ostate,mcs-oq", "the caption is not state, then the card");
     }
-    assert(t.some((x) => x.name === "Charizard #4" && x.state === "Primary" && x.grade === "PSA 9"), json(t));
-    assert(t.some((x) => x.name === "Charizard #4" && x.state === "PC" && x.grade === "PSA 8"), json(t));
+    assert(t.some((x) => x.state === "Primary" && x.ident === "Charizard #4 · Holo · PSA 9"), json(t));
+    assert(t.some((x) => x.state === "PC" && x.ident === "Charizard #4 · Holo · PSA 8"), json(t));
   });
   test("nothing administrative is laid out under the cards", async () => {
     const { r } = await show();
@@ -331,11 +333,17 @@ describe("F. the layout", () => {
     assert(/\.mcs-ogrid \{ grid-template-columns:repeat\(auto-fill, minmax\(132px, 152px\)\);[^}]*justify-content:start;/.test(wide), "the desktop grid stretches its cards");
     assert(/\.mcs-ogrid \{ list-style:none;[^}]*grid-template-columns:repeat\(3, minmax\(0, 1fr\)\)/.test(css()), "three across on a phone");
   });
-  test("no wide empty box: an open binder's cards sit on the page, the screen has a measure", () => {
+  /* RESTATED (P6-F4 B1): P6-3.1 set an open binder's cards on the page; the
+     founder's B1 brief returns them to the prototype's cover — the binder is
+     one bordered cover holding its row and its cards. The screen keeps its
+     measure. */
+  test("an open binder is one cover holding its cards; the screen has a measure", () => {
     const c = css();
     assert(/\.mcs-binders \{ max-width:1040px; \}/.test(c), "no measure for the screen");
-    assert(/\.mcs-bcover \{ display:block; width:100%; text-align:left; \}/.test(c), "the binder is a bordered box again");
-    assert(/\.mcs-bcover\.open \.mcs-bhead-row \{ border-color:var\(--t1\); \}/.test(c), "the open row is not marked");
+    assert(/\.mcs-bcover \{ display:block; width:100%; text-align:left; border:1px solid var\(--line\); background:#FFF;\s*border-radius:16px; \}/.test(c), "the binder is not a cover");
+    assert(/\.mcs-bcover\.open \{ border-color:var\(--t1\); \}/.test(c), "an open binder does not say so");
+    assert(/\.mcs-bbody \{ padding:0 10px 10px; \}/.test(c), "the cards are not inside the cover");
+    /* (the open binder is marked on its whole cover now — asserted above — not on its row) */
   });
   test("a long binder name ends in an ellipsis, keeping its count and menu in view", async () => {
     assert(/\.mcs-bline b \{[^}]*text-overflow:ellipsis; white-space:nowrap; \}/.test(css()), "a long name can push the count out");

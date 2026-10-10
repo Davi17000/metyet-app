@@ -244,17 +244,21 @@ describe("D. tiles", () => {
     assert(srcs.length >= 1 && srcs.every((x) => x === "https://img.example.invalid/char.png"), json(srcs));
     assert(/Mudkip/.test(flat(section(r, "Your Cards"))), "a card with no picture lost its name");
   });
-  test("identity on every tile: name, number, set, version — then its own grading", async () => {
-    /* RESTATED (P6-3.1): the brief's hierarchy — name and number first, then
-       state beside its own (or wanted) grade, then set and version quietly —
-       each read from its own place on ONE tile. */
+  test("identity on every tile: name, number, version — then its own grading", async () => {
+    /* RESTATED (P6-3.1, then P6-F4 B1). The founder's B1 brief adopts the
+       prototype's order: state, then (in Your Cards) where it lives, then the
+       card — name and number, its version in a collector's words ("Holo",
+       never "holofoil"), and its own (or wanted) grade — each read from its own
+       place on ONE tile. The set, which the prototype's tile does not carry,
+       is one tap away on the card sheet. */
     const { r } = await show();
-    const t = tiles(section(r, "Your Cards")).map((n) => ({ name: part(n, "mcs-oname"), state: part(n, "mcs-mk"),
-      grade: part(n, "mcs-oqual"), sub: part(n, "mcs-oq") }));
-    assert(t.some((x) => x.name === "Charizard #4" && x.state === "PC" && x.grade === "PSA 8"
-      && /Base Set · holofoil$/.test(x.sub)), json(t));
-    assert(t.some((x) => x.name === "Charizard #4" && x.state === "Primary" && x.grade === "PSA 9"
-      && /Base Set · holofoil$/.test(x.sub)), "the Goal's wanted grade: " + json(t));
+    const t = tiles(section(r, "Your Cards")).map((n) => ({ state: part(n, "mcs-mk"), home: part(n, "mcs-oloc"), ident: part(n, "mcs-oq") }));
+    assert(t.some((x) => x.state === "PC" && x.ident === "Charizard #4 · Holo · PSA 8" && x.home), json(t));
+    assert(t.some((x) => x.state === "Primary" && x.ident === "Charizard #4 · Holo · PSA 9"), "the Goal's wanted grade: " + json(t));
+    assert(!/holofoil/.test(flat(section(r, "Your Cards"))), "an internal finish value reached a tile");
+    const tile = tiles(section(r, "Your Cards")).find((n) => part(n, "mcs-oq") === "Charizard #4 · Holo · PSA 8");
+    await TR.act(async () => { tile.findAll((n) => n.type === "button")[0].props.onClick({ preventDefault() {} }); }); await settle();
+    assert(/Base Set · #4 · Holo/.test(flat(r.root)), "the set is not on the card sheet: " + flat(r.root));
   });
   test("a tile's picture opens the Card Specification", async () => {
     /* RESTATED (P6-4): through the card's own sheet, one press on. */

@@ -654,17 +654,18 @@ const CSS = `
 .mcs-sechead[aria-expanded="true"]::before { transform:rotate(90deg); }
 .mcs-sechead .mcs-bmatch { margin-left:auto; text-transform:none; letter-spacing:0; }
 .mcs-covers { display:flex; flex-direction:column; gap:10px; }
-/* P6-3.1: the ROW is the card. An open binder's cards sit beneath it on the
-   page itself — no wide empty box around a few tiles. */
+/* THE BINDER IS THE COVER (P6-F4 B1; prototype .bcover, fca2c61 index.html
+   L237–243, 272–283): one bordered cover holds the row AND, once opened, its
+   cards — the cards are inside the binder, not detached beneath it. */
 .mcs-binders { max-width:1040px; }
-.mcs-bcover { display:block; width:100%; text-align:left; }
-.mcs-bhead-row { display:flex; align-items:center; border:1px solid var(--line); background:#FFF;
-  border-radius:14px; }
-.mcs-bcover.open .mcs-bhead-row { border-color:var(--t1); }
+.mcs-bcover { display:block; width:100%; text-align:left; border:1px solid var(--line); background:#FFF;
+  border-radius:16px; }
+.mcs-bcover.open { border-color:var(--t1); }
+.mcs-bhead-row { display:flex; align-items:center; }
 .mcs-bhead { display:block; flex:1 1 auto; min-width:0; text-align:left; border:0; background:none; position:relative;
-  padding:12px 12px 12px 30px; }
+  padding:12px 12px 12px 30px; line-height:1.45; }
 .mcs-bhead-row .mcs-more { flex:0 0 auto; padding:10px 14px; font-size:18px; }
-.mcs-bmenu { display:flex; flex-direction:column; margin:6px 0 0 auto; width:min(260px,100%); background:#FFF;
+.mcs-bmenu { display:flex; flex-direction:column; margin:0 10px 8px auto; width:min(260px,calc(100% - 20px)); background:#FFF;
   border:1px solid var(--line); border-radius:12px; box-shadow:0 10px 30px rgba(16,22,27,.12); overflow:hidden; }
 .mcs-bmenu button { border:0; background:#FFF; text-align:left; padding:11px 14px; font-size:13.5px; color:var(--text); }
 .mcs-bmenu button + button { border-top:1px solid var(--line-soft); }
@@ -676,13 +677,13 @@ const CSS = `
 .mcs-bline b { font-size:15.5px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mcs-bline span { color:var(--faint); font-size:12.5px; white-space:nowrap; }
 .mcs-bmatch { display:block; margin-top:3px; font-size:11.5px; color:var(--t1); font-weight:600; }
-.mcs-bbody { padding:12px 0 6px; }
+.mcs-bbody { padding:0 10px 10px; }
 .mcs-btools { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:10px; }
 .mcs-btools .mcs-bsum { margin:0; }
 .mcs-badd { flex:0 0 auto; font-weight:600; white-space:nowrap; }
 .mcs-openb { display:block; margin:8px 0 0; font-size:12.5px; }
 .mcs-newcover { display:block; width:100%; text-align:center; color:var(--t1); font-weight:600; background:none;
-  border:1px dashed var(--line); border-radius:14px; padding:12px; }
+  border:1px dashed var(--line); border-radius:16px; padding:12px; line-height:1.45; }
 .mcs-newb { margin:0; }
 .mcs-away { align-self:flex-start; font-size:12.5px; }
 .mcs-bempty { margin:0 0 10px; }
@@ -700,11 +701,15 @@ button.mcs-otap { cursor:pointer; }
 .mcs-otile-art { display:flex; align-items:center; justify-content:center; aspect-ratio:63/88; width:100%;
   border-radius:8px; overflow:hidden; background:var(--line-soft); box-shadow:0 1px 2px rgba(10,16,20,.08); }
 .mcs-otile-art img { width:100%; height:100%; object-fit:cover; }
-.mcs-ometa { display:flex; flex-direction:column; gap:2px; margin-top:6px; min-width:0; }
+/* the caption (prototype .library .ometa / .state / .mk / .oloc / .oq) */
+.mcs-ometa { display:flex; flex-direction:column; gap:1px; margin-top:4px; min-width:0; }
 .mcs-oname { font-size:12.5px; font-weight:600; line-height:1.25; color:var(--text);
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mcs-onum { font-weight:400; color:var(--muted); }
-.mcs-ostate { display:flex; flex-wrap:wrap; align-items:center; gap:2px 6px; font-size:11px; line-height:1.35; }
+.mcs-ostate { display:flex; flex-wrap:wrap; align-items:center; gap:2px 6px; font-size:10.5px; line-height:1.35; }
+.mcs-ostate .mcs-mk { line-height:1.15; }
+.mcs-oloc { display:block; font-size:10.5px; color:var(--text); font-weight:600; line-height:1.3; }
+.mcs-oloc.unf { color:var(--muted); font-weight:500; }
 .mcs-oqual { font-size:11px; color:var(--text); }
 .mcs-mk { display:inline-block; font-size:9.5px; font-weight:600; padding:0 6px; border-radius:999px;
   border:1px solid currentColor; background:#FFF; }
@@ -712,8 +717,8 @@ button.mcs-otap { cursor:pointer; }
 .mcs-mk-trade { color:var(--amber); } .mcs-mk-owned, .mcs-mk-goal { color:var(--muted); }
 .mcs-mk-earlier { color:var(--faint); border-style:dashed; }
 .mcs-ohome { color:var(--text); font-weight:600; } .mcs-ohome.unf { color:var(--muted); font-weight:500; }
-.mcs-oq { font-size:10.5px; line-height:1.3; color:var(--faint); overflow:hidden; text-overflow:ellipsis;
-  white-space:nowrap; }
+.mcs-oq { font-size:10.5px; line-height:1.3; color:var(--muted); overflow:hidden;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
 /* THE CARD SHEET (P6-4) — mobile first: thumb-sized choices, the card on
    top, one column, nothing technical until asked for. */
 .mcs-osheet { position:relative; max-height:92vh; gap:14px; padding-top:12px; }
@@ -760,14 +765,18 @@ button.mcs-otap { cursor:pointer; }
    filing in progress; only the bar itself takes touches */
 .mcs-snack-wrap { position:fixed; left:0; right:0; z-index:45; pointer-events:none; display:flex; justify-content:center;
   padding:0 12px; bottom:calc(var(--tabbar-h) + 10px + env(safe-area-inset-bottom, 0px)); }
-.mcs-snack { pointer-events:auto; margin:0; display:flex; align-items:center; gap:12px; width:100%; max-width:480px;
-  background:var(--text); color:#FFF; border:0; border-radius:12px; padding:10px 8px 10px 14px; font-size:13.5px;
-  box-shadow:0 10px 26px rgba(10,16,20,.28); }
+/* the prototype's quiet teal note (.toast.float, fca2c61 index.html L136,
+   162–164), with production's Undo (A6) inside it */
+.mcs-snack { pointer-events:auto; margin:0; display:flex; align-items:center; gap:10px; width:100%; max-width:480px;
+  background:var(--t1-bg); color:var(--t1); border:1px solid #CFE3E5; border-radius:10px; padding:10px 12px;
+  font-size:12.5px; line-height:1.45; box-shadow:0 8px 20px rgba(10,16,20,.12); animation:mcs-cd-reveal .25s ease-out; }
+.mcs-snack:has(.mcs-undo), .mcs-snack:has(.mcs-snack-x) { padding:4px 4px 4px 12px; }
 .mcs-snack span { flex:1 1 auto; min-width:0; }
-.mcs-snack.mcs-toast { background:var(--text); color:#FFF; border:0; }
-.mcs-snack.warn { background:#5A3A06; color:#FFF; }
-.mcs-undo, .mcs-snack-x { flex:0 0 auto; min-height:40px; min-width:44px; border:0; border-radius:10px; background:rgba(255,255,255,.14);
-  color:#FFF; font-weight:700; padding:0 12px; }
+.mcs-snack.mcs-toast { background:var(--t1-bg); color:var(--t1); border-color:#CFE3E5; }
+.mcs-snack.warn { background:var(--amber-bg); color:var(--amber); border-color:var(--amber-line); }
+.mcs-undo, .mcs-snack-x { flex:0 0 auto; min-height:40px; min-width:44px; border:0; border-radius:8px; background:none;
+  color:var(--t1); font-weight:700; padding:0 12px; }
+.mcs-snack.warn .mcs-snack-x { color:var(--amber); }
 .mcs-undo:disabled { opacity:.5; }
 /* Details, as a sheet (P6-3.1) */
 .mcs-detail-head { display:flex; gap:12px; align-items:flex-start; }

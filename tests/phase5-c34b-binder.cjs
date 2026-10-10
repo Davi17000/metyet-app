@@ -269,15 +269,17 @@ const press = async (r, label) => {
    then asserts about the binder, its cards and the world is unchanged unless
    the test says so. */
 const sectionNamed = (r, label) => r.root.findAll((n) => n.type === "section" && n.props["aria-label"] === label)[0] || null;
-/* RESTATED (P6-3.1): a tile now leads with the card, then its state; its home
-   is in the quiet line under. This rebuilds the "state · home" each test
-   reads, from each tile's OWN two fields — never across tiles. */
+/* RESTATED (P6-3.1, then P6-F4 B1): a tile says its state, then (in Your
+   Cards) its home on a line of its own, then the card. This rebuilds the
+   "state · home · card" each test reads, from each tile's OWN fields — never
+   across tiles. */
 const cardsSay = (r) => {
   const s = sectionNamed(r, "Your Cards");
   return s ? s.findAll((n) => n.type === "li" && cls(n).includes("mcs-otile")).map((li) => {
     const mk = li.findAll((n) => cls(n).includes("mcs-mk"))[0];
+    const home = li.findAll((n) => cls(n).split(" ").includes("mcs-oloc"))[0];
     const oq = li.findAll((n) => cls(n).split(" ").includes("mcs-oq"))[0];
-    return `${mk ? instText(mk).trim() : ""} · ${oq ? instText(oq).trim() : ""}`;
+    return [mk, home, oq].filter(Boolean).map((x) => instText(x).trim()).join(" · ");
   }).join(" | ") : "";
 };
 const sectionSays = (r, label) => { const s = sectionNamed(r, label); return s ? instText(s).replace(/\s+/g, " ") : ""; };

@@ -148,6 +148,9 @@ const openSheetFor = async (r, re) => {
   await TR.act(async () => { art(tileFor(r, re)).props.onClick({ preventDefault() {} }); }); await settle();
   assert(sheet(r), "the card sheet did not open");
 };
+/* the binder covers that are open (P6-F4 B1) */
+const openCover = (r) => r.root.findAll((n) => n.props && n.props["data-binder"] && cls(n).split(" ").includes("open"))
+  .map((n) => n.props["data-binder"]);
 const binderChoices = (r, name) => r.root.findAll((n) => n.props && n.props.role === "group" && n.props["aria-label"] === `Binder for ${name}`)[0] || null;
 
 /* ============================================================== A */
@@ -260,6 +263,26 @@ describe("C. putting it back writes nothing", () => {
 
 /* ============================================================== D */
 describe("D. when it does not work", () => {
+  /* P6-F4 B1 (prototype fileByDrop): where it went is opened — only once the
+     server has said yes, only for a filing into a binder, never for Undo. */
+  test("after a confirmed filing the destination binder is opened", async () => {
+    const s = await show({ hold: true });
+    await pickUp(s.r, /Primary.*Charizard/);
+    await carryTo("b:b-mud");
+    eq(json(openCover(s.r)), json([]), "opened before the server answered");
+    await TR.act(async () => { s.gates[0].resolve({ ok: true }); }); await settle();
+    eq(json(openCover(s.r)), json(["b-mud"]), "the destination is not open");
+  });
+  test("a refused filing opens nothing; taking one out opens nothing", async () => {
+    const s = await show({ answer: () => ({ ok: false, refused: "binder-archived" }) });
+    await pickUp(s.r, /Primary.*Charizard/);
+    await carryTo("b:b-mud");
+    eq(json(openCover(s.r)), json([]), "a refused filing opened its destination");
+    const t = await show();
+    await pickUp(t.r, /Primary.*Charizard/);
+    await carryTo("unfiled");
+    eq(json(openCover(t.r)), json([]), "Unfiled opened a binder");
+  });
   test("a refusal is said, nothing is claimed, and a stale screen is re-read", async () => {
     const s = await show({ answer: () => ({ ok: false, refused: "binder-archived" }) });
     await pickUp(s.r, /Primary.*Charizard/);
@@ -341,6 +364,7 @@ describe("E. the paths that need no gesture", () => {
     await TR.act(async () => { u.props.onClick(); }); await settle();
     eq(json(sent[1]), json(["fileObject", { binderId: "b-gen1", goalId: "g-char" }]), "undo is a filing back");
     assert(/Put back: Charizard is in Gen 1 again/.test(flat(r.root)));
+    eq(json(openCover(r)), json(["b-mud"]), "Undo moved what is open");
     assert(!button(r, /^Undo$/), "an undo of an undo was offered");
   });
   test("no Undo is promised into a binder that cannot take it back", async () => {

@@ -102,6 +102,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useCardDescriptions } from "../card-descriptions.js";
 import CardArt from "../../card-art.jsx";
 import CardSpecification from "../CardSpecification.jsx";
+import { versionLabel } from "../CardDetail.jsx";
 import Collection from "./Collection.jsx";
 import { Fact } from "../parts.jsx";
 import { rows, text, plural, byRecency, indexById, cardTitle, criteriaLine, gradeLine,
@@ -492,6 +493,9 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
         return false;
       }
       setLandedKey(o.key);
+      /* WHERE IT WENT, OPENED (prototype fileByDrop): only once the server has
+         said yes, and only for a filing into a binder — not for its Undo. */
+      if (to && !undoing) { setSectionOpen(true); setExpanded(to); setListFor(null); }
       const name = nameOf(o);
       /* UNDO IS THE SAME COMMANDS, BACKWARDS — offered only where they can
          work: back to Unfiled, or back into a binder that is still in use. A
@@ -588,19 +592,21 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
     : o.homeName ? `in ${o.homeName}${o.homeAway ? " (put away)" : ""}` : "Unfiled");
 
 
-  /* ONE TILE (P6-3.1): the picture first and largest; then the card's name
-     and number; then why it matters (state) beside its own grade or wanted
-     grade; then, quietly, where it lives, its set and version. Everything else
-     — cert, value, photos, status, its Binder choice — is one tap away in
-     Details, never laid out under every card. Render helpers are called as
-     functions, not components defined inside the render (which React would
-     remount on every keystroke). */
+  /* ONE TILE, IN THE PROTOTYPE'S ORDER (P6-F4 B1; prototype ObjectTile and
+     .library .ometa, fca2c61 main.jsx L686–709, index.html L150–153, 251–255,
+     348): the picture first and largest; then WHY it matters (its state);
+     then, in Your Cards, WHERE it lives; then WHICH card — name and number,
+     the version in a collector's words ("Holo", never "holofoil"), and its
+     own grade or wanted grade. Everything else — set, cert, value, photos,
+     its Binder choice — is one tap away in the card sheet. Render helpers are
+     called as functions, not components defined inside the render (which
+     React would remount on every keystroke). */
   const tile = (o, showHome = true) => {
     const known = described[o.cardKey] || null;
     const go = openCard(o);
     const name = nameOf(o);
     const num = known && known.collectorNumber ? `#${known.collectorNumber}` : null;
-    const sub = [showHome ? where(o) : null, known && text(known.expansionName), known && known.finish]
+    const ident = [[name, num].filter(Boolean).join(" "), known && known.finish ? versionLabel(known) : null, o.qual || null]
       .filter(Boolean).join(" · ");
     const art = <CardArt src={known && known.imageSmall} name={known && known.cardName}
       wrap="mcs-otile-art" plate="mcs-art-plate" decorative card={phOf(o, known)} />;
@@ -627,12 +633,9 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
             aria-label={`${name}, ${MEANING[o.meaning]}, ${where(o)}`}>{art}</button>
         ) : <span className="mcs-otap">{art}</span>}
         <span className="mcs-ometa">
-          <span className="mcs-oname">{name}{num ? <span className="mcs-onum">{` ${num}`}</span> : null}</span>
-          <span className="mcs-ostate">
-            <span className={`mcs-mk mcs-mk-${o.meaning}`}>{MEANING[o.meaning]}</span>
-            {o.qual ? <span className="mcs-oqual">{o.qual}</span> : null}
-          </span>
-          {sub ? <span className="mcs-oq">{sub}</span> : null}
+          <span className="mcs-ostate"><span className={`mcs-mk mcs-mk-${o.meaning}`}>{MEANING[o.meaning]}</span></span>
+          {showHome ? <span className={`mcs-oloc${o.homeId ? "" : " unf"}`}>{where(o)}</span> : null}
+          <span className="mcs-oq">{ident}</span>
           {status ? <span className="mcs-ostatus">{status}</span> : null}
           {conflict ? <span className="mcs-oconflict">{`Says ${conflict}`}</span> : null}
           {filingKey === o.key ? <span className="mcs-ostatus" role="status">Filing…</span> : null}
@@ -662,7 +665,7 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
     const close = () => { setDetailKey(null); setMoving(false); };
     const busyNow = !!changing || !!filingKey;
     const ident = [known && text(known.expansionName), known && known.collectorNumber ? `#${known.collectorNumber}` : null,
-      known && known.finish].filter(Boolean).join(" · ");
+      known && known.finish ? versionLabel(known) : null].filter(Boolean).join(" · ");
     const others = active.filter((b) => b.id !== o.homeId);
     const ack = stateAck && stateAck.key === o.key && o.meaning === stateAck.to ? stateAck.to : null;
     return (

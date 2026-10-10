@@ -36,9 +36,9 @@
 | B5 | Tab label size | 13 px, each tab as wide as its label (prototype: 14 px, two equal tabs) | P6-F1 | Needed for four labels on one line at 390 px |
 | B6 | Card detail is a bottom sheet with a 96 px picture (prototype: full-screen page, ‹ Back, picture at 72 % width, ✎ grade editor) | — | P6-4 | **Scheduled for P6-F2** |
 | B7 | Four states shown as two labelled pairs with the other pair muted (prototype: one 2 × 2 grid) | — | P6-4 | Domain rule A2 is approved; its **presentation** is P6-F2 |
-| B8 | Tile caption: name first (prototype: state, then home, then identity) | — | P6-3.1 brief | **Scheduled for P6-F2** |
-| B9 | Expanded binder: cards on the page under the row (prototype: inside the bordered binder cover) | — | P6-3.1 brief | **Scheduled for P6-F2** |
-| B10 | Filing confirmation: dark bar (prototype: light teal note) | — | P6-4 | **Scheduled for P6-F2** |
+| B8 | ~~Tile caption: name first~~ | **Resolved in P6-F4 B1** — the prototype's order: state, then (in Your Cards) home, then the card (name #number · version in a collector's words · its own grade). The set is on the card sheet, as in the prototype | — | Awaiting founder visual acceptance |
+| B9 | ~~Expanded binder: cards on the page under the row~~ | **Resolved in P6-F4 B1** — one bordered cover holds the row and its cards. On a phone, cards inside a cover are its inset narrower than cards on the page (107 vs 114 px at 390), as in the prototype: founder decision 2026-10-10, over P6-3.1's one size everywhere (still one size from tablet up) | — | Awaiting founder visual acceptance |
+| B10 | ~~Filing confirmation: dark bar~~ | **Resolved in P6-F4 B1** — the prototype's quiet teal note, with production's Undo (A6) inside it; after a confirmed filing the destination binder opens (never for a refusal, Unfiled or Undo). Wording stays production's ("Charizard is filed in Mudkips."; prototype: "Mudkip #18 → Mudkip.") | — | Awaiting founder visual acceptance |
 | B11 | Filing chooser has no "+ New binder" destination | — | P6-3 | Would need two commands that can half-succeed |
 | B12 | ~~Browse is production's form-based Browse~~ | **Resolved in P6-F2** — the Phase 6 discovery screen | — | See B15–B19 for what remains |
 | B13 | Desktop layout (sidebar, side-panel sheet) | — | P6-1 | The prototype specified only a phone |

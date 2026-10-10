@@ -179,7 +179,18 @@ describe("an expanded binder (P6-3.1)", () => {
       const inCards = await page.locator("section[aria-label='Your Cards'] li.mcs-otile").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().width)));
       assert(inBinder.length >= 1, "the binder's cards are not shown");
       const all = [...inBinder, ...inCards];
-      assert(Math.max(...all) - Math.min(...all) <= 1, `card sizes differ: ${all}`);
+      /* RESTATED (P6-F4 B1, founder decision 2026-10-10): on a phone, cards
+         inside a binder's cover are the cover's width narrower than cards on
+         the page, exactly as in the prototype — "follow the prototype" over
+         P6-3.1's one size everywhere. Within each place, still one size; the
+         cover costs exactly its own inset (1px border + 10px padding a side)
+         and no more. From tablet up, one size everywhere, as before. */
+      const same = (xs) => Math.max(...xs) - Math.min(...xs) <= 1;
+      if (width < 600) {
+        assert(same(inBinder) && same(inCards), `card sizes differ within a place: ${inBinder} | ${inCards}`);
+        const cost = Math.max(...inCards) - Math.max(...inBinder);
+        assert(cost >= 0 && cost <= 8, `the cover shrinks its cards by ${cost}px, more than its own inset: ${all}`);
+      } else assert(same(all), `card sizes differ: ${all}`);
       if (width >= 768) assert(Math.max(...all) <= 152, `a card was stretched to ${Math.max(...all)}px`);
       const art = await opened.locator("li.mcs-otile .mcs-otile-art").first().boundingBox();
       assert(art.height > art.width, "the artwork is not the tile's dominant, card-shaped part");
