@@ -549,9 +549,11 @@ describe("the Phase 6 card saves through production (P6-F3A Stage 2)", () => {
     await page.locator(".mcs-dtile[data-dex='258']").tap();
     await page.locator(".mcs-dchip", { hasText: "Pokémon: Mudkip" }).waitFor();
 
-    /* 1. I own it · PC · Raw · Near Mint, on the Reverse Holo */
+    /* 1. Reverse Holo · Raw · Near Mint · I own it · PC (Stage 2.1 order) */
     await openSixty();
-    await choose("Reverse Holo", "I own it", "Personal collection", "Raw", "Near Mint");
+    await choose("Reverse Holo", "Raw", "Near Mint");
+    eq(await page.locator(".mcs-cd-q[data-q=intent]").count(), 1, "the collecting state did not follow the physical card");
+    await choose("I own it", "Personal collection");
     eq(commands.length, 0, "answering wrote something");
     const dock = await page.locator(".mcs-cd-dock").boundingBox();
     eq(Math.round(dock.y + dock.height), 844, "the dock is not pinned to the bottom");
@@ -574,8 +576,8 @@ describe("the Phase 6 card saves through production (P6-F3A Stage 2)", () => {
       await page.locator(".mcs-cd-remembered").innerText());
     await page.screenshot({ path: "artifacts/f3a-stage2-remembered.png" }).catch(() => {});
 
-    /* 3. I'm looking for it · Graded · PSA 10 · Primary, on the Normal */
-    await choose("Normal", "I'm looking for it", "Graded", "PSA 10", "Primary");
+    /* 3. Normal · Graded · PSA 10 · I'm looking for it · Primary */
+    await choose("Normal", "Graded", "PSA 10", "I'm looking for it", "Primary");
     await page.locator(".mcs-cd-add").tap();
     await page.locator(".mcs-d-ack").waitFor();
     w = await ctx.world();
@@ -587,7 +589,7 @@ describe("the Phase 6 card saves through production (P6-F3A Stage 2)", () => {
 
     /* 4. a genuine refusal: the same Goal arrives from elsewhere while the card is open */
     await openSixty();
-    await choose("Reverse Holo", "I'm looking for it", "Raw", "Lightly Played", "Secondary");
+    await choose("Reverse Holo", "Raw", "Lightly Played", "I'm looking for it", "Secondary");
     await ctx.post("addGoal", { canonicalCardId: reverse, tier: "primary", desired: { grade: "PSA 9" } });
     await page.locator(".mcs-cd-add").tap();
     await page.locator(".mcs-cd-hint.problem").waitFor();

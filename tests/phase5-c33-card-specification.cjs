@@ -1135,7 +1135,7 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
 
     /* RESTATED (P6-F3A): the Phase 6 card, opened, answered and closed twice. */
     await press(r, "Mudkip");
-    await press(r, "I own it");
+    await press(r, "Raw");
     await backToBrowse(r);
     await press(r, "Mudkip");
     await backToBrowse(r);

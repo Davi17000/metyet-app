@@ -132,14 +132,16 @@ describe("B. versions", () => {
     eq(versions(r).map((b) => b.props["aria-pressed"]).join(","), "false,true");
     assert(/Card picture — this version may look different\./.test(flat(r)), flat(r));
     assert(cls(r, "mcs-cd-frame")[0].props.className.includes("rev"), "the reverse holo wears no sheen");
-    assert(/What does this card mean to you\? I'm looking for it Help my Trusted Partners know what I want\. I own it Keep track of my copy\./.test(flat(r)), flat(r));
+    /* Stage 2.1: what the card IS comes next — never what it means */
+    assert(/Which version\? Normal Reverse Holo Raw or graded\? Raw Graded/.test(flat(r)), flat(r));
+    assert(!/What does this card mean to you\?/.test(flat(r)), "the collecting state came before the physical card");
     eq(addButton(r).props["aria-disabled"], true, "a version alone readied Add");
   });
   test("one printing is said, not asked; none is \"MetYet can't record this card yet.\"", () => {
     const one = card({ context: { ...MUDKIP, cards: [TWO[0]] } });
     assert(/Normal — the only version of this card\./.test(flat(one.r)), flat(one.r));
     eq(versions(one.r).length, 0, "one printing was asked");
-    assert(/What does this card mean to you\?/.test(flat(one.r)), "the one printing was not taken as chosen");
+    assert(/Raw or graded\?/.test(flat(one.r)), "the one printing was not taken as chosen");
     const none = card({ context: { ...MUDKIP, cards: [] } });
     assert(/Which version\? MetYet can't record this card yet\./.test(flat(none.r)), flat(none.r));
     eq(cls(none.r, "mcs-cd-add")[0].props["aria-disabled"], true);
@@ -245,7 +247,7 @@ describe("D. navigation", () => {
     const finds = b.calls.filter((c) => c[0] === "find").length;
     const sessionBefore = JSON.stringify(b.session);
     await tap(btns(b.r).find((x) => x.props["aria-label"] === "Mudkip, Ruby & Sapphire #60"));
-    await pick(b.r, "I own it", "Personal collection", "Raw", "Near Mint");
+    await pick(b.r, "Raw", "Near Mint", "I own it", "Personal collection");
     await tap(addButton(b.r));
     eq(JSON.stringify(b.calls.filter((c) => c[0] === "specify")), JSON.stringify([["specify",
       { kind: "record-copy", copy: { grade: "Raw", condition: "Near Mint", offered: false, keeping: true } }, "k-ctx-60"]]));
@@ -283,14 +285,33 @@ describe("E. guided configuration (Stage 2)", () => {
     eq(JSON.stringify(GRADES.slice().sort()), JSON.stringify(D.GRADED_VALUES.filter((g) => g !== "Raw").slice().sort()));
     eq(JSON.stringify(CONDITIONS), JSON.stringify(D.CONDITION_VALUES));
   });
-  test("looking for it: Raw → condition → Primary is one start-looking step, on the exact printing", async () => {
-    const { r, seen } = card();
-    await pick(r, "Normal", "I'm looking for it");
-    assert(/Raw or graded\?/.test(flat(r)) && !/How important is this one\?/.test(flat(r)), flat(r));
+  /* THE FOUNDER-APPROVED ORDER (Stage 2.1): version → raw or graded →
+     condition or grade → what it means → Primary / Secondary or PC / Trade. */
+  const order = (r) => cls(r, "mcs-cd-q").map((q) => q.props["data-q"]).join(" ");
+  test("the order: version, then Raw or graded, then condition or grade, then what it means, then the tier", async () => {
+    const { r } = card({ state: {} });
+    eq(order(r), "print");
+    await pick(r, "Normal");
+    eq(order(r), "print kind");
     await pick(r, "Raw");
+    eq(order(r), "print kind condition");
+    assert(!/What does this card mean to you\?/.test(flat(r)), "the collecting state came before the condition");
+    await pick(r, "Near Mint");
+    eq(order(r), "print kind condition intent");
+    await pick(r, "I'm looking for it");
+    eq(order(r), "print kind condition intent priority");
+    await pick(r, "I own it");
+    eq(order(r), "print kind condition intent disposition");
+    /* and nothing physical is asked again after the collecting state */
+    eq((flat(r).match(/Raw or graded\?/g) || []).length, 1);
+    assert(!/Is your copy raw or graded\?|What's it graded\?|What condition is it in\?/.test(flat(r)), flat(r));
+  });
+  test("looking for it, Raw: condition → Primary is one start-looking step, on the exact printing", async () => {
+    const { r, seen } = card();
+    await pick(r, "Normal", "Raw");
     assert(/In what condition\? Near Mint Lightly Played Moderately Played Heavily Played Damaged/.test(flat(r)), flat(r));
     eq(addButton(r).props["aria-disabled"], true, "Add woke before the condition");
-    await pick(r, "Lightly Played");
+    await pick(r, "Lightly Played", "I'm looking for it");
     assert(/How important is this one\? Primary I'm actively looking for this\. Secondary I'd act on the right opportunity\./.test(flat(r)), flat(r));
     eq(addButton(r).props["aria-disabled"], true, "Add woke before the tier");
     await pick(r, "Primary");
@@ -300,79 +321,111 @@ describe("E. guided configuration (Stage 2)", () => {
     eq(JSON.stringify(seen.saves), JSON.stringify([{ step: { kind: "start-looking", tier: "primary",
       desired: { grade: "Raw", condition: "Lightly Played" } }, canonicalCardId: "k-n" }]));
   });
-  test("looking for it: Graded → grade → Secondary, on the Reverse Holo and not the Normal", async () => {
+  test("looking for it, Graded: grade → Secondary, on the Reverse Holo and not the Normal", async () => {
     const { r, seen } = card({ state: {} });
-    await pick(r, "Reverse Holo", "I'm looking for it", "Graded");
+    await pick(r, "Reverse Holo", "Graded");
     assert(/Which grade\? PSA 10 PSA 9 PSA 8 PSA 7 PSA 6 PSA 5 PSA 4 PSA 3 PSA 2 PSA 1/.test(flat(r)), flat(r));
-    await pick(r, "PSA 10", "Secondary");
+    eq(addButton(r).props["aria-disabled"], true, "Add woke before the grade");
+    await pick(r, "PSA 10", "I'm looking for it", "Secondary");
     await tap(addButton(r));
     eq(JSON.stringify(seen.saves), JSON.stringify([{ step: { kind: "start-looking", tier: "secondary",
       desired: { grade: "PSA 10" } }, canonicalCardId: "k-r" }]));
   });
-  test("I own it: PC → Raw → condition is one record-copy step, kept, not offered", async () => {
+  test("I own it, Raw: condition → Personal collection is one record-copy step, kept, not offered", async () => {
     const { r, seen } = card();
-    await pick(r, "Reverse Holo", "I own it");
+    await pick(r, "Reverse Holo", "Raw", "Near Mint", "I own it");
     assert(/What's this card to you\? Personal collection I'm keeping this one\. Trade \/ Sell I'd consider moving it\./.test(flat(r)), flat(r));
+    eq(addButton(r).props["aria-disabled"], true, "Add woke before the disposition");
     await pick(r, "Personal collection");
-    assert(/Is your copy raw or graded\?/.test(flat(r)), flat(r));
-    await pick(r, "Raw");
-    eq(addButton(r).props["aria-disabled"], true, "a raw copy with no condition readied Add");
-    await pick(r, "Near Mint");
     await tap(addButton(r));
     eq(JSON.stringify(seen.saves), JSON.stringify([{ step: { kind: "record-copy",
       copy: { grade: "Raw", condition: "Near Mint", offered: false, keeping: true } }, canonicalCardId: "k-r" }]));
   });
-  test("I own it: Trade / Sell → Graded → grade is offered, not kept, with no condition", async () => {
+  test("I own it, Graded: grade → Trade / Sell is offered, not kept, with no condition", async () => {
     const { r, seen } = card();
-    await pick(r, "Normal", "I own another one", "Trade / Sell", "Graded");
-    assert(/What's it graded\?/.test(flat(r)), flat(r));
-    eq(addButton(r).props["aria-disabled"], true, "a graded copy with no grade readied Add");
-    await pick(r, "PSA 9");
+    await pick(r, "Normal", "Graded", "PSA 9", "I own another one", "Trade / Sell");
     await tap(addButton(r));
     eq(JSON.stringify(seen.saves), JSON.stringify([{ step: { kind: "record-copy",
       copy: { grade: "PSA 9", condition: null, offered: true, keeping: false } }, canonicalCardId: "k-n" }]));
   });
-  test("changing an answer clears what depended on it; changing the version starts again", async () => {
+  test("changing an answer clears only what depended on it", async () => {
     const { r } = card({ state: {} });
-    await pick(r, "Normal", "I'm looking for it", "Raw", "Near Mint", "Primary");
+    const pressed = (t) => (choiceNamed(r, t) ? choiceNamed(r, t).props["aria-pressed"] : "absent");
+    await pick(r, "Normal", "Raw", "Near Mint", "I'm looking for it", "Primary");
     eq(addButton(r).props["aria-disabled"], false);
-    await pick(r, "Graded");
-    assert(!/How important is this one\?/.test(flat(r)), "the tier outlived its condition");
-    eq(addButton(r).props["aria-disabled"], true);
-    await pick(r, "PSA 9");
-    eq(choiceNamed(r, "Primary").props["aria-pressed"], false, "the old tier came back after a change");
-    eq(addButton(r).props["aria-disabled"], true, "Add woke on an answer given before the change");
+    /* the tier, when the collecting state changes — the physical answers stay */
     await pick(r, "I own it");
-    assert(!/Raw or graded\?/.test(flat(r)) && /What's this card to you\?/.test(flat(r)), flat(r));
-    await pick(r, "Reverse Holo");
-    assert(!/What's this card to you\?/.test(flat(r)), "answers survived a change of version");
-    eq(choiceNamed(r, "I own it").props["aria-pressed"], false);
+    eq([pressed("Raw"), pressed("Near Mint"), pressed("Primary"), pressed("Personal collection")].join(), "true,true,absent,false");
+    await pick(r, "Personal collection");
+    /* the disposition, when it changes back */
+    await pick(r, "I'm looking for it");
+    eq([pressed("Primary"), pressed("Personal collection")].join(), "false,absent");
+    eq(addButton(r).props["aria-disabled"], true, "a stale tier readied Add");
+    await pick(r, "Primary");
+    /* a new condition: the collecting state goes, the Raw answer stays */
+    await pick(r, "Lightly Played");
+    eq([pressed("Raw"), pressed("Lightly Played"), pressed("I'm looking for it")].join(), "true,true,false");
+    assert(!/How important is this one\?/.test(flat(r)), "the tier outlived its condition");
+    /* Raw → Graded: the condition and everything after it go */
+    await pick(r, "I own it", "Trade / Sell", "Graded");
+    eq(order(r), "print kind grade");
+    await pick(r, "PSA 9");
+    eq([pressed("I own it"), pressed("Trade / Sell")].join(), "false,absent", "the collecting state outlived the grading");
+    eq(addButton(r).props["aria-disabled"], true, "Add woke on answers given before the change");
+    /* a new grade: the collecting state goes, the grading stays */
+    await pick(r, "I own it", "Trade / Sell", "PSA 8");
+    eq([pressed("Graded"), pressed("PSA 8"), pressed("I own it"), pressed("Trade / Sell")].join(), "true,true,false,absent");
+    /* the version: everything starts again */
+    await pick(r, "I own it", "Personal collection", "Reverse Holo");
+    eq(order(r), "print kind");
+    eq([pressed("Raw"), pressed("Graded")].join(), "false,false", "answers survived a change of version");
+    /* and re-pressing an answer already given changes nothing */
+    await pick(r, "Graded", "PSA 8", "I own it", "Personal collection", "PSA 8");
+    eq(addButton(r).props["aria-disabled"], false, "re-pressing an answer cleared what followed it");
+  });
+  test("the clearing rule itself: each answer invalidates exactly what follows it", () => {
+    const { answered } = load("client/collector/CardDetail.jsx");
+    const full = { printing: "k", kind: "raw", condition: "Near Mint", grade: null, intent: "own", priority: null, disposition: "trade" };
+    const keys = (a) => JSON.stringify(a);
+    eq(keys(answered(full, "kind", "graded")), keys({ ...full, kind: "graded", condition: null, grade: null, intent: null, priority: null, disposition: null }));
+    eq(keys(answered(full, "condition", "Damaged")), keys({ ...full, condition: "Damaged", intent: null, priority: null, disposition: null }));
+    const graded = { ...full, kind: "graded", condition: null, grade: "PSA 9" };
+    eq(keys(answered(graded, "grade", "PSA 8")), keys({ ...graded, grade: "PSA 8", intent: null, priority: null, disposition: null }));
+    eq(keys(answered(full, "intent", "looking")), keys({ ...full, intent: "looking", priority: null, disposition: null }));
+    eq(keys(answered({ ...full, intent: "looking", disposition: null, priority: "primary" }, "intent", "own")),
+      keys({ ...full, intent: "own", priority: null, disposition: null }));
+    eq(answered(full, "condition", "Near Mint"), full, "re-giving an answer changed something");
   });
   test("every required answer is required — nothing is defaulted on the Collector's behalf", () => {
     const { nextUnanswered, stepFor } = load("client/collector/CardDetail.jsx");
     const one = [printing("k", "non_holo")];
-    const base = { printing: "k", intent: null, kind: null, grade: null, condition: null, priority: null, disposition: null, facts: null };
+    const base = { printing: "k", kind: null, condition: null, grade: null, intent: null, priority: null, disposition: null };
     const cases = [
-      [{ intent: "looking" }, "kind"],
-      [{ intent: "looking", kind: "raw", priority: "primary" }, "condition"],
-      [{ intent: "looking", kind: "graded", priority: "primary" }, "grade"],
-      [{ intent: "looking", kind: "raw", condition: "Near Mint" }, "priority"],
-      [{ intent: "own" }, "disposition"],
-      [{ intent: "own", disposition: "pc" }, "facts"],
-      [{ intent: "own", disposition: "pc", facts: "raw" }, "condition"],
-      [{ intent: "own", disposition: "trade", facts: "graded" }, "grade"],
+      [{}, "kind"],
+      [{ intent: "looking", priority: "primary" }, "kind"],
+      [{ kind: "raw" }, "condition"],
+      [{ kind: "raw", intent: "looking", priority: "primary" }, "condition"],
+      [{ kind: "graded", intent: "own", disposition: "pc" }, "grade"],
+      [{ kind: "raw", condition: "Near Mint" }, "intent"],
+      [{ kind: "raw", condition: "Near Mint", intent: "looking" }, "priority"],
+      [{ kind: "graded", grade: "PSA 9", intent: "own" }, "disposition"],
     ];
     for (const [patch, want] of cases) eq((nextUnanswered(one, { ...base, ...patch }, null) || [])[0], want, JSON.stringify(patch));
-    eq(nextUnanswered(one, { ...base, intent: "looking", kind: "graded", grade: "PSA 9", priority: "secondary" }, null), null);
+    eq(nextUnanswered(one, { ...base, kind: "graded", grade: "PSA 9", intent: "looking", priority: "secondary" }, null), null);
+    eq(nextUnanswered(one, { ...base, kind: "raw", condition: "Damaged", intent: "own", disposition: "trade" }, null), null);
     /* and the step never fills a gap itself */
-    eq(stepFor({ ...base, intent: "looking", kind: "raw", priority: "primary" }).desired.condition, null);
-    eq(stepFor({ ...base, intent: "own", disposition: "pc", facts: "raw" }).copy.condition, null);
+    eq(stepFor({ ...base, kind: "raw", intent: "looking", priority: "primary" }).desired.condition, null);
+    eq(stepFor({ ...base, kind: "raw", intent: "own", disposition: "pc" }).copy.condition, null);
+    eq(stepFor({ ...base, intent: "own", disposition: "pc" }), null, "a step without the physical card");
+    /* and a graded copy never carries a condition, whatever else is lying about */
+    eq(stepFor({ ...base, kind: "graded", grade: "PSA 9", condition: "Near Mint", intent: "own", disposition: "pc" }).copy.condition, null);
+    eq(JSON.stringify(stepFor({ ...base, kind: "graded", grade: "PSA 9", condition: "Near Mint", intent: "looking", priority: "primary" }).desired), JSON.stringify({ grade: "PSA 9" }));
   });
   test("during its beat the card shows what it showed, not the projection that already moved", async () => {
     let r;
     const props = { context: { ...MUDKIP, cards: TWO }, state: {}, onClose() {}, onSave: async () => ({ ok: true, value: "c9" }) };
     TR.act(() => { r = TR.create(React.createElement(CardDetail, props)); });
-    await pick(r, "Normal", "I own it", "Personal collection", "Raw", "Near Mint");
+    await pick(r, "Normal", "Raw", "Near Mint", "I own it", "Personal collection");
     await tap(addButton(r));
     /* the store has already refreshed: the new copy is in the projection */
     await TR.act(async () => { r.update(React.createElement(CardDetail, { ...props,
@@ -380,32 +433,53 @@ describe("E. guided configuration (Stage 2)", () => {
     assert(!/MetYet remembers/.test(flat(r)), "the card re-rendered into the new world during its beat");
     assert(/I own it/.test(flat(r)) && !/I own another one/.test(flat(r)), flat(r));
   });
-  test("a muted Add writes nothing and points at the next question, in the prototype's words", async () => {
+  test("a muted Add writes nothing and points at the next question", async () => {
     const { r, seen } = card({ state: {} });
     assert(/Add to MetYet wakes up as you answer\./.test(flat(r)));
     await tap(addButton(r));
     assert(/Which version is it\?/.test(flat(r)), flat(r));
-    await pick(r, "Normal", "I'm looking for it", "Graded");
+    await pick(r, "Normal");
     await tap(addButton(r));
-    assert(/Which grade are you after\?/.test(flat(r)), flat(r));
+    assert(/Raw or graded\?/.test(cls(r, "mcs-cd-hint")[0] ? flat(cls(r, "mcs-cd-hint")[0]) : ""), flat(r));
+    await pick(r, "Graded");
+    await tap(addButton(r));
+    assert(/Which grade is it\?/.test(flat(r)), flat(r));
     eq(cls(r, "mcs-cd-q").find((q) => q.props["data-q"] === "grade").props.className.includes("nudge"), true);
+    await pick(r, "PSA 7", "I'm looking for it");
+    await tap(addButton(r));
+    assert(/How important is this one\?/.test(flat(cls(r, "mcs-cd-hint")[0])), flat(r));
     eq(seen.saves.length, 0);
   });
   test("an existing Goal is shown, not offered again; another copy is still yours to add", async () => {
     const { r } = card();
     await pick(r, "Reverse Holo");
+    assert(!/You're looking for it/.test(flat(r)), "the collecting state came before the physical card");
+    await pick(r, "Raw", "Near Mint");
     assert(/You're looking for it Secondary · PSA 9 · Mudkip/.test(flat(r)), flat(r));
     assert(!choiceNamed(r, "I'm looking for it"), "a second Goal was offered");
     assert(choiceNamed(r, "I own it"), "owning was taken away by wanting");
-    await pick(r, "Normal");
+    await pick(r, "Normal", "Raw", "Near Mint");
     assert(choiceNamed(r, "I'm looking for it") && choiceNamed(r, "I own another one"), flat(r));
+  });
+  test("each version resolves to one canonical printing, named specifically enough to tell apart", async () => {
+    const { versionLabel } = load("client/collector/CardDetail.jsx");
+    const first = printing("k-1", "holofoil", { printRun: "first_edition" });
+    const unl = printing("k-u", "holofoil", { printRun: "unlimited" });
+    const rev = printing("k-r", "reverse_holofoil");
+    eq([first, unl, rev].map((c) => versionLabel(c, [first, unl, rev])).join(" | "), "Holo · First Edition | Holo · Unlimited | Reverse Holo");
+    eq(versionLabel(unl, [unl, rev]), "Holo", "Unlimited said when nothing differs by it");
+    const { r, seen } = card({ state: {}, context: { ...MUDKIP, cards: [first, unl, rev] } });
+    eq(versions(r).map((b) => flat(b)).join(" | "), "Holo · First Edition | Holo · Unlimited | Reverse Holo");
+    await pick(r, "Holo · Unlimited", "Graded", "PSA 9", "I own it", "Personal collection");
+    await tap(addButton(r));
+    eq(seen.saves[0].canonicalCardId, "k-u");
   });
   test("no Binder here: neither step names a binder, and the card never files", () => {
     const src = code("client/collector/CardDetail.jsx");
     assert(!/file-object|fileObject|unfile|preselect|addBinderEntry|make-binder/.test(src), "the card files");
     /* and the step it sends carries nothing but the meaning and the copy */
     const { stepFor } = load("client/collector/CardDetail.jsx");
-    const a = { printing: "k", intent: "own", disposition: "pc", facts: "raw", condition: "Near Mint" };
+    const a = { printing: "k", kind: "raw", condition: "Near Mint", intent: "own", disposition: "pc" };
     eq(JSON.stringify(Object.keys(stepFor(a)).concat(Object.keys(stepFor(a).copy))), JSON.stringify(["kind", "copy", "grade", "condition", "offered", "keeping"]));
     const g = { printing: "k", intent: "looking", kind: "graded", grade: "PSA 9", priority: "primary" };
     eq(JSON.stringify(Object.keys(stepFor(g))), JSON.stringify(["kind", "tier", "desired"]));
@@ -413,7 +487,7 @@ describe("E. guided configuration (Stage 2)", () => {
   test("one Add, however many taps", async () => {
     let release;
     const { r, seen } = card({}, () => new Promise((done) => { release = done; }));
-    await pick(r, "Normal", "I own another one", "Personal collection", "Raw", "Damaged");
+    await pick(r, "Normal", "Raw", "Damaged", "I own another one", "Personal collection");
     const b = addButton(r);
     await TR.act(async () => { b.props.onClick(); b.props.onClick(); b.props.onClick(); });
     await TR.act(async () => { addButton(r).props.onClick(); });
@@ -427,7 +501,7 @@ describe("E. guided configuration (Stage 2)", () => {
   test("success is claimed only after the server answers, held, then handed back once", async () => {
     let release;
     const { r, seen } = card({}, () => new Promise((done) => { release = done; }));
-    await pick(r, "Reverse Holo", "I own it", "Trade / Sell", "Graded", "PSA 8");
+    await pick(r, "Reverse Holo", "Graded", "PSA 8", "I own it", "Trade / Sell");
     await tap(addButton(r));
     assert(!/Added to MetYet/.test(flat(r)), "success was shown before the server answered");
     await TR.act(async () => { release({ ok: true, value: "c9" }); });
@@ -442,7 +516,7 @@ describe("E. guided configuration (Stage 2)", () => {
   });
   test("a refusal is said in production's words, nothing is claimed, and the answers stay", async () => {
     const { r, seen } = card({ state: {} }, () => ({ ok: false, refused: "duplicate-goal" }));
-    await pick(r, "Normal", "I'm looking for it", "Graded", "PSA 9", "Primary");
+    await pick(r, "Normal", "Graded", "PSA 9", "I'm looking for it", "Primary");
     await tap(addButton(r));
     assert(/Nothing was saved: the goal could not be saved — That card is already on your list\./.test(flat(r)), flat(r));
     assert(!/Added to MetYet|goal ✓/.test(flat(r)), "a refusal was shown as success");
@@ -453,14 +527,14 @@ describe("E. guided configuration (Stage 2)", () => {
   });
   test("lost contact is said honestly and claims nothing", async () => {
     const { r, seen } = card({ state: {} }, () => { throw new Error("offline"); });
-    await pick(r, "Normal", "I own it", "Personal collection", "Graded", "PSA 1");
+    await pick(r, "Normal", "Graded", "PSA 1", "I own it", "Personal collection");
     await tap(addButton(r));
     assert(/MetYet lost contact, so nothing was saved\. Your answers are still here\./.test(flat(r)), flat(r));
     eq(seen.added.length, 0);
   });
   test("with no save path, Add stays quiet and promises nothing", async () => {
     const { r, seen } = card({ onSave: null });
-    await pick(r, "Normal", "I'm looking for it", "Raw", "Near Mint", "Primary");
+    await pick(r, "Normal", "Raw", "Near Mint", "I'm looking for it", "Primary");
     eq(addButton(r).props["aria-disabled"], true);
     assert(!/wakes up/.test(flat(r)));
     await tap(addButton(r));

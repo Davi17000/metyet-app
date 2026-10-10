@@ -417,12 +417,19 @@ async function run() {
        taps on both sides, each shot with the newest question scrolled into
        view. s12 (a refused save) has no prototype reference: the prototype
        cannot be refused — it alerts a defect — so it is production only. */
+    /* Stage 2.1 order: version → raw or graded → condition or grade → what it
+       means → tier or disposition. The PROTOTYPE asks in its own (earlier)
+       order, so its shots follow the same taps in its order and show the
+       nearest state it has — compared for styling, not for sequence. */
     const FLOW = [
-      ["s01-open", []], ["s02-printing", ["Reverse Holo"]], ["s03-looking", ["I'm looking for it"]],
-      ["s04-raw-condition", ["Raw", "Near Mint"]], ["s05-primary", ["Primary"]], ["s06-secondary", ["Secondary"]],
-      ["s07-own", ["I own it"]], ["s08-pc", ["Personal collection"]], ["s09-graded", ["Graded", "PSA 9"]],
-      ["s10-trade", ["Trade / Sell"]],
+      ["s01-open", []], ["s02-versions", ["__scroll-versions"]], ["s03-version-raw-graded", ["Reverse Holo"]],
+      ["s04-raw-condition", ["Raw", "Near Mint"]], ["s05-graded-grades", ["Graded"]],
+      ["s06-meaning", ["PSA 9"]], ["s07-looking-tier", ["I'm looking for it", "Primary"]], ["s07b-secondary", ["Secondary"]],
+      ["s08-own-disposition", ["I own it", "Trade / Sell"]], ["s09-ready", ["Personal collection"]],
     ];
+    /* the prototype's order for the same answers */
+    const PROTO_TAPS = { "Raw": ["I'm looking for it", "Raw"], "Graded": ["Graded"], "PSA 9": ["PSA 9"], "I'm looking for it": [],
+      "I own it": ["I own it", "Personal collection", "Graded", "PSA 9"], "Personal collection": ["Personal collection"] };
     const DETAIL = { proto: { root: ".phone .detail", scroll: ".phone .detail-scroll", choice: ".phone .detail .choice", add: ".phone .detail .add", back: ".phone .detail button.back",
         remembered: ".phone .detail .remembered" },
       prod: { root: ".mcs-cd", scroll: ".mcs-cd-scroll", choice: ".mcs-cd-choice", add: ".mcs-cd-add", back: ".mcs-cd-back", remembered: ".mcs-cd-remembered" } };
@@ -439,6 +446,7 @@ async function run() {
           window.scrollTo(0, y); }, { root: D.root, y: windowY });
         if (where === "bottom") await page.locator(D.scroll).evaluate((e) => e.scrollTo(0, e.scrollHeight));
         else if (where === "top") await page.locator(D.scroll).evaluate((e) => e.scrollTo(0, 0));
+        else if (where === "versions") await page.locator(D.scroll).evaluate((e) => e.scrollTo(0, 260));
         await sleep(350);
         await page.screenshot({ path: path.join(OUT, `${tag}-${name}.png`), clip: await S.screen(page) });
       };
@@ -458,29 +466,35 @@ async function run() {
       await S.tab(page, "Browse").tap(); await sleep(600);
       const dex = page.locator(`${BROWSE[side].tile}[data-dex='258']`); await dex.scrollIntoViewIfNeeded(); await dex.tap(); await sleep(900);
       await openSixty();
-      for (const [name, taps] of FLOW) { for (const t of taps) await choose(t); await shot(name); }
-      await shot("s10b-trade-top", "top");
+      for (const [name, taps] of FLOW) {
+        for (const t of taps) {
+          if (t === "__scroll-versions") continue;
+          for (const u of side === "proto" && PROTO_TAPS[t] ? PROTO_TAPS[t] : [t]) await choose(u);
+        }
+        await shot(name, name === "s02-versions" ? "versions" : "bottom");
+      }
+      await shot("s09b-ready-top", "top");
       /* 11. the save */
       await page.locator(D.add).tap(); await sleep(250);
-      await page.evaluate((y) => window.scrollTo(0, y), windowY); await page.screenshot({ path: path.join(OUT, `${tag}-s11-saved-on-card.png`), clip: await S.screen(page) });
+      await page.evaluate((y) => window.scrollTo(0, y), windowY); await page.screenshot({ path: path.join(OUT, `${tag}-s10-saved-on-card.png`), clip: await S.screen(page) });
       await sleep(1400);
-      await page.evaluate((y) => window.scrollTo(0, y), windowY); await page.screenshot({ path: path.join(OUT, `${tag}-s11b-saved-back-in-browse.png`), clip: await S.screen(page) });
+      await page.evaluate((y) => window.scrollTo(0, y), windowY); await page.screenshot({ path: path.join(OUT, `${tag}-s10b-saved-back-in-browse.png`), clip: await S.screen(page) });
       /* 13. reopened: remembered */
       await openSixty();
       const remembered = await page.locator(D.remembered).innerText().catch(() => "");
-      await shot("s13-reopened-remembers", "top");
+      await shot("s11-reopened-remembers", "top");
       /* 12. production only: a genuine server refusal — the same Goal arrives from elsewhere */
       if (side === "prod") {
-        await choose("Normal"); await choose("I'm looking for it"); await choose("Graded"); await choose("PSA 10"); await choose("Primary");
+        await choose("Normal"); await choose("Graded"); await choose("PSA 10"); await choose("I'm looking for it"); await choose("Primary");
         const r60 = (await (await fetch(prod.url + "api/card-contexts?pokedex=258", { headers: { authorization: "Bearer casey" } })).json()).contexts.find((c) => c.collectorNumber === "60" && c.expansionName === "Ruby & Sapphire");
         const normal = (await (await fetch(prod.url + `api/card-contexts/${r60.cardContextId}`, { headers: { authorization: "Bearer casey" } })).json()).canonicalCards.find((c) => c.finish === "non_holo").canonicalCardId;
         await prod.post("addGoal", { canonicalCardId: normal, tier: "secondary", desired: { grade: "PSA 9" } });
         await page.locator(D.add).tap(); await sleep(800);
-        await page.evaluate((y) => window.scrollTo(0, y), windowY); await page.screenshot({ path: path.join(OUT, `${tag}-s12-refused.png`), clip: await S.screen(page) });
+        await page.evaluate((y) => window.scrollTo(0, y), windowY); await page.screenshot({ path: path.join(OUT, `${tag}-s13-refused.png`), clip: await S.screen(page) });
       }
       /* 14. back to the same Browse */
       await page.locator(D.back).tap(); await sleep(700);
-      await page.evaluate((y) => window.scrollTo(0, y), windowY); await page.screenshot({ path: path.join(OUT, `${tag}-s14-back-to-browse.png`), clip: await S.screen(page) });
+      await page.evaluate((y) => window.scrollTo(0, y), windowY); await page.screenshot({ path: path.join(OUT, `${tag}-s12-back-to-browse.png`), clip: await S.screen(page) });
       results.stage2[tag] = { remembered, errors };
       await context.close();
     }

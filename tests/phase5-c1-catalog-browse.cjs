@@ -396,8 +396,9 @@ describe("C. the Collector: browse, specify, commit", () => {
     assert(b.props["aria-disabled"] === false, "Add to MetYet is not ready: " + texts(r));
     await press(r, "Add to MetYet");
   };
+  /* Stage 2.1: the physical card first, the collecting state last. */
   const lookingFor = async (r, tier, grade = "PSA 9") => {
-    await answer(r, "I'm looking for it", "Graded", grade, tier);
+    await answer(r, "Graded", grade, "I'm looking for it", tier);
     await add(r);
   };
 
@@ -454,8 +455,11 @@ describe("C. the Collector: browse, specify, commit", () => {
     await typeInto(r, "mcs-br-q", "Blastoise");
     assert(!buttons(r).some((n) => (n.props["aria-label"] || "") === "Add Blastoise"), "a `+` survived");
     await press(r, "Blastoise");
+    /* RESTATED (P6-F3A Stage 2, order per Stage 2.1): where the `+` led is now
+       the card's own questions — what it is, then what it means. */
+    assert(texts(r).includes("Raw or graded?"), "the card does not ask: " + texts(r));
+    await answer(r, "Raw", "Near Mint");
     const viaCard = texts(r);
-    /* RESTATED (P6-F3A Stage 2): where the `+` led is now the card's own question. */
     assert(viaCard.includes("What does this card mean to you? I'm looking for it"), "the card does not ask: " + viaCard);
   });
 
@@ -553,6 +557,7 @@ describe("C. the Collector: browse, specify, commit", () => {
        "You're looking for it" — not a choice — so there is nothing to add twice.
        Changing how hard is a Binders job (the four-state sheet). */
     assert(/MetYet remembers Holo · Looking for it · Primary · PSA 9/.test(texts(r)), texts(r));
+    await answer(r, "Graded", "PSA 9");
     const shown = texts(r);
     assert(/You're looking for it Primary · PSA 9 · Not in a binder/.test(shown), shown);
     assert(!/I'm looking for it/.test(shown), "it offered to ask again: " + shown);

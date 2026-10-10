@@ -327,8 +327,8 @@ describe("G. discovery is not collecting", () => {
     assert(s.r.root.findAll((n) => n.props && n.props.className === "mcs-cd").length === 1, "not the Phase 6 card");
     assert(!/Are you looking for it\?/.test(flat(s.r.root)), "the old form opened from the grid");
     const choice = s.r.root.findAll((n) => n.type === "button" && /mcs-cd-choice/.test(n.props.className || ""))[0];
-    if (!/What does this card mean to you\?/.test(flat(s.r.root))) await press(s, choice);
-    assert(/What does this card mean to you\?/.test(flat(s.r.root)), "the card asks nothing");
+    if (!/Raw or graded\?/.test(flat(s.r.root))) await press(s, choice);
+    assert(/Raw or graded\?/.test(flat(s.r.root)), "the card asks nothing");
     await press(s, s.r.root.findAll((n) => n.type === "button" && /mcs-cd-add/.test(n.props.className || ""))[0]);
     assert(!/Are you looking for it\?/.test(flat(s.r.root)), "Add reached the old form");
     eq(s.specify.length, 0, "opening wrote something");

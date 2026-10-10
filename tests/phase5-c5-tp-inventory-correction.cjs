@@ -1014,13 +1014,20 @@ describe("G. what the product says", () => {
        appeared once one was chosen — so stopping here would assert the absence
        of something that was never going to be present. Choose one. */
     /* RESTATED (P6-F3A): the Phase 6 card asks "Which version?" in the
-       prototype's words — the unlimited printing is plain "Holo", First Edition
-       is "Holo · First Edition" — and then its own questions. */
-    const unlimited = r.root.findAll((n) => n.type === "button")
-      .find((n) => /mcs-cd-choice/.test(n.props.className || "") && texts(n).join("").trim() === "Holo");
-    assert(unlimited, "no unlimited version to choose");
-    await TR.act(async () => { unlimited.props.onClick(); });
-    await TR.act(async () => {});
+       prototype's words — "Holo · Unlimited" beside "Holo · First Edition"
+       (Stage 2.1 names the print run when it tells two versions apart) — then
+       what the card is (Raw · Near Mint), then what it means. */
+    const tapChoice = async (label) => {
+      const c = r.root.findAll((n) => n.type === "button")
+        .find((n) => /mcs-cd-choice/.test(n.props.className || "") && n.findAll((x) => x.type === "b")[0]
+          && n.findAll((x) => x.type === "b")[0].children.join("") === label);
+      assert(c, `no "${label}" to choose`);
+      await TR.act(async () => { c.props.onClick(); });
+      await TR.act(async () => {});
+    };
+    await tapChoice("Holo · Unlimited");
+    await tapChoice("Raw");
+    await tapChoice("Near Mint");
     const shown = texts(r.root).join(" ");
     /* The card is open AND past the chooser: these strings belong to the
        questions the count used to sit beside (P6-F3A Stage 2: the card's own

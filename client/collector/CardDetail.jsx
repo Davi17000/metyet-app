@@ -12,11 +12,14 @@
      hero        the card's picture at 72% width
      identity    name; set · number · artist
      remembers   what this Collector already wants or owns of this card
-     questions   Which version? → What does this card mean to you? → then, for
-                 a Goal: Raw or graded? · condition or grade · how important;
-                 for a copy: PC or Trade / Sell · raw or graded · condition or
-                 grade. Each appears only once the one before it is answered,
-                 and changing an answer clears what depended on it.
+     questions   THE FOUNDER-APPROVED ORDER (Stage 2.1), a deliberate refinement
+                 of the prototype's: first WHICH card (Which version?), then
+                 WHAT it is physically (Raw or graded? · condition or grade),
+                 then WHAT IT MEANS (What does this card mean to you? → Primary
+                 or Secondary, or Personal collection or Trade / Sell). The
+                 collecting state is always the last decision before Add. Each
+                 question appears only once the one before it is answered, and
+                 changing an answer clears exactly what depended on it.
      dock        "Add to MetYet", pinned; it wakes when every answer is given
 
    ONE ADD IS ONE COMMAND (Stage 2), the same two the prototype planned:
@@ -39,9 +42,13 @@ import { explain } from "./CardSpecification.jsx";
    makes a production printing different, said only when it is not the usual. */
 const FINISH_NAMES = { non_holo: "Normal", holofoil: "Holo", reverse_holofoil: "Reverse Holo", cosmos_holofoil: "Cosmos Holo" };
 const titled = (s) => String(s).replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-export const versionLabel = (card) => [
+/* `siblings` are the card's other printings: a print run that is usually left
+   unsaid ("Unlimited") is said when a sibling differs by it, so "Holo ·
+   Unlimited" and "Holo · First Edition" can be told apart. */
+export const versionLabel = (card, siblings = []) => [
   FINISH_NAMES[card.finish] || titled(card.finish || "Version"),
-  card.printRun && !["unlimited", "not_applicable"].includes(card.printRun) ? titled(card.printRun) : null,
+  card.printRun && card.printRun !== "not_applicable" && (card.printRun !== "unlimited"
+    || siblings.some((o) => o !== card && o.finish === card.finish && o.printRun !== card.printRun)) ? titled(card.printRun) : null,
   card.stamp && card.stamp !== "none" ? `${titled(card.stamp)} stamp` : null,
   card.printVariation && card.printVariation !== "standard" ? titled(card.printVariation) : null,
   card.language && card.language !== "en" ? card.language.toUpperCase() : null,
@@ -86,7 +93,7 @@ function knownFor(state, canonicalCardId) {
 function remembered(state, cards) {
   const lines = [];
   for (const card of cards) {
-    const label = versionLabel(card);
+    const label = versionLabel(card, cards);
     const k = knownFor(state, card.canonicalCardId);
     if (k.goal) {
       lines.push([label, "Looking for it", TIER[k.goal.tier] || null, criteriaLine(k.goal.desired) || null, k.goal.home]
@@ -104,21 +111,37 @@ function remembered(state, cards) {
   return lines;
 }
 
-/* THE ANSWERS (prototype blankAnswers). One printing is not a choice. */
+/* THE ANSWERS (prototype blankAnswers), in the order they are asked. `kind`,
+   `condition` and `grade` describe the physical card and serve both
+   branches; `priority` answers a Goal and `disposition` a copy. One printing
+   is not a choice. */
 const blankAnswers = (cards) => ({
   printing: cards.length === 1 ? cards[0].canonicalCardId : null,
-  intent: null, kind: null, grade: null, condition: null, priority: null, disposition: null, facts: null,
+  kind: null, condition: null, grade: null, intent: null, priority: null, disposition: null,
 });
+/* WHAT EACH ANSWER INVALIDATES when it changes — only what depended on it. */
+const CLEARS = {
+  kind: { condition: null, grade: null, intent: null, priority: null, disposition: null },
+  condition: { intent: null, priority: null, disposition: null },
+  grade: { intent: null, priority: null, disposition: null },
+  intent: { priority: null, disposition: null },
+  priority: {},
+  disposition: {},
+};
+/* The answers after one more is given: an unchanged answer changes nothing. */
+export const answered = (a, field, value) => (a[field] === value ? a : { ...a, [field]: value, ...CLEARS[field] });
+/* The physical card is described once the applicable condition or grade is given. */
+const described = (a) => (a.kind === "raw" && Boolean(a.condition)) || (a.kind === "graded" && Boolean(a.grade));
 
 /* THE ONE STEP THE ANSWERS DESCRIBE (prototype planFor), in the words the
    Collector's entrance turns into a command. */
 export function stepFor(a) {
-  if (!a.printing || !a.intent) return null;
+  if (!a.printing || !a.kind || !a.intent) return null;
   if (a.intent === "looking") {
     const desired = a.kind === "graded" ? { grade: a.grade } : { grade: "Raw", condition: a.condition };
     return { kind: "start-looking", tier: a.priority, desired };
   }
-  const facts = a.facts === "raw" ? { grade: "Raw", condition: a.condition } : { grade: a.grade, condition: null };
+  const facts = a.kind === "raw" ? { grade: "Raw", condition: a.condition } : { grade: a.grade, condition: null };
   return { kind: "record-copy", copy: { ...facts, offered: a.disposition === "trade", keeping: a.disposition === "pc" } };
 }
 
@@ -127,28 +150,23 @@ export function stepFor(a) {
 export function nextUnanswered(cards, a, existingGoal) {
   if (!cards.length) return ["print", "MetYet can't record this card yet."];
   if (!a.printing) return ["print", "Which version is it?"];
+  if (!a.kind) return ["kind", "Raw or graded?"];
+  if (a.kind === "raw" && !a.condition) return ["condition", "What condition is it?"];
+  if (a.kind === "graded" && !a.grade) return ["grade", "Which grade is it?"];
   if (!a.intent) return ["intent", "What does this card mean to you?"];
   if (a.intent === "looking") {
     if (existingGoal) return ["intent", "You're already looking for this version."];
-    if (!a.kind) return ["kind", "Raw or graded?"];
-    if (a.kind === "graded" && !a.grade) return ["grade", "Which grade are you after?"];
-    if (a.kind === "raw" && !a.condition) return ["condition", "What condition are you after?"];
     if (!a.priority) return ["priority", "How important is this one?"];
-  } else {
-    if (!a.disposition) return ["disposition", "What's this card to you?"];
-    if (!a.facts) return ["facts", "Is your copy raw or graded?"];
-    if (a.facts === "raw" && !a.condition) return ["condition", "What condition is it in?"];
-    if (a.facts === "graded" && !a.grade) return ["grade", "What's it graded?"];
-  }
+  } else if (!a.disposition) return ["disposition", "What's this card to you?"];
   return null;
 }
 
 /* The prototype's acknowledgement (ackFor): the meaning, its value, then Browse. */
-export function ackFor(card, a) {
-  const print = versionLabel(card);
-  const physical = a.facts === "raw" ? `Raw · ${a.condition}` : a.facts === "graded" ? a.grade : null;
+export function ackFor(card, a, siblings = []) {
+  const print = versionLabel(card, siblings);
+  const physical = a.kind === "raw" ? `Raw · ${a.condition}` : a.kind === "graded" ? a.grade : null;
   if (a.intent === "looking") return { head: `${TIER[a.priority]} goal ✓`,
-    facts: `${a.kind === "graded" ? a.grade : `Raw · ${a.condition}`} · ${print}`,
+    facts: `${physical} · ${print}`,
     value: "Your Trusted Partners can now see what you're looking for." };
   if (a.disposition === "trade") return { head: "Trade / Sell ✓", facts: [physical, print].filter(Boolean).join(" · "),
     value: "Your Trusted Partners can now see you'd move this one." };
@@ -203,9 +221,9 @@ export default function CardDetail({ context, state, backLabel = "Browse", posit
   }, [onClose]);
 
   const set = (patch) => { setHint(null); setFocus(null); setProblem(null); setA((x) => ({ ...x, ...patch })); };
-  /* CHANGE AN ANSWER, LOSE WHAT DEPENDED ON IT (prototype Iteration 3). */
-  const choose = (field, value, clears) => { if (a[field] !== value) set({ [field]: value, ...clears }); };
-  const AFTER_INTENT = { kind: null, grade: null, condition: null, priority: null, disposition: null, facts: null };
+  /* CHANGE AN ANSWER, LOSE WHAT DEPENDED ON IT (prototype Iteration 3) — and
+     only that. Re-pressing the answer already given changes nothing. */
+  const choose = (field, value) => { if (a[field] !== value) set(answered(a, field, value)); };
 
   /* THE CARD HOLDS STILL DURING ITS ACKNOWLEDGEMENT: the projection has already
      changed; the card keeps showing what was just given until Browse returns. */
@@ -238,7 +256,7 @@ export default function CardDetail({ context, state, backLabel = "Browse", posit
     if (!ready) { nudge(); return; }
     sending.current = true; setSaving(true); setProblem(null);
     const before = state;
-    const ack = ackFor(chosen, a);
+    const ack = ackFor(chosen, a, cards);
     try {
       const answer = await onSave(step, chosen.canonicalCardId);
       if (!alive.current) return;
@@ -278,7 +296,7 @@ export default function CardDetail({ context, state, backLabel = "Browse", posit
       <header className="mcs-cd-hd">
         <button type="button" className="mcs-cd-back" onClick={onClose}>‹ {backLabel}</button>
         {compact ? (
-          <span className="mcs-cd-mini">{art("mini")}<b>{name}</b><span>{chosen ? versionLabel(chosen) : number ? `#${number}` : ""}</span></span>
+          <span className="mcs-cd-mini">{art("mini")}<b>{name}</b><span>{chosen ? versionLabel(chosen, cards) : number ? `#${number}` : ""}</span></span>
         ) : null}
         {/* ONE CARD IS THE SUBJECT (prototype): no "3 of 9"; the arrows stay, quiet. */}
         <span className="mcs-cd-step">
@@ -310,16 +328,37 @@ export default function CardDetail({ context, state, backLabel = "Browse", posit
           <Section id="print" title="Which version?" focus={focus}>
             <div className="mcs-cd-wrap" role="group" aria-label="Which version?">
               {cards.map((c) => (
-                <Choice key={c.canonicalCardId} on={a.printing === c.canonicalCardId} title={versionLabel(c)}
+                <Choice key={c.canonicalCardId} on={a.printing === c.canonicalCardId} title={versionLabel(c, cards)}
                   onClick={() => a.printing !== c.canonicalCardId && set({ ...blankAnswers(cards), printing: c.canonicalCardId })} />
               ))}
             </div>
           </Section>
         ) : (
-          <p className="mcs-cd-established">{versionLabel(cards[0])} — the only version of this card.</p>
+          <p className="mcs-cd-established">{versionLabel(cards[0], cards)} — the only version of this card.</p>
         )}
 
-        {chosen && !formMode ? (
+        {/* 2. WHAT IT IS, PHYSICALLY. */}
+        {chosen && !formMode ? (<>
+          <Section id="kind" title="Raw or graded?" focus={focus}>
+            <div className="mcs-cd-row">
+              <Choice on={a.kind === "raw"} title="Raw" onClick={() => choose("kind", "raw")} />
+              <Choice on={a.kind === "graded"} title="Graded" onClick={() => choose("kind", "graded")} />
+            </div>
+          </Section>
+          {a.kind === "raw" ? (
+            <Section id="condition" title="In what condition?" focus={focus}>
+              <div className="mcs-cd-wrap">{CONDITIONS.map((c) => <Choice key={c} on={a.condition === c} title={c} onClick={() => choose("condition", c)} />)}</div>
+            </Section>
+          ) : null}
+          {a.kind === "graded" ? (
+            <Section id="grade" title="Which grade?" focus={focus}>
+              <div className="mcs-cd-wrap">{GRADES.map((g) => <Choice key={g} on={a.grade === g} title={g} onClick={() => choose("grade", g)} />)}</div>
+            </Section>
+          ) : null}
+        </>) : null}
+
+        {/* 3. WHAT IT MEANS — always the last decision before Add. */}
+        {chosen && !formMode && described(a) ? (
           <Section id="intent" title="What does this card mean to you?" focus={focus}>
             <div className="mcs-cd-col">
               {existingGoal ? (
@@ -330,67 +369,29 @@ export default function CardDetail({ context, state, backLabel = "Browse", posit
                 </div>
               ) : (
                 <Choice on={a.intent === "looking"} title="I'm looking for it" sub="Help my Trusted Partners know what I want."
-                  onClick={() => choose("intent", "looking", AFTER_INTENT)} />
+                  onClick={() => choose("intent", "looking")} />
               )}
               <Choice on={a.intent === "own"} title={known.copies.length ? "I own another one" : "I own it"}
-                sub="Keep track of my copy." onClick={() => choose("intent", "own", AFTER_INTENT)} />
+                sub="Keep track of my copy." onClick={() => choose("intent", "own")} />
             </div>
           </Section>
         ) : null}
-
-        {a.intent === "looking" && !existingGoal ? (<>
-          <Section id="kind" title="Raw or graded?" focus={focus}>
-            <div className="mcs-cd-row">
-              <Choice on={a.kind === "raw"} title="Raw" onClick={() => choose("kind", "raw", { grade: null, condition: null, priority: null })} />
-              <Choice on={a.kind === "graded"} title="Graded" onClick={() => choose("kind", "graded", { grade: null, condition: null, priority: null })} />
+        {described(a) && a.intent === "looking" && !existingGoal ? (
+          <Section id="priority" title="How important is this one?" focus={focus}>
+            <div className="mcs-cd-col">
+              <Choice on={a.priority === "primary"} title="Primary" sub="I'm actively looking for this." onClick={() => choose("priority", "primary")} />
+              <Choice on={a.priority === "secondary"} title="Secondary" sub="I'd act on the right opportunity." onClick={() => choose("priority", "secondary")} />
             </div>
           </Section>
-          {a.kind === "raw" ? (
-            <Section id="condition" title="In what condition?" focus={focus}>
-              <div className="mcs-cd-wrap">{CONDITIONS.map((c) => <Choice key={c} on={a.condition === c} title={c} onClick={() => set({ condition: c })} />)}</div>
-            </Section>
-          ) : null}
-          {a.kind === "graded" ? (
-            <Section id="grade" title="Which grade?" focus={focus}>
-              <div className="mcs-cd-wrap">{GRADES.map((g) => <Choice key={g} on={a.grade === g} title={g} onClick={() => set({ grade: g })} />)}</div>
-            </Section>
-          ) : null}
-          {(a.kind === "raw" && a.condition) || (a.kind === "graded" && a.grade) ? (
-            <Section id="priority" title="How important is this one?" focus={focus}>
-              <div className="mcs-cd-col">
-                <Choice on={a.priority === "primary"} title="Primary" sub="I'm actively looking for this." onClick={() => set({ priority: "primary" })} />
-                <Choice on={a.priority === "secondary"} title="Secondary" sub="I'd act on the right opportunity." onClick={() => set({ priority: "secondary" })} />
-              </div>
-            </Section>
-          ) : null}
-        </>) : null}
-
-        {a.intent === "own" ? (<>
+        ) : null}
+        {described(a) && a.intent === "own" ? (
           <Section id="disposition" title="What's this card to you?" focus={focus}>
             <div className="mcs-cd-col">
-              <Choice on={a.disposition === "pc"} title="Personal collection" sub="I'm keeping this one." onClick={() => set({ disposition: "pc" })} />
-              <Choice on={a.disposition === "trade"} title="Trade / Sell" sub="I'd consider moving it." onClick={() => set({ disposition: "trade" })} />
+              <Choice on={a.disposition === "pc"} title="Personal collection" sub="I'm keeping this one." onClick={() => choose("disposition", "pc")} />
+              <Choice on={a.disposition === "trade"} title="Trade / Sell" sub="I'd consider moving it." onClick={() => choose("disposition", "trade")} />
             </div>
           </Section>
-          {a.disposition ? (
-            <Section id="facts" title="Is your copy raw or graded?" focus={focus}>
-              <div className="mcs-cd-row">
-                <Choice on={a.facts === "raw"} title="Raw" onClick={() => choose("facts", "raw", { grade: null, condition: null })} />
-                <Choice on={a.facts === "graded"} title="Graded" onClick={() => choose("facts", "graded", { grade: null, condition: null })} />
-              </div>
-            </Section>
-          ) : null}
-          {a.facts === "raw" ? (
-            <Section id="condition" title="What condition is it in?" focus={focus}>
-              <div className="mcs-cd-wrap">{CONDITIONS.map((c) => <Choice key={c} on={a.condition === c} title={c} onClick={() => set({ condition: c })} />)}</div>
-            </Section>
-          ) : null}
-          {a.facts === "graded" ? (
-            <Section id="grade" title="What's it graded?" focus={focus}>
-              <div className="mcs-cd-wrap">{GRADES.map((g) => <Choice key={g} on={a.grade === g} title={g} onClick={() => set({ grade: g })} />)}</div>
-            </Section>
-          ) : null}
-        </>) : null}
+        ) : null}
 
         <div className="mcs-cd-spacer" />
       </div>
