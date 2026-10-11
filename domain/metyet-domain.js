@@ -158,6 +158,13 @@ const transactionallyLost = (o, opps) => {
    deleting would produce an unstorable world, the exact shape this batch set
    out to avoid one predicate over. The honest way out of a dead deal is to
    cancel it, which stays available and is what makes the Goal deletable. */
+/* THE FOUR COLLECTING STATES, and how many times one record's meaning may
+   cross between a Goal and an owned copy (P6-F4 Batch 5). Every crossing
+   appends to the record's `formerly` lineage and nothing is ever removed from
+   it, so the bound is a refusal (`lineage-full`), never a truncation. */
+const COLLECTING_STATES = Object.freeze(["primary", "secondary", "pc", "trade"]);
+const COLLECTING_LINEAGE_MAX = 64;
+
 const goalNamedByActive = (goalId, opps) =>
   (opps || []).some((o) => o && o.goalId === goalId && isActive(o));
 
@@ -1073,6 +1080,19 @@ const REFUSE = {
      with the means to satisfy it. It is scoped to the canonical path — the
      legacy `cardId` path is the prototype's and keeps its own answer. */
   criteriaRequired: "criteria-required",
+  /* CHANGING WHAT A CARD MEANS (P6-F4 Batch 5): `changeCollectingState`.
+     `state-changed` — the screen asked from a state the record is no longer
+     in; nothing is guessed, the Collector chooses again on the latest.
+     `partner-interest` — a Trusted Partner has said they are interested in
+     this copy; it is never turned into a Goal underneath them.
+     `state-change-unsupported` — a legacy record with no canonical printing.
+     `lineage-full` — the record's history is full; nothing is ever dropped
+     from it to make room. `invalid-state` — not one of the four. */
+  stateChanged: "state-changed",
+  partnerInterest: "partner-interest",
+  stateChangeUnsupported: "state-change-unsupported",
+  lineageFull: "lineage-full",
+  invalidState: "invalid-state",
   invitationRequired: "invitation-required",
   alreadyRegistered: "already-registered",
   /* Redemption (Phase 5 Batch 3A). ONE WORD FOR SIX CAUSES, on purpose: an
@@ -1850,6 +1870,8 @@ module.exports.soldInventoryIds = soldInventoryIds;
 module.exports.meetsGoalCriteria = meetsGoalCriteria;
 module.exports.transactionallyLost = transactionallyLost;
 module.exports.goalNamedByActive = goalNamedByActive;
+module.exports.COLLECTING_STATES = COLLECTING_STATES;
+module.exports.COLLECTING_LINEAGE_MAX = COLLECTING_LINEAGE_MAX;
 module.exports.collectorCopyStatus = collectorCopyStatus;
 module.exports.binderRowState = binderRowState;
 module.exports.goalLocked = goalLocked;

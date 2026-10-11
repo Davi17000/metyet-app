@@ -196,7 +196,7 @@ describe("A. the door opened by exactly two", () => {
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    eq(EXPOSED_COMMANDS.length, 29, "the production surface is not the size C5 intended");
+    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(EXPOSED_COMMANDS.length, 30, "the production surface is not the size C5 intended");
     for (const name of ["updateInventoryCopy", "removeInventoryCopy"]) {
       assert(EXPOSED_COMMANDS.includes(name), `${name} is not offered`);
     }
@@ -257,7 +257,8 @@ describe("A. the door opened by exactly two", () => {
        actually had it rather than against a literal. */
     /* …and the five Market Validation Batch 3B opened with the price controls
        that send them — the fourth time this guard fired for a declared reason. */
-    eq(json(added.sort()), json(["acceptPrice", "addCopyPhotos", "cancelOpportunity", "declineOffer",
+    /* …and P6-F4 B5's changeCollectingState, with the saved card's Submit Update. */
+    eq(json(added.sort()), json(["acceptPrice", "addCopyPhotos", "cancelOpportunity", "changeCollectingState", "declineOffer",
       "endReview", "fileObject", "proposePrice", "removeInventoryCopy",
       "requestPhotos", "reviewCopy", "setCollectorCopyKept", "startOpportunity", "unfileObject",
       "updateInventoryCopy"]),
@@ -1092,7 +1093,7 @@ describe("H. nothing else moved", () => {
        there was no existing command that could name a Goal's or a copy's
        Binder, because until 3A no row could hold one. */
     /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
-    eq([...COMMAND_NAMES].length, 54, "C5 wrote a command instead of shipping two that existed");
+    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq([...COMMAND_NAMES].length, 55, "C5 wrote a command instead of shipping two that existed");
   });
 
   test("no new route, and the catalogue import is still unreachable", async () => {

@@ -134,6 +134,11 @@ function everyCommand(store, rec) {
      because a canonical Goal states which copy it wants. */
   x(C1, "updateGoalCriteria", { goalId: g, desired: { grade: "Raw", condition: "Near Mint" } });
   step("updateGoalCriteria", { goal: s().goals.find((q) => q.id === g) });
+  /* P6-F4 B5. Same-type, because this is a legacy `cardId` Goal and a
+     crossing needs a canonical printing; the crossing itself is
+     tests/phase6-f4-b5-collecting-state.cjs. */
+  x(C1, "changeCollectingState", { goalId: g, from: "primary", to: "secondary" });
+  step("changeCollectingState", { goal: s().goals.find((q) => q.id === g) });
   x(C1, "removeGoal", { goalId: g });
 
   const inv = x(TP1, "addInventoryCopy", { copy: { cardId: "k1", ask: 1000, cost: 700, acquired: "2020-05-05",
@@ -414,7 +419,7 @@ describe("B. every minted id comes from the injected runtime", () => {
        51 → 53 in Batch 3A (`fileObject`, `unfileObject`): object-level Binder
        membership is a new durable fact, so it needed commands to state it.
        53 → 54 in Market Validation Batch 2 (`declineOffer`), exercised above. */
-    eq(C.COMMAND_NAMES.length, 54, "the command set");
+    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(C.COMMAND_NAMES.length, 55, "the command set");
   });
 
   test("each new record's id is exactly what the runtime handed out, with the record's prefix", () => {

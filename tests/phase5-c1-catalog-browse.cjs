@@ -843,7 +843,7 @@ describe("G. boundaries, and what did not change", () => {
          Batch 3C-1 closed it by name once the release owner judged that window
          enough. `removeBinderEntry` stays — it is how a legacy row is removed. */
       "fileObject", "unfileObject",
-      "updateCollectorCopy", "updateGoalCriteria",
+      "updateCollectorCopy", "updateGoalCriteria", "changeCollectingState",
       /* C3.4b, the Binder library's two: rename one in place, put one away and
          bring it back. Deleting one is still nobody's door. */
       "renameBinder", "setBinderArchived",

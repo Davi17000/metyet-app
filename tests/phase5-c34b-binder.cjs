@@ -1456,7 +1456,7 @@ describe("F. the two new doors", () => {
          Batch 3C-1 closed it by name once the release owner judged that window
          enough. `removeBinderEntry` stays — it is how a legacy row is removed. */
       "fileObject", "unfileObject",
-      "updateCollectorCopy", "updateGoalCriteria",
+      "updateCollectorCopy", "updateGoalCriteria", "changeCollectingState",
       "renameBinder", "setBinderArchived",
       /* AND THE TWO C5 ADDED (Phase 5 C5). `updateInventoryCopy` and
          `removeInventoryCopy` were written and tested in Batch 6 and shipped
@@ -1493,7 +1493,7 @@ describe("F. the two new doors", () => {
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    eq(EXPOSED_COMMANDS.length, 29);
+    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(EXPOSED_COMMANDS.length, 30);
     for (const name of EXPOSED_COMMANDS) {
       assert(C.COMMAND_NAMES.includes(name), `${name} is not a command`);
     }
@@ -1885,7 +1885,7 @@ describe("H. the navigation", () => {
        foundation it shipped needed neither, and 3A's are additive — nothing
        C3.4b built was re-keyed, widened or dropped to make room. */
     /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
-    eq(C.COMMAND_NAMES.length, 54, "a command was added or removed");
+    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(C.COMMAND_NAMES.length, 55, "a command was added or removed");
   });
 
   test("compatibility: a historical Goal with no criteria is still manageable", async () => {

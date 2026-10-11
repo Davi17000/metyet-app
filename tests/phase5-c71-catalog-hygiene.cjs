@@ -512,7 +512,7 @@ describe("D. all four deployed surfaces use it", () => {
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    eq(EXPOSED_COMMANDS.length, 29, "the production door moved");
+    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(EXPOSED_COMMANDS.length, 30, "the production door moved");
     /* 49 → 50 in Option B (`setCopyPending`), and → 51 in the four-state batch
        (`setCollectorCopyKept`). C7.1's claim is the door above, which has not
        moved for either: the first is written, tested and deliberately unexposed,
@@ -528,7 +528,7 @@ describe("D. all four deployed surfaces use it", () => {
        25. 3B-1 makes the number right, which would have let it become correct
        by accident — the reason it says is now the reason that happened. */
     /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
-    eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 54,
+    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 55,
       "the domain's command table moved");
   });
 });

@@ -541,7 +541,7 @@ describe("F. What did not move", () => {
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    eq(EXPOSED_COMMANDS.length, 29, "a command was exposed that no batch declared");
+    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(EXPOSED_COMMANDS.length, 30, "a command was exposed that no batch declared");
     for (const closed of ["acceptMarketValue", "acceptDeal", "setCopyPending", "proposeFulfillment", "confirmHandoff"]) {
       assert(!EXPOSED_COMMANDS.includes(closed), `${closed} was exposed`);
     }

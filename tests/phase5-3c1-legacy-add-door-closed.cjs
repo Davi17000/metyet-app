@@ -238,11 +238,11 @@ describe("B. kept in the domain, closed at the door, and only one way in", () =>
     assert(!EXPOSED_COMMANDS.includes("addBinderEntry"), "the retired add is exposed");
     assert(EXPOSED_COMMANDS.includes("removeBinderEntry"), "the legacy removal is not exposed");
     /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
-    eq(C.COMMAND_NAMES.length, 54, "the domain command table moved");
+    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(C.COMMAND_NAMES.length, 55, "the domain command table moved");
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    eq(EXPOSED_COMMANDS.length, 29, "the production surface is not 29");
+    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(EXPOSED_COMMANDS.length, 30, "the production surface is not 29");
   });
 
   test("a legacy row can still be made past the door, by design", async () => {

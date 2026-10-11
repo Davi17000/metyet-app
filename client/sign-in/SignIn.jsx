@@ -51,7 +51,7 @@ import { savePartnerProfile, openCollectorInvitation, revokeCollectorInvitation,
   setGoalCriteria, addOwnedCopy, updateOwnedCopy, setCopyOffered, removeOwnedCopy,
   createBinder, unfileCardFromBinder,
   fileObjectInBinder, unfileObjectFromBinder,
-  inspectCopy, endInspection, requestCopyPhotos, provideCopyPhotos, setCopyKept,
+  inspectCopy, endInspection, requestCopyPhotos, provideCopyPhotos, setCopyKept, changeCardState,
   renameBinder, setBinderArchived,
   refreshView, openOffer, counterOffer, acceptOffer, declineOffer, withdrawOffer } from "../commands.js";
 
@@ -219,6 +219,7 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
     const copy = { add: addOwnedCopy(store), update: updateOwnedCopy(store),
       offered: setCopyOffered(store), keeping: setCopyKept(store),
       remove: removeOwnedCopy(store) };
+    const meaning = changeCardState(store);
     const binder = { create: createBinder(store),
       unfile: unfileCardFromBinder(store),
       /* WHERE A THING LIVES (Batch 3B-1), beside where a CARD was filed. Only
@@ -260,6 +261,8 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
         case "keeping": return copy.keeping(step.copyId, step.keeping);
         case "forget-copy": return copy.remove(step.copyId);
         case "record-copy": return copy.add({ canonicalCardId, ...step.copy });
+        /* WHAT A SAVED CARD MEANS (P6-F4 Batch 5): one command, either way. */
+        case "change-state": return meaning({ goalId: step.goalId, collectorCopyId: step.collectorCopyId, from: step.from, to: step.to });
         /* A step this build does not know is not guessed at. It cannot happen
            from the panel in this bundle, and if it ever does the answer is a
            refusal rather than a command chosen by resemblance. */

@@ -207,7 +207,25 @@ function validateWorld(state) {
   }
 
   /* ---------------------------------------------------------- GOALS AND COPIES */
+  /* A RECORD'S LINEAGE (P6-F4 Batch 5): what it was before a collecting-state
+     change crossed it between a Goal and an owned copy. Absent, or an array of
+     at most D.COLLECTING_LINEAGE_MAX entries, each naming the kind and id it
+     came from, when, and that record's facts as an object. */
+  const lineageOf = (r, path, who) => {
+    if (r.formerly === undefined) return;
+    if (!Array.isArray(r.formerly) || r.formerly.length > D.COLLECTING_LINEAGE_MAX) {
+      report("field.invalid", `${path}.formerly`, `${who}.formerly must be a list of at most ${D.COLLECTING_LINEAGE_MAX} entries.`);
+      return;
+    }
+    r.formerly.forEach((f, i) => {
+      if (!f || typeof f !== "object" || (f.kind !== "goal" && f.kind !== "copy") || !isId(f.id)
+        || typeof f.at !== "string" || !f.facts || typeof f.facts !== "object" || Array.isArray(f.facts)) {
+        report("field.invalid", `${path}.formerly[${i}]`, `${who}.formerly[${i}] must name a kind, an id, a time and its facts.`);
+      }
+    });
+  };
   for (const [g, path] of C.goals) {
+    lineageOf(g, path, `Goal "${g.id}"`);
     const who = `Goal "${g.id}"`;
     ref(collectors, g.collectorId, `${path}.collectorId`, "collector", who);
     /* A GOAL NAMES ITS CARD ONE WAY OR THE OTHER (Phase 5 Batch 7), on the same
@@ -300,6 +318,7 @@ function validateWorld(state) {
   }
   for (const [b, path] of C.collectorCopies) {
     const who = `CollectorCopy "${b.id}"`;
+    lineageOf(b, path, who);
     ref(collectors, b.collectorId, `${path}.collectorId`, "collector", who);
     /* A COPY NAMES ITS CARD ONE WAY OR THE OTHER (Phase 5 C2), on the rule an
        InventoryCopy has followed since Batch 6. Owning nothing is not owning,

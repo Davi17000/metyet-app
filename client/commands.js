@@ -305,6 +305,17 @@ export function setCopyKept(target) {
   return (copyId, keeping) => target.execute("setCollectorCopyKept", { copyId, keeping });
 }
 
+/* WHAT A SAVED CARD MEANS (P6-F4 Batch 5): one of the four states, from the
+   one the screen showed. The server decides whether that is an edit of the
+   same record or one atomic re-making as the other kind. */
+export function changeCardState(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("changeCardState: the production store is required");
+  }
+  return ({ goalId, collectorCopyId, from, to }) => target.execute("changeCollectingState",
+    goalId ? { goalId, from, to } : { collectorCopyId, from, to });
+}
+
 export function removeOwnedCopy(target) {
   if (!target || typeof target.execute !== "function") {
     throw new TypeError("removeOwnedCopy: the production store is required");

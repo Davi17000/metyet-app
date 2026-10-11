@@ -135,6 +135,11 @@ const EXPOSED_COMMANDS = Object.freeze([
   "removeBinderEntry",           // Collector → the legacy line, removing a card filed before 3B
   "updateCollectorCopy",         // Collector → Card Specification, correcting a copy
   "updateGoalCriteria",          // Collector → Card Specification, which copy is wanted
+  /* WHAT A CARD MEANS, IN ONE STEP (P6-F4 Batch 5). The saved card's page
+     shows all four states and Submit Update sends this: the same record for
+     Primary ↔ Secondary and PC ↔ Trade / Sell, and one atomic re-making —
+     same printing, same binder, lineage kept — across them. */
+  "changeCollectingState",       // Collector → a saved card, Submit Update
   /* MANAGING A BINDER AS AN OBJECT (Phase 5 C3.4). C3.1 wrote these two and
      C3.3 deliberately left them shut, because C3.3 let a person say where the
      card IN FRONT OF THEM belongs and nothing more — renaming a binder or

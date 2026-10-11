@@ -1045,7 +1045,7 @@ describe("G. whose shelf this is", () => {
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    eq(EXPOSED_COMMANDS.length, 29, "C8 opened a production command: " + EXPOSED_COMMANDS.join(","));
+    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(EXPOSED_COMMANDS.length, 30, "C8 opened a production command: " + EXPOSED_COMMANDS.join(","));
     /* 49 → 50 in Option B (`setCopyPending`), and → 51 in the four-state batch
        (`setCollectorCopyKept`). C8's claim is unchanged: C8 added no domain
        command, and the door it is really guarding — the allow-list above —
@@ -1059,7 +1059,7 @@ describe("G. whose shelf this is", () => {
        the count 25 again, and the history is now written out rather than
        quietly becoming true. */
     /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
-    eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 54,
+    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 55,
       "C8 added a domain command");
     const app = code("server/app.js");
     assert(!/inventory-import|inventoryImport|\/api\/inventory|csv/i.test(app),

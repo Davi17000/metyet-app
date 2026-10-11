@@ -734,7 +734,7 @@ describe("D. the production door, and what is still shut", () => {
          Batch 3C-1 closed it by name once the release owner judged that window
          enough. `removeBinderEntry` stays — it is how a legacy row is removed. */
       "fileObject", "unfileObject",
-      "updateCollectorCopy", "updateGoalCriteria",
+      "updateCollectorCopy", "updateGoalCriteria", "changeCollectingState",
       "renameBinder", "setBinderArchived",
       /* AND THE TWO C5 ADDED (Phase 5 C5). `updateInventoryCopy` and
          `removeInventoryCopy` were written and tested in Batch 6 and shipped
@@ -771,7 +771,7 @@ describe("D. the production door, and what is still shut", () => {
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    eq(EXPOSED_COMMANDS.length, 29);
+    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(EXPOSED_COMMANDS.length, 30);
     for (const name of EXPOSED_COMMANDS) {
       assert(C.COMMAND_NAMES.includes(name), `${name} is not a command`);
     }
@@ -1292,7 +1292,11 @@ describe("F. one button, a sequence of commands that already existed", () => {
     /* And nothing is mapped that the panel cannot produce — the card-level add
        above all. */
     const mapped = [...entrance.matchAll(/case "([a-z-]+)":/g)].map((m) => m[1]);
-    eq(json([...new Set(mapped)].sort()), json([...new Set(produced)].sort()),
+    /* (P6-F4 B5: and the saved card's page produces `change-state`, which the
+       entrance maps to changeCollectingState — the one step not the panel's.) */
+    const card = code("client/collector/CardEdit.jsx");
+    assert(/kind: "change-state"/.test(card), "the saved card's page no longer produces change-state");
+    eq(json([...new Set(mapped)].sort()), json([...new Set([...produced, "change-state"])].sort()),
       "the entrance maps a step nothing produces");
     assert(!/case "file"/.test(entrance), "the entrance maps the retired card-level add");
   });

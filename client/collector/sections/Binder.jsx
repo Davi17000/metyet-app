@@ -606,6 +606,9 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
      is the outcome they asked for, and the bar says so instead.) */
   const removingRef = useRef(null);
   const heldRef = useRef(null);
+  /* A STATE CHANGE THAT RE-MADE THE RECORD (P6-F4 B5) opens the record that
+     now exists, and says so there. */
+  const [arrived, setArrived] = useState(null);
   useEffect(() => {
     if (!detailKey || objs.some((x) => x.key === detailKey)) return;
     if (heldRef.current && heldRef.current.key === detailKey) return;   // its guided step is saying what happened
@@ -714,7 +717,7 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
     const o = detailKey ? objs.find((x) => x.key === detailKey)
       || (heldRef.current && heldRef.current.key === detailKey ? heldRef.current : null) : null;
     if (!o || (o.kind !== "goal" && o.kind !== "copy")) return null;
-    const close = () => { heldRef.current = null; setDetailKey(null); setMoving(false); };
+    const close = () => { heldRef.current = null; setArrived(null); setDetailKey(null); setMoving(false); };
     const save = onSpecify ? (step, id) => {
       if ((step.kind === "stop-looking" || step.kind === "forget-copy") && !heldRef.current) {
         removingRef.current = { key: o.key, said: step.kind === "stop-looking" ? `Stopped looking for ${nameOf(o)}.` : `Removed this copy of ${nameOf(o)}.` };
@@ -726,8 +729,9 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
     } : null;
     return (
       <CardEdit key={o.key} kind={o.kind} thing={o.thing} known={described[o.cardKey] || null}
-        homeName={o.homeName} homeAway={o.homeAway} homeId={o.homeId || null} state={state}
-        onOpenRecord={(key) => { heldRef.current = null; setMoving(false); setDetailKey(key); }}
+        homeName={o.homeName} homeAway={o.homeAway} state={state}
+        arrived={arrived && arrived.key === o.key ? arrived.said : null}
+        onOpenRecord={(key, said) => { heldRef.current = null; setMoving(false); setArrived(said ? { key, said } : null); setDetailKey(key); }}
         onHold={(on) => { heldRef.current = on ? o : null; }}
         busy={!!filingKey} onClose={close} onSave={save}
         onMove={filable(o) ? () => setMoving(true) : null} onRefresh={onRefresh}

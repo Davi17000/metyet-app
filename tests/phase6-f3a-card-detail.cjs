@@ -597,7 +597,11 @@ describe("F. the review-only artwork exception", () => {
     const { execFileSync } = require("child_process");
     const changed = execFileSync("git", ["diff", "--name-only", "450013e", "--", "persistence", "server", "domain",
       "scripts", "app-src"], { cwd: ROOT, encoding: "utf8" }).trim();
-    eq(changed, "", "Stage 1 changed production catalogue, server or domain code");
+    /* RESTATED (P6-F4 B5): the founder-approved changeCollectingState touched the
+       domain's commands, refusals and validator and the server's allow-list —
+       none of them the catalogue importer or the image rules this guards. */
+    const B5 = ["domain/metyet-commands.js", "domain/metyet-domain.js", "domain/metyet-world.js", "server/exposed-commands.js"];
+    eq(changed.split("\n").filter((f) => f && !B5.includes(f)).join("\n"), "", "Stage 1 changed production catalogue, server or domain code");
   });
 });
 

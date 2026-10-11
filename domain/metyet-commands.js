@@ -1262,6 +1262,145 @@ const COMMANDS = {
      and to no one else — see metyet-projection.js. A Trusted Partner receives
      no name, no id, no membership and no count, because how somebody organises
      their collection is not a fact about a trade. */
+  /* ==========================================================================
+     CHANGING WHAT A CARD MEANS (P6-F4 Batch 5) — ONE COMMAND, ONE COMMIT.
+
+     A Collector sees four states on one card: Primary, Secondary, PC, Trade /
+     Sell. Underneath, the first two are a Goal and the last two an owned
+     CollectorCopy, and that distinction stays (engineering context §2). So:
+
+       SAME TYPE    Primary ↔ Secondary, PC ↔ Trade / Sell: exactly what
+                    updateGoalTier / setCollectorCopyKept / setCollectorCopyOffered
+                    do, on the same record, under their rules. The id stays.
+       CROSS TYPE   one commit that (1) writes the other kind of record on the
+                    SAME canonical printing, (2) re-points the record's binder
+                    membership at it — the same membership row, binder and
+                    filing, archived binder included — and (3) removes the
+                    source. THE RECORD ID CHANGES; the new one is returned.
+
+     NOTHING IS DISCARDED. The new record carries `formerly`: the source's
+     lineage plus one entry for the source — { kind, id, at, facts } — where
+     `facts` is everything the source held beyond its identity (a copy's
+     grade, condition, certificate, value, photos, dates, disposition; a Goal's
+     tier, wanted grade, note and dates). The lineage is append-only and
+     bounded (D.COLLECTING_LINEAGE_MAX), so repeated crossings keep every
+     earlier snapshot; at the bound the change is refused, never truncated.
+     It is the Collector's alone: no partner allow-list names it.
+
+     NOTHING IS ASSERTED. A Goal's wanted grade is what they hoped for, not
+     what they hold, so a copy made from a Goal is born with no grade or
+     condition (doctrine: identity and state are enough at birth). A Goal made
+     from a copy wants what the copy is, which is a preference, not a fact.
+
+     REFUSED, CHANGING NOTHING, WHEN:
+       the record is not the asker's (not-owner) or no longer exists — unless a
+         record's lineage shows this very change already happened, which is
+         answered as done (a retry, or a lost answer), never done twice
+       `to` / `from` is not one of the four (invalid-state)
+       the record is not in `from` any more (state-changed)
+       cross type, and the record names no canonical printing
+         (state-change-unsupported), or its lineage is full (lineage-full)
+       Goal → copy while an active opportunity names the Goal (goal-locked)
+       copy → Goal while a deal holds the copy (copy-reserved, copy-committed),
+         or any deal's trade package has ever named it (copy-in-use), or a
+         Trusted Partner has marked interest in it (partner-interest), or a
+         Goal for this printing already exists (duplicate-goal — never merged),
+         or the copy states no grade, or is Raw with no condition
+         (criteria-required), or its grading contradicts itself
+         (grading-incoherent)
+     and the same-type refusals are those of the commands it shares rules with.
+     ========================================================================== */
+  changeCollectingState(state, a, { goalId, collectorCopyId, from, to }, ctx) {
+    if (a.seat !== "collector") return refuse(R.notOwner);
+    const S = D.COLLECTING_STATES;
+    if (!S.includes(to) || !(from === null || S.includes(from))) return refuse(R.invalidState);
+    const isGoal = typeof goalId === "string" && goalId !== "";
+    const isCopy = typeof collectorCopyId === "string" && collectorCopyId !== "";
+    if (isGoal === isCopy) return refuse(R.notFound);
+    const sourceId = isGoal ? goalId : collectorCopyId;
+    const kind = isGoal ? "goal" : "copy";
+    const src = isGoal ? list(state.goals).find((g) => g.id === goalId)
+      : list(state.collectorCopies).find((c) => c.id === collectorCopyId);
+    const stateOf = (k, r) => (k === "goal" ? r.tier : r.offered === true ? "trade" : r.keeping === true ? "pc" : null);
+    if (!src) {
+      /* ALREADY DONE? A record of theirs that came from this one, and is now
+         in the state asked for, is this change having happened. */
+      const heir = [...list(state.goals).map((g) => ["goal", g]), ...list(state.collectorCopies).map((c) => ["copy", c])]
+        .find(([, r]) => r.collectorId === a.collectorId && Array.isArray(r.formerly)
+          && r.formerly.some((f) => f && f.kind === kind && f.id === sourceId));
+      if (!heir) return refuse(R.notFound);
+      if (stateOf(heir[0], heir[1]) === to) return done(state, { id: heir[1].id, kind: heir[0], state: to, already: true });
+      return refuse(R.stateChanged);
+    }
+    if (src.collectorId !== a.collectorId) return refuse(R.notOwner);
+    const now = stateOf(kind, src);
+    /* A REPEAT of a change that has landed is answered as done; a record
+       that moved somewhere else in the meantime is not guessed at. */
+    if (now !== from) return now === to ? done(state, { id: src.id, kind, state: to, already: true }) : refuse(R.stateChanged);
+    const answer = (r, k) => (r.ok ? { ...r, value: { id: src.id, kind: k, state: to } } : r);
+    if (now === to) return done(state, { id: src.id, kind, state: to });
+    const toGoal = to === "primary" || to === "secondary";
+
+    /* SAME TYPE: the existing command, its rules, the same record. */
+    if (toGoal === isGoal) {
+      if (isGoal) return answer(COMMANDS.updateGoalTier(state, a, { goalId, tier: to }, ctx), "goal");
+      return answer(to === "trade"
+        ? COMMANDS.setCollectorCopyOffered(state, a, { copyId: collectorCopyId, offered: true }, ctx)
+        : COMMANDS.setCollectorCopyKept(state, a, { copyId: collectorCopyId, keeping: true }, ctx), "copy");
+    }
+
+    /* CROSS TYPE */
+    const canonical = typeof src.canonicalCardId === "string" && src.canonicalCardId ? src.canonicalCardId : null;
+    if (!canonical || src.cardId) return refuse(R.stateChangeUnsupported);
+    const lineage = Array.isArray(src.formerly) ? src.formerly : [];
+    if (lineage.length >= D.COLLECTING_LINEAGE_MAX) return refuse(R.lineageFull);
+    const opps = list(state.opportunities);
+    if (isGoal) {
+      if (D.goalNamedByActive(goalId, opps)) return refuse(R.goalLocked);
+    } else {
+      const status = D.collectorCopyStatus(collectorCopyId, opps);
+      if (status === "committed" || status === "traded") return refuse(R.copyCommitted);
+      if (status === "reserved") return refuse(R.copyReserved);
+      if (opps.some((o) => (o.trade && o.trade.cards || []).some((c) => c.binderId === collectorCopyId))) return refuse(R.copyInUse);
+      if (list(state.interests).some((i) => i.binderId === collectorCopyId)) return refuse(R.partnerInterest);
+      if (list(state.goals).some((g) => g.collectorId === a.collectorId && g.canonicalCardId === canonical)) return refuse(R.duplicateGoal);
+      /* what is MISSING first — the Collector can act on it — then what contradicts */
+      const grade = typeof src.grade === "string" ? src.grade.trim() : "";
+      const condition = typeof src.condition === "string" ? src.condition.trim() : "";
+      if (!grade || (grade === "Raw" && !condition)) return refuse(R.criteriaRequired);
+      if (D.gradingProblem(src)) return refuse(R.gradingIncoherent);
+    }
+
+    const at = ctx.at;
+    const { id: _id, collectorId: _c, canonicalCardId: _k, cardId: _l, formerly: _f, ...facts } = src;
+    const formerly = [...lineage, { kind, id: src.id, at, facts: JSON.parse(JSON.stringify(facts)) }];
+    let next;
+    let newId;
+    if (isGoal) {
+      newId = ctx.id("b");
+      const copy = withDisposition({ id: newId, collectorId: a.collectorId, canonicalCardId: canonical, addedAt: at, formerly },
+        to === "trade", to === "pc", null);
+      next = { ...state,
+        goals: list(state.goals).filter((g) => g.id !== src.id),
+        collectorCopies: [...list(state.collectorCopies), copy] };
+    } else {
+      newId = ctx.id("g");
+      const desired = src.grade.trim() === "Raw" ? { grade: "Raw", condition: src.condition.trim() } : { grade: src.grade.trim() };
+      const goal = { id: newId, collectorId: a.collectorId, canonicalCardId: canonical, tier: to,
+        createdAt: at, since: at, note: "", desired, formerly };
+      next = { ...state,
+        collectorCopies: list(state.collectorCopies).filter((c) => c.id !== src.id),
+        goals: [...list(state.goals), goal] };
+    }
+    /* THE SAME HOME: the membership row is re-pointed, never re-made. */
+    next = { ...next, binderMemberships: list(state.binderMemberships).map((m) => {
+      if ((isGoal ? m.goalId : m.collectorCopyId) !== src.id) return m;
+      const { goalId: _g, collectorCopyId: _cc, ...rest } = m;
+      return { ...rest, ...(isGoal ? { collectorCopyId: newId } : { goalId: newId }) };
+    }) };
+    return done(next, { id: newId, kind: isGoal ? "copy" : "goal", state: to, from: { kind, id: src.id } });
+  },
+
   createBinder(state, a, { name }, ctx) {
     if (a.seat !== "collector") return refuse(R.notOwner);
     const clean = typeof name === "string" ? name.trim() : "";

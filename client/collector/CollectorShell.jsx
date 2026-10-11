@@ -755,40 +755,13 @@ ${STATE_CSS}
    pair opens the guided step, so it wears a dashed edge — it adds, not edits */
 .mcs-ce .mcs-ce-four { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
 .mcs-ce .mcs-ce-four .mcs-cd-choice { min-height:60px; padding:9px 12px; }
-.mcs-ce .mcs-ce-four .mcs-cd-choice.cross { border-style:dashed; }
-.mcs-cx-scrim { z-index:40; }
-.mcs-sheet.mcs-cx { gap:12px; max-height:90vh; }
-.mcs-cx .mcs-cx-hd { display:flex; gap:12px; align-items:center; }
-.mcs-cx .mcs-cx-art { flex:0 0 56px; width:56px; }
-.mcs-cx .mcs-cx-title { flex:1; min-width:0; }
-.mcs-cx .mcs-cx-title h2 { margin:0 0 2px; font-size:18px; line-height:1.25; }
-.mcs-cx .mcs-cx-title p { margin:0; font-size:12.5px; color:var(--muted); }
-.mcs-cx dl.mcs-cx-plan { margin:0; border:1px solid var(--line); border-radius:12px; padding:4px 12px; }
-.mcs-cx dl.mcs-cx-plan > div { display:flex; gap:10px; align-items:center; padding:7px 0; }
-.mcs-cx dl.mcs-cx-plan > div + div { border-top:1px solid var(--line-soft); }
-.mcs-cx dl.mcs-cx-plan dt { flex:0 0 72px; font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
-.mcs-cx dl.mcs-cx-plan dd { flex:1; margin:0; display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:13.5px; color:var(--text); }
-.mcs-cx dl.mcs-cx-plan dd .mcs-linkish { margin-left:auto; }
-.mcs-cx .mcs-cx-config { display:flex; flex-direction:column; gap:8px; }
-.mcs-cx .mcs-cd-q { margin:0; }
-.mcs-cx .mcs-cx-foot { position:sticky; bottom:calc(-20px - env(safe-area-inset-bottom, 0px)); background:var(--panel);
-  margin:0 -16px calc(-20px - env(safe-area-inset-bottom, 0px)); padding:10px 16px calc(16px + env(safe-area-inset-bottom, 0px));
-  border-top:1px solid var(--line); display:flex; flex-direction:column; gap:8px; }
-.mcs-cx .mcs-cx-foot .mcs-cx-acts { margin:0; } .mcs-cx .mcs-cx-foot .mcs-cx-acts .mcs-cd-add { flex:1; }
-.mcs-cx .mcs-cx-foot .mcs-cd-hint { margin:0; }
-.mcs-cx p.mcs-cx-lede { margin:4px 0 12px; font-size:14px; color:var(--text); }
-.mcs-cx .mcs-cx-rec { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:13px; color:var(--muted); margin:0 0 6px; }
-.mcs-cx .mcs-cx-k { font-weight:700; color:var(--text); }
-.mcs-cx p.mcs-cx-hint { margin:0 0 8px; font-size:12.5px; color:var(--muted); }
-.mcs-cx .mcs-cd-row + p.mcs-cx-hint { margin:8px 0 0; }
-.mcs-cx .mcs-cx-goal { flex-direction:column; }
-.mcs-cx .mcs-cx-acts { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:10px 0 0; }
-.mcs-cx .mcs-cd-dock .mcs-cx-acts { margin:0; } .mcs-cx .mcs-cd-dock .mcs-cx-acts .mcs-cd-add { flex:1; }
-.mcs-cx .mcs-cx-done { padding:8px 0; }
-.mcs-cx p.mcs-cx-ok { display:flex; align-items:center; gap:8px; margin:0 0 8px; font-size:16px; }
-.mcs-cx p.mcs-cx-line { margin:0 0 6px; font-size:14px; color:var(--text); }
-.mcs-cx p.mcs-cx-line.warn { color:var(--amber); }
-.mcs-cx .mcs-cx-acts .mcs-go { min-height:44px; }
+/* its history, offered after a state change crossed it (B5) */
+.mcs-ce .mcs-ce-recall { margin:10px 0 0; display:flex; flex-direction:column; gap:8px; }
+.mcs-ce .mcs-ce-recall p { margin:0; display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:13px; color:var(--text);
+  border:1px solid var(--line); border-radius:12px; padding:9px 12px; background:var(--line-soft); }
+.mcs-ce .mcs-ce-recall p span { flex:1 1 200px; }
+.mcs-ce .mcs-ce-recall .mcs-go { min-height:40px; }
+.mcs-ce p.mcs-ce-history { margin:10px 0 0; font-size:12.5px; color:var(--muted); }
 .mcs-ce .mcs-ce-home { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .mcs-ce .mcs-ce-home b { font-size:15px; }
 .mcs-ce .mcs-ce-home .mcs-go { min-height:44px; min-width:96px; }

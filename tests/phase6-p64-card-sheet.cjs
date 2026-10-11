@@ -78,6 +78,10 @@ const applyStep = (s, step) => {
   if (step.kind === "stop-looking") return { ...s, goals: s.goals.filter((g) => g.id !== step.goalId), binderMemberships: s.binderMemberships.filter((m) => m.goalId !== step.goalId) };
   if (step.kind === "forget-copy") return { ...s, collectorCopies: s.collectorCopies.filter((c) => c.id !== step.copyId), binderMemberships: s.binderMemberships.filter((m) => m.collectorCopyId !== step.copyId) };
   if (step.kind === "how-hard") return { ...s, goals: s.goals.map((g) => (g.id === step.goalId ? { ...g, tier: step.tier } : g)) };
+  /* (P6-F4 B5: a same-type change-state is the same record's tier or disposition) */
+  if (step.kind === "change-state" && step.goalId) return { ...s, goals: s.goals.map((g) => (g.id === step.goalId ? { ...g, tier: step.to } : g)) };
+  if (step.kind === "change-state") return { ...s, collectorCopies: s.collectorCopies.map((c) => (c.id === step.collectorCopyId
+    ? (step.to === "pc" ? { ...c, keeping: true, offered: false } : { ...c, offered: true, keeping: false }) : c)) };
   if (step.kind === "keeping") return { ...s, collectorCopies: s.collectorCopies.map((c) => (c.id === step.copyId ? { ...c, keeping: true, offered: false } : c)) };
   if (step.kind === "offering") return { ...s, collectorCopies: s.collectorCopies.map((c) => (c.id === step.copyId ? { ...c, offered: true, keeping: false } : c)) };
   return s;
@@ -152,32 +156,33 @@ const steps = (sent) => sent.filter(([k]) => k === "step").map(([, s]) => s);
 
 /* ============================================================== A */
 describe("A. a Goal: Primary and Secondary", () => {
-  /* RESTATED (P6-F4 B4): all four states are shown; the copy pair is not an
-     edit of this Goal — it opens the guided step (tests/phase6-f4-b4-guided-transitions.cjs) */
-  test("the page opens on the Goal's saved tier and wanted grade; the copy pair is marked as adding, not editing", async () => {
+  /* RESTATED (P6-F4 B4, then B5): all four states are shown, as equals — any
+     one is a state change (tests/phase6-f4-b5-card-state-ui.cjs) */
+  test("the page opens on the Goal's saved tier and wanted grade; all four states are offered alike", async () => {
     const { r, sent } = await show();
     await open(r, "Primary", "Charizard");
     eq(choice(r, "primary").props["aria-pressed"], true);
     eq(choice(r, "secondary").props["aria-pressed"], false);
-    for (const m of ["pc", "trade"]) { eq(choice(r, m).props["aria-pressed"], false); assert(/\bcross\b/.test(choice(r, m).props.className), `${m} looks like an edit`); }
+    for (const m of ["pc", "trade"]) { eq(choice(r, m).props["aria-pressed"], false); assert(!/\bcross\b/.test(choice(r, m).props.className), `${m} is styled as a different kind of action`); }
     const pressed = sheet(r).findAll((n) => n.type === "button" && n.props["aria-pressed"] === true).map(flat);
     assert(pressed.includes("Graded") && pressed.includes("PSA 9"), "the wanted grade is not selected: " + pressed);
     assert(/Charizard/.test(flat(sheet(r))) && /Base Set · 4/.test(flat(sheet(r))) && /Holo — the version you saved/.test(flat(sheet(r))) && !/holofoil/.test(flat(sheet(r))), "the card's identity");
     eq(sent.length, 0, "opening wrote something");
   });
-  test("Secondary: one updateGoalTier step, on Save; said only after the answer; the tile follows", async () => {
-    /* SUPERSEDED IN PART (P6-F4 B2B): a tap chooses; Save Changes sends. */
+  test("Secondary: one state step, on Submit; said only after the answer; the tile follows", async () => {
+    /* SUPERSEDED IN PART (P6-F4 B2B): a tap chooses; Save Changes sends.
+       RESTATED (P6-F4 B5): the step is change-state (changeCollectingState). */
     const s = await show({ hold: true });
     await open(s.r, "Primary", "Charizard");
     await press(choice(s.r, "secondary"));
     eq(steps(s.sent).length, 0, "choosing sent something");
     await TR.act(async () => { saveBtn(s.r).props.onClick(); });
-    eq(json(steps(s.sent)), json([{ kind: "how-hard", goalId: "g-char", tier: "secondary" }]));
+    eq(json(steps(s.sent)), json([{ kind: "change-state", goalId: "g-char", from: "primary", to: "secondary" }]));
     assert(/Saving…/.test(flat(saveBtn(s.r))), "no pending state");
     assert(!/✓/.test(flat(sheet(s.r))), "success claimed before the answer");
     await TR.act(async () => { s.gates[0].resolve({ ok: true }); }); await settle();
     eq(choice(s.r, "secondary").props["aria-pressed"], true);
-    assert(/✓ Saved — how important it is\./.test(flat(sheet(s.r))), "no acknowledgement: " + flat(sheet(s.r)));
+    assert(/✓ Saved — Secondary\./.test(flat(sheet(s.r))), "no acknowledgement: " + flat(sheet(s.r)));
     assert(tileOf(s.r, "Secondary", "Charizard"), "the tile did not follow the server");
   });
   test("the current state chosen again: nothing to save", async () => {
@@ -192,12 +197,14 @@ describe("A. a Goal: Primary and Secondary", () => {
 
 /* ============================================================== B */
 describe("B. a copy: PC and Trade / Sell", () => {
-  test("PC → Trade / Sell is setCollectorCopyOffered; back is setCollectorCopyKept", async () => {
+  /* RESTATED (P6-F4 B5): one change-state each way, on the same copy */
+  test("PC → Trade / Sell and back: one state step each, on the same copy", async () => {
     const { r, sent } = await show();
     await open(r, "PC", "Charizard");
     await press(choice(r, "trade")); await save(r);
     await press(choice(r, "pc")); await save(r);
-    eq(json(steps(sent)), json([{ kind: "offering", copyId: "k-char", offered: true }, { kind: "keeping", copyId: "k-char", keeping: true }]));
+    eq(json(steps(sent)), json([{ kind: "change-state", collectorCopyId: "k-char", from: "pc", to: "trade" },
+      { kind: "change-state", collectorCopyId: "k-char", from: "trade", to: "pc" }]));
     eq(choice(r, "pc").props["aria-pressed"], true);
   });
   test("a copy that said neither is shown as unanswered, and either answer can be given", async () => {
@@ -205,8 +212,9 @@ describe("B. a copy: PC and Trade / Sell", () => {
     await open(r, "Owned", "Venusaur");
     eq(choice(r, "pc").props["aria-pressed"], false); eq(choice(r, "trade").props["aria-pressed"], false);
     await press(choice(r, "pc")); await save(r);
-    eq(json(steps(sent)), json([{ kind: "keeping", copyId: "k-ven", keeping: true }]));
-    assert(/✓ Saved — Personal collection\./.test(flat(sheet(r))));
+    /* RESTATED (P6-F4 B5): from "neither" (null), as the server allows */
+    eq(json(steps(sent)), json([{ kind: "change-state", collectorCopyId: "k-ven", from: null, to: "pc" }]));
+    assert(/✓ Saved — PC\./.test(flat(sheet(r))));
   });
   test("a copy's grade is selected at once; its certificate is in Copy details", async () => {
     /* RESTATED (P6-F4 B2B): the founder brought certificate and value onto the page, editable */
@@ -220,29 +228,30 @@ describe("B. a copy: PC and Trade / Sell", () => {
 });
 
 /* ============================================================== C */
-describe("C. a Goal is never turned into a copy, nor a copy into a Goal", () => {
-  /* RESTATED (P6-F4 B4): offered now, as a guided addition; the page says what they do */
-  test("on a Goal, PC and Trade / Sell add a copy, and the page says so", async () => {
+/* RESTATED (P6-F4 B5, founder decision): across the pair the SERVER re-makes
+   the record as the other kind in one command (changeCollectingState); the
+   page itself never creates, files or converts — it sends that one step. */
+describe("C. the page never makes a Goal or a copy itself", () => {
+  test("on a Goal, PC and Trade / Sell are states to choose; choosing sends nothing", async () => {
     const { r, sent } = await show();
     await open(r, "Primary", "Charizard");
-    assert(choice(r, "pc") && choice(r, "trade"));
-    assert(/PC or Trade \/ Sell adds a copy you own — you'll choose whether this Goal stays\./.test(flat(sheet(r))), flat(sheet(r)));
+    await press(choice(r, "pc"));
+    eq(choice(r, "pc").props["aria-pressed"], true);
     eq(sent.length, 0);
   });
-  /* RESTATED (P6-F4 B4) */
-  test("on a copy, Primary and Secondary start a Goal, and the page says so", async () => {
+  test("on a copy, Primary and Secondary are states to choose; choosing sends nothing", async () => {
     const { r, sent } = await show();
     await open(r, "Trade / Sell", "Pikachu");
-    assert(choice(r, "primary") && choice(r, "secondary"));
-    assert(/Primary or Secondary starts a Goal for another copy — this copy stays yours\./.test(flat(sheet(r))), flat(sheet(r)));
+    await press(choice(r, "secondary"));
+    eq(choice(r, "secondary").props["aria-pressed"], true);
     eq(sent.length, 0);
   });
-  /* (P6-F4 B4: still true of the page itself — record-making lives only in CardCross.jsx, behind its own confirmation) */
+  /* (P6-F4 B5: change-state joins; the page still makes no record) */
   test("the page's steps: changes to the same record, and removal — never conversion or record-making", () => {
     /* SUPERSEDED IN PART (P6-F4 B2B): removal (stop-looking, forget-copy) is now on the page, behind a confirmation */
     const src = fs.readFileSync(path.join(ROOT, "client/collector/CardEdit.jsx"), "utf8");
     const kinds = [...src.matchAll(/kind: "([a-z-]+)"/g)].map((m) => m[1]);
-    eq(json([...new Set(kinds)].sort()), json(["correct-copy", "forget-copy", "how-hard", "keeping", "offering", "stop-looking", "wanted-copy"]), "the page's steps");
+    eq(json([...new Set(kinds)].sort()), json(["change-state", "correct-copy", "forget-copy", "how-hard", "keeping", "offering", "stop-looking", "wanted-copy"]), "the page's steps");
     assert(!/start-looking|record-copy/.test(src), "the page can make a record");
   });
 });
@@ -291,8 +300,9 @@ describe("E. refusals are said, never claimed", () => {
     const { r, refreshes } = await show({ answer: () => ({ ok: false, refused: "goal-locked" }) });
     await open(r, "Primary", "Charizard");
     await press(choice(r, "secondary")); await save(r);
-    assert(/Nothing was saved: how hard you're looking could not be saved/.test(flat(sheet(r))), flat(sheet(r)));
-    assert(/active deal/i.test(flat(sheet(r))), "the reason is not said: " + flat(sheet(r)));
+    /* RESTATED (P6-F4 B5): the state step's own words */
+    assert(/This card is part of an active deal, so it stays as it is until the deal ends\./.test(flat(sheet(r))), flat(sheet(r)));
+    eq(choice(r, "primary").props["aria-pressed"], true, "the old state is not shown");
     assert(!/✓/.test(flat(sheet(r))));
     eq(refreshes.length, 0);
     assert(tileOf(r, "Primary", "Charizard"), "the refused change reached the tile");
@@ -301,7 +311,8 @@ describe("E. refusals are said, never claimed", () => {
     const { r, refreshes } = await show({ answer: () => ({ ok: false, refused: "not-found" }) });
     await open(r, "PC", "Charizard");
     await press(choice(r, "trade")); await save(r);
-    assert(/Nothing was saved/.test(flat(sheet(r))));
+    /* RESTATED (P6-F4 B5): the state step's own words */
+    assert(/This card changed elsewhere\. The latest is shown\./.test(flat(sheet(r))), flat(sheet(r)));
     eq(refreshes.length, 1, "a stale screen was not re-read");
   });
   test("lost contact: said honestly, and re-read", async () => {
@@ -463,7 +474,7 @@ describe("H. accessibility and shape", () => {
 describe("I. boundaries", () => {
   test("the section still names no command; the page uses the step words it was handed", () => {
     const { EXPOSED_COMMANDS } = require("../server/exposed-commands.js");
-    eq(EXPOSED_COMMANDS.length, 29, "the production door is unchanged");
+    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(EXPOSED_COMMANDS.length, 30, "the production door is unchanged");
     for (const f of ["client/collector/sections/Binder.jsx", "client/collector/CardEdit.jsx"]) {
       const src = fs.readFileSync(path.join(ROOT, f), "utf8");
       for (const c of EXPOSED_COMMANDS) assert(!new RegExp(`["']${c}["']`).test(src), `${f} names ${c}`);

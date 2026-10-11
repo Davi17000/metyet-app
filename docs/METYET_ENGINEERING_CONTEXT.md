@@ -49,6 +49,52 @@ physical facts.
 For new CollectorCopies there is no durable "Haven't decided." Once
 saved, disposition switches `PC ↔ Trade/Sell`.
 
+### Changing a card's collecting state (P6-F4 Batch 5, founder-approved)
+
+**Collector-facing: one card, four states. Underneath: Goal and
+CollectorCopy remain distinct records.** A saved card shows all four
+states; the Collector selects one and presses Submit Update. One
+server-authoritative, atomic command — `changeCollectingState({ goalId |
+collectorCopyId, from, to })` — carries it:
+
+- **Same type** (`Primary ↔ Secondary`, `PC ↔ Trade/Sell`): the same
+  record, under exactly the rules of `updateGoalTier` /
+  `setCollectorCopyKept` / `setCollectorCopyOffered`. The id is stable.
+- **Cross type** (Goal ↔ CollectorCopy): one commit writes the other kind
+  of record on the **same canonical printing**, re-points the **same
+  Binder membership row** at it (archived Binder included — a re-point is
+  not new filing), and removes the source. **The record id changes**; the
+  command returns the new one. Never a second visible card; never merged
+  with an existing record.
+- **Nothing discarded:** the new record carries `formerly`, an append-only
+  lineage of `{ kind, id, at, facts }` — every earlier record's full facts
+  (a copy's grade, condition, cert, value, photos, dates, disposition; a
+  Goal's tier, wanted grade, note, dates). Bounded at
+  `D.COLLECTING_LINEAGE_MAX` (64) by **refusal** (`lineage-full`), never by
+  truncation. Stored in the record's JSON attributes (no migration);
+  Collector-only — no partner allow-list names it.
+- **Nothing asserted:** a copy made from a Goal is born with **no** grade
+  or condition (a wanted grade is not a physical fact). The card may offer,
+  after the change, "You were looking for PSA 9 — is this one PSA 9?" or
+  "Your earlier copy: … Restore these"; a tap only fills the draft, and
+  Submit Update sends it as an ordinary edit. A Goal made from a copy wants
+  what the copy is (a preference, editable).
+- **Refused, changing nothing:** not the Collector's; unknown state
+  (`invalid-state`); stale screen (`state-changed`); legacy non-canonical
+  record (`state-change-unsupported`); Goal → copy while an active
+  opportunity names the Goal (`goal-locked`); copy → Goal while a deal
+  holds the copy (`copy-reserved` / `copy-committed`), if any trade ever
+  named it (`copy-in-use`), if a Trusted Partner marked interest
+  (`partner-interest` — partner relationships are never silently
+  discarded), if a Goal for the printing exists (`duplicate-goal`), or if
+  the copy lacks grade/condition (`criteria-required`).
+- **Retry-safe:** a repeat of a change that landed — including after a
+  lost answer, found through `formerly` — is answered as done, never done
+  twice; a race from a stale `from` is `state-changed`.
+
+Creating an additional Goal or copy is Browse's and Binder "+ Add cards"'
+job, not a state change.
+
 ## 3. Binder doctrine
 
 **State answers why this specific thing matters. Binder answers how it

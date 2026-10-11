@@ -65,6 +65,10 @@ const applyStep = (s, step) => {
   const goals = (f) => ({ ...s, goals: s.goals.map((g) => (g.id === step.goalId ? f(g) : g)) });
   const copies = (f) => ({ ...s, collectorCopies: s.collectorCopies.map((c) => (c.id === step.copyId ? f(c) : c)) });
   if (step.kind === "how-hard") return goals((g) => ({ ...g, tier: step.tier }));
+  /* (P6-F4 B5: a same-type change-state is the same record's tier or disposition) */
+  if (step.kind === "change-state" && step.goalId) return { ...s, goals: s.goals.map((g) => (g.id === step.goalId ? { ...g, tier: step.to } : g)) };
+  if (step.kind === "change-state") return { ...s, collectorCopies: s.collectorCopies.map((c) => (c.id === step.collectorCopyId
+    ? (step.to === "pc" ? { ...c, keeping: true, offered: false } : { ...c, offered: true, keeping: false }) : c)) };
   if (step.kind === "wanted-copy") return goals((g) => ({ ...g, desired: step.desired }));
   if (step.kind === "correct-copy") return copies((c) => ({ ...c, ...step.patch }));
   if (step.kind === "keeping") return copies((c) => ({ ...c, keeping: true, offered: false }));
@@ -149,16 +153,17 @@ describe("A. the record's own saved answers, already chosen", () => {
 
 /* ============================================================== B */
 describe("B. Save changes sends only what changed", () => {
-  test("Primary → Secondary: one how-hard step on that Goal; Raw · Near Mint and the binder untouched", async () => {
+  /* RESTATED (P6-F4 B5): the state step is change-state (changeCollectingState) */
+  test("Primary → Secondary: one state step on that Goal; Raw · Near Mint and the binder untouched", async () => {
     const s = await show();
     await open(s.r, /Mudkip/);
     await tap(choice(s.r, "Secondary"));
     eq(saveBtn(s.r).props["aria-disabled"], false);
     await save(s.r);
-    eq(json(steps(s.sent)), json([{ kind: "how-hard", goalId: "g-mud", tier: "secondary" }]));
+    eq(json(steps(s.sent)), json([{ kind: "change-state", goalId: "g-mud", from: "primary", to: "secondary" }]));
     eq(s.sent[0][1], "cc-mud-r", "the exact card");
     eq(json(pressed(s.r)), json(["Secondary", "Raw", "Near Mint"]), "the configuration was reset");
-    assert(/✓ Saved — how important it is\./.test(flat(page(s.r))));
+    assert(/✓ Saved — Secondary\./.test(flat(page(s.r))));
     eq(json(s.live.binderMemberships), json(STATE().binderMemberships), "the binder moved");
     eq(saveBtn(s.r).props["aria-disabled"], true, "Save stays ready after the change is saved");
   });
@@ -181,12 +186,13 @@ describe("B. Save changes sends only what changed", () => {
     await save(s.r);
     eq(json(steps(s.sent)), json([{ kind: "wanted-copy", goalId: "g-mud", desired: { grade: "PSA 10" } }]));
   });
-  test("a copy: PC → Trade / Sell is one offering step; its grading, cert and value stay", async () => {
+  /* RESTATED (P6-F4 B5) */
+  test("a copy: PC → Trade / Sell is one state step; its grading, cert and value stay", async () => {
     const s = await show();
     await open(s.r, /PC.*Charizard/);
     await tap(choice(s.r, "Trade / Sell"));
     await save(s.r);
-    eq(json(steps(s.sent)), json([{ kind: "offering", copyId: "k-a", offered: true }]));
+    eq(json(steps(s.sent)), json([{ kind: "change-state", collectorCopyId: "k-a", from: "pc", to: "trade" }]));
     eq(json(pressed(s.r)), json(["Trade / Sell", "Graded", "PSA 8"]));
   });
   test("a copy's grade, cert and value together are ONE correct-copy patch, naming only what changed", async () => {
@@ -247,7 +253,7 @@ describe("B.1 an owned copy's state, both ways (P6-F4 B2B.1)", () => {
     const s = await show();
     await open(s.r, /PC.*Charizard/);
     await tap(choice(s.r, "Trade / Sell")); await save(s.r);
-    eq(json(steps(s.sent)), json([{ kind: "offering", copyId: "k-a", offered: true }]));
+    eq(json(steps(s.sent)), json([{ kind: "change-state", collectorCopyId: "k-a", from: "pc", to: "trade" }]));
     await backTo(s.r);
     await open(s.r, /Trade \/ Sell.*Charizard #4 · Holo · PSA 8/);
     eq(json(pressed(s.r)), json(["Trade / Sell", "Graded", "PSA 8"]));
@@ -260,7 +266,7 @@ describe("B.1 an owned copy's state, both ways (P6-F4 B2B.1)", () => {
     const s = await show();
     await open(s.r, /Trade \/ Sell.*Charizard/);
     await tap(choice(s.r, "PC")); await save(s.r);
-    eq(json(steps(s.sent)), json([{ kind: "keeping", copyId: "k-b", keeping: true }]));
+    eq(json(steps(s.sent)), json([{ kind: "change-state", collectorCopyId: "k-b", from: "trade", to: "pc" }]));
     await backTo(s.r);
     await open(s.r, /PC.*Charizard #4 · Holo · Raw/);
     eq(json(pressed(s.r)), json(["PC", "Raw", "Lightly Played"]));
@@ -271,7 +277,8 @@ describe("B.1 an owned copy's state, both ways (P6-F4 B2B.1)", () => {
     const s = await show({ answer: () => ({ ok: false, refused: "copy-committed" }) });
     await open(s.r, /PC.*Charizard/);
     await tap(choice(s.r, "Trade / Sell")); await save(s.r);
-    assert(!/✓/.test(flat(page(s.r))) && /Nothing was saved/.test(flat(page(s.r))), flat(page(s.r)));
+    /* RESTATED (P6-F4 B5): the state step's own words */
+    assert(!/✓/.test(flat(page(s.r))) && /This copy is part of a deal, so it stays in your collection\./.test(flat(page(s.r))), flat(page(s.r)));
     await backTo(s.r);
     await open(s.r, /PC.*Charizard/);
     eq(choice(s.r, "PC").props["aria-pressed"], true, "the refused state is shown as saved");
@@ -306,21 +313,24 @@ describe("D. a record's version is its identity", () => {
 
 /* ============================================================== E */
 describe("E. refusals and partial saves", () => {
-  test("a refusal: said in production's words, nothing claimed, the answer kept", async () => {
+  /* RESTATED (P6-F4 B5, founder): a refused state change shows the ORIGINAL
+     saved state again, and says why — it no longer keeps the refused draft */
+  test("a refusal: said, nothing claimed, the saved state shown again", async () => {
     const s = await show({ answer: () => ({ ok: false, refused: "goal-locked" }) });
     await open(s.r, /Mudkip/);
     await tap(choice(s.r, "Secondary")); await save(s.r);
-    assert(/Nothing was saved: how hard you're looking could not be saved/.test(flat(page(s.r))), flat(page(s.r)));
+    assert(/This card is part of an active deal, so it stays as it is until the deal ends\./.test(flat(page(s.r))), flat(page(s.r)));
     assert(!/✓/.test(flat(page(s.r))));
-    eq(json(pressed(s.r)), json(["Secondary", "Raw", "Near Mint"]), "the answer was lost");
+    eq(json(pressed(s.r)), json(["Primary", "Raw", "Near Mint"]), "the refused state is still shown");
   });
   test("two changes, the second refused: says exactly what was saved and what was not", async () => {
-    const s = await show({ answer: (step) => (step.kind === "how-hard" ? { ok: false, refused: "goal-locked" } : { ok: true }) });
+    /* RESTATED (P6-F4 B5): the state is the last step, change-state */
+    const s = await show({ answer: (step) => (step.kind === "change-state" ? { ok: false, refused: "goal-locked" } : { ok: true }) });
     await open(s.r, /Mudkip/);
     await tap(choice(s.r, "Lightly Played")); await tap(choice(s.r, "Secondary"));
     await save(s.r);
-    eq(json(steps(s.sent).map((x) => x.kind)), json(["wanted-copy", "how-hard"]));
-    assert(/which copy you want was saved\. But how hard you're looking could not be saved/.test(flat(page(s.r))), flat(page(s.r)));
+    eq(json(steps(s.sent).map((x) => x.kind)), json(["wanted-copy", "change-state"]));
+    assert(/what you're looking for saved\. This card is part of an active deal/.test(flat(page(s.r))), flat(page(s.r)));
     assert(!/✓/.test(flat(page(s.r))), "a partial save claimed success");
     eq(json(pressed(s.r)), json(["Primary", "Raw", "Lightly Played"]), "the page does not show what is actually saved");
   });
@@ -401,7 +411,7 @@ describe("G. shape", () => {
   });
   test("the client names no command; the allow-list is unchanged", () => {
     const { EXPOSED_COMMANDS } = require("../server/exposed-commands.js");
-    eq(EXPOSED_COMMANDS.length, 29);
+    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(EXPOSED_COMMANDS.length, 30);
     const src = read("client/collector/CardEdit.jsx");
     for (const c of EXPOSED_COMMANDS) assert(!new RegExp(`["']${c}["']`).test(src), `CardEdit names ${c}`);
   });
