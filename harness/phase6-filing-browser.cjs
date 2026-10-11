@@ -969,6 +969,102 @@ describe("Four states, one Submit, through production (P6-F4 B5)", () => {
   });
 });
 
+/* P6-F4 BATCH 5.1 — SEQUENTIAL EDITING ON ONE OPEN EDITOR. The founder saw
+   a card stop accepting updates after its first. Every save here is followed
+   by another on the SAME open page — no close, no reopen, no reload — and
+   each is checked against the server: the record, its state, its grading,
+   the editor's selection, and that Submit Update is off after a save and on
+   again for the next change. Same-record and cross-type (new id) alike. */
+describe("Sequential edits on one open editor, through production (P6-F4 B5.1)", () => {
+  test("state ↔ state, grade → grade → grade, condition → condition, state then grade, grade then state, and across the pair — each save leaves the editor ready for the next", async () => {
+    await before();
+    const api = async (u) => (await fetch(ctx.url + u, { headers: { authorization: "Bearer casey" } })).json();
+    const jungle = (await api("api/card-contexts?pokedex=25")).contexts.find((c) => c.collectorNumber === "25");
+    const pikaJ = (await api(`api/card-contexts/${jungle.cardContextId}`)).canonicalCards[0].canonicalCardId;
+    const rs59 = (await api("api/card-contexts?pokedex=258")).contexts.find((c) => c.collectorNumber === "59");
+    const mud59 = (await api(`api/card-contexts/${rs59.cardContextId}`)).canonicalCards.find((k) => k.finish === "non_holo").canonicalCardId;
+    const goalId = await ctx.post("addGoal", { canonicalCardId: pikaJ, tier: "primary", desired: { grade: "PSA 8" } });
+    await ctx.post("fileObject", { binderId: ctx.ids.gen1, goalId });
+    const copyId = await ctx.post("addCollectorCopy", { copy: { canonicalCardId: mud59, grade: "Raw", condition: "Near Mint", keeping: true } });
+    await ctx.post("fileObject", { binderId: ctx.ids.mud, collectorCopyId: copyId });
+
+    const context = await browser.newContext({ ...PHONE }); const page = await context.newPage();
+    const errors = []; page.on("pageerror", (e) => errors.push(e.message));
+    const sent = []; page.on("request", (r) => { if (r.url().includes("/api/commands")) sent.push(JSON.parse(r.postData() || "{}")); });
+    await signIn(page, ctx.url);
+    await page.tap("nav[aria-label=Collector] button:has-text('Binders')"); await page.waitForTimeout(500);
+    const sec = page.locator("button.mcs-sechead", { hasText: /^Binders/ }).first();
+    if ((await sec.getAttribute("aria-expanded")) !== "true") await sec.tap();
+    const submit = page.locator(".mcs-ce .mcs-cd-dock .mcs-cd-add");
+    const off = async () => (await submit.getAttribute("aria-disabled")) === "true";
+    const shown = () => page.locator(".mcs-ce [data-q='state'] .mcs-cd-choice[aria-pressed='true']").getAttribute("data-st");
+    const choose = async (t) => { const c = page.locator(".mcs-ce .mcs-cd-choice", { has: page.locator("b", { hasText: new RegExp(`^${t}$`) }) }).first(); await c.scrollIntoViewIfNeeded(); await c.tap(); await page.waitForTimeout(120); };
+    const record = async (canon) => { const w = await ctx.world();
+      const g = w.goals.filter((x) => x.canonicalCardId === canon); const c = w.collectorCopies.filter((x) => x.canonicalCardId === canon);
+      eq(g.length + c.length, 1, "not exactly one record of this card");
+      const r = g[0] || c[0];
+      return { id: r.id, kind: g[0] ? "goal" : "copy", state: g[0] ? r.tier : r.offered ? "trade" : r.keeping ? "pc" : null,
+        grading: g[0] ? JSON.stringify(r.desired || null) : JSON.stringify([r.grade || null, r.condition || null]),
+        home: ((w.binderMemberships || []).find((m) => m.goalId === r.id || m.collectorCopyId === r.id) || {}).binderId || null }; };
+    /* one save: choose, Submit on, submit, the server's answer, the editor after */
+    const step = async (canon, picks, expect) => {
+      assert(await off(), "Submit is on before anything was changed");
+      for (const t of picks) await choose(t);
+      assert(!(await off()), `Submit is off after choosing ${picks.join(" + ")}`);
+      const n = sent.length;
+      await submit.tap();
+      await page.locator(".mcs-ce .mcs-cd-hint.ack").waitFor({ timeout: 8000 });
+      await page.waitForTimeout(200);
+      eq(sent.length - n, expect.commands, `${picks.join(" + ")}: commands sent`);
+      const r = await record(canon);
+      eq(JSON.stringify([r.state, r.grading]), JSON.stringify([expect.state, expect.grading]), `${picks.join(" + ")}: the server`);
+      eq(await shown(), expect.state, `${picks.join(" + ")}: the editor shows another state`);
+      assert(await off(), `${picks.join(" + ")}: Submit stays on after the save`);
+      return r;
+    };
+    const openTile = async (key) => { const t = page.locator(`li.mcs-otile[data-key='${key}'] button.mcs-otap`).first(); await t.scrollIntoViewIfNeeded(); await t.tap(); await page.locator(".mcs-ce").waitFor(); await page.waitForTimeout(300); };
+
+    /* A Goal, one open page: Primary → Secondary → Primary; PSA 8 → 9 → 10;
+       state then grade; grade then state; then across: PC → Trade / Sell */
+    const row = page.locator(`.mcs-bcover[data-binder='${ctx.ids.gen1}'] button.mcs-bhead`);
+    if ((await row.getAttribute("aria-expanded")) !== "true") await row.tap();
+    await openTile(`g:${goalId}`);
+    const G = (state, grade) => ({ state, grading: JSON.stringify({ grade }), commands: 1 });
+    await step(pikaJ, ["Secondary"], G("secondary", "PSA 8"));
+    await step(pikaJ, ["Primary"], G("primary", "PSA 8"));
+    await step(pikaJ, ["PSA 9"], G("primary", "PSA 9"));
+    await step(pikaJ, ["PSA 10"], G("primary", "PSA 10"));
+    await step(pikaJ, ["Secondary"], G("secondary", "PSA 10"));
+    await step(pikaJ, ["PSA 9"], G("secondary", "PSA 9"));
+    await step(pikaJ, ["PSA 8", "Primary"], { ...G("primary", "PSA 8"), commands: 2 });
+    const start = await record(pikaJ);
+    const asCopy = await step(pikaJ, ["PC"], { state: "pc", grading: JSON.stringify([null, null]), commands: 1 });
+    assert(asCopy.id !== start.id && asCopy.kind === "copy" && asCopy.home === start.home, "the cross-type change is not one re-made record in the same binder");
+    await step(pikaJ, ["Trade \\/ Sell"], { state: "trade", grading: JSON.stringify([null, null]), commands: 1 });
+    await step(pikaJ, ["PC"], { state: "pc", grading: JSON.stringify([null, null]), commands: 1 });
+    await step(pikaJ, ["Graded", "PSA 8"], { state: "pc", grading: JSON.stringify(["PSA 8", null]), commands: 1 });
+    const back = await step(pikaJ, ["Primary"], { state: "primary", grading: JSON.stringify({ grade: "PSA 8" }), commands: 1 });
+    assert(back.kind === "goal" && back.id !== asCopy.id && back.home === start.home, "back across the pair is not one re-made record");
+    await step(pikaJ, ["Secondary"], G("secondary", "PSA 8"));
+    await page.locator(".mcs-ce .mcs-cd-back").tap(); await page.waitForTimeout(300);
+
+    /* A copy, one open page: Raw Near Mint → Lightly Played → Near Mint;
+       PC → Trade / Sell → PC; Primary → Trade / Sell across the pair */
+    const mrow = page.locator(`.mcs-bcover[data-binder='${ctx.ids.mud}'] button.mcs-bhead`);
+    if ((await mrow.getAttribute("aria-expanded")) !== "true") await mrow.tap();
+    await openTile(`c:${copyId}`);
+    const K = (state, g, c) => ({ state, grading: JSON.stringify([g, c]), commands: 1 });
+    await step(mud59, ["Lightly Played"], K("pc", "Raw", "Lightly Played"));
+    await step(mud59, ["Near Mint"], K("pc", "Raw", "Near Mint"));
+    await step(mud59, ["Trade \\/ Sell"], K("trade", "Raw", "Near Mint"));
+    await step(mud59, ["PC"], K("pc", "Raw", "Near Mint"));
+    await step(mud59, ["Primary"], { state: "primary", grading: JSON.stringify({ grade: "Raw", condition: "Near Mint" }), commands: 1 });
+    await step(mud59, ["Trade \\/ Sell"], { state: "trade", grading: JSON.stringify([null, null]), commands: 1 });
+    eq(errors.length, 0, errors.join(" | "));
+    await context.close();
+  });
+});
+
 if (!chromium) {
   console.log("SKIPPED: Playwright is not installed.");
 } else {
