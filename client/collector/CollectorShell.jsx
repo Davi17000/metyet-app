@@ -751,6 +751,32 @@ ${STATE_CSS}
 .mcs-snack-wrap.over-page { bottom:calc(132px + env(safe-area-inset-bottom, 0px)); }
 /* the record's own pair, side by side and thumb-sized (B2B.1) */
 .mcs-ce .mcs-ce-pair .mcs-cd-choice { min-height:64px; }
+/* all four states, two by two (B4): the record's own pair first; the other
+   pair opens the guided step, so it wears a dashed edge — it adds, not edits */
+.mcs-ce .mcs-ce-four { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.mcs-ce .mcs-ce-four .mcs-cd-choice { min-height:60px; padding:9px 12px; }
+.mcs-ce .mcs-ce-four .mcs-cd-choice.cross { border-style:dashed; }
+.mcs-cx .mcs-cx-hd { display:flex; gap:14px; align-items:center; margin:0 0 4px; }
+.mcs-cx .mcs-cx-hd .mcs-cd-ident { flex:1; min-width:0; margin:0; }
+.mcs-cx .mcs-cx-art { flex:0 0 72px; width:72px; }
+.mcs-cx .mcs-cx-hd.done { flex-direction:column; align-items:center; text-align:center; }
+.mcs-cx .mcs-cx-hd.done .mcs-cx-art { flex-basis:auto; width:180px; }
+.mcs-cx .mcs-cx-done { text-align:center; } .mcs-cx .mcs-cx-done p.mcs-cx-ok { justify-content:center; }
+.mcs-cx .mcs-cx-done .mcs-cx-acts { justify-content:center; }
+.mcs-cx .mcs-cx-hd h2 { font-size:21px; }
+.mcs-cx p.mcs-cx-lede { margin:4px 0 12px; font-size:14px; color:var(--text); }
+.mcs-cx .mcs-cx-rec { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:13px; color:var(--muted); margin:0 0 6px; }
+.mcs-cx .mcs-cx-k { font-weight:700; color:var(--text); }
+.mcs-cx p.mcs-cx-hint { margin:0 0 8px; font-size:12.5px; color:var(--muted); }
+.mcs-cx .mcs-cd-row + p.mcs-cx-hint { margin:8px 0 0; }
+.mcs-cx .mcs-cx-goal { flex-direction:column; }
+.mcs-cx .mcs-cx-acts { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:10px 0 0; }
+.mcs-cx .mcs-cd-dock .mcs-cx-acts { margin:0; } .mcs-cx .mcs-cd-dock .mcs-cx-acts .mcs-cd-add { flex:1; }
+.mcs-cx .mcs-cx-done { padding:8px 0; }
+.mcs-cx p.mcs-cx-ok { display:flex; align-items:center; gap:8px; margin:0 0 8px; font-size:16px; }
+.mcs-cx p.mcs-cx-line { margin:0 0 6px; font-size:14px; color:var(--text); }
+.mcs-cx p.mcs-cx-line.warn { color:var(--amber); }
+.mcs-cx .mcs-cx-acts .mcs-go { min-height:44px; }
 .mcs-ce .mcs-ce-home { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .mcs-ce .mcs-ce-home b { font-size:15px; }
 .mcs-ce .mcs-ce-home .mcs-go { min-height:44px; min-width:96px; }

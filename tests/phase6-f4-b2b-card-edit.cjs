@@ -230,7 +230,9 @@ describe("B. Save changes sends only what changed", () => {
 /* ============================================================== B.1 */
 describe("B.1 an owned copy's state, both ways (P6-F4 B2B.1)", () => {
   const backTo = async (r) => { await tap(page(r).findAll((n) => cls(n) === "mcs-cd-back")[0]); };
-  test("the state question comes first, right under the card, with both choices", async () => {
+  /* RESTATED (P6-F4 B4): all four states, the record's own pair first among
+     equals; the other pair opens the guided step (tests/phase6-f4-b4-guided-transitions.cjs) */
+  test("the state question comes first, right under the card, with all four states", async () => {
     const { r } = await show();
     await open(r, /PC.*Charizard/);
     const qs = page(r).findAll((n) => n.props && n.props["data-q"]).map((n) => n.props["data-q"]);
@@ -238,7 +240,8 @@ describe("B.1 an owned copy's state, both ways (P6-F4 B2B.1)", () => {
     const st = page(r).findAll((n) => n.props && n.props["data-q"] === "state")[0];
     assert(/^What does this card mean to you\?/.test(flat(st)), flat(st));
     eq(json(st.findAll((n) => n.type === "button").map((b) => [b.props["data-st"], flat(b), b.props["aria-pressed"]])),
-      json([["pc", "PC A keeper", true], ["trade", "Trade / Sell Available for trade or sale", false]]));
+      json([["primary", "Primary Actively hunting", false], ["secondary", "Secondary I'm interested in this card.", false],
+        ["pc", "PC A keeper", true], ["trade", "Trade / Sell Available for trade or sale", false]]));
   });
   test("PC → Trade / Sell → Save → reopen: Trade / Sell is selected; grade, cert, value and binder unchanged", async () => {
     const s = await show();

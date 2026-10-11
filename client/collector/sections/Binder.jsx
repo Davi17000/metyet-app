@@ -605,8 +605,10 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
   /* (A card its owner has just removed, from its own page, goes quietly: that
      is the outcome they asked for, and the bar says so instead.) */
   const removingRef = useRef(null);
+  const heldRef = useRef(null);
   useEffect(() => {
     if (!detailKey || objs.some((x) => x.key === detailKey)) return;
+    if (heldRef.current && heldRef.current.key === detailKey) return;   // its guided step is saying what happened
     setDetailKey(null); setMoving(false);
     if (removingRef.current && removingRef.current.key === detailKey) {
       setToast({ text: removingRef.current.said, undo: null }); removingRef.current = null; return;
@@ -707,11 +709,14 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
      opened on its saved answers (CardEdit). Its Move is Batch 2A's chooser;
      its saves and removals are the steps the entrance already maps. */
   const cardEdit = () => {
-    const o = detailKey ? objs.find((x) => x.key === detailKey) || null : null;
+    /* A GUIDED STEP THAT STOPS LOOKING (B4) keeps its page while the Goal goes,
+       so the result is said; held only while it asks */
+    const o = detailKey ? objs.find((x) => x.key === detailKey)
+      || (heldRef.current && heldRef.current.key === detailKey ? heldRef.current : null) : null;
     if (!o || (o.kind !== "goal" && o.kind !== "copy")) return null;
-    const close = () => { setDetailKey(null); setMoving(false); };
+    const close = () => { heldRef.current = null; setDetailKey(null); setMoving(false); };
     const save = onSpecify ? (step, id) => {
-      if (step.kind === "stop-looking" || step.kind === "forget-copy") {
+      if ((step.kind === "stop-looking" || step.kind === "forget-copy") && !heldRef.current) {
         removingRef.current = { key: o.key, said: step.kind === "stop-looking" ? `Stopped looking for ${nameOf(o)}.` : `Removed this copy of ${nameOf(o)}.` };
       }
       return Promise.resolve(onSpecify(step, id)).then((answer) => {
@@ -721,7 +726,10 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
     } : null;
     return (
       <CardEdit key={o.key} kind={o.kind} thing={o.thing} known={described[o.cardKey] || null}
-        homeName={o.homeName} homeAway={o.homeAway} busy={!!filingKey} onClose={close} onSave={save}
+        homeName={o.homeName} homeAway={o.homeAway} homeId={o.homeId || null} state={state}
+        onOpenRecord={(key) => { heldRef.current = null; setMoving(false); setDetailKey(key); }}
+        onHold={(on) => { heldRef.current = on ? o : null; }}
+        busy={!!filingKey} onClose={close} onSave={save}
         onMove={filable(o) ? () => setMoving(true) : null} onRefresh={onRefresh}
         onRemoved={(said) => { removingRef.current = null; close(); setToast({ text: said, undo: null }); }} />
     );

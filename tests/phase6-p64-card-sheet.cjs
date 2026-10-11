@@ -152,12 +152,14 @@ const steps = (sent) => sent.filter(([k]) => k === "step").map(([, s]) => s);
 
 /* ============================================================== A */
 describe("A. a Goal: Primary and Secondary", () => {
-  test("the page opens on the Goal's saved tier and wanted grade; only its own pair is offered", async () => {
+  /* RESTATED (P6-F4 B4): all four states are shown; the copy pair is not an
+     edit of this Goal — it opens the guided step (tests/phase6-f4-b4-guided-transitions.cjs) */
+  test("the page opens on the Goal's saved tier and wanted grade; the copy pair is marked as adding, not editing", async () => {
     const { r, sent } = await show();
     await open(r, "Primary", "Charizard");
     eq(choice(r, "primary").props["aria-pressed"], true);
     eq(choice(r, "secondary").props["aria-pressed"], false);
-    for (const m of ["pc", "trade"]) eq(choice(r, m), null, `${m} offered on a Goal`);
+    for (const m of ["pc", "trade"]) { eq(choice(r, m).props["aria-pressed"], false); assert(/\bcross\b/.test(choice(r, m).props.className), `${m} looks like an edit`); }
     const pressed = sheet(r).findAll((n) => n.type === "button" && n.props["aria-pressed"] === true).map(flat);
     assert(pressed.includes("Graded") && pressed.includes("PSA 9"), "the wanted grade is not selected: " + pressed);
     assert(/Charizard/.test(flat(sheet(r))) && /Base Set · 4/.test(flat(sheet(r))) && /Holo — the version you saved/.test(flat(sheet(r))) && !/holofoil/.test(flat(sheet(r))), "the card's identity");
@@ -219,20 +221,23 @@ describe("B. a copy: PC and Trade / Sell", () => {
 
 /* ============================================================== C */
 describe("C. a Goal is never turned into a copy, nor a copy into a Goal", () => {
-  test("on a Goal, PC and Trade / Sell are not offered, and the page says why", async () => {
+  /* RESTATED (P6-F4 B4): offered now, as a guided addition; the page says what they do */
+  test("on a Goal, PC and Trade / Sell add a copy, and the page says so", async () => {
     const { r, sent } = await show();
     await open(r, "Primary", "Charizard");
-    eq(choice(r, "pc"), null); eq(choice(r, "trade"), null);
-    assert(/This is a card you're looking for\. If you own one, add it from Browse — this Goal stays\./.test(flat(sheet(r))), flat(sheet(r)));
+    assert(choice(r, "pc") && choice(r, "trade"));
+    assert(/PC or Trade \/ Sell adds a copy you own — you'll choose whether this Goal stays\./.test(flat(sheet(r))), flat(sheet(r)));
     eq(sent.length, 0);
   });
-  test("on a copy, Primary and Secondary are not offered, and the page says why", async () => {
+  /* RESTATED (P6-F4 B4) */
+  test("on a copy, Primary and Secondary start a Goal, and the page says so", async () => {
     const { r, sent } = await show();
     await open(r, "Trade / Sell", "Pikachu");
-    eq(choice(r, "primary"), null); eq(choice(r, "secondary"), null);
-    assert(/This is a copy you own\. To look for another, start a Goal from Browse\./.test(flat(sheet(r))), flat(sheet(r)));
+    assert(choice(r, "primary") && choice(r, "secondary"));
+    assert(/Primary or Secondary starts a Goal for another copy — this copy stays yours\./.test(flat(sheet(r))), flat(sheet(r)));
     eq(sent.length, 0);
   });
+  /* (P6-F4 B4: still true of the page itself — record-making lives only in CardCross.jsx, behind its own confirmation) */
   test("the page's steps: changes to the same record, and removal — never conversion or record-making", () => {
     /* SUPERSEDED IN PART (P6-F4 B2B): removal (stop-looking, forget-copy) is now on the page, behind a confirmation */
     const src = fs.readFileSync(path.join(ROOT, "client/collector/CardEdit.jsx"), "utf8");

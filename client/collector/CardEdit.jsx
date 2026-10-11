@@ -11,9 +11,11 @@
                           to change). To record a different version, Browse.
      raw or graded        preselected; editable
      condition / grade    preselected; editable (PSA, the domain's only company)
-     what it is to you    the record's own pair only — Primary / Secondary for
-                          a Goal, PC / Trade / Sell for a copy. A Goal never
-                          becomes a copy here, or the other way round.
+     what it is to you    all four states (P6-F4 B4). The record's own pair is
+                          an edit — Primary / Secondary on a Goal, PC / Trade /
+                          Sell on a copy. The other pair is not: it opens the
+                          guided step (CardCross.jsx), which ADDS the other
+                          record and never turns this one into it.
      binder               where it lives, and Batch 2A's one Move
      copy details         certificate and reference value (editable), when it
                           was added, photos and status (as recorded)
@@ -38,6 +40,7 @@ import { text, day, photoNote, statusLabel, isGraded, gradeConflictLine } from "
 import { explain } from "./CardSpecification.jsx";
 import { versionLabel, GRADES, CONDITIONS, Choice, Section } from "./CardDetail.jsx";
 import { STATE_STYLE } from "./states.jsx";
+import CardCross from "./CardCross.jsx";
 
 /* WHAT IS SAVED, read off the record — never inferred from the card. */
 export function savedOf(kind, thing) {
@@ -93,22 +96,24 @@ const SAVED_WORDS = {
 };
 
 export default function CardEdit({ kind, thing, known, homeName = null, homeAway = false, onClose,
-  onSave = null, onMove = null, busy = false, onRemoved = null, onRefresh = null }) {
+  onSave = null, onMove = null, busy = false, onRemoved = null, onRefresh = null,
+  state = null, homeId = null, onOpenRecord = null, onHold = null }) {
   const saved = savedOf(kind, thing);
   const [edits, setEdits] = useState({});
   const [saving, setSaving] = useState(false);
   const [ack, setAck] = useState(null);           // what the server just confirmed
   const [problem, setProblem] = useState(null);
   const [removing, setRemoving] = useState(false); // the confirmation is open
+  const [crossing, setCrossing] = useState(null);  // the other pair's state, chosen: the guided step
   const sending = useRef(false);
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
   useEffect(() => {
     if (typeof window === "undefined" || !window.addEventListener) return undefined;
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e) => { if (e.key === "Escape" && !crossing) onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, crossing]);
 
   const a = { ...saved, ...edits };
   const set = (field, value) => {
@@ -178,6 +183,7 @@ export default function CardEdit({ kind, thing, known, homeName = null, homeAway
   const version = known && known.finish ? versionLabel(known) : null;
   const imageShown = known ? known.imageLarge || known.imageSmall || null : null;
   const pair = kind === "goal" ? ["primary", "secondary"] : ["pc", "trade"];
+  const FOUR = ["primary", "secondary", "pc", "trade"];
   /* The shared language (states.jsx): its labels; its messages, with the
      Secondary sentence the founder approved for this page. */
   const TITLE = Object.fromEntries(Object.entries(STATE_STYLE).map(([k, st]) => [k, st.label]));
@@ -185,6 +191,17 @@ export default function CardEdit({ kind, thing, known, homeName = null, homeAway
     secondary: "I'm interested in this card." };
   const field = kind === "goal" ? "tier" : "disposition";
   const copy = kind === "copy" ? thing : null;
+  const canCross = Boolean(onSave) && Boolean(thing && thing.canonicalCardId);
+
+  if (crossing) {
+    return (
+      <CardCross from={kind} thing={thing} target={crossing} name={name} ident={ident} version={version}
+        art={<CardArt src={imageShown} name={name} wrap="mcs-cd-art" plate="mcs-art-plate" decorative
+          card={{ key: known && known.cardContextId, set: known && known.expansionName, number }} />}
+        homeId={homeId} homeName={homeName} homeAway={homeAway} state={state} onSave={onSave} onRefresh={onRefresh}
+        onBack={() => setCrossing(null)} onClose={onClose} onOpenRecord={onOpenRecord} onHold={onHold} />
+    );
+  }
 
   return (
     <div className="mcs-cd mcs-ce" role="dialog" aria-modal="true" aria-label={`Your ${kind === "goal" ? "Goal" : "copy"}: ${name}`}>
@@ -208,14 +225,15 @@ export default function CardEdit({ kind, thing, known, homeName = null, homeAway
             (y 848 on an 844-pt screen); it is the change a Collector makes most,
             so it comes straight after the card, both choices side by side. */}
         <Section id="state" title="What does this card mean to you?">
-          <div className="mcs-cd-row mcs-ce-pair" role="group" aria-label="What does this card mean to you?">
-            {pair.map((m) => (
-              <Choice key={m} st={m} on={a[field] === m} title={TITLE[m]} sub={SUB[m]} disabled={saving} onClick={() => set(field, m)} />
-            ))}
+          <div className="mcs-ce-pair mcs-ce-four" role="group" aria-label="What does this card mean to you?">
+            {FOUR.map((m) => (pair.includes(m)
+              ? <Choice key={m} st={m} on={a[field] === m} title={TITLE[m]} sub={SUB[m]} disabled={saving} onClick={() => set(field, m)} />
+              : <Choice key={m} st={m} on={false} extra="cross" title={TITLE[m]} sub={SUB[m]} disabled={saving || !canCross}
+                onClick={() => { setProblem(null); setCrossing(m); }} />))}
           </div>
           <p className="mcs-cd-cannot mcs-ce-note">{kind === "goal"
-            ? "This is a card you're looking for. If you own one, add it from Browse — this Goal stays."
-            : "This is a copy you own. To look for another, start a Goal from Browse."}</p>
+            ? "PC or Trade / Sell adds a copy you own — you'll choose whether this Goal stays."
+            : "Primary or Secondary starts a Goal for another copy — this copy stays yours."}</p>
         </Section>
 
         <Section id="print" title="Version">

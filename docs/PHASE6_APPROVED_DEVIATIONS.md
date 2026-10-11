@@ -66,6 +66,8 @@
 | B34 | **A saved card's version cannot be changed** on its page: a record's printing is its identity — no command changes a Goal's card, and `updateCollectorCopy` refuses `canonicalCardId`. The page shows it as fixed ("To record a different version, add it from Browse") | — | P6-F4 B2B | Founder decision 2026-10-10: show as fixed; no delete-and-recreate |
 | B35 | Edits are saved with **Save changes** (no auto-save); the prototype's sheet changed state on a tap. Removal (Stop looking / I no longer own this) and a copy's certificate and reference value are on the page — they used to be reached only through "Open full card", which is gone | — | P6-F4 B2B | Founder decision 2026-10-10: bring them in |
 | B36 | The Card Specification is reached only from an earlier filing (a legacy card-level row in a binder); no Goal, copy, or Browse door opens it | — | P6-F4 B2B / B3 | Retire with the legacy rows |
+| B37 | A guided transition's new record can go to the source record's binder or Unfiled; other binders are reached afterwards with Move | — | P6-F4 B4 | Revisit if Collectors ask to choose any binder in the step |
+| B38 | The live-Deal-Flow refusal of Stop looking (`goal-locked`) is exercised in unit tests and the existing domain suites, not in the real-browser journey (seeding a real deal needs a partner, relationship and inventory in the review server) | — | P6-F4 B4 | Add when the review world seeds a Trusted Partner deal |
 
 ## C. Unavoidable comparison differences (not product decisions)
 

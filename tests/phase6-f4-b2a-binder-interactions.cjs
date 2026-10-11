@@ -205,8 +205,9 @@ describe("A. one visual language for the four states", () => {
     /* RESTATED (P6-F4 B2B): the saved card's page offers the record's own pair, in the shared language */
     const states = sheet(r).findAll((n) => n.type === "button" && n.props["data-st"]);
     /* (B2B.1: the shared messages, with the founder's Secondary sentence) */
+    /* (B4: all four, in the shared language) */
     eq(json(states.map((b) => [b.props["data-st"], flat(b)])), json([["primary", "Primary Actively hunting"],
-      ["secondary", "Secondary I'm interested in this card."]]));
+      ["secondary", "Secondary I'm interested in this card."], ["pc", "PC A keeper"], ["trade", "Trade / Sell Available for trade or sale"]]));
     assert(states.every((b) => b.findAll((n) => n.props && n.props["data-state-icon"] === b.props["data-st"]).length === 1), "a state button has no icon");
   });
   test("Browse markers and the Phase 6 card's choices read the same mapping", () => {
