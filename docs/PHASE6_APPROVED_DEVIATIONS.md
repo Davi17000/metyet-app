@@ -68,6 +68,7 @@
 | B36 | The Card Specification is reached only from an earlier filing (a legacy card-level row in a binder); no Goal, copy, or Browse door opens it | — | P6-F4 B2B / B3 | Retire with the legacy rows |
 | B37 | A guided transition's new record can go to the source record's binder or Unfiled; other binders are reached afterwards with Move | — | P6-F4 B4 | Revisit if Collectors ask to choose any binder in the step |
 | B38 | The live-Deal-Flow refusal of Stop looking (`goal-locked`) is exercised in unit tests and the existing domain suites, not in the real-browser journey (seeding a real deal needs a partner, relationship and inventory in the review server) | — | P6-F4 B4 | Add when the review world seeds a Trusted Partner deal |
+| B39 | A copy's unsaved certificate or reference value and a Goal draft (Primary / Secondary) cannot be submitted together: the dock asks to save or undo the copy's details first, so a cross-record confirmation never silently carries same-record edits | — | P6-F4 B4.1 | Revisit if Collectors want both in one Submit |
 
 ## C. Unavoidable comparison differences (not product decisions)
 

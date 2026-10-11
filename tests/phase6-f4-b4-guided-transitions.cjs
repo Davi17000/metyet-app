@@ -1,5 +1,8 @@
 /* ============================================================================
-   PHASE 6 P6-F4 BATCH 4 — FOUR STATES, AND GUIDED TRANSITIONS (CardEdit → CardCross)
+   PHASE 6 P6-F4 BATCH 4 / 4.1 — FOUR STATES, A DRAFT, AND SUBMIT UPDATE
+   (CardEdit → CardCross). RESTATED for B4.1: a state is chosen on the card
+   as a draft; Submit Update opens the confirmation (a sheet over the card,
+   no state selector of its own) for the other pair.
    The four states describe collecting intent. Goals and owned copies remain
    distinct production records.
      A. four states      all four on every saved card; the saved one selected
@@ -134,7 +137,13 @@ const xbtn = (r, re) => cross(r).findAll((n) => n.type === "button" && re.test(f
 const confirmBtn = (r) => cross(r).findAll((n) => n.type === "button" && cls(n).includes("mcs-cd-add"))[0];
 const xpressed = (r) => cross(r).findAll((n) => n.type === "button" && n.props["aria-pressed"] === true).map((n) => (n.findAll((x) => x.type === "b")[0] || { children: [] }).children.join(""));
 const kinds = (sent) => sent.map(([s]) => s.kind);
-const startCross = async (r, tileRe, state) => { await open(r, tileRe); await tap(choice(r, state)); assert(cross(r), "no guided step"); };
+const ready = (r) => saveBtn(r).props["aria-disabled"] === false;
+const startCross = async (r, tileRe, state) => {
+  await open(r, tileRe); await tap(choice(r, state));
+  assert(!cross(r), "choosing a state opened something");
+  assert(ready(r), "Submit update is not live");
+  await save(r); assert(cross(r), "Submit update did not open the confirmation");
+};
 const homeOf = (live, k, id) => (live.binderMemberships.find((m) => m[k] === id) || {}).binderId || null;
 
 /* ============================================================== A */
@@ -153,9 +162,17 @@ describe("A. all four states, on every saved card", () => {
     eq(json(pressed(r)), json(["PC", "Graded", "PSA 8"]));
     eq(page(r).findAll((n) => n.props && n.props["data-q"] === "state")[0].findAll((n) => n.type === "button").length, 4);
   });
-  test("choosing the other pair sends nothing", async () => {
+  test("choosing the other pair: selected on the card, nothing opened, nothing sent; Submit opens the confirmation", async () => {
     const s = await show();
-    await startCross(s.r, /Primary.*Mudkip/, "PC");
+    await open(s.r, /Primary.*Mudkip/);
+    await tap(choice(s.r, "PC"));
+    eq(cross(s.r), null, "a form opened");
+    eq(json(pressed(s.r).slice(0, 1)), json(["PC"]));
+    eq(flat(saveBtn(s.r)), "Submit update");
+    assert(ready(s.r));
+    eq(s.sent.length, 0);
+    await save(s.r);
+    assert(cross(s.r) && page(s.r), "the confirmation is not over the card");
     eq(s.sent.length, 0);
   });
 });
@@ -189,14 +206,18 @@ describe("C. Goal → owned: a new copy, and the Goal only goes if they say", ()
     const s = await show();
     await startCross(s.r, /Primary.*Mudkip/, "PC");
     const t = flat(cross(s.r));
-    assert(/Do you own this card now\?/.test(t) && /MetYet will add an owned copy using this card's saved version and configuration\./.test(t), t);
-    assert(/Reverse Holo — the same printing/.test(t), t);
-    eq(json(xpressed(s.r)), json(["PC", "Raw", "Near Mint", "Mudkips", "Keep this Goal"]));
+    assert(/Add this card to your collection\?/.test(t) && /MetYet will create an owned copy using the same printing\./.test(t), t);
+    assert(/Now Primary this Goal — stays/.test(t) && /New PC a new copy · Reverse Holo/.test(t) && /Your copy Raw · Near Mint Change/.test(t), t);
+    eq(cross(s.r).findAll((n) => n.props && n.props["data-st"] && n.type === "button").length, 0, "a second state selector");
+    eq(json(xpressed(s.r)), json(["Mudkips", "Keep this Goal"]));
     assert(/I'm still looking for another copy\./.test(t) && /I've found what I wanted\./.test(t));
-    assert(/This Goal stays in Mudkips\./.test(t), t);
     eq(flat(confirmBtn(s.r)), "Add to Personal Collection");
-    await tap(xchoice(s.r, "Trade / Sell"));
+    /* switching the destination state: on the card, the draft kept */
+    await tap(xbtn(s.r, /^Cancel$/));
+    await tap(choice(s.r, "Trade / Sell")); await save(s.r);
     eq(flat(confirmBtn(s.r)), "Add to Trade / Sell");
+    await tap(xchoice(s.r, "Stop looking for this card"));
+    assert(/this Goal — you'll stop looking/.test(flat(cross(s.r))));
   });
   test("Primary Goal → PC, keep the Goal: one copy, the Goal's printing, filed by its id; the Goal untouched", async () => {
     const s = await show();
@@ -218,7 +239,7 @@ describe("C. Goal → owned: a new copy, and the Goal only goes if they say", ()
     eq(confirmBtn(s.r).props["aria-disabled"], true);
     await tap(confirmBtn(s.r)); eq(s.sent.length, 0);
     await tap(xchoice(s.r, "Graded")); await tap(xchoice(s.r, "PSA 9"));
-    eq(json(xpressed(s.r)), json(["Trade / Sell", "Graded", "PSA 9", "Unfiled", "Keep this Goal"]));
+    eq(json(xpressed(s.r)), json(["Graded", "PSA 9", "Unfiled", "Keep this Goal"]));
     await tap(confirmBtn(s.r));
     eq(json(steps(s.sent)), json([{ kind: "record-copy", copy: { grade: "PSA 9", condition: null, offered: true, keeping: false } }]));
     assert(/Unfiled/.test(flat(cross(s.r))));
@@ -226,6 +247,7 @@ describe("C. Goal → owned: a new copy, and the Goal only goes if they say", ()
   test("prefilled from the Goal but corrected: the copy is what they have, the Goal keeps what they wanted", async () => {
     const s = await show();
     await startCross(s.r, /Primary.*Mudkip/, "PC");
+    await tap(xbtn(s.r, /^Change$/));
     await tap(xchoice(s.r, "Lightly Played"));
     await tap(confirmBtn(s.r));
     eq(s.sent[0][0].copy.condition, "Lightly Played");
@@ -278,22 +300,27 @@ describe("D. owned → Goal: a new Goal; the copy stays; no duplicate", () => {
     const s = await show();
     await startCross(s.r, /PC.*Charizard #4 · Holo · PSA 8/, "Primary");
     const t = flat(cross(s.r));
-    assert(/Looking for another copy\?/.test(t) && /Your owned copy will stay in your collection\./.test(t), t);
-    eq(json(xpressed(s.r)), json(["Primary", "Graded", "PSA 8", "Gen 1"]));
+    assert(/Looking for another copy\?/.test(t) && /Your owned copy stays unchanged\./.test(t), t);
+    assert(/Now PC this copy — stays/.test(t) && /New Primary a new Goal/.test(t) && /You want PSA 8/.test(t), t);
+    eq(json(xpressed(s.r)), json(["Gen 1"]));
     eq(flat(confirmBtn(s.r)), "Create Primary Goal");
     await tap(confirmBtn(s.r));
     eq(json(s.sent), json([[{ kind: "start-looking", tier: "primary", desired: { grade: "PSA 8" } }, "cc-char"],
       [{ kind: "file-object", binderId: "b-gen1", goalId: "g-new1" }, "cc-char"]]));
     eq(json(s.live.collectorCopies.find((c) => c.id === "k-a")), json(STATE().collectorCopies[0]));
     eq(homeOf(s.live, "collectorCopyId", "k-a"), "b-gen1");
-    assert(/✓ Primary Goal created/.test(flat(cross(s.r))) && /Your copy stays in your collection\./.test(flat(cross(s.r))));
+    assert(/✓ Primary Goal created/.test(flat(cross(s.r))) && /Your copy stays in your collection, unchanged\./.test(flat(cross(s.r))));
     await tap(xbtn(s.r, /^Back to the copy$/));
-    assert(page(s.r) && /Your copy: Charizard/.test(page(s.r).props["aria-label"]));
+    assert(page(s.r) && /Your copy: Charizard/.test(page(s.r).props["aria-label"]) && !cross(s.r));
+    eq(json(pressed(s.r)), json(["PC", "Graded", "PSA 8"]), "the card is not back on what is saved");
+    assert(!ready(s.r), "Submit update is live after the transition");
   });
   test("Trade / Sell copy → Secondary Goal, desired changed to Near Mint", async () => {
     const s = await show();
     await startCross(s.r, /Trade \/ Sell.*Charizard #4 · Holo · Raw/, "Secondary");
-    eq(json(xpressed(s.r)), json(["Secondary", "Raw", "Lightly Played", "Unfiled"]));
+    eq(json(xpressed(s.r)), json(["Unfiled"]));
+    await tap(xbtn(s.r, /^Change$/));
+    eq(json(xpressed(s.r)), json(["Raw", "Lightly Played", "Unfiled"]));
     await tap(xchoice(s.r, "Near Mint"));
     eq(flat(confirmBtn(s.r)), "Create Secondary Goal");
     await tap(confirmBtn(s.r));
@@ -384,13 +411,71 @@ describe("E. partial success and lost answers", () => {
     await tap(confirmBtn(s.r));
     assert(cross(s.r) && /You've stopped looking for this card\./.test(flat(cross(s.r))));
   });
-  test("Back from the step returns to the card, nothing sent; Escape does not close the step", async () => {
+  test("Cancel returns to the card with the draft kept, nothing sent; Escape does not close the confirmation", async () => {
     const s = await show();
-    await startCross(s.r, /Primary.*Mudkip/, "PC");
+    await open(s.r, /Primary.*Mudkip/);
+    await tap(choice(s.r, "Graded")); await tap(choice(s.r, "PSA 10")); await tap(choice(s.r, "PC"));
+    await save(s.r);
+    assert(/Your copy PSA 10/.test(flat(cross(s.r))), "the card's draft is not the new copy's start: " + flat(cross(s.r)));
     await TR.act(async () => { fireWin("keydown", { key: "Escape" }); }); await settle();
-    assert(cross(s.r), "Escape threw the step away");
-    await tap(xbtn(s.r, /^‹ Back$/));
+    assert(cross(s.r), "Escape threw the confirmation away");
+    await tap(xbtn(s.r, /^Cancel$/));
     assert(page(s.r) && !cross(s.r)); eq(s.sent.length, 0);
+    eq(json(pressed(s.r)), json(["PC", "Graded", "PSA 10"]), "the draft was lost");
+    assert(ready(s.r));
+  });
+});
+
+/* ============================================================== G */
+describe("G. Submit update is live only while the draft differs from what is saved", () => {
+  test("a Goal: open → off; Secondary → on; Primary again → off; grade → on; back → off; a cross state → on; back → off", async () => {
+    const s = await show();
+    await open(s.r, /Primary.*Mudkip/);
+    assert(!ready(s.r), "live on opening");
+    await tap(choice(s.r, "Secondary")); assert(ready(s.r));
+    await tap(choice(s.r, "Primary")); assert(!ready(s.r), "a reverted state is still a change");
+    await tap(choice(s.r, "Lightly Played")); assert(ready(s.r));
+    await tap(choice(s.r, "Near Mint")); assert(!ready(s.r), "a reverted condition is still a change");
+    await tap(choice(s.r, "Trade / Sell")); assert(ready(s.r));
+    await tap(choice(s.r, "PC")); await tap(choice(s.r, "Secondary")); await tap(choice(s.r, "Primary"));
+    assert(!ready(s.r), "Primary → Trade / Sell → PC → Secondary → Primary is still a change");
+    eq(json(pressed(s.r)), json(["Primary", "Raw", "Near Mint"]));
+    eq(s.sent.length, 0);
+  });
+  test("a copy: certificate and value on and off; Raw ↔ Graded back again restores nothing it cleared but is said", async () => {
+    const s = await show();
+    await open(s.r, /PC.*Charizard #4 · Holo · PSA 8/);
+    assert(!ready(s.r));
+    await type(inputs(s.r)[0], "CERT-Z"); assert(ready(s.r));
+    await type(inputs(s.r)[0], "CERT-A"); assert(!ready(s.r));
+    await type(inputs(s.r)[1], "301"); assert(ready(s.r));
+    await type(inputs(s.r)[1], "300"); assert(!ready(s.r));
+    await tap(choice(s.r, "PSA 9")); assert(ready(s.r));
+    await tap(choice(s.r, "PSA 8")); assert(!ready(s.r));
+    await tap(choice(s.r, "Trade / Sell")); assert(ready(s.r));
+    await tap(choice(s.r, "PC")); assert(!ready(s.r));
+  });
+  test("opening the Move chooser or the removal question is not a change", async () => {
+    const s = await show();
+    await open(s.r, /PC.*Charizard #4 · Holo · PSA 8/);
+    await tap(page(s.r).findAll((n) => n.type === "button" && flat(n) === "I no longer own this")[0]);
+    assert(!ready(s.r));
+    await tap(page(s.r).findAll((n) => n.type === "button" && flat(n) === "Keep it")[0]);
+    assert(!ready(s.r)); eq(s.sent.length, 0);
+  });
+  test("a copy's unsaved details and a Goal draft together: said, not sent", async () => {
+    const s = await show();
+    await open(s.r, /PC.*Charizard #4 · Holo · PSA 8/);
+    await type(inputs(s.r)[0], "CERT-Z"); await tap(choice(s.r, "Primary"));
+    assert(!ready(s.r));
+    assert(/Save or undo this copy's details before adding a Goal\./.test(flat(page(s.r))));
+  });
+  test("a same-record refusal: no success said; the draft stays", async () => {
+    const s = await show({ answer: () => ({ ok: false, refused: "goal-locked" }) });
+    await open(s.r, /Primary.*Mudkip/);
+    await tap(choice(s.r, "Secondary")); await save(s.r);
+    assert(!/✓/.test(flat(page(s.r))) && /Nothing was saved/.test(flat(page(s.r))));
+    eq(s.live.goals.find((g) => g.id === "g-mud").tier, "primary");
   });
 });
 

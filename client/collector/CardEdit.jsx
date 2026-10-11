@@ -11,16 +11,19 @@
                           to change). To record a different version, Browse.
      raw or graded        preselected; editable
      condition / grade    preselected; editable (PSA, the domain's only company)
-     what it is to you    all four states (P6-F4 B4). The record's own pair is
-                          an edit — Primary / Secondary on a Goal, PC / Trade /
-                          Sell on a copy. The other pair is not: it opens the
-                          guided step (CardCross.jsx), which ADDS the other
-                          record and never turns this one into it.
+     what it is to you    all four states (P6-F4 B4), chosen as a DRAFT (B4.1).
+                          The record's own pair is an edit — Primary /
+                          Secondary on a Goal, PC / Trade / Sell on a copy. The
+                          other pair is not: on Submit Update it opens the
+                          confirmation (CardCross.jsx) over this page, which
+                          ADDS the other record and never turns this one into it.
      binder               where it lives, and Batch 2A's one Move
      copy details         certificate and reference value (editable), when it
                           was added, photos and status (as recorded)
 
-   SAVE CHANGES sends only what changed, through the existing steps the
+   SUBMIT UPDATE (B4.1; was Save changes) is live only while the draft differs
+   from the saved record — compared field by field, so a change undone is no
+   change. For the record's own fields it sends only what changed, through the existing steps the
    Collector's entrance maps (client/sign-in/SignIn.jsx):
      Goal   wanted-copy → updateGoalCriteria · how-hard → updateGoalTier
      copy   correct-copy → updateCollectorCopy (grade, condition, cert, value
@@ -104,16 +107,17 @@ export default function CardEdit({ kind, thing, known, homeName = null, homeAway
   const [ack, setAck] = useState(null);           // what the server just confirmed
   const [problem, setProblem] = useState(null);
   const [removing, setRemoving] = useState(false); // the confirmation is open
-  const [crossing, setCrossing] = useState(null);  // the other pair's state, chosen: the guided step
+  const [crossTo, setCrossTo] = useState(null);    // the other pair's state, chosen as a draft
+  const [confirming, setConfirming] = useState(false); // Submit Update on a cross draft: the confirmation
   const sending = useRef(false);
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
   useEffect(() => {
     if (typeof window === "undefined" || !window.addEventListener) return undefined;
-    const onKey = (e) => { if (e.key === "Escape" && !crossing) onClose(); };
+    const onKey = (e) => { if (e.key === "Escape" && !confirming) onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, crossing]);
+  }, [onClose, confirming]);
 
   const a = { ...saved, ...edits };
   const set = (field, value) => {
@@ -125,7 +129,25 @@ export default function CardEdit({ kind, thing, known, homeName = null, homeAway
   const physicalMissing = (a.kind === "raw" && !a.condition && (a.kind !== saved.kind || "condition" in edits))
     || (a.kind === "graded" && !a.grade && (a.kind !== saved.kind || "grade" in edits));
   const marketBad = kind === "copy" && text(a.market) !== "" && text(a.market) != null && !(Number(text(a.market)) >= 0);
-  const ready = Boolean(onSave) && steps.length > 0 && !physicalMissing && !marketBad && !saving && !busy;
+  /* A CROSS DRAFT adds the other record; the card's grading draft is that
+     record's starting point. A copy's own details (certificate, value) are
+     not part of it, so they are saved — or undone — first. */
+  const detailsEdited = kind === "copy" && (text(a.cert) !== text(saved.cert) || text(a.market) !== text(saved.market));
+  const canCross = Boolean(onSave) && Boolean(thing && thing.canonicalCardId);
+  const ready = Boolean(onSave) && !saving && !busy && (crossTo
+    ? canCross && !detailsEdited
+    : steps.length > 0 && !physicalMissing && !marketBad);
+  const choose = (m, own) => {
+    setProblem(null); setAck(null);
+    if (own) { setCrossTo(null); set(field, m); return; }
+    setCrossTo(m);
+    setEdits((x) => { const { [field]: drop, ...rest } = x; return rest; });   // the record's own state is not changing
+  };
+  const submit = () => {
+    if (!ready || sending.current) return;
+    if (crossTo) { setConfirming(true); return; }
+    save();
+  };
 
   const save = async () => {
     if (!ready || sending.current) return;
@@ -191,17 +213,7 @@ export default function CardEdit({ kind, thing, known, homeName = null, homeAway
     secondary: "I'm interested in this card." };
   const field = kind === "goal" ? "tier" : "disposition";
   const copy = kind === "copy" ? thing : null;
-  const canCross = Boolean(onSave) && Boolean(thing && thing.canonicalCardId);
-
-  if (crossing) {
-    return (
-      <CardCross from={kind} thing={thing} target={crossing} name={name} ident={ident} version={version}
-        art={<CardArt src={imageShown} name={name} wrap="mcs-cd-art" plate="mcs-art-plate" decorative
-          card={{ key: known && known.cardContextId, set: known && known.expansionName, number }} />}
-        homeId={homeId} homeName={homeName} homeAway={homeAway} state={state} onSave={onSave} onRefresh={onRefresh}
-        onBack={() => setCrossing(null)} onClose={onClose} onOpenRecord={onOpenRecord} onHold={onHold} />
-    );
-  }
+  const shown = crossTo || a[field];
 
   return (
     <div className="mcs-cd mcs-ce" role="dialog" aria-modal="true" aria-label={`Your ${kind === "goal" ? "Goal" : "copy"}: ${name}`}>
@@ -226,10 +238,9 @@ export default function CardEdit({ kind, thing, known, homeName = null, homeAway
             so it comes straight after the card, both choices side by side. */}
         <Section id="state" title="What does this card mean to you?">
           <div className="mcs-ce-pair mcs-ce-four" role="group" aria-label="What does this card mean to you?">
-            {FOUR.map((m) => (pair.includes(m)
-              ? <Choice key={m} st={m} on={a[field] === m} title={TITLE[m]} sub={SUB[m]} disabled={saving} onClick={() => set(field, m)} />
-              : <Choice key={m} st={m} on={false} extra="cross" title={TITLE[m]} sub={SUB[m]} disabled={saving || !canCross}
-                onClick={() => { setProblem(null); setCrossing(m); }} />))}
+            {FOUR.map((m) => (
+              <Choice key={m} st={m} on={shown === m} extra={pair.includes(m) ? undefined : "cross"} title={TITLE[m]} sub={SUB[m]}
+                disabled={saving || (!pair.includes(m) && !canCross)} onClick={() => choose(m, pair.includes(m))} />))}
           </div>
           <p className="mcs-cd-cannot mcs-ce-note">{kind === "goal"
             ? "PC or Trade / Sell adds a copy you own — you'll choose whether this Goal stays."
@@ -295,13 +306,25 @@ export default function CardEdit({ kind, thing, known, homeName = null, homeAway
         <div className="mcs-cd-spacer" />
       </div>
 
+      {confirming && crossTo ? (
+        <CardCross from={kind} thing={thing} target={crossTo} name={name} ident={ident} version={version}
+          art={<CardArt src={imageShown} name={name} wrap="mcs-cd-art" plate="mcs-art-plate" decorative
+            card={{ key: known && known.cardContextId, set: known && known.expansionName, number }} />}
+          draft={{ kind: a.kind, condition: a.condition, grade: a.grade }}
+          homeId={homeId} homeName={homeName} homeAway={homeAway} state={state} onSave={onSave} onRefresh={onRefresh}
+          onCancel={() => setConfirming(false)}
+          onFinished={() => { setConfirming(false); setCrossTo(null); setEdits({}); }}
+          onClose={onClose} onOpenRecord={onOpenRecord} onHold={onHold} />
+      ) : null}
       <div className="mcs-cd-dock">
         {problem ? <p className="mcs-cd-hint problem" role="alert">{problem}</p>
           : ack ? <p className="mcs-cd-hint ack" role="status">{`✓ ${ack}`}</p>
-            : physicalMissing ? <p className="mcs-cd-hint">{a.kind === "raw" ? "What condition is it?" : "Which grade is it?"}</p>
-              : !steps.length ? <p className="mcs-cd-hint quiet">Change anything above, then save.</p> : null}
+            : crossTo && detailsEdited ? <p className="mcs-cd-hint">{`Save or undo this copy's details before adding a Goal.`}</p>
+              : crossTo ? <p className="mcs-cd-hint quiet">{`${TITLE[a[field]] || "Saved"} ${kind === "goal" ? "Goal" : "copy"} → a new ${TITLE[crossTo]} ${kind === "goal" ? "copy" : "Goal"}. Submit to review it.`}</p>
+                : physicalMissing ? <p className="mcs-cd-hint">{a.kind === "raw" ? "What condition is it?" : "Which grade is it?"}</p>
+                  : !steps.length ? <p className="mcs-cd-hint quiet">Change anything above, then submit.</p> : null}
         <button type="button" className={`mcs-cd-add${ready ? " ready" : ""}`} aria-disabled={!ready} aria-busy={saving}
-          onClick={save}>{saving ? "Saving…" : "Save changes"}</button>
+          onClick={submit}>{saving ? "Saving…" : "Submit update"}</button>
       </div>
     </div>
   );

@@ -865,16 +865,18 @@ describe("+ Add cards to a binder, through production (P6-F4 B3)", () => {
   });
 });
 
-/* P6-F4 BATCH 4 — LAST, BECAUSE IT WRITES. All four states on a saved card;
-   the other pair ADDS a record through the guided step — on the real server. */
-describe("Guided state transitions, through production (P6-F4 B4)", () => {
-  test("Goal → Trade / Sell copy (filing refused once, Retry filing); copy → existing Goal found; Goal → PC with Stop looking; copy → new Primary Goal", async () => {
+/* P6-F4 BATCH 4 / 4.1 — LAST, BECAUSE IT WRITES. All four states on a saved
+   card, chosen as a draft; Submit update edits the record, or — for the other
+   pair — opens the confirmation that ADDS a record, on the real server. */
+describe("Submit update and guided transitions, through production (P6-F4 B4 / B4.1)", () => {
+  test("drafts on and off; a same-record update; Goal → Trade / Sell copy (filing refused once, Retry filing); copy → existing Goal; Goal → PC with Stop looking; copy → new Primary Goal", async () => {
     await before();
     const context = await browser.newContext({ ...PHONE }); const page = await context.newPage();
     const errors = []; page.on("pageerror", (e) => errors.push(e.message));
     const commands = []; page.on("request", (r) => { if (r.url().includes("/api/commands")) commands.push(JSON.parse(r.postData() || "{}").command); });
-    const shot = (n) => page.screenshot({ path: `artifacts/fidelity/f4-b4/${n}.png` }).catch(() => {});
-    require("fs").mkdirSync("artifacts/fidelity/f4-b4", { recursive: true });
+    const DIR = "artifacts/fidelity/f4-b4-1";
+    require("fs").mkdirSync(DIR, { recursive: true });
+    const shot = async (n) => { await page.waitForTimeout(400); await page.screenshot({ path: `${DIR}/${n}.png` }).catch(() => {}); };   // past the dock's .25s transition
     let w = await ctx.world();
     const goal = w.goals.find((g) => g.id === ctx.ids.goal);
     const gen1 = w.binders.find((b) => b.id === ctx.ids.gen1);
@@ -886,21 +888,33 @@ describe("Guided state transitions, through production (P6-F4 B4)", () => {
     if ((await sec.getAttribute("aria-expanded")) !== "true") await sec.tap();
     const row = page.locator(`.mcs-bcover[data-binder='${gen1.id}'] button.mcs-bhead`);
     if ((await row.getAttribute("aria-expanded")) !== "true") await row.tap();
-    const openTile = async (key) => { const t = page.locator(`.mcs-bcover li.mcs-otile[data-key='${key}'] button.mcs-otap, li.mcs-otile[data-key='${key}'] button.mcs-otap`).first(); await t.scrollIntoViewIfNeeded(); await t.tap(); await page.locator(".mcs-ce").first().waitFor(); await page.waitForTimeout(300); };
+    const openTile = async (key) => { const t = page.locator(`li.mcs-otile[data-key='${key}'] button.mcs-otap`).first(); await t.scrollIntoViewIfNeeded(); await t.tap(); await page.locator(".mcs-ce").first().waitFor(); await page.waitForTimeout(300); };
     const choose = async (t, scope = ".mcs-cd") => { const c = page.locator(`${scope} .mcs-cd-choice`, { has: page.locator("b", { hasText: new RegExp(`^${t}$`) }) }).first(); await c.scrollIntoViewIfNeeded(); await c.tap(); await page.waitForTimeout(150); };
     const top = () => page.evaluate(() => { const sc = document.querySelector(".mcs-cd-scroll"); if (sc) sc.scrollTop = 0; });
+    const submit = page.locator(".mcs-ce .mcs-cd-dock .mcs-cd-add");
+    const live = async () => (await submit.getAttribute("aria-disabled")) === "false";
 
-    /* 1. the Goal: four states; Trade / Sell → the guided step */
+    /* 1. the Primary Goal: four states; drafts on and off */
     await openTile(`g:${goal.id}`); await top();
     eq(await page.locator(".mcs-ce [data-q='state'] .mcs-cd-choice").count(), 4, "not four states");
-    await shot("b4-01-goal-four-states");
+    eq((await submit.textContent()).trim(), "Submit update");
+    eq(await live(), false, "live on opening");
+    await shot("b41-01-goal-no-changes");
+    await choose("Secondary"); eq(await live(), true); await top(); await shot("b41-02-primary-to-secondary");
+    await choose("Primary"); eq(await live(), false); await top(); await shot("b41-03-reverted-primary");
+    await choose("PC"); eq(await live(), true);
+    eq(await page.locator(".mcs-cx").count(), 0, "choosing PC opened something");
+    await top(); await shot("b41-04-primary-to-pc-draft");
+    eq(commands.length, 0, "a draft wrote something");
+    await submit.tap(); await page.locator(".mcs-cx").waitFor(); await page.waitForTimeout(300);
+    await shot("b41-05-cross-confirmation");
+    await page.locator(".mcs-cx button", { hasText: /^Cancel$/ }).tap(); await page.waitForTimeout(300);
+    eq(await page.locator(".mcs-cx").count(), 0);
+    eq(await live(), true, "the draft was lost");
+    await top(); await shot("b41-06-cancelled-draft-kept");
+    /* now Trade / Sell; its first filing pointed at a binder that does not exist — a real refusal */
     await choose("Trade \\/ Sell");
-    await page.locator(".mcs-cx").waitFor();
-    eq(commands.length, 0, "choosing wrote something");
-    await shot("b4-03-goal-to-owned");
-    await page.evaluate(() => { const sc = document.querySelector(".mcs-cx .mcs-cd-scroll"); sc.scrollTop = sc.scrollHeight; });
-    await shot("b4-05-goal-to-owned-keep-goal");
-    /* its first filing pointed at a binder that does not exist — a real refusal */
+    await submit.tap(); await page.locator(".mcs-cx").waitFor();
     let pointed = false;
     await page.route("**/api/commands", async (route) => {
       const body = JSON.parse(route.request().postData() || "{}");
@@ -909,9 +923,9 @@ describe("Guided state transitions, through production (P6-F4 B4)", () => {
     });
     await page.locator(".mcs-cx .mcs-cd-add", { hasText: "Add to Trade / Sell" }).tap();
     await page.locator(".mcs-cx .mcs-cd-hint.problem", { hasText: /couldn't go into Gen 1/ }).waitFor();
-    await shot("b4-09-partial-retry-filing");
+    await shot("b41-13-partial-retry-filing");
     w = await ctx.world();
-    let made = w.collectorCopies.filter((c) => c.canonicalCardId === goal.canonicalCardId && !charCopies0.includes(c.id));
+    const made = w.collectorCopies.filter((c) => c.canonicalCardId === goal.canonicalCardId && !charCopies0.includes(c.id));
     eq(made.length, 1, "not exactly one new copy");
     await page.locator(".mcs-cx button", { hasText: /^Retry filing$/ }).tap();
     await page.locator(".mcs-cx-done").waitFor();
@@ -920,40 +934,39 @@ describe("Guided state transitions, through production (P6-F4 B4)", () => {
     eq(JSON.stringify([made[0].offered, made[0].grade]), JSON.stringify([true, "PSA 9"]), "the copy is not what was said");
     eq(((w.binderMemberships || []).find((m) => m.collectorCopyId === made[0].id) || {}).binderId, gen1.id, "the copy is not in Gen 1");
     assert(w.goals.some((g) => g.id === goal.id && g.tier === "primary"), "the Goal changed");
-    await shot("b4-08-transition-success");
+    await shot("b41-12-cross-success");
 
-    /* 2. the new copy: four states; Primary → the Goal that already exists */
+    /* 2. the new copy (Trade / Sell): PC → back; grade → back; existing Goal found */
     await page.locator(".mcs-cx button", { hasText: /^Open the new copy$/ }).tap();
-    await page.locator(".mcs-ce:not(.mcs-cx)").waitFor(); await top();
-    await shot("b4-02-copy-four-states");
-    await choose("Secondary");
+    await page.locator(".mcs-ce").waitFor(); await page.waitForTimeout(300); await top();
+    eq(await live(), false);
+    await shot("b41-07-copy-no-changes");
+    await choose("PC"); eq(await live(), true); await top(); await shot("b41-08-trade-to-pc");
+    await choose("Trade \\/ Sell"); eq(await live(), false);
+    await choose("PSA 10"); eq(await live(), true); await shot("b41-09-grade-changed");
+    await choose("PSA 9"); eq(await live(), false); await shot("b41-10-grade-reverted");
+    await choose("Secondary"); await submit.tap();
     await page.locator(".mcs-cx", { hasText: "You already have a Goal for this version" }).waitFor();
-    await shot("b4-07-owned-to-goal-existing");
     await page.locator(".mcs-cx button", { hasText: /^Open that Goal$/ }).tap();
-    await page.locator(".mcs-ce:not(.mcs-cx)").waitFor(); await page.waitForTimeout(300);
+    await page.locator(".mcs-ce").waitFor(); await page.waitForTimeout(300);
 
     /* 3. the Goal again: PC, and Stop looking */
-    await choose("PC");
-    await page.locator(".mcs-cx").waitFor();
+    await choose("PC"); await submit.tap(); await page.locator(".mcs-cx").waitFor();
     await choose("Stop looking for this card", ".mcs-cx");
-    await shot("b4-06-goal-to-owned-stop-looking");
     await page.locator(".mcs-cx .mcs-cd-add", { hasText: "Add to Personal Collection" }).tap();
     await page.locator(".mcs-cx-done", { hasText: "You've stopped looking for this card." }).waitFor();
     w = await ctx.world();
     assert(!w.goals.some((g) => g.id === goal.id), "the Goal is still there");
     eq(w.collectorCopies.filter((c) => c.canonicalCardId === goal.canonicalCardId && !charCopies0.includes(c.id)).length, 2, "not two new copies");
     await page.locator(".mcs-cx button", { hasText: /^Back to Gen 1$/ }).tap(); await page.waitForTimeout(500);
-    eq(await page.locator(".mcs-cx").count(), 0);
+    eq(await page.locator(".mcs-cx, .mcs-ce").count(), 0);
     eq(await page.locator(`.mcs-bcover.open[data-binder='${gen1.id}']`).count(), 1, "Gen 1 is not open on return");
-    await page.locator(`.mcs-bcover[data-binder='${gen1.id}']`).scrollIntoViewIfNeeded();
-    await shot("b4-10-return-to-binder");
 
-    /* 4. a PC copy with no Goal → a new Primary Goal; the copy stays */
+    /* 5. a PC copy with no Goal → a new Primary Goal; the copy stays */
     const blas = w.collectorCopies.find((c) => c.id === ctx.ids.copy);
     await openTile(`c:${blas.id}`);
-    await choose("Primary");
+    await choose("Primary"); await submit.tap();
     await page.locator(".mcs-cx", { hasText: "Looking for another copy?" }).waitFor();
-    await shot("b4-04-owned-to-goal");
     await page.locator(".mcs-cx .mcs-cd-add", { hasText: "Create Primary Goal" }).tap();
     await page.locator(".mcs-cx-done", { hasText: "Primary Goal created" }).waitFor();
     w = await ctx.world();
@@ -961,7 +974,17 @@ describe("Guided state transitions, through production (P6-F4 B4)", () => {
     eq(g2.length, 1, "not one new Goal");
     eq(JSON.stringify([g2[0].tier, g2[0].desired]), JSON.stringify(["primary", { grade: "PSA 8" }]));
     eq(JSON.stringify(w.collectorCopies.find((c) => c.id === blas.id)), JSON.stringify(blas), "the copy changed");
-    eq(JSON.stringify(commands), JSON.stringify(["addCollectorCopy", "fileObject", "fileObject", "addCollectorCopy", "fileObject", "removeGoal", "addGoal", "fileObject"].filter((c, i) => !(c === "fileObject" && i === 7 && !(w.binderMemberships || []).some((m) => m.collectorCopyId === blas.id)))), "unexpected commands: " + JSON.stringify(commands));
+    /* 6. a same-record update on that new Goal: Primary → Secondary, Submit */
+    await page.locator(".mcs-cx button", { hasText: /^Open the new Goal$/ }).tap();
+    await page.locator(".mcs-ce").waitFor(); await page.waitForTimeout(300);
+    await choose("Secondary"); await submit.tap();
+    await page.locator(".mcs-ce .mcs-cd-hint.ack").waitFor(); await top();
+    eq(await live(), false, "still live after saving");
+    await shot("b41-11-same-record-success");
+    w = await ctx.world();
+    eq(JSON.stringify(w.goals.filter((g) => g.canonicalCardId === blas.canonicalCardId).map((g) => [g.id, g.tier])), JSON.stringify([[g2[0].id, "secondary"]]), "not saved on the same Goal");
+    const filedBlas = (w.binderMemberships || []).some((m) => m.collectorCopyId === blas.id);
+    eq(JSON.stringify(commands), JSON.stringify(["addCollectorCopy", "fileObject", "fileObject", "addCollectorCopy", "fileObject", "removeGoal", "addGoal", ...(filedBlas ? ["fileObject"] : []), "updateGoalTier"]), "unexpected commands: " + JSON.stringify(commands));
     eq(errors.length, 0, errors.join(" | "));
     await context.close();
   });

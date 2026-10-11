@@ -1,5 +1,13 @@
 /* ============================================================================
-   CARD CROSS — FROM A GOAL TO A COPY, OR A COPY TO A GOAL (P6-F4 Batch 4)
+   CARD CROSS — FROM A GOAL TO A COPY, OR A COPY TO A GOAL (P6-F4 Batch 4;
+   a confirmation over the card since Batch 4.1)
+
+   B4.1: the state is chosen on the card's own four-state grid, as a draft;
+   Submit Update opens THIS — a sheet over the card, not a second editor. It
+   has no state selector of its own: it says what is saved, what will be
+   made, where it goes, and what happens to the record already there, and
+   offers the new record's configuration (prefilled from the card's draft)
+   for correction. Cancel returns to the card with its draft intact.
 
    The four states describe collecting intent. Goals and owned copies remain
    distinct production records. So choosing PC or Trade / Sell on a Goal — or
@@ -39,11 +47,12 @@ const physicalLine = (x) => (x.kind === "raw" ? `Raw · ${x.condition}` : x.kind
 const LIVE_TO = (ms) => new Promise((d) => setTimeout(d, ms));
 
 export default function CardCross({ from, thing, target, name, ident, version, art = null, homeId = null, homeName = null,
-  homeAway = false, state, onSave, onRefresh = null, onBack, onClose, onOpenRecord = null, onHold = null }) {
+  homeAway = false, state, draft = null, onSave, onRefresh = null, onCancel, onFinished, onClose, onOpenRecord = null, onHold = null }) {
   const toCopy = from === "goal";
   const canonical = thing.canonicalCardId || null;
   const saved = savedOf(from, thing);
-  const [a, setA] = useState({ kind: saved.kind, condition: saved.condition, grade: saved.grade, target,
+  const seed = draft || saved;
+  const [a, setA] = useState({ kind: seed.kind, condition: seed.condition, grade: seed.grade, target,
     dest: homeId && !homeAway ? homeId : null, keepGoal: true });
   const [made, setMade] = useState(null);         // { id, before } — confirmed by the server
   const [filed, setFiled] = useState(null);       // true · "skipped" · { failed }
@@ -51,6 +60,9 @@ export default function CardCross({ from, thing, target, name, ident, version, a
   const [problem, setProblem] = useState(null);
   const [working, setWorking] = useState(false);
   const [retiered, setRetiered] = useState(null); // an existing Goal's priority, changed on purpose
+  /* the new record's configuration, opened for correction — open from the
+     start when nothing usable is known yet, and it stays open while answered */
+  const [changing, setChanging] = useState(() => !(seed.kind === "raw" ? seed.condition : seed.kind === "graded" ? seed.grade : null));
   const sending = useRef(false);
   const alive = useRef(true);
   const stateRef = useRef(state);
@@ -195,12 +207,15 @@ export default function CardCross({ from, thing, target, name, ident, version, a
     } finally { sending.current = false; if (alive.current) setWorking(false); }
   };
 
-  const STATES = toCopy ? ["pc", "trade"] : ["primary", "secondary"];
-  const head = toCopy ? "Do you own this card now?" : existing && !made ? "You already have a Goal for this version" : "Looking for another copy?";
+  /* ----------------------------------------------------------- the view */
+  const head = toCopy ? "Add this card to your collection?" : existing && !made ? "You already have a Goal for this version" : "Looking for another copy?";
   const newLine = [physical, version, made && filed === true ? `in ${destName}` : made ? "Unfiled" : null].filter(Boolean).join(" · ");
+  const savedKind = toCopy ? saved.tier : saved.disposition;
+  const chip = (k) => (STATE_STYLE[k] ? <StateChip kind={k} label={STATE_STYLE[k].label} /> : null);
+  const locked = working || !!made;
 
   const sourceLine = () => {
-    if (!toCopy) return "Your copy stays in your collection.";
+    if (!toCopy) return "Your copy stays in your collection, unchanged.";
     if (goalEnd === "removed") return "You've stopped looking for this card.";
     if (goalEnd && goalEnd.refused) return goalEnd.refused === "lost-contact"
       ? "MetYet lost contact while stopping your Goal. It's still there — you can stop looking from its page."
@@ -208,19 +223,20 @@ export default function CardCross({ from, thing, target, name, ident, version, a
     return "Your Goal stays — you're still looking for another copy.";
   };
 
-  /* ----------------------------------------------------------- the view */
-  let body;
+  let body; let foot;
   if (done) {
     body = (
       <div className="mcs-cx-done" role="status">
-        <p className="mcs-cx-ok"><StateChip kind={a.target} label={STATE_STYLE[a.target].label} /> <b>{`✓ ${DONE_WORDS[a.target]}`}</b></p>
+        <p className="mcs-cx-ok">{chip(a.target)} <b>{`✓ ${DONE_WORDS[a.target]}`}</b></p>
         <p className="mcs-cx-line">{`${name} · ${newLine}`}</p>
         <p className={`mcs-cx-line${goalEnd && goalEnd.refused ? " warn" : ""}`}>{sourceLine()}</p>
-        <div className="mcs-cx-acts">
-          {made.id && onOpenRecord ? <button type="button" className="mcs-go" onClick={() => onOpenRecord(`${toCopy ? "c" : "g"}:${made.id}`)}>{`Open the new ${what}`}</button> : null}
-          {goalEnd !== "removed" ? <button type="button" className="mcs-go quiet" onClick={onBack}>{`Back to the ${toCopy ? "Goal" : "copy"}`}</button> : null}
-          <button type="button" className="mcs-linkish" onClick={onClose}>{homeName ? `Back to ${homeName}` : "Back to Binders"}</button>
-        </div>
+      </div>
+    );
+    foot = (
+      <div className="mcs-cx-acts">
+        {made.id && onOpenRecord ? <button type="button" className="mcs-go" onClick={() => onOpenRecord(`${toCopy ? "c" : "g"}:${made.id}`)}>{`Open the new ${what}`}</button> : null}
+        {goalEnd !== "removed" ? <button type="button" className="mcs-go quiet" onClick={onFinished}>{`Back to the ${toCopy ? "Goal" : "copy"}`}</button> : null}
+        <button type="button" className="mcs-linkish" onClick={onClose}>{homeName ? `Back to ${homeName}` : "Back to Binders"}</button>
       </div>
     );
   } else if (existing && !made) {
@@ -228,101 +244,96 @@ export default function CardCross({ from, thing, target, name, ident, version, a
     body = (
       <>
         <p className="mcs-cx-lede">{`You're already looking for this version of ${name}, so MetYet won't start a second Goal. Your copy stays in your collection.`}</p>
-        <div className="mcs-cx-rec">
-          <StateChip kind={tier} label={STATE_STYLE[tier] ? STATE_STYLE[tier].label : "Goal"} />
-          <span>{[physicalLine(savedOf("goal", existing)), version].filter(Boolean).join(" · ") || version}</span>
-        </div>
+        <div className="mcs-cx-rec">{chip(tier)}<span>{[physicalLine(savedOf("goal", existing)), version].filter(Boolean).join(" · ")}</span></div>
         {retiered ? <p className="mcs-cx-line" role="status">{`✓ Your Goal is now ${STATE_STYLE[retiered].label}.`}</p> : null}
-        <div className="mcs-cx-acts">
-          {onOpenRecord ? <button type="button" className="mcs-go" onClick={() => onOpenRecord(`g:${existing.id}`)}>Open that Goal</button> : null}
-          {tier !== a.target && STATE_STYLE[a.target] ? (
-            <button type="button" className="mcs-go quiet" disabled={working} onClick={retier}>{`Make it ${STATE_STYLE[a.target].label}`}</button>
-          ) : null}
-        </div>
+        {problem ? <p className="mcs-cd-hint problem" role="alert">{problem}</p> : null}
       </>
     );
+    foot = (
+      <div className="mcs-cx-acts">
+        {onOpenRecord ? <button type="button" className="mcs-go" onClick={() => onOpenRecord(`g:${existing.id}`)}>Open that Goal</button> : null}
+        {tier !== a.target && STATE_STYLE[a.target] ? (
+          <button type="button" className="mcs-go quiet" disabled={working} onClick={retier}>{`Make it ${STATE_STYLE[a.target].label}`}</button>
+        ) : null}
+        <button type="button" className="mcs-linkish" disabled={working} onClick={retiered ? onFinished : onCancel}>{retiered ? "Back to the copy" : "Cancel"}</button>
+      </div>
+    );
   } else {
+    const showConfig = changing || !physical;
     body = (
       <>
-        <p className="mcs-cx-lede">{toCopy ? "MetYet will add an owned copy using this card's saved version and configuration."
-          : "MetYet will create a collecting Goal for this card. Your owned copy will stay in your collection."}</p>
-        <div className="mcs-cx-rec"><span className="mcs-cx-k">Version</span><span>{version || "The version you saved"} — the same printing</span></div>
-        <Section id="cx-state" title={toCopy ? "Add it as" : "How important is it?"}>
-          <div className="mcs-cd-row" role="group" aria-label={toCopy ? "Add it as" : "How important is it?"}>
-            {STATES.map((m) => <Choice key={m} st={m} on={a.target === m} title={STATE_STYLE[m].label} disabled={working || !!made} onClick={() => set("target", m)} />)}
+        <p className="mcs-cx-lede">{toCopy ? "MetYet will create an owned copy using the same printing."
+          : "MetYet will create a Goal for this printing. Your owned copy stays unchanged."}</p>
+        <dl className="mcs-cx-plan">
+          <div><dt>Now</dt><dd>{chip(savedKind)}<span>{toCopy ? (a.keepGoal ? "this Goal — stays" : "this Goal — you'll stop looking") : "this copy — stays"}</span></dd></div>
+          <div><dt>New</dt><dd>{chip(a.target)}<span>{`a new ${what} · ${version || "the same printing"}`}</span></dd></div>
+          <div><dt>{toCopy ? "Your copy" : "You want"}</dt><dd>
+            <span>{physical || "Not chosen yet"}</span>
+            {!showConfig ? <button type="button" className="mcs-linkish" disabled={locked} onClick={() => setChanging(true)}>Change</button> : null}
+          </dd></div>
+        </dl>
+        {showConfig ? (
+          <div className="mcs-cx-config">
+            {toCopy && saved.kind ? <p className="mcs-cx-hint">From what you were looking for — change it to match the copy you have.</p> : null}
+            <div className="mcs-cd-row">
+              <Choice on={a.kind === "raw"} title="Raw" disabled={locked} onClick={() => set("kind", "raw")} />
+              <Choice on={a.kind === "graded"} title="Graded" disabled={locked} onClick={() => set("kind", "graded")} />
+            </div>
+            {a.kind === "raw" ? <div className="mcs-cd-wrap">{CONDITIONS.map((c) => <Choice key={c} on={a.condition === c} title={c} disabled={locked} onClick={() => set("condition", c)} />)}</div> : null}
+            {a.kind === "graded" ? <div className="mcs-cd-wrap">{GRADES.map((g) => <Choice key={g} on={a.grade === g} title={g} disabled={locked} onClick={() => set("grade", g)} />)}</div> : null}
           </div>
-        </Section>
-        <Section id="cx-kind" title={toCopy ? "The copy you have: raw or graded?" : "The copy you want: raw or graded?"}>
-          {toCopy && saved.kind ? <p className="mcs-cx-hint">From what you were looking for — change it to match the copy you have.</p> : null}
-          <div className="mcs-cd-row">
-            <Choice on={a.kind === "raw"} title="Raw" disabled={working || !!made} onClick={() => set("kind", "raw")} />
-            <Choice on={a.kind === "graded"} title="Graded" disabled={working || !!made} onClick={() => set("kind", "graded")} />
-          </div>
-        </Section>
-        {a.kind === "raw" ? (
-          <Section id="cx-condition" title="In what condition?">
-            <div className="mcs-cd-wrap">{CONDITIONS.map((c) => <Choice key={c} on={a.condition === c} title={c} disabled={working || !!made} onClick={() => set("condition", c)} />)}</div>
-          </Section>
         ) : null}
-        {a.kind === "graded" ? (
-          <Section id="cx-grade" title="Which grade?">
-            <div className="mcs-cd-wrap">{GRADES.map((g) => <Choice key={g} on={a.grade === g} title={g} disabled={working || !!made} onClick={() => set("grade", g)} />)}</div>
-          </Section>
-        ) : null}
-        <Section id="cx-dest" title={`Where the new ${what} goes`}>
+        <Section id="cx-dest" title={`The new ${what} goes`}>
           <div className="mcs-cd-row">
-            {homeId && !homeAway ? <Choice on={a.dest === homeId} title={homeName} sub="Same binder" disabled={working || !!made} onClick={() => set("dest", homeId)} /> : null}
-            <Choice on={!a.dest} title="Unfiled" sub="File it later" disabled={working || !!made} onClick={() => set("dest", null)} />
+            {homeId && !homeAway ? <Choice on={a.dest === homeId} title={homeName} sub="Same binder" disabled={locked} onClick={() => set("dest", homeId)} /> : null}
+            <Choice on={!a.dest} title="Unfiled" sub="File it later" disabled={locked} onClick={() => set("dest", null)} />
           </div>
-          <p className="mcs-cx-hint">{`This ${toCopy ? "Goal" : "copy"} stays ${homeName ? `in ${homeName}` : "where it is"}.`}</p>
         </Section>
         {toCopy ? (
           <Section id="cx-goal" title="And this Goal?">
             <div className="mcs-cd-row mcs-cx-goal">
-              <Choice on={a.keepGoal} title="Keep this Goal" sub="I'm still looking for another copy." disabled={working || !!made} onClick={() => set("keepGoal", true)} />
-              <Choice on={!a.keepGoal} title="Stop looking for this card" sub="I've found what I wanted." disabled={working || !!made} onClick={() => set("keepGoal", false)} />
+              <Choice on={a.keepGoal} title="Keep this Goal" sub="I'm still looking for another copy." disabled={locked} onClick={() => set("keepGoal", true)} />
+              <Choice on={!a.keepGoal} title="Stop looking for this card" sub="I've found what I wanted." disabled={locked} onClick={() => set("keepGoal", false)} />
             </div>
           </Section>
         ) : null}
-        <div className="mcs-cd-spacer" />
+      </>
+    );
+    const unfiledNow = filed && filed.failed;
+    foot = (
+      <>
+        {problem ? <p className="mcs-cd-hint problem" role="alert">{problem}</p>
+          : !physical ? <p className="mcs-cd-hint">{!a.kind ? "Raw or graded?" : a.kind === "raw" ? "What condition is it?" : "Which grade is it?"}</p>
+            : !canonical ? <p className="mcs-cd-hint">MetYet can't add this card from here.</p> : null}
+        {unfiledNow ? (
+          <div className="mcs-cx-acts">
+            <button type="button" className="mcs-cd-add ready" aria-busy={working} onClick={retryFiling}>{working ? "Filing…" : "Retry filing"}</button>
+            <button type="button" className="mcs-linkish" disabled={working} onClick={leaveUnfiled}>Leave it Unfiled</button>
+          </div>
+        ) : (
+          <div className="mcs-cx-acts">
+            <button type="button" className={`mcs-cd-add${ready ? " ready" : ""}`} aria-disabled={!ready} aria-busy={working}
+              onClick={go}>{working ? "Saving…" : ADD_WORDS[a.target]}</button>
+            {!made ? <button type="button" className="mcs-linkish" disabled={working} onClick={onCancel}>Cancel</button> : null}
+          </div>
+        )}
       </>
     );
   }
 
-  const unfiledNow = filed && filed.failed;
   return (
-    <div className="mcs-cd mcs-ce mcs-cx" role="dialog" aria-modal="true" aria-label={head}>
-      <header className="mcs-cd-hd">
-        <button type="button" className="mcs-cd-back" disabled={working} onClick={made ? onClose : onBack}>{made ? "‹ Binders" : "‹ Back"}</button>
-      </header>
-      <div className="mcs-cd-scroll">
-        <div className={`mcs-cx-hd${done ? " done" : ""}`}>
+    <div className="mcs-sheet-scrim mcs-cx-scrim" onClick={(e) => { if (e.target === e.currentTarget && !working && !made) onCancel(); }}>
+      <div className="mcs-sheet mcs-cx" role="dialog" aria-modal="true" aria-label={done ? DONE_WORDS[a.target] : head}>
+        <div className="mcs-cx-hd">
           {art ? <span className="mcs-cx-art">{art}</span> : null}
-          <div className="mcs-cd-ident">
+          <div className="mcs-cx-title">
             <h2>{done ? name : head}</h2>
-            <p>{(done ? [ident] : [name, ident]).filter(Boolean).join(" · ")}</p>
+            <p>{[done ? null : name, version, ident].filter(Boolean).join(" · ")}</p>
           </div>
         </div>
         {body}
+        <div className="mcs-cx-foot">{foot}</div>
       </div>
-      {!done && !(existing && !made) ? (
-        <div className="mcs-cd-dock">
-          {problem ? <p className="mcs-cd-hint problem" role="alert">{problem}</p>
-            : !physical ? <p className="mcs-cd-hint">{!a.kind ? "Raw or graded?" : a.kind === "raw" ? "What condition is it?" : "Which grade is it?"}</p>
-              : !canonical ? <p className="mcs-cd-hint">MetYet can't add this card from here.</p>
-                : <p className="mcs-cd-hint quiet">{`${STATE_STYLE[a.target].label} · ${physical} · ${destName ? `into ${destName}` : "Unfiled"}${toCopy ? (a.keepGoal ? " · Goal kept" : " · stop looking") : ""}`}</p>}
-          {unfiledNow ? (
-            <div className="mcs-cx-acts">
-              <button type="button" className="mcs-cd-add ready" aria-busy={working} onClick={retryFiling}>{working ? "Filing…" : "Retry filing"}</button>
-              <button type="button" className="mcs-linkish" disabled={working} onClick={leaveUnfiled}>Leave it Unfiled</button>
-            </div>
-          ) : (
-            <button type="button" className={`mcs-cd-add${ready ? " ready" : ""}`} aria-disabled={!ready} aria-busy={working}
-              onClick={go}>{working ? "Saving…" : ADD_WORDS[a.target]}</button>
-          )}
-        </div>
-      ) : null}
-      {existing && !made && problem ? <div className="mcs-cd-dock"><p className="mcs-cd-hint problem" role="alert">{problem}</p></div> : null}
     </div>
   );
 }

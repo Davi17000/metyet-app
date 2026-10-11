@@ -756,14 +756,26 @@ ${STATE_CSS}
 .mcs-ce .mcs-ce-four { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
 .mcs-ce .mcs-ce-four .mcs-cd-choice { min-height:60px; padding:9px 12px; }
 .mcs-ce .mcs-ce-four .mcs-cd-choice.cross { border-style:dashed; }
-.mcs-cx .mcs-cx-hd { display:flex; gap:14px; align-items:center; margin:0 0 4px; }
-.mcs-cx .mcs-cx-hd .mcs-cd-ident { flex:1; min-width:0; margin:0; }
-.mcs-cx .mcs-cx-art { flex:0 0 72px; width:72px; }
-.mcs-cx .mcs-cx-hd.done { flex-direction:column; align-items:center; text-align:center; }
-.mcs-cx .mcs-cx-hd.done .mcs-cx-art { flex-basis:auto; width:180px; }
-.mcs-cx .mcs-cx-done { text-align:center; } .mcs-cx .mcs-cx-done p.mcs-cx-ok { justify-content:center; }
-.mcs-cx .mcs-cx-done .mcs-cx-acts { justify-content:center; }
-.mcs-cx .mcs-cx-hd h2 { font-size:21px; }
+.mcs-cx-scrim { z-index:40; }
+.mcs-sheet.mcs-cx { gap:12px; max-height:90vh; }
+.mcs-cx .mcs-cx-hd { display:flex; gap:12px; align-items:center; }
+.mcs-cx .mcs-cx-art { flex:0 0 56px; width:56px; }
+.mcs-cx .mcs-cx-title { flex:1; min-width:0; }
+.mcs-cx .mcs-cx-title h2 { margin:0 0 2px; font-size:18px; line-height:1.25; }
+.mcs-cx .mcs-cx-title p { margin:0; font-size:12.5px; color:var(--muted); }
+.mcs-cx dl.mcs-cx-plan { margin:0; border:1px solid var(--line); border-radius:12px; padding:4px 12px; }
+.mcs-cx dl.mcs-cx-plan > div { display:flex; gap:10px; align-items:center; padding:7px 0; }
+.mcs-cx dl.mcs-cx-plan > div + div { border-top:1px solid var(--line-soft); }
+.mcs-cx dl.mcs-cx-plan dt { flex:0 0 72px; font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+.mcs-cx dl.mcs-cx-plan dd { flex:1; margin:0; display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:13.5px; color:var(--text); }
+.mcs-cx dl.mcs-cx-plan dd .mcs-linkish { margin-left:auto; }
+.mcs-cx .mcs-cx-config { display:flex; flex-direction:column; gap:8px; }
+.mcs-cx .mcs-cd-q { margin:0; }
+.mcs-cx .mcs-cx-foot { position:sticky; bottom:calc(-20px - env(safe-area-inset-bottom, 0px)); background:var(--panel);
+  margin:0 -16px calc(-20px - env(safe-area-inset-bottom, 0px)); padding:10px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  border-top:1px solid var(--line); display:flex; flex-direction:column; gap:8px; }
+.mcs-cx .mcs-cx-foot .mcs-cx-acts { margin:0; } .mcs-cx .mcs-cx-foot .mcs-cx-acts .mcs-cd-add { flex:1; }
+.mcs-cx .mcs-cx-foot .mcs-cd-hint { margin:0; }
 .mcs-cx p.mcs-cx-lede { margin:4px 0 12px; font-size:14px; color:var(--text); }
 .mcs-cx .mcs-cx-rec { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:13px; color:var(--muted); margin:0 0 6px; }
 .mcs-cx .mcs-cx-k { font-weight:700; color:var(--text); }
@@ -1146,7 +1158,8 @@ ${STATE_CSS}
 .mcs-cd-dock { border-top:1px solid var(--line); padding:10px 16px calc(16px + env(safe-area-inset-bottom, 0px)); background:#FFF; }
 .mcs-cd p.mcs-cd-hint { margin:0 0 8px; text-align:center; font-size:13px; color:var(--t1); } .mcs-cd p.mcs-cd-hint.quiet { color:var(--faint); }
 .mcs-cd-add { width:100%; padding:15px; border-radius:14px; border:0; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
-  background:#E6EAEE; color:#9AA3AE; font-size:14px; transition:background .25s, color .25s, transform .25s, box-shadow .25s; }
+  background:#E6EAEE; color:#9AA3AE; font-size:14px; transition:background .25s, color .25s, transform .25s, box-shadow .25s;
+  -webkit-tap-highlight-color:transparent; }
 .mcs-cd-add.ready { background:var(--t1); color:#FFF; box-shadow:0 6px 16px rgba(11,93,102,.28); }
 /* Stage 2 — the questions (prototype index.html .reveal L89, .nudge L90, .row/.col
    L91–92, .choice span/.known L95–97, .choice:disabled L173, .add.pop L106,
