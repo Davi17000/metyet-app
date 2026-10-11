@@ -265,15 +265,18 @@ describe("D. navigation", () => {
     await tap(cell);
     assert(!/wakes up as you answer/.test(flat(b.r)), flat(b.r));
   });
-  test("filling a binder keeps Stage 1's door: no questions, Add opens the form with that binder", async () => {
+  /* SUPERSEDED (P6-F4 B3): the Stage 1 door is retired. Filling a binder is the
+     same card, the same questions, and says where the card will go; the
+     create-then-file journey is tests/phase6-f4-b3-binder-add.cjs. */
+  test("filling a binder: the same questions, the binder named, nothing written before Add", async () => {
     const b = browse({ fillingBinder: { binderId: "b1", name: "Mudkip" } });
     await search(b);
     await tap(btns(b.r).find((x) => x.props["aria-label"] === "Mudkip, Ruby & Sapphire #60"));
-    assert(!/What does this card mean to you\?/.test(flat(b.r)), "the questions appeared while filling a binder");
-    assert(/For now, Add opens MetYet's current card form\./.test(flat(b.r)), flat(b.r));
-    await tap(addButton(b.r));
-    assert(/Are you looking for it\?/.test(flat(b.r)), "the form did not open");
-    eq(b.calls.filter((c) => c[0] === "specify").length, 0, "opening the form wrote something");
+    assert(/Adding to Mudkip/.test(flat(cls(b.r, "mcs-cd")[0])), flat(b.r));
+    await pick(b.r, "Raw", "Near Mint");
+    assert(/What does this card mean to you\?/.test(flat(b.r)), "the questions are missing while filling a binder");
+    assert(!/Are you looking for it\?/.test(flat(b.r)), "the old form appeared");
+    eq(b.calls.filter((c) => c[0] === "specify").length, 0, "answering wrote something");
   });
 });
 
@@ -475,9 +478,13 @@ describe("E. guided configuration (Stage 2)", () => {
     await tap(addButton(r));
     eq(seen.saves[0].canonicalCardId, "k-u");
   });
-  test("no Binder here: neither step names a binder, and the card never files", () => {
+  /* RESTATED (P6-F4 B3): no binder QUESTION; the card files only when it was
+     opened from a binder (fileInto), and only the record it just made */
+  test("no Binder question: the steps name no binder, and filing exists only for fileInto", () => {
     const src = code("client/collector/CardDetail.jsx");
-    assert(!/file-object|fileObject|unfile|preselect|addBinderEntry|make-binder/.test(src), "the card files");
+    assert(!/unfile-object|unfileObject|"unfile"|preselect|addBinderEntry|make-binder/.test(src), "the card manages binders");
+    eq((src.match(/file-object/g) || []).length, 1, "more than one way to file");
+    assert(/const fileStep = \{ kind: "file-object", binderId: fileInto\.binderId/.test(src), "filing is not tied to the binder it came from");
     /* and the step it sends carries nothing but the meaning and the copy */
     const { stepFor } = load("client/collector/CardDetail.jsx");
     const a = { printing: "k", kind: "raw", condition: "Near Mint", intent: "own", disposition: "pc" };

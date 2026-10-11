@@ -1152,9 +1152,10 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
   test("the sheet is rendered after the grid and out of flow, so nothing moves behind it", async () => {
     const ctx = await world();
     await cards(ctx);
-    /* RESTATED (P6-F3A Stage 2): the one place Browse still opens this sheet
-       is while filling a binder, so that is the door used — and the Phase 6
-       card it is opened from is held to the same rule. */
+    /* RESTATED (P6-F3A Stage 2, then P6-F4 B3): Browse opened this sheet only
+       while filling a binder; B3 retired that door — a binder's new card is
+       made on the Phase 6 card and filed into the binder. So Browse never
+       renders the sheet now, and the card is held to the order rule. */
     const binderId = (await post(ctx.app, "casey", "createBinder", { name: "Mudkip Collection" })).json().value;
     const state = await view(ctx.app, "casey");
     const { door } = doorFor(ctx);
@@ -1169,8 +1170,7 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
     await draw();
     await typeInto(r, "mcs-br-q", "Mudkip");
     await press(r, "Mudkip");
-    await press(r, "Add to MetYet");
-    assert(texts(r).includes("Are you looking for it?"), "filling a binder did not reach the panel: " + texts(r));
+    assert(!texts(r).includes("Are you looking for it?"), "Browse opened the old panel");
 
     /* ORDER IS THE MECHANISM. A panel inserted BEFORE the grid pushes it down
        the page while the window's scroll offset stays put, which is exactly the
@@ -1189,9 +1189,8 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
     /* P6-F3A: and the Phase 6 card the panel is opened from, by the same rule. */
     const card = classes.findIndex((c) => c.split(" ").includes("mcs-cd"));
     assert(grid >= 0, "the grid is not rendered");
-    assert(sheet >= 0, "the sheet is not rendered");
+    eq(sheet, -1, "Browse rendered the old sheet");
     assert(card >= 0, "the card is not rendered");
-    assert(grid < sheet, "the sheet is rendered above the grid and would push it down the page");
     assert(grid < card, "the card is rendered above the grid and would push it down the page");
 
     /* And it is taken out of flow by the stylesheet rather than by luck. */

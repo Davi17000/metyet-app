@@ -1132,6 +1132,8 @@ describe("E. add cards", () => {
     await press(r, "Binder");
     await openBinder(r, "Mudkip Collection");
     await press(r, "Add cards");
+    /* RESTATED (P6-F4 B3): + Add cards offers My Cards or Browse; Browse is the door these tests walk */
+    await press(r, "Browse new cards");
     const said = texts(r);
     assert(/Adding to/.test(said), "no note about where they came from: " + said);
     assert(said.includes("Mudkip Collection"), said);
@@ -1148,6 +1150,8 @@ describe("E. add cards", () => {
     await press(r, "Binder");
     await openBinder(r, "Mudkip Collection");
     await press(r, "Add cards");
+    /* RESTATED (P6-F4 B3): + Add cards offers My Cards or Browse; Browse is the door these tests walk */
+    await press(r, "Browse new cards");
     const during = await load(ctx);
     eq(json(during.binders), json(before.binders), "carrying a binder changed one");
     eq(during.binderEntries.length, 0, "carrying a binder filed something");
@@ -1277,6 +1281,8 @@ describe("E. add cards", () => {
     await openBinder(r, "Mudkip Collection");
     const before = await load(ctx);
     await press(r, "Add cards");
+    /* RESTATED (P6-F4 B3): + Add cards offers My Cards or Browse; Browse is the door these tests walk */
+    await press(r, "Browse new cards");
     await press(r, "Stop adding to it");
     eq(json(await load(ctx)), json(before), "the round trip wrote something");
     await press(r, "Binder");
@@ -1297,6 +1303,8 @@ describe("E. add cards", () => {
     await press(r, "Binder");
     await openBinder(r, "Mudkip Collection");
     await press(r, "Add cards");
+    /* RESTATED (P6-F4 B3): + Add cards offers My Cards or Browse; Browse is the door these tests walk */
+    await press(r, "Browse new cards");
     await press(r, "Binder");
     const said = texts(r);
     assert(/Nothing in this binder yet/.test(said), "it landed in the library: " + said);
@@ -1304,6 +1312,8 @@ describe("E. add cards", () => {
     assert(!said.includes("Favourites"), "it landed in the library: " + said);
     /* And once they stop filling, Binder is the library again. */
     await press(r, "Add cards");
+    /* RESTATED (P6-F4 B3): + Add cards offers My Cards or Browse; Browse is the door these tests walk */
+    await press(r, "Browse new cards");
     await press(r, "Stop adding to it");
     await press(r, "Binder");
     await openLibrary(r);  // RESTATED (P6-2): the library section opens on demand

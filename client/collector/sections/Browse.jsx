@@ -57,7 +57,6 @@
    ========================================================================== */
 
 import React, { useEffect, useRef, useState } from "react";
-import CardSpecification from "../CardSpecification.jsx";
 import CardDetail from "../CardDetail.jsx";
 import Discover, { newBrowseSession } from "../../browse/Discover.jsx";
 import { rows, text } from "../present.js";
@@ -66,22 +65,20 @@ import { rows, text } from "../present.js";
 export { newBrowseSession };
 
 export default function Browse({ state, session, onSession, onSpecify = null,
-  onBrowseCards = null, fillingBinder = null, onDoneFilling = null, onCount = null }) {
+  onBrowseCards = null, fillingBinder = null, onDoneFilling = null, onCount = null,
+  onRefresh = null, onBackToBinder = null }) {
   /* P6-F3A: a card opens as the Phase 6 full-screen CardDetail. Its
      neighbours are the Browse results it was opened from, so ‹ › walk them.
      Its own questions end in one command (Stage 2); after the server says yes
      it returns here, as the prototype does, with a note and the card marked.
 
-     ARRIVING FROM A BINDER'S "+ Add cards" (Phase 5 C3.4) IS THE ONE
-     EXCEPTION. That door promises the card lands in that binder, and the Phase
-     6 card has no binder question (prototype Iteration 2: "where it belongs is
-     a separate job, done in Binders"). Rather than drop the promise or invent
-     a binder step, this mode keeps Stage 1's behaviour: Add opens the existing
-     Card Specification with the binder already ticked. Awaiting a founder
-     decision (docs/PHASE6_APPROVED_DEVIATIONS.md B27). */
+     ARRIVING FROM A BINDER'S "+ Add cards" (Phase 5 C3.4; P6-F4 B3) is the same
+     card with one more thing to do: the new Goal or copy is filed — by the id
+     the create returned — into the binder the Collector started from
+     (CardDetail `fileInto`). There is no second form: the Card Specification
+     door this mode used to open (B27) is retired. */
   const [context, setContext] = useState(null);      // the card being shown: row + its printings
   const [nav, setNav] = useState(null);              // { list, index, label } — where it was opened from
-  const [specifying, setSpecifying] = useState(null); // filling a binder only: the exact canonical card
   const [problem, setProblem] = useState(null);
   const [opening, setOpening] = useState(false);
   const [note, setNote] = useState(null);            // the prototype's acknowledgement, back on Browse
@@ -90,17 +87,17 @@ export default function Browse({ state, session, onSession, onSpecify = null,
   const reading = useRef(0);
 
   useEffect(() => {
-    if (!note) return undefined;
+    if (!note || fillingBinder) return undefined;   // from a binder it waits for a choice
     const t = setTimeout(() => setNote(null), 4500);
     return () => clearTimeout(t);
   }, [note]);
 
-  const close = () => { setContext(null); setNav(null); setSpecifying(null); setProblem(null); };
+  const close = () => { setContext(null); setNav(null); setProblem(null); };
 
   const show = async (row, list, label) => {
     if (!onBrowseCards || opening) return;
     const ticket = ++reading.current;
-    setOpening(true); setProblem(null); setSpecifying(null); setNote(null);
+    setOpening(true); setProblem(null); setNote(null);
     try {
       const answer = await onBrowseCards.read(row.cardContextId);
       if (ticket !== reading.current) return;
@@ -155,30 +152,29 @@ export default function Browse({ state, session, onSession, onSpecify = null,
         onChoose={open} chosenId={context && context.cardContextId} justId={justId} busy={opening} onCount={onCount} />
       {problem ? <p className="mcs-add-problem" role="alert">{problem}</p> : null}
       {note && !context ? (
-        <button type="button" className="mcs-d-ack" role="status" onClick={() => setNote(null)}>
-          <b>{note.head}</b> <span>{[note.card, note.facts].filter(Boolean).join(" · ")}</span>
-          <span className="mcs-d-ack-value">{note.value}</span>
-        </button>
+        <div className="mcs-d-ack" role="status">
+          <button type="button" className="mcs-d-ack-body" onClick={() => setNote(null)}>
+            <b>{note.head}</b> <span>{[note.card, note.facts].filter(Boolean).join(" · ")}</span>
+            <span className="mcs-d-ack-value">{note.value}</span>
+          </button>
+          {/* FROM A BINDER: keep collecting, or go back to it (P6-F4 B3) */}
+          {fillingBinder ? (
+            <span className="mcs-d-ack-acts">
+              <button type="button" className="mcs-linkish" onClick={() => setNote(null)}>Add another</button>
+              {onBackToBinder ? (
+                <button type="button" className="mcs-go" onClick={onBackToBinder}>{`Back to ${text(fillingBinder.name) || "the binder"}`}</button>
+              ) : null}
+            </span>
+          ) : null}
+        </div>
       ) : null}
 
       {context ? (
         <CardDetail key={context.cardContextId} context={context} state={state}
           backLabel={(nav && nav.label) || "Browse"} position={nav ? nav.index : 0} total={nav ? nav.list.length : 1}
           onStep={nav && nav.list.length > 1 ? step : null} onClose={close}
-          onSave={fillingBinder ? null : onSpecify} onAdded={added} wakeHint={!addedOnce}
-          onForm={fillingBinder && onSpecify ? (card) => setSpecifying(card) : null} />
-      ) : null}
-      {context && specifying ? (
-        <div className="mcs-spec-scrim">
-          <CardSpecification
-            card={specifying}
-            context={context}
-            state={state}
-            preselectBinder={fillingBinder ? fillingBinder.binderId : null}
-            onCommit={onSpecify}
-            onClose={() => setSpecifying(null)}
-          />
-        </div>
+          onSave={onSpecify} onAdded={added} wakeHint={!addedOnce} onRefresh={onRefresh}
+          fileInto={fillingBinder ? { binderId: fillingBinder.binderId, name: text(fillingBinder.name) || "the binder" } : null} />
       ) : null}
     </div>
   );

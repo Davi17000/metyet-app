@@ -354,6 +354,16 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
   /* + NEW BINDER WHILE MOVING (P6-F4 B2A): the card waiting for its new
      binder's name, and what the name prompt says while it works. */
   const [naming, setNaming] = useState(null);       // { key, name, busy, problem }
+  /* + ADD CARDS (P6-F4 B3): the binder the chooser is for; the picker of the
+     Collector's own Goals and copies (prototype Picker), what is ticked in it,
+     its search and state lens, and the move confirmation. */
+  const [addingTo, setAddingTo] = useState(null);   // { id, name } — the chooser
+  const [picking, setPicking] = useState(null);     // { id, name } — the picker
+  const [picked, setPicked] = useState(() => new Set());
+  const [pickQuery, setPickQuery] = useState("");
+  const [pickLens, setPickLens] = useState("all");
+  const [confirmMove, setConfirmMove] = useState(false);
+  const pickingRef = useRef(false);
   /* The latest projection, for reading what is true AFTER an awaited refresh. */
   const stateRef = useRef(state); stateRef.current = state;
   /* One new binder at a time: a ref, because two taps in one instant both see
@@ -746,6 +756,10 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
             <button type="button" className="mcs-undo" disabled={!!filingKey}
               onClick={() => retryMove(problem.retry)}>Try moving again</button>
           ) : null}
+          {problem.retryPick ? (
+            <button type="button" className="mcs-undo" disabled={!!filingKey}
+              onClick={() => fileMany(problem.retryPick.keys, problem.retryPick.to)}>Try again</button>
+          ) : null}
           <button type="button" className="mcs-snack-x" aria-label="Dismiss" onClick={() => setProblem(null)}>✕</button>
         </p>
       ) : (
@@ -754,6 +768,9 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
           {toast && toast.undo ? (
             <button type="button" className="mcs-undo" disabled={!!filingKey}
               onClick={() => undo(toast.undo)}>Undo</button>
+          ) : null}
+          {toast && toast.more ? (
+            <button type="button" className="mcs-undo" onClick={() => { setToast(null); setAddingTo(toast.more); }}>Add more</button>
           ) : null}
         </p>
       )}
@@ -765,6 +782,143 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
         onCommit={onSpecify} onClose={() => setSpecifying(null)} />
     </div>
   ) : null);
+  /* FILE SEVERAL OF THEIR OWN THINGS INTO ONE BINDER (prototype curate): one
+     existing fileObject per thing, in order, each answered by the server. A
+     thing already elsewhere MOVES — only after "Move from … to …?" was
+     confirmed. A thing already there is not sent. */
+  const fileMany = async (keys, to) => {
+    if (pickingRef.current || filingRef.current || !onFileObject) return;
+    pickingRef.current = true; setBusy(true); setProblem(null); setToast(null);
+    const done = []; const failed = []; let lost = false; let stale = false;
+    try {
+      for (const key of keys) {
+        const o = objectsOf(stateRef.current).find((x) => x.key === key);
+        if (!o) { failed.push({ key, why: "it has changed since" }); stale = true; continue; }
+        if (o.homeId === to.id) { done.push(o); continue; }      // already there: nothing to send
+        const what = o.kind === "goal" ? { goalId: o.thing.id } : { collectorCopyId: o.thing.id };
+        try {
+          const answer = await onFileObject({ binderId: to.id, ...what });
+          if (answer && answer.ok === false) {
+            failed.push({ key, why: FILING_REFUSED[answer.refused] || "MetYet would not file it" });
+            if (STALE_REFUSALS.has(answer.refused)) stale = true;
+          } else done.push(o);
+        } catch (error) { failed.push({ key, why: "MetYet lost contact" }); lost = true; }
+      }
+    } finally { pickingRef.current = false; setBusy(false); }
+    if (stale || lost) { if (onRefresh) { try { await onRefresh(); } catch (e) { /* said below */ } } }
+    setPicking(null); setPicked(new Set()); setConfirmMove(false);
+    setSectionOpen(true); setExpanded(to.id); setListFor(null);
+    const moved = done.filter((o) => o.homeId && o.homeId !== to.id);
+    const said = done.length ? `${done.length} added to ${to.name}${moved.length ? ` · ${moved.length} moved from another binder` : ""}.` : "";
+    if (failed.length) {
+      const names = failed.map((f) => { const o = objs.find((x) => x.key === f.key); return o ? nameOf(o) : "a card"; });
+      setProblem({ text: `${said ? `${said} ` : ""}${failed.length === 1 ? `${names[0]} couldn't be added` : `${failed.length} couldn't be added (${names.join(", ")})`}: ${failed[0].why}.`,
+        retryPick: { keys: failed.map((f) => f.key), to } });
+    } else if (done.length) setToast({ text: said, undo: null, more: to });
+  };
+  const addChooser = () => (addingTo ? (
+    <div className="mcs-sheet-scrim" role="dialog" aria-modal="true" aria-label={`Add cards to ${addingTo.name}`}
+      onClick={(e) => { if (e.target === e.currentTarget) setAddingTo(null); }}
+      onKeyDown={(e) => { if (e.key === "Escape") setAddingTo(null); }}>
+      <div className="mcs-sheet mcs-addto">
+        <strong>{`Add cards to ${addingTo.name}`}</strong>
+        <button type="button" className="mcs-cd-choice mcs-addto-opt" autoFocus
+          onClick={() => { const to = addingTo; setAddingTo(null); setPicking(to); setPicked(new Set()); setPickQuery(""); setPickLens("all"); }}>
+          <b>Add from My Cards</b><span>Cards you&apos;re looking for or own, already in MetYet.</span></button>
+        {onAddCards ? (
+          <button type="button" className="mcs-cd-choice mcs-addto-opt"
+            onClick={() => { const to = addingTo; setAddingTo(null); onAddCards({ binderId: to.id, name: to.name }); }}>
+            <b>Browse new cards</b><span>Find a card, say what it is to you, and it lands here.</span></button>
+        ) : null}
+        <button type="button" className="mcs-linkish" onClick={() => setAddingTo(null)}>Cancel</button>
+      </div>
+    </div>
+  ) : null);
+  const picker = () => {
+    if (!picking) return null;
+    const to = picking;
+    const needle2 = text(pickQuery) ? text(pickQuery).toLowerCase() : null;
+    const mine = objs.filter((o) => o.kind === "goal" || o.kind === "copy");
+    const already = mine.filter((o) => o.homeId === to.id).length;
+    const shownHere = mine.filter((o) => (pickLens === "all" || o.meaning === pickLens) && (!needle2 || (() => {
+      const k = described[o.cardKey];
+      return [k && k.cardName, k && k.expansionName, k && k.collectorNumber && `#${k.collectorNumber}`, k && k.finish ? versionLabel(k) : null]
+        .filter(Boolean).join(" ").toLowerCase().includes(needle2);
+    })()));
+    const chosen = mine.filter((o) => picked.has(o.key) && o.homeId !== to.id);
+    const moving = chosen.filter((o) => o.homeId);
+    const from = [...new Set(moving.map((o) => o.homeName))];
+    const toggle = (o) => setPicked((p) => { const n = new Set(p); if (n.has(o.key)) n.delete(o.key); else n.add(o.key); return n; });
+    const go = () => { if (!chosen.length || busy) return; if (moving.length && !confirmMove) { setConfirmMove(true); return; } fileMany(chosen.map((o) => o.key), to); };
+    return (
+      <div className="mcs-cd mcs-pick" role="dialog" aria-modal="true" aria-label={`Add to ${to.name}`}>
+        <header className="mcs-cd-hd">
+          <button type="button" className="mcs-cd-back" onClick={() => { setPicking(null); setConfirmMove(false); }}>‹ Cancel</button>
+          <b className="mcs-pick-title">{`Add to ${to.name}`}</b>
+        </header>
+        <div className="mcs-cd-scroll">
+          {already ? <p className="mcs-pick-note">{`${already} already in ${to.name}.`}</p> : null}
+          <p className="mcs-find mcs-pick-find">
+            <input className="mcs-in" type="search" value={pickQuery} placeholder="Search your cards" aria-label="Search your cards"
+              onChange={(e) => setPickQuery(e.target.value)} />
+          </p>
+          <div className="mcs-lenses mcs-pick-lenses" role="tablist" aria-label="Show">
+            {LENSES.map(([id, label]) => (
+              <button key={id} type="button" role="tab" aria-selected={pickLens === id}
+                className={`mcs-view${pickLens === id ? " on" : ""}`} onClick={() => setPickLens(id)}>{label}</button>
+            ))}
+          </div>
+          {!mine.length ? <p className="mcs-dim mcs-bempty">Cards you&apos;re looking for or own will appear here. Find one in Browse.</p>
+            : !shownHere.length ? <p className="mcs-dim mcs-bempty">Nothing of yours matches.</p> : (
+              <ul className="mcs-ogrid">
+                {shownHere.map((o) => {
+                  const known = described[o.cardKey] || null;
+                  const here = o.homeId === to.id;
+                  const on = picked.has(o.key) && !here;
+                  const num = known && known.collectorNumber ? `#${known.collectorNumber}` : null;
+                  const ident = [[nameOf(o), num].filter(Boolean).join(" "), known && known.finish ? versionLabel(known) : null, o.qual || null].filter(Boolean).join(" · ");
+                  return (
+                    <li key={o.key} className={`mcs-otile mcs-ptile${on ? " sel" : ""}${here ? " inthis" : ""}`} data-key={o.key}>
+                      <button type="button" className="mcs-otap" disabled={here} aria-pressed={here ? undefined : on}
+                        aria-label={`${nameOf(o)}, ${MEANING[o.meaning]}, ${here ? "already in this binder" : where(o)}`}
+                        onClick={() => { setConfirmMove(false); toggle(o); }}>
+                        {here ? null : <span className="mcs-pcheck" aria-hidden="true">{on ? "✓" : ""}</span>}
+                        <CardArt src={known && known.imageSmall} name={known && known.cardName}
+                          wrap="mcs-otile-art" plate="mcs-art-plate" decorative card={phOf(o, known)} />
+                      </button>
+                      <span className="mcs-ometa">
+                        <span className="mcs-ostate"><StateChip kind={o.meaning} label={MEANING[o.meaning]} /></span>
+                        <span className={`mcs-oloc${o.homeId ? (here ? "" : " elsewhere") : " unf"}`}>{here ? "This binder" : where(o)}</span>
+                        <span className="mcs-oq">{ident}</span>
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          <div className="mcs-cd-spacer" />
+        </div>
+        <div className="mcs-cd-dock">
+          {confirmMove && moving.length ? (
+            <div className="mcs-pick-confirm" role="alert">
+              <p><b>{`Move from ${from.join(", ")} to ${to.name}?`}</b>
+                {` ${moving.length === 1 ? `${nameOf(moving[0])} will` : `${moving.length} cards will`} move here — ${moving.length === 1 ? "it" : "they"} won't stay there too.`}</p>
+              <p className="mcs-goal-do">
+                <button type="button" className="mcs-go" disabled={busy} onClick={go}>{`Move and add${chosen.length > 1 ? ` ${chosen.length}` : ""}`}</button>
+                <button type="button" className="mcs-go quiet" disabled={busy} onClick={() => setConfirmMove(false)}>Back</button>
+              </p>
+            </div>
+          ) : moving.length ? (
+            <p className="mcs-cd-hint">{`${moving.length === 1 ? "1 card" : `${moving.length} cards`} will move here from ${from.join(", ")}.`}</p>
+          ) : null}
+          {confirmMove && moving.length ? null : (
+            <button type="button" className={`mcs-cd-add${chosen.length ? " ready" : ""}`} aria-disabled={!chosen.length || busy} aria-busy={busy} onClick={go}>
+              {busy ? "Adding…" : chosen.length ? `Add ${chosen.length} to ${to.name}` : `Add to ${to.name}`}</button>
+          )}
+        </div>
+      </div>
+    );
+  };
   const moveChooser = () => {
     const o = moving && detailKey ? objs.find((x) => x.key === detailKey) || null : null;
     if (!o || naming) return null;
@@ -875,7 +1029,7 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
         ) : null}
         {isOpen ? (
           <div className="mcs-bbody">
-            {all.length || (!away && onAddCards) ? (
+            {all.length || (!away && (onAddCards || onFileObject)) ? (
               <div className="mcs-btools">
                 {all.length ? (
                   <p className="mcs-bsum" aria-label="What's here">
@@ -885,9 +1039,9 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
                     {earlierFiled.length ? <span>{` · ${earlierFiled.length} earlier ${earlierFiled.length === 1 ? "filing" : "filings"}`}</span> : null}
                   </p>
                 ) : <span />}
-                {!away && onAddCards ? (
+                {!away && (onAddCards || onFileObject) ? (
                   <button type="button" className="mcs-linkish mcs-badd"
-                    onClick={() => onAddCards({ binderId: b.id, name: b.name })}>+ Add cards</button>
+                    onClick={() => setAddingTo({ id: b.id, name: text(b.name) || "this binder" })}>+ Add cards</button>
                 ) : null}
               </div>
             ) : null}
@@ -972,6 +1126,8 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
       </section>
       {filingLayer()}
       {moveChooser()}
+      {addChooser()}
+      {picker()}
       {namePrompt()}
     </div>
   );

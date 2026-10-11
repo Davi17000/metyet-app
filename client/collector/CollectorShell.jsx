@@ -729,6 +729,25 @@ ${STATE_CSS}
 .mcs-cd-choice[data-st].on b { color:var(--st-ink); }
 /* A SAVED CARD'S PAGE (P6-F4 B2B): CardDetail's structure, plus where it lives,
    its details, and a quiet way to remove it */
+/* + ADD CARDS (P6-F4 B3): the chooser, and the picker of their own cards (prototype .picker / .otile.sel / .check) */
+.mcs-addto { display:flex; flex-direction:column; gap:10px; }
+.mcs-addto .mcs-addto-opt { min-height:64px; }
+.mcs-addto .mcs-addto-opt span { display:block; color:var(--muted); font-size:12.5px; }
+.mcs-pick .mcs-cd-hd { gap:12px; }
+.mcs-pick .mcs-pick-title { font-size:16px; }
+.mcs-pick p.mcs-pick-note { margin:0 0 8px; font-size:12.5px; color:var(--muted); }
+.mcs-pick .mcs-pick-find { margin:0 0 8px; padding:0; }
+.mcs-pick .mcs-pick-lenses { display:flex; gap:6px; overflow-x:auto; margin:0 0 10px; }
+.mcs-ptile { position:relative; border:2px solid transparent; border-radius:12px; padding:2px; }
+.mcs-ptile.sel { border-color:var(--t1); background:var(--t1-bg); }
+.mcs-ptile.inthis { opacity:.55; }
+.mcs-ptile .mcs-otap { position:relative; }
+.mcs-pcheck { position:absolute; top:6px; right:6px; z-index:2; width:24px; height:24px; border-radius:50%; background:rgba(255,255,255,.92);
+  border:1.5px solid var(--line); display:flex; align-items:center; justify-content:center; font-weight:800; color:#FFF; font-size:13px; }
+.mcs-ptile.sel .mcs-pcheck { background:var(--t1); border-color:var(--t1); }
+.mcs-oloc.elsewhere { color:var(--amber); }
+.mcs-pick .mcs-pick-confirm { border:1px solid var(--amber-line); background:var(--amber-bg); border-radius:12px; padding:10px 12px; }
+.mcs-pick .mcs-pick-confirm p { margin:0 0 8px; font-size:13px; color:var(--text); }
 .mcs-snack-wrap.over-page { bottom:calc(132px + env(safe-area-inset-bottom, 0px)); }
 /* the record's own pair, side by side and thumb-sized (B2B.1) */
 .mcs-ce .mcs-ce-pair .mcs-cd-choice { min-height:64px; }
@@ -1121,9 +1140,12 @@ ${STATE_CSS}
 .mcs-cd p.mcs-cd-hint.ack { color:#1F6F4A; font-weight:600; }
 .mcs-cd p.mcs-cd-hint.problem { color:var(--amber); }
 .mcs-d-ack { position:fixed; left:12px; right:12px; bottom:calc(var(--tabbar-h, 0px) + 10px + env(safe-area-inset-bottom, 0px)); z-index:27;
-  margin:0; padding:10px 12px; text-align:left; background:var(--t1-bg); color:var(--t1); border:1px solid #CFE3E5; border-radius:10px;
+  margin:0; padding:10px 12px; text-align:left; display:block; background:var(--t1-bg); color:var(--t1); border:1px solid #CFE3E5; border-radius:10px;
   font-size:12.5px; box-shadow:0 8px 20px rgba(10,16,20,.12); animation:mcs-cd-reveal .25s ease-out; }
-.mcs-d-ack b { color:var(--t1); } .mcs-d-ack span { color:var(--muted); font-size:12px; }
+.mcs-d-ack b { color:var(--t1); }
+.mcs-d-ack .mcs-d-ack-body { border:0; background:none; padding:0; text-align:left; font:inherit; color:inherit; display:block; width:100%; }
+.mcs-d-ack .mcs-d-ack-acts { display:flex; justify-content:flex-end; align-items:center; gap:12px; margin-top:8px; }
+.mcs-d-ack .mcs-d-ack-acts .mcs-go { min-height:40px; } .mcs-d-ack span { color:var(--muted); font-size:12px; }
 .mcs-d-ack .mcs-d-ack-value { display:block; margin:3px 0 0; color:var(--text); font-size:12.5px; }
 .mcs-dcell.just { animation:mcs-d-just 2.4s ease-out; }
 @keyframes mcs-d-just { 0% { box-shadow:0 0 0 0 rgba(11,93,102,0); } 15% { box-shadow:0 0 0 5px rgba(11,93,102,.35); } 100% { box-shadow:0 0 0 0 rgba(11,93,102,0); } }
@@ -1196,6 +1218,8 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
      Collector can untick; Save still writes only the difference, and Cancel
      still writes nothing. */
   const [fillingBinder, setFillingBinder] = useState(null);
+  /* the binder to open on arrival in Binders, after "Back to <binder>" (P6-F4 B3) */
+  const [returnTo, setReturnTo] = useState(null);
 
   const who = describeActor(state);
   /* THE ACCOUNT, ON A PHONE (P6-F1). The Phase 6 phone has no account bar:
@@ -1331,11 +1355,12 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
             ? { onAddGoal, onSetPriority, onRemoveGoal, onBrowseCards }
             : meta.id === "browse"
               ? { onSpecify, onBrowseCards, session: browseSession, onSession: setBrowseSession, onCount: setBrowseCount,
-                fillingBinder, onDoneFilling: () => setFillingBinder(null) }
+                fillingBinder, onDoneFilling: () => setFillingBinder(null), onRefresh,
+                onBackToBinder: () => { setReturnTo(fillingBinder); setFillingBinder(null); setSection("binder"); } }
               : meta.id === "binder"
                   ? { onSpecify, onBrowseCards, onCreateBinder, onRenameBinder,
-                    onArchiveBinder, fillingBinder, onFileObject, onUnfileObject, onRefresh,
-                    onAddCards: (into) => { setFillingBinder(into); setSection("browse"); } }
+                    onArchiveBinder, fillingBinder: fillingBinder || returnTo, onFileObject, onUnfileObject, onRefresh,
+                    onAddCards: (into) => { setReturnTo(null); setFillingBinder(into); setSection("browse"); } }
                   : meta.id === "partners"
                     /* Trusted Partners asks the catalog what the cards a shop
                        has for you are called, and takes nothing else (Phase 5

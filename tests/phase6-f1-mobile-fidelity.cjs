@@ -198,7 +198,8 @@ describe("D. the prototype's placeholder, in the shared card picture", () => {
   /* RESTATED (P6-F4 B2B): the card sheet became the saved card's page (CardEdit.jsx), which asks for it too */
   test("the Binders tiles, the saved card's page and the lifted card all ask for it", () => {
     const src = fs.readFileSync(path.join(ROOT, "client/collector/sections/Binder.jsx"), "utf8");
-    eq((src.match(/card=\{phOf\(/g) || []).length, 2, "the tile and the lifted card");
+    /* (P6-F4 B3: and the + Add cards picker's tile) */
+    eq((src.match(/card=\{phOf\(/g) || []).length, 3, "the tile, the picker's tile and the lifted card");
     const page = fs.readFileSync(path.join(ROOT, "client/collector/CardEdit.jsx"), "utf8");
     assert(/<CardArt src=\{imageShown\}[^>]*\bcard=\{\{ key: known && known\.cardContextId/.test(page), "the saved card's page does not ask for the placeholder");
     assert(/\.mcs \.mcs-cardph \{ --h:200; --h2:180;[^}]*inset 0 0 0 3px hsl\(48 70% 72%\)/.test(css()), "not the prototype's card face");

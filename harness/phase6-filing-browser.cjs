@@ -789,6 +789,82 @@ describe("an owned copy's state, both ways, in reach (P6-F4 B2B.1)", () => {
   });
 });
 
+/* P6-F4 BATCH 3 — LAST, BECAUSE IT WRITES. + Add cards: one of their own
+   cards, then a new card made on the Phase 6 card and filed into the binder —
+   its first filing refused by the real server, then Retry filing. */
+describe("+ Add cards to a binder, through production (P6-F4 B3)", () => {
+  test("My Cards files the exact record; Browse new cards makes one and files THAT one; Retry filing never re-creates; Back to the binder", async () => {
+    await before();
+    const context = await browser.newContext({ ...PHONE }); const page = await context.newPage();
+    const errors = []; page.on("pageerror", (e) => errors.push(e.message));
+    const commands = []; page.on("request", (r) => { if (r.url().includes("/api/commands")) commands.push(JSON.parse(r.postData() || "{}").command); });
+    const binder = (await ctx.world()).binders.find((b) => !b.archivedAt && b.name === "Favourites") || (await ctx.world()).binders.find((b) => !b.archivedAt);
+    const w0 = await ctx.world();
+    const unfiled = w0.collectorCopies.find((c) => !(w0.binderMemberships || []).some((m) => m.collectorCopyId === c.id));
+    assert(unfiled, "the fixture has no unfiled copy");
+    await signIn(page, ctx.url);
+    await page.tap("nav[aria-label=Collector] button:has-text('Binders')"); await page.waitForTimeout(500);
+    const sec = page.locator("button.mcs-sechead", { hasText: /^Binders/ }).first();
+    if ((await sec.getAttribute("aria-expanded")) !== "true") await sec.tap();
+    const row = page.locator(`.mcs-bcover[data-binder='${binder.id}'] button.mcs-bhead`);
+    if ((await row.getAttribute("aria-expanded")) !== "true") await row.tap();
+    await page.locator(`.mcs-bcover[data-binder='${binder.id}'] button.mcs-badd`).tap();
+    await page.screenshot({ path: "artifacts/f4-b3-chooser.png" }).catch(() => {});
+    eq(commands.length, 0, "the chooser wrote something");
+    /* 1. My Cards */
+    await page.locator("[role=dialog] button", { hasText: /^Add from My Cards/ }).tap();
+    const pick = page.locator(`[role=dialog].mcs-pick li[data-key='c:${unfiled.id}'] button.mcs-otap`);
+    await pick.scrollIntoViewIfNeeded(); await pick.tap();
+    await page.screenshot({ path: "artifacts/f4-b3-picker.png" }).catch(() => {});
+    await page.locator("[role=dialog].mcs-pick button.mcs-cd-add").tap();
+    await page.locator(".mcs-snack", { hasText: /1 added to/ }).waitFor();
+    eq(((await ctx.memberships()).find((m) => m.collectorCopyId === unfiled.id) || {}).binderId, binder.id, "not filed");
+    await page.screenshot({ path: "artifacts/f4-b3-picker-filed.png" }).catch(() => {});
+    /* 2. Browse new cards; the first filing pointed at a binder that does not exist */
+    await page.locator(`.mcs-bcover[data-binder='${binder.id}'] button.mcs-badd`).tap();
+    await page.locator("[role=dialog] button", { hasText: /^Browse new cards/ }).tap();
+    await page.locator(".mcs-filling").waitFor();
+    await page.screenshot({ path: "artifacts/f4-b3-browse-from-binder.png" }).catch(() => {});
+    let pointed = false;
+    await page.route("**/api/commands", async (route) => {
+      const body = JSON.parse(route.request().postData() || "{}");
+      if (body.command === "fileObject" && !pointed) { pointed = true; return route.continue({ postData: JSON.stringify({ ...body, payload: { ...body.payload, binderId: "b-does-not-exist" } }) }); }
+      return route.continue();
+    });
+    await page.locator(".mcs-dtile[data-dex='258']").tap(); await page.waitForTimeout(800);
+    const cell = page.locator("button.mcs-dcell[aria-label='Mudkip, Ruby & Sapphire #60']"); await cell.scrollIntoViewIfNeeded(); await cell.tap();
+    await page.locator(".mcs-cd").waitFor(); await page.waitForTimeout(400);
+    for (const t of ["Normal", "Graded", "PSA 6", "I own (it|another one)", "Trade \\/ Sell"]) {
+      const c = page.locator(".mcs-cd-choice", { has: page.locator("b", { hasText: new RegExp(`^${t}$`) }) }).first(); await c.scrollIntoViewIfNeeded(); await c.tap(); await page.waitForTimeout(120);
+    }
+    await page.screenshot({ path: "artifacts/f4-b3-create-with-binder.png" }).catch(() => {});
+    const before1 = (await ctx.world()).collectorCopies.map((c) => c.id);
+    await page.locator(".mcs-cd-add").tap();
+    await page.locator(".mcs-cd-hint.problem", { hasText: /couldn't go into/ }).waitFor();
+    await page.screenshot({ path: "artifacts/f4-b3-partial-retry.png" }).catch(() => {});
+    let w = await ctx.world();
+    const made = w.collectorCopies.filter((c) => !before1.includes(c.id));
+    eq(made.length, 1, "not exactly one new copy");
+    eq(((await ctx.memberships()).find((m) => m.collectorCopyId === made[0].id) || null), null, "a refused filing filed it");
+    await page.locator(".mcs-cd-add", { hasText: "Retry filing" }).tap();
+    await page.locator(".mcs-cd-add.added").waitFor();
+    w = await ctx.world();
+    eq(w.collectorCopies.filter((c) => !before1.includes(c.id)).length, 1, "Retry filing made another copy");
+    eq(((await ctx.memberships()).find((m) => m.collectorCopyId === made[0].id) || {}).binderId, binder.id, "the new copy is not in the binder");
+    eq(JSON.stringify([made[0].offered === true, made[0].grade]), JSON.stringify([true, "PSA 6"]), "the copy is not what was said");
+    await page.locator(".mcs-d-ack").waitFor();
+    await page.screenshot({ path: "artifacts/f4-b3-created-filed.png" }).catch(() => {});
+    /* 3. back to the binder, open */
+    await page.locator(".mcs-d-ack button", { hasText: `Back to ${binder.name}` }).tap(); await page.waitForTimeout(600);
+    eq(await page.locator(`.mcs-bcover.open[data-binder='${binder.id}']`).count(), 1, "the binder is not open on return");
+    assert(await page.locator(`.mcs-bcover[data-binder='${binder.id}'] li.mcs-otile[data-key='c:${made[0].id}']`).count(), "the new card is not in the binder");
+    await page.screenshot({ path: "artifacts/f4-b3-back-to-binder.png" }).catch(() => {});
+    eq(JSON.stringify(commands), JSON.stringify(["fileObject", "addCollectorCopy", "fileObject", "fileObject"]), "unexpected commands: " + JSON.stringify(commands));
+    eq(errors.length, 0, errors.join(" | "));
+    await context.close();
+  });
+});
+
 if (!chromium) {
   console.log("SKIPPED: Playwright is not installed.");
 } else {

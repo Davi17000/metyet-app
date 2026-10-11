@@ -144,6 +144,9 @@ describe("A. expand and collapse", () => {
     await click(head(r, "b-long"));
     assert(/Nothing in this binder yet/.test(flat(cover(r, "b-long"))));
     await click(cover(r, "b-long").findAll((n) => n.type === "button" && /^\+ Add cards$/.test(flat(n)))[0]);
+    /* RESTATED (P6-F4 B3): + Add cards offers My Cards or Browse first */
+    eq(sent.length, 0, "opening the chooser did something");
+    await click(btn(r, /^Browse new cards/));
     eq(json(sent), json([["addCards", { binderId: "b-long", name: LONG }]]));
   });
 });

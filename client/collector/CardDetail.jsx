@@ -200,11 +200,16 @@ export function Section({ id, title, focus, children }) {
 const HOLD_MS = 900;
 
 export default function CardDetail({ context, state, backLabel = "Browse", position = 0, total = 1,
-  onStep = null, onClose, onSave = null, onAdded = null, wakeHint = true, onForm = null }) {
-  /* FILLING A BINDER (Browse's "Adding to …" mode) keeps Stage 1's behaviour
-     until the founder decides it: no questions here, and Add opens the existing
-     Card Specification, which ticks that binder. See sections/Browse.jsx. */
-  const formMode = Boolean(onForm);
+  onStep = null, onClose, onSave = null, onAdded = null, wakeHint = true, fileInto = null, onRefresh = null }) {
+  /* ADDING FROM A BINDER (P6-F4 B3): `fileInto` is { binderId, name } — the
+     binder the Collector started from. After the server has confirmed the new
+     Goal or copy, the card files THAT record (the id the create returned) into
+     it: two existing commands, in order, each confirmed. If the filing fails,
+     the record exists and Retry filing sends the filing again — never the
+     create. If the create's answer is lost, the projection is re-read before
+     anything is sent again. */
+  const stateRef = useRef(state); stateRef.current = state;
+  const [unfiled, setUnfiled] = useState(null);   // { id, idKey, ack } — made, not yet filed (Retry filing)
   const cards = rows(context && context.cards);
   const [a, setA] = useState(() => blankAnswers(cards));
   const [focus, setFocus] = useState(null);
@@ -237,7 +242,7 @@ export default function CardDetail({ context, state, backLabel = "Browse", posit
   const existingGoal = known.goal;
   const missing = nextUnanswered(cards, a, existingGoal);
   const step = stepFor(a);
-  const ready = formMode ? Boolean(chosen) : Boolean(onSave) && !missing && Boolean(step) && !saved && !saving;
+  const ready = Boolean(onSave) && !missing && Boolean(step) && !saved && !saving && !unfiled;
 
   const wasReady = useRef(false);
   useEffect(() => {
@@ -254,17 +259,90 @@ export default function CardDetail({ context, state, backLabel = "Browse", posit
     if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
+  /* The record a create made: the id it returned. If that answer was lost,
+     the re-read projection is asked — a Goal is one per card, so it is found
+     exactly; a copy is the ONE new copy of this card, or nothing is assumed. */
+  const madeId = (step0, answer, beforeState) => {
+    if (answer && typeof answer.value === "string" && answer.value) return { id: answer.value, sure: true };
+    const isGoal = step0.kind === "start-looking";
+    const was = new Set(rows(beforeState && (isGoal ? beforeState.goals : beforeState.collectorCopies)).map((x) => x.id));
+    const now = rows(stateRef.current && (isGoal ? stateRef.current.goals : stateRef.current.collectorCopies))
+      .filter((x) => x.canonicalCardId === chosen.canonicalCardId && !was.has(x.id));
+    return now.length === 1 ? { id: now[0].id, sure: true } : { id: null, sure: false, many: now.length > 1 };
+  };
+  const fileMade = async (id, isGoal, ack, before) => {
+    const fileStep = { kind: "file-object", binderId: fileInto.binderId, ...(isGoal ? { goalId: id } : { collectorCopyId: id }) };
+    let answer;
+    try { answer = await onSave(fileStep, chosen.canonicalCardId); }
+    catch (error) { answer = { ok: false, refused: "lost-contact" }; }
+    if (!alive.current) return;
+    if (answer && answer.ok === false) {
+      setUnfiled({ id, isGoal, ack, before });
+      setProblem(`${ack.head.replace(/ ✓$/, "")} saved — but it couldn't go into ${fileInto.name}: `
+        + (answer.refused === "lost-contact" ? "MetYet lost contact. It may be there already; Retry filing checks."
+          : answer.refused === "binder-archived" ? "that binder has been put away. It's Unfiled."
+            : "MetYet would not file it. It's Unfiled."));
+      return;
+    }
+    setUnfiled(null); setProblem(null);
+    const filed = { ...ack, facts: `${ack.facts} · in ${fileInto.name}` };
+    setSaved({ ...filed, before });
+    setTimeout(() => { if (alive.current && onAdded) onAdded(filed, chosen); }, HOLD_MS);
+  };
+  /* RETRY FILING: the same record, the filing only. */
+  const retryFiling = async () => {
+    if (!unfiled || sending.current) return;
+    sending.current = true; setSaving(true); setProblem(null);
+    try {
+      /* a filing whose answer was lost may have landed: look first */
+      if (onRefresh) { try { await onRefresh(); } catch (e) { /* said below if it matters */ } await new Promise((d) => setTimeout(d, 0)); }
+      const home = rows(stateRef.current && stateRef.current.binderMemberships)
+        .find((m) => (unfiled.isGoal ? m.goalId : m.collectorCopyId) === unfiled.id);
+      if (home && home.binderId === fileInto.binderId) {
+        const filed = { ...unfiled.ack, facts: `${unfiled.ack.facts} · in ${fileInto.name}` };
+        setUnfiled(null); setSaved({ ...filed, before: unfiled.before });
+        setTimeout(() => { if (alive.current && onAdded) onAdded(filed, chosen); }, HOLD_MS);
+        return;
+      }
+      await fileMade(unfiled.id, unfiled.isGoal, unfiled.ack, unfiled.before);
+    } finally {
+      sending.current = false;
+      if (alive.current) setSaving(false);
+    }
+  };
+
   const add = async () => {
-    if (formMode) { if (chosen) onForm(chosen); else nudge(); return; }
+    if (unfiled) { await retryFiling(); return; }
     if (saved || sending.current || !onSave) return;
     if (!ready) { nudge(); return; }
     sending.current = true; setSaving(true); setProblem(null);
     const before = state;
     const ack = ackFor(chosen, a, cards);
     try {
-      const answer = await onSave(step, chosen.canonicalCardId);
+      let answer;
+      try { answer = await onSave(step, chosen.canonicalCardId); }
+      catch (error) {
+        if (!fileInto || !onRefresh) throw error;
+        /* NOT KNOWN WHETHER IT WAS MADE: look, don't resend */
+        try { await onRefresh(); } catch (e) { /* the screen says what it knows */ }
+        await new Promise((d) => setTimeout(d, 0));
+        const found = madeId(step, null, before);
+        if (!alive.current) return;
+        if (!found.sure) {
+          setProblem(found.many ? "MetYet lost contact. Check Binders before trying again — this may have been saved."
+            : "MetYet lost contact, and nothing was saved. Your answers are still here.");
+          return;
+        }
+        answer = { ok: true, value: found.id };
+      }
       if (!alive.current) return;
       if (answer && answer.ok === false) { setProblem(explain(step, answer.refused, [])); return; }
+      if (fileInto) {
+        const made = madeId(step, answer, before);
+        if (!made.sure) { setProblem("Saved — but MetYet can't tell which record it made, so it hasn't been filed. Check Binders."); setSaved({ ...ack, before }); return; }
+        await fileMade(made.id, step.kind === "start-looking", ack, before);
+        return;
+      }
       setSaved({ ...ack, before });
       setTimeout(() => { if (alive.current && onAdded) onAdded(ack, chosen); }, HOLD_MS);
     } catch (error) {
@@ -342,7 +420,7 @@ export default function CardDetail({ context, state, backLabel = "Browse", posit
         )}
 
         {/* 2. WHAT IT IS, PHYSICALLY. */}
-        {chosen && !formMode ? (<>
+        {chosen ? (<>
           <Section id="kind" title="Raw or graded?" focus={focus}>
             <div className="mcs-cd-row">
               <Choice on={a.kind === "raw"} title="Raw" onClick={() => choose("kind", "raw")} />
@@ -362,7 +440,7 @@ export default function CardDetail({ context, state, backLabel = "Browse", posit
         </>) : null}
 
         {/* 3. WHAT IT MEANS — always the last decision before Add. */}
-        {chosen && !formMode && described(a) ? (
+        {chosen && described(a) ? (
           <Section id="intent" title="What does this card mean to you?" focus={focus}>
             <div className="mcs-cd-col">
               {existingGoal ? (
@@ -401,15 +479,15 @@ export default function CardDetail({ context, state, backLabel = "Browse", posit
       </div>
 
       <div className="mcs-cd-dock">
-        {formMode && chosen ? <p className="mcs-cd-hint quiet">For now, Add opens MetYet&apos;s current card form.</p> : null}
+        {fileInto && !saved && !unfiled && !problem ? <p className="mcs-cd-hint quiet mcs-cd-into">{`Adding to ${fileInto.name}`}</p> : null}
         {problem ? <p className="mcs-cd-hint problem" role="alert">{problem}</p>
           : hint && !saved ? <p className="mcs-cd-hint">{hint}</p>
             : !ready && !saved && !saving && wakeHint && cards.length > 0 && onSave
               ? <p className="mcs-cd-hint quiet">Add to MetYet wakes up as you answer.</p> : null}
         {saved ? <p className="mcs-cd-hint ack" role="status">{saved.head}{saved.facts ? ` · ${saved.facts}` : ""}</p> : null}
-        <button type="button" className={`mcs-cd-add${ready || saving ? " ready" : ""}${justReady ? " pop" : ""}${saved ? " added" : ""}`}
-          aria-disabled={!ready} aria-busy={saving} onClick={add}>
-          {saved ? "✓ Added to MetYet" : "Add to MetYet"}
+        <button type="button" className={`mcs-cd-add${ready || saving || unfiled ? " ready" : ""}${justReady ? " pop" : ""}${saved ? " added" : ""}`}
+          aria-disabled={!(ready || (unfiled && !saving))} aria-busy={saving} onClick={add}>
+          {saved ? (fileInto ? `✓ Added to ${fileInto.name}` : "✓ Added to MetYet") : unfiled ? "Retry filing" : "Add to MetYet"}
         </button>
       </div>
     </div>
