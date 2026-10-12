@@ -96,7 +96,9 @@ describe("A. all twelve directed transitions", () => {
         eq(json([f.kind, f.id, f.at]), json([isGoalState(from) ? "goal" : "copy", "rec", f.at]));
         const { id, collectorId, canonicalCardId, ...facts } = src;
         eq(json(f.facts), json(facts), "the source's facts are not all kept");
-        if (kind === "copy") assert(!("grade" in rec) && !("condition" in rec) && !("cert" in rec), "a wanted grade was asserted as fact");
+        /* RESTATED (P6-F4 B5.2, founder): the configuration travels — the copy
+           carries the Goal's saved grade as saved, and nothing else of it */
+        if (kind === "copy") eq(json([rec.grade, rec.condition, rec.cert]), json(["PSA 9", undefined, undefined]), "the saved configuration did not travel");
         else eq(json(rec.desired), json({ grade: "PSA 8" }), "the Goal does not want what the copy was");
       }
       /* repeated Submit Update: done once */
@@ -286,6 +288,57 @@ describe("F. the lineage is the Collector's alone", () => {
   });
 });
 
+/* ============================================================== H */
+describe("H. the configuration travels (P6-F4 B5.2): changing state changes only state", () => {
+  const cross = (rec, from, to) => {
+    const st = store(rec);
+    const r = x(st, CASEY, { [rec.tier ? "goalId" : "collectorCopyId"]: "rec", from, to });
+    assert(r.ok !== false, `${from}→${to}: ${r.refused}`);
+    const w = st.get();
+    return { st, r, rec: r.value.kind === "goal" ? w.goals.find((g) => g.id === r.value.id) : w.collectorCopies.find((c) => c.id === r.value.id) };
+  };
+  test("Primary PSA 9 → Trade / Sell PSA 9", () => {
+    const { rec } = cross(GOAL("primary", { desired: { grade: "PSA 9" } }), "primary", "trade");
+    eq(json([rec.offered, rec.grade, rec.condition]), json([true, "PSA 9", undefined]));
+  });
+  test("Secondary PSA 8 → PC PSA 8", () => {
+    const { rec } = cross(GOAL("secondary", { desired: { grade: "PSA 8" } }), "secondary", "pc");
+    eq(json([rec.keeping, rec.grade]), json([true, "PSA 8"]));
+  });
+  test("PC PSA 10 → Primary PSA 10", () => {
+    const { rec } = cross(COPY("pc", { grade: "PSA 10" }), "pc", "primary");
+    eq(json([rec.tier, rec.desired]), json(["primary", { grade: "PSA 10" }]));
+  });
+  test("Trade / Sell Raw Near Mint → Secondary Raw Near Mint", () => {
+    const { rec } = cross(COPY("trade", { grade: "Raw", condition: "Near Mint" }), "trade", "secondary");
+    eq(json([rec.tier, rec.desired]), json(["secondary", { grade: "Raw", condition: "Near Mint" }]));
+  });
+  test("Raw Near Mint survives Goal → copy → Goal → copy, with every crossing in the lineage", () => {
+    const st = store(GOAL("primary", { desired: { grade: "Raw", condition: "Near Mint" } }));
+    let id = "rec"; let kind = "goal";
+    for (const [from, to] of [["primary", "secondary"], ["secondary", "pc"], ["pc", "trade"], ["trade", "primary"], ["primary", "pc"]]) {
+      const r = x(st, CASEY, { [kind === "goal" ? "goalId" : "collectorCopyId"]: id, from, to });
+      assert(r.ok !== false, `${from}→${to}: ${r.refused}`);
+      id = r.value.id; kind = r.value.kind;
+      const w = st.get();
+      const rec = kind === "goal" ? w.goals.find((g) => g.id === id) : w.collectorCopies.find((c) => c.id === id);
+      const cfg = kind === "goal" ? rec.desired : { grade: rec.grade, condition: rec.condition };
+      eq(json(cfg), json({ grade: "Raw", condition: "Near Mint" }), `${from}→${to} lost the configuration`);
+      eq(mine(w).length, 1, "a second record appeared");
+    }
+    const last = st.get().collectorCopies.find((c) => c.id === id);
+    eq(json(last.formerly.map((f) => f.kind)), json(["goal", "copy", "goal"]));
+  });
+  test("nothing fabricated: a Raw Goal with no condition, or with no criteria, makes a copy with no grade", () => {
+    eq(cross(GOAL("primary", { desired: { grade: "Raw" } }), "primary", "pc").rec.grade, undefined);
+    eq(cross(GOAL("primary", { desired: undefined }), "primary", "pc").rec.grade, undefined);
+  });
+  test("a copy made from a Goal says nothing about verification: no field beyond the grading itself", () => {
+    const { rec } = cross(GOAL("primary"), "primary", "trade");
+    eq(json(Object.keys(rec).filter((k) => !["id", "collectorId", "canonicalCardId", "grade", "addedAt", "formerly", "offered", "keeping"].includes(k))), json([]));
+  });
+});
+
 /* ============================================================== G */
 describe("G. the door, and the database", () => {
   test("the command is offered to the product", () => {
@@ -311,10 +364,12 @@ describe("G. the door, and the database", () => {
       eq(json(copy.formerly[0].facts.desired), json(goal.desired));
       const home1 = w1.binderMemberships.find((m) => m.collectorCopyId === copy.id);
       eq(json([home1.id, home1.binderId]), json([home.id, home.binderId]), "the home did not survive Postgres");
-      /* a refusal through the server: the copy has no grade, so it cannot become a Goal */
+      /* RESTATED (B5.2): the copy carries PSA 9 now; a refusal through the
+         server is a stale screen instead */
+      eq(copy.grade, goal.desired.grade, "the configuration did not travel through Postgres");
       const before = json(await ctx.world());
-      const no = await send("changeCollectingState", { collectorCopyId: copy.id, from: "pc", to: "primary" });
-      assert(no.status !== 200 && /criteria-required/.test(json(no.body)), json(no));
+      const no = await send("changeCollectingState", { collectorCopyId: copy.id, from: "trade", to: "primary" });
+      assert(no.status !== 200 && /state-changed/.test(json(no.body)), json(no));
       eq(json(await ctx.world()), before, "a refusal wrote something");
       /* and the repeat of the first is answered as done */
       const again = await send("changeCollectingState", { goalId: goal.id, from: "primary", to: "pc" });

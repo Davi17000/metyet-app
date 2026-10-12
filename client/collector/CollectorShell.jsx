@@ -755,13 +755,9 @@ ${STATE_CSS}
    pair opens the guided step, so it wears a dashed edge — it adds, not edits */
 .mcs-ce .mcs-ce-four { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
 .mcs-ce .mcs-ce-four .mcs-cd-choice { min-height:60px; padding:9px 12px; }
-/* its history, offered after a state change crossed it (B5) */
-.mcs-ce .mcs-ce-recall { margin:10px 0 0; display:flex; flex-direction:column; gap:8px; }
-.mcs-ce .mcs-ce-recall p { margin:0; display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:13px; color:var(--text);
-  border:1px solid var(--line); border-radius:12px; padding:9px 12px; background:var(--line-soft); }
-.mcs-ce .mcs-ce-recall p span { flex:1 1 200px; }
-.mcs-ce .mcs-ce-recall .mcs-go { min-height:40px; }
-.mcs-ce p.mcs-ce-history { margin:10px 0 0; font-size:12.5px; color:var(--muted); }
+/* its history (B5; B5.2): a quiet recovery in Copy details, never under the states */
+.mcs-ce p.mcs-ce-restore { margin:0 0 10px; display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:12.5px; color:var(--muted); }
+.mcs-ce p.mcs-ce-history { margin:-6px 0 14px; font-size:12.5px; color:var(--muted); }
 .mcs-ce .mcs-ce-home { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .mcs-ce .mcs-ce-home b { font-size:15px; }
 .mcs-ce .mcs-ce-home .mcs-go { min-height:44px; min-width:96px; }

@@ -1287,10 +1287,14 @@ const COMMANDS = {
      earlier snapshot; at the bound the change is refused, never truncated.
      It is the Collector's alone: no partner allow-list names it.
 
-     NOTHING IS ASSERTED. A Goal's wanted grade is what they hoped for, not
-     what they hold, so a copy made from a Goal is born with no grade or
-     condition (doctrine: identity and state are enough at birth). A Goal made
-     from a copy wants what the copy is, which is a preference, not a fact.
+     THE CONFIGURATION TRAVELS (P6-F4 B5.2, founder-approved: "changing
+     collecting state changes only collecting state"). A copy made from a Goal
+     carries the Goal's saved grade and condition — Raw and its condition, or
+     the graded grade — exactly as saved, and nothing that was not saved. That
+     is the Collector reusing what they entered, by their own explicit action;
+     it is not MetYet verifying a physical card, and nothing here says it is.
+     A Goal made from a copy wants what the copy is. Either way the configuration
+     can be edited afterwards like any other, and the lineage keeps what was.
 
      REFUSED, CHANGING NOTHING, WHEN:
        the record is not the asker's (not-owner) or no longer exists — unless a
@@ -1378,8 +1382,14 @@ const COMMANDS = {
     let newId;
     if (isGoal) {
       newId = ctx.id("b");
-      const copy = withDisposition({ id: newId, collectorId: a.collectorId, canonicalCardId: canonical, addedAt: at, formerly },
+      /* the Goal's saved configuration, as saved: Raw + condition, or a grade */
+      const want = src.desired && typeof src.desired === "object" ? src.desired : {};
+      const wg = typeof want.grade === "string" ? want.grade.trim() : "";
+      const wc = typeof want.condition === "string" ? want.condition.trim() : "";
+      const config = wg === "Raw" ? (wc ? { grade: "Raw", condition: wc } : {}) : wg ? { grade: wg } : {};
+      const copy = withDisposition({ id: newId, collectorId: a.collectorId, canonicalCardId: canonical, ...config, addedAt: at, formerly },
         to === "trade", to === "pc", null);
+      if (D.gradingProblem(copy)) return refuse(R.gradingIncoherent);
       next = { ...state,
         goals: list(state.goals).filter((g) => g.id !== src.id),
         collectorCopies: [...list(state.collectorCopies), copy] };

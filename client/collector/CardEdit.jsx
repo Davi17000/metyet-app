@@ -163,7 +163,8 @@ export default function CardEdit({ kind, thing, known, homeName = null, homeAway
     setEdits((x) => { const { meaning: _m, ...rest } = x; return m === savedState ? rest : { ...rest, meaning: m }; });
   };
   const keyOf = (v) => `${v.kind === "goal" ? "g" : "c"}:${v.id}`;
-  const STATE_SAID = (to) => `Now ${STATE_STYLE[to] ? STATE_STYLE[to].label : to} — same card, ${homeName ? `still in ${homeName}` : "still Unfiled"}.`;
+  /* ONE QUIET ACKNOWLEDGEMENT, whichever kind of record the state lives on (B5.2) */
+  const STATE_SAID = (to) => `Saved — ${STATE_STYLE[to] ? STATE_STYLE[to].label : to}.`;
   /* After a lost answer: did the change land? The record itself, or the one
      whose lineage names it, in the state asked for. */
   const landed = (step) => {
@@ -177,7 +178,7 @@ export default function CardEdit({ kind, thing, known, homeName = null, homeAway
   };
   const arrive = async (v, step) => {
     /* the same record: said here. Another record: re-read, then open it. */
-    if (v.id === thing.id) { setEdits({}); setAck(`Saved — ${STATE_STYLE[step.to].label}.`); return; }
+    if (v.id === thing.id) { setEdits({}); setAck(STATE_SAID(step.to)); return; }
     if (onRefresh) { try { await onRefresh(); } catch (e) { /* the page opens on what it has */ } }
     if (onOpenRecord) onOpenRecord(keyOf(v), STATE_SAID(step.to));
   };
@@ -272,22 +273,22 @@ export default function CardEdit({ kind, thing, known, homeName = null, homeAway
   const SUB = { ...Object.fromEntries(Object.entries(STATE_STYLE).map(([k, st]) => [k, st.message])),
     secondary: "I'm interested in this card." };
   const copy = kind === "copy" ? thing : null;
-  /* ITS HISTORY (P6-F4 B5): what this card was before a state change crossed
-     it. Offered, never applied: a tap fills the draft, and Submit Update
-     sends it like any other edit. */
+  /* ITS HISTORY (P6-F4 B5; B5.2). A state change carries the grade and
+     condition, so nothing is asked after one. What a Goal cannot hold — an
+     earlier copy's certificate and reference value — stays in the lineage
+     and is offered quietly where those fields live: in Copy details, as a
+     recovery, filling the draft only. */
   const lineage = Array.isArray(thing && thing.formerly) ? thing.formerly : [];
   const lastOf = (k) => [...lineage].reverse().find((f) => f && f.kind === k && f.facts) || null;
-  const physOf = (f) => (f.grade === "Raw" ? (f.condition ? `Raw · ${f.condition}` : null) : f.grade || null);
-  const wasGoal = kind === "copy" && !saved.kind ? lastOf("goal") : null;
-  const wanted = wasGoal && wasGoal.facts.desired && physOf(wasGoal.facts.desired) ? wasGoal.facts.desired : null;
   const wasCopy = lastOf("copy");
   const earlier = wasCopy ? wasCopy.facts : null;
-  const earlierLine = earlier ? [physOf(earlier), earlier.cert ? `Cert ${earlier.cert}` : null,
+  const keptLine = earlier ? [earlier.cert ? `Cert ${earlier.cert}` : null,
     earlier.market != null ? `$${earlier.market}` : null, photoNote(earlier.photos)].filter(Boolean).join(" · ") : "";
-  const fill = (f, more = {}) => {
+  const restorable = kind === "copy" && earlier && ((earlier.cert && !text(saved.cert)) || (earlier.market != null && !text(saved.market)));
+  const restore = () => {
     setProblem(null); setAck(null);
-    setEdits((x) => ({ ...x, kind: f.grade === "Raw" ? "raw" : "graded", condition: f.grade === "Raw" ? f.condition : null,
-      grade: f.grade === "Raw" ? null : f.grade, ...more }));
+    setEdits((x) => ({ ...x, ...(earlier.cert && !text(saved.cert) ? { cert: String(earlier.cert) } : {}),
+      ...(earlier.market != null && !text(saved.market) ? { market: String(earlier.market) } : {}) }));
   };
 
   return (
@@ -316,22 +317,6 @@ export default function CardEdit({ kind, thing, known, homeName = null, homeAway
             {FOUR.map((m) => (
               <Choice key={m} st={m} on={meaning === m} title={TITLE[m]} sub={SUB[m]} disabled={saving} onClick={() => choose(m)} />))}
           </div>
-          {kind === "copy" && !saved.kind && (wanted || (earlier && physOf(earlier))) ? (
-            <div className="mcs-ce-recall" role="group" aria-label="From this card's history">
-              {wanted ? (
-                <p><span>{`You were looking for ${physOf(wanted)} — is this one ${physOf(wanted)}?`}</span>
-                  <button type="button" className="mcs-go" disabled={saving} onClick={() => fill(wanted)}>{`Yes, ${physOf(wanted)}`}</button></p>
-              ) : null}
-              {earlier && physOf(earlier) ? (
-                <p><span>{`Your earlier copy: ${earlierLine}.`}</span>
-                  <button type="button" className="mcs-go quiet" disabled={saving}
-                    onClick={() => fill(earlier, { cert: earlier.cert == null ? "" : String(earlier.cert), market: earlier.market == null ? "" : String(earlier.market) })}>Restore these</button></p>
-              ) : null}
-            </div>
-          ) : null}
-          {kind === "goal" && earlier && earlierLine ? (
-            <p className="mcs-ce-history">{`From your copy: ${earlierLine} — kept with this card.`}</p>
-          ) : null}
         </Section>
 
         <Section id="print" title="Version">
@@ -365,6 +350,9 @@ export default function CardEdit({ kind, thing, known, homeName = null, homeAway
           </div>
         </Section>
 
+        {kind === "goal" && keptLine ? (
+          <p className="mcs-ce-history">{`From your copy: ${keptLine} — kept with this card.`}</p>
+        ) : null}
         {copy ? (
           <Section id="details" title="Copy details">
             <label className="mcs-ce-field"><span>{isGraded(copy) ? "Certificate" : "Serial"}</span>
@@ -372,6 +360,10 @@ export default function CardEdit({ kind, thing, known, homeName = null, homeAway
             <label className="mcs-ce-field"><span>Your reference value</span>
               <input className="mcs-in" inputMode="decimal" value={a.market} disabled={saving} onChange={(e) => set("market", e.target.value)} /></label>
             {marketBad ? <p className="mcs-add-problem">A reference value has to be a number, and not a negative one.</p> : null}
+            {restorable ? (
+              <p className="mcs-ce-restore"><span>{`From this card's history: ${keptLine}.`}</span>
+                <button type="button" className="mcs-linkish" disabled={saving} onClick={restore}>Restore</button></p>
+            ) : null}
             <p className="mcs-ce-facts">
               {[copy.addedAt ? `Added ${day(copy.addedAt)}` : null, photoNote(copy.photos), statusLabel(copy.status)].filter(Boolean).join(" · ")}
             </p>

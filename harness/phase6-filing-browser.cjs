@@ -866,25 +866,39 @@ describe("+ Add cards to a binder, through production (P6-F4 B3)", () => {
   });
 });
 
-/* P6-F4 BATCH 5 — LAST, BECAUSE IT WRITES. Select a state → Submit Update →
-   the server confirms → the card is in its new state: one
-   changeCollectingState each time, on the real server and Postgres. */
-describe("Four states, one Submit, through production (P6-F4 B5)", () => {
-  test("Primary ↔ Secondary; Primary → PC (re-made, same binder, lineage); PC → Trade / Sell; a refusal with the saved state kept; Trade / Sell → Secondary; PC → Primary → Trade / Sell", async () => {
+/* P6-F4 BATCH 5 / 5.2 — LAST, BECAUSE IT WRITES. Select a state → Submit
+   Update → the server confirms → the card is in its new state, with its
+   grade and condition exactly as they were (B5.2): one changeCollectingState
+   each time, on the real server and Postgres, the editor never closed. */
+describe("Four states, one Submit, configuration kept, through production (P6-F4 B5 / B5.2)", () => {
+  test("Charizard Primary PSA 9 → Trade / Sell PSA 9 → reopened → Secondary PSA 9 → Primary → PC; a PC copy → Primary → Trade / Sell; no question asked", async () => {
     await before();
     const context = await browser.newContext({ ...PHONE }); const page = await context.newPage();
     const errors = []; page.on("pageerror", (e) => errors.push(e.message));
     const commands = []; page.on("request", (r) => { if (r.url().includes("/api/commands")) commands.push(JSON.parse(r.postData() || "{}").command); });
-    const DIR = "artifacts/fidelity/f4-b5";
+    const DIR = "artifacts/fidelity/f4-b5-2";
     require("fs").mkdirSync(DIR, { recursive: true });
     const shot = async (n) => { await page.waitForTimeout(400); await page.screenshot({ path: `${DIR}/${n}.png` }).catch(() => {}); };
     let w = await ctx.world();
     const goal = w.goals.find((g) => g.id === ctx.ids.goal);
     const gen1 = w.binders.find((b) => b.id === ctx.ids.gen1);
     const home0 = (w.binderMemberships || []).find((m) => m.goalId === goal.id);
-    assert(goal && home0 && home0.binderId === gen1.id, "the seed's Charizard Goal is not in Gen 1");
-    const cardRecords = (world, canon) => [...world.goals.filter((g) => g.canonicalCardId === canon), ...world.collectorCopies.filter((c) => c.canonicalCardId === canon)];
-    const charCount0 = cardRecords(w, goal.canonicalCardId).length;
+    assert(goal && home0 && home0.binderId === gen1.id && goal.desired.grade === "PSA 9", "the seed's Charizard Primary PSA 9 Goal is not in Gen 1");
+    const recs = (world, canon) => [...world.goals.filter((g) => g.canonicalCardId === canon).map((g) => ({ kind: "goal", r: g })),
+      ...world.collectorCopies.filter((c) => c.canonicalCardId === canon).map((c) => ({ kind: "copy", r: c }))];
+    const n0 = recs(w, goal.canonicalCardId).length;
+    let lastId = goal.id;
+    /* the record this card now is, on the server: kind, state, grading, binder row, lineage */
+    const server = async () => {
+      const wd = await ctx.world(); const all = recs(wd, goal.canonicalCardId);
+      eq(all.length, n0, "a second record of this card appeared");
+      const one = all.find((x) => x.r.id === lastId || (x.r.formerly || []).some((f) => f.id === lastId));
+      assert(one, "the record is gone");
+      const { kind, r } = one;
+      return { id: r.id, kind, state: kind === "goal" ? r.tier : r.offered ? "trade" : r.keeping ? "pc" : null,
+        grading: kind === "goal" ? JSON.stringify(r.desired) : JSON.stringify({ grade: r.grade, ...(r.condition ? { condition: r.condition } : {}) }),
+        home: ((wd.binderMemberships || []).find((m) => m.goalId === r.id || m.collectorCopyId === r.id) || {}).id || null, lineage: (r.formerly || []).length };
+    };
     await signIn(page, ctx.url);
     await page.tap("nav[aria-label=Collector] button:has-text('Binders')"); await page.waitForTimeout(500);
     const sec = page.locator("button.mcs-sechead", { hasText: /^Binders/ }).first();
@@ -893,77 +907,60 @@ describe("Four states, one Submit, through production (P6-F4 B5)", () => {
     if ((await row.getAttribute("aria-expanded")) !== "true") await row.tap();
     const openTile = async (key) => { const t = page.locator(`li.mcs-otile[data-key='${key}'] button.mcs-otap`).first(); await t.scrollIntoViewIfNeeded(); await t.tap(); await page.locator(".mcs-ce").first().waitFor(); await page.waitForTimeout(300); };
     const choose = async (t) => { const c = page.locator(".mcs-ce .mcs-cd-choice", { has: page.locator("b", { hasText: new RegExp(`^${t}$`) }) }).first(); await c.scrollIntoViewIfNeeded(); await c.tap(); await page.waitForTimeout(150); };
-    const top = () => page.evaluate(() => { const sc = document.querySelector(".mcs-cd-scroll"); if (sc) sc.scrollTop = 0; });
+    const toGrades = () => page.evaluate(() => { const sc = document.querySelector(".mcs-cd-scroll"); const q = document.querySelector(".mcs-ce .mcs-cd-ident"); if (sc && q) sc.scrollTop = q.offsetTop - 64; });
     const submit = page.locator(".mcs-ce .mcs-cd-dock .mcs-cd-add");
     const live = async () => (await submit.getAttribute("aria-disabled")) === "false";
     const on = async () => (await page.locator(".mcs-ce [data-q='state'] .mcs-cd-choice[aria-pressed='true']").getAttribute("data-st"));
-    const ack = async (re) => { await page.locator(".mcs-ce .mcs-cd-hint.ack", { hasText: re }).waitFor(); await top(); };
+    const grade = async () => (await page.locator(".mcs-ce [data-q='grade'] .mcs-cd-choice[aria-pressed='true']").textContent()).trim();
+    const saved = async (label) => { await page.locator(".mcs-ce .mcs-cd-hint.ack", { hasText: `Saved — ${label}.` }).waitFor(); };
+    const noQuestion = async () => eq(await page.locator(".mcs-ce").getByText(/You were looking for|is this one/).count(), 0, "a reconfirmation question appeared");
     const close = async () => { await page.locator(".mcs-ce .mcs-cd-back").tap(); await page.waitForTimeout(400); };
+    const expect = async (kind, state, grading, lineage, why) => {
+      const r = await server(); lastId = r.id;
+      eq(JSON.stringify([r.kind, r.state, r.grading, r.home, r.lineage]), JSON.stringify([kind, state, JSON.stringify(grading), home0.id, lineage]), why);
+      return r;
+    };
 
-    /* 1. Primary ↔ Secondary: the same Goal */
-    await openTile(`g:${goal.id}`); await top();
-    eq(await live(), false, "live on opening"); await shot("b5-07-submit-disabled");
-    await choose("Secondary"); eq(await live(), true); await top(); await shot("b5-08-submit-active");
-    eq(commands.length, 0, "a selection wrote something");
-    await submit.tap(); await ack(/Saved — Secondary/); await shot("b5-01-primary-to-secondary");
-    w = await ctx.world(); eq(w.goals.find((g) => g.id === goal.id).tier, "secondary", "not the same Goal");
-    await choose("Primary"); await submit.tap(); await ack(/Saved — Primary/);
-
-    /* 2. Primary → PC: re-made as a copy; same binder row; lineage; no grade asserted */
-    await choose("PC"); await submit.tap(); await ack(/Now PC — same card, still in Gen 1/);
-    await shot("b5-02-primary-to-pc");
-    w = await ctx.world();
-    const copy = w.collectorCopies.find((c) => c.formerly && c.formerly.some((f) => f.id === goal.id));
-    assert(copy && copy.keeping === true && !("grade" in copy), "the copy is not what was asked");
-    assert(!w.goals.some((g) => g.id === goal.id), "the Goal is still there");
-    eq(cardRecords(w, goal.canonicalCardId).length, charCount0, "a second record of this card appeared");
-    const home1 = w.binderMemberships.find((m) => m.collectorCopyId === copy.id);
-    eq(JSON.stringify([home1.id, home1.binderId]), JSON.stringify([home0.id, gen1.id]), "not the same binder home");
-    eq(JSON.stringify(copy.formerly[0].facts.desired), JSON.stringify(goal.desired), "the Goal's want was not kept");
-    /* reopened: PC */
-    await close(); await openTile(`c:${copy.id}`);
-    eq(await on(), "pc"); await top(); await shot("b5-09-confirmed-reopened");
-
-    /* 3. PC → Trade / Sell: the same copy */
-    await choose("Trade \\/ Sell"); await submit.tap(); await ack(/Saved — Trade \/ Sell/);
-    await shot("b5-05-pc-to-trade");
-
-    /* 4. Trade / Sell → Secondary, refused: no grade yet — the saved state comes back, nothing written */
-    const before4 = JSON.stringify(await ctx.world());
-    await choose("Secondary"); await submit.tap();
-    await page.locator(".mcs-ce .mcs-cd-hint.problem", { hasText: /Add this copy's grade first/ }).waitFor();
-    eq(await on(), "trade", "the refused state is shown");
-    eq(JSON.stringify(await ctx.world()), before4, "a refusal wrote something");
-    await top(); await shot("b5-10-refused-original-kept");
-    /* the history offers the wanted grade; one tap fills the draft; Submit sends the copy's own edit */
-    await page.locator(".mcs-ce-recall button", { hasText: /^Yes, PSA 9$/ }).tap(); await submit.tap(); await ack(/Saved/);
-    await choose("Secondary"); await submit.tap(); await ack(/Now Secondary/);
-    await shot("b5-06-trade-to-secondary");
-    w = await ctx.world();
-    const g2 = w.goals.find((g) => g.formerly && g.formerly.some((f) => f.id === copy.id));
-    assert(g2 && g2.tier === "secondary" && JSON.stringify(g2.desired) === JSON.stringify({ grade: "PSA 9" }), "the Goal is not what was asked");
-    eq(g2.formerly.length, 2, "the lineage did not keep both crossings");
-    eq(cardRecords(w, goal.canonicalCardId).length, charCount0);
-    eq(w.binderMemberships.find((m) => m.goalId === g2.id).id, home0.id, "the binder row changed");
+    /* 1. Charizard Primary PSA 9 → Trade / Sell PSA 9 */
+    await openTile(`g:${goal.id}`);
+    eq(await on(), "primary"); eq(await grade(), "PSA 9"); eq(await live(), false);
+    await toGrades(); await shot("b52-01-primary-psa9-before");
+    await choose("Trade \\/ Sell"); eq(await live(), true); eq(commands.length, 0, "a selection wrote something");
+    await toGrades(); await shot("b52-02-trade-selected-submit-active");
+    await submit.tap(); await saved("Trade / Sell"); await noQuestion();
+    eq(await on(), "trade"); eq(await grade(), "PSA 9"); eq(await live(), false);
+    const asCopy = await expect("copy", "trade", { grade: "PSA 9" }, 1, "Trade / Sell on the server");
+    await toGrades(); await shot("b52-03-saved-trade-psa9");
+    /* reopened */
+    await close(); await openTile(`c:${asCopy.id}`);
+    eq(await on(), "trade"); eq(await grade(), "PSA 9"); eq(await live(), false);
+    await toGrades(); await shot("b52-04-reopened-trade-psa9");
+    /* 2. and on, without closing: Secondary, Primary, PC — PSA 9 at every step */
+    await choose("Secondary"); await submit.tap(); await saved("Secondary"); await noQuestion();
+    const asGoal = await expect("goal", "secondary", { grade: "PSA 9" }, 2, "Secondary on the server");
+    eq(await grade(), "PSA 9");
+    await toGrades(); await shot("b52-05-then-secondary-psa9");
+    await choose("Primary"); await submit.tap(); await saved("Primary");
+    eq((await expect("goal", "primary", { grade: "PSA 9" }, 2, "Primary on the server")).id, asGoal.id, "Primary ↔ Secondary is not the same record");
+    await choose("PC"); await submit.tap(); await saved("PC"); await noQuestion();
+    await expect("copy", "pc", { grade: "PSA 9" }, 3, "PC on the server");
+    eq(await grade(), "PSA 9");
     await close();
 
-    /* 5. a PC copy → Primary → Trade / Sell */
+    /* 3. a PC copy (PSA 8) → Primary → Trade / Sell: PSA 8 throughout */
     const blas = w.collectorCopies.find((c) => c.id === ctx.ids.copy);
     await openTile(`c:${blas.id}`);
-    await choose("Primary"); await submit.tap(); await ack(/Now Primary/);
-    await shot("b5-04-pc-to-primary");
+    await choose("Primary"); await submit.tap(); await saved("Primary"); await noQuestion();
     w = await ctx.world();
     const g3 = w.goals.find((g) => g.formerly && g.formerly.some((f) => f.id === blas.id));
     eq(JSON.stringify([g3.tier, g3.desired]), JSON.stringify(["primary", { grade: "PSA 8" }]));
-    await choose("Trade \\/ Sell"); await submit.tap(); await ack(/Now Trade \/ Sell/);
-    await page.locator(".mcs-ce-recall", { hasText: /Your earlier copy: PSA 8/ }).waitFor();
-    await shot("b5-03-primary-to-trade");
+    await choose("Trade \\/ Sell"); await submit.tap(); await saved("Trade / Sell"); await noQuestion();
     w = await ctx.world();
     const k3 = w.collectorCopies.find((c) => c.formerly && c.formerly.some((f) => f.id === g3.id));
-    assert(k3 && k3.offered === true && k3.formerly.length === 2, "the Trade / Sell copy is not what was asked");
+    eq(JSON.stringify([k3.offered, k3.grade, k3.formerly.length]), JSON.stringify([true, "PSA 8", 2]));
+    eq(w.collectorCopies.filter((c) => c.canonicalCardId === blas.canonicalCardId).length + w.goals.filter((g) => g.canonicalCardId === blas.canonicalCardId).length, 1, "a second Blastoise appeared");
 
-    eq(JSON.stringify(commands), JSON.stringify(["changeCollectingState", "changeCollectingState", "changeCollectingState", "changeCollectingState",
-      "changeCollectingState", "updateCollectorCopy", "changeCollectingState", "changeCollectingState", "changeCollectingState"]), "unexpected commands: " + JSON.stringify(commands));
+    eq(JSON.stringify(commands), JSON.stringify(Array(6).fill("changeCollectingState")), "unexpected commands: " + JSON.stringify(commands));
     eq(errors.length, 0, errors.join(" | "));
     await context.close();
   });
@@ -1038,14 +1035,15 @@ describe("Sequential edits on one open editor, through production (P6-F4 B5.1)",
     await step(pikaJ, ["PSA 9"], G("secondary", "PSA 9"));
     await step(pikaJ, ["PSA 8", "Primary"], { ...G("primary", "PSA 8"), commands: 2 });
     const start = await record(pikaJ);
-    const asCopy = await step(pikaJ, ["PC"], { state: "pc", grading: JSON.stringify([null, null]), commands: 1 });
+    /* RESTATED (B5.2): the configuration travels across the pair */
+    const asCopy = await step(pikaJ, ["PC"], { state: "pc", grading: JSON.stringify(["PSA 8", null]), commands: 1 });
     assert(asCopy.id !== start.id && asCopy.kind === "copy" && asCopy.home === start.home, "the cross-type change is not one re-made record in the same binder");
-    await step(pikaJ, ["Trade \\/ Sell"], { state: "trade", grading: JSON.stringify([null, null]), commands: 1 });
-    await step(pikaJ, ["PC"], { state: "pc", grading: JSON.stringify([null, null]), commands: 1 });
-    await step(pikaJ, ["Graded", "PSA 8"], { state: "pc", grading: JSON.stringify(["PSA 8", null]), commands: 1 });
-    const back = await step(pikaJ, ["Primary"], { state: "primary", grading: JSON.stringify({ grade: "PSA 8" }), commands: 1 });
+    await step(pikaJ, ["Trade \\/ Sell"], { state: "trade", grading: JSON.stringify(["PSA 8", null]), commands: 1 });
+    await step(pikaJ, ["PC"], { state: "pc", grading: JSON.stringify(["PSA 8", null]), commands: 1 });
+    await step(pikaJ, ["PSA 9"], { state: "pc", grading: JSON.stringify(["PSA 9", null]), commands: 1 });
+    const back = await step(pikaJ, ["Primary"], { state: "primary", grading: JSON.stringify({ grade: "PSA 9" }), commands: 1 });
     assert(back.kind === "goal" && back.id !== asCopy.id && back.home === start.home, "back across the pair is not one re-made record");
-    await step(pikaJ, ["Secondary"], G("secondary", "PSA 8"));
+    await step(pikaJ, ["Secondary"], G("secondary", "PSA 9"));
     await page.locator(".mcs-ce .mcs-cd-back").tap(); await page.waitForTimeout(300);
 
     /* A copy, one open page: Raw Near Mint → Lightly Played → Near Mint;
@@ -1059,7 +1057,7 @@ describe("Sequential edits on one open editor, through production (P6-F4 B5.1)",
     await step(mud59, ["Trade \\/ Sell"], K("trade", "Raw", "Near Mint"));
     await step(mud59, ["PC"], K("pc", "Raw", "Near Mint"));
     await step(mud59, ["Primary"], { state: "primary", grading: JSON.stringify({ grade: "Raw", condition: "Near Mint" }), commands: 1 });
-    await step(mud59, ["Trade \\/ Sell"], { state: "trade", grading: JSON.stringify([null, null]), commands: 1 });
+    await step(mud59, ["Trade \\/ Sell"], { state: "trade", grading: JSON.stringify(["Raw", "Near Mint"]), commands: 1 });
     eq(errors.length, 0, errors.join(" | "));
     await context.close();
   });

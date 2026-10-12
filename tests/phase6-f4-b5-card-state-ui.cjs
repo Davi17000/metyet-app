@@ -206,65 +206,81 @@ describe("B. the same record: Primary ↔ Secondary, PC ↔ Trade / Sell", () =>
 });
 
 /* ============================================================== C */
-describe("C. across the pair: the record re-made, the same card on screen", () => {
-  test("Primary → PC: one command; the page is now the copy, same binder, no grade asserted; one Mudkip tile still", async () => {
+/* RESTATED (P6-F4 B5.2, founder): changing state changes only state — the
+   grade and condition travel; nothing is asked afterwards. */
+describe("C. across the pair: the record re-made, the same card on screen, its configuration kept", () => {
+  test("Primary → PC: one command; the page is now the copy, same binder, Raw · Near Mint kept; one Mudkip tile still", async () => {
     const s = await show();
     const tiles0 = tilesFor(s.r, /Mudkip/).length;
     await open(s.r, /Primary.*Mudkip/);
     await tap(choice(s.r, "PC")); await save(s.r);
     eq(json(kinds(s.sent)), json(["change-state"]));
     assert(page(s.r) && /^Your copy: Mudkip/.test(page(s.r).props["aria-label"]), "the page is not the copy");
-    eq(json(statesOn(s.r).filter(([, on]) => on)), json([["pc", true]]));
-    assert(/✓ Now PC — same card, still in Mudkips\./.test(dock(s.r)), dock(s.r));
+    eq(json(pressed(s.r)), json(["PC", "Raw", "Near Mint"]), "the configuration did not travel");
+    assert(/✓ Saved — PC\./.test(dock(s.r)), dock(s.r));
     assert(!ready(s.r));
     const copy = s.live.collectorCopies.find((c) => c.formerly && c.formerly[0].id === "g-mud");
-    assert(copy && !("grade" in copy), "a wanted grade was asserted");
+    eq(json([copy.grade, copy.condition]), json(["Raw", "Near Mint"]));
     eq(homeOf(s.live, copy.id), "b-mud");
     assert(!s.live.goals.some((g) => g.id === "g-mud"));
     eq(tilesFor(s.r, /Mudkip/).length, tiles0, "a second card appeared");
-    eq(json(pressed(s.r)), json(["PC"]), "a grade is shown as chosen");
   });
-  test("after it: 'You were looking for Raw · Near Mint' — a tap fills the draft; Submit sends the copy's own edit", async () => {
+  test("after it: no reconfirmation — nothing asks about the grade or condition", async () => {
     const s = await show();
     await open(s.r, /Primary.*Mudkip/);
     await tap(choice(s.r, "PC")); await save(s.r);
-    assert(recall(s.r) && /You were looking for Raw · Near Mint — is this one Raw · Near Mint\?/.test(flat(recall(s.r))), page(s.r) ? flat(page(s.r)) : "no page");
-    eq(s.sent.length, 1, "the suggestion sent something");
-    await tap(btnIn(recall(s.r), /^Yes, Raw · Near Mint$/));
-    eq(json(pressed(s.r)), json(["PC", "Raw", "Near Mint"])); assert(ready(s.r));
-    await save(s.r);
-    const id = s.live.collectorCopies.find((c) => c.formerly).id;
-    eq(json(steps(s.sent)[1]), json({ kind: "correct-copy", copyId: id, patch: { grade: "Raw", condition: "Near Mint" } }));
-    eq(recall(s.r), null, "the suggestion stays after it was taken");
+    assert(!/You were looking for|is this one|Yes, Raw/.test(flat(page(s.r))), flat(page(s.r)));
+    eq(page(s.r).findAll((n) => /mcs-ce-recall|mcs-ce-restore/.test(cls(n))).length, 0, "a prompt appeared");
+    eq(s.sent.length, 1);
   });
-  test("PC copy → Primary: the Goal wants what the copy was; the copy's cert and value are kept in its history, and said", async () => {
+  test("PC copy → Primary: the Goal wants what the copy was; the copy's cert and value are kept, said quietly below", async () => {
     const s = await show();
     await open(s.r, /PC.*Charizard #4 · Holo · PSA 8/);
     await tap(choice(s.r, "Primary")); await save(s.r);
     assert(/^Your Goal: Charizard/.test(page(s.r).props["aria-label"]));
     eq(json(pressed(s.r)), json(["Primary", "Graded", "PSA 8"]));
-    assert(/From your copy: PSA 8 · Cert CERT-A · \$300 — kept with this card\./.test(flat(page(s.r))), flat(page(s.r)));
-    assert(/still in Gen 1/.test(dock(s.r)));
+    assert(/From your copy: Cert CERT-A · \$300 — kept with this card\./.test(flat(page(s.r))), flat(page(s.r)));
+    const st = page(s.r).findAll((n) => n.props && n.props["data-q"] === "state")[0];
+    assert(!/From your copy/.test(flat(st)), "the history note sits under the states");
+    assert(/✓ Saved — Primary\./.test(dock(s.r)), dock(s.r));
     const g = s.live.goals.find((x) => x.formerly && x.formerly[0].id === "k-a");
     eq(homeOf(s.live, g.id), "b-gen1");
     eq(json(s.live.collectorCopies.find((c) => c.id === "k-b")), json(STATE().collectorCopies[1]), "its sibling copy changed");
   });
-  test("PC → Primary → Trade / Sell: 'Your earlier copy' can be restored in one tap; nothing applied until Submit", async () => {
+  test("PC → Primary → Trade / Sell: PSA 8 kept throughout; the earlier cert and value can be restored from Copy details", async () => {
     const s = await show();
     await open(s.r, /PC.*Charizard #4 · Holo · PSA 8/);
     await tap(choice(s.r, "Primary")); await save(s.r);
     await tap(choice(s.r, "Trade / Sell")); await save(s.r);
     assert(/^Your copy: Charizard/.test(page(s.r).props["aria-label"]));
+    eq(json(pressed(s.r)), json(["Trade / Sell", "Graded", "PSA 8"]));
     const copy = s.live.collectorCopies.find((c) => c.formerly && c.formerly.length === 2);
-    assert(copy, "the lineage did not carry both crossings");
     eq(json(copy.formerly.map((f) => f.kind)), json(["copy", "goal"]));
-    assert(/Your earlier copy: PSA 8 · Cert CERT-A · \$300\./.test(flat(recall(s.r))), flat(recall(s.r)));
-    assert(/You were looking for PSA 8/.test(flat(recall(s.r))));
-    await tap(btnIn(recall(s.r), /^Restore these$/));
-    eq(json(inputs(s.r).map((i) => i.props.value)), json(["CERT-A", "300"]));
+    eq(copy.grade, "PSA 8");
+    const restore = page(s.r).findAll((n) => cls(n) === "mcs-ce-restore")[0];
+    const details = page(s.r).findAll((n) => n.props && n.props["data-q"] === "details")[0];
+    assert(restore && details.findAll((n) => n === restore).length === 1, "the recovery is not in Copy details");
+    assert(/From this card's history: Cert CERT-A · \$300\./.test(flat(restore)), flat(restore));
     eq(s.sent.length, 2);
+    await tap(btnIn(restore, /^Restore$/));
+    eq(json(inputs(s.r).map((i) => i.props.value)), json(["CERT-A", "300"]));
+    eq(s.sent.length, 2, "Restore sent something");
     await save(s.r);
-    eq(json(steps(s.sent)[2]), json({ kind: "correct-copy", copyId: copy.id, patch: { grade: "PSA 8", condition: null, cert: "CERT-A", market: 300 } }));
+    eq(json(steps(s.sent)[2]), json({ kind: "correct-copy", copyId: copy.id, patch: { cert: "CERT-A", market: 300 } }));
+  });
+  test("state then grade, grade then state, and both in one Submit", async () => {
+    const s = await show();
+    await open(s.r, /PC.*Charizard #4 · Holo · PSA 8/);
+    await tap(choice(s.r, "Trade / Sell")); await save(s.r);
+    await tap(choice(s.r, "PSA 9")); await save(s.r);
+    await tap(choice(s.r, "PSA 10")); await save(s.r);
+    await tap(choice(s.r, "PC")); await save(s.r);
+    await tap(choice(s.r, "PSA 9")); await tap(choice(s.r, "Primary")); await save(s.r);
+    eq(json(kinds(s.sent)), json(["change-state", "correct-copy", "correct-copy", "change-state", "correct-copy", "change-state"]));
+    const g = s.live.goals.find((x) => x.formerly && x.formerly[0].id === "k-a");
+    eq(json([g.tier, g.desired]), json(["primary", { grade: "PSA 9" }]));
+    eq(json(pressed(s.r)), json(["Primary", "Graded", "PSA 9"]));
+    assert(!ready(s.r));
   });
 });
 
@@ -323,7 +339,7 @@ describe("E. a lost answer is looked up, never resent", () => {
     await open(s.r, /Primary.*Mudkip/);
     await tap(choice(s.r, "PC")); await save(s.r);
     eq(s.sent.length, 1);
-    assert(/^Your copy: Mudkip/.test(page(s.r).props["aria-label"]) && /✓ Now PC/.test(dock(s.r)), dock(s.r));
+    assert(/^Your copy: Mudkip/.test(page(s.r).props["aria-label"]) && /✓ Saved — PC\./.test(dock(s.r)), dock(s.r));
   });
   test("lost, and it did not land: said; the saved state back; nothing resent", async () => {
     const s = await show({ answer: (st) => (st.kind === "change-state" ? "throw" : { ok: true }) });

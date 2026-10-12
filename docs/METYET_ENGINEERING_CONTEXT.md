@@ -73,12 +73,18 @@ collectorCopyId, from, to })` — carries it:
   `D.COLLECTING_LINEAGE_MAX` (64) by **refusal** (`lineage-full`), never by
   truncation. Stored in the record's JSON attributes (no migration);
   Collector-only — no partner allow-list names it.
-- **Nothing asserted:** a copy made from a Goal is born with **no** grade
-  or condition (a wanted grade is not a physical fact). The card may offer,
-  after the change, "You were looking for PSA 9 — is this one PSA 9?" or
-  "Your earlier copy: … Restore these"; a tap only fills the draft, and
-  Submit Update sends it as an ordinary edit. A Goal made from a copy wants
-  what the copy is (a preference, editable).
+- **Changing state changes only state (B5.2):** the grade and condition
+  travel. A copy made from a Goal carries the Goal's saved configuration as
+  saved — Raw and its condition, or the graded grade — and nothing that was
+  not saved (a Raw Goal with no condition, or a Goal with no criteria,
+  yields a copy with no grade; nothing is fabricated). A Goal made from a
+  copy wants what the copy is. This is the Collector reusing what they
+  entered, by their own explicit action — **not** MetYet verifying a
+  physical card, and no projection or screen claims verification. Nothing is
+  asked after a state change; grade and condition stay independently
+  editable. What a Goal cannot hold (an earlier copy's certificate,
+  reference value, photos) stays in `formerly`; the copy's Copy details may
+  offer it quietly as a recovery that only fills the draft.
 - **Refused, changing nothing:** not the Collector's; unknown state
   (`invalid-state`); stale screen (`state-changed`); legacy non-canonical
   record (`state-change-unsupported`); Goal → copy while an active

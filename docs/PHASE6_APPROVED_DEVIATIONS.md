@@ -71,6 +71,7 @@
 | B39 | ~~A copy's unsaved details and a Goal draft could not be submitted together~~ | **Resolved in P6-F4 B5** — the record's own edits are sent first, then its state (changeCollectingState); the edited facts travel in the lineage | — | — |
 | B40 | Cross-type state changes give the record a new id (Goal ↔ copy remain distinct records); the lineage (`formerly`) links them, bounded at 64 by refusal | — | P6-F4 B5 | Founder-approved design |
 | B41 | The B4 / B4.1 guided creation sheet (CardCross) is retired from state editing; creating another Goal or copy is Browse's and + Add cards' | — | P6-F4 B5 | — |
+| B42 | A copy made from a Goal carries the Goal's saved grade/condition (founder: changing state changes only state). It is the Collector's own saved configuration reused by their action, not a verified physical fact; the post-change reconfirmation prompt is removed | — | P6-F4 B5.2 | Founder-approved |
 
 ## C. Unavoidable comparison differences (not product decisions)
 
