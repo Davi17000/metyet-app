@@ -364,7 +364,8 @@ describe("C. the shell: its sections, and counts that are row counts", () => {
      unreachable rather than merely counted. */
   test("the sections are the product's own, in its own words", () => {
     const r = show(FULL);
-    const labels = buttons(r).map(instText).filter((s) => NAV.some((n) => s.includes(n)));
+    /* (P6-F5A.1: Browse's scope option "Trusted Partners" is a radio, not a section) */
+    const labels = buttons(r).filter((b) => b.props.role !== "radio").map(instText).filter((s) => NAV.some((n) => s.includes(n)));
     eq(labels.length, NAV.length, "no section more, none fewer: " + labels.join(" | "));
     NAV.forEach((n, i) => assert(labels[i].includes(n), `section ${i} is not ${n}`));
     /* RE-PINNED (Phase 6 P6-1): Deal Flow now precedes Trusted Partners. */

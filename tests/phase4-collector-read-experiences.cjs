@@ -427,7 +427,8 @@ describe("A. Goals — and the one place coordination appears", () => {
 
   test("there is no Collector Opportunities product", () => {
     const r = show(FULL);
-    const labels = buttons(r).map(instText);
+    /* (P6-F5A.1: Browse's scope option "Trusted Partners" is a radio, not a section) */
+    const labels = buttons(r).filter((b) => b.props.role !== "radio").map(instText);
     eq(labels.filter((l) => NAV.some((n) => l.includes(n))).length, NAV.length,
       "a section appeared that the product does not offer");
     onEverySection(r, (shown) =>
@@ -857,7 +858,11 @@ describe("F. nothing acts, nothing mutates, nothing forbidden is imported", () =
     /* A deferred Goals, handed no callbacks, still offers nothing to press. */
     eq(buttons(show(FULL, "Goals")).length, 0, "a deferred section offered a control");
     clickText(r, "Browse");
-    const browsing = buttons(r).map(instText).map((l) => l.trim());
+    /* (P6-F5A.1) the scope's two radios are checked by name below, apart from
+       the section buttons they share a word with */
+    const scopeLabels = buttons(r).filter((b) => b.props.role === "radio").map(instText).map((l) => l.trim());
+    eq(scopeLabels.join(","), "All Cards,Trusted Partners", "the Browse scope is not All Cards | Trusted Partners");
+    const browsing = buttons(r).filter((b) => b.props.role !== "radio").map(instText).map((l) => l.trim());
     /* A nav button carries its count ("2 Goals"), so it is matched by the label
        it contains rather than by equality. */
     /* the shell's chrome is excluded by name: nav, Sign out, and (P6-F1) the
@@ -867,9 +872,9 @@ describe("F. nothing acts, nothing mutates, nothing forbidden is imported", () =
     const own = browsing.filter((l) => !NAV.some((n) => l.includes(n)) && l !== "Sign out" && l !== "What works today" && !chrome.has(l));
     /* RESTATED (P6-F2): the Phase 6 doorways and the generation filter's "All"
        (with no catalogue here there are no generations to add). */
-    /* RESTATED (P6-F5A): and, for a Collector with Trusted Partners, the one
-       server-side filter "At my shops" */
-    eq(own.join(","), "At my shops,Pokémon,Sets,Artists,All", "Browse grew a control: " + own.join(" | "));
+    /* RESTATED (P6-F5A, then F5A.1): and the scope — All Cards | Trusted
+       Partners — the one server-side filter, as a two-way control */
+    eq(own.join(","), "Pokémon,Sets,Artists,All", "Browse grew a control: " + own.join(" | "));
     const bare = COLLECTOR_FILES.map(code).join("\n");
     /* Binder entries, interests and invitations are still nobody's to write
        from here; each moves with its own batch. */

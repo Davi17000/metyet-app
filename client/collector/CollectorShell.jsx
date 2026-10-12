@@ -1077,11 +1077,12 @@ ${STATE_CSS}
 .mcs-cd p.mcs-cd-noshop { margin:0 0 16px; font-size:12.5px; color:var(--muted); }
 /* AT MY SHOPS (P6-F5A): one quiet filter, and one quiet line under a card a
    connected shop has available — the artwork stays the thing you see */
-.mcs-dfilters { display:flex; gap:6px; margin:-4px 0 10px; }
-.mcs-dchip.mcs-dshops { background:#FFF; border-color:var(--line); color:var(--text); font-weight:600; }
-.mcs-dchip.mcs-dshops.on { background:var(--t1-bg); border-color:var(--t1); color:var(--t1); }
-.mcs-dchip.mcs-dshops::before { content:""; display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--t1);
-  margin-right:6px; vertical-align:1px; }
+/* the scope (F5A.1): a compact two-way segmented control under the search */
+.mcs-dscope { display:flex; gap:0; margin:-2px 0 12px; padding:3px; border-radius:12px; background:var(--line-soft); }
+.mcs-dscope-opt { flex:1; border:0; background:transparent; border-radius:9px; padding:7px 10px; font-size:13.5px; font-weight:600;
+  color:var(--muted); min-height:36px; }
+.mcs-dscope-opt.on { background:#FFF; color:var(--t1); box-shadow:0 1px 3px rgba(10,16,20,.12); }
+.mcs-dscope-opt:focus-visible { outline:2px solid var(--t1); outline-offset:1px; }
 .mcs-dshop { display:flex; align-items:center; gap:5px; margin-top:4px; font-size:10.5px; font-weight:600; color:var(--t1); }
 .mcs-dshop::before { content:""; width:6px; height:6px; border-radius:50%; background:var(--t1); flex:0 0 auto; }
 .mcs-dmarks .mcs-mk { font-size:10.5px; }

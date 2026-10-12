@@ -84,10 +84,10 @@ function Fan({ seed }) {
 
 function Markers({ m }) {
   if (!m) return null;
-  /* AT YOUR SHOPS (P6-F5A): a connected Trusted Partner has an AVAILABLE copy
-     of one of this card's printings — the projection's own word, never a
-     guess, and never a claim about a grade or condition. */
-  const shop = m.shops ? <span className="mcs-dshop">At your shops</span> : null;
+  /* WITH A TRUSTED PARTNER (P6-F5A; wording F5A.1): a connected Trusted
+     Partner has an AVAILABLE copy of one of this card's printings — the
+     projection's own word, never a guess, never a claim about grade. */
+  const shop = m.shops ? <span className="mcs-dshop">With a Trusted Partner</span> : null;
   const chips = [];
   if (m.primary) chips.push(["Primary", "primary"]);
   if (m.secondary) chips.push(["Secondary", "secondary"]);
@@ -228,18 +228,23 @@ export default function Discover({ state, browse = null, browsing, onBrowsing, o
           onChange={(e) => set({ text: e.target.value })} />
         {S.text ? <button type="button" className="mcs-dclear" aria-label="Clear search" onClick={() => set({ text: "" })}>×</button> : null}
       </div>
-      {hasPartners || shops ? (
-        <div className="mcs-dfilters">
-          <button type="button" className={`mcs-dchip mcs-dshops${shops ? " on" : ""}`} aria-pressed={shops}
-            onClick={() => set({ shops: !shops })}>At my shops</button>
-        </div>
-      ) : null}
+      {/* THE SCOPE (P6-F5A.1): everything, or what the Collector's Trusted
+          Partners have available — the server's `atMyShops` flag. Switching
+          keeps the search and the Pokémon / set / artist chosen. A radio pair:
+          arrow keys move between the two, as a segmented control should. */}
+      <div className="mcs-dscope" role="radiogroup" aria-label="Browse"
+        onKeyDown={(e) => { if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) { e.preventDefault(); set({ shops: !shops }); } }}>
+        {[["all", "All Cards", !shops], ["partners", "Trusted Partners", shops]].map(([id, label, on]) => (
+          <button key={id} type="button" role="radio" aria-checked={on} tabIndex={on ? 0 : -1}
+            className={`mcs-dscope-opt${on ? " on" : ""}`} data-scope={id}
+            onClick={() => { if (!on) set({ shops: id === "partners" }); }}>{label}</button>))}
+      </div>
       {chips.length ? (
         <div className="mcs-dchips" aria-label="Showing">
           {chips.map(([k, label]) => (
             <button key={k} type="button" className="mcs-dchip" aria-label={`Remove ${label}`} onClick={() => set({ [k]: null })}>
               {label} <span aria-hidden="true">×</span></button>))}
-          <button type="button" className="mcs-dchip clearall" onClick={() => set({ pokemon: null, set: null, artist: null, text: "", shops: false })}>Clear all</button>
+          <button type="button" className="mcs-dchip clearall" onClick={() => set({ pokemon: null, set: null, artist: null, text: "" })}>Clear all</button>
         </div>
       ) : null}
       {suggestions.length ? (
@@ -303,10 +308,10 @@ export default function Discover({ state, browse = null, browsing, onBrowsing, o
         <>
           {!cards.loaded && cards.busy ? <p className="mcs-dempty">Looking…</p> : null}
           {cards.loaded && !cards.items.length && shops ? (
-            <p className="mcs-dempty">{active || needle
-              ? "None of your Trusted Partners has one of these available right now."
-              : "Your Trusted Partners have nothing available right now."}{" "}
-              <button type="button" className="mcs-linkish" onClick={() => set({ shops: false })}>Show all cards</button></p>
+            <p className="mcs-dempty" data-empty={hasPartners ? "partners" : "no-partners"}>{hasPartners
+              ? "No matching cards are available from your Trusted Partners right now."
+              : "You're not connected to any Trusted Partners yet, so there's no partner inventory to show."}{" "}
+              <button type="button" className="mcs-linkish" onClick={() => set({ shops: false })}>Browse all cards</button></p>
           ) : cards.loaded && !cards.items.length ? (
             <p className="mcs-dempty">{needle ? `Nothing matches “${needle}”${summary ? ` in ${summary}` : ""}.` : "No cards here."}
               {/* The grid searches card names and numbers; a set or an artist

@@ -74,6 +74,8 @@
 | B42 | A copy made from a Goal carries the Goal's saved grade/condition (founder: changing state changes only state). It is the Collector's own saved configuration reused by their action, not a verified physical fact; the post-change reconfirmation prompt is removed | — | P6-F4 B5.2 | Founder-approved |
 | B43 | Browse shows connected Trusted Partners' available copies (shop, printing, grading, Proposed Market Price, firmness) without a Goal — trusted-network discovery, not a public marketplace. Supersedes the Phase 4 "not a shop window" and C5 "Browse names no shop" rules (guards restated, their cost / certificate / unconnected-shop protections kept) | — | P6-F5A | Founder decision |
 | B44 | Opening a deal does not by itself mark a shop's copy unavailable; it stays "At your shops" until a (not yet shipped) deal step reserves it. No reservation behaviour is invented | — | P6-F5A | Reservation ships with the later deal lifecycle |
+| B45 | In the Trusted Partners scope, search suggestions keep the catalogue's own counts (e.g. "Charizard · 2 cards" when one is with a partner), as All Cards does (B15 rule); narrowing them would need new partner-scoped list filters, out of F5A.1's scope | — | P6-F5A.1 | Revisit if confusing |
+| B46 | With Trusted Partners chosen and nothing else, Browse lists every partner-available card at once rather than the Pokémon / Sets / Artists doorways (which are catalogue-wide lists); the doorways return under All Cards | — | P6-F5A.1 | Revisit with partner-scoped doorways |
 
 ## C. Unavoidable comparison differences (not product decisions)
 

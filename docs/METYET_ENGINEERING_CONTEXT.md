@@ -354,10 +354,16 @@ unrestricted public marketplace:
 - **Shown on the Browse card:** shop name, printing, grading, Proposed
   Market Price (`ask`), Open to Offers / Firm on Price. **Never** the
   certificate, photographs, cost or acquisition date.
-- **Grid:** a quiet "At your shops" line; **filter:** "At my shops", a
-  server-side catalogue flag computed from the actor's own projection
-  (`availableAtShops`), so paging and search are exact and no request can
-  widen it.
+- **Language and scope (F5A.1):** Browse has two scopes directly under
+  the search — **All Cards | Trusted Partners** (default All Cards).
+  Trusted Partners is the server-side catalogue flag (`atMyShops`,
+  computed from the actor's own projection by `availableAtShops`), so
+  paging and search are exact and no request can widen it; switching keeps
+  the search and the Pokémon / set / artist chosen. The grid's quiet line
+  reads "With a Trusted Partner"; the card's section "Available from your
+  Trusted Partners", grouped under each partner's own name. Collector
+  Browse avoids storefront words ("shop") for this; identifiers keep
+  their names.
 - **Order:** grouped by shop, shops by name; within a shop by printing
   then date added. Never ranked by price; nothing recommended.
 - **Looking is looking:** browsing creates no Goal, opportunity or offer.

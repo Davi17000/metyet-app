@@ -1063,71 +1063,86 @@ describe("Sequential edits on one open editor, through production (P6-F4 B5.1)",
   });
 });
 
-/* P6-F5A — TRUSTED-NETWORK INVENTORY IN BROWSE, through production. Casey is
-   connected to Northline Cards (two Mudkip #60 printings, a Charizard) and
-   not to Faraway Games (a Mudkip #60 PSA 10, a Jungle Pikachu). Looking
-   writes nothing. */
-describe("At your shops, through production (P6-F5A)", () => {
-  test("the grid marks only cards a connected shop has available; the card lists them by shop; At my shops filters on the server; nothing from Faraway; nothing written", async () => {
+/* P6-F5A / F5A.1 — TRUSTED-NETWORK INVENTORY IN BROWSE, through production.
+   Casey is connected to Northline Cards (two Mudkip #60 printings, a
+   Charizard) and not to Faraway Games (a Mudkip #60 PSA 10, a Jungle
+   Pikachu). Browse has two scopes — All Cards | Trusted Partners — and
+   looking writes nothing. */
+describe("All Cards | Trusted Partners, through production (P6-F5A / F5A.1)", () => {
+  test("the grid marks only cards a connected partner has available; the card lists them by partner; the scope filters on the server and keeps the search; nothing from Faraway; nothing written", async () => {
     await before();
     const context = await browser.newContext({ ...PHONE }); const page = await context.newPage();
     const errors = []; page.on("pageerror", (e) => errors.push(e.message));
     const commands = []; page.on("request", (r) => { if (r.url().includes("/api/commands")) commands.push(r.url()); });
     const finds = []; page.on("request", (r) => { if (r.url().includes("/api/card-contexts?")) finds.push(r.url()); });
-    const DIR = "artifacts/fidelity/f5a";
+    const DIR = "artifacts/fidelity/f5a1";
     require("fs").mkdirSync(DIR, { recursive: true });
     const shot = async (n) => { await page.waitForTimeout(400); await page.screenshot({ path: `${DIR}/${n}.png` }).catch(() => {}); };
-    const versionOf = async () => (await (await fetch(ctx.url + "api/view", { headers: { authorization: "Bearer casey" } })).json());
-    const v0 = await versionOf();
+    const viewOf = async () => (await (await fetch(ctx.url + "api/view", { headers: { authorization: "Bearer casey" } })).json());
+    const v0 = await viewOf();
     const body = () => page.locator("body").innerText();
-    const noFaraway = async (where) => { const t = await body(); assert(!/Faraway|\$300|\$500/.test(t), `the unconnected shop reached ${where}`); };
+    const noFaraway = async (where) => { const t = await body(); assert(!/Faraway|\$300|\$500/.test(t), `the unconnected partner reached ${where}`); };
+    const scopeOn = async () => page.locator(".mcs-dscope [role=radio][aria-checked=true]").getAttribute("data-scope");
+    const setScope = async (id) => { await page.locator(`.mcs-dscope [data-scope='${id}']`).tap(); await page.waitForTimeout(900); };
 
     await signIn(page, ctx.url);
-    /* 1. Mudkip: #60 is at your shops, #59 is not */
+    eq(await scopeOn(), "all", "All Cards is not the default");
+    /* the order: search, scope, doorways */
+    const tops = await page.evaluate(() => [".mcs-dsearch", ".mcs-dscope", ".mcs-dtabs"].map((q) => document.querySelector(q).getBoundingClientRect().top));
+    assert(tops[0] < tops[1] && tops[1] < tops[2], "search, scope and doorways are out of order: " + tops);
+    const w = await page.evaluate(() => document.querySelector(".mcs-dscope").getBoundingClientRect().width);
+    assert(w <= 390 - 24, "the scope does not fit a phone: " + w);
+    /* 1. All Cards, Mudkip: #60 is with a Trusted Partner, #59 is not */
     await page.locator(".mcs-dtile[data-dex='258']").tap(); await page.waitForTimeout(900);
     const c60 = page.locator("button.mcs-dcell[aria-label='Mudkip, Ruby & Sapphire #60']");
     const c59 = page.locator("button.mcs-dcell[aria-label='Mudkip, Ruby & Sapphire #59']");
     await c60.waitFor();
-    eq(await c60.locator(".mcs-dshop").count(), 1, "#60 is not marked");
+    eq((await c60.locator(".mcs-dshop").innerText()).trim(), "With a Trusted Partner");
     eq(await c59.locator(".mcs-dshop").count(), 0, "#59 is marked with nothing available");
-    await shot("f5a-01-grid-at-your-shops");
-    /* 2. the card: Northline's two copies, grouped, no Faraway */
+    assert(!/At your shops|At my shops/.test(await body()), "the old storefront words remain");
+    await shot("f5a1-01-all-cards");
+    /* 2. the card: Northline's two copies, under its name */
     await c60.tap(); await page.locator(".mcs-cd-shops").waitFor();
     const shop = await page.locator(".mcs-cd-shops").innerText();
-    assert(/Northline Cards/.test(shop) && /Normal · Raw · Near Mint/.test(shop) && /Proposed Market Price \$12 · Open to Offers/.test(shop)
-      && /Reverse Holo · PSA 9/.test(shop) && /Proposed Market Price \$85 · Firm on Price/.test(shop), shop);
-    eq(await page.locator(".mcs-cd-shops li.mcs-cd-shop").count(), 1, "not one shop group");
+    assert(/^Available from your Trusted Partners/.test(shop.trim()) && /Northline Cards/.test(shop) && /Normal · Raw · Near Mint/.test(shop)
+      && /Proposed Market Price \$12 · Open to Offers/.test(shop) && /Reverse Holo · PSA 9/.test(shop) && /Proposed Market Price \$85 · Firm on Price/.test(shop), shop);
     await noFaraway("the card");
     await page.evaluate(() => { const sc = document.querySelector(".mcs-cd-scroll"); const q = document.querySelector(".mcs-cd-ident"); if (sc && q) sc.scrollTop = q.offsetTop - 64; });
-    await shot("f5a-02-card-available-copies");
+    await shot("f5a1-05-card-available-from-partners");
     await page.locator(".mcs-cd-back").tap(); await page.waitForTimeout(500);
-    /* 3. #59: nothing available, said quietly */
-    await c59.tap(); await page.locator(".mcs-cd-noshop").waitFor();
-    await page.evaluate(() => { const sc = document.querySelector(".mcs-cd-scroll"); const q = document.querySelector(".mcs-cd-ident"); if (sc && q) sc.scrollTop = q.offsetTop - 64; });
-    await shot("f5a-03-card-no-availability");
+    await c59.tap(); await page.locator(".mcs-cd-noshop", { hasText: "None of your Trusted Partners has this card available right now." }).waitFor();
     await page.locator(".mcs-cd-back").tap(); await page.waitForTimeout(500);
-    /* 4. At my shops, with Mudkip: only #60 — asked of the server */
-    await page.locator("button.mcs-dshops").tap(); await page.waitForTimeout(900);
+    /* 3. Trusted Partners, Mudkip kept: only #60 — asked of the server */
+    await setScope("partners");
+    eq(await scopeOn(), "partners");
     assert(/atMyShops=1/.test(finds[finds.length - 1]) && /pokedex=258/.test(finds[finds.length - 1]), finds[finds.length - 1]);
     eq(await page.locator("button.mcs-dcell").count(), 1);
-    await shot("f5a-04-filter-at-my-shops");
-    /* and across everything: #60 and Charizard, never Faraway's Pikachu */
-    await page.locator(".mcs-dchip", { hasText: "Pokémon: Mudkip" }).tap(); await page.waitForTimeout(900);
-    const labels = await page.locator("button.mcs-dcell").evaluateAll((xs) => xs.map((x) => x.getAttribute("aria-label")).sort());
-    eq(JSON.stringify(labels), JSON.stringify(["Charizard, Base Set #4", "Mudkip, Ruby & Sapphire #60"]));
-    await noFaraway("the filtered grid");
-    await shot("f5a-05-filter-all-shops");
-    /* 5. off again: the ordinary catalogue */
-    await page.locator("button.mcs-dshops").tap(); await page.waitForTimeout(600);
-    eq(await page.locator("button.mcs-dshops").getAttribute("aria-pressed"), "false");
-    eq(await page.locator("button.mcs-dcell").count(), 0, "with no constraint, the landing returns");
+    assert(/Pokémon: Mudkip/.test(await body()), "the Pokémon chosen was lost");
+    await shot("f5a1-02-trusted-partners");
+    /* 4. a matching search across Trusted Partners: Charizard, kept when switching scope */
+    await page.locator(".mcs-dchip", { hasText: "Pokémon: Mudkip" }).tap(); await page.waitForTimeout(600);
+    await page.locator(".mcs-dsearch-in").fill("charizard"); await page.waitForTimeout(1200);
+    const labels = await page.locator("button.mcs-dcell").evaluateAll((xs) => xs.map((x) => x.getAttribute("aria-label")));
+    eq(JSON.stringify(labels), JSON.stringify(["Charizard, Base Set #4"]), "the matching search");
+    assert(/atMyShops=1/.test(finds[finds.length - 1]) && /query=charizard/.test(finds[finds.length - 1]), finds[finds.length - 1]);
+    await page.locator(".mcs-dsearch-in").blur();
+    await shot("f5a1-03-matching-search");
+    /* 5. an empty Trusted Partners result: Pikachu (only Faraway has one) */
+    await page.locator(".mcs-dsearch-in").fill(""); await page.waitForTimeout(400);
+    await setScope("all");
     await page.locator(".mcs-dtile[data-dex='25']").tap(); await page.waitForTimeout(900);
-    eq(await page.locator("button.mcs-dcell .mcs-dshop").count(), 0, "a Pikachu is marked though only an unconnected shop has one");
+    eq(await page.locator("button.mcs-dcell .mcs-dshop").count(), 0, "a Pikachu is marked though only an unconnected partner has one");
+    await setScope("partners");
+    await page.locator(".mcs-dempty", { hasText: "No matching cards are available from your Trusted Partners right now." }).waitFor();
     await noFaraway("Pikachu");
+    await shot("f5a1-04-empty-trusted-partners");
+    await page.locator(".mcs-dempty button", { hasText: "Browse all cards" }).tap(); await page.waitForTimeout(900);
+    eq(await scopeOn(), "all"); assert(/Pokémon: Pikachu/.test(await body()), "Browse all cards lost the Pokémon chosen");
+    assert(await page.locator("button.mcs-dcell").count() >= 2, "All Cards did not come back");
     /* 6. nothing written */
-    const v1 = await versionOf();
-    eq(JSON.stringify([v1.version, v1.state.goals.length, (v1.state.opportunities || []).length]),
-      JSON.stringify([v0.version, v0.state.goals.length, (v0.state.opportunities || []).length]), "browsing wrote something");
+    const v1 = await viewOf();
+    eq(JSON.stringify([v1.version, v1.state.goals.length, (v1.state.opportunities || []).length, v1.state.inventory.length]),
+      JSON.stringify([v0.version, v0.state.goals.length, (v0.state.opportunities || []).length, v0.state.inventory.length]), "browsing wrote something");
     eq(commands.length, 0, "a command was sent: " + commands.join(" "));
     eq(errors.length, 0, errors.join(" | "));
     await context.close();

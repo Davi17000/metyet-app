@@ -427,8 +427,8 @@ export default function CardDetail({ context, state, backLabel = "Browse", posit
             live copies and this Collector's view of their status. Looking
             changes nothing: no Goal, no deal. */}
         {shopRows.length ? (
-          <section className="mcs-cd-shops" aria-label="At your shops">
-            <h4>At your shops</h4>
+          <section className="mcs-cd-shops" aria-label="Available from your Trusted Partners">
+            <h4>Available from your Trusted Partners</h4>
             <ul>{shopGroups.map((g) => (
               <li key={g.partnerId} className="mcs-cd-shop" data-shop={g.partnerId}>
                 <b className="mcs-cd-shop-name">{shopName(g.partnerId)}</b>

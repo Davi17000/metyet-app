@@ -181,44 +181,77 @@ async function discover(state = STATE) {
   return { get r() { return r; }, finds, draw };
 }
 const cell = (r, n) => r.root.findAll((x) => x.type === "button" && cls(x).includes("mcs-dcell") && x.props["aria-label"].includes(`#${n}`))[0] || null;
-const shopsBtn = (r) => r.root.findAll((x) => x.type === "button" && cls(x).includes("mcs-dshops"))[0] || null;
+/* (P6-F5A.1) the scope: All Cards | Trusted Partners, a radio pair */
+const scope = (r, id) => r.root.findAll((x) => x.type === "button" && x.props.role === "radio" && x.props["data-scope"] === id)[0] || null;
+const scopeGroup = (r) => r.root.findAll((x) => x.props && x.props.role === "radiogroup" && cls(x) === "mcs-dscope")[0] || null;
+const emptyDiscover = async (state, session0) => {
+  stubWindow();
+  const finds = [];
+  const empty = { find: async (q) => { finds.push(q); return { contexts: [], total: 0 }; }, describe: async () => ({ cards: [] }),
+    pokemon: async () => ({ pokemon: [], total: 0 }), expansions: async () => ({ expansions: [], total: 0 }), artists: async () => ({ artists: [], total: 0 }) };
+  let session = { ...Discover.newBrowseSession(), ...session0 };
+  let r; const draw = async () => TR.act(async () => { const el = React.createElement(Discover.default, { state, browse: empty, browsing: session, onBrowsing: (x) => { session = x; draw(); }, onChoose() {} }); if (r) r.update(el); else r = TR.create(el); });
+  await draw(); await settle(); await draw(); await settle();
+  return { get r() { return r; }, finds, get session() { return session; } };
+};
 
 describe("C. the grid", () => {
-  test("'At your shops' only on the card with an AVAILABLE copy — not on one whose copies are pending or unavailable", async () => {
+  test("'With a Trusted Partner' only on the card with an AVAILABLE copy — not on one whose copies are pending or unavailable", async () => {
     const d = await discover();
-    assert(/At your shops/.test(flat(cell(d.r, "60"))), flat(cell(d.r, "60")));
-    assert(!/At your shops/.test(flat(cell(d.r, "59"))), "a pending or unavailable copy was called available");
+    assert(/With a Trusted Partner/.test(flat(cell(d.r, "60"))), flat(cell(d.r, "60")));
+    assert(!/With a Trusted Partner/.test(flat(cell(d.r, "59"))), "a pending or unavailable copy was called available");
+    assert(!/At your shops|At my shops/.test(flat(d.r.root)), "the old storefront words remain");
   });
-  test("At my shops is a server flag on the catalogue query, and comes off again", async () => {
+  test("All Cards is the default; Trusted Partners is the server flag; back to All Cards; the Pokémon chosen is kept both ways", async () => {
     const d = await discover();
-    assert(!d.finds.some((q) => /atMyShops/.test(q)));
-    eq(shopsBtn(d.r).props["aria-pressed"], false);
-    await TR.act(async () => { shopsBtn(d.r).props.onClick(); }); await settle(); await d.draw(); await settle();
+    assert(!d.finds.some((q) => /atMyShops/.test(q)), "the default asked for partners: " + d.finds.join(" | "));
+    eq(json([scope(d.r, "all").props["aria-checked"], scope(d.r, "partners").props["aria-checked"]]), json([true, false]));
+    await TR.act(async () => { scope(d.r, "partners").props.onClick(); }); await settle(); await d.draw(); await settle();
     assert(/atMyShops=1/.test(d.finds[d.finds.length - 1]) && /pokedex=258/.test(d.finds[d.finds.length - 1]), d.finds.join(" | "));
-    eq(shopsBtn(d.r).props["aria-pressed"], true);
+    eq(json([scope(d.r, "all").props["aria-checked"], scope(d.r, "partners").props["aria-checked"]]), json([false, true]));
     eq(cell(d.r, "59"), null);
-    await TR.act(async () => { shopsBtn(d.r).props.onClick(); }); await settle(); await d.draw(); await settle();
-    assert(cell(d.r, "59"), "removing the filter did not bring the rest back");
+    assert(/Pokémon: Mudkip/.test(flat(d.r.root)), "the Pokémon chosen was lost");
+    const n = d.finds.length;
+    await TR.act(async () => { scope(d.r, "all").props.onClick(); }); await settle(); await d.draw(); await settle();
+    assert(cell(d.r, "59"), "All Cards did not bring the rest back");
+    /* All Cards reuses the page already loaded for it (the session's cache);
+       nothing asked after the switch is partner-scoped */
+    assert(!d.finds.slice(n).some((q) => /atMyShops/.test(q)), "All Cards still asked for partners: " + d.finds.join(" | "));
   });
-  test("an empty result says so, and offers to show all cards", async () => {
+  test("the scope keeps the search text, and Clear all clears constraints, not the scope", async () => {
+    const d = await emptyDiscover(STATE, { text: "mudkip", shops: true });
+    assert(/atMyShops=1/.test(d.finds[d.finds.length - 1]) && /query=mudkip/.test(d.finds[d.finds.length - 1]), d.finds.join(" | "));
+    await TR.act(async () => { scope(d.r, "all").props.onClick(); }); await settle();
+    eq(json([d.session.text, d.session.shops]), json(["mudkip", false]));
+  });
+  test("keyboard: the scope is a radio group; arrow keys switch it; only the chosen one is in the tab order", async () => {
     const d = await discover();
-    d.finds.length = 0;
-    const browseEmpty = d; // reuse the same instance: make the next find empty
-    await TR.act(async () => { shopsBtn(d.r).props.onClick(); }); await settle();
-    /* the stub answers the flag with one card; an empty answer is checked on its own below */
-    assert(browseEmpty);
-    const finds = [];
-    const empty = { find: async (q) => { finds.push(q); return { contexts: [], total: 0 }; }, describe: async () => ({ cards: [] }),
-      pokemon: async () => ({ pokemon: [], total: 0 }), expansions: async () => ({ expansions: [], total: 0 }), artists: async () => ({ artists: [], total: 0 }) };
-    stubWindow();
-    let session = { ...Discover.newBrowseSession(), shops: true };
-    let r; const draw = async () => TR.act(async () => { const el = React.createElement(Discover.default, { state: STATE, browse: empty, browsing: session, onBrowsing: (s) => { session = s; draw(); }, onChoose() {} }); if (r) r.update(el); else r = TR.create(el); });
-    await draw(); await settle(); await draw(); await settle();
-    assert(/Your Trusted Partners have nothing available right now\. Show all cards/.test(flat(r.root)), flat(r.root));
+    const g = scopeGroup(d.r);
+    eq(g.props["aria-label"], "Browse");
+    eq(json([scope(d.r, "all").props.tabIndex, scope(d.r, "partners").props.tabIndex]), json([0, -1]));
+    await TR.act(async () => { g.props.onKeyDown({ key: "ArrowRight", preventDefault() {} }); }); await settle(); await d.draw(); await settle();
+    eq(scope(d.r, "partners").props["aria-checked"], true);
+    eq(json([scope(d.r, "all").props.tabIndex, scope(d.r, "partners").props.tabIndex]), json([-1, 0]));
   });
-  test("no Trusted Partners: no filter offered", async () => {
-    const d = await discover({ ...STATE, partners: [], inventory: [] });
-    eq(shopsBtn(d.r), null);
+  test("the order: search, then the scope, then the doorways", async () => {
+    stubWindow();
+    const browse = { find: async () => ({ contexts: [], total: 0 }), describe: async () => ({ cards: [] }),
+      pokemon: async () => ({ pokemon: [], total: 0, generations: [] }), expansions: async () => ({ expansions: [], total: 0 }), artists: async () => ({ artists: [], total: 0 }) };
+    let r; await TR.act(async () => { r = TR.create(React.createElement(Discover.default, { state: STATE, browse, browsing: Discover.newBrowseSession(), onBrowsing() {}, onChoose() {} })); }); await settle();
+    const order = r.root.findAll((n) => n.props && (cls(n) === "mcs-dsearch" || cls(n) === "mcs-dscope" || cls(n) === "mcs-dtabs")).map(cls);
+    eq(json(order), json(["mcs-dsearch", "mcs-dscope", "mcs-dtabs"]));
+  });
+  test("Trusted Partners with nothing matching: said without implying the card doesn't exist; 'Browse all cards' keeps the search", async () => {
+    const d = await emptyDiscover(STATE, { text: "mudkip", shops: true });
+    assert(/No matching cards are available from your Trusted Partners right now\. Browse all cards/.test(flat(d.r.root)), flat(d.r.root));
+    const go = d.r.root.findAll((x) => x.type === "button" && flat(x) === "Browse all cards")[0];
+    await TR.act(async () => { go.props.onClick(); }); await settle();
+    eq(json([d.session.text, d.session.shops]), json(["mudkip", false]));
+  });
+  test("no Trusted Partners: the scope is there, and Trusted Partners says why there is nothing", async () => {
+    const d = await emptyDiscover({ ...STATE, partners: [], inventory: [] }, { shops: true });
+    assert(scope(d.r, "partners"));
+    assert(/You're not connected to any Trusted Partners yet, so there's no partner inventory to show\. Browse all cards/.test(flat(d.r.root)), flat(d.r.root));
   });
 });
 
@@ -241,7 +274,8 @@ describe("D. the card", () => {
   test("each available copy of THESE printings: shop, printing, grading, Proposed Market Price, Open to Offers / Firm on Price", () => {
     const r = detail();
     const sec = r.root.findAll((n) => cls(n) === "mcs-cd-shops")[0];
-    assert(sec, "no At your shops section");
+    assert(sec, "no Available from your Trusted Partners section");
+    assert(/^Available from your Trusted Partners/.test(flat(sec)), flat(sec));
     const shops = sec.findAll((n) => n.type === "li" && cls(n) === "mcs-cd-shop");
     eq(json(shops.map((g) => [flat(g.findAll((n) => cls(n) === "mcs-cd-shop-name")[0]),
       g.findAll((n) => n.type === "li" && n !== g).map(flat)])), json([
@@ -256,7 +290,7 @@ describe("D. the card", () => {
   });
   test("no Trusted Partners: nothing about shops at all", () => {
     const r = detail({ ...STATE, partners: [], inventory: [] });
-    assert(!/Trusted Partners|At your shops/.test(flat(r.root)));
+    assert(!/Trusted Partners|At your shops|Available from/.test(flat(r.root)));
   });
   test("the card still asks its questions and writes nothing by being looked at", () => {
     const r = detail();
