@@ -512,7 +512,14 @@ describe("C. the Collector: browse, specify, commit", () => {
     eq(goals[0].canonicalCardId, made.blastoise.cards[0]);
   });
 
-  test("Browse tells a Collector nothing about who holds the card — not even a number", async () => {
+  /* RESTATED (P6-F5A, founder decision): "Browse creates exposure. Binders
+     create coherence. Goals express priority. Deal Flow coordinates action."
+     Browse now NAMES the Collector's connected shops that have the card
+     available, with the Proposed Market Price — not a count, and only shops
+     they are connected to. What C1 protected survives: an unconnected shop
+     is never named, and a shop's own books (cost) and the copy's certificate
+     never reach the Collector. */
+  test("Browse names only connected shops with the card available — never another shop, never a cost or certificate", async () => {
     /* C1 SHIPPED A COUNT HERE AND C5 REMOVED IT, so this test now asserts the
        absence its own original assertion would have forbidden. Three things
        were wrong with "1 of your Trusted Partners has this": it was anonymous
@@ -531,14 +538,21 @@ describe("C. the Collector: browse, specify, commit", () => {
     /* Northline is theirs; Second is not. Both stock the card. */
     await post(ctx.app, "north", "addInventoryCopy",
       { copy: { canonicalCardId: made.blastoise.cards[0], ask: 900, cost: 400, cert: "TP-CERT-1" } });
+    /* (P6-F5A) and Second — not Casey's — really does stock it, written as a
+       stored world (Second has no account here), so "never named" is tested */
+    const stocked = await ctx.repository.loadWorld();
+    await ctx.repository.saveWorld({ ...stocked, inventory: [...stocked.inventory,
+      { invId: "inv-second-1", partnerId: "p2", canonicalCardId: made.blastoise.cards[0], ask: 777, cost: 300, cert: "SECOND-CERT", addedAt: "2026-01-01", updatedAt: "2026-01-01" }] });
     const r = await browsing(ctx, async () => ({ ok: true }));
     await typeInto(r, "mcs-br-q", "Blastoise");
     await press(r, "Blastoise");
     const shown = texts(r);
     assert(!/of your Trusted Partners ha[sv]e? this/.test(shown), "the count came back: " + shown);
-    assert(!shown.includes("Northline"), "the partner was named");
-    assert(!shown.includes("900") && !shown.includes("400") && !shown.includes("TP-CERT-1"),
-      "a partner's own figures reached the Collector: " + shown);
+    assert(shown.includes("Northline"), "the connected shop is not named: " + shown);
+    assert(/Proposed Market Price \$900/.test(shown), "the connected shop's price is not shown: " + shown);
+    assert(!/\bSecond\b(?!ary)/.test(shown) && !shown.includes("777") && !shown.includes("SECOND-CERT"), "an unconnected shop or its copy reached the Collector");
+    assert(!shown.includes("400") && !shown.includes("TP-CERT-1"),
+      "a shop's cost or the copy's certificate reached the Collector: " + shown);
   });
 
   test("a card already on the list says so instead of offering to ask again", async () => {

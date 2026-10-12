@@ -304,7 +304,7 @@ function createCatalogRepository(db, { newId } = {}) {
        the first active printing that has an image, ordered by id so the same
        context always shows the same picture. A context with no images yields
        null and the caller draws the card's name instead. */
-    async findCardContexts({ query, expansionId, expansion, artist, pokedex, number,
+    async findCardContexts({ query, expansionId, expansion, artist, pokedex, number, canonicalCardIds,
       page = 1, pageSize = DEFAULT_PAGE_SIZE } = {}) {
       const size = Math.min(Math.max(Number(pageSize) || DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
       const at = Math.max(Number(page) || 1, 1);
@@ -341,6 +341,18 @@ function createCatalogRepository(db, { newId } = {}) {
           add("(c.collector_number ~ '^[0-9]+$' and ltrim(c.collector_number, '0') = ltrim($?, '0'))", n);
         } else {
           add("lower(c.collector_number) = $?", n.toLowerCase());
+        }
+      }
+      /* ONLY THESE PRINTINGS (P6-F5A, "At my shops"): a context is listed when
+         one of its canonical cards is in the set. The set is the caller's to
+         decide — the route computes it from the actor's own projection — and
+         this repository neither knows nor asks why. An empty set lists nothing,
+         rather than everything. */
+      if (Array.isArray(canonicalCardIds)) {
+        if (!canonicalCardIds.length) where.push("false");
+        else {
+          add(`exists (select 1 from metyet_catalog.canonical_cards s
+            where s.card_context_id = c.card_context_id and s.canonical_card_id = any($?::text[]))`, canonicalCardIds.map(String));
         }
       }
       const clause = where.length ? `where ${where.join(" and ")}` : "";

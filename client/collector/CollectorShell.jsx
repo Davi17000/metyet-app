@@ -1062,6 +1062,28 @@ ${STATE_CSS}
 .mcs-dcap span:first-child { min-width:0; }   /* wraps, as the prototype's caption does */
 .mcs-dcap span:last-child { white-space:nowrap; }
 .mcs-dmarks { display:flex; flex-wrap:wrap; gap:4px; margin-top:5px; }
+.mcs-cd .mcs-cd-shops { margin:4px 0 18px; border:1px solid var(--line); border-radius:14px; padding:10px 12px; background:#FFF; }
+.mcs-cd .mcs-cd-shops h4 { margin:0 0 6px; font-size:13px; color:var(--t1); display:flex; align-items:center; gap:6px; }
+.mcs-cd .mcs-cd-shops h4::before { content:""; width:7px; height:7px; border-radius:50%; background:var(--t1); }
+.mcs-cd .mcs-cd-shops ul { list-style:none; margin:0; padding:0; }
+.mcs-cd .mcs-cd-shops li.mcs-cd-shop { padding:8px 0; }
+.mcs-cd .mcs-cd-shops li.mcs-cd-shop + li.mcs-cd-shop { border-top:1px solid var(--line-soft); }
+.mcs-cd .mcs-cd-shops .mcs-cd-shop-name { display:block; font-size:14px; color:var(--text); margin:0 0 2px; }
+.mcs-cd .mcs-cd-shops li li { display:flex; flex-direction:column; gap:1px; padding:5px 0 5px 10px; font-size:13px; color:var(--muted);
+  border-left:2px solid var(--line-soft); }
+.mcs-cd .mcs-cd-shop-hd { display:flex; justify-content:space-between; gap:8px; color:var(--text); }
+.mcs-cd .mcs-cd-shop-ok { font-size:11.5px; font-weight:600; color:var(--t1); }
+.mcs-cd .mcs-cd-shop-price { color:var(--text); }
+.mcs-cd p.mcs-cd-noshop { margin:0 0 16px; font-size:12.5px; color:var(--muted); }
+/* AT MY SHOPS (P6-F5A): one quiet filter, and one quiet line under a card a
+   connected shop has available — the artwork stays the thing you see */
+.mcs-dfilters { display:flex; gap:6px; margin:-4px 0 10px; }
+.mcs-dchip.mcs-dshops { background:#FFF; border-color:var(--line); color:var(--text); font-weight:600; }
+.mcs-dchip.mcs-dshops.on { background:var(--t1-bg); border-color:var(--t1); color:var(--t1); }
+.mcs-dchip.mcs-dshops::before { content:""; display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--t1);
+  margin-right:6px; vertical-align:1px; }
+.mcs-dshop { display:flex; align-items:center; gap:5px; margin-top:4px; font-size:10.5px; font-weight:600; color:var(--t1); }
+.mcs-dshop::before { content:""; width:6px; height:6px; border-radius:50%; background:var(--t1); flex:0 0 auto; }
 .mcs-dmarks .mcs-mk { font-size:10.5px; }
 .mcs-dmore { display:block; width:100%; border:0; background:none; text-align:center; color:var(--faint); font-size:12px; margin:14px 0; min-height:44px; }
 .mcs-dempty { color:var(--faint); font-size:12.5px; margin-top:18px; text-align:center; }

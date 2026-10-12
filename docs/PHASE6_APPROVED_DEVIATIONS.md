@@ -72,6 +72,8 @@
 | B40 | Cross-type state changes give the record a new id (Goal ↔ copy remain distinct records); the lineage (`formerly`) links them, bounded at 64 by refusal | — | P6-F4 B5 | Founder-approved design |
 | B41 | The B4 / B4.1 guided creation sheet (CardCross) is retired from state editing; creating another Goal or copy is Browse's and + Add cards' | — | P6-F4 B5 | — |
 | B42 | A copy made from a Goal carries the Goal's saved grade/condition (founder: changing state changes only state). It is the Collector's own saved configuration reused by their action, not a verified physical fact; the post-change reconfirmation prompt is removed | — | P6-F4 B5.2 | Founder-approved |
+| B43 | Browse shows connected Trusted Partners' available copies (shop, printing, grading, Proposed Market Price, firmness) without a Goal — trusted-network discovery, not a public marketplace. Supersedes the Phase 4 "not a shop window" and C5 "Browse names no shop" rules (guards restated, their cost / certificate / unconnected-shop protections kept) | — | P6-F5A | Founder decision |
+| B44 | Opening a deal does not by itself mark a shop's copy unavailable; it stays "At your shops" until a (not yet shipped) deal step reserves it. No reservation behaviour is invented | — | P6-F5A | Reservation ships with the later deal lifecycle |
 
 ## C. Unavoidable comparison differences (not product decisions)
 

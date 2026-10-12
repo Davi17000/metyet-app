@@ -610,5 +610,15 @@ const FIELD_RULES = Object.freeze({
   COLLECTOR_COPY_FOR_PARTNER, INTEREST_FOR_COLLECTOR, OPPORTUNITY_PARTNER_PRIVATE,
 });
 
-module.exports = { projectForActor, FIELD_RULES, PROJECTED_COLLECTIONS: COLLECTIONS,
+/* AT MY SHOPS (P6-F5A): the printings a Collector's view says a connected
+   Trusted Partner has AVAILABLE — read off a FINISHED projection, so it can
+   only ever narrow what that actor was already authorised to see. Not a
+   Collector: nothing. Pending, unavailable or any other status: not here. */
+function availableAtShops(view) {
+  if (!view || !view.actor || view.actor.seat !== "collector") return [];
+  return [...new Set(list(view.inventory).filter((i) => i && i.status === "available" && i.canonicalCardId)
+    .map((i) => i.canonicalCardId))];
+}
+
+module.exports = { availableAtShops, projectForActor, FIELD_RULES, PROJECTED_COLLECTIONS: COLLECTIONS,
   PROJECTION_SECTIONS: SECTIONS, UNAVAILABLE };

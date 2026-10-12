@@ -40,7 +40,7 @@ const plural = (n, one, many) => `${Number(n || 0).toLocaleString()} ${n === 1 ?
    pages already loaded, and — as presentation memory only — where each view
    was scrolled to. Nothing in it is ever sent anywhere or stored. */
 export const newBrowseSession = () => ({ tab: "pokemon", gen: "all", text: "", pokemon: null, set: null, artist: null,
-  pages: {}, scroll: {} });
+  shops: false, pages: {}, scroll: {} });
 
 /* Pages of one list, kept in the session under `key`, fetched as needed. */
 function usePages({ key, load, browsing, push, enabled }) {
@@ -84,15 +84,19 @@ function Fan({ seed }) {
 
 function Markers({ m }) {
   if (!m) return null;
+  /* AT YOUR SHOPS (P6-F5A): a connected Trusted Partner has an AVAILABLE copy
+     of one of this card's printings — the projection's own word, never a
+     guess, and never a claim about a grade or condition. */
+  const shop = m.shops ? <span className="mcs-dshop">At your shops</span> : null;
   const chips = [];
   if (m.primary) chips.push(["Primary", "primary"]);
   if (m.secondary) chips.push(["Secondary", "secondary"]);
   if (m.pc) chips.push([m.pc > 1 ? `PC ×${m.pc}` : "PC", "pc"]);
   if (m.tradeSell) chips.push([m.tradeSell > 1 ? `Trade / Sell ×${m.tradeSell}` : "Trade / Sell", "trade"]);
   if (m.owned) chips.push([m.owned > 1 ? `Owned ×${m.owned}` : "Owned", "owned"]);
-  if (!chips.length) return null;
+  if (!chips.length) return shop;
   /* the four states in their one visual language (P6-F4 B2A); Owned stays neutral */
-  return <span className="mcs-dmarks">{chips.map(([t, c]) => <StateChip key={t} kind={c} label={t} />)}</span>;
+  return <>{shop}<span className="mcs-dmarks">{chips.map(([t, c]) => <StateChip key={t} kind={c} label={t} />)}</span></>;
 }
 
 export default function Discover({ state, browse = null, browsing, onBrowsing, onChoose, chosenId = null, justId = null, busy: opening = false, onCount = null }) {
@@ -107,14 +111,18 @@ export default function Discover({ state, browse = null, browsing, onBrowsing, o
   const set = (patch) => push((s) => ({ ...s, ...patch }));
   const needle = text(S.text) || "";      // text() is null for nothing typed
   const active = S.pokemon != null || !!S.set || !!S.artist;
-  const showingCards = active || !!needle;
+  /* AT MY SHOPS (P6-F5A) narrows the catalogue ON THE SERVER, so it pages and
+     searches like every other constraint and misses nothing past page one. */
+  const shops = S.shops === true;
+  const showingCards = active || !!needle || shops;
   const summary = [S.pokemon && S.pokemon.name, S.set && S.set.name, S.artist].filter(Boolean).join(" · ");
 
   /* THE CARDS: every constraint is one more AND on the same catalogue query. */
-  const cardsKey = showingCards ? `cards:${JSON.stringify([S.pokemon && S.pokemon.dex, S.set && S.set.id, S.artist, needle])}` : null;
+  const cardsKey = showingCards ? `cards:${JSON.stringify([S.pokemon && S.pokemon.dex, S.set && S.set.id, S.artist, needle, shops])}` : null;
   const cards = usePages({ key: cardsKey, browsing: S, push, enabled: !!browse, load: async (page) => {
     const r = await browse.find(qs({ pokedex: S.pokemon && S.pokemon.dex, expansionId: S.set && S.set.id, artist: S.artist,
-      ...(needle ? (looksLikeNumber(needle) ? { number: needle } : { query: needle }) : {}), page, pageSize: PAGE.cards }));
+      ...(needle ? (looksLikeNumber(needle) ? { number: needle } : { query: needle }) : {}),
+      ...(shops ? { atMyShops: 1 } : {}), page, pageSize: PAGE.cards }));
     return { items: rows(r && r.contexts), total: Number(r && r.total) || 0 };
   } });
   /* THE LANDING LISTS. */
@@ -161,7 +169,11 @@ export default function Discover({ state, browse = null, browsing, onBrowsing, o
   /* WHAT IS YOURS, marked on the cards it belongs to. */
   /* ragged rows (a null where a record should be) are skipped, never fatal */
   const goals = rows(state && state.goals).filter(Boolean); const copies = rows(state && state.collectorCopies).filter(Boolean);
-  const ids = [...goals, ...copies].map((x) => x.canonicalCardId).filter(Boolean);
+  /* and what a connected shop has AVAILABLE — only that status; a copy pending
+     for the Collector's own deal is not "at your shops" */
+  const atShops = rows(state && state.inventory).filter((i) => i && i.status === "available" && i.canonicalCardId);
+  const hasPartners = rows(state && state.partners).length > 0;
+  const ids = [...goals, ...copies, ...atShops].map((x) => x.canonicalCardId).filter(Boolean);
   const { described, describe } = useCardDescriptions(browse);
   /* asked for only once cards are on screen: the landing needs none */
   useEffect(() => { if (showingCards) describe(ids); }, [showingCards, ids.join(","), describe]);
@@ -169,6 +181,7 @@ export default function Discover({ state, browse = null, browsing, onBrowsing, o
   const mark = (id, f) => { const d = described[String(id)]; if (!d || !d.cardContextId) return; const m = marks[d.cardContextId] || (marks[d.cardContextId] = {}); f(m); };
   for (const g of goals) mark(g.canonicalCardId, (m) => { if (g.tier === "primary") m.primary = true; else if (g.tier === "secondary") m.secondary = true; });
   for (const c of copies) mark(c.canonicalCardId, (m) => { const k = c.offered === true ? "tradeSell" : c.keeping === true ? "pc" : "owned"; m[k] = (m[k] || 0) + 1; });
+  for (const i of atShops) mark(i.canonicalCardId, (m) => { m.shops = true; });
 
   /* The count beside the title, as in the prototype, while cards are shown. */
   useEffect(() => { if (onCount) onCount(showingCards && cards.loaded ? cards.total : null); }, [showingCards, cards.loaded, cards.total]);
@@ -215,12 +228,18 @@ export default function Discover({ state, browse = null, browsing, onBrowsing, o
           onChange={(e) => set({ text: e.target.value })} />
         {S.text ? <button type="button" className="mcs-dclear" aria-label="Clear search" onClick={() => set({ text: "" })}>×</button> : null}
       </div>
+      {hasPartners || shops ? (
+        <div className="mcs-dfilters">
+          <button type="button" className={`mcs-dchip mcs-dshops${shops ? " on" : ""}`} aria-pressed={shops}
+            onClick={() => set({ shops: !shops })}>At my shops</button>
+        </div>
+      ) : null}
       {chips.length ? (
         <div className="mcs-dchips" aria-label="Showing">
           {chips.map(([k, label]) => (
             <button key={k} type="button" className="mcs-dchip" aria-label={`Remove ${label}`} onClick={() => set({ [k]: null })}>
               {label} <span aria-hidden="true">×</span></button>))}
-          <button type="button" className="mcs-dchip clearall" onClick={() => set({ pokemon: null, set: null, artist: null, text: "" })}>Clear all</button>
+          <button type="button" className="mcs-dchip clearall" onClick={() => set({ pokemon: null, set: null, artist: null, text: "", shops: false })}>Clear all</button>
         </div>
       ) : null}
       {suggestions.length ? (
@@ -283,7 +302,12 @@ export default function Discover({ state, browse = null, browsing, onBrowsing, o
       ) : (
         <>
           {!cards.loaded && cards.busy ? <p className="mcs-dempty">Looking…</p> : null}
-          {cards.loaded && !cards.items.length ? (
+          {cards.loaded && !cards.items.length && shops ? (
+            <p className="mcs-dempty">{active || needle
+              ? "None of your Trusted Partners has one of these available right now."
+              : "Your Trusted Partners have nothing available right now."}{" "}
+              <button type="button" className="mcs-linkish" onClick={() => set({ shops: false })}>Show all cards</button></p>
+          ) : cards.loaded && !cards.items.length ? (
             <p className="mcs-dempty">{needle ? `Nothing matches “${needle}”${summary ? ` in ${summary}` : ""}.` : "No cards here."}
               {/* The grid searches card names and numbers; a set or an artist
                   is found through its suggestion (register: B15). */}

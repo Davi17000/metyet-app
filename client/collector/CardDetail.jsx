@@ -37,6 +37,7 @@ import React, { useEffect, useRef, useState } from "react";
 import CardArt from "../card-art.jsx";
 import { rows, text, gradeLine, criteriaLine } from "./present.js";
 import { explain } from "./CardSpecification.jsx";
+import { dollars } from "../negotiation.jsx";
 import { StateIcon } from "./states.jsx";
 
 /* The prototype's version words (fixtures.js FINISH_NAMES), plus what else
@@ -211,6 +212,24 @@ export default function CardDetail({ context, state, backLabel = "Browse", posit
   const stateRef = useRef(state); stateRef.current = state;
   const [unfiled, setUnfiled] = useState(null);   // { id, idKey, ack } — made, not yet filed (Retry filing)
   const cards = rows(context && context.cards);
+  /* what connected shops have available of THESE printings (P6-F5A) */
+  const printIds = new Set(cards.map((c) => c.canonicalCardId));
+  const partnerRows = rows(state && state.partners);
+  const partnersHere = partnerRows.length > 0;
+  const shopName = (pid) => text((partnerRows.find((p) => p && p.id === pid) || {}).name) || "A Trusted Partner";
+  /* GROUPED BY SHOP, shops in name order; within a shop, the card's own
+     printing order, then when the copy was added. Never ranked by price. */
+  const printOrder = (id) => cards.findIndex((c) => c.canonicalCardId === id);
+  const shopRows = rows(state && state.inventory)
+    .filter((i) => i && i.status === "available" && printIds.has(i.canonicalCardId))
+    .sort((x, y) => shopName(x.partnerId).localeCompare(shopName(y.partnerId)) || String(x.partnerId).localeCompare(String(y.partnerId))
+      || printOrder(x.canonicalCardId) - printOrder(y.canonicalCardId) || String(x.addedAt || "").localeCompare(String(y.addedAt || ""))
+      || String(x.invId).localeCompare(String(y.invId)));
+  const shopGroups = shopRows.reduce((acc, i) => {
+    const last = acc[acc.length - 1];
+    if (last && last.partnerId === i.partnerId) last.copies.push(i); else acc.push({ partnerId: i.partnerId, copies: [i] });
+    return acc;
+  }, []);
   const [a, setA] = useState(() => blankAnswers(cards));
   const [focus, setFocus] = useState(null);
   const [hint, setHint] = useState(null);
@@ -400,6 +419,34 @@ export default function CardDetail({ context, state, backLabel = "Browse", posit
             <h4>MetYet remembers</h4>
             <ul>{lines.map((l) => <li key={l}>{l}</li>)}</ul>
           </div>
+        ) : null}
+
+        {/* AT YOUR SHOPS (P6-F5A): copies a connected Trusted Partner has
+            AVAILABLE, of this card's own printings — straight from the
+            projection, which the server already limited to connected shops,
+            live copies and this Collector's view of their status. Looking
+            changes nothing: no Goal, no deal. */}
+        {shopRows.length ? (
+          <section className="mcs-cd-shops" aria-label="At your shops">
+            <h4>At your shops</h4>
+            <ul>{shopGroups.map((g) => (
+              <li key={g.partnerId} className="mcs-cd-shop" data-shop={g.partnerId}>
+                <b className="mcs-cd-shop-name">{shopName(g.partnerId)}</b>
+                <ul>{g.copies.map((i) => {
+                  const print = cards.find((c) => c.canonicalCardId === i.canonicalCardId);
+                  const price = dollars(i.ask);
+                  return (
+                    <li key={i.invId} data-inv={i.invId}>
+                      <span className="mcs-cd-shop-hd"><span>{[print ? versionLabel(print, cards) : null, gradeLine(i) || "Grade not stated"].filter(Boolean).join(" · ")}</span>
+                        <span className="mcs-cd-shop-ok">Available</span></span>
+                      <span className="mcs-cd-shop-price">{[price ? `Proposed Market Price ${price}` : "No price listed",
+                        i.firmOnPrice === true ? "Firm on Price" : "Open to Offers"].join(" · ")}</span>
+                    </li>);
+                })}</ul>
+              </li>))}</ul>
+          </section>
+        ) : partnersHere ? (
+          <p className="mcs-cd-noshop">None of your Trusted Partners has this card available right now.</p>
         ) : null}
 
         {!cards.length ? (

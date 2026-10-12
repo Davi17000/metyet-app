@@ -1063,6 +1063,77 @@ describe("Sequential edits on one open editor, through production (P6-F4 B5.1)",
   });
 });
 
+/* P6-F5A — TRUSTED-NETWORK INVENTORY IN BROWSE, through production. Casey is
+   connected to Northline Cards (two Mudkip #60 printings, a Charizard) and
+   not to Faraway Games (a Mudkip #60 PSA 10, a Jungle Pikachu). Looking
+   writes nothing. */
+describe("At your shops, through production (P6-F5A)", () => {
+  test("the grid marks only cards a connected shop has available; the card lists them by shop; At my shops filters on the server; nothing from Faraway; nothing written", async () => {
+    await before();
+    const context = await browser.newContext({ ...PHONE }); const page = await context.newPage();
+    const errors = []; page.on("pageerror", (e) => errors.push(e.message));
+    const commands = []; page.on("request", (r) => { if (r.url().includes("/api/commands")) commands.push(r.url()); });
+    const finds = []; page.on("request", (r) => { if (r.url().includes("/api/card-contexts?")) finds.push(r.url()); });
+    const DIR = "artifacts/fidelity/f5a";
+    require("fs").mkdirSync(DIR, { recursive: true });
+    const shot = async (n) => { await page.waitForTimeout(400); await page.screenshot({ path: `${DIR}/${n}.png` }).catch(() => {}); };
+    const versionOf = async () => (await (await fetch(ctx.url + "api/view", { headers: { authorization: "Bearer casey" } })).json());
+    const v0 = await versionOf();
+    const body = () => page.locator("body").innerText();
+    const noFaraway = async (where) => { const t = await body(); assert(!/Faraway|\$300|\$500/.test(t), `the unconnected shop reached ${where}`); };
+
+    await signIn(page, ctx.url);
+    /* 1. Mudkip: #60 is at your shops, #59 is not */
+    await page.locator(".mcs-dtile[data-dex='258']").tap(); await page.waitForTimeout(900);
+    const c60 = page.locator("button.mcs-dcell[aria-label='Mudkip, Ruby & Sapphire #60']");
+    const c59 = page.locator("button.mcs-dcell[aria-label='Mudkip, Ruby & Sapphire #59']");
+    await c60.waitFor();
+    eq(await c60.locator(".mcs-dshop").count(), 1, "#60 is not marked");
+    eq(await c59.locator(".mcs-dshop").count(), 0, "#59 is marked with nothing available");
+    await shot("f5a-01-grid-at-your-shops");
+    /* 2. the card: Northline's two copies, grouped, no Faraway */
+    await c60.tap(); await page.locator(".mcs-cd-shops").waitFor();
+    const shop = await page.locator(".mcs-cd-shops").innerText();
+    assert(/Northline Cards/.test(shop) && /Normal · Raw · Near Mint/.test(shop) && /Proposed Market Price \$12 · Open to Offers/.test(shop)
+      && /Reverse Holo · PSA 9/.test(shop) && /Proposed Market Price \$85 · Firm on Price/.test(shop), shop);
+    eq(await page.locator(".mcs-cd-shops li.mcs-cd-shop").count(), 1, "not one shop group");
+    await noFaraway("the card");
+    await page.evaluate(() => { const sc = document.querySelector(".mcs-cd-scroll"); const q = document.querySelector(".mcs-cd-ident"); if (sc && q) sc.scrollTop = q.offsetTop - 64; });
+    await shot("f5a-02-card-available-copies");
+    await page.locator(".mcs-cd-back").tap(); await page.waitForTimeout(500);
+    /* 3. #59: nothing available, said quietly */
+    await c59.tap(); await page.locator(".mcs-cd-noshop").waitFor();
+    await page.evaluate(() => { const sc = document.querySelector(".mcs-cd-scroll"); const q = document.querySelector(".mcs-cd-ident"); if (sc && q) sc.scrollTop = q.offsetTop - 64; });
+    await shot("f5a-03-card-no-availability");
+    await page.locator(".mcs-cd-back").tap(); await page.waitForTimeout(500);
+    /* 4. At my shops, with Mudkip: only #60 — asked of the server */
+    await page.locator("button.mcs-dshops").tap(); await page.waitForTimeout(900);
+    assert(/atMyShops=1/.test(finds[finds.length - 1]) && /pokedex=258/.test(finds[finds.length - 1]), finds[finds.length - 1]);
+    eq(await page.locator("button.mcs-dcell").count(), 1);
+    await shot("f5a-04-filter-at-my-shops");
+    /* and across everything: #60 and Charizard, never Faraway's Pikachu */
+    await page.locator(".mcs-dchip", { hasText: "Pokémon: Mudkip" }).tap(); await page.waitForTimeout(900);
+    const labels = await page.locator("button.mcs-dcell").evaluateAll((xs) => xs.map((x) => x.getAttribute("aria-label")).sort());
+    eq(JSON.stringify(labels), JSON.stringify(["Charizard, Base Set #4", "Mudkip, Ruby & Sapphire #60"]));
+    await noFaraway("the filtered grid");
+    await shot("f5a-05-filter-all-shops");
+    /* 5. off again: the ordinary catalogue */
+    await page.locator("button.mcs-dshops").tap(); await page.waitForTimeout(600);
+    eq(await page.locator("button.mcs-dshops").getAttribute("aria-pressed"), "false");
+    eq(await page.locator("button.mcs-dcell").count(), 0, "with no constraint, the landing returns");
+    await page.locator(".mcs-dtile[data-dex='25']").tap(); await page.waitForTimeout(900);
+    eq(await page.locator("button.mcs-dcell .mcs-dshop").count(), 0, "a Pikachu is marked though only an unconnected shop has one");
+    await noFaraway("Pikachu");
+    /* 6. nothing written */
+    const v1 = await versionOf();
+    eq(JSON.stringify([v1.version, v1.state.goals.length, (v1.state.opportunities || []).length]),
+      JSON.stringify([v0.version, v0.state.goals.length, (v0.state.opportunities || []).length]), "browsing wrote something");
+    eq(commands.length, 0, "a command was sent: " + commands.join(" "));
+    eq(errors.length, 0, errors.join(" | "));
+    await context.close();
+  });
+});
+
 if (!chromium) {
   console.log("SKIPPED: Playwright is not installed.");
 } else {

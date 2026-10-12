@@ -600,7 +600,11 @@ describe("F. the review-only artwork exception", () => {
     /* RESTATED (P6-F4 B5): the founder-approved changeCollectingState touched the
        domain's commands, refusals and validator and the server's allow-list —
        none of them the catalogue importer or the image rules this guards. */
-    const B5 = ["domain/metyet-commands.js", "domain/metyet-domain.js", "domain/metyet-world.js", "server/exposed-commands.js"];
+    /* (P6-F5A: the At my shops catalogue filter — a query clause, the route
+       that computes it from the projection, and the projection's helper —
+       touches neither the importer nor any image rule) */
+    const B5 = ["domain/metyet-commands.js", "domain/metyet-domain.js", "domain/metyet-world.js", "server/exposed-commands.js",
+      "domain/metyet-projection.js", "persistence/catalog-repository.js", "server/app.js"];
     eq(changed.split("\n").filter((f) => f && !B5.includes(f)).join("\n"), "", "Stage 1 changed production catalogue, server or domain code");
   });
 });

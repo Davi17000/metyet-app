@@ -672,8 +672,20 @@ describe("C. Trusted Partners", () => {
        which is what a shop paid and when it bought: those never cross, and the
        projection strips them before they could. The scope narrows too: every
        file EXCEPT Deal Flow is still held to the whole original list. */
+    /* RESTATED (P6-F5A, founder decision): "Browse creates exposure." A
+       Collector may now see their CONNECTED shops' AVAILABLE copies of a card
+       on the Browse card (CardDetail) without a Goal — shop, printing,
+       grading, Proposed Market Price, Open to Offers / Firm on Price. So
+       CardDetail joins Deal Flow as a reader of `ask` and `invId`. What this
+       rule always protected still holds everywhere: the shop's own books
+       (`cost`, `acquired`) never cross, and the Browse card reads no copy's
+       certificate or photographs (asserted just below). */
     const exceptDealFlow = COLLECTOR_FILES
-      .filter((f) => !/DealFlow\.jsx$/.test(f)).map(code).join("\n");
+      .filter((f) => !/DealFlow\.jsx$/.test(f) && !/collector\/CardDetail\.jsx$/.test(f)).map(code).join("\n");
+    const browseCard = code(COLLECTOR_FILES.find((f) => /collector\/CardDetail\.jsx$/.test(f)));
+    for (const field of ["cert", "photos", "cost", "acquired"]) {
+      assert(!new RegExp(`\\.${field}\\b|\\["${field}"\\]`).test(browseCard), `the Browse card reads a shop copy's ${field}`);
+    }
     for (const field of ["ask", "cost", "acquired", "invId"]) {
       assert(!new RegExp(`\\.${field}\\b|\\["${field}"\\]`).test(exceptDealFlow),
         `a Collector surface other than Deal Flow reads a copy's ${field}`);
@@ -855,7 +867,9 @@ describe("F. nothing acts, nothing mutates, nothing forbidden is imported", () =
     const own = browsing.filter((l) => !NAV.some((n) => l.includes(n)) && l !== "Sign out" && l !== "What works today" && !chrome.has(l));
     /* RESTATED (P6-F2): the Phase 6 doorways and the generation filter's "All"
        (with no catalogue here there are no generations to add). */
-    eq(own.join(","), "Pokémon,Sets,Artists,All", "Browse grew a control: " + own.join(" | "));
+    /* RESTATED (P6-F5A): and, for a Collector with Trusted Partners, the one
+       server-side filter "At my shops" */
+    eq(own.join(","), "At my shops,Pokémon,Sets,Artists,All", "Browse grew a control: " + own.join(" | "));
     const bare = COLLECTOR_FILES.map(code).join("\n");
     /* Binder entries, interests and invitations are still nobody's to write
        from here; each moves with its own batch. */

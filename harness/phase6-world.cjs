@@ -93,7 +93,7 @@ async function applyReviewArtwork(db) {
 /* THE REVIEW STORY used by the P6-3 / P6-4 checks and `review:mobile`:
    two binders, two Goals, two copies. A different story (the fidelity
    harness's copy of the prototype's own preset) is passed as `seed`. */
-async function reviewSeed({ card, post, catalog, expansion }) {
+async function reviewSeed({ card, post, postAs, catalog, expansion }) {
   const BASE = { code: "b1", name: "Base Set", printedTotal: 102 };
   const char = await card("4", "Charizard", "holofoil", BASE, [6]);
   const blas = await card("2", "Blastoise", "holofoil", BASE, [9]);
@@ -121,7 +121,29 @@ async function reviewSeed({ card, post, catalog, expansion }) {
   const goal2 = await post("addGoal", { canonicalCardId: ven, tier: "secondary", desired: { grade: "PSA 9" } });
   const copy2 = await post("addCollectorCopy", { copy: { canonicalCardId: pika, grade: "PSA 7", offered: true } });
   await post("fileObject", { binderId: mud, collectorCopyId: copy2 });
-  return { gen1, mud, goal, copy, goal2, copy2 };
+  /* P6-F5A: what the shops have. Northline (connected): two Mudkip #60
+     printings and a Charizard; a copy it took off its shelf (archived).
+     Faraway (not connected): a Mudkip #60 and a Jungle Pikachu that Casey must
+     never see. Prices are whole dollars, as the domain requires. */
+  const shops = {};
+  if (postAs) {
+    const ctxOf = async (n) => (await catalog.findCardContexts({ number: n, pokedex: 258 })).contexts[0];
+    const rs60 = await ctxOf("60");
+    const rs60cards = (await catalog.readCardContext(rs60.cardContextId)).canonicalCards;
+    const normal60 = rs60cards.find((k) => k.finish === "non_holo").canonicalCardId;
+    const reverse60 = rs60cards.find((k) => k.finish === "reverse_holofoil").canonicalCardId;
+    const jungle = (await catalog.findCardContexts({ number: "25", pokedex: 25 })).contexts.find((c) => c.expansionName === "Jungle");
+    const pikaJ = (await catalog.readCardContext(jungle.cardContextId)).canonicalCards[0].canonicalCardId;
+    const inv = (who, copy) => postAs(who, "addInventoryCopy", { copy });
+    shops.n1 = await inv("north", { canonicalCardId: normal60, grade: "Raw", condition: "Near Mint", ask: 12, cost: 6 });
+    shops.n2 = await inv("north", { canonicalCardId: reverse60, grade: "PSA 9", ask: 85, cost: 50, firmOnPrice: true });
+    shops.n3 = await inv("north", { canonicalCardId: char, grade: "PSA 8", ask: 1200, cost: 900 });
+    shops.gone = await inv("north", { canonicalCardId: blas, grade: "PSA 9", ask: 400, cost: 300 });
+    await postAs("north", "removeInventoryCopy", { invId: shops.gone });
+    shops.f1 = await inv("far", { canonicalCardId: normal60, grade: "PSA 10", ask: 300, cost: 200 });
+    shops.f2 = await inv("far", { canonicalCardId: pikaJ, grade: "PSA 10", ask: 500, cost: 300 });
+  }
+  return { gen1, mud, goal, copy, goal2, copy2, shops };
 }
 
 /* What build a running review server is serving, so a second launcher can say
@@ -139,12 +161,20 @@ async function serve({ port = 0, seed = reviewSeed, collectorName = "Casey" } = 
   const runtime = RT.systemRuntime();
   const repository = createWorldRepository(db);
   const catalog = createCatalogRepository(db, { newId: runtime.newId });
-  await repository.saveWorld({ catalog: [], collectors: [{ id: "c1", name: collectorName }], partners: [], relationships: [],
+  /* TWO SHOPS (P6-F5A): Northline is one of Casey's Trusted Partners;
+     Faraway is not — its inventory must never reach Casey. */
+  await repository.saveWorld({ catalog: [], collectors: [{ id: "c1", name: collectorName }],
+    partners: [{ id: "p-north", name: "Northline Cards", city: "Portland", tradeRate: 0.7 },
+      { id: "p-far", name: "Faraway Games", city: "Elsewhere", tradeRate: 0.7 }],
+    relationships: [{ partnerId: "p-north", collectorId: "c1", status: "accepted", at: "2026-01-01T00:00:00.000Z" }],
     invitations: [], goals: [], inventory: [], collectorCopies: [], binders: [], binderEntries: [], interests: [],
     opportunities: [], conversations: [], photoRequests: [], copyReviews: [] });
   const accounts = createAccountDirectory(db);
   await accounts.linkAccount({ subject: "sub-casey", role: "collector", collectorId: "c1" });
-  const verifier = { verify: async (t) => { if (t !== "casey") throw Object.assign(new Error("no"), { reason: "x" }); return { subject: "sub-casey", email: "c@x.invalid", emailVerified: true }; } };
+  await accounts.linkAccount({ subject: "sub-north", role: "tp", partnerId: "p-north" });
+  await accounts.linkAccount({ subject: "sub-far", role: "tp", partnerId: "p-far" });
+  const TOKENS = { casey: "sub-casey", north: "sub-north", far: "sub-far" };
+  const verifier = { verify: async (t) => { if (!TOKENS[t]) throw Object.assign(new Error("no"), { reason: "x" }); return { subject: TOKENS[t], email: `${t}@x.invalid`, emailVerified: true }; } };
   const app = createApp({ repository, catalog, accounts, verifier, runtime });
   await app.ready();
   /* The catalogue the seed may name. Every card is real catalogue data (an
@@ -159,12 +189,17 @@ async function serve({ port = 0, seed = reviewSeed, collectorName = "Casey" } = 
   const card = async (n, name, finish, set = { code: "b1", name: "Base Set", printedTotal: 102 }, dex = []) => (await catalog.putCanonicalCard({ finish,
     cardContextId: (await catalog.putCardContext({ game: "pokemon", expansionId: await expansion(set.code, set.name, set.printedTotal),
       collectorNumber: n, cardName: name, artist: "Ken Sugimori", rarity: "Rare", pokedexNumbers: dex })).cardContextId })).canonicalCardId;
+  const postAs = async (who, command, payload) => {
+    const res = await app.inject({ method: "POST", url: "/api/commands", headers: { authorization: `Bearer ${who}` }, payload: { command, payload } });
+    if (res.statusCode !== 200) throw new Error(`${who} ${command}: ${res.body}`);
+    return res.json().value;
+  };
   const post = async (command, payload) => {
     const res = await app.inject({ method: "POST", url: "/api/commands", headers: { authorization: "Bearer casey" }, payload: { command, payload } });
     if (res.statusCode !== 200) throw new Error(`${command}: ${res.body}`);
     return res.json().value;
   };
-  const ids = await seed({ card, post, catalog, db, expansion });
+  const ids = await seed({ card, post, postAs, catalog, db, expansion });
   await applyReviewArtwork(db);
   const build = async (contents) => (await esbuild.build({ stdin: { contents, resolveDir: ROOT, loader: "jsx" }, bundle: true,
     write: false, format: "iife", jsx: "automatic", logLevel: "silent", define: { "process.env.NODE_ENV": '"production"' } })).outputFiles[0].text;
@@ -218,7 +253,7 @@ p{margin:0;max-width:430px;text-align:center}</style></head><body>
   await new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, "127.0.0.1", resolve); });
   const memberships = async () => (await repository.loadWorld()).binderMemberships || [];
   const world = async () => repository.loadWorld();
-  return { url: `http://127.0.0.1:${server.address().port}/`, server, memberships, world, post,
+  return { url: `http://127.0.0.1:${server.address().port}/`, server, memberships, world, post, postAs,
     ids, build: build_, hooks };
 }
 

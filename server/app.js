@@ -39,7 +39,7 @@
    ========================================================================== */
 
 const Fastify = require("fastify");
-const { projectForActor } = require("../domain/metyet-projection.js");
+const { projectForActor, availableAtShops } = require("../domain/metyet-projection.js");
 /* Whether an invitation is still open is a PRODUCT rule, so it is asked of the
    domain rather than restated here (Phase 5 Batch 3D). Calling the same
    predicate the acceptance transaction calls is what keeps the front door and
@@ -357,7 +357,21 @@ function createApp({
   if (catalog) {
     app.get("/api/card-contexts", { preHandler: authenticate }, async (request) => {
       const q = request.query || {};
+      /* AT MY SHOPS (P6-F5A). Which printings the actor's Trusted Partners have
+         available is a fact about the WORLD, so it is answered from the actor's
+         own projection — the same read, the same rules, as /api/view: only
+         connected partners, never an archived copy, only a copy whose status
+         for this Collector is `available`. Nothing in the request can widen it;
+         the flag only narrows a catalogue read, and a non-Collector gets none. */
+      let canonicalCardIds;
+      /* a repeated parameter arrives as a list; any "on" in it is on — a
+         malformed request must never quietly turn the filter OFF */
+      if ([].concat(q.atMyShops == null ? [] : q.atMyShops).some((v) => v === "1" || v === "true")) {
+        const seen = await repository.withTransaction(async (tx) => projectForActor(await repository.loadWorld(tx), request.metyet.actor), { readOnly: true });
+        canonicalCardIds = availableAtShops(seen);
+      }
       const { contexts, page, pageSize, total } = await catalog.findCardContexts({
+        canonicalCardIds,
         query: q.query,
         expansionId: q.expansionId,
         expansion: q.expansion,
@@ -372,7 +386,7 @@ function createApp({
          the one thing this batch needs to learn and cannot learn any other way
          — a browse is a read, and a read leaves no record anywhere. The door
          and how many rows came back; never the words they typed. */
-      const doorway = q.pokedex ? "pokemon" : q.expansion || q.expansionId ? "set"
+      const doorway = canonicalCardIds ? "shops" : q.pokedex ? "pokemon" : q.expansion || q.expansionId ? "set"
         : q.artist ? "artist" : q.query ? "name" : q.number ? "number" : "all";
       request.log.info({ ...actorLog(request.metyet.actor), doorway, results: total }, "browse");
       return { contexts, page, pageSize, total };

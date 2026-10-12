@@ -20,7 +20,11 @@ visual polish. Local cleanup while touching a boundary is good; broad
 cleanup waits until the Collector loop is complete and before pilot.
 
 MetYet is a coordination layer for trusted collecting relationships, not
-a generic marketplace. Product framing: **"This isn't where
+a generic marketplace. (P6-F5A, founder decision) **Browse creates exposure.
+Binders create coherence. Goals express priority. Deal Flow coordinates
+action.** Discovery happens inside the trusted network only — a Collector
+sees what their *connected* Trusted Partners have *available*; there is no
+public listing, no unconnected shop, no ranking. Product framing: **"This isn't where
 relationships start --- it's where they continue."** Another durable
 principle: **any input/participation should benefit the person entering
 it and other relevant participants.**
@@ -317,7 +321,7 @@ There is a naming collision to resolve before transaction entry.
 mutation-sensitive; final agreement creates hard exclusivity; Pending is
 a separate availability boundary.
 
-## 13. Browse/Search direction --- later
+## 13. Browse/Search direction
 
 Observed Collector behavior: browse by Pokémon, set and artist; artwork
 is central. Product progression: **Exposure → Refinement → Curation**.
@@ -333,7 +337,37 @@ four-state/object-Binder doctrine. Do not recreate durable stateless
 interest or bare-card Binder membership. Reuse the discovery ideas
 later, reconciled with current invariants.
 
-## 14. TP inventory --- deferred
+### Trusted-network inventory discovery (P6-F5A, founder-approved)
+
+Supersedes the Phase 4 / Phase 5 rule that a Trusted Partner's copy is
+never shown outside Deal Flow and that Browse names no shop. **A Collector
+may discover available inventory from their connected Trusted Partners
+without first creating a Goal.** This is trusted-network discovery, not an
+unrestricted public marketplace:
+
+- **Who:** only partners with an accepted relationship to the Collector;
+  an unconnected shop is never named, counted or listed.
+- **What:** only copies whose status *for this Collector* is `available`
+  (the projection's `copyForViewer`); never archived, pending,
+  committed, sold or otherwise held. Exact printing (`canonicalCardId`)
+  only — a printing match is never a claim about grade or condition.
+- **Shown on the Browse card:** shop name, printing, grading, Proposed
+  Market Price (`ask`), Open to Offers / Firm on Price. **Never** the
+  certificate, photographs, cost or acquisition date.
+- **Grid:** a quiet "At your shops" line; **filter:** "At my shops", a
+  server-side catalogue flag computed from the actor's own projection
+  (`availableAtShops`), so paging and search are exact and no request can
+  widen it.
+- **Order:** grouped by shop, shops by name; within a shop by printing
+  then date added. Never ranked by price; nothing recommended.
+- **Looking is looking:** browsing creates no Goal, opportunity or offer.
+  Starting Market Validation still requires a Primary Goal; no Goal-free
+  offers.
+- **Known limitation:** opening a deal does not by itself mark a copy
+  unavailable — reservation happens only in deal steps not yet shipped
+  (`setCopyPending` is unexposed). F5A invents no reservation behaviour.
+
+## 14. TP inventory ingestion --- deferred
 
 Potential ingestion: manual lookup/add, CSV import from tools, dedicated
 integrations. Do not build this before the Collector loop is stable. TP
