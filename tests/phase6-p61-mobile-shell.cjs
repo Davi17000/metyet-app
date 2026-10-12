@@ -133,7 +133,10 @@ describe("C. nothing else moved", () => {
       "? { onSpecify, onBrowseCards, onCreateBinder, onRenameBinder,",
       "? { onBrowseCards }",
       "? { onBrowseCards, onInspect, onEndInspection, onRequestPhotos,",
-      "onOpenOffer, onCounterOffer, onAcceptOffer, onWithdrawOffer, onRefresh }"]) {
+      /* RESTATED (P6-F5B): Deal Flow keeps every prop it had and gains only
+         `focus` / `onFocusUsed` — the copy it was sent to from Browse */
+      "onOpenOffer, onCounterOffer, onAcceptOffer, onWithdrawOffer, onRefresh,",
+      "focus: dealFocus, onFocusUsed: () => setDealFocus(null) }"]) {
       assert(src.includes(line), `a section's props changed: ${line}`);
     }
   });

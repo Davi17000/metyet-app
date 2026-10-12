@@ -309,7 +309,7 @@ export function objectsOf(state) {
 
 export default function Binder({ state, onBrowseCards = null, onSpecify = null,
   onCreateBinder = null, onRenameBinder = null, onArchiveBinder = null,
-  onAddCards = null, fillingBinder = null,
+  onAddCards = null, fillingBinder = null, focusKey = null, onFocusUsed = null,
   /* Handed down and passed straight through to the opened binder's object
      rows, which is where Move and Remove from Binder live. This section names
      no command, as it never has. */
@@ -372,6 +372,12 @@ export default function Binder({ state, onBrowseCards = null, onSpecify = null,
   const openSheet = (key) => {
     setDetailKey(key); setMoving(false); setProblem(null);   // an old warning is about something else
   };
+  /* SENT HERE TO EDIT A GOAL (P6-F5B, from a shop's copy in Browse): open it once */
+  useEffect(() => {
+    if (!focusKey) return;
+    if (objectsOf(state).some((x) => x.key === focusKey)) openSheet(focusKey);
+    if (onFocusUsed) onFocusUsed();
+  }, [focusKey]);
   /* FILING (P6-3): the card being carried, the one being filed (one at a
      time — a second gesture while a command is out is ignored), and the one
      that just landed. The ref is the guard, because two drops in one instant

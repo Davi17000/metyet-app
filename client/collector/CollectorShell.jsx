@@ -1074,6 +1074,14 @@ ${STATE_CSS}
 .mcs-cd .mcs-cd-shop-hd { display:flex; justify-content:space-between; gap:8px; color:var(--text); }
 .mcs-cd .mcs-cd-shop-ok { font-size:11.5px; font-weight:600; color:var(--t1); }
 .mcs-cd .mcs-cd-shop-price { color:var(--text); }
+/* the next step on a shop's copy (P6-F5B): Make an Offer is the one filled
+   action; the rest are quiet, and Open in Deal Flow is a link, not a button */
+.mcs-cd .mcs-cd-next { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:6px; }
+.mcs-cd .mcs-cd-next .mcs-go { min-height:38px; }
+.mcs-cd .mcs-cd-offer { border:0; border-radius:10px; padding:9px 14px; min-height:40px; font-weight:700; font-size:13.5px;
+  background:var(--t1); color:#FFF; }
+.mcs-cd .mcs-cd-next-note { flex-basis:100%; font-size:12.5px; color:var(--text); }
+.mcs-cd .mcs-cd-next-problem { flex-basis:100%; font-size:12.5px; color:var(--amber); }
 .mcs-cd p.mcs-cd-noshop { margin:0 0 16px; font-size:12.5px; color:var(--muted); }
 /* AT MY SHOPS (P6-F5A): one quiet filter, and one quiet line under a card a
    connected shop has available — the artwork stays the thing you see */
@@ -1251,6 +1259,10 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
   const [fillingBinder, setFillingBinder] = useState(null);
   /* the binder to open on arrival in Binders, after "Back to <binder>" (P6-F4 B3) */
   const [returnTo, setReturnTo] = useState(null);
+  /* FROM A SHOP'S COPY TO DEAL FLOW, OR TO THE GOAL IN BINDERS (P6-F5B): the
+     exact copy (or Goal) is carried, and the destination opens on it once. */
+  const [dealFocus, setDealFocus] = useState(null);
+  const [binderFocus, setBinderFocus] = useState(null);
 
   const who = describeActor(state);
   /* THE ACCOUNT, ON A PHONE (P6-F1). The Phase 6 phone has no account bar:
@@ -1387,11 +1399,15 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
             : meta.id === "browse"
               ? { onSpecify, onBrowseCards, session: browseSession, onSession: setBrowseSession, onCount: setBrowseCount,
                 fillingBinder, onDoneFilling: () => setFillingBinder(null), onRefresh,
-                onBackToBinder: () => { setReturnTo(fillingBinder); setFillingBinder(null); setSection("binder"); } }
+                onBackToBinder: () => { setReturnTo(fillingBinder); setFillingBinder(null); setSection("binder"); },
+                onMakeOffer: onOpenOffer ? (f) => { setDealFocus({ ...f, compose: true }); setSection("deal-flow"); } : null,
+                onOpenDeal: (f) => { setDealFocus({ ...f, compose: false }); setSection("deal-flow"); },
+                onEditGoal: (goalId) => { setBinderFocus(`g:${goalId}`); setSection("binder"); } }
               : meta.id === "binder"
                   ? { onSpecify, onBrowseCards, onCreateBinder, onRenameBinder,
                     onArchiveBinder, fillingBinder: fillingBinder || returnTo, onFileObject, onUnfileObject, onRefresh,
-                    onAddCards: (into) => { setReturnTo(null); setFillingBinder(into); setSection("browse"); } }
+                    onAddCards: (into) => { setReturnTo(null); setFillingBinder(into); setSection("browse"); },
+                    focusKey: binderFocus, onFocusUsed: () => setBinderFocus(null) }
                   : meta.id === "partners"
                     /* Trusted Partners asks the catalog what the cards a shop
                        has for you are called, and takes nothing else (Phase 5
@@ -1408,7 +1424,8 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
                          still real domain commands with no surface, and this
                          screen still stops at the line before a transaction. */
                       ? { onBrowseCards, onInspect, onEndInspection, onRequestPhotos,
-                        onOpenOffer, onCounterOffer, onAcceptOffer, onWithdrawOffer, onRefresh }
+                        onOpenOffer, onCounterOffer, onAcceptOffer, onWithdrawOffer, onRefresh,
+                        focus: dealFocus, onFocusUsed: () => setDealFocus(null) }
                       : {})} />
         </main>
       </div>

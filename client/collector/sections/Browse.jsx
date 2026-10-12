@@ -66,7 +66,7 @@ export { newBrowseSession };
 
 export default function Browse({ state, session, onSession, onSpecify = null,
   onBrowseCards = null, fillingBinder = null, onDoneFilling = null, onCount = null,
-  onRefresh = null, onBackToBinder = null }) {
+  onRefresh = null, onBackToBinder = null, onMakeOffer = null, onOpenDeal = null, onEditGoal = null }) {
   /* P6-F3A: a card opens as the Phase 6 full-screen CardDetail. Its
      neighbours are the Browse results it was opened from, so ‹ › walk them.
      Its own questions end in one command (Stage 2); after the server says yes
@@ -174,6 +174,7 @@ export default function Browse({ state, session, onSession, onSpecify = null,
           backLabel={(nav && nav.label) || "Browse"} position={nav ? nav.index : 0} total={nav ? nav.list.length : 1}
           onStep={nav && nav.list.length > 1 ? step : null} onClose={close}
           onSave={onSpecify} onAdded={added} wakeHint={!addedOnce} onRefresh={onRefresh}
+          onMakeOffer={onMakeOffer} onOpenDeal={onOpenDeal} onEditGoal={onEditGoal}
           fileInto={fillingBinder ? { binderId: fillingBinder.binderId, name: text(fillingBinder.name) || "the binder" } : null} />
       ) : null}
     </div>

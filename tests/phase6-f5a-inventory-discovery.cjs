@@ -279,8 +279,9 @@ describe("D. the card", () => {
     const shops = sec.findAll((n) => n.type === "li" && cls(n) === "mcs-cd-shop");
     eq(json(shops.map((g) => [flat(g.findAll((n) => cls(n) === "mcs-cd-shop-name")[0]),
       g.findAll((n) => n.type === "li" && n !== g).map(flat)])), json([
-      ["Northline Cards", ["Normal · Raw · Near Mint Available Proposed Market Price $12 · Open to Offers"]],
-      ["West Coast", ["Reverse Holo · PSA 9 Available Proposed Market Price $85 · Firm on Price"]]]));
+      /* (P6-F5B: each copy now ends with its next step — no Goal here, so Add as Primary Goal) */
+      ["Northline Cards", ["Normal · Raw · Near Mint Available Proposed Market Price $12 · Open to Offers Add as Primary Goal"]],
+      ["West Coast", ["Reverse Holo · PSA 9 Available Proposed Market Price $85 · Firm on Price Add as Primary Goal"]]]));
     assert(!/CERT|cost/i.test(flat(sec)), "private inventory metadata shown");
   });
   test("pending, unavailable and other cards' copies are not shown; a card with none says so quietly", () => {

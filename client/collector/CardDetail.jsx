@@ -37,7 +37,7 @@ import React, { useEffect, useRef, useState } from "react";
 import CardArt from "../card-art.jsx";
 import { rows, text, gradeLine, criteriaLine } from "./present.js";
 import { explain } from "./CardSpecification.jsx";
-import { dollars } from "../negotiation.jsx";
+import { dollars, isLiveDeal } from "../negotiation.jsx";
 import { StateIcon } from "./states.jsx";
 
 /* The prototype's version words (fixtures.js FINISH_NAMES), plus what else
@@ -201,7 +201,8 @@ export function Section({ id, title, focus, children }) {
 const HOLD_MS = 900;
 
 export default function CardDetail({ context, state, backLabel = "Browse", position = 0, total = 1,
-  onStep = null, onClose, onSave = null, onAdded = null, wakeHint = true, fileInto = null, onRefresh = null }) {
+  onStep = null, onClose, onSave = null, onAdded = null, wakeHint = true, fileInto = null, onRefresh = null,
+  onMakeOffer = null, onOpenDeal = null, onEditGoal = null }) {
   /* ADDING FROM A BINDER (P6-F4 B3): `fileInto` is { binderId, name } — the
      binder the Collector started from. After the server has confirmed the new
      Goal or copy, the card files THAT record (the id the create returned) into
@@ -230,6 +231,26 @@ export default function CardDetail({ context, state, backLabel = "Browse", posit
     if (last && last.partnerId === i.partnerId) last.copies.push(i); else acc.push({ partnerId: i.partnerId, copies: [i] });
     return acc;
   }, []);
+  /* THE NEXT STEP ON EACH COPY (P6-F5B), from the server's own answers: the
+     Collector's Goal for that exact printing, `discoveries` (which copies the
+     server says match a Goal), and their own live deals. Nothing here decides
+     eligibility — startOpportunity does, again, when the offer is sent. */
+  const myGoals = rows(state && state.goals);
+  const discoveries = rows(state && state.discoveries);
+  /* live = the server's own projected turn says so (isLiveDeal), as Deal Flow reads it */
+  const liveDeals = rows(state && state.opportunities).filter((o) => o && isLiveDeal(o));
+  const nextFor = (copy) => {
+    const live = liveDeals.find((o) => o.canonicalCardId === copy.canonicalCardId);
+    if (live) return { kind: "live", opp: live };
+    const goal = myGoals.find((g) => g.canonicalCardId === copy.canonicalCardId);
+    if (!goal) return { kind: "add" };
+    if (goal.tier !== "primary") return { kind: "promote", goal };
+    const match = discoveries.some((d) => d && d.goalId === goal.id && rows(d.invIds).includes(copy.invId));
+    return match ? { kind: "offer", goal } : { kind: "mismatch", goal };
+  };
+  const [promoting, setPromoting] = useState(null);   // the copy whose "Make it Primary" is in flight
+  const [nextProblem, setNextProblem] = useState(null);
+  const stayOpen = useRef(false);                      // Add as Primary Goal keeps the card open
   const [a, setA] = useState(() => blankAnswers(cards));
   const [focus, setFocus] = useState(null);
   const [hint, setHint] = useState(null);
@@ -363,6 +384,9 @@ export default function CardDetail({ context, state, backLabel = "Browse", posit
         return;
       }
       setSaved({ ...ack, before });
+      /* FROM A SHOP'S COPY (Add as Primary Goal): the card stays, so the same
+         copy can offer Make an Offer once the projection carries the Goal. */
+      if (stayOpen.current) return;
       setTimeout(() => { if (alive.current && onAdded) onAdded(ack, chosen); }, HOLD_MS);
     } catch (error) {
       if (alive.current) setProblem("MetYet lost contact, so nothing was saved. Your answers are still here.");
@@ -383,6 +407,78 @@ export default function CardDetail({ context, state, backLabel = "Browse", posit
   /* THE FINISH, SHOWN ON THE CARD'S OWN PICTURE (prototype CardArt `fx`). */
   const fx = !chosen || !shared ? "" : chosen.finish === "reverse_holofoil" ? " rev"
     : chosen.finish === "holofoil" || chosen.finish === "cosmos_holofoil" ? " holo" : "";
+  /* ADD AS PRIMARY GOAL: the card's own questions, answered from this copy —
+     its printing, its grade or condition, looking, Primary. Nothing is sent:
+     the Collector still presses Add. */
+  const prefillFrom = (copy) => {
+    const g = text(copy.grade);
+    const raw = g === "Raw";
+    stayOpen.current = true;
+    setHint(null); setFocus(null); setProblem(null); setNextProblem(null);
+    setA({ ...blankAnswers(cards), printing: copy.canonicalCardId,
+      kind: g ? (raw ? "raw" : "graded") : null,
+      condition: raw ? text(copy.condition) || null : null, grade: g && !raw ? g : null,
+      intent: "looking", priority: "primary" });
+    setJustReady(true);
+  };
+  /* MAKE IT PRIMARY: the approved state change, same Goal, same binder. */
+  const PROMOTE_WHY = { "goal-locked": "This Goal is part of an active deal, so it stays as it is.",
+    "state-changed": "This Goal changed elsewhere. The latest is shown.", "not-found": "This Goal changed elsewhere. The latest is shown." };
+  const promote = async (goal, invId) => {
+    if (!onSave || promoting) return;
+    setPromoting(invId); setNextProblem(null);
+    try {
+      const answer = await onSave({ kind: "change-state", goalId: goal.id, from: goal.tier, to: "primary" }, goal.canonicalCardId);
+      if (!alive.current) return;
+      if (answer && answer.ok === false) {
+        setNextProblem({ invId, message: PROMOTE_WHY[answer.refused] || "MetYet would not change it." });
+        if (onRefresh && (answer.refused === "state-changed" || answer.refused === "not-found")) { try { await onRefresh(); } catch (e) { /* said */ } }
+      }
+    } catch (error) {
+      if (onRefresh) { try { await onRefresh(); } catch (e) { /* said below */ } }
+      if (alive.current) setNextProblem({ invId, message: "MetYet lost contact. The latest is shown — check before trying again." });
+    } finally {
+      if (alive.current) setPromoting(null);
+    }
+  };
+  const nextStep = (copy) => {
+    const n = nextFor(copy);
+    const trouble = nextProblem && nextProblem.invId === copy.invId ? <span className="mcs-cd-next-problem" role="alert">{nextProblem.message}</span> : null;
+    if (n.kind === "offer") {
+      return onMakeOffer ? (
+        <span className="mcs-cd-next">
+          <button type="button" className="mcs-cd-offer" onClick={() => onMakeOffer({ goalId: n.goal.id, invId: copy.invId })}>Make an Offer</button>
+        </span>) : null;
+    }
+    if (n.kind === "live") {
+      return (
+        <span className="mcs-cd-next">
+          <span className="mcs-cd-next-note">{`Your offer for this card is under way with ${shopName(n.opp.partnerId)}.`}</span>
+          {onOpenDeal ? <button type="button" className="mcs-linkish" onClick={() => onOpenDeal({ goalId: n.opp.goalId })}>Open in Deal Flow</button> : null}
+        </span>);
+    }
+    if (n.kind === "add") {
+      return onSave && !fileInto ? (
+        <span className="mcs-cd-next">
+          <button type="button" className="mcs-go quiet" onClick={() => prefillFrom(copy)}>Add as Primary Goal</button>
+        </span>) : null;
+    }
+    if (n.kind === "promote") {
+      return onSave ? (
+        <span className="mcs-cd-next">
+          <span className="mcs-cd-next-note">You&apos;re interested in this card (Secondary).</span>
+          <button type="button" className="mcs-go quiet" disabled={!!promoting} aria-busy={promoting === copy.invId}
+            onClick={() => promote(n.goal, copy.invId)}>{promoting === copy.invId ? "Saving…" : "Make it Primary"}</button>
+          {trouble}
+        </span>) : null;
+    }
+    return (
+      <span className="mcs-cd-next">
+        <span className="mcs-cd-next-note">{`Your Goal is for ${criteriaLine(n.goal.desired) || "a different copy"}; this copy is ${gradeLine(copy) || "not graded as stated"}.`}</span>
+        {onEditGoal ? <button type="button" className="mcs-linkish" onClick={() => onEditGoal(n.goal.id)}>Edit your Goal in Binders</button> : null}
+      </span>);
+  };
+
   const name = text(context && context.cardName) || "This card";
   const number = text(context && context.collectorNumber);
   const ident = [text(context && context.expansionName), number, text(context && context.artist)].filter(Boolean).join(" · ");
@@ -441,6 +537,7 @@ export default function CardDetail({ context, state, backLabel = "Browse", posit
                         <span className="mcs-cd-shop-ok">Available</span></span>
                       <span className="mcs-cd-shop-price">{[price ? `Proposed Market Price ${price}` : "No price listed",
                         i.firmOnPrice === true ? "Firm on Price" : "Open to Offers"].join(" · ")}</span>
+                      {nextStep(i)}
                     </li>);
                 })}</ul>
               </li>))}</ul>

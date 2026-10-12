@@ -1149,6 +1149,115 @@ describe("All Cards | Trusted Partners, through production (P6-F5A / F5A.1)", ()
   });
 });
 
+/* P6-F5B — DISCOVERY TO MARKET VALIDATION, through production, on a FRESH
+   review world (so earlier journeys' Goals do not decide the next step).
+   Discover → Add as Primary Goal → Make an Offer → Deal Flow → the partner
+   counters → the Collector accepts. Every step is the Collector's own. */
+describe("From a Trusted Partner's copy to Market Validation, through production (P6-F5B)", () => {
+  test("Add as Primary Goal (card stays open) → Make an Offer (composer on that copy) → $10 sent → counter $11 → accept → agreed $11, Proposed Market Price $12 kept; Secondary → Make it Primary; a grade mismatch routes to Binders", async () => {
+    await before();
+    const own = await serve();
+    const context = await browser.newContext({ ...PHONE }); const page = await context.newPage();
+    const errors = []; page.on("pageerror", (e) => errors.push(e.message));
+    const commands = []; page.on("request", (r) => { if (r.url().includes("/api/commands")) commands.push(JSON.parse(r.postData() || "{}").command); });
+    const DIR = "artifacts/fidelity/f5b";
+    require("fs").mkdirSync(DIR, { recursive: true });
+    const shot = async (n) => { await page.waitForTimeout(400); await page.screenshot({ path: `${DIR}/${n}.png` }).catch(() => {}); };
+    const W = () => own.world();
+    const body = () => page.locator("body").innerText();
+    const toShops = () => page.evaluate(() => { const sc = document.querySelector(".mcs-cd-scroll"); const q = document.querySelector(".mcs-cd-shops"); if (sc && q) sc.scrollTop = q.offsetTop - 180; });
+    const n1 = own.ids.shops.n1; const n2 = own.ids.shops.n2;
+    const row = (inv) => page.locator(`.mcs-cd-shops li[data-inv='${inv}']`);
+    const openMudkip60 = async () => {
+      await page.tap("nav[aria-label=Collector] button:has-text('Browse')"); await page.waitForTimeout(500);
+      if (await page.locator(".mcs-dtile[data-dex='258']").count()) { await page.locator(".mcs-dtile[data-dex='258']").tap(); await page.waitForTimeout(900); }
+      await page.locator("button.mcs-dcell[aria-label='Mudkip, Ruby & Sapphire #60']").tap();
+      await page.locator(".mcs-cd-shops").waitFor(); await page.waitForTimeout(300);
+    };
+    const w0 = await W();
+
+    await signIn(page, own.url);
+    /* 1. the card: two Northline copies, no Goal → Add as Primary Goal on each */
+    await openMudkip60();
+    assert(await row(n1).locator("button", { hasText: /^Add as Primary Goal$/ }).count() === 1, await row(n1).innerText());
+    assert(!/Faraway/.test(await body()), "an unconnected partner reached the card");
+    await toShops(); await shot("f5b-01-card-copies-next-steps");
+    eq(commands.length, 0, "browsing sent something");
+    /* 2. Add as Primary Goal on the Normal Raw Near Mint copy: answers filled, nothing sent */
+    await row(n1).locator("button", { hasText: /^Add as Primary Goal$/ }).tap(); await page.waitForTimeout(300);
+    eq(commands.length, 0, "the prefill sent something");
+    await shot("f5b-02-add-as-primary-goal-prefilled");
+    await page.locator(".mcs-cd-add").tap();
+    await page.locator(".mcs-cd-add.added, .mcs-cd-hint.ack, .mcs-cd-add", { hasText: /✓|Primary/ }).first().waitFor();
+    await page.waitForTimeout(1500);
+    assert(await page.locator(".mcs-cd").count() === 1, "the card closed after Add as Primary Goal");
+    await row(n1).locator("button.mcs-cd-offer", { hasText: /^Make an Offer$/ }).waitFor();
+    let w = await W();
+    const goal = w.goals.find((g) => g.canonicalCardId === w.inventory.find((i) => i.invId === n1).canonicalCardId);
+    eq(JSON.stringify([goal.tier, goal.desired]), JSON.stringify(["primary", { grade: "Raw", condition: "Near Mint" }]));
+    eq(w.opportunities.length, w0.opportunities.length, "an opportunity was started automatically");
+    await toShops(); await shot("f5b-03-make-an-offer-available");
+    /* 3. Make an Offer → Deal Flow, composer open on that exact copy; nothing sent */
+    const before3 = commands.length;
+    await row(n1).locator("button.mcs-cd-offer").tap();
+    await page.locator(`li.mcs-df-copy[data-inv='${n1}'] .mcs-offer`).waitFor();
+    eq(commands.length, before3, "arriving in Deal Flow sent something");
+    assert(/Northline Cards · Proposed Market Price \$12 · Open to Offers/.test(await page.locator(`li.mcs-df-copy[data-inv='${n1}']`).innerText()));
+    await shot("f5b-04-deal-flow-composer");
+    /* 4. the Collector's own opening: $10 */
+    await page.locator(`li.mcs-df-copy[data-inv='${n1}'] input[aria-label='Offer, in whole dollars']`).fill("10");
+    await page.locator(`li.mcs-df-copy[data-inv='${n1}'] button[type=submit]`).tap();
+    await page.waitForTimeout(1200);
+    w = await W();
+    let opp = w.opportunities.find((o) => o.goalId === goal.id);
+    eq(JSON.stringify([opp.invId, opp.listedPrice, opp.agreedPrice, opp.priceThread.map((p) => [p.by, p.type, p.amount])]),
+      JSON.stringify([n1, 12, null, [["collector", "offer", 10]]]), "the opening");
+    await shot("f5b-05-offer-sent");
+    /* 5. the partner counters $11; the Collector sees it and accepts — explicitly */
+    await own.postAs("north", "proposePrice", { oppId: opp.id, amount: 11 });
+    await signIn(page, own.url);
+    await page.tap("nav[aria-label=Collector] button:has-text('Deal Flow')"); await page.waitForTimeout(800);
+    const accept = page.locator("button", { hasText: /^Accept \$11$/ });
+    await accept.waitFor();
+    w = await W(); eq(w.opportunities.find((o) => o.id === opp.id).agreedPrice, null, "a counter was taken as agreement");
+    await shot("f5b-06-partner-counter");
+    await accept.tap(); await page.waitForTimeout(1200);
+    w = await W(); opp = w.opportunities.find((o) => o.id === opp.id);
+    eq(JSON.stringify([opp.listedPrice, opp.agreedPrice]), JSON.stringify([12, 11]), "agreed price not stored apart from the Proposed Market Price");
+    await shot("f5b-07-agreed-market-price");
+    /* the copy is not reserved merely because a deal started */
+    eq(w.inventory.find((i) => i.invId === n1).archived === true, false);
+    /* 6. back on the card: under way, Open in Deal Flow (a link) */
+    await openMudkip60();
+    assert(/Your offer for this card is under way with Northline Cards\./.test(await row(n1).innerText()) || /under way/.test(await body()), await body());
+    /* 7. Secondary → Make it Primary on the Reverse Holo copy */
+    const rev = w.inventory.find((i) => i.invId === n2).canonicalCardId;
+    await own.post("addGoal", { canonicalCardId: rev, tier: "secondary", desired: { grade: "PSA 9" } });
+    await signIn(page, own.url); await openMudkip60();
+    await row(n2).locator("button", { hasText: /^Make it Primary$/ }).waitFor();
+    await toShops(); await shot("f5b-08-secondary-make-it-primary");
+    await row(n2).locator("button", { hasText: /^Make it Primary$/ }).tap();
+    await row(n2).locator("button.mcs-cd-offer", { hasText: /^Make an Offer$/ }).waitFor();
+    w = await W(); eq(w.goals.filter((g) => g.canonicalCardId === rev).map((g) => g.tier).join(), "primary", "not one Goal, now Primary");
+    await toShops(); await shot("f5b-09-primary-make-an-offer");
+    /* 8. a grade mismatch (Charizard: Goal PSA 9, Northline PSA 8) → Edit your Goal in Binders */
+    await page.locator(".mcs-cd-back").tap(); await page.waitForTimeout(400);
+    if (await page.locator(".mcs-dchip.clearall").count()) { await page.locator(".mcs-dchip.clearall").tap(); await page.waitForTimeout(400); }
+    await page.locator(".mcs-dsearch-in").fill("charizard"); await page.waitForTimeout(1200);
+    await page.locator("button.mcs-dcell[aria-label='Charizard, Base Set #4']").tap(); await page.locator(".mcs-cd-shops").waitFor();
+    const charRow = page.locator(`.mcs-cd-shops li[data-inv='${own.ids.shops.n3}']`);
+    assert(/Your Goal is for PSA 9; this copy is PSA 8\./.test(await charRow.innerText()), await charRow.innerText());
+    await toShops(); await shot("f5b-10-grade-mismatch");
+    await charRow.locator("button", { hasText: /^Edit your Goal in Binders$/ }).tap(); await page.waitForTimeout(800);
+    assert(/^Your Goal: Charizard/.test(await page.locator(".mcs-ce").getAttribute("aria-label")), "Binders did not open the Goal");
+    eq((await W()).goals.find((g) => g.id === own.ids.goal).desired.grade, "PSA 9", "the Goal was changed for them");
+    /* every command was one the Collector pressed for */
+    eq(JSON.stringify(commands), JSON.stringify(["addGoal", "startOpportunity", "acceptPrice", "changeCollectingState"]), "unexpected commands: " + JSON.stringify(commands));
+    eq(errors.length, 0, errors.join(" | "));
+    await context.close(); own.server.close();
+  });
+});
+
 if (!chromium) {
   console.log("SKIPPED: Playwright is not installed.");
 } else {

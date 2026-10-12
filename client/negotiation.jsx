@@ -287,7 +287,9 @@ export function statusLine(deal, seat, other, stageName) {
 /* The captured terms: the price the shop listed when the offer opened, and
    whether it was Firm or Open. Both are the server's snapshot. */
 export const termsLine = (deal) => [
-  dollars(deal && deal.listedPrice) ? `Listed at ${dollars(deal.listedPrice)}` : null,
+  /* the partner's price captured when the offer opened — named as everywhere
+     else (P6-F5B): it is the Proposed Market Price, never the agreed one */
+  dollars(deal && deal.listedPrice) ? `Proposed Market Price ${dollars(deal.listedPrice)}` : null,
   deal && deal.firmOnPrice === true ? "Firm on Price" : deal && deal.firmOnPrice === false ? "Open to Offers" : null,
 ].filter(Boolean).join(" · ") || null;
 /* THE EXACT CARD, IN ONE LINE: name, set and number, then the version words

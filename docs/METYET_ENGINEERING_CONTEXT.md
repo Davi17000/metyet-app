@@ -373,6 +373,51 @@ unrestricted public marketplace:
   unavailable — reservation happens only in deal steps not yet shipped
   (`setCopyPending` is unexposed). F5A invents no reservation behaviour.
 
+### From discovery to Market Validation (P6-F5B, founder-approved)
+
+Discover card → express priority → make an offer → follow Deal Flow.
+Discovering a card is not wanting it: every step is the Collector's own.
+Each available copy on the Browse card shows one next step, read from the
+server's own answers (the Goal for that exact printing, `discoveries`,
+live deals via the projected turn):
+
+- matching **Primary** Goal (a discovery) → **Make an Offer**: opens Deal
+  Flow's existing composer on that exact copy; nothing is sent until the
+  Collector submits (`startOpportunity` with their amount or percentage);
+- **no Goal** → **Add as Primary Goal**: fills the card's own questions from
+  that copy (printing, grade/condition, looking, Primary); the Collector
+  still presses Add (`addGoal`); the card stays open and the copy then
+  offers Make an Offer; never an automatic opportunity;
+- **Secondary** Goal → **Make it Primary** (`changeCollectingState`);
+- a **live deal on the card** (any partner) → "under way with …" and **Open
+  in Deal Flow** (one live offer per card is the server's rule);
+- a **Primary Goal for another grade** → explained, with **Edit your Goal in
+  Binders**; the Goal is never changed to fit inventory — Collector
+  priorities drive opportunities, not the reverse.
+
+No new command. Eligibility stays `startOpportunity`'s.
+
+### Four prices, never one (Market Validation)
+
+1. **Proposed Market Price** — the partner's own valuation of a specific
+   copy (`inventory.ask`), captured on the opportunity when the Collector
+   opens (`listedPrice`, with `firmOnPrice`). A reference, not a verified
+   market price and not an agreement. Later shelf edits never move it.
+2. **Collector's Offer** — always the Collector's opening, in whole
+   dollars or a whole-number percentage of the captured price
+   (`priceThread[0]`). Firm on Price: the opening must equal the captured
+   price — still only an offer.
+3. **Agreed Market Price** — exists only once one party explicitly accepts
+   the other's latest proposal (`agreedPrice`, null until then), stored
+   apart from `listedPrice`. Nothing is auto-accepted, not even an offer at
+   the price. It is the card's value for later calculations — not the cash
+   that changes hands.
+4. **Final cash difference** — later: Agreed Market Price − total agreed
+   trade value, then any final adjustment. Not built in this batch.
+
+Opening a deal reserves nothing (B44): the copy stays available until a
+later, not yet shipped, step holds it.
+
 ## 14. TP inventory ingestion --- deferred
 
 Potential ingestion: manual lookup/add, CSV import from tools, dedicated

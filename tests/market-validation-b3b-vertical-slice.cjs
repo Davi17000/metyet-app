@@ -258,7 +258,7 @@ describe("B. the shop answers from Opportunities", () => {
     const rec = record(ready, "Casey");
     assert(rec, "Casey's offer is not under Ready to coordinate");
     const t = textOf(rec).replace(/\s+/g, " ");
-    for (const part of ["Mudkip", "non_holo", "PSA 9", "Listed at $120", "Open to Offers", "Casey's offer is $100. Your move.",
+    for (const part of ["Mudkip", "non_holo", "PSA 9", "Proposed Market Price $120", "Open to Offers", "Casey's offer is $100. Your move.",
       "Casey offered $100", "Your move"]) assert(t.includes(part), `the shop is not told "${part}": ${t}`);
     for (const b of ["Accept $100", "Counter", "Decline"]) assert(button(rec, b), `no ${b}`);
     assert(!record(panel(north, "In progress") || north.r.root, "Casey") || !panel(north, "In progress")

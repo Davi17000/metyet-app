@@ -76,6 +76,8 @@
 | B44 | Opening a deal does not by itself mark a shop's copy unavailable; it stays "At your shops" until a (not yet shipped) deal step reserves it. No reservation behaviour is invented | — | P6-F5A | Reservation ships with the later deal lifecycle |
 | B45 | In the Trusted Partners scope, search suggestions keep the catalogue's own counts (e.g. "Charizard · 2 cards" when one is with a partner), as All Cards does (B15 rule); narrowing them would need new partner-scoped list filters, out of F5A.1's scope | — | P6-F5A.1 | Revisit if confusing |
 | B46 | With Trusted Partners chosen and nothing else, Browse lists every partner-available card at once rather than the Pokémon / Sets / Artists doorways (which are catalogue-wide lists); the doorways return under All Cards | — | P6-F5A.1 | Revisit with partner-scoped doorways |
+| B47 | Deal Flow's card line in a negotiation shows raw printing identifiers ("not_applicable · non_holo · en") — a pre-existing display defect in the shared negotiation `cardLine`, seen on the F5B journey, not changed here | — | P6-F5B | Fix in a Deal Flow polish batch |
+| B48 | Deal Flow still uses "your shops" wording ("What your shops have") that F5A.1 removed from Browse | — | P6-F5B | Align with F5A.1 language in a Deal Flow batch |
 
 ## C. Unavoidable comparison differences (not product decisions)
 

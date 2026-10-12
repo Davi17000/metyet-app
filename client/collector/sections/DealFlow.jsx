@@ -82,7 +82,7 @@ import { rows, text, money, plural, gradeLine, gradeProblem, gradeConflictLine,
 export default function DealFlow({ state, onBrowseCards = null,
   onInspect = null, onEndInspection = null, onRequestPhotos = null,
   onOpenOffer = null, onCounterOffer = null, onAcceptOffer = null, onWithdrawOffer = null,
-  onRefresh = null }) {
+  onRefresh = null, focus = null, onFocusUsed = null }) {
   const goals = rows(state && state.goals);
   const partners = rows(state && state.partners);
   const inventory = rows(state && state.inventory);
@@ -157,6 +157,17 @@ export default function DealFlow({ state, onBrowseCards = null,
   const [composing, setComposing] = useState(null);
   const [offerSaid, setOfferSaid] = useState(null);
   const offer = useSender(onRefresh, (key, message) => setOfferSaid(message ? { key, message } : null));
+  /* ARRIVING FROM A SHOP'S COPY IN BROWSE (P6-F5B): open on that Goal, and —
+     for Make an Offer — with the existing composer open on that exact copy.
+     Nothing is sent: the Collector still writes and submits the offer. */
+  useEffect(() => {
+    if (!focus) return;
+    if (focus.compose && focus.invId) { offer.clear(); setOfferSaid(null); setComposing(focus.invId); }
+    if (typeof document !== "undefined") {
+      setTimeout(() => { const el = document.querySelector(`[data-goal="${focus.goalId}"]`); if (el && el.scrollIntoView) el.scrollIntoView({ block: "start" }); }, 0);
+    }
+    if (onFocusUsed) onFocusUsed();
+  }, [focus]);
 
   const partnerName = new Map();
   for (const p of partners) if (p.id != null) partnerName.set(p.id, text(p.name));
@@ -285,7 +296,7 @@ export default function DealFlow({ state, onBrowseCards = null,
           : null;
 
         return (
-          <article className="mcs-group" key={goal.id}>
+          <article className="mcs-group" key={goal.id} data-goal={goal.id}>
             <div className="mcs-group-head">
               <CardArt src={card && card.imageSmall} name={card && card.cardName}
                 wrap="mcs-group-art" plate="mcs-art-plate" decorative />
@@ -342,7 +353,7 @@ export default function DealFlow({ state, onBrowseCards = null,
                   const answered = answeredRequest.has(copy.invId);
                   const photographed = !!(copy.photos && copy.photos.front && copy.photos.back);
                   return (
-                    <li key={copy.invId} className="mcs-df-copy">
+                    <li key={copy.invId} className="mcs-df-copy" data-inv={copy.invId}>
                       <span className="mcs-df-shop">
                         {partnerName.get(partnerId) || "A Trusted Partner"}
                       </span>
