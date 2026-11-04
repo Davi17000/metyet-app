@@ -1,146 +1,111 @@
 /* ============================================================================
-   DEAL FLOW — WHO I TRUST HAS THE THING I ASKED FOR
+   DEAL FLOW — ONE CARD PER GOAL, AND WHERE EACH STANDS
+   (Milestone 2C.1; organised by the Goal since the true-match batch)
 
-   One question, and the screen answers only that one:
+   The landing page is for orientation; the Deal Workspace is for conducting
+   the deal. One Goal, one card, one progress bar when a deal is active, one
+   next action:
 
-     Which physical copies, in shops I have a relationship with, are the card
-     I said I wanted, in the grade and condition I said I wanted it?
+     the card        art, name, set and number, what was asked for, Primary
+     who has it      how many Trusted Partners match (partners, not copies)
+     where it is     the active deal's stage, its progress bar, its status
+     what next       one button: View Deal / Review Counteroffer / View
+                     Agreement for an active deal, View Matches otherwise
 
-   ORGANISED BY THE GOAL, NEVER BY THE SHOP OR BY WHAT IS NEW. A Collector
-   arrives here holding a want, not browsing. So the Goal is the heading and the
-   copies sit under it, and a shop appears as many times as it has an answer.
-   That is the opposite shape from a listing feed, deliberately: there is no For
-   You, no New, no Ending Soon, no Nearby, nothing sorted by price and nothing
-   scored. Those answer "what might I want?", which nobody asked.
+   PRIMARY GOALS ONLY (Milestone 2C.2, founder decision). Deal Flow is where
+   deals are coordinated, and a Secondary Goal says interest, not that: it is
+   not drawn, counted or offered here, and stays exactly as it is in Binders
+   and Browse, where it can be made Primary.
 
-   IT SHOWS THE COPIES, WHICH IS THE WHOLE POINT. Until now a Collector was told
-   "Northline has 2" and could not see which two. Every fact needed to show them
-   properly — grade, condition, certificate, photographs, the asking price — has
-   been arriving in `state.inventory` since Batch 6 and was rendered nowhere.
-   This file renders what was already in the browser; it adds no field, asks for
-   no new read and sends no command.
+   NOT AN ACCORDION, AND NOTHING NESTED. No copy rows, prices, inspection,
+   photo requests or offer entry on this page. A Goal without a deal shows no
+   progress at all — a Goal existing does not mean Market Validation started —
+   and a Goal nobody has gets no button rather than a disabled one.
 
-   MAKING AN OFFER (Market Validation, Batch 3B). Past qualification there is
-   now one more step, and only one: agreeing what a copy is worth. A copy a
-   PRIMARY Goal matches may carry "Make an offer"; the offer opens inline on
-   that copy and names the shop, the price they listed and whether it is Firm;
-   once it is sent, the deal sits under the Goal it came from with where it
-   stands and whose move it is. Every rule is the server's — this screen shows
-   `turn`, `priceThread` and the captured terms it was sent, and the controls
-   for the Collector's own move and nothing else. After a price is agreed the
-   screen says so and what comes next, and offers no way to withdraw: ending
-   an agreed deal is a different decision this batch does not build.
+   VIEW MATCHES (`GoalMatches`, below) is the one Goal's matching copies,
+   full screen: the Trusted Partners whose copies match, each copy's picture,
+   grading, Proposed Market Price and terms, Request actual photos and Make an
+   offer. IMAGE FIRST (Milestone 2C.2): there is no Inspect button — the
+   picture is what a Collector taps to look, and looking sends nothing. The
+   picture is the CATALOGUE's, and says so: it shows the printing, not this
+   copy's condition. A copy's own `photos` are the Trusted Partner's (only
+   their Add requested photos writes them), but they are references the
+   partner typed, not images MetYet holds, and a Collector surface still
+   never renders one as a picture (tests/phase4-collector-read-experiences);
+   they are said in words. Opening it sends nothing and reserves nothing; an offer
+   is sent only by the Collector's own Send. After it is sent, the server's
+   next projection names the new deal, and that deal — by the id the server
+   gave it, never a guessed one — opens in the Deal Workspace.
 
-   QUALIFICATION, AND NOTHING PAST IT (Phase 5). The screen kept no controls
-   at all while Inspect and Request Photos were unexposed, because a greyed-out
-   button is the product promising something it has not built. They are exposed
-   now, so they are here — and nothing else is. There is still no offer, no
-   price, no Market Value, no Pending and no message box, because those are
-   transaction, and the line this screen stops at is the one before it:
+   ORGANISED BY THE GOAL, NEVER BY THE PARTNER OR BY WHAT IS NEW. Goals in the
+   server's own order; no For You, no New, nothing sorted by price, urgency or
+   score. Partners appear in the server's order (`discoveries`, by key), and a
+   partner with two matching copies is one Trusted Partner with two rows.
 
-     Inspect         look properly at THIS physical copy
-     Request photos  ask to be shown it before deciding anything
+   EVERY COUNT IS THE SERVER'S MATCH. `discoveries` is the server's answer to
+   "which available copies, at connected partners, are the exact card in the
+   grade and condition asked for" — the same rule for presence and for counts,
+   so nothing here broadens or narrows a Goal. An unconnected partner's copy
+   never reaches this projection at all.
 
-   Neither reserves the card, tells the shop you will buy it, gives you a claim
-   ahead of anybody else, or begins a deal. Several Collectors may be inspecting
-   one copy at the same moment and none of them is ahead. What they do is let a
-   person answer "is this specific copy worth continuing with?", which is the
-   question that was unanswerable here before.
+   ONE ACTIVE DEAL PER GOAL. The domain allows one live offer per exact card;
+   a Goal is one exact card, so a live deal under a Goal is that offer, and
+   View Matches says why another cannot start. The server remains the
+   authority: it refuses a second offer whatever this screen shows.
 
-   WHAT IT MAY SAY ABOUT ANOTHER PERSON'S DEAL: nothing. Every field below comes
-   from `INVENTORY_FOR_COLLECTOR`, the server's allow-list for a Collector, and
-   a copy held by somebody else's deal never reaches it at all — the projection
-   drops the row. There is no rival opportunity id here, no rival collector, no
-   stage, no terms, and no `pendingFor`, because none of them is in the data
-   this file can see.
+   WHAT IT SENDS, ONLY THROUGH THE PROPS IT IS HANDED: Request photos and
+   opening an offer, from View Matches — and ending an old inspection of a
+   copy that is no longer available. (A photo request opens the inspection
+   record itself, in the domain, so nothing a Collector needs depends on a
+   separate Inspect press.)
+   Accept, Counter and Withdraw live in the Deal Workspace (client/collector/
+   DealWorkspace.jsx). Whose move it is comes from the server's `turn`; the
+   stage and its bar from `deal-progress.js`, through the parts both screens
+   share (`deal-parts.jsx`).
 
-   THE EMPTY STATES ARE THE INTERESTING PART. Four different silences mean four
-   different things, and telling them apart is most of this screen's value:
+   WHAT IT MAY SAY ABOUT A PARTNER'S COPY: the fields of the server's
+   allow-list for a Collector — grading, the Proposed Market Price, Open to
+   Offers or Firm on Price, and whether photographs exist. Not the certificate
+   (P6-F5A doctrine for a partner's copy), and never cost, acquisition date or
+   notes, which do not arrive.
+
+   THE EMPTY STATES are still four different silences, said in the network's
+   own words (Trusted Partners, never "shops"):
 
      no Trusted Partners     nobody to have it
      no Goals                nothing asked for
      asked, nobody has it    a true and ordinary answer
-     they have the card,     the criteria did their job — and this one is
-     but not as described    worth saying out loud, because otherwise the
-                             screen looks broken to somebody who can see the
-                             card in a shop's window
-
-   The last is computed from rows already present: a copy of the same canonical
-   card, at a related shop, available, which this Goal did not match. No new
-   projection, no second matching rule — the absence is read from the same data
-   the presence is.
+     they have the card,     said out loud, because otherwise the screen
+     but not as described    looks broken to somebody who can see the card
    ========================================================================== */
 
-import React, { useEffect, useMemo, useState } from "react";
-import { Panel, Record, Fact, Tag } from "../parts.jsx";
-import { OfferEntry, PriceHistory, useSender, statusLine, termsLine, priceOnTable, viewerSeat,
-  isUnresolved, myPriceMove, dollars, isLiveDeal, isEndedDeal, cardLine } from "../../negotiation.jsx";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useSender, statusLine, viewerSeat, isLiveDeal, isEndedDeal } from "../../negotiation.jsx";
 import CardArt from "../../card-art.jsx";
+import { StateChip } from "../states.jsx";
+import { dealGlance, GoalProgress, OpeningOffer } from "../deal-parts.jsx";
 import { rows, text, money, plural, gradeLine, gradeProblem, gradeConflictLine,
-  photoNote, tierIntent, tierLabel, criteriaLine, stageLabel } from "../present.js";
+  photoNote, criteriaLine, printingLine, versionLabel } from "../present.js";
 
-export default function DealFlow({ state, onBrowseCards = null,
-  onInspect = null, onEndInspection = null, onRequestPhotos = null,
-  onOpenOffer = null, onCounterOffer = null, onAcceptOffer = null, onWithdrawOffer = null,
-  onRefresh = null, focus = null, onFocusUsed = null }) {
+/* ------------------------------------------------------------ WHAT IS SHOWN
+   Pure: the projection in, one entry per Goal out. Exported so the counts can
+   be tested without a renderer. */
+export function dealFlowGoals(state) {
   const goals = rows(state && state.goals);
-  const partners = rows(state && state.partners);
   const inventory = rows(state && state.inventory);
+  const discoveries = rows(state && state.discoveries);
   const reviews = rows(state && state.copyReviews);
   const requests = rows(state && state.photoRequests);
-
-  /* WHAT THIS COLLECTOR IS ALREADY DOING WITH EACH COPY, read from the rows the
-     server sent and derived nowhere else. `copyReviews` and `photoRequests` are
-     already scoped to this Collector by the projection, so an open row here is
-     this person's own — there is no other Collector's activity to filter out,
-     and none arrives to be filtered. */
-  const openReview = new Map();
-  for (const r of reviews) if (!r.endedAt && r.invId != null) openReview.set(r.invId, r);
-  const openRequest = new Set();
-  const answeredRequest = new Set();
-  for (const r of requests) {
-    if (r.invId == null) continue;
-    if (r.fulfilledAt) answeredRequest.add(r.invId);
-    else openRequest.add(r.invId);
-  }
-
-  const [busy, setBusy] = useState({});
-  const [trouble, setTrouble] = useState(null);
-  /* ONE SENDER FOR ALL THREE, so a refusal is reported the same way whichever
-     control produced it. The server is what decides; this only says so. */
-  /* ONE PRESS PER CONTROL, NOT ONE PRESS PER SCREEN. An adversarial run found a
-     single `busy` flag swallowing a press on a DIFFERENT copy while the first
-     was in flight: the other buttons still looked live and did nothing, with no
-     message. Two copies are two independent things to ask about. */
-  const run = async (key, invId, send, verb) => {
-    if (!send || busy[key]) return;
-    setBusy((held) => ({ ...held, [key]: true }));
-    setTrouble((held) => (held && held.invId === invId ? null : held));
-    try {
-      const answer = await send();
-      if (answer && answer.ok === false) {
-        setTrouble({ invId, message: answer.refused === "copy-unavailable"
-          /* The server gives one answer for pending, promised and sold, so this
-             says one thing back. Which of the three it was is the business of
-             the people in that deal. */
-          ? "That copy isn't available any more."
-          : `Couldn't ${verb} just now.` });
-      }
-    } catch (error) {
-      setTrouble({ invId, message: `Couldn't ${verb} just now.` });
-    } finally {
-      setBusy((held) => { const next = { ...held }; delete next[key]; return next; });
-    }
-  };
-  const discoveries = rows(state && state.discoveries);
-
-  /* THIS COLLECTOR'S OWN DEALS, by the Goal each one is for. The projection
-     sends only their own. The live one (if any) is what the Goal shows; with
-     none live, the most recent that ended is said once, quietly, so an offer
-     that was declined does not simply vanish. */
   const deals = rows(state && state.opportunities);
-  /* Who is looking, as the server stated it. */
-  const me = viewerSeat(state);
+
+  const copyById = new Map();
+  for (const c of inventory) if (c.invId != null) copyById.set(c.invId, c);
+  const openReview = new Set();
+  for (const r of reviews) if (!r.endedAt && r.invId != null) openReview.add(r.invId);
+  const openRequest = new Set();
+  for (const r of requests) if (r.invId != null && !r.fulfilledAt) openRequest.add(r.invId);
+
+  /* This Collector's own deals, by Goal: the live one, or the latest ended. */
   const liveFor = new Map();
   const endedFor = new Map();
   for (const o of deals) {
@@ -151,78 +116,76 @@ export default function DealFlow({ state, onBrowseCards = null,
       if (!held || String(o.updated || "") > String(held.updated || "")) endedFor.set(o.goalId, o);
     }
   }
-  /* One offer panel open at a time, on the copy it is for. What the server
-     said about it is kept against the GOAL: a re-read after a refusal can take
-     the copy off the screen, and the message must not go with it. */
-  const [composing, setComposing] = useState(null);
-  const [offerSaid, setOfferSaid] = useState(null);
-  const offer = useSender(onRefresh, (key, message) => setOfferSaid(message ? { key, message } : null));
-  /* ARRIVING FROM A SHOP'S COPY IN BROWSE (P6-F5B): open on that Goal, and —
-     for Make an Offer — with the existing composer open on that exact copy.
-     Nothing is sent: the Collector still writes and submits the offer. */
-  useEffect(() => {
-    if (!focus) return;
-    if (focus.compose && focus.invId) { offer.clear(); setOfferSaid(null); setComposing(focus.invId); }
-    if (typeof document !== "undefined") {
-      setTimeout(() => { const el = document.querySelector(`[data-goal="${focus.goalId}"]`); if (el && el.scrollIntoView) el.scrollIntoView({ block: "start" }); }, 0);
-    }
-    if (onFocusUsed) onFocusUsed();
-  }, [focus]);
 
-  const partnerName = new Map();
-  for (const p of partners) if (p.id != null) partnerName.set(p.id, text(p.name));
-  const copyById = new Map();
-  for (const c of inventory) if (c.invId != null) copyById.set(c.invId, c);
-
-  /* One entry per Goal that has at least one answer. `discoveries` is keyed by
-     (goal, partner), so a Goal matched by two shops arrives as two rows and is
-     gathered back together here — the Collector's question is about the card,
-     and which shops have it is the answer, not the heading. */
-  const answers = new Map();
+  const found = new Map();
   for (const d of discoveries) {
     if (d.goalId == null) continue;
-    const held = answers.get(d.goalId) || [];
-    held.push(d);
-    answers.set(d.goalId, held);
+    if (!found.has(d.goalId)) found.set(d.goalId, []);
+    found.get(d.goalId).push(d);
   }
 
-  /* A card the Collector asked for that a related shop HAS, in a form they did
-     not ask for. Read from the same projection: same canonical card, still
-     available, and not among the copies THIS Goal matched.
+  return goals.map((goal) => {
+    /* Partners in the server's order; a copy the projection did not send is
+       not drawn and not counted. */
+    const partners = [];
+    const byPartner = new Map();
+    const matched = new Set();
+    for (const d of found.get(goal.id) || []) {
+      const copies = rows(d.invIds).map((invId) => copyById.get(invId)).filter(Boolean);
+      if (!copies.length || d.partnerId == null) continue;
+      let group = byPartner.get(d.partnerId);
+      if (!group) { group = { partnerId: d.partnerId, copies: [] }; byPartner.set(d.partnerId, group); partners.push(group); }
+      for (const c of copies) { group.copies.push({ copy: c, closed: false }); matched.add(c.invId); }
+    }
+    const partnerCount = partners.length;
+    const copyCount = matched.size;
 
-     PER GOAL, NOT ACROSS ALL OF THEM. An earlier version built one set from
-     every discovery, so two Goals for one card in different grades cancelled
-     each other out: the copy that satisfied the first was treated as "matched"
-     by the second, which then said nobody had the card at all — to the one
-     person who can see it in the shop's window. The exclusion belongs to the
-     Goal being rendered. */
-  const nearMissCount = (goal, matched) => inventory.filter((c) =>
-    c.canonicalCardId === goal.canonicalCardId
-    && c.archived !== true && c.status === "available"
-    && !matched.has(c.invId)).length;
+    /* HELD, NOT MATCHED (Milestone 2C.3 regression fix). A copy of this card
+       that this Collector is still inspecting, or asked photos of, but that
+       the server does not match to the Goal — gone from the shelf, or there
+       in another grade or condition. It stays reachable, so the way to finish
+       with it does not vanish, but in its OWN list: never among the matches,
+       never counted, never offered. Its records are untouched here. */
+    const held = [];
+    for (const c of inventory) {
+      if (c.canonicalCardId !== goal.canonicalCardId || matched.has(c.invId)) continue;
+      if (!openReview.has(c.invId) && !openRequest.has(c.invId)) continue;
+      held.push({ copy: c, partnerId: c.partnerId, closed: true });
+    }
 
-  /* Goals that have an answer come first, in the order the server produced
-     them; then the ones that do not, so a person sees what is there before
-     what is not. Nothing is scored and nothing is ranked. */
-  const ordered = useMemo(() => {
-    const withAnswers = goals.filter((g) => (answers.get(g.id) || []).length > 0);
-    const without = goals.filter((g) => (answers.get(g.id) || []).length === 0);
-    return [...withAnswers, ...without];
-  }, [goals, discoveries]);
+    /* The card in a form they did not ask for, at a connected partner. */
+    const nearMiss = inventory.filter((c) => c.canonicalCardId === goal.canonicalCardId
+      && c.archived !== true && c.status === "available" && !matched.has(c.invId)).length;
 
-  /* The catalogue is asked once, for every card on the screen, exactly as every
-     other Collector surface asks it. A card whose description has not arrived
-     still renders — the shop still has it. */
-  const shownKey = ordered.map((g) => g.canonicalCardId).filter(Boolean).join(",");
-  const shownIds = useMemo(() => [...new Set(shownKey.split(",").filter(Boolean))],
-    [shownKey]);
+    const live = liveFor.get(goal.id) || null;
+    return {
+      goal,
+      partners,
+      held,
+      partnerCount,
+      copyCount,
+      nearMiss,
+      live,
+      ended: live ? null : endedFor.get(goal.id) || null,
+      liveCopy: live ? copyById.get(live.invId) || null : null,
+    };
+  });
+}
+
+
+const terms = (copy) => (copy && copy.firmOnPrice === true ? "Firm on Price" : "Open to Offers");
+
+/* The catalogue's name and printing for the cards on screen, asked once. */
+function useDescribed(onBrowseCards, ids) {
+  const key = [...new Set(ids.filter(Boolean))].join(",");
+  const wanted = useMemo(() => key.split(",").filter(Boolean), [key]);
   const [described, setDescribed] = useState({});
   useEffect(() => {
-    if (!onBrowseCards || !shownIds.length) return undefined;
+    if (!onBrowseCards || !wanted.length) return undefined;
     let current = true;
     (async () => {
       try {
-        const answer = await onBrowseCards.describe(shownIds);
+        const answer = await onBrowseCards.describe(wanted);
         if (!current) return;
         const next = {};
         for (const card of rows(answer && answer.cards)) next[card.canonicalCardId] = card;
@@ -230,285 +193,449 @@ export default function DealFlow({ state, onBrowseCards = null,
       } catch (error) { /* a card without a caption is still a card */ }
     })();
     return () => { current = false; };
-  }, [shownKey, onBrowseCards]);
+  }, [key, onBrowseCards]);
+  return described;
+}
 
-  const totalCopies = discoveries.reduce((n, d) => n + rows(d.invIds).length, 0);
+/* Set, number and version (Normal, Reverse Holo …) — see present.js. */
+const printingOf = printingLine;
+/* Distinct Trusted Partners, never copies: a partner with two matching copies
+   is one Trusted Partner who has it. */
+const matchLine = (partnerCount) => (partnerCount
+  ? plural(partnerCount, "Trusted Partner matches", "Trusted Partners match")
+  : "No Trusted Partner matches yet");
+const namesOf = (state) => {
+  const names = new Map();
+  for (const p of rows(state && state.partners)) if (p.id != null) names.set(p.id, text(p.name));
+  return (id) => names.get(id) || "A Trusted Partner";
+};
+const tierChip = (goal) => (goal.tier === "primary"
+  ? <StateChip kind="primary" label="Primary Goal" />
+  : <StateChip kind="secondary" label="Secondary Goal" />);
 
-  /* The four silences. Ordered from the one furthest from the person's control
-     to the one nearest it. */
+/* ============================================================ THE LANDING PAGE */
+export default function DealFlow({ state, onBrowseCards = null, onOpenDeal = null, onOpenMatches = null,
+  onFindCards = null, focus = null, onFocusUsed = null }) {
+  const goals = rows(state && state.goals);
+  const partners = rows(state && state.partners);
+  const me = viewerSeat(state);
+  const nameOf = namesOf(state);
+  const shown = dealFlowGoals(state);
+  const described = useDescribed(onBrowseCards, goals.map((g) => g.canonicalCardId));
+
+  /* ARRIVING WITH SOMEWHERE TO LAND. From Browse's Open in Deal Flow (P6-F5B),
+     the Goal is scrolled into view. Back from the Deal Workspace or View
+     Matches, focus also returns to the Goal's button — or to the card, if
+     what happened there means it has no button now. Nothing is sent. */
+  useEffect(() => {
+    if (!focus) return;
+    if (typeof document !== "undefined") {
+      setTimeout(() => {
+        const el = document.querySelector(`[data-goal="${focus.goalId}"]`);
+        if (el && el.scrollIntoView) el.scrollIntoView({ block: "start" });
+        const to = el ? el.querySelector(".mcs-dg-cta") || el : null;
+        if (focus.returnFrom && to && to.focus) to.focus({ preventScroll: true });
+      }, 0);
+    }
+    if (onFocusUsed) onFocusUsed();
+  }, [focus]);
+
   const empty = !partners.length
-    ? "You have no Trusted Partners yet. A shop invites you, and once you accept they "
+    ? "You have no Trusted Partners yet. A Trusted Partner invites you, and once you accept they "
       + "can see what you're looking for — and you can see what they have."
     : !goals.length
       ? "You haven't said what you're looking for yet. Find a card in Browse and tell "
-        + "MetYet what you want, and any of your shops that has one will show up here."
+        + "MetYet what you want, and any of your Trusted Partners who has one will show up here."
       : null;
+  if (empty) return <section className="mcs-dg-sec"><p className="mcs-empty">{empty}</p></section>;
 
+  /* Primary Goals only, in the server's order (see the header). */
+  const primary = shown.filter((g) => g.goal.tier === "primary");
+  const card = (entry) => (
+    <GoalCard key={entry.goal.id} entry={entry} card={described[entry.goal.canonicalCardId] || null}
+      me={me} nameOf={nameOf} onOpenDeal={onOpenDeal} onOpenMatches={onOpenMatches} />
+  );
   return (
-    <Panel
-      title="What your shops have"
-      note={totalCopies
-        ? plural(totalCopies, "copy that matches", "copies that match")
-        : null}
-      empty={empty}
-    >
-      {!empty && ordered.map((goal) => {
-        const card = described[goal.canonicalCardId] || null;
-        const found = answers.get(goal.id) || [];
-        const matched = new Set(found.flatMap((d) => rows(d.invIds)));
-        const missed = nearMissCount(goal, matched);
-        const copies = found.flatMap((d) => rows(d.invIds)
-          .map((invId) => ({ partnerId: d.partnerId, copy: copyById.get(invId) }))
-          .filter((x) => x.copy));
-
-        /* AND THE COPIES THIS COLLECTOR IS STILL IN THE MIDDLE OF.
-
-           `discoveries` is the server's answer to "which copies match, and are
-           available" — so a copy stops being a discovery the moment somebody
-           else's deal takes it. An adversarial run found that this made the
-           whole point of the batch invisible: the projection kept the copy for
-           a Collector who was mid-inspection, and this screen, which reads only
-           discoveries, dropped it anyway. They lost the card off the screen
-           exactly as before, and with it the only way to reach Done inspecting
-           — so the open review pinned the copy into their projection for good.
-
-           These are added back from the projection they are already in, under
-           the Goal whose card they are, and they carry no Inspect or Request
-           photos control because the door is shut. What they carry is the
-           truth: this one is no longer available, and here is how to close it
-           off. */
-        const alsoQualifying = inventory
-          .filter((c) => c.canonicalCardId === goal.canonicalCardId
-            && !matched.has(c.invId)
-            && (openReview.has(c.invId) || openRequest.has(c.invId)))
-          .map((c) => ({ partnerId: c.partnerId, copy: c, closed: true }));
-        const shown = [...copies, ...alsoQualifying];
-        const live = liveFor.get(goal.id) || null;
-        const ended = live ? null : endedFor.get(goal.id) || null;
-        /* An offer may open from a Primary Goal with nothing already live on
-           it — the server holds one active offer per exact card, and a Goal is
-           one exact card, so a live deal here is that offer. */
-        const canOffer = !!onOpenOffer && goal.tier === "primary" && !live;
-        const title = (card && card.cardName) || "Loading this card…";
-        const sub = card
-          ? [text(card.expansionName), card.collectorNumber ? `#${card.collectorNumber}` : null]
-            .filter(Boolean).join(" · ") || null
-          : null;
-
-        return (
-          <article className="mcs-group" key={goal.id} data-goal={goal.id}>
-            <div className="mcs-group-head">
-              <CardArt src={card && card.imageSmall} name={card && card.cardName}
-                wrap="mcs-group-art" plate="mcs-art-plate" decorative />
-              <div className="mcs-rec-id">
-                <div className="mcs-rec-t">{title}</div>
-                {sub ? <div className="mcs-rec-s">{sub}</div> : null}
-                <div className="mcs-rec-tags">
-                  <Tag tone={goal.tier === "primary" ? "strong" : null}>
-                    {tierIntent(goal.tier) || tierLabel(goal.tier)}
-                  </Tag>
-                  {copies.length
-                    ? <Tag>{plural(copies.length, "copy", "copies")}</Tag>
-                    : null}
-                </div>
-                <div className="mcs-rec-facts">
-                  <Fact label="You asked for"
-                    value={criteriaLine(goal.desired) || "any grade or condition"} />
-                </div>
-              </div>
-            </div>
-
-            {live ? (
-              <LiveDeal deal={live} me={me} card={card} shop={partnerName.get(live.partnerId) || "your shop"}
-                copy={copyById.get(live.invId) || null} sender={offer}
-                onCounterOffer={onCounterOffer} onAcceptOffer={onAcceptOffer}
-                onWithdrawOffer={onWithdrawOffer} />
-            ) : ended ? (
-              <p className="mcs-df-none">{statusLine(ended, me, partnerName.get(ended.partnerId) || "The shop")}</p>
-            ) : null}
-
-            {offerSaid && offerSaid.key.startsWith(`open:${goal.id}:`) ? (
-              <p className="mcs-df-none mcs-df-trouble" role="status">{offerSaid.message}</p>
-            ) : null}
-
-            {shown.length === 0 ? (
-              <p className="mcs-df-none">
-                {missed > 0
-                  /* The one silence worth explaining. A shop has the card; it is
-                     not the card they described. Said without naming which shop,
-                     because a copy this Goal did not match is a copy the
-                     Collector has no claim on and no business being told about
-                     in any more detail than this. */
-                  ? `No copies match what you asked for — though ${plural(missed, "copy", "copies")} `
-                    + `of this card ${missed === 1 ? "is" : "are"} available at your shops `
-                    + "in a different grade or condition."
-                  : "None of your shops has this one right now."}
-              </p>
-            ) : (
-              <ul className="mcs-df-copies">
-                {shown.map(({ partnerId, copy, closed }) => {
-                  const conflict = gradeProblem(copy) ? gradeConflictLine(copy) : null;
-                  const looking = openReview.get(copy.invId) || null;
-                  const asked = openRequest.has(copy.invId);
-                  const answered = answeredRequest.has(copy.invId);
-                  const photographed = !!(copy.photos && copy.photos.front && copy.photos.back);
-                  return (
-                    <li key={copy.invId} className="mcs-df-copy" data-inv={copy.invId}>
-                      <span className="mcs-df-shop">
-                        {partnerName.get(partnerId) || "A Trusted Partner"}
-                      </span>
-                      <span className="mcs-df-facts">
-                        {gradeLine(copy) ? <span className="mcs-df-grade">{gradeLine(copy)}</span> : null}
-                        {text(copy.cert) ? <span className="mcs-df-cert">{`Cert ${text(copy.cert)}`}</span> : null}
-                        {photoNote(copy.photos) ? <span className="mcs-df-photo">{photoNote(copy.photos)}</span> : null}
-                        {money(copy.ask) ? <span className="mcs-df-ask">{money(copy.ask)}</span> : null}
-                      </span>
-                      {conflict ? <span className="mcs-df-note">{conflict}</span> : null}
-
-                      {/* QUALIFICATION, ON THE COPY IT IS ABOUT. The controls sit
-                          on the physical copy's own row and never on the Goal,
-                          because inspecting is something you do to one object.
-                          Nothing here is disabled to suggest a locked feature:
-                          a control the Collector cannot use is simply absent. */}
-                      <span className="mcs-df-do">
-                        {closed ? (
-                          <span className="mcs-df-state">No longer available</span>
-                        ) : null}
-                        {trouble && trouble.invId === copy.invId
-                          ? <span className="mcs-df-trouble" role="status">{trouble.message}</span>
-                          : null}
-                        {looking ? (
-                          <>
-                            <span className="mcs-df-state">You're inspecting this copy</span>
-                            {onEndInspection ? (
-                              <button type="button" className="mcs-go quiet"
-                                disabled={!!busy[`end:${copy.invId}`]}
-                                onClick={() => run(`end:${copy.invId}`, copy.invId,
-                                  () => onEndInspection(looking.id), "close that")}>
-                                Done inspecting
-                              </button>
-                            ) : null}
-                          </>
-                        ) : closed ? null : onInspect ? (
-                          <button type="button" className="mcs-go"
-                            disabled={!!busy[`look:${copy.invId}`]}
-                            onClick={() => run(`look:${copy.invId}`, copy.invId,
-                              () => onInspect(copy.invId), "open that")}>
-                            Inspect
-                          </button>
-                        ) : null}
-
-                        {/* THE EVIDENCE ASK. Once both faces exist there is
-                            nothing to ask for, so the control goes rather than
-                            sitting there doing nothing. */}
-                        {closed ? null : photographed ? null : asked ? (
-                          <span className="mcs-df-state">Photos requested</span>
-                        ) : onRequestPhotos ? (
-                          <button type="button" className="mcs-go quiet"
-                            disabled={!!busy[`ask:${copy.invId}`]}
-                            onClick={() => run(`ask:${copy.invId}`, copy.invId,
-                              () => onRequestPhotos(copy.invId), "ask for photos")}>
-                            Request photos
-                          </button>
-                        ) : null}
-                        {photographed && answered
-                          ? <span className="mcs-df-state">Photos arrived</span> : null}
-
-                        {/* MAKE AN OFFER, on the copy it is about. */}
-                        {canOffer && !closed && composing !== copy.invId ? (
-                          <button type="button" className="mcs-go"
-                            disabled={!!offer.busy}
-                            onClick={() => { offer.clear(); setOfferSaid(null); setComposing(copy.invId); }}>
-                            Make an offer
-                          </button>
-                        ) : null}
-                      </span>
-                      {canOffer && !closed && composing === copy.invId ? (
-                        <div className="mcs-offer">
-                          {cardLine(card) ? <p className="mcs-offer-card">{cardLine(card)}</p> : null}
-                          <p className="mcs-offer-terms">
-                            {`${partnerName.get(partnerId) || "This shop"} · `
-                              + `${dollars(copy.ask) ? `Proposed Market Price ${dollars(copy.ask)}` : "No price listed"}`
-                              + ` · ${copy.firmOnPrice === true ? "Firm on Price" : "Open to Offers"}`
-                              + `${gradeLine(copy) ? ` · ${gradeLine(copy)}` : ""}`}
-                          </p>
-                          <OfferEntry cls="mcs" busy={!!offer.busy}
-                            listed={typeof copy.ask === "number" && copy.ask > 0 ? copy.ask : null}
-                            fixed={copy.firmOnPrice === true && typeof copy.ask === "number" && copy.ask > 0
-                              ? Math.round(copy.ask) : null}
-                            onCancel={() => { offer.clear(); setOfferSaid(null); setComposing(null); }}
-                            onSubmit={async (price) => {
-                              const sent = await offer.send(`open:${goal.id}:${copy.invId}`,
-                                () => onOpenOffer(goal.id, copy.invId, price));
-                              if (sent) setComposing(null);
-                            }} />
-                        </div>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </article>
-        );
-      })}
-    </Panel>
+    <>
+      <section className="mcs-dg-sec" aria-labelledby="mcs-dg-primary">
+        <h2 className="mcs-dg-h2" id="mcs-dg-primary">Primary Goals</h2>
+        {primary.length ? <div className="mcs-dg-list">{primary.map(card)}</div> : (
+          <div className="mcs-dg-none">
+            <p className="mcs-empty">No Primary Goals yet. Make a card Primary when you're ready to make an offer on it.</p>
+            {onFindCards ? <button type="button" className="mcs-go" onClick={onFindCards}>Find a card in Browse</button> : null}
+          </div>
+        )}
+      </section>
+    </>
   );
 }
 
-/* ----------------------------------------------------------------- A LIVE DEAL
-   Under the Goal it is for: the shop, the copy, the captured terms, where it
-   stands, how the price got here, and — when the server says it is the
-   Collector's move — Accept, Counter and Withdraw. While the shop is replying,
-   the Collector may still withdraw. After agreement there are no controls:
-   what comes next is the next stage, and it is said in words. */
-function LiveDeal({ deal, me, card, shop, copy, sender, onCounterOffer, onAcceptOffer, onWithdrawOffer }) {
-  const [countering, setCountering] = useState(false);
-  const unresolved = isUnresolved(deal);
-  const myMove = myPriceMove(deal, me);
-  const onTable = priceOnTable(deal);
-  const busy = !!sender.busy;
+/* ------------------------------------------------------------ ONE GOAL, ONE CARD
+   Identity, who matches, where the one deal stands, one button. No button
+   for a Goal with nothing behind one: no deal and nobody who has it. */
+function GoalCard({ entry, card, me, nameOf, onOpenDeal, onOpenMatches }) {
+  const { goal, partners: groups, held, partnerCount, nearMiss, live, ended } = entry;
+  const glance = live ? dealGlance(live, me, nameOf(live.partnerId)) : null;
+  const headId = `mcs-dg-${goal.id}`;
+  const printing = printingOf(card);
+  /* A copy still being inspected that has since stopped matching is listed
+     in View Matches — apart from the matches — so the way to finish with it
+     stays reachable. */
+  const canView = !live && (groups.length > 0 || held.length > 0) && !!onOpenMatches;
   return (
-    <div className="mcs-offer mcs-offer-live" aria-label="Your offer">
-      {cardLine(card) ? <p className="mcs-offer-card">{cardLine(card)}</p> : null}
-      <p className="mcs-offer-terms">
-        {[shop, copy ? gradeLine(copy) : null, copy && text(copy.cert) ? `Cert ${text(copy.cert)}` : null, termsLine(deal)]
-          .filter(Boolean).join(" · ")}
-      </p>
-      <p className="mcs-offer-status" role="status">
-        {statusLine(deal, me, shop, stageLabel(deal.stage))}
-      </p>
-      <PriceHistory cls="mcs" deal={deal} seat={me} other={shop} />
-      {unresolved ? (
-        countering ? (
-          <OfferEntry cls="mcs" verb="Send counter" busy={busy}
-            listed={typeof deal.listedPrice === "number" && deal.listedPrice > 0 ? deal.listedPrice : null}
-            onCancel={() => { sender.clear(); setCountering(false); }}
-            onSubmit={async (price) => {
-              if (await sender.send(`counter:${deal.id}`, () => onCounterOffer(deal.id, price))) setCountering(false);
-            }} />
-        ) : (
-          <div className="mcs-offer-do">
-            {myMove && onTable != null && onAcceptOffer ? (
-              <button type="button" className="mcs-go" disabled={busy}
-                onClick={() => sender.send(`accept:${deal.id}`, () => onAcceptOffer(deal.id))}>
-                {sender.busy === `accept:${deal.id}` ? "Accepting…" : `Accept ${dollars(onTable)}`}
-              </button>
-            ) : null}
-            {myMove && onCounterOffer ? (
-              <button type="button" className="mcs-go quiet" disabled={busy}
-                onClick={() => { sender.clear(); setCountering(true); }}>Counter</button>
-            ) : null}
-            {onWithdrawOffer ? (
-              <button type="button" className="mcs-go quiet" disabled={busy}
-                onClick={() => sender.send(`withdraw:${deal.id}`, () => onWithdrawOffer(deal.id))}>
-                {sender.busy === `withdraw:${deal.id}` ? "Withdrawing…" : "Withdraw offer"}
-              </button>
-            ) : null}
-          </div>
-        )
+    <article className="mcs-dg" data-goal={goal.id} aria-labelledby={headId} tabIndex={-1}>
+      <div className="mcs-dg-top">
+        <CardArt src={card && card.imageSmall} name={card && card.cardName}
+          wrap="mcs-dg-art" plate="mcs-art-plate" decorative />
+        <div className="mcs-dg-id">
+          <h3 className="mcs-dg-name" id={headId}>{(card && card.cardName) || "Loading this card…"}</h3>
+          {printing ? <p className="mcs-dg-set">{printing}</p> : null}
+          <p className="mcs-dg-want">{criteriaLine(goal.desired) || "Any grade or condition"}</p>
+          <span className="mcs-dg-marks">{tierChip(goal)}</span>
+        </div>
+      </div>
+      <p className={`mcs-dg-match${partnerCount ? "" : " none"}`}>{matchLine(partnerCount)}</p>
+      {!partnerCount && nearMiss > 0 ? (
+        <p className="mcs-dg-near">Your Trusted Partners have this card in another grade or condition.</p>
       ) : null}
-      {sender.trouble ? <p className="mcs-df-trouble" role="status">{sender.trouble}</p> : null}
+      {live ? (
+        <div className="mcs-dg-deal" data-opp={live.id}>
+          <GoalProgress deal={live} glance={glance} />
+          {onOpenDeal ? (
+            <button type="button" className={`mcs-go mcs-dg-cta${glance && glance.mine ? " mine" : ""}`}
+              onClick={() => onOpenDeal(live.id, live.goalId)}>
+              {glance ? glance.cta : "View Deal"}
+            </button>
+          ) : null}
+        </div>
+      ) : (
+        <>
+          {ended ? <p className="mcs-dg-ended">{statusLine(ended, me, nameOf(ended.partnerId))}</p> : null}
+          {canView ? (
+            <button type="button" className="mcs-go mcs-dg-cta" data-matches={goal.id}
+              onClick={() => onOpenMatches(goal.id)}>View Matches</button>
+          ) : null}
+        </>
+      )}
+    </article>
+  );
+}
+
+/* ============================================================ VIEW MATCHES
+   One Goal's matching copies, full screen, in place of the whole Collector
+   screen as the Deal Workspace is. The Goal is looked up among this
+   Collector's own (`state.goals` holds nothing else); one that is not there
+   is said to be unavailable. Opening it sends nothing. */
+export function GoalMatches({ state, goalId, compose = null, onBack = null, onBrowseCards = null,
+  onEndInspection = null, onRequestPhotos = null, onOpenOffer = null,
+  onOpenDeal = null, onRefresh = null }) {
+  const me = viewerSeat(state);
+  const nameOf = namesOf(state);
+  const entry = dealFlowGoals(state).find((g) => g.goal.id === goalId) || null;
+  const reviews = rows(state && state.copyReviews);
+  const requests = rows(state && state.photoRequests);
+
+  const openReview = new Map();
+  for (const r of reviews) if (!r.endedAt && r.invId != null) openReview.set(r.invId, r);
+  const openRequest = new Set();
+  for (const r of requests) if (r.invId != null && !r.fulfilledAt) openRequest.add(r.invId);
+
+  /* ONE PRESS PER CONTROL, NOT ONE PER SCREEN: two copies are two independent
+     things to ask about, and a press on one never swallows a press on another. */
+  const [busy, setBusy] = useState({});
+  const [trouble, setTrouble] = useState(null);
+  const run = async (key, invId, send, verb) => {
+    if (!send || busy[key]) return;
+    setBusy((held) => ({ ...held, [key]: true }));
+    setTrouble((held) => (held && held.invId === invId ? null : held));
+    try {
+      const answer = await send();
+      if (answer && answer.ok === false) {
+        setTrouble({ invId, message: answer.refused === "copy-unavailable"
+          ? "That copy isn't available any more."
+          : `Couldn't ${verb} just now.` });
+      }
+    } catch (error) {
+      setTrouble({ invId, message: `Couldn't ${verb} just now.` });
+    } finally {
+      setBusy((held) => { const next = { ...held }; delete next[key]; return next; });
+    }
+  };
+
+  /* One offer composer at a time, on the copy it is for — open on arrival
+     only when the Collector came here by pressing Make an Offer in Browse
+     (`compose` is the copy Browse named). */
+  const [composing, setComposing] = useState(compose && compose.invId ? compose.invId : null);
+  const [offerSaid, setOfferSaid] = useState(null);
+  const offer = useSender(onRefresh, (key, message) => setOfferSaid(message ? { key, message } : null));
+
+  /* AFTER AN OFFER, THE DEAL IT MADE. Not guessed: the server's next
+     projection names the Goal's live deal, and that id is what opens. */
+  const [sent, setSent] = useState(false);
+  const liveId = entry && entry.live ? entry.live.id : null;
+  useEffect(() => {
+    if (sent && liveId && onOpenDeal) onOpenDeal(liveId, goalId);
+  }, [sent, liveId]);
+
+  const cardId = entry ? entry.goal.canonicalCardId : null;
+  const card = useDescribed(onBrowseCards, [cardId])[cardId] || null;
+
+  /* THE PHOTO VIEWER: which copy's pictures are open, if any. Closing puts
+     focus back on that copy's picture, so the Collector is where they were. */
+  const [viewing, setViewing] = useState(null);
+  const thumbs = useRef({});
+  const closeViewer = () => {
+    const was = viewing;
+    setViewing(null);
+    const el = was ? thumbs.current[was] : null;
+    if (el && el.focus) setTimeout(() => el.focus(), 0);
+  };
+
+  /* Arriving starts at the top, with focus on the title — unless they came
+     to make an offer, when the composer they asked for keeps it. */
+  const titleRef = useRef(null);
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.scrollTo) window.scrollTo(0, 0);
+    if (!compose && titleRef.current && titleRef.current.focus) titleRef.current.focus({ preventScroll: true });
+  }, [goalId]);
+
+  const back = onBack ? (
+    <button type="button" className="mcs-ws-back" onClick={onBack} aria-label="Back to Deal Flow">
+      <span aria-hidden="true" className="mcs-ws-arrow" />
+    </button>
+  ) : null;
+
+  if (!entry) {
+    return (
+      <div className="mcs-ws mcs-gm">
+        <header className="mcs-ws-hd">
+          <div className="mcs-ws-top">
+            {back}
+            <h1 className="mcs-ws-title" tabIndex={-1} ref={titleRef}>Goal not available</h1>
+          </div>
+        </header>
+        <div className="mcs-ws-body">
+          <p className="mcs-ws-note">This Goal isn't available. It may have been removed. Nothing has been changed.</p>
+          {onBack ? <button type="button" className="mcs-go" onClick={onBack}>Back to Deal Flow</button> : null}
+        </div>
+      </div>
+    );
+  }
+
+  const { goal, partners: groups, held, partnerCount, nearMiss, live, ended } = entry;
+  const isPrimary = goal.tier === "primary";
+  const canOffer = !!onOpenOffer && isPrimary && !live;
+  const livePartner = live ? nameOf(live.partnerId) : null;
+
+  /* One copy's row — in the matches, or (closed) among the copies held
+     from before. */
+  const drawCopy = (group) => ({ copy, closed }) => {
+                const conflict = gradeProblem(copy) ? gradeConflictLine(copy) : null;
+                const looking = openReview.get(copy.invId) || null;
+                const asked = openRequest.has(copy.invId);
+                const pics = picturesOf(copy, card);
+                const photographed = !!(copy.photos && copy.photos.front && copy.photos.back);
+                const inDeal = !!live && live.invId === copy.invId;
+                const canAsk = !closed && !photographed && !asked && !!onRequestPhotos;
+                return (
+                  <li key={copy.invId} className={`mcs-df-copy${inDeal ? " in-deal" : ""}`} data-inv={copy.invId}>
+                    <button type="button" className="mcs-pv-thumb" ref={(el) => { thumbs.current[copy.invId] = el; }}
+                      aria-label={`Look at this copy: ${pics.catalog ? "catalog image" : "no picture yet"}${pics.sides ? `, partner photos: ${pics.sides}` : ""}`}
+                      onClick={() => setViewing(copy.invId)}>
+                      <CardArt src={card && card.imageSmall} name={card && card.cardName}
+                        wrap="mcs-pv-art" plate="mcs-art-plate" decorative />
+                      <span className="mcs-pv-tag">{pics.catalog ? "Catalog" : "No picture"}</span>
+                    </button>
+                    <span className="mcs-df-facts">
+                      <span className="mcs-df-grade">{gradeLine(copy) || "Grade not stated"}</span>
+                      <span className="mcs-df-terms">{terms(copy)}</span>
+                      <span className="mcs-df-photo">{pics.sides ? `Partner photos: ${pics.sides}`
+                        : asked ? "Photos requested" : "No photos yet"}</span>
+                    </span>
+                    <span className="mcs-df-price">
+                      <span className="mcs-df-ask">{money(copy.ask) || "No price yet"}</span>
+                      <span className="mcs-df-pl">Proposed Market Price</span>
+                    </span>
+                    {conflict ? <span className="mcs-df-note">{conflict}</span> : null}
+
+                    <span className="mcs-df-do">
+                      {inDeal ? <span className="mcs-df-state">In your active deal</span> : null}
+                      {/* Kept on the list only because an old inspection or a photo
+                          request holds it: say which is true — the copy left the
+                          partner's shelf, or it is there but no longer matches. */}
+                      {closed ? <span className="mcs-df-state">{`${nameOf(group.partnerId)} · ${copy.status === "available"
+                        ? "No longer matches your Goal" : "No longer available"}`}</span> : null}
+                      {trouble && trouble.invId === copy.invId
+                        ? <span className="mcs-df-trouble" role="status">{trouble.message}</span>
+                        : null}
+                      {canOffer && !closed && !sent && composing !== copy.invId ? (
+                        <button type="button" className="mcs-go mcs-go-primary"
+                          disabled={!!offer.busy}
+                          onClick={() => { offer.clear(); setOfferSaid(null); setComposing(copy.invId); }}>
+                          Make an offer
+                        </button>
+                      ) : null}
+                      {canAsk ? (
+                        <button type="button" className="mcs-go quiet"
+                          disabled={!!busy[`ask:${copy.invId}`]}
+                          onClick={() => run(`ask:${copy.invId}`, copy.invId,
+                            () => onRequestPhotos(copy.invId), "ask for photos")}>
+                          Request actual photos
+                        </button>
+                      ) : null}
+                      {/* An inspection begun before Milestone 2C.2, on a copy that has
+                          since stopped being available: the one way to put it down.
+                          Offered only when it is TRUE — with a photo request still
+                          open, ending the inspection would not take the copy off
+                          this list (the request keeps it here, and the domain has
+                          no way to withdraw a request), so it is not offered. */}
+                      {closed && looking && !asked && onEndInspection ? (
+                        <button type="button" className="mcs-go quiet"
+                          disabled={!!busy[`end:${copy.invId}`]}
+                          onClick={() => run(`end:${copy.invId}`, copy.invId,
+                            () => onEndInspection(looking.id), "remove that")}>
+                          Remove from list
+                        </button>
+                      ) : null}
+                    </span>
+                    {canOffer && !closed && !sent && composing === copy.invId ? (
+                      <OpeningOffer busy={!!offer.busy} partner={nameOf(group.partnerId)}
+                        listed={typeof copy.ask === "number" && copy.ask > 0 ? copy.ask : null}
+                        firm={copy.firmOnPrice === true}
+                        onCancel={() => { offer.clear(); setOfferSaid(null); setComposing(null); }}
+                        onSubmit={async (price) => {
+                          const ok = await offer.send(`open:${goal.id}:${copy.invId}`,
+                            () => onOpenOffer(goal.id, copy.invId, price));
+                          if (ok) { setComposing(null); setSent(true); }
+                        }} />
+                    ) : null}
+                    {viewing === copy.invId ? (
+                      <PhotoViewer pics={pics} card={card} copy={copy} partner={nameOf(group.partnerId)}
+                        asked={asked} canAsk={canAsk} busy={!!busy[`ask:${copy.invId}`]}
+                        onRequest={() => run(`ask:${copy.invId}`, copy.invId, () => onRequestPhotos(copy.invId), "ask for photos")}
+                        onClose={closeViewer} />
+                    ) : null}
+                  </li>
+                );
+  };
+
+  return (
+    <div className="mcs-ws mcs-gm" data-goal={goal.id}>
+      <header className="mcs-ws-hd">
+        <div className="mcs-ws-top">
+          {back}
+          <CardArt src={card && card.imageSmall} name={card && card.cardName}
+            wrap="mcs-ws-art" plate="mcs-art-plate" decorative />
+          <div className="mcs-ws-id">
+            <h1 className="mcs-ws-title" tabIndex={-1} ref={titleRef}>{(card && card.cardName) || "Your Goal"}</h1>
+            <p className="mcs-ws-sub">{[printingOf(card), criteriaLine(goal.desired) || "Any grade or condition"]
+              .filter(Boolean).join(" · ")}</p>
+          </div>
+        </div>
+        <p className="mcs-gm-sum">{tierChip(goal)}<span>{matchLine(partnerCount)}</span></p>
+      </header>
+
+      <div className="mcs-ws-body">
+        {live ? (
+          <p className="mcs-ws-say">
+            {`You have an active deal for this card with ${livePartner}. One deal at a time per Goal, `
+              + "so another offer can't start while it's active."}
+          </p>
+        ) : ended ? <p className="mcs-ws-say">{statusLine(ended, me, nameOf(ended.partnerId))}</p> : null}
+        {!isPrimary ? (
+          <p className="mcs-ws-say">This is a Secondary Goal. You can look at copies and ask for photos; offers start from a Primary Goal.</p>
+        ) : null}
+        {offerSaid && offerSaid.key.startsWith(`open:${goal.id}:`) ? (
+          <p className="mcs-df-trouble" role="status">{offerSaid.message}</p>
+        ) : null}
+        {sent && !live ? <p className="mcs-ws-say" role="status">Offer sent. Opening your deal…</p> : null}
+
+        {groups.length === 0 ? (
+          <p className="mcs-ws-note">
+            {nearMiss > 0
+              ? `No copies match what you asked for — though ${plural(nearMiss, "copy", "copies")} `
+                + `of this card ${nearMiss === 1 ? "is" : "are"} available from your Trusted Partners `
+                + "in a different grade or condition."
+              : "None of your Trusted Partners has this one right now."}
+          </p>
+        ) : groups.map((group) => (
+          <section key={group.partnerId} className="mcs-gm-partner" data-partner={group.partnerId}
+            aria-label={nameOf(group.partnerId)}>
+            <h2 className="mcs-gm-pname">
+              <span>{nameOf(group.partnerId)}</span>
+              {live && live.partnerId === group.partnerId ? <span className="mcs-dg-tag">Active deal</span> : null}
+            </h2>
+            <ul className="mcs-df-copies">
+              {group.copies.map(drawCopy(group))}
+            </ul>
+          </section>
+        ))}
+
+        {/* HELD, NOT MATCHED: copies of this card kept only because of an old
+            inspection or a photo request. Apart from the matches, below them,
+            never counted or offered (Milestone 2C.3 regression fix). */}
+        {held.length ? (
+          <section className="mcs-gm-held" aria-labelledby={`mcs-gm-held-${goal.id}`}>
+            <h2 className="mcs-ws-h2" id={`mcs-gm-held-${goal.id}`}>Copies you looked at before</h2>
+            <p className="mcs-ws-note">These don't match this Goal now. They're kept here because you inspected them or asked for photos.</p>
+            <ul className="mcs-df-copies">
+              {held.map((h) => drawCopy({ partnerId: h.partnerId })(h))}
+            </ul>
+          </section>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================ THE PICTURES
+   What there is to look at for one physical copy, and where it came from.
+   The catalogue's picture identifies the printing and says nothing about
+   this copy's condition. The copy's own photographs are its Trusted
+   Partner's — said in words (`photoNote`), never drawn: they are references
+   the partner typed, not images MetYet holds. Nothing is fetched or invented. */
+function picturesOf(copy, card) {
+  return { catalog: !!(card && (text(card.imageSmall) || text(card.imageLarge))), sides: photoNote(copy && copy.photos) };
+}
+
+/* ONE COPY, LARGE. A dialog over View Matches, with its own Close, Escape
+   and a tap outside; focus starts on Close and returns to the picture that
+   opened it. It sends nothing — except Request actual photos, when the
+   Collector presses it, through the same command and authorization as the
+   button on the copy's row. */
+function PhotoViewer({ pics, card, copy, partner, asked, canAsk, busy, onRequest, onClose }) {
+  const closeRef = useRef(null);
+  useEffect(() => { if (closeRef.current && closeRef.current.focus) closeRef.current.focus(); }, []);
+  const name = (card && card.cardName) || "This card";
+  const titleId = `mcs-pv-${copy.invId}`;
+  return (
+    <div className="mcs-pv-scrim" role="dialog" aria-modal="true" aria-labelledby={titleId}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}>
+      <div className="mcs-pv">
+        <div className="mcs-pv-hd">
+          <p className="mcs-pv-title" id={titleId}>
+            <strong>{name}</strong>
+            <span>{[card && text(card.finish) ? versionLabel(card) : null, gradeLine(copy), partner].filter(Boolean).join(" · ")}</span>
+          </p>
+          <button type="button" className="mcs-go quiet" ref={closeRef} onClick={onClose}>Close</button>
+        </div>
+        <div className="mcs-pv-stage" role="img" aria-label={pics.catalog ? `Catalog image of ${name}` : `No picture of ${name} yet`}>
+          <CardArt src={card && (card.imageLarge || card.imageSmall)} name={card && card.cardName}
+            wrap="mcs-pv-big" plate="mcs-art-plate" decorative />
+        </div>
+        <p className="mcs-pv-says">
+          {pics.catalog ? "Catalog image — it shows the printing, not this copy's condition." : "There's no picture of this card yet."}
+        </p>
+        {pics.sides ? (
+          <p className="mcs-pv-says">{`${partner} has added photos of this copy (${pics.sides.toLowerCase()}). MetYet describes them here but can't show them yet.`}</p>
+        ) : asked ? <p className="mcs-pv-says">{`Photos requested — ${partner} will add them.`}</p> : null}
+        {canAsk ? (
+          <button type="button" className="mcs-go mcs-go-primary mcs-pv-ask" disabled={busy} onClick={onRequest}>
+            Request actual photos
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

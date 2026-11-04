@@ -127,12 +127,16 @@ describe("C. the release notice: its words kept, said where they are true", () =
     const r = render(LIVE);
     for (const tab of ["Browse", "Binders"]) { go(r, tab); eq(scope(r), null, `${tab} carries a notice line`); }
   });
-  test("Deal Flow and Trusted Partners say trades and messages arrive later", () => {
+  test("Trusted Partners says trades and messages arrive later; Deal Flow carries no line", () => {
     const r = render(LIVE);
-    for (const tab of ["Deal Flow", "Trusted Partners"]) {
-      go(r, tab);
-      assert(scope(r) && /^Trades and messages arrive later\. What works today$/.test(flat(scope(r))), `${tab}: ${scope(r) && flat(scope(r))}`);
-    }
+    /* RESTATED (Milestone 2C.1, founder brief): Deal Flow's landing page is a
+       title, one subtitle and its Goal cards — the line and its "What works
+       today" link come off it. The notice itself is unchanged and still one
+       tap away in the account sheet (asserted above). */
+    go(r, "Deal Flow");
+    eq(scope(r), null, "Deal Flow carries a notice line");
+    go(r, "Trusted Partners");
+    assert(scope(r) && /^Trades and messages arrive later\. What works today$/.test(flat(scope(r))), `Trusted Partners: ${scope(r) && flat(scope(r))}`);
   });
   test("a shell that can change nothing says so on every screen", () => {
     const r = render();

@@ -35,26 +35,14 @@
    ========================================================================== */
 import React, { useEffect, useRef, useState } from "react";
 import CardArt from "../card-art.jsx";
-import { rows, text, gradeLine, criteriaLine } from "./present.js";
+import { rows, text, gradeLine, criteriaLine, versionLabel } from "./present.js";
 import { explain } from "./CardSpecification.jsx";
 import { dollars, isLiveDeal } from "../negotiation.jsx";
 import { StateIcon } from "./states.jsx";
 
-/* The prototype's version words (fixtures.js FINISH_NAMES), plus what else
-   makes a production printing different, said only when it is not the usual. */
-const FINISH_NAMES = { non_holo: "Normal", holofoil: "Holo", reverse_holofoil: "Reverse Holo", cosmos_holofoil: "Cosmos Holo" };
-const titled = (s) => String(s).replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-/* `siblings` are the card's other printings: a print run that is usually left
-   unsaid ("Unlimited") is said when a sibling differs by it, so "Holo ·
-   Unlimited" and "Holo · First Edition" can be told apart. */
-export const versionLabel = (card, siblings = []) => [
-  FINISH_NAMES[card.finish] || titled(card.finish || "Version"),
-  card.printRun && card.printRun !== "not_applicable" && (card.printRun !== "unlimited"
-    || siblings.some((o) => o !== card && o.finish === card.finish && o.printRun !== card.printRun)) ? titled(card.printRun) : null,
-  card.stamp && card.stamp !== "none" ? `${titled(card.stamp)} stamp` : null,
-  card.printVariation && card.printVariation !== "standard" ? titled(card.printVariation) : null,
-  card.language && card.language !== "en" ? card.language.toUpperCase() : null,
-].filter(Boolean).join(" · ");
+/* The version words live in present.js (Milestone 2C.3), so Deal Flow and the
+   Deal Workspace name a printing the same way this card does. */
+export { versionLabel };
 const TIER = { primary: "Primary", secondary: "Secondary" };
 
 /* The vocabulary the domain already has (D.GRADED_VALUES, D.CONDITION_VALUES),

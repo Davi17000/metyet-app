@@ -249,6 +249,13 @@ export const myPriceMove = (deal, seat) => isUnresolved(deal) && !!seat
 export const priceOnTable = (deal) => (turnOf(deal) && typeof turnOf(deal).amount === "number"
   ? turnOf(deal).amount : null);
 
+/* Whether the latest price was an opening offer or a counter — for the
+   wording only, like `statusLine`'s own read below. */
+export const lastPriceMove = (deal) => {
+  const thread = threadOf(deal);
+  return thread.length ? thread[thread.length - 1].type || null : null;
+};
+
 /* One sentence: where this deal stands, from this viewer. `stageName` is the
    viewer's own word for the stage, used only as a label. */
 export function statusLine(deal, seat, other, stageName) {

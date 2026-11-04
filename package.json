@@ -32,7 +32,8 @@
     "ux:mobile-review:assert": "node harness/mobile-ux-review.cjs --assert-only",
     "ux:filing-browser": "node harness/phase6-filing-browser.cjs",
     "review:mobile": "node harness/phase6-mobile-review.cjs",
-    "review:fidelity": "node harness/phase6-fidelity.cjs"
+    "review:fidelity": "node harness/phase6-fidelity.cjs",
+    "review:deal-scenarios": "node harness/phase6-deal-scenarios.cjs"
   },
   "dependencies": {
     "esbuild": "^0.28.2",

@@ -65,7 +65,8 @@ import { newBrowseSession } from "./sections/Browse.jsx";
 import Browse from "./sections/Browse.jsx";
 import Binder from "./sections/Binder.jsx";
 import Goals from "./sections/Goals.jsx";
-import DealFlow from "./sections/DealFlow.jsx";
+import DealFlow, { GoalMatches } from "./sections/DealFlow.jsx";
+import DealWorkspace from "./DealWorkspace.jsx";
 
 import TrustedPartners from "./sections/TrustedPartners.jsx";
 
@@ -140,7 +141,7 @@ export const SECTIONS = Object.freeze([
      the fifth tab is gone rather than deferred. */
   { id: "deal-flow", label: "Deal Flow", count: null, view: DealFlow,
     title: "Deal Flow",
-    sub: "Which of your shops has the card you asked for" },
+    sub: "Your collecting goals and where they stand." },
   /* THE NETWORK (Phase 6 P6-1: last). The shops this Collector deals with —
      reference rather than a place to act, so it follows Deal Flow. */
   { id: "partners", label: "Trusted Partners", count: "partners", unit: ["partner", "partners"], view: TrustedPartners,
@@ -330,31 +331,184 @@ const CSS = `
 .mcs-binder-name { margin:0 0 10px; padding:0 16px; font-family:var(--font-display);
   font-size:16px; font-weight:700; color:var(--text); }
 
-/* ---- deal flow: the copies your shops have (true-match batch) ----
+/* ---- deal flow: one card per Goal (Milestone 2C.1) ----
 
-   ARTWORK-FORWARD AT THE GOAL, PLAIN AT THE COPY. The card is the thing a
-   person recognises, so it keeps the same 5/7 tile every other collector
-   surface uses; a physical copy is a row of facts and gets no picture of its
-   own, because a photograph of THIS slab is what Request Photos is for and that
-   is not this batch. Each copy reads as one line on a phone and stays one line
-   on a desktop — grade first, because it is what the Collector asked about. */
-.mcs-df-copies { list-style:none; margin:0; padding:0 16px 14px; display:flex;
-  flex-direction:column; gap:6px; }
-.mcs-df-copy { display:flex; flex-wrap:wrap; gap:4px 10px; align-items:baseline;
-  padding:8px 10px; background:var(--line-soft); border-radius:7px; }
-.mcs-df-shop { font-weight:600; font-size:12.5px; color:var(--text); }
-.mcs-df-facts { display:flex; flex-wrap:wrap; gap:4px 10px; align-items:baseline;
-  min-width:0; font-size:12px; color:var(--muted); }
-.mcs-df-grade { color:var(--t1); font-weight:600; }
-.mcs-df-ask { margin-left:auto; color:var(--text); font-variant-numeric:tabular-nums; }
+   PHONE FIRST (390 wide), several Goals in view at once. Each Goal is one
+   card with a hairline border and no nested boxes: the art beside the name,
+   set and number, what was asked for and the Primary mark; one line for who
+   matches; for an active deal, the stage, a quiet ten-step bar and the
+   status; then one full-width button. */
+.mcs-dg-sec { margin:12px 0 18px; }
+.mcs-dg-h2 { margin:0 0 8px; font-family:var(--font-display); font-size:10.5px; font-weight:700;
+  letter-spacing:.09em; text-transform:uppercase; color:var(--muted); }
+.mcs-dg-sec .mcs-empty { margin:0; }
+.mcs-dg-list { display:flex; flex-direction:column; gap:12px; }
+.mcs-dg { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px;
+  display:flex; flex-direction:column; gap:10px; scroll-margin-top:76px; }
+.mcs-dg:focus { outline:none; }
+.mcs-dg:focus-visible { box-shadow:0 0 0 2px var(--t1); }
+.mcs-dg-top { display:flex; gap:12px; align-items:flex-start; min-width:0; }
+.mcs-dg-art { flex:0 0 60px; width:60px; aspect-ratio:5/7; display:flex; align-items:center; justify-content:center;
+  background:var(--line-soft); border-radius:6px; overflow:hidden; }
+.mcs-dg-art img { width:100%; height:100%; object-fit:contain; }
+.mcs-dg-art .mcs-art-plate { overflow-wrap:normal; word-break:normal; hyphens:manual; font-size:8.5px; padding:3px; }
+.mcs-dg-id { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.mcs-dg-name { margin:0; font-family:var(--font-display); font-size:16px; font-weight:700; line-height:1.25;
+  color:var(--text); overflow-wrap:normal; word-break:normal; }
+.mcs-dg-set, .mcs-dg-want { margin:0; font-size:12.5px; line-height:1.35; color:var(--muted); }
+.mcs-dg-want { color:var(--text); }
+.mcs-dg-marks { display:flex; flex-wrap:wrap; gap:6px; margin-top:3px; }
+.mcs-dg-marks .mcs-mk { font-size:10.5px; padding:1px 7px; }
+.mcs-dg-match { margin:0; font-size:13px; font-weight:600; color:var(--text); }
+.mcs-dg-match.none { font-weight:500; color:var(--muted); }
+.mcs-dg-near, .mcs-dg-ended { margin:-6px 0 0; font-size:12px; line-height:1.4; color:var(--muted); }
+.mcs-dg-sec.quiet .mcs-dg { background:transparent; }
+
+/* the active deal: stage, bar, status — then the one button */
+.mcs-dg-deal { display:flex; flex-direction:column; gap:10px; padding-top:10px; border-top:1px solid var(--line-soft); }
+.mcs-dg-progress { display:flex; flex-direction:column; gap:4px; }
+.mcs-dg-plabel { margin:0; font-size:12.5px; font-weight:600; color:var(--text); }
+.mcs-dg-pnext { margin:0; font-size:11.5px; color:var(--muted); }
+.mcs-dg-status { margin:0; font-size:12.5px; color:var(--muted); }
+.mcs-dg-status.mine { color:var(--amber); font-weight:700; }
+.mcs-dg-bar { --done:var(--t1); display:grid; grid-template-columns:repeat(10, 1fr); gap:3px; }
+.mcs-dg-progress.card .mcs-dg-bar { gap:2px; }
+.mcs-dg-seg { height:6px; border-radius:3px; background:var(--line-soft); }
+.mcs-dg-progress.card .mcs-dg-seg { height:4px; }
+.mcs-dg-seg.done { background:var(--done); }
+.mcs-dg-seg.current { background:var(--done); opacity:.45; }
+.mcs-dg-seg.current.planned { background:none; opacity:1; border:1px dashed var(--muted); }
+.mcs .mcs-go.mcs-dg-cta { width:100%; min-height:44px; text-align:center; justify-content:center; }
+.mcs .mcs-go.mcs-dg-cta.mine { background:var(--t1); border-color:var(--t1); color:#FFF; }
+
+.mcs-dg-none { display:flex; flex-direction:column; align-items:flex-start; gap:10px; }
+
+/* ---- view matches: one Goal's matching copies, full screen (Milestone 2C.1) ---- */
+.mcs-gm-sum { margin:0; display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:13px; font-weight:600; color:var(--text); }
+.mcs-gm-sum .mcs-mk { font-size:10.5px; padding:1px 7px; }
+.mcs-gm-partner { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; }
+/* copies held from before — apart from the matches, and quieter */
+.mcs-gm-held { display:flex; flex-direction:column; gap:8px; padding:12px; border:1px dashed var(--line); border-radius:12px; }
+.mcs-gm-pname { display:flex; align-items:center; gap:8px; margin:0 0 8px; font-family:inherit; font-weight:700; font-size:14px; color:var(--text); }
+/* the copy's picture is the way to look at it (Milestone 2C.2) */
+.mcs-df-copy > .mcs-pv-thumb { flex:0 0 48px; }
+.mcs-pv-thumb { position:relative; width:48px; padding:0; border:0; background:none; border-radius:6px; cursor:zoom-in;
+  display:flex; flex-direction:column; align-items:stretch; gap:3px; }
+.mcs-pv-art { width:48px; aspect-ratio:5/7; display:flex; align-items:center; justify-content:center;
+  background:#FFF; border:1px solid var(--line); border-radius:5px; overflow:hidden; }
+.mcs-pv-art img { width:100%; height:100%; object-fit:cover; }
+.mcs-pv-art .mcs-art-plate { font-size:7.5px; overflow-wrap:normal; word-break:normal; }
+.mcs-pv-tag { font-size:9.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; text-align:center; color:var(--muted); }
+.mcs-pv-scrim { position:fixed; inset:0; z-index:40; background:rgba(10,16,20,.72); display:flex;
+  align-items:center; justify-content:center; padding:16px; }
+.mcs-pv { width:100%; max-width:420px; max-height:100%; overflow:auto; background:var(--panel); border-radius:14px;
+  padding:14px; display:flex; flex-direction:column; gap:10px; }
+.mcs-pv-hd { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+.mcs-pv-title { margin:0; display:flex; flex-direction:column; min-width:0; }
+.mcs-pv-title strong { font-family:var(--font-display); font-size:16px; }
+.mcs-pv-title span { font-size:12.5px; color:var(--muted); }
+.mcs-pv-stage { display:flex; align-items:center; justify-content:center; background:var(--line-soft); border-radius:10px;
+  min-height:200px; }
+.mcs-pv-big { width:min(100%, 300px); aspect-ratio:5/7; max-height:58vh; display:flex; align-items:center; justify-content:center; }
+.mcs-pv-big img { display:block; width:100%; height:100%; object-fit:contain; }
+.mcs-pv-big .mcs-art-plate { font-size:16px; }
+.mcs-pv-empty, .mcs-pv-says { margin:0; font-size:13px; line-height:1.45; color:var(--muted); }
+.mcs .mcs-go.mcs-pv-ask { min-height:44px; }
+
+/* the opening offer (Milestone 2C.2) */
+.mcs-oo { flex-basis:100%; display:flex; flex-direction:column; gap:10px; margin-top:4px; padding:12px;
+  background:var(--panel); border:1px solid var(--line); border-radius:10px; }
+.mcs-oo-basis, .mcs-oo-result { margin:0; display:flex; justify-content:space-between; align-items:baseline; gap:10px;
+  font-size:13px; color:var(--muted); }
+.mcs-oo-basis strong { font-size:15px; color:var(--text); font-variant-numeric:tabular-nums; }
+.mcs-oo-result { padding-top:8px; border-top:1px solid var(--line-soft); color:var(--text); }
+.mcs-oo-result strong { font-size:18px; color:var(--t1); font-variant-numeric:tabular-nums; }
+.mcs-oo-mode { display:grid; grid-template-columns:1fr 1fr; gap:0; border:1px solid var(--line); border-radius:9px; overflow:hidden; }
+.mcs-oo-mode button { appearance:none; border:0; background:var(--panel); color:var(--text); font:inherit; font-size:13px;
+  font-weight:600; min-height:40px; cursor:pointer; }
+.mcs-oo-mode button + button { border-left:1px solid var(--line); }
+.mcs-oo-mode button.on, .mcs-oo-mode button.on:hover { background:var(--t1); color:#FFF; }
+.mcs-oo-field { display:flex; align-items:center; gap:6px; border:1px solid var(--line); border-radius:9px; padding:0 12px;
+  background:#FFF; }
+.mcs-oo-field:focus-within { border-color:var(--t1); box-shadow:0 0 0 2px var(--t1-bg); }
+/* the field carries the focus ring, so the input inside it does not draw a second */
+.mcs .mcs-oo-field input:focus-visible { outline:none; }
+.mcs-oo-field input { flex:1; min-width:0; border:0; outline:none; background:none; font:inherit; font-size:16px;
+  font-weight:600; min-height:44px; font-variant-numeric:tabular-nums; }
+.mcs-oo-unit { font-size:16px; font-weight:600; color:var(--muted); }
+.mcs-oo-hint, .mcs-oo-note { margin:0; font-size:12.5px; line-height:1.45; color:var(--muted); }
+.mcs-oo-problem { margin:0; font-size:12.5px; color:var(--amber); }
+.mcs-oo-do { display:flex; flex-wrap:wrap; gap:8px; }
+.mcs-oo-do .mcs-go { min-height:44px; }
+.mcs-oo-do .mcs-go-primary { flex:1 1 auto; }
+.mcs-dg-tag { font-size:10.5px; font-weight:600; padding:0 7px; border-radius:999px; color:var(--t1);
+  background:var(--t1-bg); border:1px solid #CBE0E2; }
+.mcs-df-copies { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+.mcs-df-copy { display:flex; flex-wrap:wrap; gap:4px 10px; align-items:flex-start;
+  padding:9px 10px; background:var(--line-soft); border-radius:8px; }
+.mcs-df-copy.in-deal { box-shadow:inset 3px 0 0 var(--t1); }
+.mcs-df-facts { flex:1; display:flex; flex-direction:column; gap:1px; min-width:0; font-size:12px; color:var(--muted); }
+.mcs-df-grade { color:var(--text); font-weight:600; font-size:13px; }
+.mcs-df-price { display:flex; flex-direction:column; align-items:flex-end; }
+.mcs-df-ask { color:var(--text); font-weight:700; font-size:15px; font-variant-numeric:tabular-nums; }
+.mcs-df-pl { font-size:10.5px; color:var(--muted); }
 .mcs-df-note { flex-basis:100%; font-size:11.5px; color:var(--amber); }
-/* QUALIFICATION CONTROLS, ON THEIR OWN LINE UNDER THE COPY THEY ACT ON. The
-   facts above read left to right; these wrap to a full row so a press is never
-   next to a number it might be mistaken for. */
-.mcs-df-do { flex-basis:100%; display:flex; flex-wrap:wrap; gap:8px;
-  align-items:center; margin-top:6px; }
-.mcs-df-state { font-size:11.5px; color:var(--dim); }
+.mcs-df-do { flex-basis:100%; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.mcs-df-do:empty { display:none; }
+.mcs-df-do .mcs-go { padding:7px 12px; font-size:13px; }
+.mcs-df-do .mcs-df-state { flex-basis:100%; }
+.mcs-df-state { font-size:11.5px; color:var(--muted); }
 .mcs-df-trouble { font-size:11.5px; color:var(--amber); }
+/* ---- the Deal Workspace: one deal, full screen (Milestone 2C) ----
+
+   The whole Collector screen, not a drawer: a header that stays while the
+   deal scrolls under it (back, the card, the partner, whose turn, progress),
+   then the current stage's terms and actions, then the conversation's
+   reserved place. Nothing is fixed to the bottom, so a phone keyboard opened
+   by the Counter box never covers the action it belongs to. */
+.mcs-ws { flex:1; display:flex; flex-direction:column; min-height:100vh; background:var(--bg); }
+.mcs-ws-hd { position:sticky; top:0; z-index:5; background:var(--panel); border-bottom:1px solid var(--line);
+  padding:10px 16px 12px; display:flex; flex-direction:column; gap:8px; }
+.mcs-ws-top { display:flex; align-items:center; gap:10px; min-width:0; }
+.mcs-ws-back { flex:0 0 auto; width:44px; height:44px; margin-left:-10px; border:0; background:none;
+  border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--text); }
+.mcs-ws-arrow { width:11px; height:11px; border-left:2.5px solid currentColor; border-bottom:2.5px solid currentColor;
+  transform:rotate(45deg); margin-left:4px; }
+.mcs-ws-art { flex:0 0 34px; width:34px; aspect-ratio:5/7; display:flex; align-items:center; justify-content:center;
+  background:var(--line-soft); border-radius:4px; overflow:hidden; }
+.mcs-ws-art img { width:100%; height:100%; object-fit:contain; }
+.mcs-ws-art .mcs-art-plate { font-size:7px; overflow-wrap:normal; word-break:normal; }
+.mcs-ws-id { flex:1; min-width:0; }
+.mcs-ws-title { margin:0; font-family:var(--font-display); font-size:18px; font-weight:700; line-height:1.2;
+  color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mcs-ws-title:focus { outline:none; }
+.mcs-ws-sub { margin:1px 0 0; font-size:12.5px; line-height:1.35; color:var(--muted); }
+.mcs-ws-turn { margin:0; font-size:15px; font-weight:700; color:var(--text); }
+.mcs-ws-turn.mine { color:var(--amber); }
+.mcs-ws-turn.ended { color:var(--muted); font-weight:600; }
+.mcs-dg-progress.compact .mcs-dg-plabel { font-size:12.5px; }
+.mcs-ws-body { flex:1; display:flex; flex-direction:column; gap:12px; padding:14px 16px 32px; }
+.mcs-ws-stage, .mcs-ws-talk { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+  padding:14px; display:flex; flex-direction:column; gap:10px; }
+.mcs-ws-h2 { margin:0; font-family:var(--font-display); font-size:10.5px; font-weight:700; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--muted); }
+.mcs-ws-terms { margin:0; font-size:13px; color:var(--text); font-weight:600; }
+.mcs-ws-prices { margin:0; display:grid; grid-template-columns:1fr auto; gap:0; }
+.mcs-ws-prices div { display:contents; }
+.mcs-ws-prices dt, .mcs-ws-prices dd { padding:7px 0; border-top:1px solid var(--line-soft); }
+.mcs-ws-prices div:first-child dt, .mcs-ws-prices div:first-child dd { border-top:0; }
+.mcs-ws-prices dt { font-size:13px; color:var(--muted); }
+.mcs-ws-prices dd { margin:0; text-align:right; font-size:16px; font-weight:600; font-variant-numeric:tabular-nums; }
+.mcs-ws-prices .live dt, .mcs-ws-prices .live dd { color:var(--amber); font-weight:700; }
+.mcs-ws-prices .agreed dt { color:var(--t1); font-weight:600; }
+.mcs-ws-prices .agreed dd { color:var(--t1); font-weight:700; font-size:18px; }
+.mcs-ws-say { margin:0; font-size:13px; color:var(--muted); line-height:1.45; }
+.mcs-ws-stage .mcs-offer-live { margin:0; border:0; padding:0; }
+.mcs-ws-stage .mcs-offer-do .mcs-go { flex:1 1 auto; min-height:44px; }
+.mcs .mcs-go.mcs-go-primary { background:var(--t1); border-color:var(--t1); color:#FFF; }
+.mcs-ws-talk { background:transparent; border-style:dashed; }
+.mcs-ws-note { margin:0; font-size:12.5px; color:var(--muted); line-height:1.45; }
+
 /* ---- making an offer, and the offer under its Goal (Batch 3B) ----
    On the copy it is for, a full row under the copy's own controls; under the
    Goal, a box above the copies. One column at every width. */
@@ -1217,7 +1371,9 @@ function scopeNotice(onAddGoal, onOpenOffer) {
 /* The phone's one line, for the screens it is true of. */
 function scopeLine(sectionId, onAddGoal) {
   if (!onAddGoal) return "Read-only for now — everything here is what MetYet holds for you.";
-  return sectionId === "deal-flow" || sectionId === "partners" ? "Trades and messages arrive later." : null;
+  /* Not on Deal Flow (Milestone 2C.1): its cards say where each deal stands,
+     and the account sheet still says what works today. */
+  return sectionId === "partners" ? "Trades and messages arrive later." : null;
 }
 
 export default function CollectorShell({ state, onSignOut, joined = null, onDismissJoined = null,
@@ -1263,6 +1419,37 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
      exact copy (or Goal) is carried, and the destination opens on it once. */
   const [dealFocus, setDealFocus] = useState(null);
   const [binderFocus, setBinderFocus] = useState(null);
+
+  /* THE DEAL WORKSPACE (Milestone 2C): which ONE opportunity is open full
+     screen, by its own id — and VIEW MATCHES (Milestone 2C.1): which ONE
+     Goal's matching copies are, by the Goal's id, with the copy to open the
+     offer composer on when Browse's Make an Offer sent them. Back from
+     either lands on that Goal's card in Deal Flow. Presentation state in
+     memory, like the rest of this shell; the deal and the copies are always
+     the server's projection.
+
+     NOT IN THE ADDRESS BAR. The product reads the URL in exactly one place —
+     the entrance, where an invitation's credential arrives in the fragment —
+     and that boundary is held by test. So the workspace is not a URL, the
+     browser's own Back does not close it, and a reload (which signs out: the
+     session is never stored) returns to the first screen. */
+  const [dealOpen, setDealOpen] = useState(null);
+  const [matchesOpen, setMatchesOpen] = useState(null);
+  const openDeal = (oppId) => { setMatchesOpen(null); setDealOpen(oppId); };
+  const closeDeal = () => {
+    const was = dealOpen;
+    const o = rows(state && state.opportunities).find((x) => x.id === was);
+    setDealOpen(null);
+    setSection("deal-flow");
+    if (o && o.goalId != null) setDealFocus({ goalId: o.goalId, returnFrom: was });
+  };
+  const openMatches = (goalId, compose = null) => setMatchesOpen({ goalId, compose });
+  const closeMatches = () => {
+    const was = matchesOpen;
+    setMatchesOpen(null);
+    setSection("deal-flow");
+    if (was) setDealFocus({ goalId: was.goalId, returnFrom: true });
+  };
 
   const who = describeActor(state);
   /* THE ACCOUNT, ON A PHONE (P6-F1). The Phase 6 phone has no account bar:
@@ -1345,6 +1532,16 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
         </div>
       ) : null}
 
+      {dealOpen ? (
+        <DealWorkspace state={state} oppId={dealOpen} onBack={closeDeal} onBrowseCards={onBrowseCards}
+          onCounterOffer={onCounterOffer} onAcceptOffer={onAcceptOffer} onWithdrawOffer={onWithdrawOffer}
+          onRefresh={onRefresh} />
+      ) : matchesOpen ? (
+        <GoalMatches key={matchesOpen.goalId} state={state} goalId={matchesOpen.goalId} compose={matchesOpen.compose}
+          onBack={closeMatches} onBrowseCards={onBrowseCards}
+          onEndInspection={onEndInspection} onRequestPhotos={onRequestPhotos}
+          onOpenOffer={onOpenOffer} onOpenDeal={(oppId) => openDeal(oppId)} onRefresh={onRefresh} />
+      ) : (
       <div className="mcs-body">
         <nav className="mcs-nav" aria-label="Collector">
           {SECTIONS.map((s) => (
@@ -1400,7 +1597,7 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
               ? { onSpecify, onBrowseCards, session: browseSession, onSession: setBrowseSession, onCount: setBrowseCount,
                 fillingBinder, onDoneFilling: () => setFillingBinder(null), onRefresh,
                 onBackToBinder: () => { setReturnTo(fillingBinder); setFillingBinder(null); setSection("binder"); },
-                onMakeOffer: onOpenOffer ? (f) => { setDealFocus({ ...f, compose: true }); setSection("deal-flow"); } : null,
+                onMakeOffer: onOpenOffer ? (f) => { setSection("deal-flow"); openMatches(f.goalId, f); } : null,
                 onOpenDeal: (f) => { setDealFocus({ ...f, compose: false }); setSection("deal-flow"); },
                 onEditGoal: (goalId) => { setBinderFocus(`g:${goalId}`); setSection("binder"); } }
               : meta.id === "binder"
@@ -1415,20 +1612,22 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
                        a question and offers no way to act on the answer. */
                     ? { onBrowseCards }
                     : meta.id === "deal-flow"
-                      /* AND THE QUALIFICATION COMMANDS (this batch). Deal Flow
-                         was handed no command while Inspect and Request Photos
-                         were unexposed, because a control that cannot work is a
-                         promise the product has not kept. They work now, so it
-                         gets exactly those three and no more: Agree Market
-                         Value, Pending and everything downstream of them are
-                         still real domain commands with no surface, and this
-                         screen still stops at the line before a transaction. */
-                      ? { onBrowseCards, onInspect, onEndInspection, onRequestPhotos,
-                        onOpenOffer, onCounterOffer, onAcceptOffer, onWithdrawOffer, onRefresh,
+                      /* ORIENTATION ONLY (Milestone 2C.1). The landing page
+                         sends nothing: its cards open the one deal in the Deal
+                         Workspace, or the one Goal's matches in View Matches,
+                         and those two screens are handed the commands above —
+                         Inspect, Request Photos, Make an offer; Accept, Counter,
+                         Withdraw. Everything downstream of an agreed price is
+                         still a real domain command with no surface. */
+                      ? { onBrowseCards,
+                        onOpenDeal: (oppId) => openDeal(oppId),
+                        onOpenMatches: (goalId) => openMatches(goalId),
+                        onFindCards: () => setSection("browse"),
                         focus: dealFocus, onFocusUsed: () => setDealFocus(null) }
                       : {})} />
         </main>
       </div>
+      )}
     </div>
   );
 }

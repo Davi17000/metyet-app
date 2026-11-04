@@ -451,7 +451,15 @@ const build = (rel) => {
   new Function("module", "exports", "require", out.outputFiles[0].text)(mod, mod.exports, require);
   return mod.exports;
 };
-const DealFlow = build("client/collector/sections/DealFlow.jsx").default;
+const DF_MOD = build("client/collector/sections/DealFlow.jsx");
+const DealFlow = DF_MOD.default;
+/* RE-PINNED (Milestone 2C.1): the copies moved from the Goal's accordion to
+   View Matches, one full screen per Goal. What a Collector can reach from
+   Deal Flow is the landing page plus each Goal's matches, so that is what is
+   rendered: the landing, then every Goal's View Matches beneath it. */
+const Reachable = (props) => React.createElement(React.Fragment, null,
+  React.createElement(DealFlow, props),
+  ...(props.state.goals || []).map((g) => React.createElement(DF_MOD.GoalMatches, { ...props, key: g.id, goalId: g.id })));
 const SHELL = build("client/collector/CollectorShell.jsx");
 
 const texts = (r) => {
@@ -473,7 +481,7 @@ const door = { describe: async (ids) => ({ cards: ids.map((id) => CARDS[id]).fil
 const render = async (st, actor = A) => {
   const state = P.projectForActor(st.get(), actor);
   let r;
-  await TR.act(async () => { r = TR.create(React.createElement(DealFlow, { state, onBrowseCards: door })); });
+  await TR.act(async () => { r = TR.create(React.createElement(Reachable, { state, onBrowseCards: door })); });
   for (let i = 0; i < 10; i += 1) {
     await TR.act(async () => { await new Promise((done) => setTimeout(done, 0)); });
   }
@@ -506,8 +514,11 @@ describe("E. The surface shows the copies, and only those", () => {
     const shown = texts(r);
     assert(shown.includes("Charizard"), "the card is named: " + shown);
     assert(shown.includes("Northline") && shown.includes("Silver Vale"), "both shops: " + shown);
-    assert(shown.includes("CERT-ONE") && shown.includes("CERT-TWO"), "both copies: " + shown);
-    assert(/2 copies that match/.test(shown), "and counted as copies: " + shown);
+    /* RE-PINNED (Milestone 2B): a copy is told apart by its facts and price,
+       not its certificate, and the count is of Trusted Partners. */
+    eq(r.root.findAll((n) => n.type === "li" && n.props.className === "mcs-df-copy").length, 2, "both copies");
+    assert(/\$4,200/.test(shown) && /\$4,400/.test(shown), "both copies' prices: " + shown);
+    assert(/2 Trusted Partners match/.test(shown), "and counted as Trusted Partners: " + shown);
   });
 
   test("[27] a copy that does not qualify is not rendered", async () => {
@@ -518,8 +529,9 @@ describe("E. The surface shows the copies, and only those", () => {
         copy({ invId: "i2", grade: "PSA 8", cert: "HIDDEN" })] });
     const { r } = await render(st);
     const shown = texts(r);
-    assert(shown.includes("SHOWN"), "the qualifying copy is there");
-    assert(!shown.includes("HIDDEN"), "a copy she did not ask for was rendered: " + shown);
+    const inv = r.root.findAll((n) => n.type === "li" && n.props.className === "mcs-df-copy").map((n) => n.props["data-inv"]);
+    eq(inv.join(","), "i1", "only the qualifying copy is there");
+    assert(!/PSA 8/.test(shown), "a copy she did not ask for was rendered: " + shown);
   });
 
   test("[28] the authorized copy facts render", async () => {
@@ -528,9 +540,11 @@ describe("E. The surface shows the copies, and only those", () => {
       inventory: [copy({ grade: "PSA 9", cert: "CERT-X", ask: 4200, photos: PH })] });
     const { r } = await render(st);
     const shown = texts(r);
-    for (const fact of ["Northline", "PSA 9", "CERT-X"]) {
+    for (const fact of ["Northline", "PSA 9", "Proposed Market Price", "Open to Offers"]) {
       assert(shown.includes(fact), `${fact} is missing: ` + shown);
     }
+    /* RE-PINNED (Milestone 2B): the certificate is not shown in Deal Flow. */
+    assert(!shown.includes("CERT-X"), "a partner's certificate reached Deal Flow: " + shown);
     assert(/4,?200/.test(shown), "the asking price is missing: " + shown);
   });
 
@@ -558,7 +572,12 @@ describe("E. The surface shows the copies, and only those", () => {
     const st = world({ goals: [goal({ desired: { grade: "PSA 9" } })],
       inventory: [copy({ grade: "PSA 9" })] });
     const { r } = await render(st);
-    eq(r.root.findAll((n) => n.type === "button").length, 0, "Deal Flow grew a button");
+    /* RESTORED (Milestone 2C.1): no accordion, so every button counts again;
+       handed no command and no way to open anything, nothing is drawn —
+       RE-PINNED (Milestone 2C.2) — but a copy's picture, which opens a viewer
+       on this screen and sends nothing. */
+    eq(r.root.findAll((n) => n.type === "button" && !String(n.props.className || "").includes("mcs-pv-thumb")).length, 0,
+      "Deal Flow grew a button");
     eq(r.root.findAll((n) => n.type === "form").length, 0, "and a form");
     const src = fs.readFileSync(path.join(ROOT, "client/collector/sections/DealFlow.jsx"), "utf8")
       .replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
@@ -582,7 +601,7 @@ describe("E. The surface shows the copies, and only those", () => {
       "the no-goals silence");
 
     const nobodyHasIt = world({ goals: [goal({ desired: { grade: "PSA 9" } })], inventory: [] });
-    assert(/None of your shops has this one/i.test(texts((await render(nobodyHasIt)).r)),
+    assert(/None of your Trusted Partners has this one/i.test(texts((await render(nobodyHasIt)).r)),
       "the nobody-has-it silence");
 
     /* The one worth explaining: they have the card, in another form. */
@@ -603,16 +622,19 @@ describe("E. The surface shows the copies, and only those", () => {
     const st = world({ goals: [goal({ desired: { grade: "PSA 9" } })],
       inventory: [copy({ grade: "PSA 9" })] });
     const shown = texts((await render(st)).r);
-    assert(/You asked for PSA 9/.test(shown), "the criteria line is wrong: " + shown);
-    assert(!/any grade or condition/.test(shown), "it fell back to the unstated wording: " + shown);
+    /* RE-PINNED (Milestone 2B): the Goal's heading states the criteria. */
+    const want = (r) => r.root.findAll((n) => n.props && n.props.className === "mcs-dg-want").map(function inner(n) { return typeof n === "string" ? n : (n.children || []).map(inner).join(""); }).join("|");
+    const one = (await render(st)).r;
+    eq(want(one), "PSA 9", "the criteria line is wrong: " + shown);
+    assert(!/any grade or condition/i.test(shown), "it fell back to the unstated wording: " + shown);
 
     const both = world({ goals: [goal({ desired: { grade: "Raw", condition: "Near Mint" } })],
       inventory: [copy({ grade: "Raw", condition: "Near Mint" })] });
-    assert(/You asked for Raw · Near Mint/.test(texts((await render(both)).r)), "both criteria");
+    eq(want((await render(both)).r), "Raw · Near Mint", "both criteria");
 
     /* And a Goal that genuinely stated nothing still says so. */
     const neither = world({ goals: [goal({})], inventory: [copy({ grade: "PSA 9" })] });
-    assert(/any grade or condition/.test(texts((await render(neither)).r)), "the unstated case");
+    eq(want((await render(neither)).r), "Any grade or condition", "the unstated case");
   });
 
   test("[UI] two Goals for one card do not cancel each other's silence out", async () => {

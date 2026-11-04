@@ -115,7 +115,9 @@ describe("C. Market Validation through the real server", () => {
 
 /* ============================================================== A, B */
 const CardDetail = load("client/collector/CardDetail.jsx").default;
-const DealFlow = load("client/collector/sections/DealFlow.jsx").default;
+const DF_MOD = load("client/collector/sections/DealFlow.jsx");
+const DealFlow = DF_MOD.default;
+const { GoalMatches } = DF_MOD;
 const P = (id, finish) => ({ canonicalCardId: id, cardContextId: "x60", printRun: "unlimited", finish, language: "en", stamp: "none", printVariation: "standard", status: "active" });
 const MUD = { cardContextId: "x60", cardName: "Mudkip", expansionName: "Ruby & Sapphire", collectorNumber: "60", cards: [P("k60n", "non_holo"), P("k60r", "reverse_holofoil")] };
 const INV = [
@@ -220,16 +222,32 @@ describe("B. the routes", () => {
     await settle();
     return { r, used, offers };
   };
+  /* RE-PINNED (Milestone 2C.1): the copies, and the composer, moved from the
+     Goal's accordion to View Matches — the shell opens it for that Goal with
+     the copy Browse named, so that is what is rendered here. */
+  const matches = async (compose) => {
+    stubWindow();
+    const offers = [];
+    let r;
+    await TR.act(async () => { r = TR.create(React.createElement(GoalMatches, { state: DFSTATE, goalId: "g1", compose,
+      onOpenOffer: async (...a) => { offers.push(a); return { ok: true }; }, onBrowseCards: { describe: async () => ({ cards: [] }) } })); });
+    await settle();
+    return { r, offers };
+  };
   test("Make an Offer arrives in Deal Flow with the existing composer open on that exact copy — and nothing sent", async () => {
-    const { r, used, offers } = await deal({ goalId: "g1", invId: "i1", compose: true });
+    const { r, offers } = await matches({ goalId: "g1", invId: "i1" });
     const li = r.root.findAll((n) => n.type === "li" && n.props["data-inv"] === "i1")[0];
-    assert(li && li.findAll((n) => cls(n) === "mcs-offer").length === 1, "the composer is not open on that copy");
-    assert(/Northline Cards · Proposed Market Price \$12 · Open to Offers/.test(flat(li)), flat(li));
-    eq(offers.length, 0, "an offer was sent by arriving"); eq(used.length, 1);
+    /* RE-PINNED (Milestone 2C.2): the Collector's opening-offer composer */
+    assert(li && li.findAll((n) => cls(n) === "mcs-oo").length === 1, "the composer is not open on that copy");
+    assert(/Proposed Market Price from Northline Cards \$12/.test(flat(li)) && /Open to Offers/.test(flat(li)), flat(li));
+    eq(offers.length, 0, "an offer was sent by arriving");
   });
   test("Open in Deal Flow arrives with no composer open", async () => {
-    const { r } = await deal({ goalId: "g1", compose: false });
-    eq(r.root.findAll((n) => cls(n) === "mcs-offer").length, 0);
+    const { r, used } = await deal({ goalId: "g1", compose: false });
+    eq(r.root.findAll((n) => cls(n) === "mcs-oo").length, 0);
+    eq(used.length, 1, "the landing did not take its focus");
+    /* and View Matches, opened from the Goal's card, opens no composer either */
+    eq((await matches(null)).r.root.findAll((n) => cls(n) === "mcs-oo").length, 0);
   });
 });
 

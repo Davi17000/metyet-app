@@ -114,6 +114,8 @@ async function world({ firm = false, unpriced = false } = {}) {
     ...(unpriced ? {} : { ask: 120 }), cost: 61, firmOnPrice: firm } });
   ctx.i2 = await post("silver", "addInventoryCopy", { copy: { canonicalCardId: x, grade: "PSA 9", cert: "SV-222", ask: 125, cost: 77 } });
   ctx.i3 = await post("north", "addInventoryCopy", { copy: { canonicalCardId: y, grade: "PSA 9", cert: "NL-333", ask: 200, cost: 99 } });
+  Object.assign(BY_CERT, { "NL-111": ctx.i1, "SV-222": ctx.i2, "NL-333": ctx.i3 });
+  Object.assign(GOAL_OF, { "NL-111": ctx.gA, "SV-222": ctx.gA, "NL-333": ctx.gY });
   return ctx;
 }
 const stored = async (ctx, id) => (await ctx.repository.loadWorld()).opportunities.find((o) => o.id === id);
@@ -173,9 +175,14 @@ const press = async (s, root, text) => {
   assert(!b.props.disabled, `"${text}" is disabled`);
   await TR.act(async () => { await b.props.onClick(); }); await settle();
 };
-/* The copy row in Deal Flow for one shop. */
-const copyRow = (s, cert) => s.r.root.findAll((n) => n.type === "li" && n.props.className === "mcs-df-copy")
-  .find((li) => textOf(li).includes(cert)) || null;
+/* The copy row in Deal Flow for one shop. RE-PINNED (Milestone 2B): Deal
+   Flow no longer shows a partner's certificate, so the row is found by the
+   copy the certificate names in this fixture, via the row's own data-inv. */
+const BY_CERT = {};
+const GOAL_OF = {};
+const copyRow = (s, cert) => s.r.root.findAll((n) => n.type === "li"
+  && String(n.props.className || "").split(" ").includes("mcs-df-copy"))
+  .find((li) => li.props["data-inv"] === BY_CERT[cert]) || null;
 const entry = (root) => root.findAll((n) => n.type === "input" && /^Offer/.test(n.props["aria-label"] || ""))[0] || null;
 const typeIn = async (root, value) => {
   const i = entry(root); assert(i, "no offer box");
@@ -187,6 +194,45 @@ const submit = async (root) => {
 };
 const submitButton = (root) => root.findAll((n) => n.type === "button" && n.props.type === "submit")[0] || null;
 /* The live-deal box under a Goal (Collector) and a deal's record (shop). */
+/* The active deal on a Goal's card: its stage, progress, status and one
+   action (Milestone 2C.1). */
+const dealCard = (s) => s.r.root.findAll((n) => n.type === "div" && n.props.className === "mcs-dg-deal")[0] || null;
+/* The full-screen Deal Workspace (Milestone 2C), opened from the deal's one
+   action on the dashboard; the Collector's moves live there now. */
+const wsRoot = (s) => s.r.root.findAll((n) => n.type === "div" && n.props.className === "mcs-ws" && n.props["data-opp"])[0] || null;
+const openWorkspace = async (s) => {
+  if (wsRoot(s)) return wsRoot(s);
+  assert(dealCard(s), "no active deal on the dashboard");
+  const cta = dealCard(s).findAll((n) => n.type === "button" && String(n.props.className || "").includes("mcs-dg-cta"))[0];
+  assert(cta, "no deal action on the dashboard");
+  await TR.act(async () => { cta.props.onClick(); }); await settle();
+  return wsRoot(s);
+};
+/* Back to Deal Flow from a full-screen view (the Deal Workspace or View
+   Matches), as the Collector would: its own back arrow. */
+const backToFlow = async (s) => {
+  const b = s.r.root.findAll((n) => n.type === "button" && n.props.className === "mcs-ws-back")[0];
+  if (b) { await TR.act(async () => { b.props.onClick(); }); await settle(); }
+};
+/* RE-PINNED (Milestone 2C.1): a Goal's copies are in View Matches, opened by
+   the Goal card's own View Matches button on the landing page. */
+const viewMatches = async (s, cert) => {
+  const goalId = GOAL_OF[cert];
+  const here = s.r.root.findAll((n) => n.type === "div" && String(n.props.className || "").includes("mcs-gm")
+    && n.props["data-goal"] === goalId)[0];
+  if (here) return here;
+  await backToFlow(s);
+  const b = s.r.root.findAll((n) => n.type === "button" && n.props["data-matches"] === goalId)[0];
+  assert(b, `no View Matches for the Goal of ${cert}: ` + flat(s).slice(0, 300));
+  await TR.act(async () => { b.props.onClick(); }); await settle();
+  return s.r.root.findAll((n) => n.type === "div" && n.props["data-goal"] === goalId)[0];
+};
+/* What the Collector is told about the deal: its card on the landing page,
+   then the workspace that card's action opens. */
+const dealSaid = async (s) => {
+  await backToFlow(s);
+  return (textOf(dealCard(s)) + " " + textOf(await openWorkspace(s))).replace(/\s+/g, " ");
+};
 const liveBox = (s) => s.r.root.findAll((n) => n.props && n.props["aria-label"] === "Your offer")[0] || null;
 const panel = (s, title) => s.r.root.findAll((n) => n.type === "section"
   && n.findAll((m) => m.type === "h2" && textOf(m).trim() === title).length)[0] || null;
@@ -200,6 +246,7 @@ const record = (root, name) => root.findAll((n) => n.type === "article" && n.pro
 async function opened(ctx, amount = "100") {
   const casey = await seat(ctx, "casey");
   await go(casey, "Deal Flow");
+  await viewMatches(casey, "NL-111");
   const row = copyRow(casey, "NL-111");
   await press(casey, row, "Make an offer");
   await typeIn(copyRow(casey, "NL-111"), amount);
@@ -216,23 +263,43 @@ describe("A. the Collector opens an offer from Deal Flow", () => {
     const ctx = await world();
     const casey = await seat(ctx, "casey");
     await go(casey, "Deal Flow");
+    eq(casey.posts.length, 0, "the landing page sent nothing");
+    await viewMatches(casey, "NL-111");
+    eq(casey.posts.length, 0, "opening View Matches sent nothing");
     const row = copyRow(casey, "NL-111");
     assert(row, "Northline's matching copy is listed");
     await press(casey, row, "Make an offer");
     const open = copyRow(casey, "NL-111");
     const t = textOf(open).replace(/\s+/g, " ");
-    for (const part of ["Mudkip", "Ruby & Sapphire #60", "non_holo", "Northline", "Proposed Market Price $120", "Open to Offers", "PSA 9"]) {
+    /* RE-PINNED (Milestone 2B): the card is named once, in the Goal's
+       heading, and never by its internal printing identifiers; the composer
+       names the partner, the price and the terms. */
+    /* RE-PINNED (Milestone 2C.2): the opening-offer composer names the
+       partner's price as what it is, above an empty box */
+    for (const part of ["Proposed Market Price from Northline $120", "Open to Offers", "PSA 9", "Dollar Amount", "Percentage"]) {
       assert(t.includes(part), `the panel does not say "${part}": ${t}`);
     }
+    /* RE-PINNED (Milestone 2C.1): View Matches names the card once, in its
+       header, with what was asked for and Primary. */
+    const head = textOf(casey.r.root.findAll((n) => n.type === "header" && n.props.className === "mcs-ws-hd")[0]).replace(/\s+/g, " ");
+    for (const part of ["Mudkip", "Ruby & Sapphire · #60", "PSA 9", "Primary Goal"]) {
+      assert(head.includes(part), `the Goal's heading does not say "${part}": ${head}`);
+    }
+    assert(!/non_holo|not_applicable/.test(flat(casey)), "an internal printing identifier reached the Collector");
     await typeIn(open, "100");
     assert(label(submitButton(copyRow(casey, "NL-111"))).includes("$100"), "the button says what will be sent");
     await submit(copyRow(casey, "NL-111"));
     eq(json(casey.posts), json(["startOpportunity"]), "one command, through the factory");
     const [o] = await only(ctx);
     eq([o.goalId, o.invId, o.priceThread[0].amount, o.stage].join("|"), `${ctx.gA}|${ctx.i1}|100|agree-price`, "persisted");
+    /* RE-PINNED (Milestone 2C.1): the new deal opens in the Deal Workspace,
+       by the id the server's next projection gave it. */
+    eq(wsRoot(casey) && wsRoot(casey).props["data-opp"], o.id, "the workspace did not open on the new deal");
+    const said = await dealSaid(casey);
     const box = liveBox(casey);
-    assert(box, "the offer now sits under the Goal");
-    assert(textOf(box).includes("Waiting for Northline to reply to your $100."), "pending the shop: " + textOf(box));
+    for (const part of ["Waiting for Northline", "Proposed Market Price $120", "Your opening offer $100", "View Deal"]) {
+      assert(said.includes(part), `pending the shop, "${part}" is missing: ` + said);
+    }
     assert(!button(box, "Accept"), "nothing for the Collector to accept on their own offer");
     eq((await stored(ctx, o.id)).agreedPrice, null, "not accepted by being sent");
   });
@@ -240,8 +307,12 @@ describe("A. the Collector opens an offer from Deal Flow", () => {
     const ctx = await world();
     const casey = await seat(ctx, "casey");
     await go(casey, "Deal Flow");
-    assert(!button(copyRow(casey, "NL-333"), "Make an offer"), "an offer from a Secondary goal");
+    /* RE-PINNED (Milestone 2C.2): Deal Flow shows Primary Goals only, so the
+       Secondary Goal has no card, no View Matches and no offer there */
+    assert(!casey.r.root.findAll((n) => n.props && n.props["data-goal"] === ctx.gY).length, "a Secondary Goal is in Deal Flow");
+    assert(!casey.r.root.findAll((n) => n.type === "button" && n.props["data-matches"] === ctx.gY).length, "an offer route from a Secondary goal");
     const goals = json((await ctx.repository.loadWorld()).goals);
+    await viewMatches(casey, "NL-111");
     await press(casey, copyRow(casey, "NL-111"), "Make an offer");
     await typeIn(copyRow(casey, "NL-111"), "100");
     await submit(copyRow(casey, "NL-111"));
@@ -275,8 +346,12 @@ describe("B. the shop answers from Opportunities", () => {
     const ready = panel(north, "Ready to coordinate");
     assert(!ready || !record(ready, "Casey"), "Casey's offer is no longer waiting on the shop");
     await casey.refresh();
-    const box = liveBox(casey);
-    assert(textOf(box).includes("Agreed at $110. Next: Choosing what to trade."), "the Collector sees it: " + textOf(box));
+    const said = await dealSaid(casey);
+    const box = wsRoot(casey);
+    for (const part of ["Market price agreed", "Proposed Market Price $120", "Agreed Market Price $110",
+      "next planned stage is Select Trade", "View Agreement"]) {
+      assert(said.includes(part), `the Collector is not told "${part}": ` + said);
+    }
     assert(!button(box, "Withdraw offer") && !button(box, "Counter") && !button(box, "Accept"), "and no price controls after agreement");
   });
   test("[6] declining ends it as a decline; the Collector is told and may offer again", async () => {
@@ -287,6 +362,8 @@ describe("B. the shop answers from Opportunities", () => {
     assert(textOf(panel(north, "Completed")).includes("You declined this offer."), "the shop's history says so");
     await casey.refresh();
     assert(flat(casey).includes("Northline declined this offer."), "the Collector is told");
+    await viewMatches(casey, "NL-111");
+    assert(flat(casey).includes("Northline declined this offer."), "and View Matches says so too");
     assert(button(copyRow(casey, "NL-111"), "Make an offer"), "and may offer again");
   });
 });
@@ -301,8 +378,10 @@ describe("C. back and forth", () => {
     eq((await stored(ctx, o.id)).priceThread[1].amount, 115, "counter recorded");
     assert(textOf(panel(north, "In progress")).includes("Waiting for Casey to reply to your $115."), "the shop now waits");
     await casey.refresh();
-    const box = liveBox(casey);
-    assert(textOf(box).includes("Northline's counter is $115. Your move."), "the Collector's move: " + textOf(box));
+    const said = await dealSaid(casey);
+    for (const part of ["Your turn · Review counteroffer", "Counteroffer from Northline $115", "Review Counteroffer"]) {
+      assert(said.includes(part), `the Collector's move, "${part}" is missing: ` + said);
+    }
     await press(casey, liveBox(casey), "Accept $115");
     const r = await stored(ctx, o.id);
     eq([r.agreedPrice, r.stage].join("|"), "115|select-trade", "agreed by the Collector's acceptance alone");
@@ -313,6 +392,7 @@ describe("C. back and forth", () => {
     await typeIn(record(panel(north, "Ready to coordinate"), "Casey"), "118");
     await submit(record(panel(north, "Ready to coordinate"), "Casey"));
     await casey.refresh();
+    await openWorkspace(casey);
     await press(casey, liveBox(casey), "Counter");
     await press(casey, liveBox(casey), "% of $120");
     await typeIn(liveBox(casey), "90");
@@ -332,6 +412,7 @@ describe("C. back and forth", () => {
     await typeIn(record(panel(north, "Ready to coordinate"), "Casey"), "118");
     await submit(record(panel(north, "Ready to coordinate"), "Casey"));
     await casey.refresh();
+    await openWorkspace(casey);
     await press(casey, liveBox(casey), "Withdraw offer");
     eq(json(casey.posts.slice(-1)), json(["cancelOpportunity"]), "Withdraw is cancelOpportunity, with no reason");
     const r = await stored(ctx, o.id);
@@ -343,10 +424,12 @@ describe("C. back and forth", () => {
     const ctx = await world({ firm: true });
     const casey = await seat(ctx, "casey");
     await go(casey, "Deal Flow");
+    await viewMatches(casey, "NL-111");
     await press(casey, copyRow(casey, "NL-111"), "Make an offer");
     const row = copyRow(casey, "NL-111");
-    assert(textOf(row).includes("This shop is Firm on Price, so an offer opens at $120."), "said plainly");
+    assert(textOf(row).replace(/\s+/g, " ").includes("Northline is Firm on Price, so an opening offer is the Proposed Market Price."), "said plainly: " + textOf(row));
     assert(!entry(row), "nothing to type");
+    eq(casey.posts.length, 0, "opening the composer sent the offer");
     await press(casey, row, "Send offer at $120");
     const [o] = await only(ctx);
     eq([o.priceThread[0].amount, o.firmOnPrice, o.agreedPrice].join("|"), "120|true|", "opened at the price, not accepted");
@@ -374,13 +457,14 @@ describe("D. whole numbers, said back and never fixed", () => {
     const ctx = await world();
     const casey = await seat(ctx, "casey");
     await go(casey, "Deal Flow");
+    await viewMatches(casey, "NL-111");
     await press(casey, copyRow(casey, "NL-111"), "Make an offer");
     for (const v of ["100.50", "0", "1e2", "-5", "$100"]) {
       await typeIn(copyRow(casey, "NL-111"), v);
       assert(textOf(copyRow(casey, "NL-111")).includes("Use whole dollars above $0 — no cents."), `${v} was not explained`);
       eq(submitButton(copyRow(casey, "NL-111")).props.disabled, true, `${v} could be sent`);
     }
-    await press(casey, copyRow(casey, "NL-111"), "% of $120");
+    await press(casey, copyRow(casey, "NL-111"), "Percentage");
     await typeIn(copyRow(casey, "NL-111"), "90.5");
     assert(textOf(copyRow(casey, "NL-111")).includes("Use a whole percentage above 0, like 90."), "a fractional percentage");
     eq(submitButton(copyRow(casey, "NL-111")).props.disabled, true, "not sendable");
@@ -397,9 +481,10 @@ describe("D. whole numbers, said back and never fixed", () => {
     const ctx = await world({ unpriced: true });
     const casey = await seat(ctx, "casey");
     await go(casey, "Deal Flow");
+    await viewMatches(casey, "NL-111");
     await press(casey, copyRow(casey, "NL-111"), "Make an offer");
     const row = copyRow(casey, "NL-111");
-    assert(textOf(row).includes("No price listed"), "says so");
+    assert(textOf(row).includes("Northline hasn't listed a price"), "says so");
     assert(!buttons(row).some((b) => /^% of/.test(label(b))), "no percentage of nothing");
     await typeIn(row, "90"); await submit(copyRow(casey, "NL-111"));
     eq((await only(ctx))[0].priceThread[0].amount, 90, "a dollar opening on an unpriced copy");
@@ -411,7 +496,14 @@ describe("E. one active offer per exact card, across shops", () => {
   test("[10] once an offer is open, no other copy of the card offers one — and the server agrees", async () => {
     const ctx = await world(); const { casey } = await opened(ctx);
     await casey.refresh();
-    assert(!button(copyRow(casey, "SV-222"), "Make an offer"), "Silver Vale's copy still offers one");
+    /* RE-PINNED (Milestone 2C.1): with a deal active, the Goal's card offers
+       that deal and nothing else — no View Matches, so no route to another
+       copy's Make an offer. */
+    await backToFlow(casey);
+    assert(dealCard(casey), "the active deal is on the Goal's card");
+    assert(!casey.r.root.findAll((n) => n.type === "button" && n.props["data-matches"] === ctx.gA).length,
+      "the Goal still offers View Matches beside its active deal");
+    assert(!buttons(casey.r.root).some((b) => label(b) === "Make an offer"), "a copy still offers one");
     const direct = await casey.bind.onOpenOffer(ctx.gA, ctx.i2, { amount: 110 });
     eq(direct.refused, "already-negotiating", "the server's rule, across shops");
     eq((await only(ctx)).length, 1, "still one");
@@ -420,6 +512,7 @@ describe("E. one active offer per exact card, across shops", () => {
     const ctx = await world();
     const tab = await seat(ctx, "casey");
     await go(tab, "Deal Flow");
+    await viewMatches(tab, "SV-222");
     await opened(ctx);
     await press(tab, copyRow(tab, "SV-222"), "Make an offer");
     await typeIn(copyRow(tab, "SV-222"), "110"); await submit(copyRow(tab, "SV-222"));
@@ -494,6 +587,7 @@ describe("G. stale screens and repeated presses", () => {
     const ctx = await world();
     const casey = await seat(ctx, "casey");
     await go(casey, "Deal Flow");
+    await viewMatches(casey, "NL-111");
     await ctx.post("north", "removeInventoryCopy", { invId: ctx.i1 });
     await press(casey, copyRow(casey, "NL-111"), "Make an offer");
     await typeIn(copyRow(casey, "NL-111"), "100"); await submit(copyRow(casey, "NL-111"));
@@ -515,6 +609,7 @@ describe("H. the page", () => {
     assert(prog && textOf(prog).includes("Waiting for Casey"), "the Collector's move is in progress, and says whose");
     assert(!button(prog, "Accept") && !button(prog, "Counter") && !button(prog, "Decline"), "with nothing to press");
     await casey.refresh();
+    await openWorkspace(casey);
     await press(casey, liveBox(casey), "Withdraw offer");
     await north.refresh();
     assert(record(panel(north, "Completed"), "Casey"), "ended deals sit with the finished ones");
@@ -539,11 +634,16 @@ describe("H. the page", () => {
     const ctx = await world();
     const casey = await seat(ctx, "casey");
     await go(casey, "Deal Flow");
-    await press(casey, copyRow(casey, "NL-111"), "Inspect");
-    assert(textOf(copyRow(casey, "NL-111")).includes("You're inspecting this copy"), "inspection still opens");
-    await press(casey, copyRow(casey, "SV-222"), "Request photos");
+    await viewMatches(casey, "NL-111");
+    /* RE-PINNED (Milestone 2C.2): no Inspect press — the picture is how to
+       look, and looking sends nothing; Request actual photos still goes */
+    const thumb = copyRow(casey, "NL-111").findAll((n) => n.type === "button" && String(n.props.className || "").includes("mcs-pv-thumb"))[0];
+    await TR.act(async () => { thumb.props.onClick(); }); await settle();
+    assert(casey.r.root.findAll((n) => n.props && n.props.role === "dialog").length === 1, "the picture does not open");
+    await press(casey, casey.r.root.findAll((n) => n.props && n.props.role === "dialog")[0], "Close");
+    await press(casey, copyRow(casey, "SV-222"), "Request actual photos");
     assert(textOf(copyRow(casey, "SV-222")).includes("Photos requested"), "photo requests still go");
-    eq(json(casey.posts), json(["reviewCopy", "requestPhotos"]), "and nothing else was sent");
+    eq(json(casey.posts), json(["requestPhotos"]), "and nothing else was sent");
     assert(button(copyRow(casey, "NL-111"), "Make an offer"), "and the offer is there beside them");
   });
   test("[15] without the callbacks, Deal Flow and Opportunities offer no price control at all", async () => {

@@ -155,7 +155,7 @@ const buildOf = () => {
   return { commit: git("rev-parse", "--short", "HEAD"), dirty: !!dirty };
 };
 
-async function serve({ port = 0, seed = reviewSeed, collectorName = "Casey" } = {}) {
+async function serve({ port = 0, seed = reviewSeed, collectorName = "Casey", label = null, morePartners = [] } = {}) {
   const db = fromPGlite(new PGlite());
   await migrate(db);
   const runtime = RT.systemRuntime();
@@ -165,8 +165,12 @@ async function serve({ port = 0, seed = reviewSeed, collectorName = "Casey" } = 
      Faraway is not — its inventory must never reach Casey. */
   await repository.saveWorld({ catalog: [], collectors: [{ id: "c1", name: collectorName }],
     partners: [{ id: "p-north", name: "Northline Cards", city: "Portland", tradeRate: 0.7 },
-      { id: "p-far", name: "Faraway Games", city: "Elsewhere", tradeRate: 0.7 }],
-    relationships: [{ partnerId: "p-north", collectorId: "c1", status: "accepted", at: "2026-01-01T00:00:00.000Z" }],
+      { id: "p-far", name: "Faraway Games", city: "Elsewhere", tradeRate: 0.7 },
+      ...morePartners.map((p) => ({ id: p.id, name: p.name, city: p.city || "Portland", tradeRate: 0.7 }))],
+    /* `morePartners` (Milestone 2C.1's review story): further Trusted Partners,
+       each connected to Casey. None by default, so every other story is as it was. */
+    relationships: [{ partnerId: "p-north", collectorId: "c1", status: "accepted", at: "2026-01-01T00:00:00.000Z" },
+      ...morePartners.map((p) => ({ partnerId: p.id, collectorId: "c1", status: "accepted", at: "2026-01-01T00:00:00.000Z" }))],
     invitations: [], goals: [], inventory: [], collectorCopies: [], binders: [], binderEntries: [], interests: [],
     opportunities: [], conversations: [], photoRequests: [], copyReviews: [] });
   const accounts = createAccountDirectory(db);
@@ -174,6 +178,10 @@ async function serve({ port = 0, seed = reviewSeed, collectorName = "Casey" } = 
   await accounts.linkAccount({ subject: "sub-north", role: "tp", partnerId: "p-north" });
   await accounts.linkAccount({ subject: "sub-far", role: "tp", partnerId: "p-far" });
   const TOKENS = { casey: "sub-casey", north: "sub-north", far: "sub-far" };
+  for (const p of morePartners) {
+    await accounts.linkAccount({ subject: `sub-${p.token}`, role: "tp", partnerId: p.id });
+    TOKENS[p.token] = `sub-${p.token}`;
+  }
   const verifier = { verify: async (t) => { if (!TOKENS[t]) throw Object.assign(new Error("no"), { reason: "x" }); return { subject: TOKENS[t], email: `${t}@x.invalid`, emailVerified: true }; } };
   const app = createApp({ repository, catalog, accounts, verifier, runtime });
   await app.ready();
@@ -223,7 +231,9 @@ p{margin:0;max-width:430px;text-align:center}</style></head><body>
 </body></html>`;
   /* What the launcher's own emulated window can report about itself. */
   const hooks = {};
-  const build_ = { ...buildOf(), startedAt: new Date().toISOString() };
+  /* `label` names a non-default seed (e.g. a deal scenario), so a review
+     already on the port can say which story it is serving. */
+  const build_ = { ...buildOf(), startedAt: new Date().toISOString(), scenario: label };
   const server = http.createServer(async (req, res) => {
     if (req.url === "/__review") {
       res.writeHead(200, { "content-type": "application/json" });

@@ -681,8 +681,12 @@ describe("C. Trusted Partners", () => {
        rule always protected still holds everywhere: the shop's own books
        (`cost`, `acquired`) never cross, and the Browse card reads no copy's
        certificate or photographs (asserted just below). */
+    /* RESTATED (Milestone 2C): the Deal Workspace is Deal Flow's own full-screen
+       view of ONE deal, and reads that deal's copy (`invId`) for its grading.
+       It reads no `ask` (asserted below), and the books rule holds for it too. */
     const exceptDealFlow = COLLECTOR_FILES
-      .filter((f) => !/DealFlow\.jsx$/.test(f) && !/collector\/CardDetail\.jsx$/.test(f)).map(code).join("\n");
+      .filter((f) => !/DealFlow\.jsx$/.test(f) && !/collector\/CardDetail\.jsx$/.test(f) && !/collector\/DealWorkspace\.jsx$/.test(f)).map(code).join("\n");
+    assert(!/\.ask\b|\["ask"\]/.test(code("client/collector/DealWorkspace.jsx")), "the Deal Workspace reads a copy's ask");
     const browseCard = code(COLLECTOR_FILES.find((f) => /collector\/CardDetail\.jsx$/.test(f)));
     for (const field of ["cert", "photos", "cost", "acquired"]) {
       assert(!new RegExp(`\\.${field}\\b|\\["${field}"\\]`).test(browseCard), `the Browse card reads a shop copy's ${field}`);

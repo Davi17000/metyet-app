@@ -425,13 +425,17 @@ describe("mobile shell (P6-F1)", () => {
       await context.close();
     }
   });
-  test("the notice: none on Binders; one line on Deal Flow; the account sheet has it all, and Sign out signs out", async () => {
+  /* RESTATED (Milestone 2C.1): Deal Flow's landing page carries no notice
+     line; Trusted Partners keeps its one line, and the sheet has it all. */
+  test("the notice: none on Binders or Deal Flow; one line on Trusted Partners; the account sheet has it all, and Sign out signs out", async () => {
     await before();
     const { page, context } = await phone();
     eq(await page.locator(".mcs-scope").count(), 0, "Binders carries a notice");
     await page.locator("nav[aria-label=Collector] button", { hasText: "Deal Flow" }).tap(); await page.waitForTimeout(300);
+    eq(await page.locator(".mcs-scope").count(), 0, "Deal Flow carries a notice");
+    await page.locator("nav[aria-label=Collector] button", { hasText: "Trusted Partners" }).tap(); await page.waitForTimeout(300);
     const line = await box(page, ".mcs-scope");
-    assert(line && line.height <= 40, "the Deal Flow notice is not one compact line");
+    assert(line && line.height <= 40, "the Trusted Partners notice is not one compact line");
     await page.locator("button.mcs-acct").tap();
     const sheet = page.locator("[role=dialog][aria-label=Account]");
     assert(/Casey/.test(await sheet.innerText()) && /trades and messages arrive later/.test(await sheet.innerText()), "the account sheet");
@@ -1197,12 +1201,14 @@ describe("From a Trusted Partner's copy to Market Validation, through production
     eq(JSON.stringify([goal.tier, goal.desired]), JSON.stringify(["primary", { grade: "Raw", condition: "Near Mint" }]));
     eq(w.opportunities.length, w0.opportunities.length, "an opportunity was started automatically");
     await toShops(); await shot("f5b-03-make-an-offer-available");
-    /* 3. Make an Offer → Deal Flow, composer open on that exact copy; nothing sent */
+    /* 3. Make an Offer → Deal Flow's View Matches (Milestone 2C.1), composer
+          open on that exact copy; nothing sent */
     const before3 = commands.length;
     await row(n1).locator("button.mcs-cd-offer").tap();
-    await page.locator(`li.mcs-df-copy[data-inv='${n1}'] .mcs-offer`).waitFor();
+    await page.locator(`li.mcs-df-copy[data-inv='${n1}'] .mcs-oo`).waitFor();   // Milestone 2C.2: the opening-offer composer
     eq(commands.length, before3, "arriving in Deal Flow sent something");
-    assert(/Northline Cards · Proposed Market Price \$12 · Open to Offers/.test(await page.locator(`li.mcs-df-copy[data-inv='${n1}']`).innerText()));
+    { const said = (await page.locator(`li.mcs-df-copy[data-inv='${n1}']`).innerText()).replace(/\s+/g, " ");
+      assert(/Proposed Market Price from Northline Cards \$12/.test(said) && /Open to Offers/.test(said), said); }
     await shot("f5b-04-deal-flow-composer");
     /* 4. the Collector's own opening: $10 */
     await page.locator(`li.mcs-df-copy[data-inv='${n1}'] input[aria-label='Offer, in whole dollars']`).fill("10");
@@ -1210,6 +1216,8 @@ describe("From a Trusted Partner's copy to Market Validation, through production
     await page.waitForTimeout(1200);
     w = await W();
     let opp = w.opportunities.find((o) => o.goalId === goal.id);
+    /* Milestone 2C.1: the deal the server made opens in the Deal Workspace */
+    await page.locator(`.mcs-ws[data-opp='${opp.id}']`).waitFor({ timeout: 6000 });
     eq(JSON.stringify([opp.invId, opp.listedPrice, opp.agreedPrice, opp.priceThread.map((p) => [p.by, p.type, p.amount])]),
       JSON.stringify([n1, 12, null, [["collector", "offer", 10]]]), "the opening");
     await shot("f5b-05-offer-sent");
@@ -1217,6 +1225,9 @@ describe("From a Trusted Partner's copy to Market Validation, through production
     await own.postAs("north", "proposePrice", { oppId: opp.id, amount: 11 });
     await signIn(page, own.url);
     await page.tap("nav[aria-label=Collector] button:has-text('Deal Flow')"); await page.waitForTimeout(800);
+    /* Milestone 2C.1: the counter is reviewed through the Goal card's one action */
+    await page.locator(`article[data-goal='${goal.id}'] button.mcs-dg-cta`, { hasText: /^Review Counteroffer$/ }).tap();
+    await page.locator(".mcs-ws").waitFor();   // Milestone 2C: the full-screen Deal Workspace
     const accept = page.locator("button", { hasText: /^Accept \$11$/ });
     await accept.waitFor();
     w = await W(); eq(w.opportunities.find((o) => o.id === opp.id).agreedPrice, null, "a counter was taken as agreement");
@@ -1225,6 +1236,10 @@ describe("From a Trusted Partner's copy to Market Validation, through production
     w = await W(); opp = w.opportunities.find((o) => o.id === opp.id);
     eq(JSON.stringify([opp.listedPrice, opp.agreedPrice]), JSON.stringify([12, 11]), "agreed price not stored apart from the Proposed Market Price");
     await shot("f5b-07-agreed-market-price");
+    await page.locator(".mcs-ws-prices .agreed").waitFor({ timeout: 6000 });
+    assert(/Agreed Market Price\s+\$11/.test(await page.locator(".mcs-ws").innerText()), "the workspace does not show the agreement");
+    await page.locator(".mcs-ws-back").tap();
+    await page.locator(`article[data-goal='${goal.id}']`).waitFor();
     /* the copy is not reserved merely because a deal started */
     eq(w.inventory.find((i) => i.invId === n1).archived === true, false);
     /* 6. back on the card: under way, Open in Deal Flow (a link) */

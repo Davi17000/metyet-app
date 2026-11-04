@@ -132,10 +132,21 @@ describe("C. nothing else moved", () => {
       "? { onSpecify, onBrowseCards, session: browseSession, onSession: setBrowseSession,",
       "? { onSpecify, onBrowseCards, onCreateBinder, onRenameBinder,",
       "? { onBrowseCards }",
-      "? { onBrowseCards, onInspect, onEndInspection, onRequestPhotos,",
       /* RESTATED (P6-F5B): Deal Flow keeps every prop it had and gains only
          `focus` / `onFocusUsed` — the copy it was sent to from Browse */
-      "onOpenOffer, onCounterOffer, onAcceptOffer, onWithdrawOffer, onRefresh,",
+      /* RESTATED (Milestone 2C): the price moves go to the Deal Workspace,
+         where the deal is conducted; Deal Flow gains the way to open it */
+      /* RESTATED (Milestone 2C.1): Deal Flow's landing page sends nothing.
+         Its cards open the Deal Workspace or View Matches, and the commands
+         go to those two full-screen views, each exactly the ones it uses. */
+      "? { onBrowseCards,",
+      "onOpenDeal: (oppId) => openDeal(oppId),",
+      "onOpenMatches: (goalId) => openMatches(goalId),",
+      "onCounterOffer={onCounterOffer} onAcceptOffer={onAcceptOffer} onWithdrawOffer={onWithdrawOffer}",
+      /* RESTATED (Milestone 2C.2): Inspect left View Matches; looking is the picture */
+      "onEndInspection={onEndInspection} onRequestPhotos={onRequestPhotos}",
+      "onFindCards: () => setSection(\"browse\"),",
+      "onOpenOffer={onOpenOffer} onOpenDeal={(oppId) => openDeal(oppId)} onRefresh={onRefresh} />",
       "focus: dealFocus, onFocusUsed: () => setDealFocus(null) }"]) {
       assert(src.includes(line), `a section's props changed: ${line}`);
     }

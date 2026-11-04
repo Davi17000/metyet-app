@@ -12,6 +12,15 @@
      --no-browser    serve only, and print the address
      --shots DIR     headless: walk the P6-4 scenarios at 390px (and 1280px),
                      save screenshots to DIR, and exit
+     --scenario X    serve a Collector Deal Flow scenario instead of the plain
+                     review story (Milestone 2A; harness/phase6-deal-scenarios.cjs):
+                       a  opening offer submitted
+                       b  Trusted Partner counteroffer received
+                       c  Agreed Market Price
+                       d  three Primary Goals: c's agreed Mudkip, a
+                          Charizard two Trusted Partners match, and a
+                          Pikachu nobody connected has (Milestone 2C.1)
+                     each on its own fresh world; restart to reset
 
    A PORT THAT IS ALREADY TAKEN IS AN ANSWER, NOT A CRASH (P6-F1). Before
    starting, this asks the port who is there:
@@ -28,11 +37,13 @@ const net = require("net");
 const http = require("http");
 const { execFileSync } = require("child_process");
 const { serve, PHONE, signIn, ROOT } = require("./phase6-world.cjs");
+const { scenarioOf, serveOptions } = require("./phase6-deal-scenarios.cjs");
 
 const arg = (name) => { const i = process.argv.indexOf(name); return i < 0 ? null : process.argv[i + 1] || true; };
 const port = Number(arg("--port")) || 8790;
 const shots = arg("--shots");
 const noBrowser = process.argv.includes("--no-browser");
+const scenarioArg = arg("--scenario");
 const say = (lines) => console.log(lines.join("\n"));
 
 /* ------------------------------------------------- who is on the port? */
@@ -112,11 +123,24 @@ function tellWindow(forward) {
 }
 
 async function main() {
+  let scenario = null;
+  if (scenarioArg) {
+    try { scenario = scenarioOf(scenarioArg); } catch (e) { say([e.message]); process.exitCode = 2; return; }
+    if (shots) { say(["--shots walks the P6-4 story; for scenario screenshots run:   npm run review:deal-scenarios"]); process.exitCode = 2; return; }
+  }
   if (shots) return runShots();
+  const label = scenario ? `deal-${scenario.key}` : null;
+  const storyName = (l) => (l ? `scenario ${l.replace(/^deal-/, "")}` : "the plain review story");
   const url = `http://127.0.0.1:${port}/app`;
   const there = await whoIsOn(port);
   if (there.kind === "review") {
     const mine = here();
+    if (there.commit && there.commit === mine && (there.scenario || null) !== label) {
+      say([`Port ${port} already has this build's review running, serving ${storyName(there.scenario || null)} — you asked for ${storyName(label)}.`,
+        "Stop that one (press Ctrl-C in the terminal that started it) and run this again,",
+        `or run this one beside it:   npm run review:mobile -- ${scenario ? `--scenario ${scenario.key} ` : ""}--port ${port + 1}`]);
+      process.exitCode = 2; return;
+    }
     if (there.commit && there.commit === mine) {
       say([`A MetYet mobile review is already running at ${url} (build ${there.commit}, started ${there.startedAt}).`,
         `In any browser, the phone layout:   http://127.0.0.1:${port}/phone`,
@@ -134,7 +158,7 @@ async function main() {
     process.exitCode = 2; return;
   }
   let ctx;
-  try { ctx = await serve({ port }); } catch (e) {
+  try { ctx = await serve(scenario ? { port, ...serveOptions(scenario.key) } : { port }); } catch (e) {
     if (e && e.code === "EADDRINUSE") {
       say([`Port ${port} was taken a moment ago by something else.`, `Run the review on another port:   npm run review:mobile -- --port ${port + 1}`]);
       process.exitCode = 2; return;
@@ -143,6 +167,8 @@ async function main() {
   }
   const phoneUrl = `http://127.0.0.1:${port}/phone`;
   say(["", "MetYet mobile review — build " + (ctx.build.commit || "unknown") + (ctx.build.dirty ? " (with uncommitted changes)" : ""),
+    ...(scenario ? [`  Deal Flow scenario ${scenario.key} — ${scenario.title}`, `    ${scenario.story}`,
+      `    Next: ${scenario.next}`, "    Open Deal Flow after signing in. Restart this command to reset the scenario."] : []),
     "  Sign in with any email address and any code.",
     `  In any browser, the phone layout:   ${phoneUrl}`,
     `  (Don't open ${url} in your everyday browser window — at desktop width that is, correctly, the desktop layout.)`, ""]);

@@ -516,7 +516,15 @@ const build = (rel) => {
   new Function("module", "exports", "require", out.outputFiles[0].text)(mod, mod.exports, require);
   return mod.exports;
 };
-const DealFlow = build("client/collector/sections/DealFlow.jsx").default;
+const DF_MOD = build("client/collector/sections/DealFlow.jsx");
+const DealFlow = DF_MOD.default;
+/* RE-PINNED (Milestone 2C.1): Inspect, Done inspecting and Request photos
+   moved with the copies from the Goal's accordion to View Matches. What a
+   Collector can reach from Deal Flow is the landing page plus each Goal's
+   matches, so that is what is rendered. */
+const Reachable = (props) => React.createElement(React.Fragment, null,
+  React.createElement(DealFlow, props),
+  ...(props.state.goals || []).map((g) => React.createElement(DF_MOD.GoalMatches, { ...props, key: g.id, goalId: g.id })));
 const CARDS = { "cc-x": { canonicalCardId: "cc-x", cardName: "Charizard",
   expansionName: "Base Set", collectorNumber: "4", imageSmall: null } };
 const door = { describe: async (ids) => ({ cards: ids.map((id) => CARDS[id]).filter(Boolean) }) };
@@ -550,38 +558,52 @@ const showFlow = async (st, actor, props = {}) => {
   const state = P.projectForActor(st.get(), actor);
   let r;
   await TR.act(async () => {
-    r = TR.create(React.createElement(DealFlow, { state, onBrowseCards: door, ...props }));
+    r = TR.create(React.createElement(Reachable, { state, onBrowseCards: door, ...props }));
   });
   await settle();
   return r;
 };
 const button = (r, label) => r.root.findAllByType("button").find((n) => instText(n) === label);
+/* RE-PINNED (Milestone 2C.2): a copy's picture is the way to look at it — a
+   button that opens a viewer and sends nothing. */
+const thumbs = (r) => r.root.findAll((n) => n.type === "button" && String(n.props.className || "").includes("mcs-pv-thumb"));
+const controls = (r) => r.root.findAllByType("button").filter((n) => !String(n.props.className || "").includes("mcs-pv-thumb"));
 
 describe("F. The screen, and the door it sends through", () => {
-  test("[33] Inspect names the physical copy and nothing else", async () => {
+  test("[33] RE-PINNED (Milestone 2C.2): tapping a copy's picture opens the viewer on that copy, and sends nothing", async () => {
+    /* Was: "Inspect names the physical copy and nothing else". There is no
+       Inspect press any more: looking is the picture, and looking is not a
+       command. The copy a photo request names is asserted in [35]. */
     const st = world();
     const sent = [];
-    const r = await showFlow(st, CASEY,
-      { onInspect: async (invId) => { sent.push(invId); return { ok: true, value: "rv1" }; } });
-    const b = button(r, "Inspect");
-    assert(b, "no Inspect control: " + texts(r).slice(0, 200));
-    await TR.act(async () => { await b.props.onClick(); });
-    eq(sent.length, 1, "the press sent nothing");
-    eq(sent[0], "i1", "the press did not name the physical copy");
+    const r = await showFlow(st, CASEY, { onRequestPhotos: async (invId) => { sent.push(invId); return { ok: true }; } });
+    const t = thumbs(r)[0];
+    assert(t, "no picture to tap: " + texts(r).slice(0, 200));
+    const row = r.root.findAll((n) => n.type === "li" && n.props["data-inv"] && n.findAll((m) => m === t).length)[0];
+    await TR.act(async () => { t.props.onClick(); });
+    const dialog = r.root.findAll((n) => n.props && n.props.role === "dialog")[0];
+    assert(dialog && dialog.props["aria-modal"] === "true", "no viewer");
+    assert(row.findAll((n) => n === dialog).length === 1, "the viewer is not the tapped copy's");
+    eq(sent.length, 0, "looking sent a command");
+    await TR.act(async () => { button(r, "Close").props.onClick(); });
+    eq(r.root.findAll((n) => n.props && n.props.role === "dialog").length, 0, "Close did not close it");
   });
 
-  test("[34] the screen says when you are inspecting, and offers to stop", async () => {
+  test("[34] RE-PINNED (Milestone 2C.2): an inspection is the domain's record, not a control on the screen", async () => {
+    /* Was: "the screen says when you are inspecting, and offers to stop". A
+       photo request opens the review itself (domain/metyet-commands.js,
+       requestPhotos), so the record is still written; the screen no longer
+       makes the Collector manage it — except on a copy that has closed ([45]). */
     const st = world();
     okv(x(st, CASEY, "reviewCopy", { invId: "i1", at: AT }), "look");
-    const ended = [];
-    const r = await showFlow(st, CASEY,
-      { onEndInspection: async (id) => { ended.push(id); return { ok: true }; } });
-    assert(/inspecting this copy/i.test(texts(r)), "it does not say so: " + texts(r).slice(0, 200));
-    const b = button(r, "Done inspecting");
-    assert(b, "no way to stop");
-    await TR.act(async () => { await b.props.onClick(); });
-    eq(ended.length, 1, "stopping sent nothing");
-    assert(String(ended[0]).length > 0, "stopping did not name the review");
+    const r = await showFlow(st, CASEY, { onEndInspection: async () => ({ ok: true }), onRequestPhotos: async () => ({ ok: true }) });
+    assert(!/inspecting this copy/i.test(texts(r)), "the screen still talks about inspecting");
+    assert(!button(r, "Done inspecting") && !button(r, "Inspect"), "an inspection control remains on an available copy");
+    eq(st.get().copyReviews.filter((v) => v.collectorId === "casey" && !v.endedAt).length, 1, "the review record changed");
+    const fresh = world();
+    okv(x(fresh, CASEY, "requestPhotos", { invId: "i1", at: AT }), "ask, with no review open");
+    assert(fresh.get().copyReviews.some((v) => v.invId === "i1" && v.collectorId === "casey" && !v.endedAt),
+      "a photo request no longer opens the review itself");
   });
 
   test("[35] Request photos names the copy, and goes once asked", async () => {
@@ -589,22 +611,22 @@ describe("F. The screen, and the door it sends through", () => {
     const asked = [];
     let r = await showFlow(st, CASEY,
       { onRequestPhotos: async (invId) => { asked.push(invId); return { ok: true }; } });
-    const b = button(r, "Request photos");
-    assert(b, "no Request photos control");
+    const b = button(r, "Request actual photos");
+    assert(b, "no Request actual photos control");
     await TR.act(async () => { await b.props.onClick(); });
     eq(asked[0], "i1", "the press did not name the physical copy");
 
     okv(x(st, CASEY, "requestPhotos", { invId: "i1", at: AT }), "really ask");
     r = await showFlow(st, CASEY, { onRequestPhotos: async () => ({ ok: true }) });
     assert(/Photos requested/.test(texts(r)), "the screen does not say it was asked");
-    assert(!button(r, "Request photos"), "it offered to ask again");
+    assert(!button(r, "Request actual photos"), "it offered to ask again");
   });
 
   test("[36] a refusal is reported without saying what happened to the copy", async () => {
     const st = world();
     const r = await showFlow(st, CASEY,
-      { onInspect: async () => ({ ok: false, refused: "copy-unavailable" }) });
-    await TR.act(async () => { await button(r, "Inspect").props.onClick(); });
+      { onRequestPhotos: async () => ({ ok: false, refused: "copy-unavailable" }) });
+    await TR.act(async () => { await button(r, "Request actual photos").props.onClick(); });
     await settle();
     const shown = texts(r);
     assert(/isn't available/i.test(shown), "the refusal was swallowed: " + shown.slice(0, 200));
@@ -616,12 +638,21 @@ describe("F. The screen, and the door it sends through", () => {
   test("[37] no control is offered that the screen was handed no way to send", async () => {
     const st = world();
     const r = await showFlow(st, CASEY);   // no command props at all
-    eq(r.root.findAllByType("button").length, 0,
-      "a control appeared with nothing behind it: " + texts(r).slice(0, 200));
+    /* RE-PINNED (Milestone 2C.2): a copy's picture is a button that opens a
+       viewer and sends nothing; every other control needs a command. */
+    eq(controls(r).length, 0, "a control appeared with nothing behind it: " + texts(r).slice(0, 200));
+    for (const t of thumbs(r)) {
+      await TR.act(async () => { t.props.onClick(); });
+      eq(controls(r).map(instText).join("|"), "Close", "the viewer offers something it cannot do");
+      await TR.act(async () => { button(r, "Close").props.onClick(); });
+    }
   });
 
   test("[38] and the screen stops where the transaction starts", () => {
-    const src = codeOf("client/collector/sections/DealFlow.jsx");
+    /* RE-PINNED (Milestone 2C): the price moves moved with the negotiation into
+       the full-screen Deal Workspace, so the rule holds over the two files. */
+    const src = codeOf("client/collector/sections/DealFlow.jsx") + codeOf("client/collector/DealWorkspace.jsx")
+      + codeOf("client/collector/deal-parts.jsx");
     /* RESTATED (Market Validation Batch 3B). Deal Flow now goes one step past
        qualification — agreeing a price, "Make an offer" — through callbacks it
        is handed, never by naming a command. What it still stops before is
@@ -630,8 +661,11 @@ describe("F. The screen, and the door it sends through", () => {
       "Market Value", "Agree a price"]) {
       assert(!src.includes(gone), `Deal Flow grew ${gone}`);
     }
-    /* The qualification three, and the Collector's four price moves. */
-    for (const prop of ["onInspect", "onEndInspection", "onRequestPhotos",
+    /* The qualification commands, and the Collector's four price moves.
+       RE-PINNED (Milestone 2C.2): Inspect left the screen — looking is the
+       picture — and `onInspect` with it; the other two remain. */
+    assert(!/onInspect\b/.test(src) && !/>\s*Inspect\s*</.test(src), "Inspect came back");
+    for (const prop of ["onEndInspection", "onRequestPhotos",
       "onOpenOffer", "onCounterOffer", "onAcceptOffer", "onWithdrawOffer"]) {
       assert(src.includes(prop), `Deal Flow lost ${prop}`);
     }
@@ -744,7 +778,8 @@ describe("H. The adversarial pass", () => {
        from `discoveries`, and a discovery requires `status === "available"` — so
        the copy the projection worked to keep was dropped by the screen anyway.
        The Collector lost the card exactly as before, and with it the only route
-       to Done inspecting, which pinned the copy into their projection for good. */
+       to Done inspecting, which pinned the copy into their projection for good.
+       RE-PINNED (Milestone 2C.2): the way out is "Remove from list". */
     const st = world();
     okv(x(st, CASEY, "reviewCopy", { invId: "i1", at: AT }), "look");
     CLOSE.committed(st);
@@ -753,7 +788,7 @@ describe("H. The adversarial pass", () => {
     const shown = texts(r);
     assert(/C1/.test(shown) || /No longer available/.test(shown),
       "the copy vanished from the screen: " + shown.slice(0, 260));
-    assert(button(r, "Done inspecting"),
+    assert(button(r, "Remove from list"),
       "there is no way to close an inspection on a copy that closed");
   });
 
@@ -761,13 +796,16 @@ describe("H. The adversarial pass", () => {
     const st = world();
     okv(x(st, CASEY, "reviewCopy", { invId: "i1", at: AT }), "look");
     CLOSE.committed(st);
-    const r = await showFlow(st, CASEY, { onInspect: async () => ({ ok: true }),
+    const r = await showFlow(st, CASEY, {
       onRequestPhotos: async () => ({ ok: true }), onEndInspection: async () => ({ ok: true }) });
     assert(/No longer available/.test(texts(r)), "it does not say the copy closed");
-    /* i2 is still available and still offers both, so this is not vacuous. */
-    assert(button(r, "Inspect"), "precondition: the available copy lost its control");
-    const labels = r.root.findAllByType("button").map(instText);
-    eq(labels.filter((l) => l === "Done inspecting").length, 1, "one way out, on the closed copy");
+    /* i2 is still available and photographed, so it is listed with its picture
+       and its photos in words — this is not vacuous. */
+    assert(/Partner photos: Front and back/.test(texts(r)), "precondition: the available copy is missing");
+    eq(thumbs(r).length, 2, "a copy lost its picture");
+    const labels = controls(r).map(instText);
+    eq(labels.filter((l) => l === "Remove from list").length, 1, "one way out, on the closed copy");
+    eq(labels.filter((l) => l === "Request actual photos").length, 0, "the closed copy offered a photo request");
   });
 
   test("[47] an open review is answered with itself, before the door", async () => {
@@ -849,16 +887,19 @@ describe("H. The adversarial pass", () => {
 
   test("[52] a press on one copy does not swallow a press on another", async () => {
     /* One `busy` flag for the whole screen meant the other buttons stayed
-       lit and did nothing, with no message. */
-    const st = world();
+       lit and did nothing, with no message. RE-PINNED (Milestone 2C.2): on
+       Request actual photos, the press that remains per copy. */
+    const st = world({ inventory: [
+      { invId: "i1", partnerId: "nl", canonicalCardId: "cc-x", ask: 30, grade: "PSA 9", photos: { front: null, back: null } },
+      { invId: "i2", partnerId: "nl", canonicalCardId: "cc-x", ask: 32, grade: "PSA 9", photos: { front: null, back: null } }] });
     let release;
     const held = new Promise((done) => { release = done; });
     const seen = [];
     const r = await showFlow(st, CASEY, {
-      onInspect: async (invId) => { seen.push(invId); await held; return { ok: true }; },
+      onRequestPhotos: async (invId) => { seen.push(invId); await held; return { ok: true }; },
     });
-    const all = r.root.findAllByType("button").filter((n) => instText(n) === "Inspect");
-    assert(all.length >= 2, "precondition: two copies should be inspectable");
+    const all = r.root.findAllByType("button").filter((n) => instText(n) === "Request actual photos");
+    assert(all.length >= 2, "precondition: two copies should be askable");
     await TR.act(async () => { all[0].props.onClick(); });
     await TR.act(async () => { all[1].props.onClick(); });
     eq(seen.length, 2, "the second copy's press was swallowed");
@@ -868,8 +909,8 @@ describe("H. The adversarial pass", () => {
   test("[53] a refusal names the copy it is about", async () => {
     const st = world();
     const r = await showFlow(st, CASEY,
-      { onInspect: async () => ({ ok: false, refused: "copy-unavailable" }) });
-    const all = r.root.findAllByType("button").filter((n) => instText(n) === "Inspect");
+      { onRequestPhotos: async () => ({ ok: false, refused: "copy-unavailable" }) });
+    const all = r.root.findAllByType("button").filter((n) => instText(n) === "Request actual photos");
     await TR.act(async () => { await all[0].props.onClick(); });
     await settle();
     const notices = r.root.findAll((n) => n.props
@@ -887,17 +928,20 @@ describe("H. The adversarial pass", () => {
     assert(/qualifyingOn/.test(dom), "the predicate is gone");
   });
 
-  test("[55] the screen offers no control beyond the three", async () => {
+  test("[55] the screen offers no control beyond the declared ones", async () => {
     /* [38] in the binders suite asserted Deal Flow had NO button. That could not
        survive this batch, so it was re-pinned — and a bare "names no transaction
-       command" would let a fourth control in. This is the upper bound. */
+       command" would let a fourth control in. This is the upper bound.
+       RE-PINNED (Milestone 2C.2): Inspect and Done inspecting left with the
+       inspection workflow; each copy's picture opens the viewer. */
     const st = world();
     okv(x(st, CASEY, "reviewCopy", { invId: "i2", at: AT }), "one open look");
     const r = await showFlow(st, CASEY, { onInspect: async () => ({ ok: true }),
       onEndInspection: async () => ({ ok: true }), onRequestPhotos: async () => ({ ok: true }) });
-    const labels = [...new Set(r.root.findAllByType("button").map(instText))].sort();
-    eq(labels.join(" | "), "Done inspecting | Inspect | Request photos",
+    const labels = [...new Set(controls(r).map(instText))].sort();
+    eq(labels.join(" | "), "Request actual photos",
       "Deal Flow grew a control this batch did not declare");
+    eq(thumbs(r).length, r.root.findAll((n) => n.type === "li" && n.props["data-inv"]).length, "a copy without its picture");
   });
 });
 
