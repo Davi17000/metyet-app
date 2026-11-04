@@ -886,13 +886,17 @@ describe("H. the doors this batch opened, and no others", () => {
          "Withdraw offer" in Deal Flow, and a shop's "Accept", "Counter" and
          "Decline" in Opportunities. Agreeing a price and nothing past it. */
       "startOpportunity", "proposePrice", "acceptPrice", "declineOffer", "cancelOpportunity",
+      /* AND THE ONE MILESTONE 2D.1 ADDED (founder-approved): a deal's conversation —
+         one plain-text message on one canonical opportunity, from one of its two
+         participants. It changes no term of any deal; only Accept accepts. */
+      "sendDealMessage",
     ].sort()), "the production surface is not what this batch declared");
     /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
        name; any other change to the size still fails here. */
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(EXPOSED_COMMANDS.length, 30, "and nothing arrived unnamed");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(EXPOSED_COMMANDS.length, 31, "and nothing arrived unnamed");
   });
 
   test("every exposed name is a real command, and the client sends exactly these", () => {

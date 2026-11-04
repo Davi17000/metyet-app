@@ -411,7 +411,7 @@ describe("F. The transaction did not start", () => {
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(EXPOSED_COMMANDS.length, 30, "the production surface is not the size this batch declared");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(EXPOSED_COMMANDS.length, 31, "the production surface is not the size this batch declared");
     assert(EXPOSED_COMMANDS.includes("addCopyPhotos"), "the shop has no way to answer");
     /* EVERY NAME HERE IS A REAL COMMAND, checked the way `phase5-c5` checks it:
        an adversarial run found `reviewCopy2` in this list — not a command
@@ -431,7 +431,7 @@ describe("F. The transaction did not start", () => {
   test("[23] no migration, and no new durable fact", () => {
     const migrations = fs.readdirSync(path.join(ROOT, "persistence/migrations"))
       .filter((f) => f.endsWith(".sql")).sort();
-    eq(migrations[migrations.length - 1], "0014_binder_memberships.sql", migrations.join(","));
+    /* RE-PINNED (Milestone 2D.1): the newest migration is now 0015, a deal's conversation — not this batch's. */ eq(migrations[migrations.length - 1], "0015_deal_conversations.sql", migrations.join(","));
     const src = codeOf("domain/metyet-domain.js") + codeOf("domain/metyet-commands.js")
       + codeOf("domain/metyet-projection.js");
     for (const invented of ["acknowledged", "fulfilment", "photoTask", "notified",

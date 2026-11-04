@@ -886,6 +886,10 @@ describe("G. boundaries, and what did not change", () => {
          "Withdraw offer" in Deal Flow, and a shop's "Accept", "Counter" and
          "Decline" in Opportunities. Agreeing a price and nothing past it. */
       "startOpportunity", "proposePrice", "acceptPrice", "declineOffer", "cancelOpportunity",
+      /* AND THE ONE MILESTONE 2D.1 ADDED (founder-approved): a deal's conversation —
+         one plain-text message on one canonical opportunity, from one of its two
+         participants. It changes no term of any deal; only Accept accepts. */
+      "sendDealMessage",
     ].sort()), "a door was opened that nobody declared");
     const browserCode = code("client/browse/CardBrowser.jsx");
     assert(!EXPOSED_COMMANDS.some((c) => browserCode.includes(c)),

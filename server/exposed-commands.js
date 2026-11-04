@@ -245,6 +245,15 @@ const EXPOSED_COMMANDS = Object.freeze([
   "acceptPrice",                 // Collector → Deal Flow / TP → Opportunities, "Accept"
   "declineOffer",                // TP → Opportunities, "Decline"
   "cancelOpportunity",           // Collector → Deal Flow, "Withdraw offer"
+  /* A DEAL'S CONVERSATION (Milestone 2D.1). One plain-text message on one
+     canonical opportunity, from one of its two participants, while it is
+     active. The sender is the session's actor and the participants are the
+     deal's own; the payload names only the deal, the words and a nonce. It
+     changes no term of any deal — not a price, turn, stage or agreement — and
+     only Accept accepts. The legacy `sendMessage`, `reachOut` and
+     `recordNote` stay closed: they key a thread by a legacy catalogue card and
+     take participants from the payload. No screen sends this yet (2D.2). */
+  "sendDealMessage",             // Collector ↔ TP, a deal's conversation
 ]);
 
 /* ONE ANSWER FOR TWO QUESTIONS, ON PURPOSE. A command that does not exist and a

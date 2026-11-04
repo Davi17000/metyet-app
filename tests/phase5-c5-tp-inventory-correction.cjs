@@ -196,7 +196,7 @@ describe("A. the door opened by exactly two", () => {
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(EXPOSED_COMMANDS.length, 30, "the production surface is not the size C5 intended");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(EXPOSED_COMMANDS.length, 31, "the production surface is not the size C5 intended");
     for (const name of ["updateInventoryCopy", "removeInventoryCopy"]) {
       assert(EXPOSED_COMMANDS.includes(name), `${name} is not offered`);
     }
@@ -258,9 +258,10 @@ describe("A. the door opened by exactly two", () => {
     /* …and the five Market Validation Batch 3B opened with the price controls
        that send them — the fourth time this guard fired for a declared reason. */
     /* …and P6-F4 B5's changeCollectingState, with the saved card's Submit Update. */
+    /* …and Milestone 2D.1's sendDealMessage, a deal's conversation, founder-approved. */
     eq(json(added.sort()), json(["acceptPrice", "addCopyPhotos", "cancelOpportunity", "changeCollectingState", "declineOffer",
       "endReview", "fileObject", "proposePrice", "removeInventoryCopy",
-      "requestPhotos", "reviewCopy", "setCollectorCopyKept", "startOpportunity", "unfileObject",
+      "requestPhotos", "reviewCopy", "sendDealMessage", "setCollectorCopyKept", "startOpportunity", "unfileObject",
       "updateInventoryCopy"]),
       "a door was opened that no batch declared");
     /* RE-PINNED (Batch 3C-1): exactly one door somebody else opened has been
@@ -1081,7 +1082,7 @@ describe("H. nothing else moved", () => {
 
   test("C5 wrote no migration: the newest is still somebody else's", async () => {
     const files = fs.readdirSync(path.join(ROOT, "persistence/migrations")).sort();
-    eq(files[files.length - 1], "0014_binder_memberships.sql", "C5 added or renamed a migration");
+    /* RE-PINNED (Milestone 2D.1): the newest migration is now 0015, a deal's conversation — not this batch's. */ eq(files[files.length - 1], "0015_deal_conversations.sql", "C5 added or renamed a migration");
   });
 
   test("the domain's command table did not grow", async () => {
@@ -1093,7 +1094,7 @@ describe("H. nothing else moved", () => {
        there was no existing command that could name a Goal's or a copy's
        Binder, because until 3A no row could hold one. */
     /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
-    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq([...COMMAND_NAMES].length, 55, "C5 wrote a command instead of shipping two that existed");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq([...COMMAND_NAMES].length, 56, "C5 wrote a command instead of shipping two that existed");
   });
 
   test("no new route, and the catalogue import is still unreachable", async () => {

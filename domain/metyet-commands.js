@@ -1773,6 +1773,56 @@ const COMMANDS = {
       D.threadKey(cid, pid, card));
   },
 
+  /* ------------------------------------------------------------ a deal's conversation
+     (Milestone 2D.1). One thread per canonical opportunity, between that
+     deal's two participants and nobody else.
+
+     WHO. The sender is the authenticated actor and nothing else: the payload
+     names only the deal, the words and a nonce. The participants are read off
+     the deal, so a client cannot address a message to anybody, or forge who
+     sent it. Not found and not-a-participant answer as every deal command
+     does (`oppGate`'s order).
+
+     WHAT IT CHANGES: one entry in one thread. Never the opportunity — not its
+     price thread, turn, stage, terms or agreement — and never inventory, Goals
+     or any other deal. "I accept your $11 offer" is stored as those words;
+     only Accept accepts. The text is kept as plain text, trimmed, 1 to
+     DEAL_MESSAGE_MAX characters.
+
+     WHEN. Readable for as long as the participants can see the deal; sent
+     only while the deal is active — refused as `terminal` once it is ended
+     (withdrawn, cancelled, declined) or completed, as every deal command is.
+     A message never reopens anything.
+
+     A RETRY IS NOT A SECOND MESSAGE. The client composes each message with a
+     fresh nonce. The same sender, deal, nonce and words again — a press whose
+     answer was lost — returns the message already stored, even if the deal
+     has since closed; the same nonce with different words is refused. The
+     nonce lives on the entry, so this survives a reload and a restart. Each
+     sender's nonces are their own. */
+  sendDealMessage(state, a, { oppId, text, nonce }, ctx) {
+    const o = oppById(state, oppId);
+    if (!o) return refuse(R.notFound);
+    if (!isParticipant(a, o)) return refuse(R.notParticipant);
+    const clean = typeof text === "string" ? text.trim() : "";
+    if (!clean) return refuse(R.messageEmpty);
+    if ([...clean].length > D.DEAL_MESSAGE_MAX) return refuse(R.messageTooLong);
+    if (typeof nonce !== "string" || !nonce.trim() || nonce.length > 128) return refuse(R.nonceRequired);
+    const thread = D.findDealThread(state.conversations, o.id);
+    const before = thread ? thread.entries.find((e) => e.kind === "message" && e.by === a.seat && e.nonce === nonce) : null;
+    if (before) return before.text === clean ? done(state, before.id) : refuse(R.nonceConflict);
+    if (!D.isActive(o)) return refuse(R.terminal);
+    const id = ctx.id("m");
+    const entry = { id, at: ctx.now(), kind: "message", by: a.seat,
+      senderId: a.seat === "tp" ? a.partnerId : a.collectorId, text: clean, nonce };
+    const key = D.dealThreadKey(o.id);
+    const conversations = thread
+      ? list(state.conversations).map((t) => (t.key === key ? { ...t, entries: [...t.entries, entry] } : t))
+      : [...list(state.conversations), { id: "t" + key, key, collectorId: o.collectorId, partnerId: o.partnerId,
+        cardId: null, oppId: o.id, entries: [entry] }];
+    return done({ ...state, conversations }, id);
+  },
+
   /* A lifecycle note: an entry in the participants' own thread and/or the
      partner's activity feed. Records reading of what happened; changes no term.
      The activity row is stamped with the acting partner (D-4): it is that

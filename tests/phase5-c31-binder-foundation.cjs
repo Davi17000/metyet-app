@@ -752,13 +752,17 @@ describe("E. the commands exist, and production cannot reach them", () => {
          "Withdraw offer" in Deal Flow, and a shop's "Accept", "Counter" and
          "Decline" in Opportunities. Agreeing a price and nothing past it. */
       "startOpportunity", "proposePrice", "acceptPrice", "declineOffer", "cancelOpportunity",
+      /* AND THE ONE MILESTONE 2D.1 ADDED (founder-approved): a deal's conversation —
+         one plain-text message on one canonical opportunity, from one of its two
+         participants. It changes no term of any deal; only Accept accepts. */
+      "sendDealMessage",
     ].sort()), "the production surface is not what C3.4 declared");
     /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
        name; any other change to the size still fails here. */
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(EXPOSED_COMMANDS.length, 30);
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(EXPOSED_COMMANDS.length, 31);
   });
 
   /* SUPERSEDED AND RESTATED. The claim was that the client bound the three
@@ -842,7 +846,7 @@ describe("F. what is stored, and what the schema refuses", () => {
        object-level membership, with `binder_entries` not altered at all. What
        this test is for is that C3.1's own migration is present and in sequence,
        which it still is. */
-    eq(versions[versions.length - 1], "0014_binder_memberships", "it is not the newest");
+    /* RE-PINNED (Milestone 2D.1): the newest migration is now 0015, a deal's conversation — not this batch's. */ eq(versions[versions.length - 1], "0015_deal_conversations", "it is not the newest");
 
     const pg = new PGlite();
     const db = fromPGlite(pg);
@@ -861,7 +865,7 @@ describe("F. what is stored, and what the schema refuses", () => {
     assert(!first.applied.includes("0013_binders"), "the binder tables arrived early");
 
     const upgrade = await migrate(db, { migrations: all });
-    eq(upgrade.applied.join(","), "0013_binders,0014_binder_memberships",
+    /* RE-PINNED (Milestone 2D.1): 0015 applies as an upgrade too */ eq(upgrade.applied.join(","), "0013_binders,0014_binder_memberships,0015_deal_conversations",
       "the upgrade applied something else too");
     const t = await pg.query(
       "select table_name from information_schema.tables where table_schema = 'metyet' and table_name in ('binders','binder_entries') order by table_name");

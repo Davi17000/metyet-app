@@ -675,7 +675,7 @@ describe("F. The boundary this batch did not cross", () => {
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(EXPOSED_COMMANDS.length, 30, "a command was exposed by this batch");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(EXPOSED_COMMANDS.length, 31, "a command was exposed by this batch");
     /* THE TRANSACTION IS WHAT MUST STAY CLOSED. `reviewCopy`, `endReview` and
        `requestPhotos` left this loop when the qualification batch gave them a
        surface in Deal Flow, and `addCopyPhotos` left it when photo fulfilment
@@ -694,7 +694,7 @@ describe("F. The boundary this batch did not cross", () => {
        untouched: filing a copy in a Binder is organising, not dealing, and a
        copy in a live deal is filed and unfiled exactly as any other. */
     /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
-    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(COMMAND_NAMES.length, 55, "a command was added or removed");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(COMMAND_NAMES.length, 56, "a command was added or removed");
   });
 
   test("[11][34][35][36] Option B's availability model is untouched", () => {

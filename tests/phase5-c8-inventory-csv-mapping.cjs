@@ -319,7 +319,7 @@ describe("B. a template is configuration, and cannot outvote the domain", () => 
     assert(!/create table|insert into|select |db\.|repository/i.test(body),
       "the template module reaches persistence");
     const migrations = fs.readdirSync(path.join(ROOT, "persistence", "migrations")).sort();
-    eq(migrations[migrations.length - 1], "0014_binder_memberships.sql", "C8 added a migration: " + migrations.join(","));
+    /* RE-PINNED (Milestone 2D.1): the newest migration is now 0015, a deal's conversation — not this batch's. */ eq(migrations[migrations.length - 1], "0015_deal_conversations.sql", "C8 added a migration: " + migrations.join(","));
   });
 });
 
@@ -1045,7 +1045,7 @@ describe("G. whose shelf this is", () => {
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(EXPOSED_COMMANDS.length, 30, "C8 opened a production command: " + EXPOSED_COMMANDS.join(","));
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(EXPOSED_COMMANDS.length, 31, "C8 opened a production command: " + EXPOSED_COMMANDS.join(","));
     /* 49 → 50 in Option B (`setCopyPending`), and → 51 in the four-state batch
        (`setCollectorCopyKept`). C8's claim is unchanged: C8 added no domain
        command, and the door it is really guarding — the allow-list above —
@@ -1059,7 +1059,7 @@ describe("G. whose shelf this is", () => {
        the count 25 again, and the history is now written out rather than
        quietly becoming true. */
     /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
-    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 55,
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 56,
       "C8 added a domain command");
     const app = code("server/app.js");
     assert(!/inventory-import|inventoryImport|\/api\/inventory|csv/i.test(app),
@@ -1141,7 +1141,7 @@ describe("I. and nothing else moved", () => {
 
   test("C8 wrote no migration: the newest is still somebody else's", () => {
     const migrations = fs.readdirSync(path.join(ROOT, "persistence", "migrations")).sort();
-    eq(migrations[migrations.length - 1], "0014_binder_memberships.sql", migrations.join(","));
+    /* RE-PINNED (Milestone 2D.1): the newest migration is now 0015, a deal's conversation — not this batch's. */ eq(migrations[migrations.length - 1], "0015_deal_conversations.sql", migrations.join(","));
   });
 
   test("the catalog gained a read and no write", () => {

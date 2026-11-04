@@ -575,6 +575,16 @@ export function acceptOffer(target) {
   }
   return (oppId) => target.execute("acceptPrice", { oppId });
 }
+/* A DEAL'S CONVERSATION (Milestone 2D.1). One message on one deal. `nonce`
+   is generated once per composed message and sent again unchanged on a retry,
+   so a press whose answer was lost is not a second message. The sender is
+   whoever is signed in; nothing here names a participant. */
+export function sendDealMessage(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("sendDealMessage: the production store is required");
+  }
+  return (oppId, text, nonce) => target.execute("sendDealMessage", { oppId, text, nonce });
+}
 export function declineOffer(target) {
   if (!target || typeof target.execute !== "function") {
     throw new TypeError("declineOffer: the production store is required");

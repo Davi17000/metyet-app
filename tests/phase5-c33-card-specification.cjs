@@ -765,13 +765,17 @@ describe("D. the production door, and what is still shut", () => {
          "Withdraw offer" in Deal Flow, and a shop's "Accept", "Counter" and
          "Decline" in Opportunities. Agreeing a price and nothing past it. */
       "startOpportunity", "proposePrice", "acceptPrice", "declineOffer", "cancelOpportunity",
+      /* AND THE ONE MILESTONE 2D.1 ADDED (founder-approved): a deal's conversation —
+         one plain-text message on one canonical opportunity, from one of its two
+         participants. It changes no term of any deal; only Accept accepts. */
+      "sendDealMessage",
     ].sort()), "the production surface is not what C3.4 declared");
     /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
        name; any other change to the size still fails here. */
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(EXPOSED_COMMANDS.length, 30);
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(EXPOSED_COMMANDS.length, 31);
     for (const name of EXPOSED_COMMANDS) {
       assert(C.COMMAND_NAMES.includes(name), `${name} is not a command`);
     }
@@ -1934,7 +1938,7 @@ describe("H. how somebody organises their collection is not a fact about a trade
 
   test("C3.3 wrote no migration: the newest is still somebody else's", () => {
     const names = fs.readdirSync(path.join(ROOT, "persistence", "migrations")).sort();
-    eq(names[names.length - 1], "0014_binder_memberships.sql",
+    /* RE-PINNED (Milestone 2D.1): the newest migration is now 0015, a deal's conversation — not this batch's. */ eq(names[names.length - 1], "0015_deal_conversations.sql",
       "C3.3 added a migration: " + names.join(","));
     /* `desired` lives in a Goal's attrs and needed no DDL; nothing else C3.3
        writes is a new shape. */

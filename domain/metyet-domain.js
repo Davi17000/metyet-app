@@ -1011,6 +1011,13 @@ const REFUSE = {
   noRelationship: "no-relationship",
   wrongStage: "wrong-stage",
   terminal: "terminal",
+  /* A deal message (Milestone 2D.1): nothing to say, too much to say, no
+     nonce to recognise a retry by, and a nonce already used by this sender
+     on this deal for different words. */
+  messageEmpty: "message-empty",
+  messageTooLong: "message-too-long",
+  nonceRequired: "nonce-required",
+  nonceConflict: "nonce-conflict",
   notYourTurn: "not-your-turn",
   goalLocked: "goal-locked",
   duplicateGoal: "duplicate-goal",
@@ -1528,6 +1535,15 @@ const requirePartner = (partnerId, fn) => {
 const threadKey = (collectorId, partnerId, card) =>
   collectorId + "::" + requirePartner(partnerId, "threadKey") + "::" + identityKey(card);
 
+/* ONE CONVERSATION PER DEAL (Milestone 2D.1). A deal's thread is keyed by the
+   deal alone — never by a card, a name or anything a client chose — and its
+   participants are the deal's own. Migration 0015 holds the database to the
+   same key, so the pair (unique key, this function) is one thread per deal. */
+const dealThreadKey = (oppId) => "opp::" + oppId;
+const findDealThread = (threads, oppId) => (threads || []).find((t) => t.key === dealThreadKey(oppId)) || null;
+/* A message is plain text of at most this many characters, after trimming. */
+const DEAL_MESSAGE_MAX = 2000;
+
 const findThread = (threads, collectorId, partnerId, card) => {
   const k = threadKey(collectorId, partnerId, card);
   return (threads || []).find((t) => t.key === k) || null;
@@ -1573,6 +1589,9 @@ const partnersInConversation = (threads, collectorId, card) =>
   threadsForCard(threads, collectorId, card).map((t) => t.partnerId).filter(Boolean);
 
 module.exports.threadKey = threadKey;
+module.exports.dealThreadKey = dealThreadKey;
+module.exports.findDealThread = findDealThread;
+module.exports.DEAL_MESSAGE_MAX = DEAL_MESSAGE_MAX;
 module.exports.findThread = findThread;
 module.exports.appendThreadEntry = appendThreadEntry;
 module.exports.hasConversation = hasConversation;

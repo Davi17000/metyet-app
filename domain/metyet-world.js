@@ -690,7 +690,16 @@ function validateWorld(state) {
     ref(collectors, t.collectorId, `${path}.collectorId`, "collector", who);
     /* D.threadKey throws on a partnerless thread, so this one breaks execute. */
     ref(partners, t.partnerId, `${path}.partnerId`, "partner", who);
-    const card = cardRef(t.cardId, `${path}.cardId`, who);
+    /* A DEAL'S OWN THREAD (Milestone 2D.1): no legacy card; keyed by its deal
+       alone, and that deal must exist (checked with the oppId below). */
+    const dealThread = t.cardId === null || t.cardId === undefined;
+    if (dealThread) {
+      if (blank(t.oppId)) report("ref.missing", `${path}.oppId`, `${who} names neither a card nor a deal.`);
+      else if (t.key !== D.dealThreadKey(t.oppId)) {
+        report("field.invalid", `${path}.key`, `${who} has key ${JSON.stringify(t.key)}; its deal gives "${D.dealThreadKey(t.oppId)}".`);
+      }
+    }
+    const card = dealThread ? null : cardRef(t.cardId, `${path}.cardId`, who);
     if (card && isId(t.collectorId) && isId(t.partnerId)) {
       const expected = D.threadKey(t.collectorId, t.partnerId, card);
       if (t.key !== expected) {

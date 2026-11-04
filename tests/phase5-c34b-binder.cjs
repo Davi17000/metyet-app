@@ -1168,7 +1168,7 @@ describe("E. add cards", () => {
     }
     /* No table grew a place to put it, either. */
     const migrations = fs.readdirSync(path.join(ROOT, "persistence", "migrations")).sort();
-    eq(migrations[migrations.length - 1], "0014_binder_memberships.sql",
+    /* RE-PINNED (Milestone 2D.1): the newest migration is now 0015, a deal's conversation — not this batch's. */ eq(migrations[migrations.length - 1], "0015_deal_conversations.sql",
       "C3.4 added a migration: " + migrations.join(","));
     assert(!/prefs/.test(code("persistence/world-repository.js")), "a prefs column appeared");
   });
@@ -1487,13 +1487,17 @@ describe("F. the two new doors", () => {
          "Withdraw offer" in Deal Flow, and a shop's "Accept", "Counter" and
          "Decline" in Opportunities. Agreeing a price and nothing past it. */
       "startOpportunity", "proposePrice", "acceptPrice", "declineOffer", "cancelOpportunity",
+      /* AND THE ONE MILESTONE 2D.1 ADDED (founder-approved): a deal's conversation —
+         one plain-text message on one canonical opportunity, from one of its two
+         participants. It changes no term of any deal; only Accept accepts. */
+      "sendDealMessage",
     ].sort()), "the production surface is not what C3.4 declared");
     /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
        name; any other change to the size still fails here. */
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(EXPOSED_COMMANDS.length, 30);
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(EXPOSED_COMMANDS.length, 31);
     for (const name of EXPOSED_COMMANDS) {
       assert(C.COMMAND_NAMES.includes(name), `${name} is not a command`);
     }
@@ -1875,7 +1879,7 @@ describe("H. the navigation", () => {
 
   test("C3.4b wrote no migration: the newest is still somebody else's", () => {
     const migrations = fs.readdirSync(path.join(ROOT, "persistence", "migrations")).sort();
-    eq(migrations[migrations.length - 1], "0014_binder_memberships.sql", migrations.join(","));
+    /* RE-PINNED (Milestone 2D.1): the newest migration is now 0015, a deal's conversation — not this batch's. */ eq(migrations[migrations.length - 1], "0015_deal_conversations.sql", migrations.join(","));
     /* 49 → 50 in Option B (`setCopyPending`). C3.4b's real claim is the line
        above — no new MIGRATION — and it survived Option B intact: that batch
        added a durable field to an inventory copy and still needed no
@@ -1885,7 +1889,7 @@ describe("H. the navigation", () => {
        foundation it shipped needed neither, and 3A's are additive — nothing
        C3.4b built was re-keyed, widened or dropped to make room. */
     /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
-    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(C.COMMAND_NAMES.length, 55, "a command was added or removed");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(C.COMMAND_NAMES.length, 56, "a command was added or removed");
   });
 
   test("compatibility: a historical Goal with no criteria is still manageable", async () => {

@@ -687,7 +687,7 @@ describe("G. The boundary", () => {
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(EXPOSED_COMMANDS.length, 30, "the production surface is not the size this batch declared");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(EXPOSED_COMMANDS.length, 31, "the production surface is not the size this batch declared");
     assert(EXPOSED_COMMANDS.includes("addCopyPhotos"),
       "the shop lost its way to answer a request");
     for (const open of ["reviewCopy", "endReview", "requestPhotos"]) {
@@ -710,7 +710,7 @@ describe("G. The boundary", () => {
   test("[41] no migration, and no new durable field", () => {
     const migrations = fs.readdirSync(path.join(ROOT, "persistence/migrations"))
       .filter((f) => f.endsWith(".sql")).sort();
-    eq(migrations[migrations.length - 1], "0014_binder_memberships.sql", migrations.join(","));
+    /* RE-PINNED (Milestone 2D.1): the newest migration is now 0015, a deal's conversation — not this batch's. */ eq(migrations[migrations.length - 1], "0015_deal_conversations.sql", migrations.join(","));
     /* A durable concept would show up as a FIELD being written or read, so this
        looks for the shapes a field takes rather than for the word, which the
        comments use freely to explain that there is no such field. */

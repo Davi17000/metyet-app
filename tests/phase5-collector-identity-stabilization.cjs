@@ -718,7 +718,7 @@ describe("D. What this batch did not touch", () => {
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(EXPOSED_COMMANDS.length, 30, "the production surface changed size");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(EXPOSED_COMMANDS.length, 31, "the production surface changed size");
     const { COMMAND_NAMES } = require("../domain/metyet-commands.js");
     const known = (n) => [...COMMAND_NAMES].includes(n);
     for (const shut of ["proposeTradeSelection", "reviewTradeCard", "proposeMarketValue",
@@ -741,8 +741,8 @@ describe("D. What this batch did not touch", () => {
        is NOT superseded, and is in fact the proof 3A owes — `binder_entries`
        keeps its exact shape, the archive still works, and the legacy row is
        still a fact about a CARD. */
-    eq(migrations.length, 14, migrations.join(","));
-    eq(migrations[migrations.length - 1], "0014_binder_memberships.sql", "a migration was added");
+    /* RE-PINNED (Milestone 2D.1): + 0015 */ eq(migrations.length, 15, migrations.join(","));
+    /* RE-PINNED (Milestone 2D.1): the newest migration is now 0015, a deal's conversation — not this batch's. */ eq(migrations[migrations.length - 1], "0015_deal_conversations.sql", "a migration was added");
     const st = world();
     const bd = okv(x(st, CASEY, "createBinder", { name: "Shoebox" }), "binder");
     okv(x(st, CASEY, "addGoal",

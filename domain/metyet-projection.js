@@ -323,6 +323,18 @@ const COLLECTIONS = ["catalog", "collectors", "partners", "relationships", "invi
      section cannot appear unnoticed" a real guard rather than a list to edit. */
   "binderMemberships",
   "interests", "opportunities", "conversations", "activity", "photoRequests", "copyReviews"];
+/* A participant's own threads (each projection already filters to them).
+   A deal message's `nonce` (Milestone 2D.1) is how its SENDER recognises a
+   retry; it is nothing to the other participant, so it reaches only the
+   seat that wrote it. Everything else in a thread is shared by both. */
+const threadsFor = (threads, seat) => clone(threads).map((t) => (Array.isArray(t.entries)
+  ? { ...t, entries: t.entries.map((e) => {
+    if (!e || e.nonce === undefined || e.by === seat) return e;
+    const { nonce, ...rest } = e;
+    return rest;
+  }) }
+  : t));
+
 const SECTIONS = ["actor", ...COLLECTIONS, "counterparties", "discoveries"];
 const empty = () => {
   const out = { actor: null };
@@ -487,7 +499,7 @@ function projectForCollector(state, me) {
       .filter((x) => myCopyIds.has(x.binderId) && related(x.partnerId))
       .map((x) => pick(x, INTEREST_FOR_COLLECTOR)),
     opportunities: opportunities.map((o) => ownReadPosition(withTurn(omit(o, OPPORTUNITY_PARTNER_PRIVATE), o), "collector")),
-    conversations: clone(conversations),
+    conversations: threadsFor(conversations, "collector"),
     activity: [],                                          // D-4: partner-private
     photoRequests: clone(photoRequests),
     copyReviews: clone(copyReviews),
@@ -584,7 +596,7 @@ function projectForPartner(state, me) {
     binderMemberships: [],
     interests: clone(list(state.interests).filter((x) => x.partnerId === pid)),
     opportunities: opportunities.map(opportunityForPartner),
-    conversations: clone(conversations),
+    conversations: threadsFor(conversations, "tp"),
     activity: clone(list(state.activity).filter((a) => a.partnerId === pid)),   // D-4
     photoRequests: clone(photoRequests),
     copyReviews: [],                               // a collector's own review workflow

@@ -1380,7 +1380,7 @@ describe("I. A capability with a surface, at last", () => {
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(EXPOSED_COMMANDS.length, 30, `the production surface is ${EXPOSED_COMMANDS.join(",")}`);
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(EXPOSED_COMMANDS.length, 31, `the production surface is ${EXPOSED_COMMANDS.join(",")}`);
     /* RE-PINNED (Batch 3C-1): THE CARD-LEVEL PAIR IS NO LONGER A PAIR. 3B-1
        kept `addBinderEntry` open for one release so a browser tab opened before
        that deploy kept working; that release shipped (`b658e7e`), the release
@@ -1397,7 +1397,7 @@ describe("I. A capability with a surface, at last", () => {
       eq(typeof C.COMMANDS[name], "function", `${name} has no implementation`);
     }
     /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
-    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq([...C.COMMAND_NAMES].length, 55, "the domain command table moved");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq([...C.COMMAND_NAMES].length, 56, "the domain command table moved");
     const st = world();
     const id = okv(x(st, CASEY, "fileObject", { binderId: "A", goalId: "g1" }), "file");
     eq(homeOf(st, "goalId", "g1").binderId, "A", "the command stopped working");
@@ -1483,7 +1483,7 @@ describe("I. A capability with a surface, at last", () => {
        left with the door it sent through. */
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29, both sides at once —
        the five price bindings arrived with the screens that call them. */
-    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(sent.size, 30, `the client can send ${sent.size}`);
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(sent.size, 31, `the client can send ${sent.size}`);
     /* AND EVERY ONE OF THEM IS IMPORTED BY SOMETHING. This is the half the
        exact-set guard cannot see: a binding nothing imports satisfies it while
        being dead, which is what 3A's two thunks were. */
@@ -1500,14 +1500,15 @@ describe("I. A capability with a surface, at last", () => {
     /* The batch is a change of SUBJECT in the UI. These are the counts it
        fixes, asserted together so a change to a screen cannot quietly arrive
        with a change to the schema or the refusal vocabulary. */
+    /* RE-PINNED (Milestone 2D.1, founder-approved): + 0015, a deal's conversation */
     eq(require("fs").readdirSync(path.join(ROOT, "persistence/migrations"))
-      .filter((f) => f.endsWith(".sql")).length, 14, "a migration moved");
+      .filter((f) => f.endsWith(".sql")).length, 15, "a migration moved");
     /* 45 since Market Validation Batch 1, which added exactly one code,
        `invalid-pricing-preference` (a TP's Firm on Price must be a boolean).
        The pin still fails on any other change to the vocabulary. */
     /* 46 since Market Validation Batch 2: `firm-on-price` (an opening on a Firm
        copy must equal its captured Proposed Market Price). */
-    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(Object.keys(D.REFUSE).length, 51, "the refusal vocabulary moved");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + four message refusals (empty, too long, nonce required, nonce conflict) — each founder-approved */ eq(Object.keys(D.REFUSE).length, 55, "the refusal vocabulary moved");
     eq(D.REFUSE.firmOnPrice, "firm-on-price", "Batch 2's one new refusal code");
     eq(D.REFUSE.invalidPricingPreference, "invalid-pricing-preference", "Batch 1's one new refusal code");
     assert(D.REFUSE.invalidTarget === "invalid-target" && D.REFUSE.binderArchived === "binder-archived",

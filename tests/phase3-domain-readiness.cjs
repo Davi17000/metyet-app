@@ -244,6 +244,11 @@ function everyCommand(store, rec) {
   step("proposePrice", { opp: opp(o) });
   x(C1, "acceptPrice", { oppId: o });
   step("acceptPrice", { opp: opp(o) });
+  /* MILESTONE 2D.1: a message on the deal's own thread — after agreement, which
+     is not the end of the conversation — carrying a forged `at` like the rest. */
+  const m = x(C1, "sendDealMessage", { oppId: o, text: "Agreed — let's talk trades", nonce: "n-1" });
+  const dealThread = () => s().conversations.find((t) => t.key === D.dealThreadKey(o));
+  step("sendDealMessage", { id: m, entry: dealThread().entries.find((e) => e.id === m), opp: opp(o) });
   /* THE ONE AVAILABILITY FACT A PARTNER CHOOSES (Option B). Set and released
      here so the script exercises both directions, and so the recorded shape
      shows a copy carrying `pendingFor` and then not. */
@@ -418,8 +423,9 @@ describe("B. every minted id comes from the injected runtime", () => {
        command is exercised by the script above like all the others.
        51 → 53 in Batch 3A (`fileObject`, `unfileObject`): object-level Binder
        membership is a new durable fact, so it needed commands to state it.
-       53 → 54 in Market Validation Batch 2 (`declineOffer`), exercised above. */
-    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(C.COMMAND_NAMES.length, 55, "the command set");
+       53 → 54 in Market Validation Batch 2 (`declineOffer`), exercised above.
+       55 → 56 in Milestone 2D.1 (`sendDealMessage`), exercised above. */
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(C.COMMAND_NAMES.length, 56, "the command set");
   });
 
   test("each new record's id is exactly what the runtime handed out, with the record's prefix", () => {
@@ -441,6 +447,8 @@ describe("B. every minted id comes from the injected runtime", () => {
     assert(countedId("inv-").test(steps.inviteCollector.invitation.id), "invitation id");
     eq(steps.inviteCollector.invitation.id, steps.inviteCollector.id, "the command returns the invitation's own id");
     assert(countedId("e").test(steps.sendMessage.entry.id), "message entry id");
+    /* M2D.1: a deal message's id is the runtime's, and the command returns it */
+    assert(countedId("m").test(steps.sendDealMessage.id) && steps.sendDealMessage.entry.id === steps.sendDealMessage.id, "deal message id");
     assert(countedId("e").test(steps.recordNote.entry.id), "milestone entry id");
     assert(countedId("a").test(steps.recordNote.activity.id), "activity id");
     assert(countedId("tck2-").test(steps.proposeTradeSelection.opp.trade.cards[0].id), "trade row id");
@@ -487,6 +495,7 @@ describe("C. every authoritative timestamp is the injected runtime's time", () =
     revokeCollectorInvitation: (x) => [x.invitation.revokedAt],
     markBinderReviewed: (x) => [x.relationship.binderReviewedAt],
     sendMessage: (x) => [x.entry.at],
+    sendDealMessage: (x) => [x.entry.at],
     reachOut: (x) => [x.entry.at],
     recordNote: (x) => [x.entry.at, x.activity.date],
     startOpportunity: (x) => [x.opp.priceThread[0].at, x.opp.updated],

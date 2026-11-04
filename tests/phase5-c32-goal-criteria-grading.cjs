@@ -551,7 +551,7 @@ describe("D. what the product may not invent", () => {
     /* RE-PINNED TWICE. C3.2 added no migration and still has not; the newest
        is whatever the newest is, and it has since been C3.1's and now Batch
        3A's. What this asserts is that `desired` never acquired a column. */
-    eq(versions[versions.length - 1], "0014_binder_memberships",
+    /* RE-PINNED (Milestone 2D.1): the newest migration is now 0015, a deal's conversation — not this batch's. */ eq(versions[versions.length - 1], "0015_deal_conversations",
       "C3.2 added a migration; `desired` lives in the Goal's attrs and needs no column");
     /* The Goal table stores everything but identity and its card in `attrs`
        (`tier` is a generated column read FROM attrs), so a new attrs key needs
@@ -753,13 +753,17 @@ describe("E. what C3.2 did not touch", () => {
          "Withdraw offer" in Deal Flow, and a shop's "Accept", "Counter" and
          "Decline" in Opportunities. Agreeing a price and nothing past it. */
       "startOpportunity", "proposePrice", "acceptPrice", "declineOffer", "cancelOpportunity",
+      /* AND THE ONE MILESTONE 2D.1 ADDED (founder-approved): a deal's conversation —
+         one plain-text message on one canonical opportunity, from one of its two
+         participants. It changes no term of any deal; only Accept accepts. */
+      "sendDealMessage",
     ].sort()), "the production surface is not what C3.4 declared");
     /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
        name; any other change to the size still fails here. */
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    /* P6-F4 B5: + changeCollectingState, founder-approved */ eq(EXPOSED_COMMANDS.length, 30);
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(EXPOSED_COMMANDS.length, 31);
 
     /* C3.2 ADDED NEITHER, asserted against C3.2's own commit rather than
        against the world as it is now. This is the claim that batch actually
