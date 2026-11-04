@@ -22,6 +22,7 @@
    ========================================================================== */
 
 import React, { useRef, useState } from "react";
+import { printingLine } from "./printing.js";
 
 const dollars = (n) => (typeof n === "number" && Number.isFinite(n)
   ? "$" + Math.round(n).toLocaleString("en-US") : null);
@@ -191,14 +192,17 @@ export function OfferEntry({ cls, listed = null, fixed = null, verb = "Send offe
 
 /* ------------------------------------------------------------ READING
    `seat` is who is looking ("collector" or "tp"); `other` is the other
-   person's name. */
+   person's name. Each move in the Collector's words (Milestone 2D.3):
+   "Casey's offer", "Your counter", "Casey accepted" — an offer and a
+   counter stay distinct. */
 const entryLine = (e, seat, other, listed) => {
   const me = e.by === seat;
-  const who = me ? "You" : other;
-  const verb = e.type === "offer" ? "offered" : e.type === "counter" ? "countered with" : e.type === "accept" ? "accepted" : e.type;
+  const label = e.type === "offer" || e.type === "counter"
+    ? `${me ? "Your" : possessive(other)} ${e.type}`
+    : e.type === "accept" ? `${me ? "You" : other} accepted` : `${me ? "You" : other} ${e.type}`;
   const basis = e.basis && typeof e.basis.percent === "number" && dollars(listed)
     ? ` (${pct(e.basis.percent)} of ${dollars(listed)})` : "";
-  return `${who} ${verb} ${dollars(e.amount)}${basis}`;
+  return `${label} ${dollars(e.amount)}${basis}`;
 };
 
 export function PriceHistory({ cls, deal, seat, other }) {
@@ -325,25 +329,23 @@ export function statusLine(deal, seat, other, stageName) {
     const what = thread.length && thread[thread.length - 1].type === "offer" ? "offer" : "counter";
     return `${other}'s ${what} is ${dollars(amount)}. Your move.`;
   }
-  return `Waiting for ${other} to reply to your ${dollars(amount)}.`;
+  const last = threadOf(deal).slice(-1)[0];
+  return `Waiting for ${other} to reply to your ${dollars(amount)} ${last && last.type === "offer" ? "offer" : "counter"}.`;
 }
 
-/* The captured terms: the price the shop listed when the offer opened, and
-   whether it was Firm or Open. Both are the server's snapshot. */
+/* The captured terms: whether the shop was Firm or Open when the offer
+   opened — the server's snapshot. The asking price captured with it is said
+   once, as the record's own "Asking price" (Milestone 2D.3), so it is not
+   repeated here. */
 export const termsLine = (deal) => [
-  /* the partner's price captured when the offer opened — named as everywhere
-     else (P6-F5B): it is the Proposed Market Price, never the agreed one */
-  dollars(deal && deal.listedPrice) ? `Proposed Market Price ${dollars(deal.listedPrice)}` : null,
   deal && deal.firmOnPrice === true ? "Firm on Price" : deal && deal.firmOnPrice === false ? "Open to Offers" : null,
 ].filter(Boolean).join(" · ") || null;
-/* THE EXACT CARD, IN ONE LINE: name, set and number, then the version words
-   every other production screen uses for it (print run, finish, language),
-   from the catalogue's own description. A card not yet described says so
-   rather than guessing. */
+/* THE EXACT CARD, IN ONE LINE: name, then set, number and version in the
+   words every other production screen uses (`printingLine`, Milestone 2D.3) —
+   "Normal", not the catalogue's `non_holo · not_applicable · en`. A card not
+   yet described says nothing rather than guessing. */
 export const cardLine = (card) => {
   if (!card) return null;
-  const set = [card.expansionName, card.collectorNumber ? `#${card.collectorNumber}` : null].filter(Boolean).join(" ");
-  const version = [card.printRun, card.finish, card.language].filter(Boolean).join(" · ");
-  return [card.cardName, set || null, version || null].filter(Boolean).join(" · ") || null;
+  return [card.cardName, printingLine(card)].filter(Boolean).join(" · ") || null;
 };
 export { dollars };

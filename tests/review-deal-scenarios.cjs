@@ -45,7 +45,8 @@ describe("B. Trusted Partner counteroffer received", () => {
     eq(f.onTable, 11);
     eq(f.proposedMarketPrice, 12);
     eq(f.partnerSees.panel, "In progress");
-    eq(f.partnerSees.priceBlock.says, "Waiting for Casey to reply to your $11.");
+    /* RESTATED (Milestone 2D.3 polish): the shop's $11 is named as a counter. */
+    eq(f.partnerSees.priceBlock.says, "Waiting for Casey to reply to your $11 counter.");
     eq(f.partnerSees.priceBlock.controls.length, 0, "the shop can answer its own counter");
   });
 });

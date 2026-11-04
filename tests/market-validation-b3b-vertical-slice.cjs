@@ -331,8 +331,13 @@ describe("B. the shop answers from Opportunities", () => {
     const rec = record(ready, "Casey");
     assert(rec, "Casey's offer is not under Ready to coordinate");
     const t = textOf(rec).replace(/\s+/g, " ");
-    for (const part of ["Mudkip", "non_holo", "PSA 9", "Proposed Market Price $120", "Open to Offers", "Casey's offer is $100. Your move.",
-      "Casey offered $100", "Your move"]) assert(t.includes(part), `the shop is not told "${part}": ${t}`);
+    /* RESTATED (Milestone 2D.3): the printing in words ("Normal"), as the
+       Collector reads it — never the catalogue's codes. */
+    assert(!/non_holo|not_applicable|· en\b/.test(t), `an internal printing code reached the shop: ${t}`);
+    /* RESTATED (Milestone 2D.3 polish): the Collector's words on the shop's
+       side — "Asking price", "Casey's offer" — said once each. */
+    for (const part of ["Mudkip", "Ruby & Sapphire · #60 · Normal", "PSA 9", "Asking price $120", "Open to Offers", "Casey's offer is $100. Your move.",
+      "Casey's offer $100", "Your move"]) assert(t.includes(part), `the shop is not told "${part}": ${t}`);
     for (const b of ["Accept $100", "Counter", "Decline"]) assert(button(rec, b), `no ${b}`);
     assert(!record(panel(north, "In progress") || north.r.root, "Casey") || !panel(north, "In progress")
       || !textOf(panel(north, "In progress")).includes("Casey"), "and it is not also under In progress");
@@ -344,7 +349,12 @@ describe("B. the shop answers from Opportunities", () => {
     const r = await stored(ctx, o.id);
     eq([r.agreedPrice, r.stage].join("|"), "110|select-trade", "agreed and advanced");
     const prog = panel(north, "In progress");
-    assert(prog && textOf(prog).includes("Waiting for Casey"), "the shop sees whose turn it now is");
+    /* RESTATED (Milestone 2D.3): Select Trade is not in production, so the
+       shop is no longer told it is waiting on Casey — a move Casey cannot
+       make. It is told the price is agreed and what comes next. */
+    assert(prog && textOf(prog).includes("Price agreed · Select Trade coming soon") && !textOf(prog).includes("Waiting for Casey"),
+      "the shop is not told the price is agreed and Select Trade is coming");
+    assert(/Agreed price \$110/.test(textOf(prog).replace(/\s+/g, " ")), "the agreed price is not shown prominently");
     const ready = panel(north, "Ready to coordinate");
     assert(!ready || !record(ready, "Casey"), "Casey's offer is no longer waiting on the shop");
     await casey.refresh();
@@ -379,7 +389,8 @@ describe("C. back and forth", () => {
     await press(north, rec(), "Counter");
     await typeIn(rec(), "115"); await submit(rec());
     eq((await stored(ctx, o.id)).priceThread[1].amount, 115, "counter recorded");
-    assert(textOf(panel(north, "In progress")).includes("Waiting for Casey to reply to your $115."), "the shop now waits");
+    /* RESTATED (Milestone 2D.3 polish): it says the shop's $115 is a counter. */
+    assert(textOf(panel(north, "In progress")).includes("Waiting for Casey to reply to your $115 counter."), "the shop now waits");
     await casey.refresh();
     const said = await dealSaid(casey);
     /* RESTATED (Milestone 2D.2 refinement): both figures, the counter marked Latest. */
@@ -406,7 +417,8 @@ describe("C. back and forth", () => {
     eq([t.amount, t.basis && t.basis.percent].join("|"), "108|0.9", "sent as a percentage; the server resolved it");
     await north.refresh();
     const rec = record(panel(north, "Ready to coordinate"), "Casey");
-    assert(textOf(rec).includes("Casey countered with $108 (90% of $120)"), "the shop sees the basis: " + textOf(rec));
+    /* RESTATED (Milestone 2D.3 polish): "Casey's counter", basis kept. */
+    assert(textOf(rec).includes("Casey's counter $108 (90% of $120)"), "the shop sees the basis: " + textOf(rec));
     await press(north, rec, "Accept $108");
     eq((await stored(ctx, o.id)).agreedPrice, 108, "agreed");
   });

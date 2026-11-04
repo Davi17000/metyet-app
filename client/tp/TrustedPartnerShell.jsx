@@ -310,6 +310,18 @@ const CSS = `
 .tps-offer-unit { color:var(--muted); font-weight:600; }
 .tps-offer-line { margin:0; font-size:12px; color:var(--muted); }
 .tps-offer-problem { margin:0; font-size:12px; color:var(--amber); }
+/* The price moves are the record's primary actions: a full finger's height
+   (Milestone 2D.3). They already wrap, so 320px stacks them, never crowds. */
+.tps-offer-do .tps-go, .tps-offer-mode .tps-chip { min-height:44px; }
+.tps-offer-field input { min-height:44px; box-sizing:border-box; }
+/* An agreed price (Milestone 2D.3): the figure first and large, the prices
+   that led to it under it, then what comes next. */
+.tps-agreed { margin:0 16px 15px; padding:11px 12px; border:1px solid #CBE0E2; border-radius:6px; background:var(--t1-bg);
+  display:flex; flex-direction:column; gap:7px; max-width:70ch; }
+.tps-agreed-row { margin:0; display:flex; justify-content:space-between; align-items:baseline; gap:12px; color:var(--t1); }
+.tps-agreed-row span { font-size:13px; font-weight:600; }
+.tps-agreed-row strong { font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; }
+.tps-agreed-next { margin:0; font-size:12.5px; color:var(--text); line-height:1.45; }
 .tps-chip { background:#FFF; border:1px solid var(--line); color:var(--muted); border-radius:999px;
   padding:5px 11px; font-size:12px; }
 .tps-chip.on { border-color:var(--t1); color:var(--t1); font-weight:600; }

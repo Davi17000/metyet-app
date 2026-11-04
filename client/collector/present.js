@@ -217,38 +217,10 @@ export const photoNote = (photos) => {
   return has.length === 2 ? "Front and back" : (has[0] === "front" ? "Front only" : "Back only");
 };
 
-/* The prototype's version words (fixtures.js FINISH_NAMES), plus what else
-   makes a production printing different, said only when it is not the usual. */
-const FINISH_NAMES = { non_holo: "Normal", holofoil: "Holo", reverse_holofoil: "Reverse Holo", cosmos_holofoil: "Cosmos Holo" };
-const titled = (s) => String(s).replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-/* `siblings` are the card's other printings: a print run that is usually left
-   unsaid ("Unlimited") is said when a sibling differs by it, so "Holo ·
-   Unlimited" and "Holo · First Edition" can be told apart. */
-/* What else makes a printing different, besides its finish — each said only
-   when it is not the usual. Shared by both labels below. */
-const qualifiers = (card, siblings = []) => [
-  card.printRun && card.printRun !== "not_applicable" && (card.printRun !== "unlimited"
-    || siblings.some((o) => o !== card && o.finish === card.finish && o.printRun !== card.printRun)) ? titled(card.printRun) : null,
-  card.stamp && card.stamp !== "none" ? `${titled(card.stamp)} stamp` : null,
-  card.printVariation && card.printVariation !== "standard" ? titled(card.printVariation) : null,
-  card.language && card.language !== "en" ? card.language.toUpperCase() : null,
-].filter(Boolean);
-export const versionLabel = (card, siblings = []) => [
-  FINISH_NAMES[card.finish] || titled(card.finish || "Version"),
-  ...qualifiers(card, siblings),
-].join(" · ");
-
-/* A printing as one line — set, number and version — from the canonical card
-   the catalogue described (Milestone 2C.3), in the Browse card's own words
-   (`versionLabel`'s). Pure presentation: it decides no identity, match or
-   price. Two Goals for one card in different finishes must never read alike,
-   so the finish is always said when the catalogue names one — and nothing is
-   invented when it does not: no "Version" placeholder, only what is known. */
-export const printingLine = (card) => (card
-  ? [text(card.expansionName), card.collectorNumber ? `#${card.collectorNumber}` : null,
-    text(card.finish) ? FINISH_NAMES[card.finish] || titled(card.finish) : null,
-    ...qualifiers(card)].filter(Boolean).join(" · ") || null
-  : null);
+/* The version words and the printing line live in client/printing.js
+   (Milestone 2D.3), so the Trusted Partner's workspace names a printing in
+   the same words without reaching into this app. */
+export { versionLabel, printingLine } from "../printing.js";
 
 /* ---------------------------------------------------------------- LABELS */
 

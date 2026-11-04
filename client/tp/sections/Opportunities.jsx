@@ -189,6 +189,7 @@ export default function Opportunities({ state, onBrowseCards = null,
        same card, however plausible it would look. */
     const copy = o.invId != null ? copies.get(o.invId) || null : null;
     const known = isKnownStage(o.stage);
+    const awaiting = awaitingTrade(o);
     const grade = gradeLine(card);
     const subtitle = [cardSetLine(card), grade].filter(Boolean).join(" · ") || null;
     /* A deal on a catalogue card names it from the catalogue's description,
@@ -204,18 +205,20 @@ export default function Opportunities({ state, onBrowseCards = null,
         subtitle={exact || (cardTitle(card) ? `${cardTitle(card)}${subtitle ? ` — ${subtitle}` : ""}` : subtitle)}
         tags={
           <>
-            <Tag tone={known ? "strong" : "unknown"}>{stageLabel(o.stage)}</Tag>
+            {awaiting ? <Tag tone="strong">Price agreed · Select Trade coming soon</Tag>
+              : <Tag tone={known ? "strong" : "unknown"}>{stageLabel(o.stage)}</Tag>}
             {known ? null : <Tag>not a stage this version knows</Tag>}
             {goal ? <Tag>{tierLabel(goal.tier)}</Tag> : null}
-            {turnTag(o)}
+            {awaiting ? null : turnTag(o)}
           </>
         }
         note={text(goal && goal.note)}
         noteLabel="Their goal"
         facts={
           <>
-            <Fact label="Listed" value={money(o.listedPrice)} mono />
-            <Fact label="Agreed" value={money(o.agreedPrice)} mono />
+            <Fact label="Asking price" value={money(o.listedPrice)} mono />
+            {/* Said once: the agreed-price summary below carries it when shown. */}
+            <Fact label="Agreed price" value={agreedOn(o) ? null : money(o.agreedPrice)} mono />
             {/* This copy's own cert and your own cost for it. */}
             <Fact label="Your copy" value={text(copy && copy.cert)} mono />
             <Fact label="Your cost" value={money(copy && copy.cost)} mono />
@@ -229,6 +232,13 @@ export default function Opportunities({ state, onBrowseCards = null,
             onCounterOffer={onCounterOffer} onAcceptOffer={onAcceptOffer}
             onDeclineOffer={onDeclineOffer} onRefresh={onRefresh} report={sayAbout(o.id)} note={said[o.id] || null} />
         ) : null}
+        {agreedOn(o) ? (
+          <div className="tps-agreed" aria-label="Agreed price">
+            <p className="tps-agreed-row"><span>Agreed price</span><strong>{dollars(o.agreedPrice)}</strong></p>
+            <PriceHistory cls="tps" deal={o} seat={me} other={who.get(o.collectorId) || "The collector"} />
+            {awaiting ? <p className="tps-agreed-next">Agreeing a price doesn't complete the deal. Select Trade is coming soon.</p> : null}
+          </div>
+        ) : null}
         {said[o.id] && !(isUnresolved(o) || isEndedDeal(o))
           ? <p className="tps-offer-problem tps-offer-said" role="status">{said[o.id]}</p> : null}
         <DealTalk deal={o} state={state} me={me} collector={who.get(o.collectorId) || "the collector"}
@@ -237,6 +247,14 @@ export default function Opportunities({ state, onBrowseCards = null,
       </Record>
     );
   };
+  /* AN AGREED PRICE, AND NOTHING YET AFTER IT (Milestone 2D.3). The server's
+     turn says the next move is choosing a trade (`choose-trade`), and
+     production has no Select Trade yet — so "Waiting for Casey" would send
+     the shop waiting on a move Casey cannot make. Said instead as what it
+     is, in the Collector's terms. Read from `turn` and `agreedPrice`, the
+     server's own fields; no stage is compared and nothing is decided. */
+  const agreedOn = (o) => isLiveDeal(o) && !isUnresolved(o) && !!dollars(o.agreedPrice);
+  const awaitingTrade = (o) => agreedOn(o) && o.turn.reason === "choose-trade";
   /* Whose turn, in two words. Only for live deals; a finished one has none. */
   const turnTag = (o) => {
     if (!isLiveDeal(o) || !o.turn.seat) return null;
