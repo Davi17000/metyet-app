@@ -223,8 +223,9 @@ export function PriceHistory({ cls, deal, seat, other }) {
    no controls, no live box — rather than guessing.
 
    THE ONE DELIBERATE READ OF THE THREAD. `threadOf` is the only place the
-   price history is opened, and it is opened to SHOW it: the history list, and
-   whether the last price was an offer or a counter, for the wording. Neither
+   price history is opened, and it is opened to SHOW it: the history list,
+   each side's latest figure (`priceRows`), and whether the last price was an
+   offer or a counter, for the wording. Neither
    decides anything — what may be pressed, and for how much, comes from `turn`.
 
    WHO IS LOOKING is `state.actor.seat`, the server's own statement of the
@@ -255,6 +256,42 @@ export const lastPriceMove = (deal) => {
   const thread = threadOf(deal);
   return thread.length ? thread[thread.length - 1].type || null : null;
 };
+
+/* ---------------------------------------------- THE PRICES SO FAR
+   (Milestone 2D.2 refinement) The negotiation in a few rows, so the viewer
+   can see the asking price, what they last offered and what the other side
+   last countered, all at once. Like `PriceHistory`, a display read of the
+   history through `threadOf`, plus `agreedPrice`; it decides nothing. What
+   may be pressed, and for how much, is still the server's `turn`.
+
+     asking   the price captured when the offer opened (`listedPrice`)
+     yours    this viewer's latest offer or counter
+     theirs   the other side's latest counter (or offer)
+     agreed   only once a price was explicitly accepted (`agreedPrice`)
+
+   `latest` marks the figure on the table while the price is open. Rows with
+   nothing behind them are left out, never shown as empty or zero. */
+const possessive = (name) => (/s$/i.test(name) ? `${name}'` : `${name}'s`);
+const priced = (n) => typeof n === "number" && Number.isFinite(n) && n > 0;
+export function priceRows(deal, me, partner) {
+  if (!deal) return [];
+  const who = partner || "The other side";
+  const moves = threadOf(deal)
+    .filter((e) => e && (e.type === "offer" || e.type === "counter") && priced(e.amount));
+  const lastWhere = (test) => { for (let i = moves.length - 1; i >= 0; i -= 1) if (test(moves[i])) return moves[i]; return null; };
+  const latest = isUnresolved(deal) ? moves[moves.length - 1] || null : null;
+  const yours = me ? lastWhere((e) => e.by === me) : null;
+  const theirs = me ? lastWhere((e) => e.by !== me) : null;
+  const out = [];
+  if (priced(deal.listedPrice)) out.push({ key: "asking", label: `${possessive(who)} asking price`, amount: deal.listedPrice });
+  if (yours) out.push({ key: "yours", label: "Your offer", amount: yours.amount, latest: yours === latest });
+  if (theirs) {
+    out.push({ key: "theirs", label: `${possessive(who)} ${theirs.type === "offer" ? "offer" : "counter"}`,
+      amount: theirs.amount, latest: theirs === latest });
+  }
+  if (!isUnresolved(deal) && priced(deal.agreedPrice)) out.push({ key: "agreed", label: "Agreed price", amount: deal.agreedPrice });
+  return out;
+}
 
 /* One sentence: where this deal stands, from this viewer. `stageName` is the
    viewer's own word for the stage, used only as a label. */

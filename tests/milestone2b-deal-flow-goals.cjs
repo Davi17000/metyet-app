@@ -329,7 +329,9 @@ describe("F. pricing language and the agreed state", () => {
   test("opening offer: Proposed Market Price and Your opening offer, in the workspace", async () => {
     const { st, oppId } = withDeal();
     const t = flat((await workspace(st, oppId)).root);
-    assert(/Proposed Market Price \$12/.test(t) && /Your opening offer \$10/.test(t) && /Waiting for Northline Cards/.test(t), t);
+    /* RESTATED (Milestone 2D.2 refinement): the workspace's shorter words —
+       the asking price and "Your offer", the one on the table marked. */
+    assert(/Northline Cards' asking price \$12/.test(t) && /Your offer Latest \$10/.test(t) && /Waiting for Northline Cards/.test(t), t);
   });
   test("agreed: $11 apart from the $12 snapshot; Select Trade named as unavailable; no action past it", async () => {
     const { st, oppId } = withDeal([[NL, "proposePrice", { amount: 11 }], [A, "acceptPrice"]]);
@@ -343,8 +345,9 @@ describe("F. pricing language and the agreed state", () => {
     assert(!buttons(art).includes("Make an offer"), "an offer can be started on an agreed Goal");
     const w = await workspace(st, oppId);
     const t = flat(w.root);
-    for (const part of [/Proposed Market Price \$12/, /Agreed Market Price \$11/, /Market Validation complete/,
-      /next planned stage is Select Trade, which isn't available in MetYet yet/, /doesn't complete the deal/]) {
+    /* RESTATED (Milestone 2D.2 refinement): same facts, the new words. */
+    for (const part of [/asking price \$12/, /Agreed price \$11/, /Market Validation complete/,
+      /Select Trade comes next, and isn't available in MetYet yet/, /doesn't complete the deal/]) {
       assert(part.test(t), `${part}: ${t}`);
     }
     assert(!/Continue|Cash Difference \$|balance|Completed|paid/i.test(t), "something past the price is implied: " + t);

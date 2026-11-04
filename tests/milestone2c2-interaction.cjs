@@ -199,7 +199,8 @@ describe("A. image-first viewing", () => {
     eq(JSON.stringify(s.sent), JSON.stringify(["requestPhotos"]));
     const req = st.get().photoRequests.filter((r) => r.collectorId === "casey");
     eq(req.map((r) => r.invId).join(), "c3", "not a request for that copy");
-    assert(/Photos requested — Silver Vale will add them\./.test(flat(dialog(s))), flat(dialog(s)));
+    /* RESTATED (Milestone 2D.2 refinement): the founder's shorter words. */
+    assert(/Photos requested/.test(flat(dialog(s))) && !/will add them/.test(flat(dialog(s))), flat(dialog(s)));
     await s.press(dialog(s), "Close");
     assert(/Photos requested/.test(flat(rowOf(s, "c3"))) && !buttons(rowOf(s, "c3")).includes("Request actual photos"), "it offers to ask again");
     /* the domain's own duplicate protection, unchanged */
@@ -298,9 +299,13 @@ describe("C. no Price History in the workspace", () => {
     const s = await shell(w.st); await s.go("Deal Flow"); await s.press(s.goal("gM"), "Review Counteroffer");
     const stage = byCls(s.ws(), "mcs-ws-stage")[0];
     const rowsOf = stage.findAll((n) => n.type === "dt").map((d) => flat(d));
-    eq(rowsOf.join("|"), "Proposed Market Price|Counteroffer from Northline Cards");
-    assert(/Counteroffer from Northline Cards \$11/.test(flat(stage)), flat(stage));
-    assert(!/Price history|Your opening offer|offered \$|countered with/i.test(flat(s.ws())), "a history is recited: " + flat(s.ws()));
+    /* RESTATED (Milestone 2D.2 refinement): the founder now asks for each
+       side's latest figure beside the asking price, so the Collector can see
+       what they offered and what came back. Still no ledger: one row per
+       side, at most, and no recited history. */
+    eq(rowsOf.join("|"), "Northline Cards' asking price|Your offer|Northline Cards' counter Latest");
+    assert(/Your offer \$10 Northline Cards' counter Latest \$11/.test(flat(stage)), flat(stage));
+    assert(!/Price history|offered \$|countered with/i.test(flat(s.ws())), "a history is recited: " + flat(s.ws()));
     eq(s.ws().findAll((n) => n.type === "details" || n.type === "summary").length, 0, "an expand/collapse history remains");
     /* the canonical history is untouched */
     eq(w.st.get().opportunities.find((o) => o.id === w.mud).priceThread.map((e) => `${e.by}:${e.type}:${e.amount}`).join(),
@@ -310,14 +315,19 @@ describe("C. no Price History in the workspace", () => {
     const w = world({ agreed: false });
     const s = await shell(w.st); await s.go("Deal Flow"); await s.press(s.goal("gM"), "View Deal");
     eq(byCls(s.ws(), "mcs-ws-stage")[0].findAll((n) => n.type === "dt").map((d) => flat(d)).join("|"),
-      "Proposed Market Price|Your opening offer");
+      /* RESTATED (Milestone 2D.2 refinement): the new words; the Collector's
+         offer is the figure on the table. */
+      "Northline Cards' asking price|Your offer Latest");
   });
   test("agreed: the Agreed Market Price beside the Proposed Market Price, the next stage named; history kept", async () => {
     const w = world();
     const s = await shell(w.st); await s.go("Deal Flow"); await s.press(s.goal("gM"), "View Agreement");
     const stage = byCls(s.ws(), "mcs-ws-stage")[0];
-    eq(stage.findAll((n) => n.type === "dt").map((d) => flat(d)).join("|"), "Proposed Market Price|Agreed Market Price");
-    assert(/Agreed Market Price \$11/.test(flat(stage)) && /doesn't complete the deal/.test(flat(stage)), flat(stage));
+    /* RESTATED (Milestone 2D.2 refinement): the offer and counter that led
+       to the agreement stay beside it, so the context is never lost. */
+    eq(stage.findAll((n) => n.type === "dt").map((d) => flat(d)).join("|"),
+      "Northline Cards' asking price|Your offer|Northline Cards' counter|Agreed price");
+    assert(/Agreed price \$11/.test(flat(stage)) && /doesn't complete the deal/.test(flat(stage)), flat(stage));
     assert(!/Price history/i.test(flat(s.ws())));
     eq(w.st.get().opportunities.find((o) => o.id === w.mud).priceThread.length, 3, "the canonical history changed");
   });

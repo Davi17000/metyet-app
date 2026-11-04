@@ -313,7 +313,9 @@ describe("D. photo security", () => {
     const srcs = s.r.root.findAll((n) => n.type === "img").map((n) => String(n.props.src));
     assert(srcs.length > 0 && srcs.every((u) => u === "https://example.test/mud.png"), "an image other than the catalogue's: " + srcs.join(", "));
     assert(!/tracker\.example/.test(JSON.stringify(s.r.toJSON())), "the reference reached the page");
-    assert(/Northline Cards has added photos of this copy \(front and back\)\. MetYet describes them here but can't show them yet\./.test(flat(dialog(s))), flat(dialog(s)));
+    /* RESTATED (Milestone 2D.2 refinement): shorter, same facts — the
+       partner's photos exist, and MetYet does not draw them. */
+    assert(/Northline Cards has added photos of this copy \(front and back\), but MetYet can't show them yet\./.test(flat(dialog(s))), flat(dialog(s)));
   });
   test("the source still renders catalogue images only", () => {
     const strip = (f) => require("fs").readFileSync(path.join(ROOT, f), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");

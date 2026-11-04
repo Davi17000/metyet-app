@@ -349,7 +349,12 @@ describe("H. boundaries", () => {
   test("the TP's CardBrowser is unchanged by this batch", () => {
     const { execFileSync } = require("child_process");
     const changed = execFileSync("git", ["diff", "--name-only", "3447331", "--", "client/browse/CardBrowser.jsx", "client/tp"], { cwd: ROOT, encoding: "utf8" }).trim();
-    eq(changed, "", "the Trusted Partner side changed");
+    /* RESTATED (Milestone 2D.2): the deal's conversation joins the shop's
+       Opportunities — its shell hands the one messaging binding on, and the
+       section draws the thread. CardBrowser and every other TP file are
+       still untouched. */
+    const D2 = ["client/tp/TrustedPartnerShell.jsx", "client/tp/sections/Opportunities.jsx"];
+    eq(changed.split("\n").filter((f) => f && !D2.includes(f)).join("\n"), "", "the Trusted Partner side changed");
   });
   test("the account button sits at the right edge with or without a count (F1 defect)", () => {
     const Shell = load("client/collector/CollectorShell.jsx").default;

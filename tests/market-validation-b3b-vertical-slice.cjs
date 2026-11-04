@@ -297,7 +297,9 @@ describe("A. the Collector opens an offer from Deal Flow", () => {
     eq(wsRoot(casey) && wsRoot(casey).props["data-opp"], o.id, "the workspace did not open on the new deal");
     const said = await dealSaid(casey);
     const box = liveBox(casey);
-    for (const part of ["Waiting for Northline", "Proposed Market Price $120", "Your opening offer $100", "View Deal"]) {
+    /* RESTATED (Milestone 2D.2 refinement): the Deal Workspace's shorter
+       price words; same figures. */
+    for (const part of ["Waiting for Northline", "Northline's asking price $120", "Your offer Latest $100", "View Deal"]) {
       assert(said.includes(part), `pending the shop, "${part}" is missing: ` + said);
     }
     assert(!button(box, "Accept"), "nothing for the Collector to accept on their own offer");
@@ -348,8 +350,9 @@ describe("B. the shop answers from Opportunities", () => {
     await casey.refresh();
     const said = await dealSaid(casey);
     const box = wsRoot(casey);
-    for (const part of ["Market price agreed", "Proposed Market Price $120", "Agreed Market Price $110",
-      "next planned stage is Select Trade", "View Agreement"]) {
+    /* RESTATED (Milestone 2D.2 refinement): same facts, the new words. */
+    for (const part of ["Market price agreed", "Northline's asking price $120", "Your offer $110", "Agreed price $110",
+      "Select Trade comes next", "View Agreement"]) {
       assert(said.includes(part), `the Collector is not told "${part}": ` + said);
     }
     assert(!button(box, "Withdraw offer") && !button(box, "Counter") && !button(box, "Accept"), "and no price controls after agreement");
@@ -379,7 +382,8 @@ describe("C. back and forth", () => {
     assert(textOf(panel(north, "In progress")).includes("Waiting for Casey to reply to your $115."), "the shop now waits");
     await casey.refresh();
     const said = await dealSaid(casey);
-    for (const part of ["Your turn · Review counteroffer", "Counteroffer from Northline $115", "Review Counteroffer"]) {
+    /* RESTATED (Milestone 2D.2 refinement): both figures, the counter marked Latest. */
+    for (const part of ["Your turn · Review counteroffer", "Your offer $100", "Northline's counter Latest $115", "Review Counteroffer"]) {
       assert(said.includes(part), `the Collector's move, "${part}" is missing: ` + said);
     }
     await press(casey, liveBox(casey), "Accept $115");
@@ -676,8 +680,10 @@ describe("I. the door and the client agree", () => {
       assert(new RegExp(`\\b${fn}\\(store\\)`).test(signIn), `${fn} is never bound`);
     }
     const tpShell = code("client/tp/TrustedPartnerShell.jsx");
-    assert(/opportunities" \? \{ onBrowseCards, onCounterOffer, onAcceptOffer, onDeclineOffer, onRefresh \}/.test(tpShell),
-      "Opportunities is handed something other than the shop's three answers");
+    /* RESTATED (Milestone 2D.2): plus `onSendMessage`, the deal's
+       conversation — a message, which answers no price. */
+    assert(/opportunities" \? \{ onBrowseCards, onCounterOffer, onAcceptOffer, onDeclineOffer, onRefresh,\s*onSendMessage \}/.test(tpShell),
+      "Opportunities is handed something other than the shop's three answers and the conversation");
     assert(!/onOpenOffer|onWithdrawOffer/.test(tpShell), "the shop's shell can reach the Collector's moves");
     const coShell = code("client/collector/CollectorShell.jsx");
     assert(!/onDeclineOffer/.test(coShell), "the Collector's shell can reach the shop's decline");

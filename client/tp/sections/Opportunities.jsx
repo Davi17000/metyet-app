@@ -37,6 +37,12 @@
    shop's move on a price. Every later stage still reads: no stage button and
    no disabled affordance pretending to be one.
 
+   EACH DEAL HAS ITS CONVERSATION (Milestone 2D.2). Under the price, behind
+   one "Conversation" control so a list of deals stays a list: the same
+   thread the Collector sees in their Deal Workspace, from this shop's side,
+   through the shared `DealConversation` and the one messaging command. It is
+   never read for intent — a message is not an answer to a price.
+
    ORGANISED BY WHO MOVES NEXT. A deal waiting on THIS shop's answer to a
    price is in Ready to coordinate, ahead of the shelf overlaps — it is the
    most actionable thing on the page. Everything else live stays in In
@@ -75,11 +81,13 @@ import { OfferEntry, PriceHistory, useSender, statusLine, termsLine, priceOnTabl
   isUnresolved, isLiveDeal, myPriceMove, dollars, isEndedDeal, cardLine } from "../../negotiation.jsx";
 import { rows, indexById, text, day, money, plural, cardTitle, cardSetLine,
   gradeLine, stageLabel, isKnownStage, tierLabel, supplyLine, byRecency } from "../present.js";
+import { DealConversation, dealThread, messagesOf } from "../../deal-conversation.jsx";
 
 const COMPLETED = "completed";
 
 export default function Opportunities({ state, onBrowseCards = null,
-  onCounterOffer = null, onAcceptOffer = null, onDeclineOffer = null, onRefresh = null }) {
+  onCounterOffer = null, onAcceptOffer = null, onDeclineOffer = null, onRefresh = null,
+  onSendMessage = null }) {
   const all = rows(state && state.opportunities);
   const catalog = indexById(state && state.catalog);
   const goals = indexById(state && state.goals);
@@ -120,6 +128,10 @@ export default function Opportunities({ state, onBrowseCards = null,
      can land in a different panel with the message still owed. */
   const [said, setSaid] = useState({});
   const sayAbout = (oppId) => (key, message) => setSaid((held) => ({ ...held, [oppId]: message }));
+  /* Which conversations are open, kept here for the same reason: a deal that
+     moves panel keeps its conversation open. */
+  const [talking, setTalking] = useState({});
+  const toggleTalk = (oppId) => setTalking((held) => ({ ...held, [oppId]: !held[oppId] }));
   const ready = rows(state && state.discoveries).filter((d) => !working.has(d.key));
 
   /* WHAT EACH ONE IS, ASKED FOR ONCE. The ids are in this projection already;
@@ -219,6 +231,9 @@ export default function Opportunities({ state, onBrowseCards = null,
         ) : null}
         {said[o.id] && !(isUnresolved(o) || isEndedDeal(o))
           ? <p className="tps-offer-problem tps-offer-said" role="status">{said[o.id]}</p> : null}
+        <DealTalk deal={o} state={state} me={me} collector={who.get(o.collectorId) || "the collector"}
+          open={!!talking[o.id]} onToggle={() => toggleTalk(o.id)}
+          onSendMessage={onSendMessage} onRefresh={onRefresh} />
       </Record>
     );
   };
@@ -309,6 +324,27 @@ function PriceBlock({ deal, me, collector, onCounterOffer, onAcceptOffer, onDecl
         )
       ) : null}
       {sender.trouble || note ? <p className="tps-offer-problem" role="status">{sender.trouble || note}</p> : null}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------ THE CONVERSATION
+   One control that says how many messages there are, and the thread under it.
+   Closing it HIDES the thread rather than removing it, so a half-written
+   message is still there when it is opened again. */
+function DealTalk({ deal, state, me, collector, open, onToggle, onSendMessage, onRefresh }) {
+  const count = messagesOf(dealThread(state, deal.id)).length;
+  const panel = `tps-talk-${deal.id}`;
+  return (
+    <div className="tps-talk">
+      <button type="button" className="tps-talk-toggle" aria-expanded={open} aria-controls={panel} onClick={onToggle}>
+        {open ? "Hide conversation"
+          : count ? `Conversation · ${plural(count, "message", "messages")}` : "Conversation"}
+      </button>
+      <div id={panel} hidden={!open}>
+        <DealConversation key={deal.id} cls="tps" deal={deal} state={state} me={me} other={collector}
+          onSendMessage={onSendMessage} onRefresh={onRefresh} />
+      </div>
     </div>
   );
 }

@@ -1237,7 +1237,8 @@ describe("From a Trusted Partner's copy to Market Validation, through production
     eq(JSON.stringify([opp.listedPrice, opp.agreedPrice]), JSON.stringify([12, 11]), "agreed price not stored apart from the Proposed Market Price");
     await shot("f5b-07-agreed-market-price");
     await page.locator(".mcs-ws-prices .agreed").waitFor({ timeout: 6000 });
-    assert(/Agreed Market Price\s+\$11/.test(await page.locator(".mcs-ws").innerText()), "the workspace does not show the agreement");
+    /* RESTATED (Milestone 2D.2 refinement): the workspace's shorter words. */
+    assert(/Agreed price\s+\$11/.test(await page.locator(".mcs-ws").innerText()), "the workspace does not show the agreement");
     await page.locator(".mcs-ws-back").tap();
     await page.locator(`article[data-goal='${goal.id}']`).waitFor();
     /* the copy is not reserved merely because a deal started */

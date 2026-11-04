@@ -84,8 +84,9 @@ import { useSender, statusLine, viewerSeat, isLiveDeal, isEndedDeal } from "../.
 import CardArt from "../../card-art.jsx";
 import { StateChip } from "../states.jsx";
 import { dealGlance, GoalProgress, OpeningOffer } from "../deal-parts.jsx";
+import { picturesOf, PhotoViewer } from "../card-viewer.jsx";
 import { rows, text, money, plural, gradeLine, gradeProblem, gradeConflictLine,
-  photoNote, criteriaLine, printingLine, versionLabel } from "../present.js";
+  criteriaLine, printingLine } from "../present.js";
 
 /* ------------------------------------------------------------ WHAT IS SHOWN
    Pure: the projection in, one entry per Goal out. Exported so the counts can
@@ -510,7 +511,7 @@ export function GoalMatches({ state, goalId, compose = null, onBack = null, onBr
                         }} />
                     ) : null}
                     {viewing === copy.invId ? (
-                      <PhotoViewer pics={pics} card={card} copy={copy} partner={nameOf(group.partnerId)}
+                      <PhotoViewer id={copy.invId} pics={pics} card={card} copy={copy} partner={nameOf(group.partnerId)}
                         asked={asked} canAsk={canAsk} busy={!!busy[`ask:${copy.invId}`]}
                         onRequest={() => run(`ask:${copy.invId}`, copy.invId, () => onRequestPhotos(copy.invId), "ask for photos")}
                         onClose={closeViewer} />
@@ -588,54 +589,3 @@ export function GoalMatches({ state, goalId, compose = null, onBack = null, onBr
   );
 }
 
-/* ============================================================ THE PICTURES
-   What there is to look at for one physical copy, and where it came from.
-   The catalogue's picture identifies the printing and says nothing about
-   this copy's condition. The copy's own photographs are its Trusted
-   Partner's — said in words (`photoNote`), never drawn: they are references
-   the partner typed, not images MetYet holds. Nothing is fetched or invented. */
-function picturesOf(copy, card) {
-  return { catalog: !!(card && (text(card.imageSmall) || text(card.imageLarge))), sides: photoNote(copy && copy.photos) };
-}
-
-/* ONE COPY, LARGE. A dialog over View Matches, with its own Close, Escape
-   and a tap outside; focus starts on Close and returns to the picture that
-   opened it. It sends nothing — except Request actual photos, when the
-   Collector presses it, through the same command and authorization as the
-   button on the copy's row. */
-function PhotoViewer({ pics, card, copy, partner, asked, canAsk, busy, onRequest, onClose }) {
-  const closeRef = useRef(null);
-  useEffect(() => { if (closeRef.current && closeRef.current.focus) closeRef.current.focus(); }, []);
-  const name = (card && card.cardName) || "This card";
-  const titleId = `mcs-pv-${copy.invId}`;
-  return (
-    <div className="mcs-pv-scrim" role="dialog" aria-modal="true" aria-labelledby={titleId}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-      onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}>
-      <div className="mcs-pv">
-        <div className="mcs-pv-hd">
-          <p className="mcs-pv-title" id={titleId}>
-            <strong>{name}</strong>
-            <span>{[card && text(card.finish) ? versionLabel(card) : null, gradeLine(copy), partner].filter(Boolean).join(" · ")}</span>
-          </p>
-          <button type="button" className="mcs-go quiet" ref={closeRef} onClick={onClose}>Close</button>
-        </div>
-        <div className="mcs-pv-stage" role="img" aria-label={pics.catalog ? `Catalog image of ${name}` : `No picture of ${name} yet`}>
-          <CardArt src={card && (card.imageLarge || card.imageSmall)} name={card && card.cardName}
-            wrap="mcs-pv-big" plate="mcs-art-plate" decorative />
-        </div>
-        <p className="mcs-pv-says">
-          {pics.catalog ? "Catalog image — it shows the printing, not this copy's condition." : "There's no picture of this card yet."}
-        </p>
-        {pics.sides ? (
-          <p className="mcs-pv-says">{`${partner} has added photos of this copy (${pics.sides.toLowerCase()}). MetYet describes them here but can't show them yet.`}</p>
-        ) : asked ? <p className="mcs-pv-says">{`Photos requested — ${partner} will add them.`}</p> : null}
-        {canAsk ? (
-          <button type="button" className="mcs-go mcs-go-primary mcs-pv-ask" disabled={busy} onClick={onRequest}>
-            Request actual photos
-          </button>
-        ) : null}
-      </div>
-    </div>
-  );
-}

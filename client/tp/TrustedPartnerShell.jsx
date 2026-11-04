@@ -318,6 +318,45 @@ const CSS = `
 .tps-go.quiet { background:#FFF; border-color:var(--line); color:var(--muted); font-weight:400; }
 .tps-go:disabled { opacity:.6; cursor:default; }
 
+/* ---- a deal's conversation (Milestone 2D.2) ----
+   Under the price, behind one control. The shop's own messages tinted and to
+   the right, the collector's plain and to the left, each saying who and when
+   in words. The box is 16px so a phone does not zoom into it. */
+.tps-talk { margin:0 16px 15px; max-width:70ch; }
+.tps-talk-toggle { background:#FFF; border:1px solid var(--line); color:var(--t1); border-radius:5px;
+  padding:7px 12px; min-height:36px; font-size:12.5px; font-weight:600; }
+.tps-talk-toggle[aria-expanded="true"] { border-color:var(--t1); background:var(--t1-bg); }
+.tps-msg { margin-top:9px; padding:11px 12px; border:1px solid var(--line); border-radius:6px;
+  display:flex; flex-direction:column; gap:9px; background:#FFF; }
+.tps-msg-hd { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+.tps-msg-h { margin:0; font-family:'Archivo'; font-size:10.5px; font-weight:600; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--muted); }
+.tps-msg-check { border:0; background:none; padding:4px 0; color:var(--t1); font-size:12px; font-weight:600; }
+.tps-msg-check:disabled { color:var(--faint); cursor:default; }
+.tps-msg-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:7px; }
+.tps-msg-item { max-width:88%; align-self:flex-start; background:#F7F8FA; border:1px solid var(--line-soft);
+  border-radius:10px 10px 10px 3px; padding:7px 10px; }
+.tps-msg-item.mine { align-self:flex-end; background:var(--t1-bg); border-color:#CBE0E2; border-radius:10px 10px 3px 10px; }
+.tps-msg-meta { margin:0 0 2px; display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; font-size:11px; color:var(--muted); }
+.tps-msg-who { font-weight:700; color:var(--text); }
+.tps-msg-item.mine .tps-msg-who { color:var(--t1); }
+.tps-msg-text { margin:0; font-size:13px; line-height:1.45; white-space:pre-wrap; overflow-wrap:anywhere; }
+.tps-msg-empty, .tps-msg-closed { margin:0; font-size:12.5px; color:var(--muted); }
+.tps-msg-form { display:flex; flex-direction:column; gap:6px; margin:0; border-top:1px solid var(--line-soft); padding-top:9px; }
+.tps-msg-label { font-size:12px; font-weight:600; color:var(--text); }
+.tps-msg-in { width:100%; min-height:68px; resize:vertical; font-family:inherit; font-size:16px; line-height:1.4;
+  border:1px solid var(--line); border-radius:5px; padding:8px 10px; color:var(--text); background:#FFF; }
+.tps-msg-in:focus-visible { outline:2px solid var(--t1); outline-offset:1px; border-color:var(--t1); }
+.tps-msg-in[readonly] { background:#F7F8FA; color:var(--muted); }
+.tps-msg-count { margin:0; font-size:11.5px; color:var(--muted); text-align:right; }
+.tps-msg-problem, .tps-msg-trouble { margin:0; font-size:12px; color:var(--amber); }
+.tps-msg-do { display:flex; align-items:flex-start; gap:10px; }
+.tps-msg-help { flex:1; margin:0; font-size:11.5px; color:var(--faint); }
+.tps-msg-send { flex:0 0 auto; min-height:40px; min-width:80px; background:var(--t1); border:1px solid var(--t1);
+  color:#FFF; border-radius:5px; padding:8px 15px; font-weight:600; font-size:13px; }
+.tps-msg-send:disabled { opacity:.5; cursor:default; }
+.tps-msg-sr, .tps-msg-vh { position:absolute; width:1px; height:1px; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+
 /* ---- a phone ---- */
 @media (max-width:860px) {
   .tps { display:block; }
@@ -332,6 +371,7 @@ const CSS = `
   .tps-top, .tps-ro { padding-left:16px; padding-right:16px; }
   .tps-scroll { padding:14px 12px 36px; }
   .tps-rec, .tps-ph, .tps-empty, .tps-foot-note { padding-left:13px; padding-right:13px; }
+  .tps-talk { margin-left:13px; margin-right:13px; }
 }
 `;
 
@@ -339,7 +379,7 @@ export default function TrustedPartnerShell({ state, onSignOut, onSaveProfile = 
   onInvite = null, onRevokeInvite = null, onRefresh = null,
   onAddCopy = null, onEditCopy = null, onRetireCopy = null, onBrowseCards = null,
   onProvidePhotos = null,
-  onCounterOffer = null, onAcceptOffer = null, onDeclineOffer = null }) {
+  onCounterOffer = null, onAcceptOffer = null, onDeclineOffer = null, onSendMessage = null }) {
   const [section, setSection] = useState(SECTIONS[0].id);
 
   const who = describeActor(state);
@@ -362,11 +402,13 @@ export default function TrustedPartnerShell({ state, onSignOut, onSaveProfile = 
      the section is handed no command, exactly as before.
      Batch 3B hands it three, and only three: the shop's answers to a price
      (Accept, Counter, Decline), plus a re-read for when an answer finds the
-     deal has already moved. */
+     deal has already moved. Milestone 2D.2 adds one more, `onSendMessage`: a
+     message on one deal's conversation, which moves nothing. */
   const extra = meta.id === "inventory"
     ? { onSaveProfile, onAddCopy, onEditCopy, onRetireCopy, onBrowseCards, onProvidePhotos }
     : meta.id === "collectors" ? { onInvite, onRevokeInvite, onRefresh, onBrowseCards }
-      : meta.id === "opportunities" ? { onBrowseCards, onCounterOffer, onAcceptOffer, onDeclineOffer, onRefresh }
+      : meta.id === "opportunities" ? { onBrowseCards, onCounterOffer, onAcceptOffer, onDeclineOffer, onRefresh,
+        onSendMessage }
         : null;
 
   return (

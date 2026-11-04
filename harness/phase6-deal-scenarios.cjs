@@ -367,9 +367,12 @@ async function photograph(ctx, key, dir, browser) {
   await settle();
   const workspace = { opp: await ws.getAttribute("data-opp"),
     header: await saidOf(page.locator(".mcs-ws-hd")), stage: await saidOf(page.locator(".mcs-ws-stage")),
-    talk: await saidOf(page.locator(".mcs-ws-talk")),
+    /* (Milestone 2D.2: the conversation is the deal's real thread, with its
+       own composer — the one box drawn before anything is pressed) */
+    talk: await saidOf(page.locator(".mcs-msg")),
+    composer: await page.locator(".mcs-msg textarea").count(),
     buttons: (await page.locator(".mcs-ws-stage button").allInnerTexts()).map((b) => b.trim()),
-    inputs: await page.locator(".mcs-ws input, .mcs-ws textarea").count(),
+    inputs: await page.locator(".mcs-ws input, .mcs-ws textarea").count() - await page.locator(".mcs-msg textarea").count(),
     nav: await page.locator("nav[aria-label=Collector]").count(),
     focused: (await focusOf(page)).cls, fits: await fitsOf(page) };
   files.workspace = `${base}-2-workspace.png`;
@@ -627,14 +630,16 @@ function checkScreen(key, shot) {
   if (l.bars !== 1) fail(`the card has ${l.bars} progress bars`);
   const expect = {
     a: { lines: ["Market Validation", "Waiting for Northline Cards"], cta: "View Deal", turn: "Waiting for Northline Cards",
-      stage: [/Proposed Market Price \$12/, /Your opening offer \$10/, /Northline Cards can accept, counter or decline/],
+      /* RESTATED (Milestone 2D.2 refinement): the shorter price words; the
+         figure on the table marked Latest (drawn upper-case). */
+      stage: [/Northline Cards' asking price\s+\$12/, /Your offer\s*Latest\s+\$10/i, /Northline Cards can accept, counter or decline/],
       buttons: ["Withdraw offer"] },
     b: { lines: ["Market Validation", "Your turn · Review counteroffer"], cta: "Review Counteroffer", turn: "Your turn · Review counteroffer",
-      stage: [/Proposed Market Price \$12/, /Counteroffer from Northline Cards \$11/],
+      stage: [/Northline Cards' asking price\s+\$12/, /Your offer\s+\$10/, /Northline Cards' counter\s*Latest\s+\$11/i],
       buttons: ["Accept $11", "Counter", "Withdraw offer"] },
     c: { lines: ["Market price agreed", "Select Trade not yet available"], cta: "View Agreement", turn: "Market price agreed",
-      stage: [/Proposed Market Price \$12/, /Agreed Market Price \$11/, /doesn't complete the deal/,
-        /next planned stage is Select Trade, which isn't available in MetYet yet/], buttons: [] },
+      stage: [/Northline Cards' asking price\s+\$12/, /Your offer\s+\$10/, /Northline Cards' counter\s+\$11/, /Agreed price\s+\$11/,
+        /doesn't complete the deal/, /Select Trade comes next, and isn't available in MetYet yet/], buttons: [] },
   }[s.key];
   if (json(l.progress) !== json(expect.lines)) fail(`the card's stage and status are ${json(l.progress)}`);
   if (json(l.buttons) !== json([expect.cta])) fail(`the card's actions are ${json(l.buttons)}`);
@@ -650,10 +655,18 @@ function checkScreen(key, shot) {
   if (json(w.buttons) !== json(expect.buttons)) fail(`stage buttons are ${json(w.buttons)}`);
   /* Milestone 2C.2: no Price History, and no amount recited twice */
   if (/Price history|offered \$|countered with/i.test(w.stage)) fail("the workspace recites the price history");
-  if (s.key === "b" && /Your opening offer/.test(w.stage)) fail("the superseded opening offer is still listed");
+  /* RESTATED (Milestone 2D.2 refinement): the Collector's $10 now stays
+     beside the counter by design; what must not happen is the wrong figure
+     being marked as the one on the table. */
+  if (s.key === "b" && /Your offer\s*Latest/i.test(w.stage)) fail("the superseded offer is marked as the one on the table");
+  if (s.key === "c" && /Latest/i.test(w.stage)) fail("a figure is still marked on the table after agreement");
   if (s.key === "c" && /balance|cash difference|completed|paid|Continue/i.test(w.stage)) fail("something past the price is implied");
   if (w.inputs !== 0) fail("an input is drawn before anything was pressed (a composer?)");
-  if (!/Messaging isn't available in MetYet yet/.test(w.talk)) fail("the conversation area does not say messaging is unavailable");
+  /* RESTATED (Milestone 2D.2): the conversation is live — an empty thread
+     and its composer, which says messages don't change the deal. Two-sided
+     messaging has its own run: harness/phase6-deal-messaging.cjs. */
+  if (!/Conversation with Northline Cards/i.test(w.talk) || !/No messages yet/.test(w.talk)
+    || !/Chat doesn't confirm a deal/.test(w.talk) || w.composer !== 1) fail("the conversation area is not the deal's empty thread and composer");
   if (!/mcs-ws-title/.test(w.focused || "")) fail("focus did not move to the workspace title");
   if (w.headerTop !== 0) fail(`the header scrolled away (top ${w.headerTop})`);
   /* back */
@@ -663,7 +676,7 @@ function checkScreen(key, shot) {
   if (s.key === "b") {
     const a = shot.acted;
     if (a.commands !== 1) fail(`Accept sent ${a.commands} commands`);
-    if (!/Market price agreed/.test(a.header) || !/Agreed Market Price \$11/.test(a.stage) || !/Proposed Market Price \$12/.test(a.stage)) fail("the workspace did not show the server's new state");
+    if (!/Market price agreed/.test(a.header) || !/Agreed price\s+\$11/.test(a.stage) || !/asking price\s+\$12/.test(a.stage)) fail("the workspace did not show the server's new state");
     if (a.buttons.some((b) => /Accept|Counter|Withdraw/.test(b))) fail("negotiation actions remain after agreement");
     if (json(a.card.progress) !== json(["Market price agreed", "Select Trade not yet available"]) || json(a.card.buttons) !== json(["View Agreement"])) {
       fail(`the card did not follow the server: ${json(a.card)}`);
@@ -712,7 +725,7 @@ function checkGoals(shot) {
     || !/Northline Cards is Firm on Price, so an opening offer is the Proposed Market Price\./.test(shot.firm.text)) fail("Firm on Price");
   /* the workspace */
   const w = shot.workspace;
-  if (w.opp !== shot.oppId || !/Agreed Market Price \$11/.test(w.stage) || w.history !== 0 || /Price history|Your opening offer/.test(w.stage)) fail("the Mudkip workspace");
+  if (w.opp !== shot.oppId || !/Agreed price\s+\$11/.test(w.stage) || w.history !== 0 || /Price history|offered \$|countered with/i.test(w.stage)) fail("the Mudkip workspace");
   const r = shot.returned;
   if (r.focus.goal !== ids.mudkip || !/mcs-dg-cta/.test(r.focus.cls || "") || !r.inView) fail("Back did not return to Mudkip's card, focused on its action");
   /* Milestone 2C.3: two printings never read alike; the legacy states */

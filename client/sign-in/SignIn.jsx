@@ -53,7 +53,8 @@ import { savePartnerProfile, openCollectorInvitation, revokeCollectorInvitation,
   fileObjectInBinder, unfileObjectFromBinder,
   inspectCopy, endInspection, requestCopyPhotos, provideCopyPhotos, setCopyKept, changeCardState,
   renameBinder, setBinderArchived,
-  refreshView, openOffer, counterOffer, acceptOffer, declineOffer, withdrawOffer } from "../commands.js";
+  refreshView, openOffer, counterOffer, acceptOffer, declineOffer, withdrawOffer,
+  sendDealMessage } from "../commands.js";
 
 /* Identity is read in exactly one place — client/actor.js — and re-exported
    here because this module's own tests have always asked it that question.
@@ -295,6 +296,9 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
   const onAcceptOffer = useMemo(() => (store ? acceptOffer(store) : null), [store]);
   const onDeclineOffer = useMemo(() => (store ? declineOffer(store) : null), [store]);
   const onWithdrawOffer = useMemo(() => (store ? withdrawOffer(store) : null), [store]);
+  /* A DEAL'S CONVERSATION (Milestone 2D.2). Both seats get it: either
+     participant may write on their own deal, and the server checks which. */
+  const onSendMessage = useMemo(() => (store ? sendDealMessage(store) : null), [store]);
   const onRenameBinder = useMemo(() => (store ? renameBinder(store) : null), [store]);
   const onArchiveBinder = useMemo(() => (store ? setBinderArchived(store) : null), [store]);
   /* WHERE A FILED THING GOES NEXT (Batch 3B-1). The Binder view's `Move` and
@@ -723,7 +727,7 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
       onBrowseCards, onAddGoal, onSetPriority, onRemoveGoal, onSpecify,
       onCreateBinder, onRenameBinder, onArchiveBinder, onFileObject, onUnfileObject,
       onInspect, onEndInspection, onRequestPhotos,
-      onOpenOffer, onCounterOffer, onAcceptOffer, onDeclineOffer, onWithdrawOffer,
+      onOpenOffer, onCounterOffer, onAcceptOffer, onDeclineOffer, onWithdrawOffer, onSendMessage,
       /* Phase 5 Batch 3A. Who they just joined, so the shell can greet them by
          it once. It is read from the server's own reply, it is cleared the
          moment they do anything else, and it grants nothing. */

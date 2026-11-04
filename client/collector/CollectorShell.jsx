@@ -413,6 +413,7 @@ const CSS = `
 .mcs-pv-big img { display:block; width:100%; height:100%; object-fit:contain; }
 .mcs-pv-big .mcs-art-plate { font-size:16px; }
 .mcs-pv-empty, .mcs-pv-says { margin:0; font-size:13px; line-height:1.45; color:var(--muted); }
+.mcs .mcs-pv-hd .mcs-go { min-height:44px; }
 .mcs .mcs-go.mcs-pv-ask { min-height:44px; }
 
 /* the opening offer (Milestone 2C.2) */
@@ -474,7 +475,14 @@ const CSS = `
   border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--text); }
 .mcs-ws-arrow { width:11px; height:11px; border-left:2.5px solid currentColor; border-bottom:2.5px solid currentColor;
   transform:rotate(45deg); margin-left:4px; }
-.mcs-ws-art { flex:0 0 34px; width:34px; aspect-ratio:5/7; display:flex; align-items:center; justify-content:center;
+.mcs-ws-artbtn { flex:0 0 44px; position:relative; width:44px; min-height:50px; padding:0; border:0; background:none;
+  border-radius:6px; display:flex; align-items:center; justify-content:center; cursor:zoom-in;
+  -webkit-tap-highlight-color:transparent; }
+.mcs-ws-artbtn:focus-visible { outline:2px solid var(--t1); outline-offset:2px; }
+.mcs-ws-artbtn::after { content:""; position:absolute; right:0; bottom:0; width:14px; height:14px; border-radius:50%;
+  background:var(--panel) no-repeat center/9px 9px; box-shadow:0 0 0 1px var(--line);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1 4V1h3M9 6v3H6M1 1l3 3M9 9L6 6' fill='none' stroke='%23616B7A' stroke-width='1.4'/%3E%3C/svg%3E"); }
+.mcs-ws-art { flex:0 0 36px; width:36px; aspect-ratio:5/7; display:flex; align-items:center; justify-content:center;
   background:var(--line-soft); border-radius:4px; overflow:hidden; }
 .mcs-ws-art img { width:100%; height:100%; object-fit:contain; }
 .mcs-ws-art .mcs-art-plate { font-size:7px; overflow-wrap:normal; word-break:normal; }
@@ -488,7 +496,7 @@ const CSS = `
 .mcs-ws-turn.ended { color:var(--muted); font-weight:600; }
 .mcs-dg-progress.compact .mcs-dg-plabel { font-size:12.5px; }
 .mcs-ws-body { flex:1; display:flex; flex-direction:column; gap:12px; padding:14px 16px 32px; }
-.mcs-ws-stage, .mcs-ws-talk { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+.mcs-ws-stage, .mcs-msg { background:var(--panel); border:1px solid var(--line); border-radius:12px;
   padding:14px; display:flex; flex-direction:column; gap:10px; }
 .mcs-ws-h2 { margin:0; font-family:var(--font-display); font-size:10.5px; font-weight:700; letter-spacing:.09em;
   text-transform:uppercase; color:var(--muted); }
@@ -499,15 +507,53 @@ const CSS = `
 .mcs-ws-prices div:first-child dt, .mcs-ws-prices div:first-child dd { border-top:0; }
 .mcs-ws-prices dt { font-size:13px; color:var(--muted); }
 .mcs-ws-prices dd { margin:0; text-align:right; font-size:16px; font-weight:600; font-variant-numeric:tabular-nums; }
-.mcs-ws-prices .live dt, .mcs-ws-prices .live dd { color:var(--amber); font-weight:700; }
+.mcs-ws-prices .latest dt, .mcs-ws-prices .latest dd { color:var(--text); font-weight:700; }
+.mcs-ws-prices .latest dd { font-size:18px; }
+.mcs-ws-latest { margin-left:4px; padding:1px 6px; border-radius:999px; background:var(--line-soft); color:var(--muted);
+  font-size:10.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; vertical-align:1px; }
 .mcs-ws-prices .agreed dt { color:var(--t1); font-weight:600; }
 .mcs-ws-prices .agreed dd { color:var(--t1); font-weight:700; font-size:18px; }
 .mcs-ws-say { margin:0; font-size:13px; color:var(--muted); line-height:1.45; }
 .mcs-ws-stage .mcs-offer-live { margin:0; border:0; padding:0; }
 .mcs-ws-stage .mcs-offer-do .mcs-go { flex:1 1 auto; min-height:44px; }
 .mcs .mcs-go.mcs-go-primary { background:var(--t1); border-color:var(--t1); color:#FFF; }
-.mcs-ws-talk { background:transparent; border-style:dashed; }
 .mcs-ws-note { margin:0; font-size:12.5px; color:var(--muted); line-height:1.45; }
+
+/* ---- the deal's conversation (Milestone 2D.2) ----
+   Below the stage area and never above it: the deal's terms and moves come
+   first. Bubbles are restrained — the Collector's own tinted and to the right,
+   the partner's plain and to the left — and each says who and when in words,
+   so the colour is never the only signal. The box is 16px so a phone does not
+   zoom into it, and Send is a full thumb's height. */
+.mcs-msg-hd { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+.mcs-msg-h { margin:0; font-family:var(--font-display); font-size:10.5px; font-weight:700; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--muted); }
+.mcs-msg-check { border:0; background:none; padding:6px 0; min-height:32px; color:var(--t1); font-size:12.5px;
+  font-weight:600; }
+.mcs-msg-check[disabled] { color:var(--faint); }
+.mcs-msg-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
+.mcs-msg-item { max-width:88%; align-self:flex-start; background:var(--bg); border:1px solid var(--line-soft);
+  border-radius:12px 12px 12px 4px; padding:8px 11px; }
+.mcs-msg-item.mine { align-self:flex-end; background:var(--t1-bg); border-color:#CBE0E2; border-radius:12px 12px 4px 12px; }
+.mcs-msg-meta { margin:0 0 2px; display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; font-size:11.5px; color:var(--muted); }
+.mcs-msg-who { font-weight:700; color:var(--text); }
+.mcs-msg-item.mine .mcs-msg-who { color:var(--t1); }
+.mcs-msg-text { margin:0; font-size:14px; line-height:1.45; white-space:pre-wrap; overflow-wrap:anywhere; }
+.mcs-msg-empty, .mcs-msg-closed { margin:0; font-size:13px; color:var(--muted); line-height:1.45; }
+.mcs-msg-form { display:flex; flex-direction:column; gap:6px; margin:0; border-top:1px solid var(--line-soft); padding-top:10px; }
+.mcs-msg-label { font-size:12.5px; font-weight:600; color:var(--text); }
+.mcs-msg-in { width:100%; min-height:72px; resize:vertical; font:inherit; font-size:16px; line-height:1.4;
+  border:1px solid var(--line); border-radius:8px; padding:9px 11px; background:#FFF; color:var(--text); }
+.mcs-msg-in:focus-visible { outline:2px solid var(--t1); outline-offset:1px; border-color:var(--t1); }
+.mcs-msg-in[readonly] { background:var(--bg); color:var(--muted); }
+.mcs-msg-count { margin:0; font-size:12px; color:var(--muted); text-align:right; font-variant-numeric:tabular-nums; }
+.mcs-msg-problem, .mcs-msg-trouble { margin:0; font-size:12.5px; color:var(--amber); line-height:1.4; }
+.mcs-msg-do { display:flex; align-items:flex-start; gap:10px; }
+.mcs-msg-help { flex:1; margin:0; font-size:12px; color:var(--faint); line-height:1.4; }
+.mcs-msg-send { flex:0 0 auto; min-height:44px; min-width:88px; padding:10px 16px; border-radius:10px;
+  border:1px solid var(--t1); background:var(--t1); color:#FFF; font-weight:700; }
+.mcs-msg-send[disabled] { opacity:.5; cursor:default; }
+.mcs-msg-sr, .mcs-msg-vh { position:absolute; width:1px; height:1px; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
 
 /* ---- making an offer, and the offer under its Goal (Batch 3B) ----
    On the copy it is for, a full row under the copy's own controls; under the
@@ -1382,6 +1428,9 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
   onInspect = null, onEndInspection = null, onRequestPhotos = null,
   onOpenOffer = null, onCounterOffer = null, onAcceptOffer = null, onWithdrawOffer = null,
   onRefresh = null,
+  /* A DEAL'S CONVERSATION (Milestone 2D.2): one message on one deal, handed
+     to the Deal Workspace and nowhere else. */
+  onSendMessage = null,
   onArchiveBinder = null,
   /* WHERE A FILED THING GOES NEXT (Batch 3B-1). Bound at the entrance like
      every other command and handed down, so a section stays a surface that
@@ -1535,7 +1584,7 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
       {dealOpen ? (
         <DealWorkspace state={state} oppId={dealOpen} onBack={closeDeal} onBrowseCards={onBrowseCards}
           onCounterOffer={onCounterOffer} onAcceptOffer={onAcceptOffer} onWithdrawOffer={onWithdrawOffer}
-          onRefresh={onRefresh} />
+          onRefresh={onRefresh} onSendMessage={onSendMessage} />
       ) : matchesOpen ? (
         <GoalMatches key={matchesOpen.goalId} state={state} goalId={matchesOpen.goalId} compose={matchesOpen.compose}
           onBack={closeMatches} onBrowseCards={onBrowseCards}

@@ -604,7 +604,11 @@ describe("F. the review-only artwork exception", () => {
        that computes it from the projection, and the projection's helper —
        touches neither the importer nor any image rule) */
     const B5 = ["domain/metyet-commands.js", "domain/metyet-domain.js", "domain/metyet-world.js", "server/exposed-commands.js",
-      "domain/metyet-projection.js", "persistence/catalog-repository.js", "server/app.js"];
+      "domain/metyet-projection.js", "persistence/catalog-repository.js", "server/app.js",
+      /* (Milestone 2D.1: the founder-approved deal-conversation migration —
+         the conversations table only; neither the importer nor an image rule.
+         It reached this diff once committed, being untracked before.) */
+      "persistence/migrations/0015_deal_conversations.sql"];
     eq(changed.split("\n").filter((f) => f && !B5.includes(f)).join("\n"), "", "Stage 1 changed production catalogue, server or domain code");
   });
 });

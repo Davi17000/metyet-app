@@ -13,7 +13,8 @@
         is refused plainly and shows nothing of the deal it names
      C. the stage area: each price under its own name, the moves only when the
         server says so, and the server's next projection after a move
-     D. the conversation: reserved, never simulated, never read for intent
+     D. the conversation: never simulated, never read for intent
+        (RESTATED, Milestone 2D.2: it is the deal's real thread now)
      E. one model: the workspace says the same stage as the dashboard
    (The browser's Back button, a reload and keyboard focus are exercised in a
    real browser by harness/phase6-deal-scenarios.cjs.)
@@ -207,7 +208,10 @@ describe("C. the stage area", () => {
     const s = await shell(st);
     await s.go("Deal Flow"); await s.cta("gA");
     const t = flat(s.ws());
-    for (const re of [/Proposed Market Price \$12/, /Your opening offer \$10/, /Waiting for Northline Cards/, /Step 1 of 10 · Market Validation/]) {
+    /* RESTATED (Milestone 2D.2 refinement): the founder's shorter words —
+       the asking price and "Your offer" — with the figure on the table
+       marked Latest. Same values, same server state. */
+    for (const re of [/Northline Cards' asking price \$12/, /Your offer Latest \$10/, /Waiting for Northline Cards/, /Step 1 of 10 · Market Validation/]) {
       assert(re.test(t), `${re}: ${t}`);
     }
     const stage = byCls(s.ws(), "mcs-ws-stage")[0];
@@ -218,7 +222,10 @@ describe("C. the stage area", () => {
     const s = await shell(st);
     await s.go("Deal Flow"); await s.cta("gA");
     const stage = () => byCls(s.ws(), "mcs-ws-stage")[0];
-    assert(/Counteroffer from Northline Cards \$11/.test(flat(stage())));
+    /* RESTATED (Milestone 2D.2 refinement): all three figures, not only the
+       one on the table — the asking price, the Collector's offer, and the
+       partner's counter, marked Latest. */
+    assert(/Northline Cards' asking price \$12 Your offer \$10 Northline Cards' counter Latest \$11/.test(flat(stage())), flat(stage()));
     eq(stage().findAll((n) => n.type === "button").map((b) => flat(b).trim()).join("|"), "Accept $11|Counter|Withdraw offer");
     await TR.act(async () => { await btn(stage(), "Accept $11").props.onClick(); });
     await settle();
@@ -227,7 +234,10 @@ describe("C. the stage area", () => {
     eq([o.listedPrice, o.agreedPrice, o.stage].join(), "12,11,select-trade");
     eq(s.ws().props["data-opp"], oppId, "the workspace left the deal");
     const t = flat(s.ws());
-    assert(/Market price agreed/.test(t) && /Agreed Market Price \$11/.test(t) && /Proposed Market Price \$12/.test(t), t);
+    /* RESTATED (Milestone 2D.2 refinement): "Agreed price" beside the asking
+       price, and the offer and counter that led there kept, nothing Latest. */
+    assert(/Market price agreed/.test(t) && /asking price \$12 Your offer \$10 Northline Cards' counter \$11 Agreed price \$11/.test(t), t);
+    assert(!/Latest/.test(flat(stage())), "a figure is still marked on the table after agreement");
     assert(!btn(stage(), "Accept $11") && !btn(stage(), "Withdraw offer"), "price actions remain after agreement");
   });
   test("Counter opens the existing entry box; a counter is one command", async () => {
@@ -250,10 +260,15 @@ describe("C. the stage area", () => {
     const s = await shell(st);
     await s.go("Deal Flow"); await s.cta("gA");
     const t = flat(s.ws());
-    assert(/next planned stage is Select Trade, which isn't available in MetYet yet/.test(t), t);
+    /* RESTATED (Milestone 2D.2 refinement): shorter, same meaning. */
+    assert(/Select Trade comes next, and isn't available in MetYet yet/.test(t), t);
     assert(/doesn't complete the deal/.test(t), t);
     assert(!/Continue|balance|cash difference \$|paid/i.test(t), t);
-    eq(s.ws().findAll((n) => n.type === "button").filter((b) => !b.props["aria-label"]).length, 0,
+    /* RESTATED (Milestone 2D.2): the conversation below has its own
+       controls; the deal itself still offers none. */
+    eq(byCls(s.ws(), "mcs-ws-stage")[0].findAll((n) => n.type === "button").length, 0, "a stage button");
+    eq(s.ws().findAll((n) => n.type === "button").filter((b) => !b.props["aria-label"]
+      && !byCls(s.ws(), "mcs-msg")[0].findAll((x) => x === b).length).length, 0,
       "a button other than Back");
   });
   test("a withdrawn deal says so and offers nothing; Back still works", async () => {
@@ -273,27 +288,35 @@ describe("C. the stage area", () => {
 });
 
 /* ================================================================ D */
-describe("D. the conversation is reserved, not simulated", () => {
-  test("it says messaging is unavailable, and draws no message, input or composer", async () => {
+describe("D. the conversation (RESTATED, Milestone 2D.2: messaging is real now)", () => {
+  /* Until 2D.2 this area said messaging was unavailable and drew nothing. It
+     is now the deal's own thread (tests/milestone2d2-deal-messaging-ui.cjs).
+     What still holds here: with no messaging binding handed in, nothing can
+     be typed — and nothing is ever simulated. */
+  test("without a messaging binding it draws the thread's place and no composer", async () => {
     const { st } = offered([[NL, "proposePrice", { amount: 11 }]]);
     const s = await shell(st);
     await s.go("Deal Flow"); await s.cta("gA");
-    const talk = byCls(s.ws(), "mcs-ws-talk")[0];
+    const talk = byCls(s.ws(), "mcs-msg")[0];
     assert(talk, "no conversation area");
-    eq(talk.props["data-messaging"], "unavailable");
-    assert(/Messaging isn't available in MetYet yet/.test(flat(talk)));
-    eq(talk.findAll((n) => ["input", "textarea", "button", "form", "li"].includes(n.type)).length, 0, "a fake conversation");
+    eq(talk.props["data-messaging"], "read-only");
+    assert(/No messages yet/.test(flat(talk)), flat(talk));
+    eq(talk.findAll((n) => ["input", "textarea", "form", "li"].includes(n.type)).length, 0, "a fake conversation");
     eq(s.ws().findAll((n) => n.type === "textarea").length, 0);
     eq(s.ws().findAll((n) => n.type === "input").length, 0, "an input before anything was pressed");
   });
   test("no messaging command is reached, and no text is read for intent", () => {
     const strip = (f) => fs.readFileSync(path.join(ROOT, f), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-    const src = ["client/collector/DealWorkspace.jsx", "client/collector/deal-parts.jsx"].map(strip).join("\n");
-    for (const no of ["sendMessage", "reachOut", "recordNote", "conversations", "onSendMessage"]) {
+    const src = ["client/collector/DealWorkspace.jsx", "client/collector/deal-parts.jsx",
+      "client/deal-conversation.jsx"].map(strip).join("\n");
+    /* RESTATED (2D.2): `conversations` and `onSendMessage` are now the
+       thread and its one binding; the legacy commands are still unreached. */
+    for (const no of ["\"sendMessage", "reachOut", "recordNote"]) {
       assert(!src.includes(no), `the workspace reaches ${no}`);
     }
     assert(!/\/\s*accept|includes\(\s*["']accept|toLowerCase\(\)/i.test(src), "the workspace reads text for intent");
-    assert(!/execute\s*\(|fetch\s*\(|store\./.test(src), "the workspace talks to the server directly");
+    /* (2D.2: a store METHOD call; the store's error code `store.command-in-flight` is a word, not a call) */
+    assert(!/execute\s*\(|fetch\s*\(|\bstore\.\w+\s*\(/.test(src), "the workspace talks to the server directly");
   });
 });
 
