@@ -19,6 +19,7 @@
    no label, draft or stale local value can be substituted for it.
    ========================================================================= */
 
+const { reachValuationByFixture } = require("./helpers/trade-path.cjs");
 const { describe, test, assert, eq } = require("./run.cjs");
 const fs = require("fs");
 const path = require("path");
@@ -53,9 +54,9 @@ const atValueTrade = (price = 1000) => {
     cardId: "kt", invId: "i", listedPrice: price, amount: price, at: AT });
   st.actions.agreePrice({ oppId: o, amount: price, by: "tp", at: AT });
   const row = M.emptyTradeCard("ka", null, null, "b1");
-  st.actions.patchOpportunity(o, (x) => ({ ...x, stage: "select-trade",
-    trade: { ...x.trade, submitted: true, cards: [row] } }));
-  st.actions.reviewTradeCards({ oppId: o, decision: "accepted", at: AT });
+  /* RESTATED (M3A A1): the partner now selects and closing selection reserves;
+     the retired Collector-proposes / reviewTradeCard path is replaced by the shared fixture. */
+  reachValuationByFixture(st, o, [row], AT);
   return { st, o, row,
     get: () => st.get().opportunities.find((x) => x.id === o),
     card: () => st.get().opportunities.find((x) => x.id === o).trade.cards[0] };

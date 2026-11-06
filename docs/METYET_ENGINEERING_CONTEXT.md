@@ -418,6 +418,53 @@ No new command. Eligibility stays `startOpportunity`'s.
 Opening a deal reserves nothing (B44): the copy stays available until a
 later, not yet shipped, step holds it.
 
+### Trade Selection, withdrawal and the lost shop card (M3A A1, founder-approved)
+
+Domain only — no trade command is on the production allow-list until the
+screens that send them ship (A3–A6). Production still stops at "Price agreed
+· Select Trade coming soon"; the shop's tag now reads the turn reason
+`select-trade`.
+
+- **TP-led selection.** The partner selects specific copies from the
+  Collector's Trade/Sell supply (`selectTradeCards`); the Collector never
+  submits cards and cannot force one in. The Collector may say "hold on, I'm
+  adding more cards" any number of times (`holdTradeSelection`), adds cards
+  only by offering them in Browse, and says when they are ready
+  (`continueTradeSelection`). The partner may deselect (`deselectTradeCard`)
+  and closes selection (`closeTradeSelection`). Selection never writes
+  `offered` or `keeping`. `proposeTradeSelection` / `reviewTradeCard` are
+  retired (`superseded`).
+- **Selected is not reserved.** A selected copy's grade, condition,
+  certificate and existing photos are locked (`copy-in-deal`; an empty photo
+  slot may still be filled) and snapshotted on the row, and it cannot be
+  switched to PC — but other deals, the same partner's included, may select
+  it too. Closing selection reserves every selected copy atomically and moves
+  to Value Trade; any conflict refuses the close and changes nothing. Final
+  agreement commits; completion trades. All of it is derived from the deal's
+  stage (`binderRowState`); nothing is stored on the copy. No photograph is
+  required anywhere.
+- **Withdrawal.** The Collector may withdraw any selected card from one deal
+  until final agreement. History stays; Trade/Sell is untouched; other cards'
+  agreements stand; in Deal a `reset` entry voids standing figures and both
+  confirmations. The last card leaving Value Trade or Deal returns the deal to
+  Select Trade. Reselection is a new row. Cash only is never automatic.
+- **Stale screens.** `closeTradeSelection`, `proposeFinalBalance` and
+  `acceptDeal` take an optional `expect` and refuse `terms-changed`.
+- **The lost shop card.** A deal whose InventoryCopy is promised to another
+  deal (final agreement) or removed by the partner (before a price is agreed)
+  is ENDED in the same write, `outcome: "card-unavailable"`, `endedBy: null`.
+  One active deal per Goal now has no exception; a hold (`pendingFor`) ends
+  nothing; an ended deal never comes back. A rival can therefore tell "held
+  for now" from "gone" — by design — but not promised from sold.
+- **Inventory identity.** A removed shop copy is never revived: re-adding the
+  same card mints a new `invId`, and nothing (deals, holds, matches) carries
+  over. The CSV import only adds.
+- **Deferred to A1P:** the prototype demo seed fabricates one Collector copy
+  reserved by two deals, so the whole-world `validateWorld` check of
+  "reserved by at most one" waits for A1P to re-seed (the commands enforce it
+  now). The two dev prototypes' Select Trade screens still call the retired
+  commands.
+
 ## 14. TP inventory ingestion --- deferred
 
 Potential ingestion: manual lookup/add, CSV import from tools, dedicated

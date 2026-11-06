@@ -167,8 +167,11 @@ function unrelatedWorld() {
   /* oA — cA ↔ Alpha, completed, with a traded binder copy and a signed balance. */
   const oA = x(cA, "startOpportunity", { goalId: "gA", invId: "iA1", amount: 3700 }, "oA offer");
   x(pA, "acceptPrice", { oppId: oA });
-  x(cA, "proposeTradeSelection", { oppId: oA, binderIds: ["bA"] });
-  x(pA, "reviewTradeCard", { oppId: oA, decision: "accepted" });
+  /* RESTATED (M3A A1): TP-led selection — the partner selects, the Collector
+     is ready, the partner closes and the copy is reserved for valuation. */
+  x(pA, "selectTradeCards", { oppId: oA, copyIds: ["bA"] });
+  x(cA, "continueTradeSelection", { oppId: oA });
+  x(pA, "closeTradeSelection", { oppId: oA });
   x(cA, "proposeMarketValue", { oppId: oA, tradeCardId: row(oA), amount: 500 });
   x(pA, "acceptMarketValue", { oppId: oA, tradeCardId: row(oA) });
   x(pA, "proposeTradePercent", { oppId: oA, tradeCardId: row(oA), percent: 0.8 });
@@ -190,10 +193,16 @@ function unrelatedWorld() {
   snap.offered = store.get();
   x(pA, "acceptPrice", { oppId: oABA });
   snap.agreed = store.get();                                  // iA5 committed; bAB1 still free
-  x(cAB, "proposeTradeSelection", { oppId: oABA, binderIds: ["bAB1"] });
-  snap.reserved = store.get();                                // bAB1 reserved
-  x(pA, "reviewTradeCard", { oppId: oABA, decision: "accepted" });
-  snap.committed = store.get();                               // bAB1 committed
+  /* RESTATED (M3A A1): the snapshot names are kept so the suites reading them
+     still find them, but what they hold moved with the model — `reserved` is
+     now the partner's SELECTION (bAB1 selected: locked, not exclusive) and
+     `committed` is the moment selection closes (bAB1 reserved for valuation).
+     A copy is committed only at final agreement. */
+  x(pA, "selectTradeCards", { oppId: oABA, copyIds: ["bAB1"] });
+  snap.reserved = store.get();                                // bAB1 selected
+  x(cAB, "continueTradeSelection", { oppId: oABA });
+  x(pA, "closeTradeSelection", { oppId: oABA });
+  snap.committed = store.get();                               // bAB1 reserved (valuation)
   x(cAB, "proposeMarketValue", { oppId: oABA, tradeCardId: row(oABA), amount: 1000 });
   x(pA, "acceptMarketValue", { oppId: oABA, tradeCardId: row(oABA) });
   x(pA, "proposeTradePercent", { oppId: oABA, tradeCardId: row(oABA), percent: 0.75 });
@@ -218,10 +227,11 @@ function unrelatedWorld() {
   x(pB, "acceptDeal", { oppId: oB });
   x(cB, "proposeFinalBalance", { oppId: oB, amount: 3333 });
 
-  /* oAB — cAB ↔ Beta, at Select Trade with a submitted (reserved) package. */
+  /* oAB — cAB ↔ Beta, at Select Trade with the partner's selection sent
+     (RESTATED, M3A A1: bAB2 is selected — locked, not exclusive). */
   const oAB = x(cAB, "startOpportunity", { goalId: "gAB", invId: "iB3", amount: 600 }, "oAB offer");
   x(pB, "acceptPrice", { oppId: oAB });
-  x(cAB, "proposeTradeSelection", { oppId: oAB, binderIds: ["bAB2"] });
+  x(pB, "selectTradeCards", { oppId: oAB, copyIds: ["bAB2"] });
 
   /* Conversations — one per partner–collector–card, through the real command. */
   x(cA, "sendMessage", { partnerId: "pA", cardId: "k1", text: MARK.msgA });

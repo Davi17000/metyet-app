@@ -608,7 +608,11 @@ describe("F. the review-only artwork exception", () => {
       /* (Milestone 2D.1: the founder-approved deal-conversation migration —
          the conversations table only; neither the importer nor an image rule.
          It reached this diff once committed, being untracked before.) */
-      "persistence/migrations/0015_deal_conversations.sql"];
+      "persistence/migrations/0015_deal_conversations.sql",
+      /* (M3A A1: TP-led trade selection — the Collector view's copy-state words
+         and the store's command bindings; neither the importer nor an image
+         rule.) */
+      "domain/collector-view.js", "domain/metyet-store.js", "domain/README.md"];
     eq(changed.split("\n").filter((f) => f && !B5.includes(f)).join("\n"), "", "Stage 1 changed production catalogue, server or domain code");
   });
 });

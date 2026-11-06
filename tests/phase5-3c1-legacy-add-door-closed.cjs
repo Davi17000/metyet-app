@@ -238,7 +238,7 @@ describe("B. kept in the domain, closed at the door, and only one way in", () =>
     assert(!EXPOSED_COMMANDS.includes("addBinderEntry"), "the retired add is exposed");
     assert(EXPOSED_COMMANDS.includes("removeBinderEntry"), "the legacy removal is not exposed");
     /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(C.COMMAND_NAMES.length, 56, "the domain command table moved");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A1: + selectTradeCards, deselectTradeCard, holdTradeSelection, continueTradeSelection, closeTradeSelection (proposeTradeSelection and reviewTradeCard remain as refusing names) — each founder-approved */ eq(C.COMMAND_NAMES.length, 61, "the domain command table moved");
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */

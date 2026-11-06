@@ -500,7 +500,7 @@ describe("D. what stops an overlap, and what must never be erased", () => {
     eq((await found(ctx, "dana")).length, 1, "and comes back when they release it");
 
     /* And so does the promise itself. */
-    await acted(ctx, ACTOR.casey, "proposeTradeSelection", { oppId, binderIds: [] });
+    await acted(ctx, ACTOR.casey, "chooseCashOnly", { oppId });   // RESTATED (M3A A1): cash only is its own explicit choice
     await acted(ctx, ACTOR.north, "acceptDeal", { oppId });
     await acted(ctx, ACTOR.casey, "acceptDeal", { oppId });
     eq((await found(ctx, "dana")).length, 0,
@@ -525,7 +525,7 @@ describe("D. what stops an overlap, and what must never be erased", () => {
     eq(json(valued[0].invIds.slice().sort()), json([first, second].sort()),
       "and both copies are genuinely available");
 
-    await acted(ctx, ACTOR.casey, "proposeTradeSelection", { oppId, binderIds: [] });
+    await acted(ctx, ACTOR.casey, "chooseCashOnly", { oppId });   // RESTATED (M3A A1): cash only is its own explicit choice
     await acted(ctx, ACTOR.north, "acceptDeal", { oppId });
     await acted(ctx, ACTOR.casey, "acceptDeal", { oppId });
     const theirs = await found(ctx, "dana");

@@ -177,8 +177,11 @@ const DEAL = [
   [C1, "startOpportunity", () => ({ goalId: "g1", invId: "i1", amount: 900 })],
   [TP1, "proposePrice", (w) => ({ oppId: opp(w).id, amount: 980 })],
   [C1, "acceptPrice", (w) => ({ oppId: opp(w).id })],
-  [C1, "proposeTradeSelection", (w) => ({ oppId: opp(w).id, binderIds: ["b1"] })],
-  [TP1, "reviewTradeCard", (w) => ({ oppId: opp(w).id, decision: "accepted" })],
+  /* RESTATED (M3A A1): TP-led selection, through the persisted path. */
+  [TP1, "selectTradeCards", (w) => ({ oppId: opp(w).id, copyIds: ["b1"] })],
+  [C1, "holdTradeSelection", (w) => ({ oppId: opp(w).id })],
+  [C1, "continueTradeSelection", (w) => ({ oppId: opp(w).id })],
+  [TP1, "closeTradeSelection", (w) => ({ oppId: opp(w).id, expect: { tradeCardIds: [row(w)] } })],
   [C1, "proposeMarketValue", (w) => ({ oppId: opp(w).id, tradeCardId: row(w), amount: 300 })],
   [TP1, "acceptMarketValue", (w) => ({ oppId: opp(w).id, tradeCardId: row(w) })],
   [TP1, "proposeTradePercent", (w) => ({ oppId: opp(w).id, tradeCardId: row(w), percent: 0.8 })],
@@ -489,7 +492,7 @@ describe("C. durable commands", () => {
   test("history persists: a completed deal keeps the id of a Goal removed afterwards", async () => {
     const { repo, pg } = await fresh();
     await repo.saveWorld(seed());
-    await drive(repo, DEAL.slice(0, 18));
+    await drive(repo, DEAL.slice(0, 20));   // M3A A1: selection is four steps now, so completion is step 20
     const r = await executeCommand(repo, { actor: C1, command: "removeGoal", payload: { goalId: "g1" }, runtime: runtime() });
     assert(r.ok, "a satisfied Goal can be removed: " + r.refused);
     const back = await repo.loadWorld();

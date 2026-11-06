@@ -199,7 +199,7 @@ describe("B. Discovery answers with the copies she described", () => {
     eq(seen(st).length, 1, "and released, it is again");
 
     okv(x(st, TP, "acceptPrice", { oppId: b, at: AT }), "value");
-    okv(x(st, B, "proposeTradeSelection", { oppId: b, binderIds: [], at: AT }), "package");
+    okv(x(st, B, "chooseCashOnly", { oppId: b, at: AT }), "package");
     okv(x(st, TP, "acceptDeal", { oppId: b, at: AT }), "tp yes");
     okv(x(st, B, "acceptDeal", { oppId: b, at: AT }), "collector yes");
     eq(seen(st).length, 0, "committed is not an answer");
@@ -281,7 +281,7 @@ describe("D. A negotiation that can never conclude stops holding the Goal", () =
   const rivalWins = (st) => {
     const b = okv(x(st, B, "startOpportunity", { goalId: "gB", invId: "i1", amount: 27, at: AT }), "B opens");
     okv(x(st, TP, "acceptPrice", { oppId: b, at: AT }), "value");
-    okv(x(st, B, "proposeTradeSelection", { oppId: b, binderIds: [], at: AT }), "package");
+    okv(x(st, B, "chooseCashOnly", { oppId: b, at: AT }), "package");
     okv(x(st, TP, "acceptDeal", { oppId: b, at: AT }), "tp yes");
     okv(x(st, B, "acceptDeal", { oppId: b, at: AT }), "collector yes");
     return b;
@@ -326,22 +326,19 @@ describe("D. A negotiation that can never conclude stops holding the Goal", () =
       "she may pursue the card elsewhere");
   });
 
-  test("[19b] but DELETING the Goal still waits for the dead deal to be closed", () => {
-    /* THE REGRESSION THIS EXISTS FOR. Releasing the negotiation lock is not the
-       same as releasing the REFERENCE: an active Opportunity names the Goal,
-       and `validateWorld` requires that name to resolve. Deleting it produced a
-       world the persistence layer refuses — a 500, not a refusal, which is the
-       precise failure Option B was fixed for. The way through is to cancel,
-       which is one command away and is the honest record anyway. */
+  /* RESTATED (M3A A1). WAS: the dead deal stayed ACTIVE, so it still named
+     the Goal and deleting the Goal had to wait until the Collector cancelled it.
+     NOW: the rival's final agreement ENDS the dead deal as card-unavailable, so
+     it no longer holds the Goal in any sense — and an ended deal's Goal
+     reference is history, which the validator lets outlive the Goal. */
+  test("[19b] and DELETING the Goal no longer waits: the dead deal is already ended", () => {
     const st = twoShops();
     const a = okv(x(st, A, "startOpportunity", { goalId: "gA", invId: "i1", amount: 26, at: AT }), "she opens");
     sell(st, rivalWins(st));
-    nov(x(st, A, "removeGoal", { goalId: "gA", at: AT }), D.REFUSE.goalLocked,
-      "deleting would have left an Opportunity naming nothing");
+    eq(st.get().opportunities.find((o) => o.id === a).outcome, "card-unavailable", "the dead deal ended");
+    okv(x(st, A, "removeGoal", { goalId: "gA", at: AT }), "so the Goal may go");
     assert(validateWorld(st.get()).ok, "and the world is still storable");
-    okv(x(st, A, "cancelOpportunity", { oppId: a, reason: "lost it", at: AT }), "she closes the dead deal");
-    okv(x(st, A, "removeGoal", { goalId: "gA", at: AT }), "and then the Goal goes");
-    assert(validateWorld(st.get()).ok, "and it is still storable after");
+    eq(st.get().opportunities.find((o) => o.id === a).goalId, "gA", "the ended deal still names it, as history");
   });
 
   test("[19c] losing is PERMANENT: the rival cancelling does not resurrect it", () => {
@@ -364,8 +361,10 @@ describe("D. A negotiation that can never conclude stops holding the Goal", () =
       && D.isNegotiating(o) && !D.transactionallyLost(o, st.get().opportunities));
     eq(live.length, 1, "one Goal still has exactly one live negotiation");
     eq(live[0].id, a2, "and it is the replacement, not the superseded one");
-    assert(D.transactionallyLost(st.get().opportunities.find((o) => o.id === a1),
-      st.get().opportunities), "the superseded conversation stayed lost");
+    /* RESTATED (M3A A1): permanent because it was ENDED, not because the
+       predicate remembers a cancelled promise. */
+    const first = st.get().opportunities.find((o) => o.id === a1);
+    assert(!D.isActive(first) && first.outcome === "card-unavailable", "the superseded conversation stayed ended");
     assert(validateWorld(st.get()).ok, "and the world is storable");
   });
 
@@ -403,26 +402,35 @@ describe("D. A negotiation that can never conclude stops holding the Goal", () =
       D.REFUSE.goalLocked, "and its Goal is still locked");
   });
 
-  test("[20][21] the losing record remains, untouched and un-faked", () => {
+  /* RESTATED (M3A A1). WAS: the losing record stayed byte-identical and
+     active — "only the LOCK was released" — and the honest way out was for the
+     Collector to cancel it. WHY IT CHANGED: the founder ruled out a deal that is
+     apparently active while silently excluded. NOW: it is ENDED with the
+     ordinary ending fields and outcome card-unavailable; nothing else on it is
+     touched, nobody is recorded as having ended it, and there is nothing left
+     for the Collector to cancel. */
+  test("[20][21] the losing record remains, ended explicitly and otherwise untouched", () => {
     const st = twoShops();
     const a = okv(x(st, A, "startOpportunity", { goalId: "gA", invId: "i1", amount: 26, at: AT }), "she opens");
-    const before = JSON.stringify(st.get().opportunities.find((o) => o.id === a));
+    const before = st.get().opportunities.find((o) => o.id === a);
     rivalWins(st);
     const after = st.get().opportunities.find((o) => o.id === a);
-    eq(JSON.stringify(after), before, "the losing record was rewritten");
+    const ENDING = ["declined", "endedBy", "endedAt", "endedStage", "endedReason", "outcome", "updated"];
+    const strip = (o) => JSON.stringify(Object.fromEntries(Object.entries(o).filter(([k]) => !ENDING.includes(k))));
+    eq(strip(after), strip(before), "only the ending fields were written");
     eq(after.stage, "agree-price", "it is where it was");
-    eq(after.declined, false, "and nothing faked a decline");
-    assert(after.endedAt === undefined || after.endedAt === null, "nor an ending");
-    assert(D.isActive(after), "it is still an active record; only the LOCK was released");
+    eq(after.endedStage, "agree-price", "and the ending says so");
+    eq(after.outcome, "card-unavailable", "ended because the card went elsewhere");
+    eq(after.endedBy, null, "and not by either person");
+    assert(!D.isActive(after), "it is no longer an active record");
   });
 
-  test("[23] cancellation still works, and is still the honest way out", () => {
+  test("[23] there is nothing left to cancel, and nothing to fake", () => {
     const st = twoShops();
     const a = okv(x(st, A, "startOpportunity", { goalId: "gA", invId: "i1", amount: 26, at: AT }), "she opens");
     rivalWins(st);
-    okv(x(st, A, "cancelOpportunity", { oppId: a, reason: "lost the race", at: AT }), "she may close it");
-    const after = st.get().opportunities.find((o) => o.id === a);
-    eq(after.declined, true, "and then it IS declined, because she said so");
+    nov(x(st, A, "cancelOpportunity", { oppId: a, reason: "lost the race", at: AT }), D.REFUSE.terminal, "already ended");
+    eq(st.get().opportunities.find((o) => o.id === a).endedReason, null, "and no reason was put in her mouth");
   });
 
   test("no new durable state, no sweep, no lifecycle field", () => {
@@ -694,7 +702,7 @@ describe("F. The boundary this batch did not cross", () => {
        untouched: filing a copy in a Binder is organising, not dealing, and a
        copy in a live deal is filed and unfiled exactly as any other. */
     /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(COMMAND_NAMES.length, 56, "a command was added or removed");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A1: + selectTradeCards, deselectTradeCard, holdTradeSelection, continueTradeSelection, closeTradeSelection (proposeTradeSelection and reviewTradeCard remain as refusing names) — each founder-approved */ eq(COMMAND_NAMES.length, 61, "a command was added or removed");
   });
 
   test("[11][34][35][36] Option B's availability model is untouched", () => {
@@ -713,12 +721,14 @@ describe("F. The boundary this batch did not cross", () => {
     assert(validateWorld(st.get()).ok, "two agreed values on one copy became unstorable");
 
     /* Final agreement is still the hard boundary, and still blocks a second. */
-    okv(x(st, A, "proposeTradeSelection", { oppId: a, binderIds: [], at: AT }), "A packages");
-    okv(x(st, B, "proposeTradeSelection", { oppId: b, binderIds: [], at: AT }), "B packages");
+    okv(x(st, A, "chooseCashOnly", { oppId: a, at: AT }), "A packages");
+    okv(x(st, B, "chooseCashOnly", { oppId: b, at: AT }), "B packages");
     okv(x(st, TP, "acceptDeal", { oppId: a, at: AT }), "tp yes to A");
     okv(x(st, A, "acceptDeal", { oppId: a, at: AT }), "A yes");
     eq(D.inventoryCopyStatus("i1", st.get().opportunities, st.get().inventory), "committed", "promised");
-    nov(x(st, TP, "acceptDeal", { oppId: b, at: AT }), D.REFUSE.copyCommitted,
+    /* RESTATED (M3A A1): A's promise ended B's deal in the same write. */
+    eq(st.get().opportunities.find((o) => o.id === b).outcome, "card-unavailable", "B's deal ended explicitly");
+    nov(x(st, TP, "acceptDeal", { oppId: b, at: AT }), D.REFUSE.terminal,
       "a second promise is still refused");
   });
 
@@ -730,9 +740,12 @@ describe("F. The boundary this batch did not cross", () => {
         grade: "PSA 8", offered: true, photos: PH }] });
     const a = okv(x(st, A, "startOpportunity", { goalId: "gA", invId: "i1", amount: 26, at: AT }), "opens");
     okv(x(st, TP, "acceptPrice", { oppId: a, at: AT }), "value");
-    okv(x(st, A, "proposeTradeSelection", { oppId: a, binderIds: ["kA1"], at: AT }), "offers her card");
+    /* RESTATED (M3A A1): the partner selects her card and closing selection reserves it. */
+    okv(x(st, TP, "selectTradeCards", { oppId: a, copyIds: ["kA1"], at: AT }), "the partner selects her card");
+    okv(x(st, A, "continueTradeSelection", { oppId: a, at: AT }), "she is ready");
+    okv(x(st, TP, "closeTradeSelection", { oppId: a, at: AT }), "selection closes");
     eq(D.collectorCopyStatus("kA1", st.get().opportunities), "reserved",
-      "her own copy is still held by the package");
+      "her own copy is held by the deal");
   });
 
   test("[38] the privacy shaping from the cleanup batch still holds", () => {

@@ -111,6 +111,12 @@ const turnFor = (a, o, ...reasons) => myTurn(a, o) && reasons.includes(D.nextAct
 const withOpp = (state, oppId, fn) => ({ ...state,
   opportunities: list(state.opportunities).map((o) => (o.id === oppId ? fn(o) : o)) });
 const stamp = (o, at) => (at ? { ...o, updated: at } : o);
+/* Two lists naming the same ids, in any order — how a caller's `expect` is
+   compared with the deal as it stands now. */
+const sameIdSet = (xs, ys) => {
+  const a = new Set(list(xs)); const b = new Set(list(ys));
+  return a.size === b.size && list(xs).length === a.size && [...a].every((x) => b.has(x));
+};
 const validMoney = (n) => typeof n === "number" && isFinite(n);
 /* A price in MetYet's terms: a whole number of dollars above zero (Batch 2.1). */
 const wholeDollars = (n) => Number.isSafeInteger(n) && n > 0;
@@ -285,6 +291,43 @@ function oppGate(state, a, oppId) {
   if (!isParticipant(a, o)) return { refused: R.notParticipant };
   if (!D.isActive(o)) return { refused: R.terminal };
   return { o };
+}
+
+/* IS THE CALLER LOOKING AT THE DEAL AS IT STANDS? (M3A A1). `expect` is
+   optional — a caller that sends none keeps today's behaviour — but a caller
+   that sends it is saying "this balance, these cards", and if either has moved
+   the command must not act on a deal the person never saw. */
+function termsChanged(o, expect) {
+  if (expect == null) return false;
+  if (typeof expect !== "object" || Array.isArray(expect)) return true;
+  if ("balance" in expect && expect.balance !== D.currentCashFigure(o)) return true;
+  if ("tradeCardIds" in expect
+    && !(Array.isArray(expect.tradeCardIds)
+      && sameIdSet(expect.tradeCardIds, D.TRADE.liveTradeRows(o).map((c) => c.id)))) return true;
+  return false;
+}
+
+/* THE SHOP'S CARD IS NO LONGER AVAILABLE TO THESE DEALS (M3A A1).
+
+   Ends every active deal on `invId` except `exceptOppId`, with the ordinary
+   ending fields and `outcome: "card-unavailable"`. Called by the command that
+   made the card unavailable, inside the same write, so there is no moment at
+   which a deal is apparently active over a card it can never have:
+     acceptDeal           another deal reached final agreement on the copy
+     removeInventoryCopy  the partner took the copy off the shelf
+
+   `endedBy` is null because no participant ended it; the event did. History is
+   untouched — threads, trade rows, snapshots, messages — and because an ended
+   deal holds nothing, its Goal is free, its trade cards are released and every
+   later command on it is refused as terminal. A temporary hold (`pendingFor`)
+   never calls this. */
+function endUnavailable(state, invId, exceptOppId, at) {
+  if (invId == null) return state;
+  return { ...state, opportunities: list(state.opportunities).map((o) =>
+    (o.invId === invId && o.id !== exceptOppId && D.isActive(o)
+      ? { ...o, declined: true, endedBy: null, endedAt: at || null, endedStage: o.stage,
+        endedReason: null, outcome: "card-unavailable", ...(at ? { updated: at } : {}) }
+      : o)) };
 }
 
 /* ----------------------------------------------------------------- commands */
@@ -842,8 +885,13 @@ const COMMANDS = {
        the shop no longer owns to its inventory for ever. */
     if (!D.soldInventoryIds(state.opportunities).has(invId)
       && D.INVARIANTS.copyInLiveDeal(invId, state.opportunities)) return refuse(R.copyCommitted);
-    return done({ ...state, inventory: list(state.inventory).map((i) => (i.invId === invId
-      ? { ...i, archived: true } : i)) }, invId);
+    /* THE DEALS STILL AGREEING A PRICE ON IT END WITH IT (M3A A1). The guard
+       above means only deals before a settled price can be here, and a card
+       that is off the shelf can never be theirs, so each is ended explicitly as
+       `card-unavailable` in the same write rather than left active. */
+    const archived = { ...state, inventory: list(state.inventory).map((i) => (i.invId === invId
+      ? { ...i, archived: true } : i)) };
+    return done(endUnavailable(archived, invId, null, ctx && ctx.at), invId);
   },
 
   /* ------------------------------------------------------- pending a copy */
@@ -1092,9 +1140,19 @@ const COMMANDS = {
     /* Willingness has its own command, so that "I am not selling this" and "I
        was wrong about the certificate" are never the same edit. */
     if ("offered" in p || "keeping" in p) return refuse(R.identityImmutable);
-    const status = D.collectorCopyStatus(copyId, state.opportunities);
-    if ("cert" in p && p.cert !== copy.cert && (status === "committed" || status === "traded")) {
-      return refuse(R.copyCommitted);
+    /* THE SPECIFICATION LOCK (M3A A1). From the moment a partner selects this
+       copy until every deal that selected it has let it go, the facts that say
+       what the object IS cannot be restated: grade, condition, certificate, and
+       the photographs already on it. Somebody is reasoning about exactly this
+       object. Filling an EMPTY photo slot is still allowed — evidence arriving
+       — but replacing or removing one is not, which is the same line the shop's
+       own copies draw (`photographsRewritten`). The Collector's private value
+       and notes are their own bookkeeping and stay editable. */
+    if (D.copySpecLocked(copyId, state.opportunities)) {
+      for (const k of ["grade", "condition", "cert"]) {
+        if (k in p && p[k] !== copy[k]) return refuse(R.copyInDeal);
+      }
+      if ("photos" in p && photographsRewritten(copy.photos, p.photos)) return refuse(R.copyInDeal);
     }
     const next = { ...copy, ...p, id: copy.id, cardId: copy.cardId,
       canonicalCardId: copy.canonicalCardId, collectorId: copy.collectorId,
@@ -1185,6 +1243,11 @@ const COMMANDS = {
        reason: `D.copyOffered(b)` could only have been reached by withdrawing
        a keep, which no longer happens. */
     if (D.copyKept(copy) && !D.copyOffered(copy)) return done(state, copyId);
+    /* NOT WHILE A DEAL IS CONSIDERING IT (M3A A1). Keeping a card a partner has
+       selected, or that a deal holds, would leave a "keep" copy inside a trade
+       — the Collector's own two statements contradicting each other. They
+       withdraw it from the deal first; then this is theirs to say. */
+    if (D.copySpecLocked(copyId, state.opportunities)) return refuse(R.copyInDeal);
     return done({ ...state, collectorCopies: list(state.collectorCopies).map((b) => (b.id === copyId
       ? withDisposition(b, false, true, at)
       : b)) }, copyId);
@@ -1743,7 +1806,9 @@ const COMMANDS = {
     if (!isRelated(state, a.partnerId, copy.collectorId)) return refuse(R.noRelationship);
     const has = list(state.interests).some((i) => i.partnerId === a.partnerId && i.binderId === binderId);
     if (!!on === has) return done(state, has);
-    if (on && D.collectorCopyStatus(binderId, list(state.opportunities)) !== "available") {
+    /* Selected is not held (M3A A1): a copy other partners are merely
+       considering is still somebody's to be interested in. */
+    if (on && D.copyExclusive(binderId, list(state.opportunities))) {
       return refuse(R.copyUnavailable);
     }
     return done({ ...state, interests: on
@@ -2123,138 +2188,201 @@ const COMMANDS = {
   },
 
   /* ------------------------------------------------------------ select trade */
-  /* Submitting the package. Draft selection lived in the collector's own UI
-     until now and reserved nothing; submission reserves each exact copy. An
-     empty package is the cash-only choice.
+  /* TP-LED TRADE SELECTION (M3A A1).
 
-     THIS IS WHERE THE PHOTOGRAPH REQUIREMENT LIVES NOW (Phase 5 C2).
+     The partner chooses specific physical copies from the Collector's Trade/Sell
+     supply — the copies the Collector has offered in Browse, which every
+     connected partner already sees. The Collector never submits cards to a
+     deal and cannot force one into it. What the Collector CAN do is ask for
+     time ("hold on, I'm adding more cards", as often as they like), offer more
+     copies through Browse, say when they are ready, and withdraw any selected
+     card from this deal.
 
-     It used to live at the door: `addBinderCopy` refused a copy without both
-     faces, so a Collector could not record owning a card they had not yet
-     photographed. That put an evaluation rule in front of an ownership fact,
-     and it cost the product the thing the rule was for — a Collector with a
-     shoebox and no lightbox could record nothing, so there was nothing to
-     photograph later and no prompt to do it.
+     SELECTION IS NOT RESERVATION. A selected copy's material specification is
+     locked at once (`D.copySpecLocked`) and a snapshot rides on the row, but
+     the copy stays selectable in other deals — with other partners or with this
+     one — until a deal enters valuation. `closeTradeSelection` is that moment,
+     and it is atomic: every live row is re-checked under the world lock and
+     either all of them become reserved for this deal and the stage moves to
+     Value Trade, or nothing changes at all.
 
-     Evaluation actually happens HERE: this is the first moment a specific
-     physical copy is handed to somebody else to put a value on. `binderIds` is
-     legacy naming (see setInterest); these are collector copy ids. A copy
-     entering a submitted package without both faces would ask a partner to
-     price a card they cannot see, which is exactly what `copyPhotographed`
-     exists to prevent — and it is the same standard `startOpportunity` already
-     applies to the partner's own copy on the other side of the deal.
+     NO PHOTOGRAPHS ARE REQUIRED. The rule that a copy needed both faces before
+     it could be valued was retired for the pilot; photographs that exist are
+     snapshotted and locked, and photographs that do not are not asked for.
 
-     The requirement did not weaken; it moved to where it bites. Owning is now
-     free, offering is free, and the photographs are required at the point where
-     their absence would actually harm somebody. */
-  proposeTradeSelection(state, a, { oppId, binderIds }, ctx) {
-    const at = ctx.at;
-    if (a.seat !== "collector") return refuse(R.notOwner);
-    const { o, refused } = oppGate(state, a, oppId);
-    if (refused) return refuse(refused);
-    if (o.stage !== "select-trade") return refuse(R.wrongStage);
-    if (o.trade && o.trade.submitted) return refuse(R.alreadySubmitted);
-    /* AND THE CARD HAS TO STILL BE THERE. This one matters more than the price
-       guards: submitting a package RESERVES the Collector's own copies, so a
-       dead deal on a card that has been sold or promised elsewhere would
-       consume their property — a copy they could then neither withdraw nor
-       offer to anybody else until they noticed and cancelled. Before Option B
-       this was unreachable, because a losing deal could never get past
-       `acceptPrice`; moving the boundary is what opened it. */
-    const gone = copyBlockedFor(state, o, a);
-    if (gone) return refuse(gone);
-    if (!turnFor(a, o, "choose-trade")) return refuse(R.notYourTurn);
-    const ids = list(binderIds);
-    if (new Set(ids).size !== ids.length) return refuse(R.copyInUse);
-    const rows = [];
-    for (const bid of ids) {
-      const b = list(state.collectorCopies).find((x) => x.id === bid);
-      if (!b) return refuse(R.notFound);
-      if (b.collectorId !== a.collectorId) return refuse(R.notOwner);
-      /* PC IS A HARD BAR, AND SILENCE IS NOT CONSENT.
-
-         An audit found this command reading only ownership, photographs and
-         reservation — never the copy's disposition. So a copy its owner had
-         marked PC could be put in a package, and it then crossed to the shop
-         through `referencedCopies` with its grade, cert and both photographs,
-         labelled "reserved", and could be accepted to "traded". The field-level
-         rule held (`keeping` is off the partner allow-list) but the ROW the
-         projection says never reaches a partner did reach them.
-
-         The four-state hand-back claimed that protection was DOUBLED. It was
-         not: it was single, and it rested entirely on no surface ever sending a
-         kept copy's id.
-
-         WHAT THIS CLOSES, EXACTLY, AND WHAT IT DOES NOT. This is the door INTO
-         a package. It is not a promise that a copy inside one can never be
-         kept: `setCollectorCopyKept` has no reserved-or-committed guard, so a
-         Collector may package an offered copy and then say they are keeping it,
-         and the copy stays visible to that partner as `reserved` because it IS
-         reserved to their deal. That is the same asymmetry `setCollectorCopyOffered`
-         already documents — a deal that has taken a copy is untouched by what
-         its owner later says about offering it — and unwinding it is
-         `withdrawTradeCard` or cancelling, not a disposition. Whether PC should
-         additionally refuse while a package holds the copy is a product
-         question this batch surfaced rather than answered.
-
-         `offered === true` AND NOTHING WEAKER. Refusing only `keeping` would
-         still let a copy nobody has said anything about — which is every copy
-         written before PC existed — be reserved against its owner's silence.
-         A package is where property is committed; the answer has to have been
-         given. Read through `D.copyOffered` so this and the projection's
-         `inSupply` cannot drift apart. */
-      if (!D.copyOffered(b)) return refuse(R.copyNotOffered);
-      if (!D.INVARIANTS.copyPhotographed(b.photos)) return refuse(R.photosRequired);
-      const status = D.collectorCopyStatus(bid, state.opportunities, oppId);
-      if (status === "reserved") return refuse(R.copyReserved);
-      if (status === "committed") return refuse(R.copyCommitted);
-      if (status === "traded") return refuse(R.copyUnavailable);
-      /* The row names the card the COPY names, whichever way the copy names it
-         (C2). A Collector's copy recorded in production has a canonical card
-         and no legacy one; the demo's copies have the reverse. */
-      rows.push({ ...D.emptyTradeCard(b.cardId, b.photos, b.cert, bid, b.canonicalCardId),
-        id: ctx.id("tc" + (b.canonicalCardId || b.cardId) + "-") });
-    }
-    if (!rows.length) {
-      return done(withOpp(state, oppId, (x) => stamp({ ...x, stage: "deal",
-        trade: { ...(x.trade || {}), mode: "cash", submitted: true, cards: [], cashOnlyAt: at },
-        deal: { ...D.emptyDeal(), ...(x.deal || {}), adjThread: (x.deal && x.deal.adjThread) || [] } }, at)), oppId);
-    }
-    return done(withOpp(state, oppId, (x) => stamp({ ...x,
-      trade: { ...(x.trade || {}), mode: "trade", submitted: true, cards: rows } }, at)), oppId);
-  },
-
-  /* The partner's inclusion decision. Omitting tradeCardId decides every
-     still-undecided row. Acceptance commits the exact copy. */
-  reviewTradeCard(state, a, { oppId, tradeCardId, decision }, ctx) {
+     SELECTING NEVER WRITES `offered` OR `keeping`. Trade/Sell is a fact about the
+     copy, said by its owner; being considered in a deal is a fact about the
+     deal. */
+  selectTradeCards(state, a, { oppId, copyIds }, ctx) {
     const at = ctx.at;
     if (a.seat !== "tp") return refuse(R.notOwner);
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
     if (o.stage !== "select-trade") return refuse(R.wrongStage);
-    if (!turnFor(a, o, "review-trade")) return refuse(R.notYourTurn);
-    const verdict = decision === "accepted" || decision === "accept" ? "accepted"
-      : decision === "rejected" || decision === "reject" ? "rejected" : null;
-    if (!verdict) return refuse(R.notFound);
-    /* Only ACCEPTING builds the package further; rejecting a row RELEASES the
-       collector's copy, which is the same shape as withdrawTradeCard and is
-       left open for the same reason. Guarding before the verdict was read shut
-       the partner out of closing down a deal they already know is dead. */
-    if (verdict === "accepted") {
-      const gone = copyBlockedFor(state, o, a);
-      if (gone) return refuse(gone);
+    const gone = copyBlockedFor(state, o, a);
+    if (gone) return refuse(gone);
+    if (!turnFor(a, o, "select-trade", "close-selection")) return refuse(R.notYourTurn);
+    if (!Array.isArray(copyIds)) return refuse(R.notFound);
+    const sending = D.nextActor(o).reason === "select-trade";
+    /* An empty SEND is a real message — "nothing yet; have you got more?" — and
+       hands the Collector their look. An empty selection during the final
+       review says nothing at all. */
+    if (!copyIds.length && !sending) return refuse(R.nothingToAccept);
+    if (new Set(copyIds).size !== copyIds.length) return refuse(R.copyInUse);
+    if (!isRelated(state, a.partnerId, o.collectorId)) return refuse(R.noRelationship);
+    const live = new Set(D.TRADE.liveTradeRows(o).map((c) => c.binderId));
+    const rows = [];
+    for (const bid of copyIds) {
+      const b = list(state.collectorCopies).find((x) => x.id === bid);
+      /* Somebody else's copy, or no copy: the same answer, so a partner cannot
+         probe ids for the existence of cards they were never shown. */
+      if (!b || b.collectorId !== o.collectorId) return refuse(R.notFound);
+      /* NOT OFFERED, OR HELD EXCLUSIVELY BY ANOTHER DEAL: one public answer.
+         A partner only ever sees offered copies, so "not offered" and "taken"
+         are both just "you cannot have this one", and saying which would tell
+         them about a PC decision or a rival deal they are not owed. */
+      if (!D.copyOffered(b)) return refuse(R.copyUnavailable);
+      if (D.copyExclusive(bid, state.opportunities, oppId)) return refuse(R.copyUnavailable);
+      if (live.has(bid)) return refuse(R.copyInUse);
+      /* A copy the Collector withdrew from THIS deal may be selected again: a
+         new row, a new snapshot, fresh valuation. The withdrawn row stays as
+         history. Reconsideration uses the ordinary process; nothing reopens. */
+      rows.push({ ...D.emptyTradeCard(b.cardId, b.photos, b.cert, bid, b.canonicalCardId,
+        { grade: b.grade, condition: b.condition }),
+        id: ctx.id("tc" + (b.canonicalCardId || b.cardId) + "-"),
+        inclusion: "accepted", by: "tp", selectedAt: at || null, reviewedAt: at || null });
     }
-    const rows = D.TRADE.liveTradeRows(o).filter((c) => c.inclusion === "proposed");
-    const target = tradeCardId ? rows.filter((c) => c.id === tradeCardId) : rows;
-    if (!target.length) return refuse(R.nothingToAccept);
-    const ids = new Set(target.map((c) => c.id));
-    return done(withOpp(state, oppId, (x) => stamp(D.TRADE.closeSelection({ ...x,
-      trade: { ...x.trade, cards: x.trade.cards.map((c) => (ids.has(c.id) ? D.TRADE.decide(c, verdict, at) : c)) } }), at)), oppId);
+    return done(withOpp(state, oppId, (x) => {
+      const sel = D.TRADE.selectionOf(x);
+      const selection = sending
+        ? { ...sel, sentAt: at || true, readyAt: null, closedEmptyAt: null, adding: false }
+        : sel;
+      return stamp({ ...x, trade: { ...(x.trade || {}),
+        ...(rows.length ? { mode: "trade" } : {}),
+        cards: [...((x.trade && x.trade.cards) || []), ...rows], selection } }, at);
+    }), rows.map((r) => r.id));
   },
 
-  /* Withdrawal is valid only for a RESERVED copy — submitted, not yet accepted.
-     It is a retraction, so it does not wait for the collector's turn. A
-     committed copy cannot be withdrawn unilaterally. */
+  /* The partner takes back one of its own selections before valuation. The row
+     stays, marked `rejected`, because "they looked at this one and passed" is
+     part of what happened; the copy stops being selected by this deal. */
+  deselectTradeCard(state, a, { oppId, tradeCardId }, ctx) {
+    const at = ctx.at;
+    if (a.seat !== "tp") return refuse(R.notOwner);
+    const { o, refused } = oppGate(state, a, oppId);
+    if (refused) return refuse(refused);
+    if (o.stage !== "select-trade") return refuse(R.wrongStage);
+    if (!turnFor(a, o, "select-trade", "close-selection")) return refuse(R.notYourTurn);
+    const row = D.TRADE.liveTradeRows(o).find((c) => c.id === tradeCardId);
+    if (!row) return refuse(R.notFound);
+    return done(withOpp(state, oppId, (x) => stamp({ ...x, trade: { ...x.trade,
+      cards: x.trade.cards.map((c) => (c.id === tradeCardId
+        ? { ...c, inclusion: "rejected", reviewedAt: at || null, deselectedAt: at || null } : c)) } }, at)), tradeCardId);
+  },
+
+  /* "HOLD ON, I'M ADDING MORE CARDS." The Collector may say it at any point in
+     Select Trade and as many times as they need; nothing expires it. The
+     partner waits until the Collector says they are ready. A hold also cancels
+     an earlier "ready" and an empty close, because both were said about a
+     supply the Collector is now changing. */
+  holdTradeSelection(state, a, { oppId }, ctx) {
+    const at = ctx.at;
+    if (a.seat !== "collector") return refuse(R.notOwner);
+    const { o, refused } = oppGate(state, a, oppId);
+    if (refused) return refuse(refused);
+    if (o.stage !== "select-trade") return refuse(R.wrongStage);
+    const sel = D.TRADE.selectionOf(o);
+    if (sel.adding) return done(state, oppId);
+    return done(withOpp(state, oppId, (x) => stamp({ ...x, trade: { ...(x.trade || {}),
+      selection: { ...sel, adding: true, heldAt: at || null, readyAt: null, closedEmptyAt: null } } }, at)), oppId);
+  },
+
+  /* "I'M READY — CARRY ON." Ends a hold, or answers a selection the partner
+     sent. The partner may then select more and close. */
+  continueTradeSelection(state, a, { oppId }, ctx) {
+    const at = ctx.at;
+    if (a.seat !== "collector") return refuse(R.notOwner);
+    const { o, refused } = oppGate(state, a, oppId);
+    if (refused) return refuse(refused);
+    if (o.stage !== "select-trade") return refuse(R.wrongStage);
+    if (!turnFor(a, o, "more-cards", "adding-cards")) return refuse(R.notYourTurn);
+    const sel = D.TRADE.selectionOf(o);
+    return done(withOpp(state, oppId, (x) => stamp({ ...x, trade: { ...(x.trade || {}),
+      selection: { ...sel, adding: false, readyAt: at || true } } }, at)), oppId);
+  },
+
+  /* ENTERING VALUATION, ATOMICALLY. Every live row is re-checked against the
+     world as it is NOW — the copy still the deal Collector's, still offered,
+     not held exclusively by any other deal — and then either every row is
+     reserved for this deal and the stage becomes Value Trade, or the command is
+     refused and NOTHING changes: no partial reservation, no dropped card, no
+     stage move. A conflict names this deal's own rows (`detail.tradeCardIds`)
+     so the partner can deselect them or the Collector can withdraw them; it
+     says nothing about the deal that holds them.
+
+     `expect.tradeCardIds`, when sent, is the selection the partner is looking
+     at. If a card was withdrawn since, the screen is stale and the answer is
+     `terms-changed`, not a reservation of something other than what was shown.
+
+     Closing with nothing live does not choose cash. It hands the Collector the
+     decision: hold and add more, cash only, or end the deal. */
+  closeTradeSelection(state, a, { oppId, expect }, ctx) {
+    const at = ctx.at;
+    if (a.seat !== "tp") return refuse(R.notOwner);
+    const { o, refused } = oppGate(state, a, oppId);
+    if (refused) return refuse(refused);
+    if (o.stage !== "select-trade") return refuse(R.wrongStage);
+    const gone = copyBlockedFor(state, o, a);
+    if (gone) return refuse(gone);
+    if (!turnFor(a, o, "close-selection")) return refuse(R.notYourTurn);
+    const live = D.TRADE.liveTradeRows(o);
+    if (expect != null) {
+      const ids = expect && Array.isArray(expect.tradeCardIds) ? expect.tradeCardIds : null;
+      if (!ids || !sameIdSet(ids, live.map((c) => c.id))) return refuse(R.termsChanged);
+    }
+    if (live.length && !isRelated(state, a.partnerId, o.collectorId)) return refuse(R.noRelationship);
+    const conflicts = live.filter((row) => {
+      const b = list(state.collectorCopies).find((x) => x.id === row.binderId);
+      return !b || b.collectorId !== o.collectorId || !D.copyOffered(b)
+        || D.copyExclusive(row.binderId, state.opportunities, oppId);
+    }).map((row) => row.id);
+    if (conflicts.length) return { ok: false, refused: R.copyUnavailable, detail: { tradeCardIds: conflicts } };
+    if (!live.length) {
+      return done(withOpp(state, oppId, (x) => stamp({ ...x, trade: { ...(x.trade || {}),
+        selection: { ...D.TRADE.selectionOf(x), closedEmptyAt: at || true } } }, at)), oppId);
+    }
+    const ids = new Set(live.map((c) => c.id));
+    return done(withOpp(state, oppId, (x) => stamp({ ...x, stage: "value-trade",
+      trade: { ...x.trade, mode: "trade",
+        cards: x.trade.cards.map((c) => (ids.has(c.id) ? { ...c, reservedAt: at || null } : c)) } }, at)), oppId);
+  },
+
+  /* RETIRED (M3A A1): the Collector-proposes / partner-accepts selection. The
+     partner selects now (`selectTradeCards`). Kept as names only, so a caller
+     still wired to them is told why rather than told the command is unknown. */
+  proposeTradeSelection() { return refuse(R.commandRetired); },
+  reviewTradeCard() { return refuse(R.commandRetired); },
+
+  /* WITHDRAWING ONE CARD FROM ONE DEAL (M3A A1). The Collector may take any
+     selected card out of this deal until both parties have given final
+     agreement — in Select Trade, or in Value Trade or Deal when the value on
+     the table is not worth it to them. It is a retraction, so it does not wait
+     for their turn.
+
+     What it changes, by stage:
+       select-trade   the row stops being live; nothing else depends on it
+       value-trade    its reservation is released and its valuation stops
+                      counting; every OTHER card's agreements stand, and if
+                      what is left is all settled the deal moves on to Deal
+       deal           as above, and the balance has changed, so `dealReset`
+                      voids every standing figure and both confirmations
+
+     If it was the last live card, the deal returns to Select Trade, where the
+     partner may select again and the Collector may hold, choose cash only or
+     end the deal. Cash is never chosen for them.
+
+     It never touches the copy: Trade/Sell stays as the Collector said it, and
+     the specification lock lifts only when no other deal still selects it. */
   withdrawTradeCard(state, a, { oppId, tradeCardId }, ctx) {
     const at = ctx.at;
     if (a.seat !== "collector") return refuse(R.notOwner);
@@ -2262,11 +2390,18 @@ const COMMANDS = {
     if (refused) return refuse(refused);
     const row = (o.trade && o.trade.cards || []).find((c) => c.id === tradeCardId);
     if (!row) return refuse(R.notFound);
-    if (row.inclusion === "accepted" && !row.withdrawn) return refuse(R.copyCommitted);
-    if (o.stage !== "select-trade" || !(o.trade && o.trade.submitted)) return refuse(R.wrongStage);
-    if (row.inclusion !== "proposed" || row.withdrawn) return refuse(R.nothingToAccept);
-    return done(withOpp(state, oppId, (x) => stamp(D.TRADE.closeSelection({ ...x,
-      trade: { ...x.trade, cards: x.trade.cards.map((c) => (c.id === tradeCardId ? D.TRADE.withdraw(c, at) : c)) } }), at)), oppId);
+    if (D.finalAgreementGiven(o)) return refuse(R.copyCommitted);
+    if (!["select-trade", "value-trade", "deal"].includes(o.stage)) return refuse(R.wrongStage);
+    if (!D.TRADE.liveRow(row)) return refuse(R.nothingToAccept);
+    return done(withOpp(state, oppId, (x) => {
+      let next = { ...x, trade: { ...x.trade,
+        cards: x.trade.cards.map((c) => (c.id === tradeCardId ? D.TRADE.withdraw(c, at, x.stage) : c)) } };
+      const remaining = D.TRADE.liveTradeRows(next).length;
+      if (x.stage === "deal") next = { ...next, deal: D.TRADE.dealReset(next.deal, at, "card-withdrawn") };
+      if (!remaining && x.stage !== "select-trade") next = D.TRADE.reopenSelection(next, at);
+      else if (x.stage === "value-trade") next = D.TRADE.closeValuation(next);
+      return stamp(next, at);
+    }), tradeCardId);
   },
 
   /* ------------------------------------------------------------ value trade */
@@ -2279,11 +2414,12 @@ const COMMANDS = {
   /* A new final cash figure. It supersedes the current economic state and
      clears every final agreement already given; confirmation restarts with the
      partner. Only the seat whose turn it is may change the figure. */
-  proposeFinalBalance(state, a, { oppId, amount }, ctx) {
+  proposeFinalBalance(state, a, { oppId, amount, expect }, ctx) {
     const at = ctx.at;
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
     if (o.stage !== "deal") return refuse(R.wrongStage);
+    if (termsChanged(o, expect)) return refuse(R.termsChanged);
     /* The FINAL cash figure is the strongest statement either side makes about
        this copy, so it is the last place that should still be reachable once
        the copy is gone. proposePrice's reason applies with more force here: a
@@ -2309,12 +2445,22 @@ const COMMANDS = {
   /* Final agreement to the CURRENT economic state. The partner confirms first,
      the collector second; the collector's confirmation advances to Fulfillment
      and records the agreed final figure. */
-  acceptDeal(state, a, { oppId }, ctx) {
+  acceptDeal(state, a, { oppId, expect }, ctx) {
     const at = ctx.at;
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
     if (o.stage !== "deal") return refuse(R.wrongStage);
     if (!turnFor(a, o, "final")) return refuse(R.notYourTurn);
+    /* AGREEMENT IS TO WHAT THE CALLER SAW (M3A A1). A screen that sends
+       `expect` is agreeing to that balance and those cards; if a card was
+       withdrawn or a figure moved since, nothing is written. */
+    if (termsChanged(o, expect)) return refuse(R.termsChanged);
+    /* AND THE COLLECTOR'S CARDS ARE STILL THIS DEAL'S ALONE. Reservation made
+       them exclusive on entering valuation and nothing since can have taken
+       them; this is the assertion that it held. */
+    if (D.TRADE.liveTradeRows(o).some((row) => D.copyExclusive(row.binderId, state.opportunities, o.id))) {
+      return refuse(R.copyUnavailable);
+    }
     /* THE ONE PLACE A PHYSICAL CARD CAN BE PROMISED TWICE (Option B, Item 2).
 
        This used to be safe by accident. Agreeing a market value committed the
@@ -2342,8 +2488,13 @@ const COMMANDS = {
     const agreed = { ...d, collectorAgreed: true,
       agreedAdj: standing ? figure : d.agreedAdj,
       adjThread: standing ? [...d.adjThread, { by: "collector", type: "accept", amount: figure, at }] : d.adjThread };
-    return done(withOpp(state, oppId, (x) => stamp({ ...x, deal: agreed, stage: "fulfillment",
-      fulfillment: { ...D.emptyFulfillment(), ...(x.fulfillment || {}) }, at: at || x.at }, at)), oppId);
+    /* FINAL AGREEMENT PROMISES THE SHOP'S CARD, SO EVERY RIVAL DEAL ON IT ENDS
+       HERE, in the same write (M3A A1). Before A1 they were left active and
+       silently excluded from the one-deal-per-Goal rule; now each is ended,
+       explicitly, as `card-unavailable`. */
+    const agreedState = withOpp(state, oppId, (x) => stamp({ ...x, deal: agreed, stage: "fulfillment",
+      fulfillment: { ...D.emptyFulfillment(), ...(x.fulfillment || {}) }, at: at || x.at }, at));
+    return done(endUnavailable(agreedState, o.invId, o.id, at), oppId);
   },
 
   /* ------------------------------------------------------------ fulfillment */
@@ -2486,9 +2637,8 @@ function valueStep(state, a, { oppId, tradeCardId, amount, percent }, ctx, phase
 }
 
 /* Aliases kept so screens can say what they mean without a second path. */
-/* CASH-ONLY MEANS NO CARDS ARE GOING IN. Refused while any card is still in the
-   package (proposed/reserved or accepted/committed); rejected and withdrawn rows
-   are already out. */
+/* CASH-ONLY MEANS NO CARDS ARE GOING IN. Refused while any card is still
+   selected; deselected and withdrawn rows are already out. */
 COMMANDS.chooseCashOnly = (state, a, { oppId }, ctx) => {
   const at = ctx.at;
   if (a.seat !== "collector") return refuse(R.notOwner);
@@ -2498,9 +2648,13 @@ COMMANDS.chooseCashOnly = (state, a, { oppId }, ctx) => {
   const gone = copyBlockedFor(state, o, a);
   if (gone) return refuse(gone);
   if (D.TRADE.liveTradeRows(o).length > 0) return refuse(R.tradeCardsSelected);
-  if (!turnFor(a, o, "choose-trade", "trade-reviewed")) return refuse(R.notYourTurn);
+  /* AN EXPLICIT DECISION, AVAILABLE WHENEVER NOTHING IS SELECTED (M3A A1). It
+     no longer waits for a particular turn: the partner leads selection, and a
+     Collector who has decided to pay cash should not have to wait for a review
+     of cards they do not want to trade. It is never taken automatically —
+     every path into it is this command. */
   return done(withOpp(state, oppId, (x) => stamp({ ...x, stage: "deal",
-    trade: { ...(x.trade || {}), mode: "cash", submitted: true, cards: (x.trade && x.trade.cards) || [], cashOnlyAt: at },
+    trade: { ...(x.trade || {}), mode: "cash", cards: (x.trade && x.trade.cards) || [], cashOnlyAt: at },
     deal: { ...D.emptyDeal(), ...(x.deal || {}), adjThread: (x.deal && x.deal.adjThread) || [] } }, at)), oppId);
 };
 COMMANDS.reachOut = (state, a, p, ctx) => COMMANDS.sendMessage(state, a, { ...p, event: !p.text }, ctx);
@@ -2518,7 +2672,11 @@ function execute(state, actor, command, payload, runtime) {
   if (!fn) return refuse(R.unknownCommand);
   const { at, ...args } = payload || {};
   const result = fn(state, a, args, ctx);
-  return result && result.ok ? result : refuse((result && result.refused) || R.notFound);
+  if (result && result.ok) return result;
+  /* A refusal may carry `detail` — today only `closeTradeSelection`'s list of
+     the caller's OWN conflicting rows. Nothing else a command returns survives. */
+  const out = refuse((result && result.refused) || R.notFound);
+  return result && result.detail ? { ...out, detail: result.detail } : out;
 }
 
 module.exports = { execute, resolveActor, isRelated, COMMANDS, COMMAND_NAMES: Object.keys(COMMANDS) };

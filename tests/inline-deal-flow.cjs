@@ -119,19 +119,24 @@ describe("A. Collapsed active-deal state", () => {
 
   test("the disclosure states the turn truthfully", () => {
     const r = mk();
+    /* RESTATED (M3A A1): at Select Trade the PARTNER moves first now — they
+       choose from the Collector's Trade/Sell cards — and the turn passes to the
+       Collector once a selection is sent. The disclosure follows the canonical
+       turn both ways. */
     const o = oppAt("select-trade");
     const g = goalOf(o);
-    assert(/Your move/.test(txt(cls(cardFor(r, g), "goal-deal")[0])),
-      "the collector's turn is stated");
+    eq(D.nextActor(liveFor(g)).actor, "partner", "the partner owns the first move");
+    assert(/Waiting on/.test(txt(cls(cardFor(r, g), "goal-deal")[0])),
+      "and the summary says who we wait on");
 
     const copy = S().collectorCopies.find((b) => b.collectorId === ME);
     TR.act(() => { acts().patchOpportunity(o.id, (x) => ({ ...x,
-      trade: { mode: "trade", submitted: true,
-        cards: [{ binderId: copy.id, cardId: copy.cardId, inclusion: "proposed" }] } })); });
+      trade: { mode: "trade", selection: { sentAt: "2026-08-20" },
+        cards: [{ binderId: copy.id, cardId: copy.cardId, inclusion: "accepted" }] } })); });
     let r2; TR.act(() => { r2 = TR.create(React.createElement(App)); });
-    eq(D.nextActor(liveFor(g)).actor, "partner", "the partner now owns the turn");
-    assert(/Waiting on/.test(txt(cls(cardFor(r2, g), "goal-deal")[0])),
-      "and the summary says who we wait on");
+    eq(D.nextActor(liveFor(g)).actor, "collector", "the Collector now owns the turn");
+    assert(/Your move/.test(txt(cls(cardFor(r2, g), "goal-deal")[0])),
+      "the collector's turn is stated");
   });
 });
 

@@ -145,27 +145,31 @@ function collectorView(state, meId) {
      us two answers to one question the moment a deal moved on, so it is read
      from the opportunities themselves.
 
-     The boundary follows the trade model already in force. A card that has only
-     been PROPOSED is not yet spoken for — the partner has not accepted it, and
-     the same copy may sit in more than one proposal until somebody does. It
-     becomes "in a deal" when a partner accepts it into an active trade, and
-     "traded" when that deal completes. Withdrawn and rejected rows release it.
+     The boundary follows the trade model already in force (M3A A1). A card a
+     partner has only SELECTED is not yet spoken for — the same copy may be
+     selected in more than one deal until one of them enters valuation. It
+     becomes "in a deal" when a deal reserves it on entering valuation, and
+     "traded" when that deal completes. Withdrawn and deselected rows release it.
 
      Identity is the collector copy, never the card: two copies of the same card
      are two different objects and can be in two different places. */
   const collectorCopyState = (binderId) => {
-    /* Contract §4: Available -> Reserved (in a submitted package) -> Committed
-       (accepted by the partner) -> Traded. "in-deal" is the committed state's
-       existing name on screen. */
+    /* Available -> Selected -> Reserved (valuation) -> Committed (final
+       agreement) -> Traded. "in-deal" is the screen's existing word for an
+       exclusive hold. */
     const holds = (o, want) => ((o.trade && o.trade.cards) || []).some((c) =>
       c.binderId === binderId && D.binderRowState(o, c) === want);
     const mine = state.opportunities.filter((o) => o.collectorId === meId);
+    /* M3A A1: a deal HOLDS a copy exclusively once it is reserved (valuation)
+       or committed (final agreement) — "in-deal" on screen. A copy a partner
+       has only selected is not held: it may be selected elsewhere too, and its
+       specification is locked; "selected" says so. */
     const done = mine.find((o) => D.isCompleted(o) && holds(o, "committed"));
     if (done) return { state: "traded", opp: done };
-    const live = mine.find((o) => D.isActive(o) && holds(o, "committed"));
+    const live = mine.find((o) => D.isActive(o) && (holds(o, "committed") || holds(o, "reserved")));
     if (live) return { state: "in-deal", opp: live };
-    const reserved = mine.find((o) => D.isActive(o) && holds(o, "reserved"));
-    if (reserved) return { state: "reserved", opp: reserved };
+    const selected = mine.find((o) => D.isActive(o) && holds(o, "selected"));
+    if (selected) return { state: "selected", opp: selected };
     return { state: "available", opp: null };
   };
 
@@ -275,7 +279,12 @@ function collectorView(state, meId) {
     return threadsForCard(g.cardId);
   };
 
-  /* Select Trade eligibility: EVERY copy is eligible. Partner interest orders
+  /* RETIRED WORKFLOW (M3A A1): this fed the Collector-side package picker of
+     the Collector-proposes selection, which `proposeTradeSelection` no longer
+     accepts. It stays only so the dev prototype keeps rendering until A1P
+     replaces that screen with TP-led selection; nothing new should read it.
+
+     Select Trade eligibility: EVERY copy is eligible. Partner interest orders
      the two groups; it never gates them. */
   const tradeGroups = (partnerId, opp) => {
     const used = new Set(((opp.trade && opp.trade.cards) || []).map((c) => c.binderId));
@@ -314,9 +323,13 @@ function collectorView(state, meId) {
       case "price": return mine
         ? { who: "me", what: `Accept $${t.amount.toLocaleString()} or send a counter.` }
         : { who: "partner", what: `Waiting on ${them} to reply to your $${t.amount.toLocaleString()}.` };
-      case "choose-trade": return { who: "me", what: "Choose which of your cards to put toward this, then send them over." };
-      case "review-trade": return { who: "partner", what: `Waiting while ${them} reviews your cards.` };
-      case "trade-reviewed": return { who: "me", what: "They've finished reviewing. Move on to agreeing values." };
+      /* M3A A1: TP-led selection. Worded without the partner's name — the card
+         these lines sit on already says who the partner is, once. */
+      case "select-trade": return { who: "partner", what: "Waiting while they look at your Trade/Sell cards." };
+      case "more-cards": return { who: "me", what: "They've chosen cards to consider. Add more cards first, or tell them you're ready." };
+      case "adding-cards": return { who: "me", what: "Mark any other cards you'd trade as Trade/Sell, then tell them you're ready." };
+      case "close-selection": return { who: "partner", what: "Waiting while they finish choosing cards." };
+      case "trade-reviewed": return { who: "me", what: "They didn't choose any cards. Add more cards, pay cash only, or end the deal." };
       case "value": return mine
         ? { who: "me", what: `${t.count} card${t.count === 1 ? " needs" : "s need"} a value agreed.` }
         : { who: "partner", what: `Waiting on ${them} for ${t.count} card${t.count === 1 ? "" : "s"}.` };

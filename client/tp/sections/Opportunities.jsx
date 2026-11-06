@@ -248,13 +248,14 @@ export default function Opportunities({ state, onBrowseCards = null,
     );
   };
   /* AN AGREED PRICE, AND NOTHING YET AFTER IT (Milestone 2D.3). The server's
-     turn says the next move is choosing a trade (`choose-trade`), and
-     production has no Select Trade yet — so "Waiting for Casey" would send
-     the shop waiting on a move Casey cannot make. Said instead as what it
-     is, in the Collector's terms. Read from `turn` and `agreedPrice`, the
-     server's own fields; no stage is compared and nothing is decided. */
+     turn says the next move is choosing trade cards (`select-trade` — since
+     M3A A1 the shop's own move, picking from the Collector's Trade/Sell cards),
+     and production has no Select Trade yet — so "Your move" would send the
+     shop looking for a control that does not exist. Said instead as what it
+     is. Read from `turn` and `agreedPrice`, the server's own fields; no stage
+     is compared and nothing is decided. */
   const agreedOn = (o) => isLiveDeal(o) && !isUnresolved(o) && !!dollars(o.agreedPrice);
-  const awaitingTrade = (o) => agreedOn(o) && o.turn.reason === "choose-trade";
+  const awaitingTrade = (o) => agreedOn(o) && o.turn.reason === "select-trade";
   /* Whose turn, in two words. Only for live deals; a finished one has none. */
   const turnTag = (o) => {
     if (!isLiveDeal(o) || !o.turn.seat) return null;

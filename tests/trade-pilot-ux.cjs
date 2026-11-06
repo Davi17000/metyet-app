@@ -216,10 +216,12 @@ describe("D. Removing a card keeps what happened", () => {
   /* PHASE 1 (contract §4, Invariant 18): only a RESERVED card — submitted, not yet
      accepted — can be withdrawn. A card the partner accepted is COMMITTED and
      cannot be withdrawn unilaterally. */
+  /* RESTATED (M3A A1): two cards the PARTNER has selected, still in Select Trade. */
   const reservedTrade = () => {
     const w = twoCardTrade();
     w.st.actions.patchOpportunity(w.o, (x) => ({ ...x, stage: "select-trade", trade: { ...x.trade,
-      cards: x.trade.cards.map((c) => ({ ...c, inclusion: "proposed" })) } }));
+      selection: { sentAt: AT, readyAt: AT },
+      cards: x.trade.cards.map((c) => ({ ...c, inclusion: "accepted", reservedAt: null })) } }));
     return w;
   };
 
@@ -231,17 +233,22 @@ describe("D. Removing a card keeps what happened", () => {
     assert(w.card(w.A).withdrawnAt, "with the moment it left recorded");
   });
 
-  test("a committed card cannot be withdrawn, and its history stands", () => {
+  /* RESTATED (M3A A1). WAS: once the partner accepted a card it was committed
+     and could not be withdrawn. WHY IT CHANGED: the founder decided the
+     Collector may withdraw a card until final agreement — including when the
+     agreed market value is not worth it. WHAT STILL HOLDS: the history stands,
+     and after final agreement a card can no longer be withdrawn unilaterally. */
+  test("a valued card may be withdrawn before final agreement, and its history stands", () => {
     const w = twoCardTrade();
     openMarkets(w, [[w.A, 1804], [w.B, 900]]);
     acceptMarket(w, w.A);
-    const before = JSON.stringify(w.card(w.A));
     w.st.actions.withdrawTradeCard({ oppId: w.o, tradeCardId: w.A, at: AT });
-    eq(JSON.stringify(w.card(w.A)), before, "refused: the card is committed to the deal");
+    eq(w.card(w.A).withdrawn, true, "the Collector may withdraw it");
     eq(w.card(w.A).agreedMarket, 1804, "and what was agreed is still readable");
+    eq(w.card(w.A).valueThread.length, 2, "with its whole thread");
   });
 
-  test("a committed card keeps contributing", () => {
+  test("after final agreement a card keeps contributing", () => {
     const w = twoCardTrade();
     settleBoth(w, 1804, 900);
     const a = w.st.actions;
@@ -250,8 +257,10 @@ describe("D. Removing a card keeps what happened", () => {
     [w.A, w.B].forEach((id) =>
       a.tradePercentRespond({ oppId: w.o, tradeCardId: id, by: "collector", action: "accept", at: AT }));
     eq(D.totalTradeValue(w.get()), 2118, "both counted");
+    a.dealAgree({ oppId: w.o, by: "tp", at: AT });
+    a.dealAgree({ oppId: w.o, by: "collector", at: AT });
     a.withdrawTradeCard({ oppId: w.o, tradeCardId: w.A, at: AT });
-    eq(D.totalTradeValue(w.get()), 2118, "no unilateral withdrawal changes the economics");
+    eq(D.totalTradeValue(w.get()), 2118, "no unilateral withdrawal changes the agreed economics");
   });
 
   test("the row is never deleted", () => {

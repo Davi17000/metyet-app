@@ -1977,9 +1977,12 @@ describe("Deal workspace mobile shell", () => {
     /* This describes the STANDALONE page, which keeps its own shell classes. */
     const g = cls(r, "dw-guide")[0];
     assert(g, "a guidance block");
-    assert(/Your move/.test(txt(byClassIn(g, "dw-guide-w")[0])), "whose move");
-    assert(/Choose which of your cards/.test(txt(byClassIn(g, "dw-guide-t")[0])),
-      "and what to do, in plain language");
+    /* RESTATED (M3A A1): at Select Trade the partner moves first now — they
+       choose from the Collector's Trade/Sell cards — so the canonical guidance
+       is a wait, in plain language. */
+    assert(!/Your move/.test(txt(byClassIn(g, "dw-guide-w")[0])), "whose move");
+    assert(/look at your Trade\/Sell cards/.test(txt(byClassIn(g, "dw-guide-t")[0])),
+      "and what is happening, in plain language");
     const src = readSrc("collector/MetYetCollector.jsx");
     assert(/const t = st\.turnFor\(o\)/.test(src), "from the canonical turn selector");
   });

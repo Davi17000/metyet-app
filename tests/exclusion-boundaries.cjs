@@ -66,7 +66,7 @@ const offer = (st, { goalId, who, partnerId, invId, cardId, amount }) =>
    deal. `committed` below still reads the same predicate; what changed is when
    it becomes true. */
 const toFinal = (st, oppId) => {
-  st.actions.proposeTradeSelection({ oppId, binderIds: [], at: AT });
+  st.actions.chooseCashOnly({ oppId, at: AT });   // RESTATED (M3A A1): cash only is its own explicit choice
   st.actions.dealAgree({ oppId, by: "tp", at: AT });
   st.actions.dealAgree({ oppId, by: "collector", at: AT });
 };
@@ -230,10 +230,12 @@ describe("C. The partner commits by settling a price, per copy", () => {
     eq(st.actions.agreePrice({ oppId: b, amount: 3800, by: "tp", at: AT }), b,
       "the second settlement is fine — two people may value one card");
 
-    st.actions.proposeTradeSelection({ oppId: b, binderIds: [], at: AT });
+    st.actions.chooseCashOnly({ oppId: b, at: AT });   // RESTATED (M3A A1): cash only is its own explicit choice
     toFinal(st, a);
+    /* RESTATED (M3A A1): Casey's promise ENDED Jordan's deal in the same write. */
+    eq(st.get().opportunities.find((o) => o.id === b).outcome, "card-unavailable", "Jordan's deal ended explicitly");
     const blocked = st.actions.dealAgree({ oppId: b, by: "tp", at: AT });
-    eq(blocked.refused, D.REFUSE.copyCommitted, "the second PROMISE is refused");
+    eq(blocked.refused, D.REFUSE.terminal, "the second PROMISE is refused");
     assert(!D.finalAgreementGiven(st.get().opportunities.find((o) => o.id === b)),
       "and nothing was written to it");
   });
@@ -247,13 +249,15 @@ describe("C. The partner commits by settling a price, per copy", () => {
       invId: "inv-1", cardId: "k1", amount: 3800 });
     st.actions.agreePrice({ oppId: a, amount: 3700, by: "tp", at: AT });
     st.actions.agreePrice({ oppId: b, amount: 3800, by: "tp", at: AT });
-    st.actions.proposeTradeSelection({ oppId: b, binderIds: [], at: AT });
+    st.actions.chooseCashOnly({ oppId: b, at: AT });   // RESTATED (M3A A1): cash only is its own explicit choice
     toFinal(st, a);
 
     const refusal = JSON.stringify(st.actions.dealAgree({ oppId: b, by: "tp", at: AT }));
     assert(!/casey/i.test(refusal), "no collector identity");
     assert(!/3700/.test(refusal), "and no competing amount");
-    eq(JSON.parse(refusal).refused, "copy-committed", "only that the copy is spoken for");
+    eq(JSON.parse(refusal).refused, "terminal", "only that the deal is over (RESTATED, M3A A1)");
+    const seen = JSON.stringify(st.get().opportunities.find((o) => o.id === b));
+    assert(!seen.includes(a), "and Jordan's ended record names no other deal");
   });
 
   test("Jordan's own history survives being blocked", () => {
@@ -353,14 +357,20 @@ describe("D. Release, and what does not release", () => {
       invId: "inv-1", cardId: "k1", amount: 3800 });
     st.actions.agreePrice({ oppId: a, amount: 3700, by: "tp", at: AT });
     st.actions.agreePrice({ oppId: b, amount: 3800, by: "tp", at: AT });
-    st.actions.proposeTradeSelection({ oppId: b, binderIds: [], at: AT });
+    st.actions.chooseCashOnly({ oppId: b, at: AT });   // RESTATED (M3A A1): cash only is its own explicit choice
     toFinal(st, a);
+    /* RESTATED (M3A A1). WAS: Jordan's deal waited, blocked, and went ahead once
+       Casey let go. NOW: Casey's promise ENDED it, and an ended deal never comes
+       back — but Jordan's Goal is free, so once Casey lets go he may start a NEW
+       deal on the same card. */
     eq(st.actions.dealAgree({ oppId: b, by: "tp", at: AT }).refused,
-      D.REFUSE.copyCommitted, "blocked while Casey holds it");
+      D.REFUSE.terminal, "ended when Casey was promised the card");
 
     st.actions.endOpportunity(a, "collector", AT, "changed my mind");
-    eq(st.actions.dealAgree({ oppId: b, by: "tp", at: AT }), b,
-      "and free once Casey lets go");
+    eq(st.actions.dealAgree({ oppId: b, by: "tp", at: AT }).refused, D.REFUSE.terminal,
+      "it does not come back when Casey lets go");
+    const fresh = offer(st, { goalId: gj, who: "jordan", partnerId: "nl", invId: "inv-1", cardId: "k1", amount: 3800 });
+    assert(typeof fresh === "string" && fresh !== b, "but Jordan may start again, as a new deal");
   });
 
   test("a completed deal does not hand the card back", () => {

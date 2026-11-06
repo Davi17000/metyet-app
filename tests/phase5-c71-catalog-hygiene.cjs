@@ -528,7 +528,7 @@ describe("D. all four deployed surfaces use it", () => {
        25. 3B-1 makes the number right, which would have let it become correct
        by accident — the reason it says is now the reason that happened. */
     /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 56,
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A1: + selectTradeCards, deselectTradeCard, holdTradeSelection, continueTradeSelection, closeTradeSelection (proposeTradeSelection and reviewTradeCard remain as refusing names) — each founder-approved */ eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 61,
       "the domain's command table moved");
   });
 });

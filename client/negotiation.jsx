@@ -305,6 +305,12 @@ export function statusLine(deal, seat, other, stageName) {
     if (deal.outcome === "declined") {
       return deal.endedBy === seat ? "You declined this offer." : `${other} declined this offer.`;
     }
+    /* THE SHOP'S CARD WENT ELSEWHERE OR OFF THE SHELF (M3A A1). Nobody ended
+       it; the card stopped being available. One sentence true for both people,
+       and nothing about another buyer. */
+    if (deal.outcome === "card-unavailable") {
+      return "This card is no longer available, so this deal has ended.";
+    }
     /* Ended before any price was agreed is a withdrawn offer; after, an ended
        deal. Read from what the record holds, not from a stage. */
     if (deal.agreedPrice == null) {

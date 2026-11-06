@@ -192,8 +192,13 @@ describe("C. refusals: exact, and nothing changes", () => {
   test("copy → Goal while a deal holds the copy: copy-committed / copy-reserved; ever in a trade: copy-in-use", () => {
     const opp = (rows, extra = {}) => ({ id: "o1", goalId: "gx", stage: "negotiation", trade: { cards: rows, ...extra } });
     const w = (o) => world(COPY("trade"), { opportunities: [o] });
-    eq(direct(w(opp([{ binderId: "rec", inclusion: "accepted" }])), CASEY, { collectorCopyId: "rec", from: "trade", to: "primary" }).refused, "copy-committed");
-    eq(direct(w(opp([{ binderId: "rec", inclusion: "proposed" }], { submitted: true })), CASEY, { collectorCopyId: "rec", from: "trade", to: "primary" }).refused, "copy-reserved");
+    /* RESTATED (M3A A1): a copy's hold is read from its deal's stage — reserved
+       in valuation, committed from final agreement — and a partner's SELECTION
+       (or a legacy proposal) holds nothing exclusive, so it reads copy-in-use. */
+    eq(direct(w({ ...opp([{ binderId: "rec", inclusion: "accepted" }]), stage: "fulfillment" }), CASEY, { collectorCopyId: "rec", from: "trade", to: "primary" }).refused, "copy-committed");
+    eq(direct(w({ ...opp([{ binderId: "rec", inclusion: "accepted" }]), stage: "value-trade" }), CASEY, { collectorCopyId: "rec", from: "trade", to: "primary" }).refused, "copy-reserved");
+    eq(direct(w({ ...opp([{ binderId: "rec", inclusion: "accepted" }]), stage: "select-trade" }), CASEY, { collectorCopyId: "rec", from: "trade", to: "primary" }).refused, "copy-in-use");
+    eq(direct(w(opp([{ binderId: "rec", inclusion: "proposed" }], { submitted: true })), CASEY, { collectorCopyId: "rec", from: "trade", to: "primary" }).refused, "copy-in-use");
     eq(direct(w({ ...opp([{ binderId: "rec", inclusion: "rejected" }]), declined: true }), CASEY, { collectorCopyId: "rec", from: "trade", to: "primary" }).refused, "copy-in-use");
     eq(direct(w({ ...opp([{ binderId: "rec", inclusion: "accepted" }]), stage: "completed" }), CASEY, { collectorCopyId: "rec", from: "trade", to: "secondary" }).refused, "copy-committed");
   });

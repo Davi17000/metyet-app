@@ -113,7 +113,7 @@ describe("A. an agreed price, and Select Trade not in production yet", () => {
     const { st, oppId } = offered([[NL, "proposePrice", { amount: 11 }], [A, "acceptPrice"]]);
     const o = st.get().opportunities.find((y) => y.id === oppId);
     eq([o.agreedPrice, o.stage].join(), "11,select-trade");
-    eq(P.projectForActor(st.get(), NL).opportunities.find((y) => y.id === oppId).turn.reason, "choose-trade", "the server's next move");
+    eq(P.projectForActor(st.get(), NL).opportunities.find((y) => y.id === oppId).turn.reason, "select-trade", "the server's next move (RESTATED, M3A A1: choosing trade cards is the shop's own move now)");
     const s = await shop(st);
     eq(s.tags(oppId).join("|"), "Price agreed · Select Trade coming soon|Primary goal");
     const t = flat(s.rec(oppId));
@@ -197,7 +197,8 @@ describe("C. nothing else moved", () => {
   test("the source decides nothing: it reads turn and agreedPrice, compares no stage, and adds no action", () => {
     const src = fs.readFileSync(path.join(ROOT, "client/tp/sections/Opportunities.jsx"), "utf8");
     const fn = src.slice(src.indexOf("const agreedOn ="), src.indexOf("/* Whose turn, in two words."));
-    assert(/turn\.reason === "choose-trade"/.test(fn) && /agreedPrice/.test(fn), fn);
+    /* RESTATED (M3A A1): the reason is `select-trade` — the shop's own move to choose trade cards. */
+    assert(/turn\.reason === "select-trade"/.test(fn) && /agreedPrice/.test(fn), fn);
     assert(!/\.stage|onAccept|onCounter|onDecline|onSend/.test(fn), "the agreed state compares a stage or reaches an action");
   });
 });

@@ -565,16 +565,17 @@ function validateWorld(state) {
     if (goal && goal.collectorId !== o.collectorId) {
       ownerMismatch(`${path}.goalId`, `${who} belongs to collector "${o.collectorId}", but Goal "${o.goalId}" belongs to "${goal.collectorId}".`);
     }
-    /* ONE LIVE NEGOTIATION PER GOAL — read the way the domain now reads it.
-       `activeOppForGoal` stopped counting a negotiation whose copy has gone to
-       another deal or been sold, because such a deal can never conclude and was
-       stranding the Goal for ever. That means a Goal may legitimately hold a
-       lost record AND a new live one, so this must ask the same question or the
-       world the commands produce would be unstorable — the Option B lesson,
-       where exactly this predicate was left behind and turned a legal state
-       into a 500. */
-    if (active && isId(o.goalId) && !D.transactionallyLost(o, allOpportunities)) {
-      hold(holders.goal, o.goalId, o.id);
+    /* ONE LIVE NEGOTIATION PER GOAL, WITH NO EXCEPTION (M3A A1). Before A1 a
+       deal whose shop copy had gone to another deal or been sold stayed active
+       and was left out of this count, so a Goal could legitimately hold a lost
+       record AND a new live one. That deal is now ENDED by the event that lost
+       it (`endUnavailable`), so every active deal counts, and an active deal
+       that is lost is itself a violation — the command that made the card
+       unavailable should have ended it. */
+    if (active && isId(o.goalId)) hold(holders.goal, o.goalId, o.id);
+    if (active && D.transactionallyLost(o, allOpportunities)) {
+      report("invariant.lost-deal-active", path,
+        `${who} is still active, but its shop copy was promised to or sold by another deal; it should have ended as card-unavailable.`);
     }
 
     /* EXACT INVENTORY COPY, when bound: the partner's own copy of this card.
@@ -618,7 +619,27 @@ function validateWorld(state) {
     const cards = isObject(o.trade) ? o.trade.cards : undefined;
     if (!blank(cards) && !Array.isArray(cards)) report("field.invalid", `${path}.trade.cards`, `${who}.trade.cards must be an array.`);
     const rowIds = new Set();
+    /* M3A A1: one LIVE row per copy per deal. A copy withdrawn and then selected
+       again carries two rows — the withdrawn one as history, the new one live —
+       but never two live ones.
+
+       WHAT IS DELIBERATELY NOT CHECKED HERE YET: a Collector copy reserved or
+       committed by more than one active deal. The commands make that state
+       unreachable — `selectTradeCards` and `closeTradeSelection` refuse a copy
+       another deal holds exclusively, and `acceptDeal` re-asserts it — but the
+       prototype's demo seed (`buildCanonicalSeed`, src/MetYet.jsx) still
+       fabricates two of one Collector's deals holding the same copies, the same
+       reason the old one-hold-per-copy check was never added. The whole-world
+       check joins this file when A1P corrects that seed. */
+    const liveCopies = new Set();
     list(cards).forEach((row, j) => {
+      if (isObject(row) && !blank(row.binderId) && D.TRADE.liveRow(row)) {
+        if (liveCopies.has(row.binderId)) {
+          report("invariant.copy-live-once-per-deal", `${path}.trade.cards[${j}]`,
+            `${who} holds collector copy "${row.binderId}" in more than one live trade row.`);
+        }
+        liveCopies.add(row.binderId);
+      }
       const rp = `${path}.trade.cards[${j}]`;
       if (!isObject(row)) { report("record.not-object", rp, `${rp} must be an object.`); return; }
       const rowWho = `Trade row "${row.id}" of ${who}`;
@@ -682,6 +703,7 @@ function validateWorld(state) {
     (i, ids) => `InventoryCopy "${i}" is committed to ${ids.length} active opportunities (${ids.join(", ")}).`);
   once(holders.sold, "invariant.copy-sold-once",
     (i, ids) => `InventoryCopy "${i}" was sold by ${ids.length} completed opportunities (${ids.join(", ")}).`);
+
 
   /* ---------------------------------------------------------- CONVERSATIONS */
   const threadKeys = new Set();

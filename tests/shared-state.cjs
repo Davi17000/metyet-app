@@ -497,8 +497,13 @@ describe("Opportunity references its Goal", () => {
        a (collector, card) pair. Matched loosely enough to survive a clause and
        strictly enough to still catch a re-keying. */
     assert(/o\.goalId === goalId && isNegotiating\(o\)/.test(dom), "the invariant keys on goalId");
-    assert(/!transactionallyLost\(o, opps\)/.test(dom),
-      "and a negotiation that can never conclude no longer holds the goal");
+    /* RESTATED (M3A A1): a negotiation that can never conclude no longer holds
+       its Goal because it is ENDED by the event that lost it (`endUnavailable`
+       in the command layer), not because the Goal rule silently excludes it. */
+    assert(!/!transactionallyLost\(o, opps\)/.test(dom),
+      "the silent exclusion is gone from the Goal rule");
+    assert(/function endUnavailable\(/.test(cmd) && /endUnavailable\(agreedState, o\.invId, o\.id, at\)/.test(cmd),
+      "and a negotiation that can never conclude is ended explicitly instead");
     assert(/D\.INVARIANTS\.oneNegotiationPerGoal\(goalId, state\.opportunities\)/.test(cmd),
       "and the command boundary applies it");
   });

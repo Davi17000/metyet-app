@@ -123,19 +123,28 @@ const toSelectTrade = (st) => {
 };
 
 /* ==================================== A. PC is a hard bar to a trade package */
+/* RESTATED (M3A A1). The door moved: the Collector no longer proposes a
+   package; the partner SELECTS from the Collector's Trade/Sell copies
+   (`selectTradeCards`). The guarantees this section pins are unchanged — a kept
+   copy and a copy nobody has spoken for can never enter a deal, the refusal is
+   whole rather than partial, the rule lives in the domain, a refused copy never
+   reaches the partner, and saying yes makes it eligible. Two answers moved with
+   the door: the partner is not the copy's owner, so it receives the one public
+   answer `copy-unavailable` (it must not learn that a copy it cannot see is
+   kept), and the photograph requirement was retired by the founder for the
+   pilot. */
+const select = (st, oppId, copyIds, actor = TP) => x(st, actor, "selectTradeCards", { oppId, copyIds });
 describe("A. What may go into a trade package", () => {
   test("[1] a copy its owner is keeping is refused", () => {
     const st = world();
     const kept = own(st, "keeping");
     const oppId = toSelectTrade(st);
-    eq(code(x(st, CASEY, "proposeTradeSelection", { oppId, binderIds: [kept] })),
-      D.REFUSE.copyNotOffered, "a PC copy went into a package");
+    eq(code(select(st, oppId, [kept])), D.REFUSE.copyUnavailable, "a PC copy went into a deal");
     const o = st.get().opportunities[0];
     assert(!(o.trade && o.trade.cards && o.trade.cards.length),
       "a row was written anyway: " + JSON.stringify(o.trade));
-    assert(!(o.trade && o.trade.submitted), "the package was submitted");
     eq(D.collectorCopyStatus(kept, st.get().opportunities), "available",
-      "the kept copy was reserved by a refusal");
+      "the kept copy was held by a refusal");
     eq(D.copyDisposition(copies(st)[0]), "keeping", "the refusal changed the copy");
     assert(valid(st), "the world became invalid");
   });
@@ -144,77 +153,53 @@ describe("A. What may go into a trade package", () => {
     const st = world();
     const offered = own(st, "offered");
     const oppId = toSelectTrade(st);
-    okv(x(st, CASEY, "proposeTradeSelection", { oppId, binderIds: [offered] }), "offer it");
+    okv(select(st, oppId, [offered]), "select it");
     const o = st.get().opportunities[0];
     eq(o.trade.cards.length, 1, "the row did not land");
     eq(o.trade.cards[0].binderId, offered, "the wrong copy landed");
-    eq(D.collectorCopyStatus(offered, st.get().opportunities), "reserved",
-      "an accepted copy was not reserved");
+    eq(D.collectorCopyStatus(offered, st.get().opportunities), "selected",
+      "a selected copy was not marked selected");
     assert(valid(st), "the world became invalid");
   });
 
   test("[3] a copy nobody has said anything about cannot enter a package", () => {
-    /* SILENCE IS NOT CONSENT, and this is the case that matters most in
-       practice: every copy written before PC existed is in exactly this state,
-       so refusing only `keeping` would have left them all reservable against
-       their owners' silence. */
-    /* RE-PINNED: THE COPY IS NOW SEEDED, BECAUSE THE COMMAND WILL NOT MAKE ONE.
-
-       This case is about the copies that ALREADY say nothing — every copy
-       written before PC existed, and every copy recorded between then and the
-       disposition batch. It used to create one through `addCollectorCopy`; that
-       command now refuses a copy with no disposition, so the fixture seeds the
-       row directly. That is the honest way to test a state the product holds
-       but no longer creates, and the guarantee is untouched: silence is not
-       consent, and a copy nobody has spoken for cannot be reserved. */
+    /* SILENCE IS NOT CONSENT. The copy is seeded because the command will not
+       make one: every copy written before PC existed is in exactly this state. */
     const st = world({ collectorCopies: [{ id: "quiet", collectorId: "casey",
       canonicalCardId: "cc-y", grade: "PSA 8", cert: "MINE-1", photos: PHOTOS,
       offered: false }] });
     const quiet = "quiet";
-    /* Asserted through the domain's own reader rather than by re-reading the
-       literal two lines above: what matters is that the DOMAIN still calls this
-       shape silence, not that `createStore` copied the seed faithfully. */
     eq(D.copyDisposition(copies(st)[0]), "unstated", "the fixture is not actually silent");
     assert(!D.copyKept(copies(st)[0]), "the fixture reads as kept");
     assert(valid(st), "a world holding a copy that says nothing stopped loading");
     const oppId = toSelectTrade(st);
-    eq(code(x(st, CASEY, "proposeTradeSelection", { oppId, binderIds: [quiet] })),
-      D.REFUSE.copyNotOffered, "an undeclared copy went into a package");
-    eq(D.collectorCopyStatus(quiet, st.get().opportunities), "available", "it was reserved");
+    eq(code(select(st, oppId, [quiet])), D.REFUSE.copyUnavailable, "an undeclared copy went into a deal");
+    eq(D.collectorCopyStatus(quiet, st.get().opportunities), "available", "it was held");
   });
 
   test("[4] and the domain itself is where the rule lives", () => {
-    /* Not the panel, not the server, not the shape of a payload. The command
-       refuses it when called directly, with no surface anywhere near it — and
-       one bad id refuses the WHOLE package rather than quietly dropping a row,
-       so a person cannot be told "submitted" about a set they did not choose. */
+    /* One bad id refuses the WHOLE selection rather than quietly dropping a row. */
     const st = world();
     const kept = own(st, "keeping");
     const offered = own(st, "offered", { cert: "MINE-2" });
     const oppId = toSelectTrade(st);
     for (const set of [[kept], [kept, offered], [offered, kept]]) {
-      eq(code(x(st, CASEY, "proposeTradeSelection", { oppId, binderIds: set })),
-        D.REFUSE.copyNotOffered, `${JSON.stringify(set)} got through`);
+      eq(code(select(st, oppId, set)), D.REFUSE.copyUnavailable, `${JSON.stringify(set)} got through`);
       const o = st.get().opportunities[0];
-      assert(!(o.trade && o.trade.submitted), "a partial package was submitted");
+      assert(!(o.trade && o.trade.cards && o.trade.cards.length), "a partial selection was written");
     }
     eq(D.collectorCopyStatus(offered, st.get().opportunities), "available",
-      "the good copy in a refused set was reserved anyway");
+      "the good copy in a refused set was selected anyway");
     /* And the command is not reachable from production at all. */
-    assert(!EXPOSED_COMMANDS.includes("proposeTradeSelection"),
-      "the trade command was exposed by this batch");
+    assert(!EXPOSED_COMMANDS.includes("selectTradeCards"), "the trade command was exposed by this batch");
+    assert(!EXPOSED_COMMANDS.includes("proposeTradeSelection"), "nor the retired one");
   });
 
   test("[5] a refused PC copy never becomes partner-visible", () => {
-    /* THE HARM THE RULE EXISTS TO STOP. A submitted row puts the copy in
-       `referencedCopies`, which is a second door into the partner's projection
-       beside `offered` — so before this, a kept copy reached the shop with its
-       grade, cert and both photographs, labelled "reserved". */
     const st = world();
     const kept = own(st, "keeping");
     const oppId = toSelectTrade(st);
-    eq(code(x(st, CASEY, "proposeTradeSelection", { oppId, binderIds: [kept] })),
-      D.REFUSE.copyNotOffered, "it was accepted");
+    eq(code(select(st, oppId, [kept])), D.REFUSE.copyUnavailable, "it was accepted");
     const seen = P.projectForActor(st.get(), TP);
     eq((seen.collectorCopies || []).length, 0,
       "the kept copy reached the shop: " + JSON.stringify(seen.collectorCopies));
@@ -222,19 +207,17 @@ describe("A. What may go into a trade package", () => {
     for (const secret of ["MINE-1", "front.jpg", "back.jpg", "keeping"]) {
       assert(!blob.includes(secret), `${secret} crossed to the partner`);
     }
-    /* THE POSITIVE CONTROL, so the scan above is not passing because the
-       projection is empty for some unrelated reason. The same world with the
-       copy OFFERED puts every one of those strings in front of the shop. */
+    /* THE POSITIVE CONTROL: the same world with the copy OFFERED puts every one
+       of those strings in front of the shop. */
     const st2 = world();
     const offered = own(st2, "offered");
     const opp2 = toSelectTrade(st2);
-    okv(x(st2, CASEY, "proposeTradeSelection", { oppId: opp2, binderIds: [offered] }), "package");
+    okv(select(st2, opp2, [offered]), "select");
     const open = JSON.stringify(P.projectForActor(st2.get(), TP));
     for (const shown of ["MINE-1", "front.jpg", "back.jpg"]) {
       assert(open.includes(shown), `${shown} never reaches a partner at all, so the scan proves nothing`);
     }
     assert(!open.includes("keeping"), "the allow-list leaked the disposition");
-    /* Nor to anybody else. */
     eq((P.projectForActor(st.get(), SV).collectorCopies || []).length, 0,
       "an unrelated shop saw it");
   });
@@ -243,29 +226,25 @@ describe("A. What may go into a trade package", () => {
     const st = world();
     const copy = own(st, "keeping");
     const oppId = toSelectTrade(st);
-    eq(code(x(st, CASEY, "proposeTradeSelection", { oppId, binderIds: [copy] })),
-      D.REFUSE.copyNotOffered, "refused for the wrong reason at the start");
+    eq(code(select(st, oppId, [copy])), D.REFUSE.copyUnavailable, "refused for the wrong reason at the start");
     okv(x(st, CASEY, "setCollectorCopyOffered", { copyId: copy, offered: true }), "change of mind");
-    okv(x(st, CASEY, "proposeTradeSelection", { oppId, binderIds: [copy] }), "now it should pass");
+    okv(select(st, oppId, [copy]), "now it should pass");
     eq(st.get().opportunities[0].trade.cards[0].binderId, copy, "the row did not land");
-    /* And the OTHER requirements are untouched — an offered copy with no
-       photographs is still refused, for its own reason. */
+    /* No photograph is required any more (founder, M3A A1)… */
     const st2 = world();
     const bare = own(st2, "offered", { photos: { front: null, back: null }, cert: "MINE-3" });
     const opp2 = toSelectTrade(st2);
-    eq(code(x(st2, CASEY, "proposeTradeSelection", { oppId: opp2, binderIds: [bare] })),
-      D.REFUSE.photosRequired, "the photograph requirement was lost");
-    /* …as is ownership: Casey cannot put somebody else's copy in her package,
-       and the refusal is about the COPY rather than about the deal. */
+    okv(select(st2, opp2, [bare]), "an unphotographed offered copy may be selected");
+    /* …but ownership still is: the partner cannot select somebody else's copy
+       into Casey's deal, and gets the answer a copy that does not exist gets. */
     const theirs = okv(x(st2, JORDAN, "addCollectorCopy", {
       copy: { canonicalCardId: "cc-y", grade: "PSA 8", cert: "THEIRS-1",
         photos: PHOTOS, offered: true } }), "their copy");
-    eq(code(x(st2, CASEY, "proposeTradeSelection", { oppId: opp2, binderIds: [theirs] })),
-      D.REFUSE.notOwner, "Casey could package somebody else's copy");
-    /* And somebody outside the deal cannot touch it at all, which is the
-       older rule and is untouched by this batch. */
-    eq(code(x(st2, JORDAN, "proposeTradeSelection", { oppId: opp2, binderIds: [theirs] })),
-      D.REFUSE.notParticipant, "a stranger reached into the deal");
+    okv(x(st2, CASEY, "continueTradeSelection", { oppId: opp2 }), "Casey is ready");
+    eq(code(select(st2, opp2, [theirs])), D.REFUSE.notFound, "somebody else's copy entered Casey's deal");
+    /* And neither the Collector nor somebody outside the deal can select at all. */
+    eq(code(select(st2, opp2, [theirs], CASEY)), D.REFUSE.notOwner, "the Collector cannot select");
+    eq(code(select(st2, opp2, [theirs], SV)), D.REFUSE.notParticipant, "a stranger reached into the deal");
   });
 });
 

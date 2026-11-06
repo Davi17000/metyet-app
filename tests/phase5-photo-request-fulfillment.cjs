@@ -103,7 +103,7 @@ const closeCopy = (st) => {
   const id = okv(x(st, JORDAN, "startOpportunity",
     { goalId: "gJ", invId: "i1", amount: 26, at: AT }), "open");
   okv(x(st, TP, "acceptPrice", { oppId: id, at: AT }), "value");
-  okv(x(st, JORDAN, "proposeTradeSelection", { oppId: id, binderIds: [], at: AT }), "package");
+  okv(x(st, JORDAN, "chooseCashOnly", { oppId: id, at: AT }), "package");
   okv(x(st, TP, "acceptDeal", { oppId: id, at: AT }), "shop yes");
   okv(x(st, JORDAN, "acceptDeal", { oppId: id, at: AT }), "collector yes");
   return id;

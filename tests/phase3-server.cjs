@@ -505,10 +505,14 @@ describe("E. the command endpoint", () => {
     const oppId = opened.json().value;
     const accepted = await send(app, SUBJECTS.northline, { command: "acceptPrice", payload: { oppId } });
     eq(accepted.statusCode, 200, "the partner accepts over HTTP: " + accepted.body);
-    await closedOverHttp(app, SUBJECTS.casey, "proposeTradeSelection", { oppId, binderIds: ["b1"] });
+    /* RESTATED (M3A A1): TP-led selection — still unexposed, still proved shut
+       at the boundary, then run past it through the persisted command path. */
+    await closedOverHttp(app, SUBJECTS.northline, "selectTradeCards", { oppId, copyIds: ["b1"] });
+    await closedOverHttp(app, SUBJECTS.northline, "closeTradeSelection", { oppId });
     const steps = [
-      [ACTORS.casey, "proposeTradeSelection", { oppId, binderIds: ["b1"] }],
-      [ACTORS.northline, "reviewTradeCard", { oppId, decision: "accepted" }],
+      [ACTORS.northline, "selectTradeCards", { oppId, copyIds: ["b1"] }],
+      [ACTORS.casey, "continueTradeSelection", { oppId }],
+      [ACTORS.northline, "closeTradeSelection", { oppId }],
     ];
     for (const [actor, command, payload] of steps) {
       const res = await direct(repository, actor, command, payload);

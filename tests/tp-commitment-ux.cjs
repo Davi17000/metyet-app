@@ -124,7 +124,7 @@ describe("A. There is exactly one way to settle a price", () => {
    forward — are pinned here at the moment they actually mean something, which
    is both parties saying yes to the assembled deal. */
 const toFinalAgreement = (st, oppId) => {
-  st.actions.proposeTradeSelection({ oppId, binderIds: [], at: AT });
+  st.actions.chooseCashOnly({ oppId, at: AT });   // RESTATED (M3A A1): cash only is its own explicit choice
   st.actions.dealAgree({ oppId, by: "tp", at: AT });
   st.actions.dealAgree({ oppId, by: "collector", at: AT });
 };
@@ -153,10 +153,12 @@ describe("B. The partner's seat is now bound by it", () => {
     st.actions.agreePrice({ oppId: b, amount: 3800, by: "tp", at: AT });
     /* B assembles first, so the refusal under test is the PROMISE guard rather
        than the earlier package guard. */
-    st.actions.proposeTradeSelection({ oppId: b, binderIds: [], at: AT });
+    st.actions.chooseCashOnly({ oppId: b, at: AT });   // RESTATED (M3A A1): cash only is its own explicit choice
     toFinalAgreement(st, a);
+    /* RESTATED (M3A A1): the first promise ENDED the second deal in the same write. */
+    eq(st.get().opportunities.find((o) => o.id === b).outcome, "card-unavailable", "ended explicitly");
     const blocked = st.actions.dealAgree({ oppId: b, by: "tp", at: AT });
-    eq(blocked.refused, D.REFUSE.copyCommitted, "the second cannot");
+    eq(blocked.refused, D.REFUSE.terminal, "the second cannot");
   });
 
   test("the blocked deal is left completely untouched", () => {
@@ -167,7 +169,7 @@ describe("B. The partner's seat is now bound by it", () => {
     const b = offer(st, gj, "jordan", "inv-1", "k1", 3800);
     st.actions.agreePrice({ oppId: a, amount: 3700, by: "tp", at: AT });
     st.actions.agreePrice({ oppId: b, amount: 3800, by: "tp", at: AT });
-    st.actions.proposeTradeSelection({ oppId: b, binderIds: [], at: AT });
+    st.actions.chooseCashOnly({ oppId: b, at: AT });   // RESTATED (M3A A1): cash only is its own explicit choice
     toFinalAgreement(st, a);
     const before = JSON.stringify(st.get().opportunities.find((o) => o.id === b));
     st.actions.dealAgree({ oppId: b, by: "tp", at: AT });
@@ -183,7 +185,7 @@ describe("B. The partner's seat is now bound by it", () => {
     const b = offer(st, gj, "jordan", "inv-1", "k1", 3800);
     st.actions.agreePrice({ oppId: a, amount: 3700, by: "tp", at: AT });
     st.actions.agreePrice({ oppId: b, amount: 3800, by: "tp", at: AT });
-    st.actions.proposeTradeSelection({ oppId: b, binderIds: [], at: AT });
+    st.actions.chooseCashOnly({ oppId: b, at: AT });   // RESTATED (M3A A1): cash only is its own explicit choice
     toFinalAgreement(st, a);
     st.actions.dealAgree({ oppId: b, by: "tp", at: AT });
     st.actions.dealAgree({ oppId: b, by: "collector", at: AT });

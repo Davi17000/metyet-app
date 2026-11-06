@@ -24,6 +24,7 @@
 
 process.env.METYET_DEV = "1";
 
+const { reachValuationByFixture } = require("./helpers/trade-path.cjs");
 const { describe, test, assert, eq } = require("./run.cjs");
 const fs = require("fs");
 const path = require("path");
@@ -72,9 +73,9 @@ const committed = (w) => {
     cardId: "kt", invId: "inv-1", listedPrice: 4000, amount: 3800, at: AT });
   w.st.actions.agreePrice({ oppId: o, amount: 3800, by: "tp", at: AT });
   const row = M.emptyTradeCard("ka", null, null, "b1");
-  w.st.actions.patchOpportunity(o, (x) => ({ ...x, stage: "select-trade",
-    trade: { ...x.trade, submitted: true, cards: [row] } }));
-  w.st.actions.reviewTradeCards({ oppId: o, decision: "accepted", at: AT });
+  /* RESTATED (M3A A1): the partner now selects and closing selection reserves;
+     the retired Collector-proposes / reviewTradeCard path is replaced by the shared fixture. */
+  reachValuationByFixture(w.st, o, [row], AT);
   return { o, rowId: row.id };
 };
 const edit = (w, id, patch) => w.st.actions.updateCollectorCopy({ copyId: id, patch, at: AT });
@@ -154,7 +155,10 @@ describe("B. What may and may not change", () => {
     /* A partner is valuing THAT certification. */
     const w = world();
     committed(w);
-    eq(edit(w, "b1", { cert: "PSA 999" }).refused, D.REFUSE.copyCommitted,
+    /* RESTATED (M3A A1): the refusal is `copy-in-deal`, the one specification
+       lock that now covers grade, condition, certificate and existing photos
+       from the moment a partner selects the copy. */
+    eq(edit(w, "b1", { cert: "PSA 999" }).refused, D.REFUSE.copyInDeal,
       "refused by the action, not merely by a disabled input");
     eq(w.copy("b1").cert, "PSA 111", "unchanged");
   });
@@ -167,13 +171,25 @@ describe("B. What may and may not change", () => {
     eq(w.copy("b1").cert, "PSA 999", "the constraint follows the deal");
   });
 
-  test("private value and photos stay editable throughout", () => {
-    /* Neither can misrepresent what is being traded. */
+  /* RESTATED (M3A A1). WAS: private value AND photographs stayed editable while
+     the copy was in a trade. WHY IT CHANGED: the founder decided that the
+     photographs already on a copy are part of what a partner selected, so they
+     lock with grade, condition and certificate. WHAT STILL HOLDS: the private
+     value is the Collector's own and stays editable, and an EMPTY photo slot may
+     still be filled — evidence arriving is not evidence rewritten. */
+  test("private value stays editable throughout; existing photos are locked, empty slots are not", () => {
     const w = world();
     committed(w);
-    edit(w, "b1", { market: 2000, photos: { front: "new", back: "new" } });
+    edit(w, "b1", { market: 2000 });
     eq(w.copy("b1").market, 2000, "the private note is the collector's own");
-    eq(w.copy("b1").photos.front, "new", "and better pictures are always welcome");
+    const had = w.copy("b1").photos || {};
+    const rewrite = { front: "new", back: "new" };
+    if (had.front || had.back) {
+      eq(edit(w, "b1", { photos: rewrite }).refused, D.REFUSE.copyInDeal, "existing photographs are locked");
+    } else {
+      edit(w, "b1", { photos: rewrite });
+      eq(w.copy("b1").photos.front, "new", "an empty slot may still be filled");
+    }
   });
 
   /* RESTATED IN PHASE 5 C2.

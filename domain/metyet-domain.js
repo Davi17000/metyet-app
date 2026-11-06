@@ -105,50 +105,50 @@ const priceUnresolved = (o) => isActive(o) && o.stage === "agree-price";
    Never stored. Seeking / Negotiating / Satisfied describe what the
    opportunities actually say, so they cannot drift from reality, and ending a
    negotiation returns a goal to Seeking with no mutation at all. */
-/* A NEGOTIATION THAT CAN NEVER CONCLUDE IS NOT THE ONE NEGOTIATION.
+/* A NEGOTIATION THAT CAN NEVER CONCLUDE IS ENDED, NOT IGNORED (M3A A1).
 
-   One live negotiation per Goal is a real rule and this does not loosen it. But
-   the rule assumes a negotiation can end — a person finishes it, or walks away
-   from it, and the Goal is free again. A deal whose physical copy has gone to
-   somebody else can do neither: every economic command refuses, so it sits at
-   `agree-price` for ever, and the Collector cannot demote the Goal, delete it,
-   or pursue the same card at a DIFFERENT shop, because the lock is still held
-   by a deal that lost. Nothing ever told them it had lost.
+   One live negotiation per Goal is a real rule, and it assumes a negotiation can
+   end. A deal whose physical shop copy has gone to somebody else — promised by
+   another deal's final agreement, or sold — cannot conclude, and before A1 the
+   domain coped by reading such a deal as "not the one negotiation" while leaving
+   it active: still `declined: false`, still apparently open, silently excluded
+   from the rule in four places.
 
-   So the lock is read from what is still possible rather than from what is
-   still open. A copy promised to another deal, or already handed over, cannot
-   be transacted — and both facts are derivable from the opportunities alone,
-   which is why this needs no inventory, no new field, no lifecycle state and no
-   sweep. The record is untouched: still active, still `agree-price`, still
-   `declined: false`, still exactly what happened. It is history that has
-   stopped being a claim on the future, and it derives that way every time it is
-   read — the same self-healing shape Option B used for a stale `pendingFor`.
+   That exclusion is gone. The command that makes the card unavailable now ENDS
+   every other active deal on it in the same write, with the ordinary ending
+   fields and `outcome: "card-unavailable"` (see `endUnavailable` in the command
+   layer): `acceptDeal` when another deal reaches final agreement, and
+   `removeInventoryCopy` when the partner takes the card off the shelf before any
+   price was agreed. An ended deal holds nothing, so its Goal is free, its trade
+   cards are released and every later command on it is refused as terminal.
 
-   THE WINNER IS NOT RELEASED: `copyCommittedTo` excludes the opportunity being
-   asked about, so the deal that holds the commitment still holds its Goal. */
+   `transactionallyLost` stays, as the predicate `validateWorld` uses to insist
+   that no active deal is in this condition. Losing is permanent because the
+   deal is ENDED, not because of how the predicate reads: a rival cancelling
+   after its final agreement does not resurrect a deal that was already ended,
+   and a brand-new deal on the copy once it is back on the shelf starts clean. A
+   temporary hold (`pendingFor`) is not loss and ends nothing. */
 const transactionallyLost = (o, opps) => {
   const invId = o && o.invId;
   if (invId == null) return false;
   if (soldInventoryIds(opps || []).has(invId)) return true;
-  /* EVER PROMISED, NOT CURRENTLY PROMISED — and the difference is the whole
-     correctness of this predicate.
+  /* PROMISED ELSEWHERE NOW, OR SOLD (M3A A1).
 
-     `copyCommittedTo` asks whether a commitment is standing RIGHT NOW, because
-     its question is "may somebody else pursue this?". Asking it here made the
-     release non-monotonic: the rival could cancel after final agreement, the
-     losing deal would un-lose, and a Goal that had legitimately opened a
-     replacement in the meantime then held TWO live negotiations — a state the
-     commands produced and `validateWorld` refuses, which is a 500 rather than
-     a refusal, and which no further command could clear.
+     Before A1 this asked whether another deal had EVER given final agreement on
+     the copy, because a lost deal stayed active and un-losing it — when the
+     rival cancelled after agreeing — would have handed its Goal a second live
+     negotiation. Losing had to be permanent, and the predicate was what made it
+     so.
 
-     Final agreement is never un-given: cancelling writes an ending and rewrites
-     no term, so `finalAgreementGiven` stays true on a cancelled deal for ever.
-     Keying on that makes losing permanent, which is what losing is. The copy
-     coming back onto the shelf is a new opportunity for anybody who wants it —
-     including this Collector, who may open a fresh pursuit — and not a reason
-     to resurrect a conversation that was already superseded. */
+     Losing is now made permanent by ENDING the deal (`endUnavailable`, in the
+     same write as the rival's final agreement), so the predicate no longer has
+     to carry that history — and carrying it had become wrong: after a promised
+     deal was cancelled and the copy went back on the shelf, a brand-new deal on
+     it read as "lost" from the moment it began. So this now asks what is true
+     now: another ACTIVE deal holds final agreement on the copy, or it is sold.
+     `validateWorld` uses it to insist that no active deal is in that state. */
   return (opps || []).some((other) => other && other.invId === invId
-    && other.id !== o.id && finalAgreementGiven(other));
+    && other.id !== o.id && isActive(other) && finalAgreementGiven(other));
 };
 
 /* AND A REFERENTIAL CONSTRAINT, WHICH IS NOT THE SAME AS A LOCK. Releasing the
@@ -169,13 +169,12 @@ const goalNamedByActive = (goalId, opps) =>
   (opps || []).some((o) => o && o.goalId === goalId && isActive(o));
 
 const activeOppForGoal = (goalId, opps) =>
-  (opps || []).find((o) => o.goalId === goalId && isNegotiating(o)
-    && !transactionallyLost(o, opps)) || null;
+  (opps || []).find((o) => o.goalId === goalId && isNegotiating(o)) || null;
 
 const goalState = (goalId, opps) => {
   const mine = (opps || []).filter((o) => o.goalId === goalId);
   if (mine.some(isCompleted)) return "satisfied";
-  if (mine.some((o) => isNegotiating(o) && !transactionallyLost(o, opps))) return "negotiating";
+  if (mine.some(isNegotiating)) return "negotiating";
   return "seeking";
 };
 
@@ -433,11 +432,18 @@ function nextActor(o) {
         ? { actor: "partner", reason: "price", amount: last.amount }
         : { actor: "collector", reason: "price", amount: last.amount };
     }
-    case "select-trade":
-      if (!o.trade || !o.trade.submitted) return { actor: "collector", reason: "choose-trade" };
-      return (tradeRows(o).some((c) => c.inclusion === "proposed" && !c.withdrawn))
-        ? { actor: "partner", reason: "review-trade" }
-        : { actor: "collector", reason: "trade-reviewed" };
+    /* TP-LED SELECTION (M3A A1) — see `selectionOf` for what each marker
+       means. A hold outranks everything: while the Collector is adding cards
+       the partner waits. Each send hands the Collector a fresh look, and the
+       partner may only close once the Collector has said they are ready. */
+    case "select-trade": {
+      const sel = selectionOf(o);
+      if (sel.adding) return { actor: "collector", reason: "adding-cards" };
+      if (!sel.sentAt) return { actor: "partner", reason: "select-trade" };
+      if (!sel.readyAt) return { actor: "collector", reason: "more-cards" };
+      if (sel.closedEmptyAt) return { actor: "collector", reason: "trade-reviewed" };
+      return { actor: "partner", reason: "close-selection" };
+    }
     case "value-trade": {
       const owners = activeTradeCards(o).map(cardOwner);
       const tp = owners.filter((x) => x === "tp").length;
@@ -706,57 +712,80 @@ function dealApplyAdj(rawDeal, by, action, amount, at) {
     tpAgreed: false, collectorAgreed: false };   // proposal invalidates confirmations only
 }
 
-/* Withdrawing a card from the trade. It sets a flag rather than deleting the
-   row, because the negotiation that happened is still true: the card stops
-   contributing economics but its history stays readable. Only an accepted,
-   not-already-withdrawn card can be withdrawn — the rule the TP seat already
-   used, now reachable by both. */
-/* CONTRACT §4 / Invariant 18: a COMMITTED copy (accepted by the partner)
-   cannot be withdrawn unilaterally. Only a RESERVED row — submitted, not yet
-   accepted — can be withdrawn, and withdrawing releases the reservation. The
-   row stays in the package as history. */
-const tcWithdraw = (tc, at) => (tc.inclusion === "proposed" && !tc.withdrawn
-  ? { ...tc, inclusion: "withdrawn", withdrawn: true, withdrawnAt: at } : tc);
+/* THE TRADE SIDE CHANGED UNDER THE DEAL (M3A A1). A card withdrawn in Deal
+   changes the calculated balance, so every figure and every confirmation given
+   against the old one is about a deal that no longer exists. Rather than erase
+   them, a `reset` entry is appended: the thread keeps saying exactly what was
+   proposed and accepted, and everything that reads the CURRENT position
+   (`dealAdjStanding`, `currentCashFigure`) reads only what came after the last
+   reset. The standing figures, an agreed adjustment and both confirmations are
+   cleared, and confirmation starts again with the partner. */
+function dealReset(rawDeal, at, reason) {
+  const deal = { adjThread: [], ...(rawDeal || {}) };
+  return { ...deal, tpAdj: null, collectorAdj: null, agreedAdj: null,
+    tpAgreed: false, collectorAgreed: false,
+    adjThread: [...(deal.adjThread || []), { by: null, type: "reset", reason: reason || "card-withdrawn", at: at || null }] };
+}
 
-/* The partner's inclusion decision on a proposed card. Accepting brings it into
-   the trade's economics; rejecting leaves the row and its history in place but
-   out of the totals. Only an undecided card can be decided. */
-const tcDecide = (tc, decision, at) => (tc.inclusion === "proposed"
-  ? { ...tc, inclusion: decision, reviewedAt: at } : tc);
+/* WITHDRAWING A CARD FROM ONE DEAL (M3A A1).
 
-/* WHEN SELECTION IS OVER.
+   The Collector may take one card out of one deal at any point before both
+   parties have given final agreement — in Select Trade, in Value Trade when a
+   proposed market value or percentage is not worth it to them, or in Deal. It
+   sets a flag rather than deleting the row, because the negotiation that
+   happened is still true: the card stops contributing economics but its
+   history, its snapshot and every thread entry stay readable. `withdrawnStage`
+   records where in the deal it happened.
 
-   The Trusted Partner reviews each proposed card; once none is still awaiting a
-   decision, the selection has resolved and the deal moves on — to Value Trade if
-   anything was accepted, or straight to Deal as a cash purchase if everything
-   was rejected. There is no further decision for either person to make, which is
-   why nothing waits for a confirmation that would have nothing to confirm.
+   IT IS ABOUT THIS DEAL ONLY. Nothing here touches the physical copy: its
+   Trade/Sell disposition is a fact about the copy, said in Browse, and leaving
+   one deal is not changing your mind about parting with the card. What the
+   withdrawal releases is derived — the row stops being live, so the copy stops
+   being selected or reserved BY THIS DEAL (`binderRowState`).
 
-   This rule already existed, but only inside the Trusted Partner's React module,
-   applied on its own review path. The canonical action did not run it, so a
-   review performed through the shared action left the card accepted, the
-   guidance saying "move on to agreeing values", and the stage still on Select
-   Trade — the two seats disagreeing about the same opportunity. Moving it here
-   is what makes one review mean one outcome. */
-const selectTradeSettled = (o) => !!(o.trade && o.trade.submitted)
-  && tradeRows(o).filter((c) => c.inclusion === "proposed").length === 0
-  && tradeRows(o).filter((c) => c.inclusion === "accepted").length > 0;
+   Only a live row can be withdrawn: one the partner selected (inclusion
+   `accepted`) and nobody has withdrawn. The final-agreement bar is the
+   command's, because it is a fact about the deal and not about the row. */
+const liveRow = (tc) => !!tc && tc.inclusion === "accepted" && !tc.withdrawn;
+const tcWithdraw = (tc, at, stage) => (liveRow(tc)
+  ? { ...tc, withdrawn: true, withdrawnAt: at || null, withdrawnStage: stage || null } : tc);
 
-const selectionExhausted = (o) => !!(o.trade && o.trade.submitted)
-  && tradeRows(o).filter((c) => c.inclusion === "proposed").length === 0
-  && tradeRows(o).filter((c) => c.inclusion === "accepted").length === 0;
+/* WHAT THE PARTNER HAS SELECTED, AND WHERE SELECTION STANDS (M3A A1).
 
-/* Applied after any change to inclusion. It only ever moves a deal that is
-   actually sitting in Select Trade, so it cannot disturb a later stage. */
-const closeSelection = (o) => {
-  if (o.stage !== "select-trade" || isTerminal(o)) return o;
-  if (selectTradeSettled(o)) return { ...o, stage: "value-trade" };
-  if (selectionExhausted(o)) {
-    return { ...o, trade: { ...o.trade, mode: "cash" }, stage: "deal",
-      deal: { adjThread: [], ...(o.deal || {}) } };
-  }
-  return o;
-};
+   TP-LED. The partner picks specific copies out of the Collector's Trade/Sell
+   supply; the Collector never submits cards to a deal. A selection is a trade
+   row with `inclusion: "accepted"` — the partner's inclusion decision, the same
+   value the economics have always read — so valuation, credit, the balance and
+   final agreement need no second vocabulary.
+
+   `trade.selection` carries the few facts the turn needs and nothing else:
+
+     sentAt         the partner has shown the Collector a selection (possibly
+                    empty) — every send gives the Collector a fresh look
+     adding         the Collector said "hold on, I'm adding more cards"
+     readyAt        the Collector said they are ready for the partner to finish
+     closedEmptyAt  the partner closed with nothing selected; the Collector now
+                    chooses: hold and add more, cash only, or end the deal
+
+   A HOLD MAY BE ASKED FOR ANY NUMBER OF TIMES, and nothing expires it. The
+   Collector adds cards only through Browse, by offering a copy, which puts it in
+   every connected partner's supply; there is no per-deal offering list.
+
+   SELECTION CLOSES ONLY BY A DECISION. There is no automatic move to Value
+   Trade and no automatic cash purchase: `closeTradeSelection` is the partner
+   saying "value these", and choosing cash is the Collector saying so. The old
+   `closeSelection` turned "everything was declined" into a cash deal, which is
+   a decision nobody made — it is gone. */
+const selectionOf = (o) => (o && o.trade && o.trade.selection) || {};
+
+/* RETURNING TO SELECT TRADE WHEN THE LAST CARD LEAVES. Valuation with nothing
+   to value, or a Deal whose trade side has emptied, has no honest next move, so
+   the deal goes back to the stage where one exists: the partner may select
+   again, the Collector may hold, choose cash only, or end the deal. The
+   selection markers start over; every row, thread and the deal's adjustment
+   history stay exactly as they were. */
+const reopenSelection = (o, at) => ({ ...o, stage: "select-trade",
+  trade: { ...(o.trade || {}), selection: { reopenedAt: at || null } } });
 
 /* WHEN VALUATION IS OVER. Every card still in the trade has an agreed market
    value AND an agreed percentage, and at least one of them survived to carry
@@ -779,15 +808,16 @@ const closeValuation = (o) => {
   return { ...o, stage: "deal", deal: { adjThread: [], ...(o.deal || {}) } };
 };
 
-/* Rows still IN the trade: awaiting the partner's decision, or accepted and not
-   withdrawn. Rejected and withdrawn rows keep their history but are out. */
-const liveTradeRows = (o) => tradeRows(o).filter((c) =>
-  c.inclusion === "proposed" || (c.inclusion === "accepted" && !c.withdrawn));
+/* Rows still IN the trade: selected by the partner and not withdrawn. Deselected
+   and withdrawn rows keep their history but are out. (Before M3A A1 a row the
+   Collector had proposed and the partner had not yet decided was live too; the
+   Collector no longer proposes, so there is no undecided row.) */
+const liveTradeRows = (o) => tradeRows(o).filter(liveRow);
 
-const TRADE = { applyMarket: tcApplyMarket, decide: tcDecide, liveTradeRows, cardOwner,
-  selectTradeSettled, selectionExhausted, closeSelection,
+const TRADE = { applyMarket: tcApplyMarket, liveTradeRows, liveRow, cardOwner,
+  selectionOf, reopenSelection,
   valueTradeSettled, closeValuation, applyPercent: tcApplyPercent,
-  applyDealAdjustment: dealApplyAdj, dealAdjStanding, withdraw: tcWithdraw, marketAgreed,
+  applyDealAdjustment: dealApplyAdj, dealAdjStanding, dealReset, withdraw: tcWithdraw, marketAgreed,
   marketStanding, percentStanding, negotiationState };
 
 const INVARIANTS = {
@@ -802,11 +832,12 @@ const INVARIANTS = {
      per Collector per exact card, whichever partner holds it and whether or not
      a Goal began it — the rule a Goal-free offer will need, stated without
      reference to a Goal. Same window as the Goal rule (negotiating, not ended,
-     not completed) and the same exception (a deal whose copy is already gone to
-     somebody else no longer holds the slot), so a completed purchase frees it
-     for the next copy. `sameCard(o)` answers whether `o` is about this card. */
+     not completed), so a completed purchase frees it for the next copy. A deal
+     whose copy went to somebody else is ENDED by that event (M3A A1), so it
+     frees the slot by being over, not by an exception here. `sameCard(o)`
+     answers whether `o` is about this card. */
   oneActiveOfferPerCard: (collectorId, sameCard, opps) => !(opps || []).some((o) =>
-    o.collectorId === collectorId && isNegotiating(o) && !transactionallyLost(o, opps) && sameCard(o)),
+    o.collectorId === collectorId && isNegotiating(o) && sameCard(o)),
 
   /* THE PARTNER'S BOUNDARY, and deliberately a different one.
 
@@ -1078,6 +1109,17 @@ const REFUSE = {
      end. Nothing leaks: the only actor who can reach this refusal is the copy's
      own owner. */
   copyNotOffered: "copy-not-offered",
+  /* M3A A1. `copy-in-deal`: a partner has selected this copy (or a deal holds
+     it), so the facts that say what the object is — grade, condition,
+     certificate, existing photographs — cannot be restated, and it cannot be
+     switched to PC, until every deal has let it go. The owner is the only actor
+     who can reach it. `terms-changed`: the caller acted on a deal state that is
+     no longer the current one (a card was withdrawn, a figure moved); nothing
+     was written, and the answer is to re-read. `superseded`: the command
+     belongs to the retired Collector-proposes selection workflow. */
+  copyInDeal: "copy-in-deal",
+  termsChanged: "terms-changed",
+  commandRetired: "superseded",
   /* A GOAL THAT NAMES A CANONICAL CARD SAYS WHICH COPY IT WANTS (Phase 5 C3.3).
      Distinct from `grading-incoherent`, which answers a pair that cannot be
      true: this answers a pair that was never stated. C3.2 deliberately left
@@ -1472,7 +1514,7 @@ function receiptForOpportunity(o, { binderById, cardById, partnerById } = {}) {
           binderId: tc.binderId,
           name: card(tc).name,
         })) : [],
-        submitted: reached(1) ? !!(o.trade && o.trade.submitted) : false },
+        submitted: reached(1) ? !!(o.trade && (o.trade.submitted || selectionOf(o).sentAt)) : false },
 
       { n: 3, id: "value-trade", label: "Value Trade", state: state(2),
         cards: reached(2) ? accepted.map(card) : [],
@@ -1617,6 +1659,8 @@ const currentCashFigure = (o) => {
   if (d.agreedAdj != null) return d.agreedAdj;
   const thread = d.adjThread || [];
   for (let i = thread.length - 1; i >= 0; i--) {
+    /* Nothing before a reset is on the table any more (dealReset). */
+    if (thread[i].type === "reset") break;
     if (thread[i].type === "propose") return thread[i].amount;
   }
   return calculatedBalance(o);
@@ -1814,13 +1858,37 @@ const holdingCopy = (invId, collectorId, opps, inventory) => {
   return false;
 };
 
-/* Which rows of an opportunity hold an exact BinderCopy, and how. */
+/* WHAT ONE DEAL IS DOING WITH ONE COLLECTOR COPY (M3A A1).
+
+   Derived from the deal's stage, never stored on the copy, and never a change
+   to the copy's Trade/Sell disposition:
+
+     selected   a live row while the deal is in Select Trade. The partner is
+                considering this exact copy. Its material specification is
+                locked, but it is NOT exclusive: the same copy may be selected
+                in other deals, with other partners or the same one.
+     reserved   a live row once the deal is in Value Trade or Deal. Exclusive:
+                no other deal may select or reserve it. Entering valuation is
+                the only way in (`closeTradeSelection`), and it is atomic.
+     committed  a live row once both parties have given final agreement.
+                Unilateral withdrawal is over; cancellation rules apply.
+
+   Deselected, withdrawn and legacy undecided rows hold nothing. A completed
+   deal's committed rows read as `traded` in `collectorCopyStatus`; an ended
+   deal holds nothing at all. */
 const binderRowState = (o, row) => {
-  if (!row || row.withdrawn) return null;
-  if (row.inclusion === "accepted") return "committed";
-  if (row.inclusion === "proposed" && o.trade && o.trade.submitted) return "reserved";
-  return null;                       // draft, rejected or withdrawn rows hold nothing
+  if (!o || !liveRow(row)) return null;
+  /* Fulfillment and completion are only reachable through final agreement, so
+     they are committed whatever the flags on a hand-built record say. */
+  if (finalAgreementGiven(o) || o.stage === "fulfillment" || isCompleted(o)) return "committed";
+  if (o.stage === "value-trade" || o.stage === "deal") return "reserved";
+  if (o.stage === "select-trade") return "selected";
+  return null;
 };
+/* The strongest thing any deal is doing with a copy, ranked
+   traded > committed > reserved > selected > available. `exceptOppId` asks the
+   question for everybody but one deal — "may THIS deal still have it?". */
+const COPY_HOLD_RANK = { available: 0, selected: 1, reserved: 2, committed: 3 };
 const collectorCopyStatus = (binderId, opps, exceptOppId) => {
   let status = "available";
   for (const o of opps || []) {
@@ -1831,12 +1899,24 @@ const collectorCopyStatus = (binderId, opps, exceptOppId) => {
       if (!st) continue;
       if (isCompleted(o) && st === "committed") return "traded";
       if (!isActive(o)) continue;
-      if (st === "committed") status = "committed";
-      else if (st === "reserved" && status === "available") status = "reserved";
+      if (COPY_HOLD_RANK[st] > COPY_HOLD_RANK[status]) status = st;
     }
   }
   return status;
 };
+/* Exclusive: no other deal may select or reserve this copy. */
+const EXCLUSIVE_COPY_STATES = Object.freeze(["reserved", "committed", "traded"]);
+const copyExclusive = (binderId, opps, exceptOppId) =>
+  EXCLUSIVE_COPY_STATES.includes(collectorCopyStatus(binderId, opps, exceptOppId));
+/* THE SPECIFICATION LOCK, which is not the reservation. From the moment any
+   partner selects a copy until every deal that selected it has let it go, the
+   facts that say what the object IS — grade, condition, certificate and the
+   photographs already on it — cannot be restated, because somebody is
+   reasoning about exactly that object. A copy selected in two deals stays
+   locked until both have released it; a traded copy is history and stays
+   locked for ever. Printing identity (`canonicalCardId`) is immutable on every
+   copy at all times and needs no lock. */
+const copySpecLocked = (binderId, opps) => collectorCopyStatus(binderId, opps) !== "available";
 
 /* An active Opportunity locks its Goal at Primary (§4, Invariant 13). */
 const goalLocked = (goalId, opps) => activeOppForGoal(goalId, opps || []) != null;
@@ -1862,16 +1942,31 @@ const emptyFulfillment = () => ({ method: null, show: "", date: "", time: "",
    production Collector's copy — which has no legacy card — could be owned and
    offered but never actually put into a trade. validateWorld requires one of
    the two references and refuses both. */
-const emptyTradeCard = (cardId, photos, cert, binderId, canonicalCardId) => {
+/* THE ROW IS ALSO THE SNAPSHOT (M3A A1). `spec` carries the copy's grade and
+   condition at the moment it was selected, beside the certificate and photo
+   references the row has always carried, so the deal's record of WHICH object
+   was being valued never depends on the copy staying as it was. The copy is
+   locked while selected anyway (`copySpecLocked`); the snapshot is what history
+   reads after the lock is gone. Photographs are copied, never shared by
+   reference. `selectedAt`, `reservedAt` and `withdrawnStage` are written by the
+   commands that do those things. */
+const emptyTradeCard = (cardId, photos, cert, binderId, canonicalCardId, spec) => {
   const canonical = typeof canonicalCardId === "string" && canonicalCardId;
+  const s = spec || {};
   return {
     id: "tc" + (canonical || cardId) + "-" + randomToken(8),
     ...(canonical ? { canonicalCardId: canonical } : { cardId }),
     binderId: binderId || null, inclusion: "proposed", reviewedAt: null,
-    withdrawn: false, withdrawnAt: null,
+    withdrawn: false, withdrawnAt: null, withdrawnStage: null,
+    selectedAt: null, reservedAt: null,
+    grade: typeof s.grade === "string" ? s.grade : null,
+    condition: typeof s.condition === "string" ? s.condition : null,
     collectorMarket: null, tpMarket: null, agreedMarket: null, valueThread: [],
     collectorPercent: null, tpPercent: null, agreedPercent: null, percentThread: [],
-    cert: cert || null, photos: photos || { front: null, back: null },
+    cert: cert || null,
+    photos: photos && typeof photos === "object"
+      ? { front: photos.front == null ? null : photos.front, back: photos.back == null ? null : photos.back }
+      : { front: null, back: null },
   };
 };
 
@@ -1893,6 +1988,9 @@ module.exports.COLLECTING_STATES = COLLECTING_STATES;
 module.exports.COLLECTING_LINEAGE_MAX = COLLECTING_LINEAGE_MAX;
 module.exports.collectorCopyStatus = collectorCopyStatus;
 module.exports.binderRowState = binderRowState;
+module.exports.copyExclusive = copyExclusive;
+module.exports.copySpecLocked = copySpecLocked;
+module.exports.EXCLUSIVE_COPY_STATES = EXCLUSIVE_COPY_STATES;
 module.exports.goalLocked = goalLocked;
 module.exports.emptyDeal = emptyDeal;
 module.exports.emptyFulfillment = emptyFulfillment;

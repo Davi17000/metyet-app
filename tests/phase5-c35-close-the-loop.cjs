@@ -845,7 +845,7 @@ describe("F. the boundaries hold", () => {
        door DID move — both are listed above. The pin is re-stated rather than
        loosened: the surface is still named command by command. */
     /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(C.COMMAND_NAMES.length, 56, "a command was added or removed");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A1: + selectTradeCards, deselectTradeCard, holdTradeSelection, continueTradeSelection, closeTradeSelection (proposeTradeSelection and reviewTradeCard remain as refusing names) — each founder-approved */ eq(C.COMMAND_NAMES.length, 61, "a command was added or removed");
   });
 
   test("C3.5 opened no door — the whole file is what it was", () => {

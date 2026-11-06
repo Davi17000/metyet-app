@@ -162,15 +162,16 @@ describe("2. The designated review deal walks the real lifecycle", () => {
     eq(cur().stage, "select-trade", "advanced to Select Trade");
     eq(cur().agreedPrice, 4032, "carrying the settled price forward");
 
-    /* Select Trade -> submit a package the partner then reviews. */
+    /* Select Trade (RESTATED, M3A A1): the partner selects first, the
+       Collector gets their look, and it returns to the partner once they say
+       they are ready. */
     const copy = st.get().collectorCopies.find((b) => b.collectorId === ME);
-    A.patchOpportunity(id, (o) => ({ ...o, trade: { mode: "trade", submitted: true,
-      cards: [{ binderId: copy.id, cardId: copy.cardId, inclusion: "proposed" }] } }));
-    eq(D.nextActor(cur()).actor, "partner", "the wait falls to the partner naturally");
-
-    A.patchOpportunity(id, (o) => ({ ...o, trade: { ...o.trade,
-      cards: o.trade.cards.map((c) => ({ ...c, inclusion: "accepted", reviewedAt: AT })) } }));
-    eq(D.nextActor(cur()).actor, "collector", "and returns to the collector once reviewed");
+    eq(D.nextActor(cur()).actor, "partner", "the partner selects first");
+    A.patchOpportunity(id, (o) => ({ ...o, trade: { mode: "trade", selection: { sentAt: AT },
+      cards: [{ binderId: copy.id, cardId: copy.cardId, inclusion: "accepted", reviewedAt: AT }] } }));
+    eq(D.nextActor(cur()).actor, "collector", "the Collector gets their look");
+    A.patchOpportunity(id, (o) => ({ ...o, trade: { ...o.trade, selection: { ...o.trade.selection, readyAt: AT } } }));
+    eq(D.nextActor(cur()).actor, "partner", "and it returns to the partner once they are ready");
 
     A.patchOpportunity(id, (o) => ({ ...o, stage: "value-trade" }));
     eq(cur().agreedPrice, 4032, "the price still survives at Value Trade");

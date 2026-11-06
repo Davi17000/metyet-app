@@ -29,6 +29,7 @@ window.matchMedia = (q) => ({
   addListener() {}, removeListener() {},
 });
 
+const { reachValuationByFixture } = require("./helpers/trade-path.cjs");
 const { describe, test, assert, eq } = require("./run.cjs");
 const React = require("react");
 const TR = require("react-test-renderer");
@@ -367,9 +368,9 @@ describe("F. Canonical guarantees survive on mobile", () => {
     st.actions.agreePrice({ oppId: o, amount: 3800, by: "tp", at: AT });
     const rows = [M.emptyTradeCard("ka", null, null, "b-a"),
       M.emptyTradeCard("ka", null, null, "b-b")];
-    st.actions.patchOpportunity(o, (x) => ({ ...x, stage: "select-trade",
-      trade: { ...x.trade, submitted: true, cards: rows } }));
-    st.actions.reviewTradeCards({ oppId: o, decision: "accepted", at: AT });
+    /* RESTATED (M3A A1): the partner now selects and closing selection reserves;
+       the retired Collector-proposes / reviewTradeCard path is replaced by the shared fixture. */
+    reachValuationByFixture(st, o, rows, AT);
     return { st, o, ids: rows.map((r) => r.id),
       get: () => st.get().opportunities.find((x) => x.id === o),
       card: (id) => st.get().opportunities.find((x) => x.id === o)

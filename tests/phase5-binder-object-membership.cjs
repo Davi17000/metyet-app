@@ -375,7 +375,8 @@ describe("C. One Collector's binder holds one Collector's things", () => {
     const oppId = okv(x(st, CASEY, "startOpportunity",
       { goalId: "g1", invId: "i1", amount: 26 }), "start");
     okv(x(st, TP, "acceptPrice", { oppId }), "agree");
-    okv(x(st, CASEY, "proposeTradeSelection", { oppId, binderIds: ["sell"] }), "package");
+    /* RESTATED (M3A A1): the partner selects the filed copy into its own deal. */
+    okv(x(st, TP, "selectTradeCards", { oppId, copyIds: ["sell"] }), "selection");
     const theirs = projectForActor(st.get(), TP);
     eq(JSON.stringify(theirs.binderMemberships), "[]", "a membership crossed to a partner");
     eq(JSON.stringify(theirs.binders), "[]", "a binder crossed");
@@ -1397,7 +1398,7 @@ describe("I. A capability with a surface, at last", () => {
       eq(typeof C.COMMANDS[name], "function", `${name} has no implementation`);
     }
     /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq([...C.COMMAND_NAMES].length, 56, "the domain command table moved");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A1: + selectTradeCards, deselectTradeCard, holdTradeSelection, continueTradeSelection, closeTradeSelection (proposeTradeSelection and reviewTradeCard remain as refusing names) — each founder-approved */ eq([...C.COMMAND_NAMES].length, 61, "the domain command table moved");
     const st = world();
     const id = okv(x(st, CASEY, "fileObject", { binderId: "A", goalId: "g1" }), "file");
     eq(homeOf(st, "goalId", "g1").binderId, "A", "the command stopped working");
@@ -1508,7 +1509,7 @@ describe("I. A capability with a surface, at last", () => {
        The pin still fails on any other change to the vocabulary. */
     /* 46 since Market Validation Batch 2: `firm-on-price` (an opening on a Firm
        copy must equal its captured Proposed Market Price). */
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + four message refusals (empty, too long, nonce required, nonce conflict) — each founder-approved */ eq(Object.keys(D.REFUSE).length, 55, "the refusal vocabulary moved");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + four message refusals (empty, too long, nonce required, nonce conflict); M3A A1: + copy-in-deal, terms-changed, superseded — each founder-approved */ eq(Object.keys(D.REFUSE).length, 58, "the refusal vocabulary moved");
     eq(D.REFUSE.firmOnPrice, "firm-on-price", "Batch 2's one new refusal code");
     eq(D.REFUSE.invalidPricingPreference, "invalid-pricing-preference", "Batch 1's one new refusal code");
     assert(D.REFUSE.invalidTarget === "invalid-target" && D.REFUSE.binderArchived === "binder-archived",

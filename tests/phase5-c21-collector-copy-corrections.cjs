@@ -465,7 +465,8 @@ describe("C. putting a card down is not the same act as picking it up", () => {
 describe("D. Interest does not reserve a copy, and a held copy takes no new Interest", () => {
 
   /* A Collector's copy inside a live trade package, built through the real
-     negotiation commands so the status under test is the real derivation. */
+     negotiation commands so the status under test is the real derivation.
+     RESTATED (M3A A1): TP-led — selected, then reserved when selection closes. */
   async function reserved(ctx, cards) {
     const invId = (await post(ctx.app, "north", "addInventoryCopy",
       { copy: { canonicalCardId: cards.firstEdition, ask: 9000, grade: "PSA 9" } })).json().value;
@@ -475,8 +476,10 @@ describe("D. Interest does not reserve a copy, and a held copy takes no new Inte
       offered: true, photos: PHOTOS, market: 3000 })).json().value;
     const oppId = (await direct(ctx, ACTOR.casey, "startOpportunity", { goalId, invId, amount: 9000 })).value;
     assert(!(await direct(ctx, ACTOR.north, "acceptPrice", { oppId })).refused, "acceptPrice");
-    assert(!(await direct(ctx, ACTOR.casey, "proposeTradeSelection",
-      { oppId, binderIds: [copyId] })).refused, "proposeTradeSelection");
+    for (const [actor, command, payload] of [[ACTOR.north, "selectTradeCards", { oppId, copyIds: [copyId] }],
+      [ACTOR.casey, "continueTradeSelection", { oppId }], [ACTOR.north, "closeTradeSelection", { oppId }]]) {
+      assert(!(await direct(ctx, actor, command, payload)).refused, command);
+    }
     const w = await ctx.repository.loadWorld();
     const row = w.opportunities.find((o) => o.id === oppId).trade.cards.find((c) => c.binderId === copyId);
     return { copyId, oppId, tradeCardId: row.id };
@@ -510,8 +513,12 @@ describe("D. Interest does not reserve a copy, and a held copy takes no new Inte
     const ctx = await world();
     const cards = await charizard(ctx);
     const { copyId, oppId, tradeCardId } = await reserved(ctx, cards);
-    assert(!(await direct(ctx, ACTOR.north, "reviewTradeCard",
-      { oppId, tradeCardId, decision: "accept" })).refused, "reviewTradeCard");
+    /* RESTATED (M3A A1): committed at final agreement, not at acceptance. */
+    for (const [actor, command, payload] of [[ACTOR.casey, "proposeMarketValue", { oppId, tradeCardId, amount: 3000 }],
+      [ACTOR.north, "acceptMarketValue", { oppId, tradeCardId }], [ACTOR.north, "proposeTradePercent", { oppId, tradeCardId, percent: 0.8 }],
+      [ACTOR.casey, "acceptTradePercent", { oppId, tradeCardId }], [ACTOR.north, "acceptDeal", { oppId }], [ACTOR.casey, "acceptDeal", { oppId }]]) {
+      assert(!(await direct(ctx, actor, command, payload)).refused, command);
+    }
     eq(D.collectorCopyStatus(copyId, (await ctx.repository.loadWorld()).opportunities), "committed");
     eq((await interest(ctx, ACTOR.north, copyId, true)).refused, D.REFUSE.copyUnavailable);
   });
@@ -532,8 +539,10 @@ describe("D. Interest does not reserve a copy, and a held copy takes no new Inte
       { canonicalCardId: cards.firstEdition, tier: "primary", desired: { grade: "PSA 9" } })).json().value;
     const oppId = (await direct(ctx, ACTOR.casey, "startOpportunity", { goalId, invId, amount: 9000 })).value;
     await direct(ctx, ACTOR.north, "acceptPrice", { oppId });
-    assert(!(await direct(ctx, ACTOR.casey, "proposeTradeSelection",
-      { oppId, binderIds: [copyId] })).refused, "proposeTradeSelection");
+    for (const [actor, command, payload] of [[ACTOR.north, "selectTradeCards", { oppId, copyIds: [copyId] }],
+      [ACTOR.casey, "continueTradeSelection", { oppId }], [ACTOR.north, "closeTradeSelection", { oppId }]]) {
+      assert(!(await direct(ctx, actor, command, payload)).refused, command);
+    }
     eq(D.collectorCopyStatus(copyId, (await ctx.repository.loadWorld()).opportunities), "reserved");
 
     const off = await interest(ctx, ACTOR.north, copyId, false);

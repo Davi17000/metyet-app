@@ -107,7 +107,7 @@ const valued = (st, invId = "i1") => {
   return id;
 };
 const promised = (st, oppId) => {
-  okv(x(st, JORDAN, "proposeTradeSelection", { oppId, binderIds: [], at: AT }), "package");
+  okv(x(st, JORDAN, "chooseCashOnly", { oppId, at: AT }), "package");
   okv(x(st, TP, "acceptDeal", { oppId, at: AT }), "partner yes");
   okv(x(st, JORDAN, "acceptDeal", { oppId, at: AT }), "collector yes");
   return oppId;

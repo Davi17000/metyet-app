@@ -276,10 +276,13 @@ describe("B · Trusted Partner projection", () => {
         }
       }
     }
-    /* Network supply (§6) excludes copies another deal holds or traded; own deals keep theirs. */
+    /* Network supply (§6) excludes copies another deal holds or traded; own deals keep theirs.
+       RESTATED (M3A A1): bAB2 is only SELECTED by Beta's deal, and a selection
+       is not a hold — Alpha still sees it as ordinary supply, and Beta sees its
+       own selection. */
     const statuses = (proj) => proj.collectorCopies.map((b) => b.id + ":" + b.status);
-    sameSet(statuses(P.pA), ["bA:traded", "bAB1:traded"], "pA collectorCopies: bAB2 is held by Beta's deal");
-    sameSet(statuses(P.pB), ["bAB2:reserved", "bB:available"], "pB collectorCopies: bAB1 was traded to Alpha");
+    sameSet(statuses(P.pA), ["bA:traded", "bAB1:traded", "bAB2:available"], "pA collectorCopies: Beta's selection is invisible");
+    sameSet(statuses(P.pB), ["bAB2:selected", "bB:available"], "pB collectorCopies: bAB1 was traded to Alpha");
     eq(P.pC.collectorCopies.length, 0);
   });
 
@@ -382,9 +385,9 @@ describe("C · Workflow state shared by both participants", () => {
     eq(row.binderId, "bA"); eq(row.cert, "PSA-bA"); eq(row.photos.front, "photo:bA:front");
     const bA = P.pA.collectorCopies.find((b) => b.id === "bA");
     eq(bA.cert, "PSA-bA"); eq(bA.status, "traded"); assert(!("market" in bA), "bA market reached pA");
-    /* A reserved copy in a submitted package, seen by its partner. */
+    /* A copy the partner has selected, seen by that partner (RESTATED, M3A A1). */
     const bAB2 = P.pB.collectorCopies.find((b) => b.id === "bAB2");
-    eq(bAB2.status, "reserved"); assert(!("market" in bAB2));
+    eq(bAB2.status, "selected"); assert(!("market" in bAB2));
     eq(opp(P.pB, ids.oAB).trade.cards[0].binderId, "bAB2");
     /* Collector side: the exact InventoryCopy they bought. */
     eq(opp(P.cA, ids.oA).invId, "iA1");
@@ -494,7 +497,7 @@ describe("E · Adversarial scans — who can see each marker, id and private val
        Bravo's network. The ID is a card on a shelf, not a fact about a deal. */
     iB1: ["pB", "cAB", "cB"], iB3: ["pB", "cAB", "cB"], iC1: ["pC"],
     /* bAB1: Beta's own interest record still names it. */
-    bA: ["cA", "pA"], bAB1: ["cAB", "pA", "pB"], bAB2: ["cAB", "pB"], bB: ["cB", "pB"], bX: ["cX"],
+    bA: ["cA", "pA"], bAB1: ["cAB", "pA", "pB"], bAB2: ["cAB", "pA", "pB"] /* RESTATED (M3A A1): Beta's selection is not a hold, so Alpha still sees it as supply */, bB: ["cB", "pB"], bX: ["cX"],
     gA: ["cA", "pA"], gAB: ["cAB", "pA", "pB"], gAB2: ["cAB", "pA", "pB"], gB: ["cB", "pB"], gX: ["cX"],
     a1: ["pA"], a2: ["pB"], a3: [],
     [RA]: ["cA", "pA"], [RV("cA")]: ["cA"], [RV("cAB")]: ["cAB"],
@@ -591,9 +594,13 @@ describe("F · Edge states", () => {
     eq(cA.interests.length, 0, "an ex-partner's interest still reaches the collector");
   });
 
+  /* RESTATED (M3A A1): rows are the partner's own selections now, so the one
+     thing still private is a LEGACY Collector draft — a `proposed` row in a
+     package that was never submitted. Forged here, because no command makes one. */
   test("an unsubmitted trade package never reaches the partner", () => {
     const s = { ...S, opportunities: S.opportunities.map((o) => (o.id === ids.oAB
-      ? { ...o, trade: { ...o.trade, submitted: false } } : o)) };
+      ? { ...o, trade: { ...o.trade, submitted: false,
+        cards: o.trade.cards.map((c) => ({ ...c, inclusion: "proposed" })) } } : o)) };
     const pB = projectForActor(s, ACTORS.pB), cAB = projectForActor(s, ACTORS.cAB);
     eq(opp(pB, ids.oAB).trade.cards.length, 0, "partner sees draft package rows");
     eq(opp(cAB, ids.oAB).trade.cards.length, 1, "collector lost its own draft");
@@ -752,25 +759,33 @@ describe("G3 · No copy status derives from a deal the viewer is not in", () => 
   const snaps = W.snapshots.oABA;
   const project = (label, who) => projectForActor(snaps[label], ACTORS[who]);
   const HELD = ["reserved", "committed", "valued", "deal", "fulfillment", "traded"];
+  const EXCLUSIVE = ["committed", "valued", "deal", "fulfillment", "traded"];   // M3A A1: reserved from "committed" on
 
-  test("the lifecycle really moves: Alpha sees bAB1 reserved, committed, traded", () => {
+  /* RESTATED (M3A A1). The snapshot labels keep their old names (see
+     fixture-unrelated.cjs), but the lifecycle moved: at "reserved" Alpha has
+     only SELECTED bAB1, at "committed" Alpha's deal has closed selection and
+     RESERVED it, and the copy is committed only at final agreement — so by
+     "traded" it reads traded. */
+  test("the lifecycle really moves: Alpha sees bAB1 selected, reserved, traded", () => {
     const world = (label) => D.collectorCopyStatus("bAB1", snaps[label].opportunities);
-    eq([ "agreed", "reserved", "committed", "traded"].map(world).join(), "available,reserved,committed,traded", "canonical bAB1");
+    eq([ "agreed", "reserved", "committed", "traded"].map(world).join(), "available,selected,reserved,traded", "canonical bAB1");
     const alpha = (label) => project(label, "pA").collectorCopies.find((b) => b.id === "bAB1").status;
-    eq(["agreed", "reserved", "committed", "traded"].map(alpha).join(), "available,reserved,committed,traded", "Alpha's own view");
-    eq(project("committed", "cAB").collectorCopies.find((b) => b.id === "bAB1").status, "committed", "the owner's view");
+    eq(["agreed", "reserved", "committed", "traded"].map(alpha).join(), "available,selected,reserved,traded", "Alpha's own view");
+    eq(project("committed", "cAB").collectorCopies.find((b) => b.id === "bAB1").status, "reserved", "the owner's view");
+    eq(project("fulfillment", "cAB").collectorCopies.find((b) => b.id === "bAB1").status, "committed", "committed at final agreement");
   });
 
-  test("Beta, related to the same Collector, cannot tell Alpha's deal reserved, committed or completed the copy", () => {
+  test("Beta, related to the same Collector, cannot tell Alpha's deal selected, reserved, committed or completed the copy", () => {
     const beta = Object.fromEntries(Object.keys(snaps).map((label) => [label, json(project(label, "pB"))]));
-    for (const label of HELD) {
-      eq(beta[label], beta.reserved, `Beta's whole projection at "${label}" differs from "reserved"`);
+    /* Alpha's SELECTION is invisible: Beta's whole projection is what it was before the offer. */
+    for (const label of ["beforeOffer", "offered", "agreed", "reserved"]) eq(beta[label], beta.beforeOffer, `Beta at "${label}"`);
+    /* From reservation on, the copy is simply gone — identically at every later stage. */
+    for (const label of EXCLUSIVE) {
+      eq(beta[label], beta.committed, `Beta's whole projection at "${label}" differs from "committed"`);
       assert(!tokens(project(label, "pB")).has(ids.oABA), `Beta names Alpha's deal at ${label}`);
     }
-    for (const label of ["beforeOffer", "offered", "agreed"]) eq(beta[label], beta.beforeOffer, `Beta at "${label}"`);
-    /* While free, the copy is Beta's supply; once Alpha's deal holds it, it is simply gone. */
-    eq(project("agreed", "pB").collectorCopies.find((b) => b.id === "bAB1").status, "available");
-    for (const label of HELD) assert(!project(label, "pB").collectorCopies.some((b) => b.id === "bAB1"), `bAB1 visible to Beta at ${label}`);
+    for (const label of ["agreed", "reserved"]) eq(project(label, "pB").collectorCopies.find((b) => b.id === "bAB1").status, "available", `free at ${label}`);
+    for (const label of EXCLUSIVE) assert(!project(label, "pB").collectorCopies.some((b) => b.id === "bAB1"), `bAB1 visible to Beta at ${label}`);
     /* Beta's own interest in the copy is Beta's record and does not move. */
     assert(project("traded", "pB").interests.some((x) => x.binderId === "bAB1"));
     /* No status anywhere in Beta's projection comes from a deal Beta is not in. */
@@ -837,12 +852,27 @@ describe("G3 · No copy status derives from a deal the viewer is not in", () => 
     const invId = x(w.actors.pA, "addInventoryCopy", { copy: { cardId: "k5", ask: 1600, cost: 1 } });
     const alphaDeal = x(w.actors.cAB, "startOpportunity", { goalId: "gAB2", invId, amount: 1500 });
     x(w.actors.pA, "acceptPrice", { oppId: alphaDeal });
-    x(w.actors.cAB, "proposeTradeSelection", { oppId: alphaDeal, binderIds: ["bAB2"] });
+    /* RESTATED (M3A A1): Alpha SELECTS bAB2 — not a hold, so Beta still sees
+       ordinary supply — then closes selection, which RESERVES it: from then on
+       Beta, whose own (withdrawn) row names the copy, reads only "unavailable",
+       and Alpha's later final agreement changes nothing Beta can see. */
+    x(w.actors.pA, "selectTradeCards", { oppId: alphaDeal, copyIds: ["bAB2"] });
+    eq(D.collectorCopyStatus("bAB2", w.store.get().opportunities), "selected", "canonical: selected");
+    eq(projectForActor(w.store.get(), w.actors.pB).collectorCopies.find((b) => b.id === "bAB2").status, "available",
+      "Alpha's selection is invisible to Beta");
+    x(w.actors.cAB, "continueTradeSelection", { oppId: alphaDeal });
+    x(w.actors.pA, "closeTradeSelection", { oppId: alphaDeal });
     const reserved = w.store.get();
     eq(D.collectorCopyStatus("bAB2", reserved.opportunities), "reserved", "canonical");
     const pB1 = projectForActor(reserved, w.actors.pB);
     eq(pB1.collectorCopies.find((b) => b.id === "bAB2").status, "unavailable", "Beta's view of a copy its own deal names");
-    x(w.actors.pA, "reviewTradeCard", { oppId: alphaDeal, decision: "accepted" });
+    const row = reserved.opportunities.find((o) => o.id === alphaDeal).trade.cards[0].id;
+    x(w.actors.cAB, "proposeMarketValue", { oppId: alphaDeal, tradeCardId: row, amount: 300 });
+    x(w.actors.pA, "acceptMarketValue", { oppId: alphaDeal, tradeCardId: row });
+    x(w.actors.pA, "proposeTradePercent", { oppId: alphaDeal, tradeCardId: row, percent: 0.8 });
+    x(w.actors.cAB, "acceptTradePercent", { oppId: alphaDeal, tradeCardId: row });
+    x(w.actors.pA, "acceptDeal", { oppId: alphaDeal });
+    x(w.actors.cAB, "acceptDeal", { oppId: alphaDeal });
     const pB2 = projectForActor(w.store.get(), w.actors.pB);
     eq(json(pB2), json(pB1), "Beta's projection moved when Alpha's deal committed the copy");
     assert(!tokens(pB2).has(alphaDeal), "Beta names Alpha's deal");

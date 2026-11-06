@@ -53,8 +53,11 @@ const world = () => {
   const o = st.actions.startOpportunity({ goalId: g, collectorId: "casey", partnerId: "nl",
     cardId: "k1", invId: "inv-1", listedPrice: 4000, amount: 3600, at: AT });
   st.actions.agreePrice({ oppId: o, amount: 3600, by: "tp", at: AT });
-  st.actions.proposeTradeSelection({ oppId: o, binderIds: ["b1"], at: AT });
-  st.actions.reviewTradeCards({ oppId: o, decision: "accepted", at: AT });
+  /* RESTATED (M3A A1): the partner selects b1, the Collector is ready, the
+     partner closes selection — the real commands, through the store. */
+  st.actions.selectTradeCards({ oppId: o, copyIds: ["b1"], at: AT });
+  st.actions.continueTradeSelection({ oppId: o, at: AT });
+  st.actions.closeTradeSelection({ oppId: o, at: AT });
   const get = () => st.get().opportunities.find((x) => x.id === o);
   return { st, o, tcId: get().trade.cards[0].id, get, card: () => get().trade.cards[0] };
 };

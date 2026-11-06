@@ -222,11 +222,13 @@ function ownReadPosition(out, seat) {
   return out;
 }
 
-/* A trade package is the collector's private draft until submitted (contract §3
-   "Draft negotiation input — own, until submitted"; §4 Select Trade). Commands
-   submit a package in one step, so canonical state normally never holds an
-   unsubmitted one — but a record that does must not reach the partner. */
-const submittedRows = (o) => (o.trade && o.trade.submitted === true ? list(o.trade.cards) : []);
+/* WHICH TRADE ROWS THE PARTNER SEES (M3A A1). Since selection became TP-led
+   every row is one the partner wrote — a selection — so the partner sees them
+   all. The one exception is a legacy Collector draft: a `proposed` row in a
+   package nobody submitted was the Collector's private input (contract §3), and
+   a record still holding one must not reach the partner. */
+const partnerVisibleRow = (o) => (row) => !(row && row.inclusion === "proposed" && !(o.trade && o.trade.submitted === true));
+const submittedRows = (o) => list(o.trade && o.trade.cards).filter(partnerVisibleRow(o));
 /* WHERE A DEAL STANDS, DECIDED HERE (Market Validation, Batch 3B / 3B.1).
    The domain has one turn engine, `D.nextActor`, and named lifecycle
    predicates; the screens must not grow second copies of either. So each
@@ -248,7 +250,7 @@ const withTurn = (out, o) => {
 };
 const opportunityForPartner = (o) => {
   const out = withTurn(clone(o), o);
-  if (out.trade && out.trade.submitted !== true) out.trade = { ...out.trade, cards: [] };
+  if (out.trade && Array.isArray(out.trade.cards)) out.trade = { ...out.trade, cards: out.trade.cards.filter(partnerVisibleRow(o)) };
   return ownReadPosition(out, "tp");
 };
 
@@ -268,10 +270,28 @@ const opportunityForPartner = (o) => {
    the same whether another partner's deal on a copy is reserved, committed or
    completed — and the same as if the owner had simply removed it. The owner of
    a copy takes part in every deal that holds it, so owners keep full status. */
+/* SELECTED IS NOBODY ELSE'S BUSINESS (M3A A1). A copy another deal has merely
+   SELECTED is still available to every other partner and reads exactly as if
+   no deal had touched it, so no partner can learn that a rival is considering
+   it. Only an EXCLUSIVE hold elsewhere — reserved, committed, traded — closes
+   it, and then a partner who had selected it themselves is told plainly that it
+   is unavailable, never why. The viewer's own holds keep their own word. */
 const UNAVAILABLE = "unavailable";
 function copyForViewer(row, { own, world, inSupply, referenced }) {
   if (own !== "available") return { ...row, status: own };
   if (world === "available" && inSupply) return { ...row, status: "available" };
+  if (referenced) return { ...row, status: UNAVAILABLE };
+  return null;
+}
+/* THE SAME RULE FOR A COLLECTOR'S COPY SEEN BY A PARTNER, WITH ONE MORE WORD
+   (M3A A1). `selected` is not a hold: another deal's selection leaves the copy
+   exactly as available as before, so it is read as `available` on both sides
+   of the comparison, and the viewer's own selection keeps its own word. */
+function collectorCopyForViewer(row, { own, world, inSupply, referenced }) {
+  if (D.EXCLUSIVE_COPY_STATES.includes(own)) return { ...row, status: own };
+  if (D.EXCLUSIVE_COPY_STATES.includes(world)) return referenced ? { ...row, status: UNAVAILABLE } : null;
+  if (own === "selected") return { ...row, status: own };
+  if (inSupply) return { ...row, status: "available" };
   if (referenced) return { ...row, status: UNAVAILABLE };
   return null;
 }
@@ -544,7 +564,7 @@ function projectForPartner(state, me) {
   const referencedCopies = new Set(opportunities.flatMap(submittedRows)
     .map((row) => row.binderId).filter((x) => x != null));
   const collectorCopies = list(state.collectorCopies)
-    .map((b) => withGrading(copyForViewer(pick(b, COLLECTOR_COPY_FOR_PARTNER), {
+    .map((b) => withGrading(collectorCopyForViewer(pick(b, COLLECTOR_COPY_FOR_PARTNER), {
       own: D.collectorCopyStatus(b.id, opportunities),
       world: D.collectorCopyStatus(b.id, allOpps),
       inSupply: inNetwork(b.collectorId) && b.offered === true,
