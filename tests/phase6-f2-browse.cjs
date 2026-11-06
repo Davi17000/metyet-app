@@ -354,7 +354,12 @@ describe("H. boundaries", () => {
        section draws the thread. CardBrowser and every other TP file are
        still untouched. */
     const D2 = ["client/tp/TrustedPartnerShell.jsx", "client/tp/sections/Opportunities.jsx"];
-    eq(changed.split("\n").filter((f) => f && !D2.includes(f)).join("\n"), "", "the Trusted Partner side changed");
+    /* RESTATED (M3A A2, founder-authorized): the Collector Network lists each
+       connected Collector's Trade/Sell copies, and the TP presenter gains the
+       table that sorts them by the projection's status. CardBrowser and every
+       other TP file are still untouched. */
+    const A2 = ["client/tp/present.js", "client/tp/sections/CollectorNetwork.jsx"];
+    eq(changed.split("\n").filter((f) => f && !D2.includes(f) && !A2.includes(f)).join("\n"), "", "the Trusted Partner side changed");
   });
   test("the account button sits at the right edge with or without a count (F1 defect)", () => {
     const Shell = load("client/collector/CollectorShell.jsx").default;

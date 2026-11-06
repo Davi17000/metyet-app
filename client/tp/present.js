@@ -161,6 +161,9 @@ export const isKnownStage = (stage) =>
    same way it was set. */
 export const STATUS_LABEL = Object.freeze({
   available: "Available",
+  /* M3A A1: a copy one of YOUR deals is considering. Another partner's
+     selection never reaches you as this word — it reads `available`. */
+  selected: "Selected",
   pending: "Pending",
   committed: "Committed",
   reserved: "Reserved",
@@ -172,6 +175,34 @@ export const statusLabel = (status) => {
   const raw = text(status);
   if (!raw) return null;
   return STATUS_LABEL[raw] || raw;
+};
+
+/* WHERE ONE OF A COLLECTOR'S TRADE/SELL COPIES STANDS FOR YOU (M3A A2).
+
+   The projection has already decided everything: which copies reach this
+   partner at all (offered, by a Collector in their network, or named by one of
+   their own deals) and each copy's status, derived ONLY from this partner's
+   own deals. This table says which of those answers belong on the Collector
+   Network, and in which of two places. It decides nothing the server did not:
+
+     available            supply — counted as "Available to trade"
+     selected             one of your deals is considering it
+     reserved, committed  one of your deals holds it
+     anything else        not shown here: `traded` is history and lives in the
+                          deal that traded it; `unavailable` is a copy only a
+                          deal of yours still names, and lives in that deal; a
+                          word this build has never met is not supply either
+
+   Only the first is supply. The other two are context, never counted. */
+export const COPY_STANDING = Object.freeze({
+  available: Object.freeze({ supply: true, label: null }),
+  selected: Object.freeze({ supply: false, label: "Selected in your deal" }),
+  reserved: Object.freeze({ supply: false, label: "In your deal" }),
+  committed: Object.freeze({ supply: false, label: "In your deal" }),
+});
+export const copyStanding = (copy) => {
+  const status = text(copy && copy.status);
+  return status && Object.prototype.hasOwnProperty.call(COPY_STANDING, status) ? COPY_STANDING[status] : null;
 };
 
 export const TIER_LABEL = Object.freeze({ primary: "Primary goal", secondary: "Secondary goal" });

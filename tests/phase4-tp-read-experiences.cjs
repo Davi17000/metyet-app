@@ -196,7 +196,12 @@ describe("B. every join is by identifier, never by position", () => {
       { id: "gB", collectorId: "cB", cardId: "cardB", tier: "secondary", note: "BO WANTS BLASTOISE" },
       { id: "gA", collectorId: "cA", cardId: "cardA", tier: "primary", note: "ADA WANTS CHARIZARD" },
     ],
-    collectorCopies: [{ offered: true, id: "bB1", collectorId: "cB" }, { offered: true, id: "bB2", collectorId: "cB" }],
+    /* RESTATED (M3A A2): every copy the projection sends carries the `status`
+       it derived for this partner (collectorCopyForViewer), and the count now
+       reads it. These two were written before that field mattered here; they
+       are what the server sends for two free offered copies. */
+    collectorCopies: [{ offered: true, id: "bB1", collectorId: "cB", status: "available" },
+      { offered: true, id: "bB2", collectorId: "cB", status: "available" }],
   });
 
   test("each collector's own relationship note, date and goals attach to them", () => {
@@ -219,8 +224,13 @@ describe("B. every join is by identifier, never by position", () => {
        and no longer pretends to be. */
     /* RELABELLED: the number counts physical COPIES, and a Collector offering
        two copies of one card is offering two things. */
-    assert(/Copies offered 2/.test(bo), "Bo's offered-copy count: " + bo);
-    assert(!/Cards offered/.test(ada), "Ada was given a count she has not got: " + ada);
+    /* RESTATED AGAIN (M3A A2, founder-approved): the label is "Available to
+       trade" and it counts only copies whose status is `available` — supply.
+       A copy one of your deals is considering or holding is shown apart and
+       is not counted (tests/milestone3a2-tp-trade-sell-visibility.cjs). The
+       join this test exists for is unchanged: Bo's two, Ada's none. */
+    assert(/Available to trade 2/.test(bo), "Bo's available-copy count: " + bo);
+    assert(!/Available to trade/.test(ada), "Ada was given a count she has not got: " + ada);
   });
 
   test("a relationship for somebody else's collector attaches to nobody", () => {

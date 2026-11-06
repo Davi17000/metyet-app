@@ -30,6 +30,12 @@
    network. They are demand — the thing this product exists to serve — so each
    collector's own goals are listed under them with the tier the server set.
 
+   Their Trade/Sell copies (M3A A2) are COLLECTOR_COPY_FOR_PARTNER, with the
+   status the server derived from your own deals only. Each is one physical
+   copy: what is available is supply and is counted; what one of your deals is
+   considering or holding is shown apart and is not. Reading them creates
+   nothing — no selection, no interest, no deal.
+
    NOTHING MISSING IS INVENTED. A relationship with no recorded last contact
    shows no last-contact line, rather than "never" or a date derived from
    something else. A collector with no goals shows no goals. Absence is
@@ -55,7 +61,9 @@ import React, { useCallback, useEffect, useState } from "react";
 import Qr from "../../qr/Qr.jsx";
 import { Panel, Record, Fact, Tag } from "../parts.jsx";
 import { rows, indexById, groupBy, text, day, plural, cardTitle, cardSetLine,
-  gradeLine, tierLabel, byRecency , demandLine, desiredLine } from "../present.js";
+  gradeLine, tierLabel, byRecency , demandLine, desiredLine,
+  isGraded, gradeConflictLine, photoNote, copyStanding } from "../present.js";
+import { printingLine } from "../../printing.js";
 
 /* The domain's word for why, in ours. A rule this build has not met is shown as
    itself rather than as the nearest one we know. */
@@ -134,6 +142,42 @@ const NEEDS_REPLACING = Object.freeze(["failed", "unconfirmed"]);
    is not. A server with no origin configured sends no link, and then the code
    is what gets handed over, as it was in Batch 2. */
 
+/* ONE PHYSICAL COPY A COLLECTOR OFFERS (M3A A2). Two halves, from two places,
+   never mixed:
+
+     the PRINTING   name, set, number, finish, print run — from the catalogue's
+                    description of the copy's own `canonicalCardId`, said by
+                    `printingLine` exactly as the deal screens say it;
+     the OBJECT     grade or raw condition, certificate, photographs — from this
+                    copy's own record and nowhere else.
+
+   Nothing is filled in. A copy whose description has not arrived says so; a
+   grade nobody stated is no line; a certificate is a graded copy's, so a raw
+   copy shows none; photographs are said in words, because the product does not
+   serve a Collector's photographs. A grading pair that contradicts itself
+   shows both halves, as Inventory does. What a Collector keeps private —
+   their value, whether they keep a card, where they file it — never reached
+   this projection, and this reads nothing else. */
+function CopyLine({ copy, known }) {
+  const standing = copyStanding(copy);
+  const title = (known && text(known.cardName))
+    || (copy.canonicalCardId ? "A card MetYet is still describing" : "A card MetYet can't describe");
+  const conflict = gradeConflictLine(copy);
+  const cert = isGraded(copy) ? text(copy.cert) : null;
+  const photos = photoNote(copy.photos);
+  return (
+    <li data-copy={copy.id}>
+      <span className="tps-sub-t">{title}</span>
+      {printingLine(known) ? <span className="tps-sub-s">{printingLine(known)}</span> : null}
+      <Tag>{gradeLine(copy)}</Tag>
+      {conflict ? <Tag tone="unknown">{`Says ${conflict}`}</Tag> : null}
+      {standing && standing.label ? <Tag tone="strong">{standing.label}</Tag> : null}
+      {cert ? <span className="tps-sub-n">{`Cert ${cert}`}</span> : null}
+      {photos ? <span className="tps-sub-n">{`Photos: ${photos.toLowerCase()}`}</span> : null}
+    </li>
+  );
+}
+
 export default function CollectorNetwork({ state, onInvite = null, onRevokeInvite = null,
   onRefresh = null, onBrowseCards = null }) {
   const collectors = rows(state && state.collectors);
@@ -149,8 +193,14 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
      because the server decided this partner may see them; the names are asked
      for once, for the set. Never one request per goal, and never the catalogue.
      This is demand made legible, not a match: nothing here looks at inventory,
-     and no opportunity is created by reading it. */
-  const wantedIds = [...new Set(rows(state && state.goals)
+     and no opportunity is created by reading it.
+
+     THE COPIES THEY OFFER RIDE IN THE SAME REQUEST (M3A A2). A copy names its
+     printing by `canonicalCardId` only, so its name, set and number are asked
+     for alongside the goals' — still one request for the set, never one per
+     row, and only for copies this screen will actually show. */
+  const shownCopies = rows(state && state.collectorCopies).filter((b) => copyStanding(b));
+  const wantedIds = [...new Set([...rows(state && state.goals), ...shownCopies]
     .map((g) => g.canonicalCardId).filter(Boolean))];
   const [wanted, setWanted] = useState({});
   useEffect(() => {
@@ -167,7 +217,7 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
     })();
     return () => { current = false; };
   }, [wantedIds.join(","), onBrowseCards]);
-  const copiesOf = groupBy(state && state.collectorCopies, "collectorId");
+  const copiesOf = groupBy(shownCopies, "collectorId");
   const oppsOf = groupBy(state && state.opportunities, "collectorId");
 
   /* Most recently in contact first, when that is known; the rest keep the
@@ -515,10 +565,17 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
         {ordered.map((c) => {
           const rel = relationshipOf.get(c.id) || null;
           const goals = goalsOf.get(c.id) || [];
-          /* Only the copies this Collector is OFFERING reach a partner at all
-             (C2) — the projection dropped the rest, so this is a count of
-             supply, not of what they own. */
-          const offeredCopies = copiesOf.get(c.id) || [];
+          /* THEIR TRADE/SELL COPIES, AS THE SERVER STANDS THEM FOR YOU (M3A A2).
+             Only copies this Collector is OFFERING reach a partner as supply
+             (C2) — the projection dropped PC and unstated copies, and every
+             copy of a Collector outside your network. What arrives is split by
+             the projection's own `status`, never recomputed here: available
+             copies are supply and are what the count says; copies one of YOUR
+             deals is considering or holding are context, shown apart and never
+             counted. Traded and unavailable copies are not shelf at all. */
+          const copies = byRecency(copiesOf.get(c.id) || [], "addedAt");
+          const supply = copies.filter((b) => copyStanding(b).supply);
+          const inYourDeals = copies.filter((b) => !copyStanding(b).supply);
           const live = (oppsOf.get(c.id) || []).filter((o) => o.stage !== "completed");
           const prefs = rows(c.prefs).map(text).filter(Boolean);
 
@@ -536,10 +593,12 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
                   <Fact label="Last contact" value={day(rel && rel.last)} mono />
                   <Fact label="Cards reviewed" value={day(rel && rel.binderReviewedAt)} mono />
                   <Fact label="Goals" value={goals.length ? String(goals.length) : null} mono />
-                  {/* COPIES, NOT CARDS. `offeredCopies` counts physical
-                      objects: a Collector offering two copies of one card is
-                      offering two things, and this number says so. */}
-                  <Fact label="Copies offered" value={offeredCopies.length ? String(offeredCopies.length) : null} mono />
+                  {/* COPIES, NOT CARDS. `supply` counts physical objects: a
+                      Collector offering two copies of one card is offering two
+                      things, and this number says so. It is exactly the rows
+                      listed under "Available to trade" — nothing a deal is
+                      considering or holding inflates it (M3A A2). */}
+                  <Fact label="Available to trade" value={supply.length ? String(supply.length) : null} mono />
                   <Fact label="In progress" value={live.length ? String(live.length) : null} mono />
                 </>
               }
@@ -583,6 +642,19 @@ export default function CollectorNetwork({ state, onInvite = null, onRevokeInvit
                       </li>
                     );
                   })}
+                </ul>
+              ) : null}
+
+              {supply.length ? (
+                <ul className="tps-sub tps-copies" aria-label={`${nameOf(c)}'s cards available to trade`}>
+                  <li><span className="tps-fact-l">Available to trade</span></li>
+                  {supply.map((b) => <CopyLine key={b.id} copy={b} known={wanted[b.canonicalCardId]} />)}
+                </ul>
+              ) : null}
+              {inYourDeals.length ? (
+                <ul className="tps-sub tps-copies" aria-label={`${nameOf(c)}'s cards in your deals`}>
+                  <li><span className="tps-fact-l">In your deals</span></li>
+                  {inYourDeals.map((b) => <CopyLine key={b.id} copy={b} known={wanted[b.canonicalCardId]} />)}
                 </ul>
               ) : null}
             </Record>
