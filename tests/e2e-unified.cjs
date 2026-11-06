@@ -556,8 +556,8 @@ describe("J. Select Trade across personas", () => {
     const opp = S(r).opportunities.find((o) => o.collectorId === CASEY && o.stage === "select-trade");
     /* CONTRACT CHANGE: the "Your cards" preamble was removed as redundant, so the
        panel is located by the grouped card list it actually contains. */
-    const panel = cls(r, "sec").find((n) => cls(n, "gs-row").length > 0
-      || /Cards you offered|Trade Binder/.test(txt(n)));
+    /* RESTATED (M3A A1P): the Collector's panel shows the partner's choice. */
+    const panel = cls(r, "sec").find((n) => /Cards they've chosen|looking at your Trade\/Sell cards/.test(txt(n)));
     assert(panel, "the Select Trade panel is rendered");
 
     /* Money and private value must not appear on this stage. */
@@ -568,7 +568,7 @@ describe("J. Select Trade across personas", () => {
       "no private valuation leaked into Select Trade"));
 
     const proposed = (opp.trade.cards || []).map((c) => c.binderId).filter(Boolean);
-    assert(proposed.length > 0, "copies were proposed");
+    assert(proposed.length > 0, "copies were chosen");
 
     switchTo(r, "Trusted Partner");
     const tp = S(r).opportunities.find((x) => x.id === opp.id);
@@ -576,11 +576,13 @@ describe("J. Select Trade across personas", () => {
       "the TP sees the EXACT same BinderCopy ids");
     proposed.forEach((id) => assert(S(r).collectorCopies.some((b) => b.id === id || b.cardId === id),
       "each resolves to a real canonical record: " + id));
-    /* Interest orders eligibility but never gates it. */
-    const groups = casey(r).tradeGroups(SELF, opp);
-    eq(groups.interested.length + groups.other.length,
-      casey(r).myCopies().filter((b) => !new Set(proposed).has(b.id)).length,
-      "every remaining copy is eligible, interested or not");
+    /* RESTATED (M3A A1P): the partner chooses, and only from the Collector's
+       own Trade/Sell copies — interest orders nothing here any more. */
+    proposed.forEach((id) => {
+      const b = S(r).collectorCopies.find((x) => x.id === id);
+      assert(b && b.collectorId === opp.collectorId && b.offered === true,
+        "every chosen copy is one of theirs offered as Trade/Sell: " + id);
+    });
   });
 });
 

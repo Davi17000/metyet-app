@@ -526,7 +526,8 @@ function validateWorld(state) {
   }
 
   /* ---------------------------------------------------------- OPPORTUNITIES */
-  const holders = { goal: new Map(), committed: new Map(), sold: new Map() };
+  const holders = { goal: new Map(), committed: new Map(), sold: new Map(),
+    copyExclusive: new Map(), copyTraded: new Map() };
   const hold = (map, key, oppId) => map.set(key, [...(map.get(key) || []), oppId]);
 
   const allOpportunities = C.opportunities.map(([o]) => o);
@@ -621,16 +622,8 @@ function validateWorld(state) {
     const rowIds = new Set();
     /* M3A A1: one LIVE row per copy per deal. A copy withdrawn and then selected
        again carries two rows — the withdrawn one as history, the new one live —
-       but never two live ones.
-
-       WHAT IS DELIBERATELY NOT CHECKED HERE YET: a Collector copy reserved or
-       committed by more than one active deal. The commands make that state
-       unreachable — `selectTradeCards` and `closeTradeSelection` refuse a copy
-       another deal holds exclusively, and `acceptDeal` re-asserts it — but the
-       prototype's demo seed (`buildCanonicalSeed`, src/MetYet.jsx) still
-       fabricates two of one Collector's deals holding the same copies, the same
-       reason the old one-hold-per-copy check was never added. The whole-world
-       check joins this file when A1P corrects that seed. */
+       but never two live ones. Exclusive holds are counted across deals below
+       (M3A A1P). */
     const liveCopies = new Set();
     list(cards).forEach((row, j) => {
       if (isObject(row) && !blank(row.binderId) && D.TRADE.liveRow(row)) {
@@ -639,6 +632,10 @@ function validateWorld(state) {
             `${who} holds collector copy "${row.binderId}" in more than one live trade row.`);
         }
         liveCopies.add(row.binderId);
+        /* Who holds this copy exclusively, counted across deals below. */
+        const st = D.binderRowState(o, row);
+        if (active && (st === "reserved" || st === "committed")) hold(holders.copyExclusive, row.binderId, o.id);
+        if (D.isCompleted(o) && st === "committed") hold(holders.copyTraded, row.binderId, o.id);
       }
       const rp = `${path}.trade.cards[${j}]`;
       if (!isObject(row)) { report("record.not-object", rp, `${rp} must be an object.`); return; }
@@ -703,6 +700,31 @@ function validateWorld(state) {
     (i, ids) => `InventoryCopy "${i}" is committed to ${ids.length} active opportunities (${ids.join(", ")}).`);
   once(holders.sold, "invariant.copy-sold-once",
     (i, ids) => `InventoryCopy "${i}" was sold by ${ids.length} completed opportunities (${ids.join(", ")}).`);
+  /* SELECTED BY MANY, HELD BY ONE (M3A A1P). A Collector copy may be SELECTED by
+     any number of active deals — selection is not a hold — but RESERVED (Value
+     Trade, Deal) or COMMITTED (final agreement) by at most one. A copy a
+     completed deal TRADED is gone: no other deal traded it too, and no active
+     deal may still RESERVE or COMMIT it. Another deal may still SELECT it — it
+     was selected there before this deal reserved it, and selection is not a
+     hold, so the completion is legitimate; that deal simply cannot close over
+     it (closeTradeSelection refuses copy-unavailable) until the partner
+     deselects it or the Collector withdraws it. Clearing such stale selections
+     automatically is a separate lifecycle decision. The commands make all of this
+     unreachable (selectTradeCards, closeTradeSelection and acceptDeal check
+     it under the world lock); this is the whole-world statement of it, so a
+     hand-built, imported or migrated world that breaks it is refused rather
+     than stored. */
+  once(holders.copyExclusive, "invariant.collector-copy-exclusive-once",
+    (b, ids) => `Collector copy "${b}" is reserved or committed by ${ids.length} active opportunities (${ids.join(", ")}); a copy is held by one deal at a time.`);
+  once(holders.copyTraded, "invariant.collector-copy-traded-once",
+    (b, ids) => `Collector copy "${b}" was traded by ${ids.length} completed opportunities (${ids.join(", ")}).`);
+  for (const [b, traded] of holders.copyTraded) {
+    const held = holders.copyExclusive.get(b) || [];
+    if (held.length) {
+      report("invariant.collector-copy-traded-in-use", "opportunities",
+        `Collector copy "${b}" was traded by ${traded.join(", ")} but is still reserved or committed by active opportunities (${held.join(", ")}).`);
+    }
+  }
 
 
   /* ---------------------------------------------------------- CONVERSATIONS */

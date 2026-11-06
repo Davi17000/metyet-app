@@ -323,9 +323,12 @@ describe("C. Demo progression uses only real moves", () => {
     const src = code(COL).slice(code(COL).indexOf("function DemoPartnerResponse("),
       code(COL).indexOf("function SimulateTP("));
     assert(/const A = st\.simulate;/.test(src), "it uses the canonical action set");
-    ["agreePrice", "reviewTradeCards", "tradeMarketRespond", "tradePercentRespond",
+    /* RESTATED (M3A A1P): the partner's Select Trade moves are selectTradeCards
+       and closeTradeSelection; the retired review is gone. */
+    ["agreePrice", "selectTradeCards", "closeTradeSelection", "tradeMarketRespond", "tradePercentRespond",
       "dealAdjustRespond", "dealAgree", "proposeFulfillment", "confirmHandoff"]
       .forEach((a) => assert(new RegExp("A\\." + a + "\\(").test(src), a + " is canonical"));
+    assert(!/A\.reviewTradeCards\(/.test(src), "and the retired review is not called");
     assert(!/patchOpportunity/.test(src), "and nothing is patched directly");
     assert(!/stage:/.test(src), "no stage is written");
   });

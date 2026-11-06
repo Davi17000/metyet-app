@@ -198,7 +198,9 @@ describe("E. Every settlement surface uses it", () => {
     ["Price you agreed", "Agreed market value", "Agreed Trade %", "Trade value",
       "Total trade value", "Calculated cash balance"].forEach((line) =>
       assert(rec.includes(line), "the receipt keeps: " + line));
-    assert(/<DealReceipt o=\{o\} st=\{st\} them=\{them\} \/>/.test(col),
+    /* RESTATED (M3A A1P final corrections): the Deal stage also hands the
+       receipt its per-card withdraw control, which Fulfillment never does. */
+    assert(/<DealReceipt o=\{o\} st=\{st\} them=\{them\}( onWithdraw=\{[^}]+\})? \/>/.test(col),
       "and the deal stage renders it");
   });
 

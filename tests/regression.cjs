@@ -68,9 +68,12 @@ describe("Stage workspaces keep their controls", () => {
   });
 
   test("Select Trade still reviews the proposed package", () => {
+    /* RESTATED (M3A A1P): Alex is ready, so the partner's final review offers
+       a per-card Deselect and the close; nothing is "accepted into" a trade. */
     const r = at("Alex Trinh", "Select Trade");
-    assert(btns(r, "Accept into trade").length >= 1, "inclusion decision");
-    assert(btns(r, "Reject").length >= 1, "rejection decision");
+    assert(btns(r, "Deselect").length >= 1, "inclusion decision");
+    assert(btns(r, "Start valuing").length === 1, "rejection decision");
+    eq(btns(r, "Accept into trade").length, 0, "the retired review is gone");
   });
 
   test("Value Trade still settles market value and percentage", () => {
@@ -332,7 +335,7 @@ describe("Card display survives missing artwork", () => {
     const r = render();
     goProfile(r, "Ellen Fisher");
     failImages(r);
-    eq(byClass(r, "cp-bind").length, 6, "every card still renders");
+    eq(byClass(r, "cp-bind").length, 6, "every card still renders");   // RESTATED (M3A A1P final corrections): traded copies are history, not shelf
     const toggle = byClass(r, "cp-bind-x")[0];
     const was = toggle.props["aria-pressed"];
     click(toggle);

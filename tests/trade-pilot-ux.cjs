@@ -338,10 +338,13 @@ describe("F. Select Trade keeps its canonical paths", () => {
   });
 
   test("proposed cards still use the canonical factory", () => {
-    /* PHASE 1: the Collector submits exact binder ids through the canonical
-       command; the command builds each row with the shared factory. */
+    /* RESTATED (M3A A1P): the Collector no longer submits cards — the partner
+       selects, through the canonical command, which builds each row with the
+       shared factory. The Collector's two statements are canonical commands. */
     const active = code(COL);
-    assert(/exec\("proposeTradeSelection"/.test(active), "the canonical submission command");
+    assert(!/exec\("proposeTradeSelection"/.test(active), "the retired submission is gone");
+    assert(/exec\("holdTradeSelection"/.test(active) && /exec\("continueTradeSelection"/.test(active),
+      "the canonical submission command");
     assert(!/inclusion: "proposed"/.test(active), "not a hand-built reduced object");
     const cmds = code(fs.readFileSync(path.join(ROOT, "domain", "metyet-commands.js"), "utf8"));
     assert(/D\.emptyTradeCard\(/.test(cmds), "the shared factory");

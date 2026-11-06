@@ -132,7 +132,7 @@ describe("A. The dedicated inline shell", () => {
     assert(/<DealChat o=\{o\}/.test(w), "and the canonical conversation");
     assert(/const register = useCallback/.test(w), "with the same registration contract");
     ["patchOpportunity", "endOpportunity", "startOpportunity", "appendThreadEntry",
-     "submitTrade", "confirmHandoff"].forEach((fn) =>
+     "submitTrade", "continueTrade", "holdTrade", "confirmHandoff"].forEach((fn) =>
       assert(!new RegExp("st\\." + fn + "\\(").test(w),
         fn + " is not called from the layout wrapper"));
   });
@@ -256,8 +256,10 @@ describe("F. Behaviour is unchanged", () => {
     eq(D.activeOppForGoal(g.id, S().opportunities).id, o.id, "the same opportunity");
     eq(S().opportunities.length, oppsBefore, "and no second one");
     const go = cls(card, "idf-action")[0].findAllByType("button")[0];
-    assert(go && /for review/.test(txt(go)), "the registered canonical action renders");
-    assert(/run: \(\) => st\.submitTrade\(o\.id, picked\)/.test(SRC),
+    /* RESTATED (M3A A1P): the Collector's registered Select Trade action is
+       "ready — they can finish choosing", on the Collector's own turn. */
+    assert(go && /they can finish choosing/.test(txt(go)), "the registered canonical action renders");
+    assert(/run: \(\) => st\.continueTrade\(o\.id\)/.test(SRC),
       "driving the same handler as before");
   });
 

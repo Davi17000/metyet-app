@@ -244,7 +244,7 @@ describe("C. Stage details are canonical and leak nothing", () => {
     const w = SRC.slice(SRC.indexOf("function StageDetails("), SRC.indexOf("function InlineDeal("));
     assert(/D\.receiptForOpportunity\(o,/.test(w), "it reads the canonical receipt");
     assert(!/useState|useReducer/.test(w), "holding no state of its own");
-    ["patchOpportunity", "submitTrade", "confirmHandoff", "sendMessage", "endOpportunity"]
+    ["patchOpportunity", "submitTrade", "continueTrade", "holdTrade", "confirmHandoff", "sendMessage", "endOpportunity"]
       .forEach((fn) => assert(!new RegExp("st\\." + fn + "\\(").test(w),
         fn + " is not called from a presentation column"));
   });
@@ -275,9 +275,11 @@ describe("D. Action, conversation and ending", () => {
   });
 
   test("the canonical handler and registration are untouched", () => {
-    assert(/register\(!o\.trade\.submitted && eligible\.length/.test(SRC),
+    /* RESTATED (M3A A1P): Select Trade registers the Collector's "ready" —
+       their one bar action in TP-led selection — on their own turns. */
+    assert(/register\(ready/.test(SRC),
       "Select Trade still registers its action");
-    assert(/run: \(\) => st\.submitTrade\(o\.id, picked\)/.test(SRC), "same handler");
+    assert(/run: \(\) => st\.continueTrade\(o\.id\)/.test(SRC), "same handler");
   });
 
   test("one conversation; sending changes no stage or turn", () => {

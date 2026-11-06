@@ -320,7 +320,9 @@ describe("E. The rule lives in one place, and no shortcut exists", () => {
     const reads = (src.match(/o\.stage === "/g) || []).length;
     assert(reads > 0, "it reads the stage to choose a valid response (" + reads + " checks)");
     assert(!/inclusion:/.test(src), "and never patches acceptance directly");
-    assert(/A\.reviewTradeCards\(/.test(src), "it calls the canonical review");
+    /* RESTATED (M3A A1P): the canonical partner moves are now TP-led selection. */
+    assert(/A\.selectTradeCards\(/.test(src) && /A\.closeTradeSelection\(/.test(src), "it calls the canonical review");
+    assert(!/A\.reviewTradeCards\(/.test(src), "and not the retired one");
   });
 
   /* RESTATED (M3A A1): parity between the store's binding and a direct

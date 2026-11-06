@@ -342,8 +342,11 @@ describe("The private reference value stays private until submitted", () => {
     const add = btns(r, "+ ").find((b) => text(b).includes("N (Full Art)"));
     assert(add, "the binder copy is eligible");
     click(add);
-    click(btns(r, "Send package for review")[0]);
-    btns(r, "Accept into trade").forEach((b) => click(b));
+    /* RESTATED (M3A A1P): TP-led selection — the partner sends the card, the
+       Collector (DEV seat) says they're ready, and the partner starts valuing. */
+    click(btns(r, "Send 1 card to")[0]);
+    click(btns(r, "Ready — you can finish choosing")[0]);
+    click(btns(r, "Start valuing 1 card")[0]);
     return r;
   };
   const marketBlock = (r) => byClass(r, "pn")
@@ -372,7 +375,7 @@ describe("The private reference value stays private until submitted", () => {
     click(btns(r, "Open").filter((b) => text(b).trim() === "Open")[0]);
     click(btns(r, "Accept $")[0]);
     click(btns(r, "+ ").find((b) => b && text(b).includes("N (Full Art)")));
-    click(btns(r, "Send package for review")[0]);
+    click(btns(r, "Send 1 card to")[0]);   // RESTATED (M3A A1P): the partner's selection
     const review = byClass(r, "st-card").map(text).join(" ");
     assert(!review.includes(String(PRIVATE)), "not in the review card: " + review.slice(0, 140));
     assert(!/Collector value/.test(review), "and no value label");
@@ -435,6 +438,81 @@ describe("The private reference value stays private until submitted", () => {
     eq(tp.findAllByType("input").map((i) => i.props.value).join(""), "",
       "the TP starts from empty and evaluates independently");
     assert(text(tp).includes("Accept $480"), "with their existing accept action intact");
+  });
+});
+
+/* ============================================================================
+   M3A A1P FINAL CORRECTIONS — the Collector's withdrawal, seen from the partner.
+   Driven through an injected canonical store so the deal can be put exactly
+   where the case needs it; every write is a canonical command. */
+describe("Withdrawal and the Deal reset, from the partner's seat (M3A A1P)", () => {
+  const React = require("react");
+  const MetYet = require("../dist/MetYet.cjs").default;
+  const { buildCanonicalSeed } = require("../dist/MetYet.cjs");
+  const { createStore } = require("../domain/metyet-store.js");
+  const D = require("../domain/metyet-domain.js");
+  const AT = "2026-11-05";
+  const setup = () => {
+    const store = createStore(buildCanonicalSeed());
+    const o = () => store.get().opportunities.find((x) => x.id === "o14");
+    const C = { collectorId: o().collectorId }, T = { partnerId: o().partnerId };
+    const x = (a, cmd, p) => store.execute(a, cmd, { at: AT, oppId: "o14", ...p });
+    /* Value every card: try each move in turn; the domain refuses whatever is
+       not this seat's move yet, so only legal moves are written. */
+    for (let n = 0; n < 30 && o().stage === "value-trade"; n++) {
+      for (const row of D.TRADE.liveTradeRows(o())) {
+        const id = { tradeCardId: row.id };
+        if (row.agreedMarket == null) {
+          x(C, "proposeMarketValue", { ...id, amount: 400 }); x(T, "acceptMarketValue", id); x(C, "acceptMarketValue", id);
+        } else if (row.agreedPercent == null) {
+          x(T, "proposeTradePercent", { ...id, percent: 0.8 }); x(C, "acceptTradePercent", id); x(T, "acceptTradePercent", id);
+        }
+      }
+    }
+    eq(o().stage, "deal", "o14 reached Deal");
+    let r; TR.act(() => { r = TR.create(React.createElement(MetYet, { store })); });
+    goProfile(r, "Ellen Fisher");
+    const opens = btns(r, "Open").filter((b) => text(b).trim() === "Open");
+    for (const b of opens) { click(b); if (/Final negotiation/.test(allText(r))) break; }
+    assert(/Final negotiation/.test(allText(r)), "the partner's Deal view is open");
+    return { r, store, o, T, x };
+  };
+
+  test("the Collector's simulator withdraws one card in Deal; the partner sees the reset, not a phantom proposal", () => {
+    const { r, o, T, x } = setup();
+    x(T, "proposeFinalBalance", { amount: 250 });
+    x(T, "acceptDeal", {});
+    eq(o().deal.tpAgreed, true, "the partner had agreed");
+    const wd = btns(r, "from this deal").filter((b) => /^Withdraw .+ from this deal$/.test(text(b).trim()));
+    eq(wd.length, D.TRADE.liveTradeRows(o()).length, "one simulator control per card");
+    click(wd[0]);
+    eq(o().stage, "deal", "still in Deal with the other card");
+    eq(o().deal.tpAgreed, false, "the partner's agreement was cleared");
+    const t = allText(r);
+    assert(/withdrew a card, so the balance changed/.test(t), "the partner is told why: " + t.slice(0, 200));
+    assert(/No final adjustment proposed/.test(t), "the reset is not read as a standing figure");
+    assert(!/proposed undefined|NaN/.test(t), "no figure without an amount");
+    eq(text(btnExact(r, "Agree to this deal")) , "Agree to this deal", "the partner confirms again");
+    click(btnExact(r, "Agree to this deal"));
+    eq(o().deal.tpAgreed, true, "and can");
+  });
+
+  test("Value Trade: the simulator's withdraw sits in the expanded row, and is gone once the card is out", () => {
+    const store = createStore(buildCanonicalSeed());
+    let r; TR.act(() => { r = TR.create(React.createElement(MetYet, { store })); });
+    goProfile(r, "Ellen Fisher");
+    const opens = btns(r, "Open").filter((b) => text(b).trim() === "Open");
+    for (const b of opens) { click(b); if (byClass(r, "vt-exp").length) break; }
+    const o = store.get().opportunities.find((x2) => x2.id === "o14");
+    eq(o.stage, "value-trade", "o14 in Value Trade");
+    click(byClass(r, "vt-exp")[0]);
+    const wd = btnExact(r, "Withdraw from this deal");
+    assert(wd, "the Collector's withdraw, in the simulator");
+    const before = D.TRADE.liveTradeRows(o).length;
+    click(wd);
+    eq(D.TRADE.liveTradeRows(store.get().opportunities.find((x2) => x2.id === "o14")).length, before - 1, "one card withdrawn");
+    assert(/during Value Trade/.test(allText(r)), "the row records where");
+    eq(btns(r, "Withdraw from this deal").length, 0, "and its control is gone with it");
   });
 });
 

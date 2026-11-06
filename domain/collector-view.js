@@ -279,10 +279,11 @@ function collectorView(state, meId) {
     return threadsForCard(g.cardId);
   };
 
-  /* RETIRED WORKFLOW (M3A A1): this fed the Collector-side package picker of
-     the Collector-proposes selection, which `proposeTradeSelection` no longer
-     accepts. It stays only so the dev prototype keeps rendering until A1P
-     replaces that screen with TP-led selection; nothing new should read it.
+  /* RETIRED WORKFLOW (M3A A1; no screen reads it since A1P). This fed the
+     Collector-side package picker of the Collector-proposes selection, which
+     `proposeTradeSelection` no longer accepts; both prototypes now use TP-led
+     selection. It remains only because older suites still pin its interest
+     ordering; retire it with them. Nothing new should read it.
 
      Select Trade eligibility: EVERY copy is eligible. Partner interest orders
      the two groups; it never gates them. */

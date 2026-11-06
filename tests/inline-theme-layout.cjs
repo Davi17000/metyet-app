@@ -184,7 +184,8 @@ describe("Exactly one primary stage action", () => {
 
   test("the duplication was removed at source, not hidden with CSS", () => {
     /* Each stage now defers to the registration when the shell will present it. */
-    ["st.submitTrade(o.id, picked)", "st.confirmHandoff(o.id)"].forEach((handler) => {
+    /* RESTATED (M3A A1P): Select Trade's registered handler is now "ready". */
+    ["st.continueTrade(o.id)}", "st.confirmHandoff(o.id)"].forEach((handler) => {
       const ix = SRC.indexOf(handler);
       const before = SRC.slice(Math.max(0, ix - 400), ix);
       assert(/!register/.test(before),
@@ -195,16 +196,19 @@ describe("Exactly one primary stage action", () => {
   });
 
   test("the canonical handler and registration are unchanged", () => {
-    assert(/register\(!o\.trade\.submitted && eligible\.length/.test(SRC),
+    /* RESTATED (M3A A1P): Select Trade registers the Collector's "ready" —
+       their one bar action in TP-led selection — on their own turns. */
+    assert(/register\(ready/.test(SRC),
       "Select Trade still registers its action");
-    assert(/run: \(\) => st\.submitTrade\(o\.id, picked\)/.test(SRC),
+    assert(/run: \(\) => st\.continueTrade\(o\.id\)/.test(SRC),
       "driving the same canonical handler");
     const r = mk();
     const o = oppAt("select-trade");
     const card = expand(r, goalOf(o));
     const go = cls(card, "idf-action")[0].findAllByType("button")[0];
     assert(go, "the bar presents the action");
-    assert(/for review/.test(txt(go)), "with the stage's own label");
+    /* RESTATED (M3A A1P): the Collector's Select Trade label is now "ready". */
+    assert(/they can finish choosing/.test(txt(go)), "with the stage's own label");
   });
 });
 

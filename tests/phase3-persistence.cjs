@@ -33,6 +33,7 @@ const fs = require("fs");
 const path = require("path");
 const { PGlite } = require("@electric-sql/pglite");
 const C = require("../domain/metyet-commands.js");
+const D = require("../domain/metyet-domain.js");
 const RT = require("../domain/metyet-runtime.js");
 const { createStore } = require("../domain/metyet-store.js");
 const { projectForActor } = require("../domain/metyet-projection.js");
@@ -418,7 +419,16 @@ describe("B. round-trip fidelity", () => {
     eq(refs.length, tradeRows.length, "one ref row per trade row");
     const shared = (await pg.query(`select binder_id, count(distinct opportunity_id)::int as deals
       from metyet.opportunity_trade_refs group by binder_id having count(distinct opportunity_id) > 1`)).rows;
-    assert(shared.length >= 5, "binder copies referenced by several deals persisted: " + shared.length);
+    /* RESTATED (M3A A1P): the A1P seed no longer reuses copies illegally
+       (two deals holding one copy, or a traded copy back in play), so what is
+       shared now is only what may be — a copy SELECTED by several deals. One
+       such copy is enough to prove the schema does not forbid it. */
+    assert(shared.length >= 1, "binder copies referenced by several deals persisted: " + shared.length);
+    for (const { binder_id } of shared) {
+      const holders = world.opportunities.filter((o) => ((o.trade && o.trade.cards) || [])
+        .some((c) => c.binderId === binder_id && ["reserved", "committed", "traded"].includes(D.binderRowState(o, c))));
+      assert(holders.length <= 1, binder_id + " is held exclusively by at most one deal");
+    }
     const { repo: r2, pg: pg2 } = await fresh();
     await r2.saveWorld(seed());
     await drive(r2, DEAL.slice(0, 5));

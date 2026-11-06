@@ -203,10 +203,11 @@ describe("C. Identity: a negotiation belongs to a row", () => {
 
   test("inclusion and removal address rows too", () => {
     const tp = code(TP);
-    assert(/const tpReviewInclusion = \(oppId, rowId, action\)/.test(tp),
-      "review is per row");
-    assert(/const tradeRemoveCard = \(oppId, rowId\)/.test(tp), "as is removal");
-    assert(/tpReviewInclusion\(opp\.id, tc\.id,/.test(tp), "and the call sites pass it");
+    /* RESTATED (M3A A1P): the partner's per-row decision is now deselection,
+       and the Collector's per-row retraction is withdrawal. */
+    assert(/const tpDeselect = \(oppId, rowId\)/.test(tp), "review is per row");
+    assert(/const collectorWithdrawCard = \(oppId, rowId\)/.test(tp), "as is removal");
+    assert(/tpDeselect\(opp\.id, tc\.id\)/.test(tp), "and the call sites pass it");
   });
 
   /* RESTATED (M3A A1). WAS: the partner's review of one Collector-proposed row

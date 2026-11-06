@@ -143,8 +143,9 @@ describe("C. The simulator takes actions now", () => {
   const sim = () => code(COL).slice(code(COL).indexOf("function SimulateTP("),
     code(COL).indexOf("function SimulateTP(") + 4500);
 
+  /* RESTATED (M3A A1P): the simulator's partner moves are TP-led selection. */
   test("trade review goes through the canonical action", () => {
-    assert(/A\.reviewTradeCards\(\{ oppId: o\.id, decision: "accepted", at: AT \}\)/
+    assert(/A\.selectTradeCards\(\{ oppId: o\.id \}\)/.test(sim()) && /A\.closeTradeSelection\(\{ oppId: o\.id \}\)/
       .test(sim()), "the review is an action");
     assert(!/inclusion: "accepted"/.test(sim()), "and the field is never written");
   });

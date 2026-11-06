@@ -42,6 +42,9 @@ function mount(n, flagged, opts) {
   const ctx = {
     card: (id) => cards.find((c) => c.id === id),
     get collectorCards() { return state.collectorCopies; },
+    /* RESTATED (M3A A1P final corrections): the binder reads the shelf — every
+       copy but one a completed trade handed over (status "traded"). */
+    get binderCards() { return state.collectorCopies.filter((cc) => cc.status !== "traded"); },
     // the section carries a collector-side demo control; the stub supplies what it reads
     collector: () => ({ short: "Test C.", name: "Test Collector" }),
     setModal: () => {},

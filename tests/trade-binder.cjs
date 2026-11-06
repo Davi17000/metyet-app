@@ -68,6 +68,11 @@ describe("Trade Binder — placement on the Collector Profile", () => {
   });
 });
 
+/* RESTATED (M3A A1P) — BINDER COUNTS. Each completed trade now traded copies
+   of its own (TRADED_COPIES_SEED in src/MetYet.jsx) instead of the copies the
+   same Collector's live deals still held. Those copies are history, not shelf
+   (A1P final corrections): the Trade Binder lists only copies that can still
+   be traded, so Alex (2) and James (5) keep their pre-A1P counts. */
 describe("Trade Binder — shows everything the collector shared", () => {
   test("Alex Trinh shows his existing binder cards", () => {
     const r = render();
@@ -203,33 +208,40 @@ describe("Trade Binder — standing interest writes to tpInterest", () => {
 });
 
 describe("Select Trade — eligibility still derives from tpInterest", () => {
-  /* PHASE 1 (contract §4): a copy is offered into a package only if it is
-     flagged Open to trade AND available — not reserved or committed in another
-     active Opportunity, and not already Traded. Every flagged copy James Rivera
-     holds is now unavailable, so this uses Ellen Fisher, whose binder has all
-     four cases: flagged + available, flagged + committed, flagged + traded, and
-     unflagged. */
+  /* RESTATED (M3A A1P). TP-led selection: the partner chooses from ALL of the
+     Collector's Trade/Sell copies that no other deal holds (reserved, committed
+     or traded) — "selected by many, held by one". Open to trade (tpInterest) is
+     the partner's own standing note; it orders, and no longer gates, what can
+     be chosen. Ellen Fisher's binder still has every case: flagged + free,
+     unflagged + free, and copies held by other deals. Because each completed
+     trade now trades copies of its own (TRADED_COPIES_SEED), Ellen's original
+     Rayquaza V is free again; Boss's Orders and Iono are still held. */
   test("only cards flagged Open to trade are addable in Select Trade", () => {
     const r = render();
     openDraftSelectTrade(r, "Ellen Fisher");
-    assert(allText(r).includes("Add an eligible card"), "reached the Select Trade draft");
-    const names = addable(r).sort();
-    eq(names.join(","), "Charizard V (Alt Art),Umbreon V (Alt Art)",
-      "exactly the flagged copies that are free to offer");
-    assert(!names.includes("Pikachu VMAX"), "the unflagged card must not be addable: " + names.join(","));
-    ["Boss's Orders (Full Art)", "Iono (Full Art)", "Rayquaza V (Alt Art)"].forEach((n) =>
+    assert(/Choose which of Ellen F\.'s Trade\/Sell cards/.test(allText(r)), "reached the Select Trade draft");
+    const names = addable(r).map((n) => n.split(" · ")[0]).sort();
+    eq(names.join(","), "Charizard V (Alt Art),Pikachu VMAX,Rayquaza V (Alt Art),Umbreon V (Alt Art)",
+      "exactly the Trade/Sell copies no other deal holds");
+    assert(names.includes("Pikachu VMAX"), "an unflagged Trade/Sell card is choosable too: " + names.join(","));
+    ["Boss's Orders (Full Art)", "Iono (Full Art)"].forEach((n) =>
       assert(!names.includes(n), n + " is committed or traded elsewhere, so it is not offered"));
   });
 
   test("a flagged copy committed elsewhere is not offered", () => {
     const r = render();
     openDraftSelectTrade(r, "James Rivera");
-    assert(!addable(r).some((n) => ["Electabuzz", "Chansey", "Scyther"].includes(n)),
-      "reserved, committed or traded copies stay out: " + addable(r).join(","));
-    assert(/cash is the only option/.test(allText(r)), "and the screen says why cash is what remains");
+    const names = addable(r).map((n) => n.split(" · ")[0]);
+    assert(!names.some((n) => ["Electabuzz", "Chansey", "Scyther"].includes(n)),
+      "reserved, committed or traded copies stay out: " + names.join(","));
+    /* RESTATED (M3A A1P): what remains is his free Trade/Sell copies, flagged or not. */
+    eq(names.sort().join(","), "Poliwrath,Rayquaza Gold Star", "what remains is his free copies, flagged or not");
   });
 
   test("flagging from the profile makes that card addable afterwards", () => {
+    /* RESTATED (M3A A1P): flagging is no longer what makes a card choosable —
+       Poliwrath is choosable unflagged, and flagging it changes nothing about
+       that. */
     const r = render();
     goProfile(r, "James Rivera");
     const off = toggles(r).filter((b) => b.props["aria-pressed"] === "false");
@@ -238,28 +250,36 @@ describe("Select Trade — eligibility still derives from tpInterest", () => {
     click(poli);
     openOpp(r, 0);
     click(btns(r, "Accept $")[0]);
-    assert(addable(r).includes("Poliwrath"), "newly flagged card became eligible: " + addable(r).join(","));
+    assert(addable(r).some((n) => n.startsWith("Poliwrath")), "a flagged card is eligible: " + addable(r).join(","));
+    const r2 = render();
+    openDraftSelectTrade(r2, "James Rivera");
+    assert(addable(r2).some((n) => n.startsWith("Poliwrath")), "and was eligible unflagged too");
   });
 
   test("unflagging from the profile removes eligibility afterwards", () => {
+    /* RESTATED (M3A A1P): unflagging a free copy leaves it choosable; a held
+       copy stays unchoosable whatever its flag. */
     const r = render();
-    goProfile(r, "James Rivera");
+    goProfile(r, "Ellen Fisher");
     const on = toggles(r).filter((b) => b.props["aria-pressed"] === "true");
-    const name = ["Electabuzz", "Chansey", "Scyther"].find((n) => text(cardOf(on[0])).includes(n));
-    assert(name, "picked a flagged card to unflag");
-    click(on[0]);
+    const chari = on.find((b) => text(cardOf(b)).includes("Charizard V"));
+    assert(chari, "picked a flagged card to unflag");
+    click(chari);
     openOpp(r, 0);
     click(btns(r, "Accept $")[0]);
-    assert(!addable(r).includes(name), name + " should no longer be eligible: " + addable(r).join(","));
+    assert(addable(r).some((n) => n.startsWith("Charizard V")), "an unflagged free card is still eligible: " + addable(r).join(","));
+    assert(!addable(r).some((n) => /Boss's Orders|Iono/.test(n)), "held copies stay out");
   });
 
   test("adding a binder card into a deal keeps its binder identity", () => {
     const r = render();
-    openDraftSelectTrade(r, "Ellen Fisher");   // PHASE 1: James's flagged copies are all unavailable
+    openDraftSelectTrade(r, "Ellen Fisher");
     const first = btns(r, "+ ")[0];
-    const name = text(first).replace("+", "").trim();
+    const name = text(first).replace("+", "").split(" · ")[0].trim();
     click(first);
-    // Select Trade is now a card-review surface rather than a table
+    /* RESTATED (M3A A1P): choosing drafts the card; sending is the partner's
+       canonical selectTradeCards, after which it is reviewed as Selected. */
+    click(btns(r, "Send 1 card to")[0]);
     const review = byClass(r, "st-card").map(text).join(" ");
     assert(review.includes(name), "the added card appears in the review: " + review.slice(0, 120));
     // the binder copy's own photos came with it, which is the continuity that matters here

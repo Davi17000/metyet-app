@@ -359,15 +359,21 @@ describe("Select Trade", () => {
     assert(/open\.filter\(\(b\) => !keen\(b\)\)/.test(fn), "un-flagged copies remain eligible");
   });
 
+  /* RESTATED (M3A A1P). The Collector no longer builds a package: the partner
+     chooses from their Trade/Sell cards. The two picker headings are gone, and
+     what the Collector sees is the partner's choice, in its own groups. */
   test("both groups are offered with the specified headings", () => {
     const src = readSrc("collector/MetYetCollector.jsx");
-    assert(src.includes("They've already shown interest"), "interested heading");
-    assert(src.includes("Other cards from your Trade Binder"), "other heading");
+    assert(!src.includes("They've already shown interest") && src.includes("Cards they've chosen"), "interested heading");
+    assert(!src.includes("Other cards from your Trade Binder") && src.includes("Not in this trade"), "other heading");
   });
 
   test("nothing is pre-selected", () => {
+    /* RESTATED (M3A A1P): nothing is chosen FOR the Collector either — the
+       Collector's Select Trade holds no picking state and submits nothing. */
     const src = readSrc("collector/MetYetCollector.jsx");
-    assert(/useState\(\[\]\);\s*\/\/ never pre-selected/.test(src),
+    const fn = src.slice(src.indexOf("function SelectTrade("), src.indexOf("/* Value Trade — market value"));
+    assert(!/useState/.test(fn) && !/submitTrade|proposeTradeSelection/.test(fn),
       "the collector chooses what to offer");
   });
 
@@ -562,7 +568,9 @@ describe("Concepts are not collapsed together", () => {
 
   test("trade selection carries no valuation", () => {
     const src = readSrc("collector/MetYetCollector.jsx");
-    const fn = src.slice(src.indexOf("submitTrade:"), src.indexOf("marketRespond:"));
+    /* RESTATED (M3A A1P): the Collector's selection bindings are hold/continue. */
+    const fn = src.slice(src.indexOf("holdTrade:"), src.indexOf("marketRespond:"));
+    assert(src.indexOf("holdTrade:") > 0, "the bindings exist");
     assert(!/market|Pct|money/i.test(fn), "selection says what may be included, nothing more");
   });
 });
@@ -912,7 +920,9 @@ describe("Goals: the live deal is legible and honest", () => {
       "the current stage is stated, once, in the summary row");
     /* And the stage-specific wording still drives the workspace itself. */
     click(card.findAllByType("button").find((b) => String(b.props.className || "").includes("goal-deal")));
-    assert(r.root.findAllByType("button").some((b) => /Send .* for review/.test(txt(b))),
+    /* RESTATED (M3A A1P): o9's Select Trade control is now the Collector's
+       "ready", on their look at the partner's choice. */
+    assert(r.root.findAllByType("button").some((b) => /they can finish choosing/.test(txt(b))),
       "landing on the stage's own control");
   });
 
@@ -1396,7 +1406,8 @@ describe("Goal card and Opportunity detail agree", () => {
     dealReceipt(r);
     eq(JSON.stringify(__store.get().get().opportunities.find((o) => o.id === "o9")), before,
       "opening the workspace mutates nothing");
-    assert(r.root.findAllByType("button").some((b) => /Send .* for review/.test(txt(b))),
+    /* RESTATED (M3A A1P): the Collector's "ready" is Select Trade's control. */
+    assert(r.root.findAllByType("button").some((b) => /they can finish choosing/.test(txt(b))),
       "and the stage's own control is still present");
   });
 
@@ -1720,7 +1731,8 @@ describe("Deal Flow presentation", () => {
     click(ray(r).findAllByType("button").find((b) => String(b.props.className || "").includes("goal-deal")));
     const cur = cls(r, "rail-s").find((n) => String(n.props.className).includes("current"));
     assert(txt(cur).includes("Select Trade"), "lands on the canonical current stage");
-    assert(r.root.findAllByType("button").some((b) => /Send .* for review/.test(txt(b))),
+    /* RESTATED (M3A A1P): the Collector's "ready" is Select Trade's control. */
+    assert(r.root.findAllByType("button").some((b) => /they can finish choosing/.test(txt(b))),
       "with that stage's own control");
     eq(JSON.stringify(__store.get().get().opportunities.find((o) => o.id === "o9")), before,
       "and navigating mutates nothing");
@@ -1977,11 +1989,11 @@ describe("Deal workspace mobile shell", () => {
     /* This describes the STANDALONE page, which keeps its own shell classes. */
     const g = cls(r, "dw-guide")[0];
     assert(g, "a guidance block");
-    /* RESTATED (M3A A1): at Select Trade the partner moves first now — they
-       choose from the Collector's Trade/Sell cards — so the canonical guidance
-       is a wait, in plain language. */
-    assert(!/Your move/.test(txt(byClassIn(g, "dw-guide-w")[0])), "whose move");
-    assert(/look at your Trade\/Sell cards/.test(txt(byClassIn(g, "dw-guide-t")[0])),
+    /* RESTATED (M3A A1, again A1P): the partner has chosen from the
+       Collector's Trade/Sell cards (the A1P seed puts o9 on the Collector's
+       look), so the canonical guidance is the Collector's move, in plain language. */
+    assert(/Your move/.test(txt(byClassIn(g, "dw-guide-w")[0])), "whose move");
+    assert(/tell them you're ready/.test(txt(byClassIn(g, "dw-guide-t")[0])),
       "and what is happening, in plain language");
     const src = readSrc("collector/MetYetCollector.jsx");
     assert(/const t = st\.turnFor\(o\)/.test(src), "from the canonical turn selector");
@@ -2006,12 +2018,13 @@ describe("Persistent action bar", () => {
     const src = readSrc("collector/MetYetCollector.jsx");
     /* Stages register their existing handler; the bar renders it. */
     assert(/register\(mine/.test(src), "Agree on Price registers");
-    assert(/run: \(\) => st\.submitTrade\(o\.id, picked\)/.test(src), "Select Trade registers its handler");
+    /* RESTATED (M3A A1P): Select Trade registers the Collector's "ready". */
+    assert(/run: \(\) => st\.continueTrade\(o\.id\)/.test(src), "Select Trade registers its handler");
     assert(/run: \(\) => st\.confirmHandoff\(o\.id\)/.test(src), "Fulfillment registers its handler");
     /* And the bar itself defines no mutation. */
     const bar = src.slice(src.indexOf('className="dw-bar"'), src.indexOf('className="dw-bar"') + 700);
     assert(/onClick=\{bar\.run\}/.test(bar), "the bar presses the registered handler");
-    assert(!/st\.(submitTrade|priceRespond|confirmHandoff|dealAgree)\(/.test(bar),
+    assert(!/st\.(submitTrade|continueTrade|priceRespond|confirmHandoff|dealAgree)\(/.test(bar),
       "and calls no handler of its own");
   });
 
@@ -2019,21 +2032,25 @@ describe("Persistent action bar", () => {
     const r = open(mk());
     /* The bar now holds the stage action alone — chat is no longer a destination. */
     const go = () => cls(r, "idf-action")[0].findAllByType("button")[0];
-    eq(go().props.disabled, true, "nothing to send yet");
-    click(cls(r, "pick")[0]);
-    assert(/Send 1 card for review/.test(txt(go())), "the label comes from the stage");
+    /* RESTATED (M3A A1P): the bar's action is the Collector's "ready"; it is
+       live on their turn and drives continueTradeSelection. */
+    assert(!go().props.disabled, "nothing to send yet");
+    assert(/I'm ready — they can finish choosing/.test(txt(go())), "the label comes from the stage");
     click(go());
-    eq(__store.get().get().opportunities.find((o) => o.id === "o9").trade.submitted, true,
-      "the canonical submission happened");
+    const o9 = __store.get().get().opportunities.find((o) => o.id === "o9");
+    assert(o9.trade.selection.readyAt, "the canonical submission happened");
+    eq(require("../domain/metyet-domain.js").nextActor(o9).reason, "close-selection", "and it is the partner's turn to finish");
   });
 
   test("waiting shows no invalid action", () => {
     const r = open(mk());
-    click(cls(r, "pick")[0]);
     click(cls(r, "idf-action")[0].findAllByType("button")[0]);
     const bar = cls(r, "idf-action")[0];
     assert(byClassIn(bar, "idf-action-wait")[0], "a waiting state replaces the action");
-    assert(/Waiting on Northline/.test(txt(bar)), "naming who we wait on");
+    /* RESTATED (M3A A1P): the column heading above already names the partner,
+       so the bar says what is happening without naming them a second time. */
+    assert(/Waiting on them/.test(txt(bar)) && !/Northline/.test(txt(bar)), "naming who we wait on: " + txt(bar));
+    assert(/Waiting on Northline/.test(txt(cls(r, "idf-h")[0])), "the heading still says who it is");
     eq(bar.findAllByType("button").length, 0, "and nothing false is left pressable");
     /* But the conversation is still right there, composer and all. */
     const chat = cls(r, "chat-embed")[0];
@@ -2128,6 +2145,294 @@ describe("Workspace theme", () => {
       "content is not obscured, and the safe area is respected");
     assert(/\.dw-bar \{[^}]*env\(safe-area-inset-bottom\)/.test(src.replace(/\n/g, "")),
       "the bar itself respects it too");
+  });
+});
+
+/* ============================================================================
+   SELECT TRADE, TP-LED (M3A A1P)
+
+   What the Collector does in Select Trade now that the partner chooses: look
+   at the cards chosen, withdraw any of them, and — only with nothing chosen —
+   continue without trade. And wherever they wait, the deal row names the
+   partner once: the waiting line beside the name never repeats it.
+   ========================================================================== */
+describe("Withdrawal in Value Trade and Deal (M3A A1P final corrections)", () => {
+  const D = require("../domain/metyet-domain.js");
+  const AT = "2026-11-05";
+  const S = () => __store.get();
+  const oppOf = (id) => S().get().opportunities.find((o) => o.id === id);
+  const exec = (actor, cmd, p) => { let res; TR.act(() => { res = S().execute(actor, cmd, { at: AT, ...p }); }); assert(res.ok !== false, cmd + ": " + res.refused); return res; };
+  const C12 = { collectorId: "c12" };
+  const tpOf = (id) => ({ partnerId: oppOf(id).partnerId });
+  /* o9 (Rayquaza) is this Collector's Select Trade deal with several chosen
+     cards: drive it forward through the canonical commands. */
+  const toValueTrade = () => {
+    exec(C12, "continueTradeSelection", { oppId: "o9" });
+    exec(tpOf("o9"), "closeTradeSelection", { oppId: "o9" });
+    eq(oppOf("o9").stage, "value-trade", "o9 in Value Trade");
+    assert(D.TRADE.liveTradeRows(oppOf("o9")).length >= 2, "with several cards");
+  };
+  /* Valuation moves phase by phase across the cards (one turn per deal):
+     the Collector's market values, the partner's answers, then percentages. */
+  const settle = (rows) => {
+    rows.forEach((row) => exec(C12, "proposeMarketValue", { oppId: "o9", tradeCardId: row.id, amount: 100 }));
+    rows.forEach((row) => exec(tpOf("o9"), "acceptMarketValue", { oppId: "o9", tradeCardId: row.id }));
+    rows.forEach((row) => exec(tpOf("o9"), "proposeTradePercent", { oppId: "o9", tradeCardId: row.id, percent: 0.8 }));
+    rows.forEach((row) => exec(C12, "acceptTradePercent", { oppId: "o9", tradeCardId: row.id }));
+  };
+  const openO9 = (r) => {
+    nav(r, "Goals");
+    const card = cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
+    click(card.findAllByType("button").find((b) => String(b.props.className || "").includes("goal-deal")));
+    return r;
+  };
+  const wdButtons = (r) => r.root.findAllByType("button").filter((b) => txt(b).trim() === "Withdraw from this deal");
+  const sheet = (r) => cls(r, "sheet")[0];
+  const copyOf = (bid) => S().get().collectorCopies.find((b) => b.id === bid);
+
+  test("Value Trade: each live card offers it; the sheet explains, and Keep writes nothing", () => {
+    const r = mk(); toValueTrade(); openO9(r);
+    const live = D.TRADE.liveTradeRows(oppOf("o9"));
+    eq(wdButtons(r).length, live.length, "one per live card");
+    click(wdButtons(r)[0]);
+    const t = txt(sheet(r));
+    assert(/^Withdraw .+ from this deal\?/.test(txt(cls(r, "sheet-t")[0])), "titled with the card");
+    for (const line of ["It stays in your Trade/Sell cards", "no longer held for this deal", "stays in this deal's history",
+      "Your other cards keep the values you've agreed."]) assert(t.includes(line), "says: " + line + " — " + t);
+    assert(!/moves on to Deal|last card|cleared/.test(t), "nothing that does not apply: " + t);
+    const before = JSON.stringify(S().get());
+    click(btn(r, "Keep it in the deal"));
+    eq(cls(r, "sheet").length, 0, "closed");
+    eq(JSON.stringify(S().get()), before, "nothing was written");
+  });
+
+  test("Value Trade: confirming withdraws exactly that card; it stays as history and in Trade/Sell", () => {
+    const r = mk(); toValueTrade(); openO9(r);
+    const live = D.TRADE.liveTradeRows(oppOf("o9"));
+    const first = live[0];
+    click(wdButtons(r)[0]);
+    click(r.root.findAllByType("button").find((b) => /^Withdraw .+/.test(txt(b)) && b.props.className === "btn danger"));
+    const row = oppOf("o9").trade.cards.find((c) => c.id === first.id);
+    eq(row.withdrawn, true, "withdrawn");
+    eq(row.withdrawnStage, "value-trade", "where it happened");
+    eq(D.TRADE.liveTradeRows(oppOf("o9")).length, live.length - 1, "only that card");
+    eq(copyOf(first.binderId).offered, true, "still Trade/Sell");
+    eq(D.collectorCopyStatus(first.binderId, S().get().opportunities), "available", "no longer held");
+    const hist = cls(r, "wd-hist");
+    eq(hist.length, 1, "a withdrawn section");
+    assert(/You withdrew it during Value Trade/.test(txt(hist[0])), "names the stage: " + txt(hist[0]));
+    eq(wdButtons(r).length, live.length - 1, "the rest can still be withdrawn");
+  });
+
+  test("Value Trade: when the rest are all agreed, the sheet says the deal moves on, and it does", () => {
+    const r = mk(); toValueTrade();
+    const live = D.TRADE.liveTradeRows(oppOf("o9"));
+    /* Every card valued, every percentage proposed, and all but the first
+       accepted: the first is the only one still open. */
+    live.forEach((row) => exec(C12, "proposeMarketValue", { oppId: "o9", tradeCardId: row.id, amount: 100 }));
+    live.forEach((row) => exec(tpOf("o9"), "acceptMarketValue", { oppId: "o9", tradeCardId: row.id }));
+    live.forEach((row) => exec(tpOf("o9"), "proposeTradePercent", { oppId: "o9", tradeCardId: row.id, percent: 0.8 }));
+    live.slice(1).forEach((row) => exec(C12, "acceptTradePercent", { oppId: "o9", tradeCardId: row.id }));
+    eq(oppOf("o9").stage, "value-trade", "still valuing the first card");
+    openO9(r);
+    click(wdButtons(r)[0]);
+    assert(/They're all agreed already, so the deal moves on to Deal/.test(txt(sheet(r))), "explained: " + txt(sheet(r)));
+    click(r.root.findAllByType("button").find((b) => /^Withdraw .+/.test(txt(b)) && b.props.className === "btn danger"));
+    eq(oppOf("o9").stage, "deal", "moved on to Deal");
+  });
+
+  test("Deal: withdrawing resets the figure and both agreements, and a new final agreement is reachable", () => {
+    const r = mk(); toValueTrade();
+    settle(D.TRADE.liveTradeRows(oppOf("o9")));
+    eq(oppOf("o9").stage, "deal", "in Deal");
+    exec(tpOf("o9"), "proposeFinalBalance", { oppId: "o9", amount: 500 });
+    exec(tpOf("o9"), "acceptDeal", { oppId: "o9" });
+    eq(oppOf("o9").deal.tpAgreed, true, "the partner had agreed");
+    openO9(r);
+    const live = D.TRADE.liveTradeRows(oppOf("o9"));
+    eq(wdButtons(r).length, live.length, "one per card in the receipt");
+    click(wdButtons(r)[0]);
+    const t = txt(sheet(r));
+    assert(/the final cash figure and both agreements are cleared/.test(t) && /confirms again first/.test(t), "explained: " + t);
+    click(r.root.findAllByType("button").find((b) => /^Withdraw .+/.test(txt(b)) && b.props.className === "btn danger"));
+    const o = oppOf("o9");
+    eq(o.stage, "deal", "still in Deal with the other cards");
+    eq([o.deal.tpAgreed, o.deal.collectorAgreed, o.deal.tpAdj, o.deal.agreedAdj].join(","), "false,false,,", "agreements and the $500 figure cleared");
+    const agree = cls(r, "dl-agree")[0];
+    assert(/You\s*Not yet/.test(txt(agree)) && (txt(agree).match(/Not yet/g) || []).length === 2, "both read Not yet: " + txt(agree));
+    assert(/You withdrew it during Deal/.test(txt(cls(r, "wd-hist")[0])), "history names Deal");
+    assert(!/NaN/.test(all(r)), "no NaN anywhere");
+    exec(tpOf("o9"), "acceptDeal", { oppId: "o9" });
+    click(btn(r, "Agree to this deal"));
+    eq(oppOf("o9").stage, "fulfillment", "a new valid final agreement");
+    eq(wdButtons(r).length, 0, "and no withdrawal once agreed");
+  });
+
+  test("the last card: the sheet says so, and the deal goes back to Select Trade", () => {
+    __store.reset(buildCanonicalSeed({ review: true, demoStage: "deal" }));
+    let r; TR.act(() => { r = TR.create(React.createElement(App)); });
+    const o0 = S().get().opportunities.find((o) => o.collectorId === "c12" && o.stage === "deal");
+    eq(D.TRADE.liveTradeRows(o0).length, 1, "one card in the review deal");
+    const cc = require("../domain/collector-view.js").collectorView(S().get(), "c12").cardById(o0.cardId);
+    const row = cls(r, "goal").find((n) => txt(n).startsWith(cc.name + cc.set));
+    click(row.findAllByType("button").find((b) => String(b.props.className || "").includes("goal-deal")));
+    click(wdButtons(r)[0]);
+    assert(/It's the last card in this trade, so the deal goes back to Select Trade/.test(txt(sheet(r))), "explained: " + txt(sheet(r)));
+    click(r.root.findAllByType("button").find((b) => /^Withdraw .+/.test(txt(b)) && b.props.className === "btn danger"));
+    eq(oppOf(o0.id).stage, "select-trade", "back to Select Trade");
+    assert(btn(r, "Continue without trade"), "where cash only is a choice again");
+  });
+
+  test("the phone timeline records the withdrawal in Deal and the reset, with no $NaN", () => {
+    /* MobileDeal is chosen at mount from matchMedia; narrow for this render only. */
+    const had = Object.prototype.hasOwnProperty.call(global, "window");
+    const prev = global.window;
+    global.window = { ...(prev || {}), matchMedia: () => ({ matches: true, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }) };
+    try {
+      const r = mk(); toValueTrade();
+      settle(D.TRADE.liveTradeRows(oppOf("o9")));
+      exec(tpOf("o9"), "proposeFinalBalance", { oppId: "o9", amount: 500 });
+      exec(tpOf("o9"), "acceptDeal", { oppId: "o9" });
+      openO9(r);
+      assert(cls(r, "mdl-now").length > 0, "the phone deal view");
+      const first = D.TRADE.liveTradeRows(oppOf("o9"))[0];
+      const name = require("../domain/collector-view.js").collectorView(S().get(), "c12").cardById(first.cardId).name;
+      click(wdButtons(r)[0]);
+      click(r.root.findAllByType("button").find((b) => /^Withdraw .+/.test(txt(b)) && b.props.className === "btn danger"));
+      eq(oppOf("o9").stage, "deal", "still in Deal");
+      const t = all(r);
+      /* Value Trade is a closed stage here and folds into one line; the
+         withdrawal is visible only because it is recorded as Deal's. */
+      assert(t.includes("You withdrew " + name + " from this deal"), "the withdrawal, in Deal: " + name);
+      assert(t.includes("A card was withdrawn, so the final cash figure and both agreements were cleared"), "the reset, in words");
+      assert(!/NaN/.test(t), "no $NaN");
+    } finally {
+      if (had) global.window = prev; else delete global.window;
+    }
+  });
+
+  test("never after mutual final agreement: Fulfillment and Completed show no withdrawal", () => {
+    for (const stage of ["fulfillment", "completed"]) {
+      __store.reset(buildCanonicalSeed({ review: true, demoStage: stage }));
+      let r; TR.act(() => { r = TR.create(React.createElement(App)); });
+      r.root.findAllByType("button").filter((b) => String(b.props.className || "").includes("goal-deal")).slice(0, 1).forEach(click);
+      eq(wdButtons(r).length, 0, stage + ": no withdrawal");
+    }
+    __store.reset();
+  });
+});
+
+describe("Binder copy status chips (M3A A1P final corrections)", () => {
+  const { collectorView } = require("../domain/collector-view.js");
+  const LABEL = { selected: "Selected", "in-deal": "In a deal", traded: "Traded" };
+  /* Every seeded collector's binder, every tile: the chip says exactly what
+     collectorCopyState says, and nothing for an available copy. A two-way
+     ternary once called every merely selected copy "Traded". */
+  test("each tile's chip is the label for its own state — Selected, In a deal, Traded, or none", () => {
+    const seen = new Set();
+    for (const c of SEED.collectors) {
+      __store.reset(buildCanonicalSeed());
+      let r; TR.act(() => { r = TR.create(React.createElement(App, { collectorId: c.id })); });
+      nav(r, "Trade Binder");
+      const v = collectorView(__store.get().get(), c.id);
+      const copies = v.myCopies();
+      const tiles = cls(r, "bnd-c");
+      eq(tiles.length, copies.length, `${c.id}: one tile per copy`);
+      copies.forEach((b, i) => {
+        const state = v.collectorCopyState(b.id).state;
+        seen.add(state);
+        const chip = cls(tiles[i], "bnd-av");
+        if (state === "available") eq(chip.length, 0, `${c.id}/${b.id}: an available copy has no chip`);
+        else eq(chip.length && txt(chip[0]), LABEL[state], `${c.id}/${b.id} is ${state}`);
+      });
+      TR.act(() => r.unmount());
+    }
+    for (const s2 of ["available", "selected", "in-deal", "traded"]) assert(seen.has(s2), "the seed shows a " + s2 + " copy");
+  });
+  test("a selected copy becomes In a deal when the partner starts valuing", () => {
+    const r = mk();
+    const D = require("../domain/metyet-domain.js");
+    const chipOf = (id) => {
+      nav(r, "Goals"); nav(r, "Trade Binder");
+      const v = collectorView(__store.get().get(), "c12");
+      const i = v.myCopies().findIndex((b) => b.id === id);
+      const chip = cls(cls(r, "bnd-c")[i], "bnd-av");
+      return chip.length ? txt(chip[0]) : null;
+    };
+    eq(chipOf("cc16"), "Selected", "selected in o9");
+    const s = __store.get();
+    const o = s.get().opportunities.find((x) => x.id === "o9");
+    const tp = { partnerId: o.partnerId };
+    TR.act(() => { s.execute({ collectorId: "c12" }, "continueTradeSelection", { oppId: "o9", at: "2026-11-05" }); });
+    TR.act(() => { s.execute(tp, "closeTradeSelection", { oppId: "o9", at: "2026-11-05" }); });
+    eq(s.get().opportunities.find((x) => x.id === "o9").stage, "value-trade", "selection closed");
+    eq(chipOf("cc16"), "In a deal", "reserved");
+    assert(D.TRADE.liveTradeRows(s.get().opportunities.find((x) => x.id === "o9")).length > 0, "still live");
+  });
+});
+
+describe("Select Trade, TP-led (M3A A1P)", () => {
+  const D = require("../domain/metyet-domain.js");
+  const open = (r) => {
+    const card = cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
+    click(card.findAllByType("button").find((b) => String(b.props.className || "").includes("goal-deal")));
+    return r;
+  };
+  const o9 = () => __store.get().get().opportunities.find((o) => o.id === "o9");
+
+  test("each chosen card can be withdrawn, through the canonical command", () => {
+    const r = open(mk());
+    const live = D.TRADE.liveTradeRows(o9());
+    assert(live.length >= 2, "the partner chose cards: " + live.length);
+    const w = r.root.findAllByType("button").filter((b) => /^Withdraw /.test(txt(b)));
+    eq(w.length, live.length, "one Withdraw per chosen card");
+    click(w[0]);
+    eq(D.TRADE.liveTradeRows(o9()).length, live.length - 1, "the card left the deal");
+    assert(o9().trade.cards.some((c) => c.withdrawn === true), "recorded as withdrawn, not deleted");
+    assert(all(r).includes("You withdrew this"), "and the screen says so");
+  });
+
+  test("continue without trade appears only once nothing is chosen", () => {
+    const r = open(mk());
+    eq(btn(r, "Continue without trade"), undefined, "not while the partner has cards chosen");
+    for (let k = D.TRADE.liveTradeRows(o9()).length; k > 0; k -= 1) {
+      click(r.root.findAllByType("button").find((b) => /^Withdraw /.test(txt(b))));
+    }
+    eq(D.TRADE.liveTradeRows(o9()).length, 0, "every card withdrawn");
+    eq(o9().stage, "select-trade", "still choosing");
+    assert(btn(r, "Continue without trade"), "now cash only is offered");
+    eq(o9().trade.mode === "cash", false, "but never taken for them");
+    /* Choosing it moves the deal on — and Select Trade's "ready" leaves with it
+       (a stale registration once survived into the Deal stage's bar). */
+    click(btn(r, "Continue without trade"));
+    eq(o9().stage, "deal", "cash only, chosen explicitly");
+    assert(!r.root.findAllByType("button").some((b) => /they can finish choosing/.test(txt(b))),
+      "no stale Select Trade action in the Deal stage");
+  });
+
+  test("no waiting line repeats the partner's name, at any stage", () => {
+    for (const stage of ["agree-price", "select-trade", "value-trade", "deal", "fulfillment"]) {
+      __store.reset(buildCanonicalSeed({ review: true, demoStage: stage }));
+      let r; TR.act(() => { r = TR.create(React.createElement(App)); });
+      const rows = cls(r, "goal-deal");
+      assert(rows.length > 0, stage + ": a deal row");
+      for (const row of rows) {
+        const name = txt(byClassIn(row, "goal-deal-pn")[0]);
+        const turn = txt(byClassIn(row, "goal-deal-t")[0]);
+        assert(name && !turn.includes(name), stage + `: "${turn}" repeats ${name}`);
+      }
+    }
+    /* No seeded Select Trade deal of this Collector is on the partner's turn,
+       so make one: the Collector says they're ready, and waits. */
+    __store.reset();
+    const r = open(mk());
+    click(cls(r, "idf-action")[0].findAllByType("button")[0]);
+    eq(D.nextActor(o9()).reason, "close-selection", "now waiting on the partner");
+    const row = cls(r, "goal").find((n) => txt(n).includes("Rayquaza Gold Star"));
+    const turn = txt(byClassIn(row, "goal-deal-t")[0]);
+    assert(/^Waiting on them/.test(turn), "select-trade waits without the name: " + turn);
+    assert(!turn.includes(txt(byClassIn(row, "goal-deal-pn")[0])), "the row names them once");
+    __store.reset();
   });
 });
 
