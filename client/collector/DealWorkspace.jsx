@@ -37,16 +37,27 @@ import { dealGlance, Progress, NegotiationControls } from "./deal-parts.jsx";
 import { rows, text, gradeLine, printingLine } from "./present.js";
 import { picturesOf, PhotoViewer } from "./card-viewer.jsx";
 import { DealConversation } from "../deal-conversation.jsx";
+import { useDealFreshness } from "../deal-freshness.js";
+import { CopyRow, liveRows, takenOut, myMove, turnOf, isSelectingStage, isValuingStage,
+  selectRefusal } from "../select-trade.jsx";
 
 export default function DealWorkspace({ state, oppId, onBack, onBrowseCards = null,
   onCounterOffer = null, onAcceptOffer = null, onWithdrawOffer = null, onRefresh = null,
-  onSendMessage = null }) {
+  onSendMessage = null, onHoldSelection = null, onReadyForSelection = null, onWithdrawTradeCard = null }) {
   const me = viewerSeat(state);
   const deal = rows(state && state.opportunities).find((o) => o.id === oppId) || null;
   const partner = deal ? rows(state && state.partners).find((p) => p.id === deal.partnerId) || null : null;
   const partnerName = (partner && text(partner.name)) || "your Trusted Partner";
   const copy = deal ? rows(state && state.inventory).find((c) => c.invId === deal.invId) || null : null;
   const sender = useSender(onRefresh);
+  /* FRESHNESS (M3A A3). Opening this deal reads the server again; so does
+     coming back to the page, and every 15 seconds while it is visible and the
+     deal is live. A change the check finds is said once, under whose turn it
+     is; if checking fails, the deal's moves pause until it succeeds. */
+  const live = !!deal && !isEndedDeal(deal) && !!(deal.turn && deal.turn.active);
+  const fresh = useDealFreshness({ state, seat: me, deals: live ? [oppId] : [], onRefresh, arrival: oppId,
+    nameOf: () => partnerName });
+  const frozen = fresh.failed;
 
   /* The card's name and printing, asked of the catalogue the way every other
      Collector screen asks it. */
@@ -133,12 +144,25 @@ export default function DealWorkspace({ state, oppId, onBack, onBrowseCards = nu
           <p className="mcs-ws-turn ended" role="status">{statusLine(deal, me, partnerName)}</p>
         )}
         {glance ? <Progress progress={progress} compact /> : null}
+        {fresh.notes[deal.id] && !fresh.failed ? <p className="mcs-fresh" role="status">{fresh.notes[deal.id]}</p> : null}
+        {fresh.failed ? (
+          <div className="mcs-fresh-fail" role="alert">
+            <span>{fresh.ended ? "Your session has ended — sign in again to see the latest."
+              : "Couldn't check for updates — what's shown may be out of date. Your moves are paused until MetYet can confirm the latest."}</span>
+            {fresh.ended ? null : <button type="button" className="mcs-go" onClick={() => fresh.refreshNow()}>Refresh deal</button>}
+          </div>
+        ) : null}
       </header>
 
       <div className="mcs-ws-body">
         <StageArea deal={deal} me={me} partnerName={partnerName} copy={copy} progress={progress}
           sender={sender} onCounterOffer={onCounterOffer} onAcceptOffer={onAcceptOffer}
-          onWithdrawOffer={onWithdrawOffer} />
+          onWithdrawOffer={onWithdrawOffer} frozen={frozen} />
+        {isSelectingStage(deal) || isValuingStage(deal) ? (
+          <SelectTradeArea key={deal.id} deal={deal} state={state} me={me} partnerName={partnerName} frozen={frozen}
+            onBrowseCards={onBrowseCards} onRefresh={onRefresh} onHoldSelection={onHoldSelection}
+            onReadyForSelection={onReadyForSelection} onWithdrawTradeCard={onWithdrawTradeCard} />
+        ) : null}
         {/* Keyed by the deal: a draft, a nonce and a send in flight belong to
             ONE deal, and are never carried onto another one opened after. */}
         <DealConversation key={deal.id} cls="mcs" deal={deal} state={state} me={me} other={partnerName}
@@ -161,7 +185,7 @@ export default function DealWorkspace({ state, oppId, onBack, onBrowseCards = nu
    agreement and after a deal ends, so the context is never lost. The moves
    are the shared `NegotiationControls`; what may be pressed is the server's
    `turn`, never these rows. */
-function StageArea({ deal, me, partnerName, copy, progress, sender, onCounterOffer, onAcceptOffer, onWithdrawOffer }) {
+function StageArea({ deal, me, partnerName, copy, progress, sender, onCounterOffer, onAcceptOffer, onWithdrawOffer, frozen = false }) {
   const open = isUnresolved(deal);
   const ended = isEndedDeal(deal);
   const agreed = !open && dollars(deal.agreedPrice);
@@ -196,8 +220,124 @@ function StageArea({ deal, me, partnerName, copy, progress, sender, onCounterOff
       ) : null}
 
       <NegotiationControls deal={deal} me={me} sender={sender} onCounterOffer={onCounterOffer}
-        onAcceptOffer={onAcceptOffer} onWithdrawOffer={onWithdrawOffer} />
+        onAcceptOffer={onAcceptOffer} onWithdrawOffer={onWithdrawOffer} frozen={frozen} />
 
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------ SELECT TRADE
+   (M3A A3) The Trusted Partner chooses which of this Collector's Trade/Sell
+   cards to consider; the Collector sees what was chosen, says "hold on" or
+   "ready", and may take a card back out. What may be pressed is the server's
+   `turn`; what is shown is the deal's own rows and this Collector's own
+   copies. Nothing here is kept between visits: leaving and coming back shows
+   exactly where the deal stands.
+
+   Taking a card out is offered on THIS screen only while cards are being
+   chosen. The domain allows it until both final agreements (M3A A1); Value
+   Trade and Deal have no screen in production yet, and when they do, they
+   offer it too. */
+function SelectTradeArea({ deal, state, me, partnerName, onBrowseCards, onRefresh,
+  onHoldSelection, onReadyForSelection, onWithdrawTradeCard, frozen = false }) {
+  const sender = useSender(onRefresh, null, { sentence: selectRefusal("collector", partnerName), refreshAlways: true });
+  const [confirming, setConfirming] = useState(null);   // the row id being taken out, or null
+  const [done, setDone] = useState(null);
+  const busy = !!sender.busy || frozen;
+  const live = liveRows(deal);
+  const out = takenOut(deal);
+  const copies = new Map(rows(state && state.collectorCopies).map((b) => [b.id, b]));
+  const valuing = isValuingStage(deal);
+  const selecting = isSelectingStage(deal);
+  const reason = turnOf(deal).reason;
+  const who = partnerName;
+
+  /* The rows' names, asked for once for the set. */
+  const ids = [...new Set([...live, ...out].map((r) => r.canonicalCardId).filter(Boolean))];
+  const [named, setNamed] = useState({});
+  useEffect(() => {
+    if (!onBrowseCards || !ids.length) return undefined;
+    let current = true;
+    (async () => {
+      try {
+        const answer = await onBrowseCards.describe(ids);
+        if (!current) return;
+        const next = {};
+        for (const c of rows(answer && answer.cards)) next[c.canonicalCardId] = c;
+        setNamed((held) => ({ ...held, ...next }));
+      } catch (error) { /* a row without a caption is still the copy */ }
+    })();
+    return () => { current = false; };
+  }, [ids.join(","), onBrowseCards]);
+
+  const mine = myMove(deal, me, "more-cards", "adding-cards");
+  const say = valuing ? "These cards are held for this deal. Value Trade isn't available in MetYet yet."
+    : reason === "adding-cards" ? `You're adding cards. Mark cards Trade / Sell in your Binders, then tell ${who} you're ready.`
+      : reason === "more-cards" ? (live.length
+        ? `${who} chose ${live.length === 1 ? "a card" : `${live.length} cards`} to consider. Add more Trade/Sell cards, or tell ${who} you're ready.`
+        : `${who} asked if you have more cards to trade. Mark cards Trade / Sell in your Binders, then tell them you're ready.`)
+        : reason === "close-selection" ? `${who} is finishing their choice.`
+          : `${who} is choosing from your Trade/Sell cards. You'll see their choice here.`;
+
+  const run = async (key, fn, ok) => { if (await sender.send(key, fn)) { setConfirming(null); setDone(ok); } };
+  const nameOf = (r) => (named[r.canonicalCardId] && named[r.canonicalCardId].cardName) || "this card";
+
+  return (
+    <section className="mcs-sel" aria-label="Choosing cards to trade" data-select={deal.id}>
+      <h2 className="mcs-ws-h2">{valuing ? "Cards held for this deal" : "Choosing cards to trade"}</h2>
+      <p className={`mcs-sel-say${mine ? " mine" : ""}`} role="status">{say}</p>
+
+      {live.length ? (
+        <ul className="mcs-sel-list" aria-label={valuing ? "Held for this deal" : `Chosen by ${who}`}>
+          {live.map((r) => (
+            <CopyRow key={r.id} cls="mcs" row={r} copy={copies.get(r.binderId) || null} card={named[r.canonicalCardId] || null}
+              tag={valuing ? "Held" : null}>
+              {selecting && onWithdrawTradeCard && confirming !== r.id ? (
+                <button type="button" className="mcs-go quiet" disabled={busy}
+                  onClick={() => { sender.clear(); setDone(null); setConfirming(r.id); }}>Take out of this deal</button>
+              ) : null}
+            </CopyRow>
+          ))}
+        </ul>
+      ) : null}
+
+      {confirming && live.some((r) => r.id === confirming) ? (
+        <div className="mcs-sel-confirm" role="group" aria-label="Take a card out">
+          <p className="mcs-sel-line">
+            {`Take ${nameOf(live.find((r) => r.id === confirming))} out of this deal? It stays in your Trade/Sell cards — this only takes it out of this deal.`}
+          </p>
+          <div className="mcs-sel-do">
+            <button type="button" className="mcs-go mcs-go-primary" disabled={busy}
+              onClick={() => run(`withdraw:${confirming}`, () => onWithdrawTradeCard(deal.id, confirming), "Taken out of this deal. It's still in your Trade/Sell cards.")}>
+              {sender.busy && sender.busy.startsWith("withdraw:") ? "Taking it out…" : "Take it out"}
+            </button>
+            <button type="button" className="mcs-go quiet" disabled={busy} onClick={() => setConfirming(null)}>Keep it in</button>
+          </div>
+        </div>
+      ) : null}
+
+      {selecting ? (
+        <div className="mcs-sel-do">
+          {mine && onReadyForSelection ? (
+            <button type="button" className="mcs-go mcs-go-primary" disabled={busy}
+              onClick={() => run(`ready:${deal.id}`, () => onReadyForSelection(deal.id), `Done — ${who} can finish choosing.`)}>
+              {sender.busy === `ready:${deal.id}` ? "Saying so…" : "I'm ready — they can finish choosing"}
+            </button>
+          ) : null}
+          {reason !== "adding-cards" && onHoldSelection ? (
+            <button type="button" className="mcs-go quiet" disabled={busy}
+              onClick={() => run(`hold:${deal.id}`, () => onHoldSelection(deal.id), `${who} will wait while you add cards.`)}>
+              {sender.busy === `hold:${deal.id}` ? "Saying so…" : "Hold on, I'm adding cards"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {out.length ? (
+        <p className="mcs-sel-out">{`Taken out of this deal: ${out.map(nameOf).join(", ")}`}</p>
+      ) : null}
+      {sender.trouble ? <p className="mcs-df-trouble" role="status">{sender.trouble}</p>
+        : done ? <p className="mcs-sel-done" role="status">{done}</p> : null}
     </section>
   );
 }

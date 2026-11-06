@@ -403,13 +403,18 @@ describe("B. the shell is the product, and all of it is the server's data", () =
     assert(!/Agree on Price|Deal\b/.test(shown), "and was guessed into a known one: " + shown);
   });
 
-  test("navigating the shell asks the server for nothing", async () => {
+  /* RESTATED (M3A A3 freshness, founder-authorized): opening Opportunities —
+     where live deals are conducted — reads the server once, so the shop never
+     acts on a deal as it was. Every other move still asks for nothing. */
+  test("navigating the shell asks the server for nothing — except opening the deals, once", async () => {
     const { r, apiCalls } = await signedIn();
     eq(apiCalls().length, 1, "one read, on arrival");
     clickText(r, "Inventory"); await flush(r);
+    eq(apiCalls().length, 1, "Inventory re-asked the server");
     clickText(r, "Opportunities"); await flush(r);
+    eq(apiCalls().length, 2, "opening the deals did not read them again");
     clickText(r, "Collector Network"); await flush(r);
-    eq(apiCalls().length, 1, "moving around the product re-asked the server");
+    eq(apiCalls().length, 2, "moving around the product re-asked the server");
     assert(looksLikeTpShell(r), "and it is still the shell");
   });
 });

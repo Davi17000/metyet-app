@@ -564,8 +564,12 @@ describe("F. A removed shop copy is never revived; re-adding the same card is a 
 /* ============================================ G. boundaries and money */
 describe("G. Production boundary, privacy and money are unchanged", () => {
   test("no A1 trade command is exposed to production", () => {
+    /* RESTATED (M3A A3, founder-authorized): Select Trade's six became
+       production doors with the screens that send them. Everything after
+       Select Trade, cash-only and the retired names stay shut. */
     for (const c of ["selectTradeCards", "deselectTradeCard", "holdTradeSelection", "continueTradeSelection",
-      "closeTradeSelection", "withdrawTradeCard", "chooseCashOnly", "acceptDeal", "proposeFinalBalance",
+      "closeTradeSelection", "withdrawTradeCard"]) eq(isExposed(c), true, c);
+    for (const c of ["chooseCashOnly", "acceptDeal", "proposeFinalBalance",
       "proposeTradeSelection", "reviewTradeCard"]) eq(isExposed(c), false, c);
   });
   test("a partner never receives a Collector's keep decision or private value", () => {

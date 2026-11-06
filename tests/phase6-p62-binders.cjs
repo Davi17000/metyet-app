@@ -389,7 +389,7 @@ describe("G. boundaries", () => {
     const src = code("client/collector/sections/Binder.jsx");
     for (const name of EXPOSED_COMMANDS) assert(!new RegExp(`["']${name}["']`).test(src), `it names ${name}`);
     assert(!/localStorage|sessionStorage|indexedDB/.test(src), "something is stored");
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(EXPOSED_COMMANDS.length, 31, "the production door moved");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37, "the production door moved");
   });
   test("the catalogue is asked once on arrival, for the tiles on screen only", async () => {
     const { r, asks } = await show();

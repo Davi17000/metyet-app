@@ -260,9 +260,10 @@ describe("A. one thread, both sides", () => {
     await s.open("gA");
     okv(x(st, NL, "sendDealMessage", { oppId, text: "Shop's open till six.", nonce: "n-nl-1" }), "msg");
     eq(s.talk().findAll((n) => n.type === "li").length, 0, "a message appeared without a read");
+    const opened = s.refreshes;   /* RESTATED (M3A A3 freshness, founder-authorized): opening the deal now reads the server too, so this counts the re-reads this event caused. */
     await TR.act(async () => { btn(s.talk(), "Refresh messages").props.onClick(); });
     await settle();
-    eq(s.refreshes, 1);
+    eq(s.refreshes - opened, 1);
     eq(bubbles(s.talk()).map((b) => b.who).join(), "Northline Cards");
     s.refreshFails = true;
     await TR.act(async () => { btn(s.talk(), "Refresh messages").props.onClick(); });
@@ -334,9 +335,10 @@ describe("C. sending", () => {
     const s = await collector(st);
     await s.open("gA");
     s.msg.mode = "lost";
+    const opened = s.refreshes;   /* RESTATED (M3A A3 freshness, founder-authorized): opening the deal now reads the server too, so this counts the re-reads this event caused. */
     await type(s.talk(), "Cash is fine.");
     await submit(s.talk());
-    eq(s.refreshes, 1, "an ambiguous failure did not re-read");
+    eq(s.refreshes - opened, 1, "an ambiguous failure did not re-read");
     eq(s.msg.calls.length, 1, "it was sent again on its own");
     eq(bubbles(s.talk()).map((b) => b.text).join("|"), "Cash is fine.");
     eq(box(s.talk()).props.value, "", "a delivered message stayed in the box");
@@ -453,9 +455,10 @@ describe("D. a finished deal is read-only", () => {
     await s.open("gA");
     await type(s.talk(), "Still interested!");
     okv(x(st, NL, "declineOffer", { oppId }), "decline behind the Collector's back");
+    const opened = s.refreshes;   /* RESTATED (M3A A3 freshness, founder-authorized): opening the deal now reads the server too, so this counts the re-reads this event caused. */
     await submit(s.talk());
     eq(messages(st, oppId).length, 0);
-    eq(s.refreshes, 1, "a terminal refusal did not re-read");
+    eq(s.refreshes - opened, 1, "a terminal refusal did not re-read");
     assert(/This deal has ended/.test(flat(s.talk())) || s.talk().props["data-messaging"] === "read-only",
       flat(s.talk()));
     eq(s.talk().props["data-messaging"], "read-only");

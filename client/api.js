@@ -4,7 +4,7 @@
      const api = createApiClient({ baseUrl, getToken })
      await api.view()                     -> { version, state }
      await api.command(name, payload)     -> { ok: true,  version, value, state }
-                                           | { ok: false, refused, version }
+                                           | { ok: false, refused, version [, detail] }
 
    Two calls, because the server has two: read what I am allowed to see, and ask
    for something to happen. Everything a production screen needs goes through
@@ -91,6 +91,12 @@ const failureFor = (status, code) => {
   if (status >= 500 || status === 503) return FAILURES.unavailable;
   return FAILURES.unexpected;
 };
+
+/* WHAT A REFUSAL MAY CARRY BESIDES ITS WORD (M3A A3). Today one thing: the
+   caller's own trade rows a close could not hold (`tradeCardIds`). Read
+   narrowly — a list of non-empty strings and nothing else — so a reply this
+   client does not understand adds nothing rather than something wrong. */
+const detailOf = (ids) => (Array.isArray(ids) && ids.length && ids.every((x) => typeof x === "string" && x) ? { detail: { tradeCardIds: [...ids] } } : {});
 
 export function createApiClient({ baseUrl, getToken, timeoutMs = DEFAULT_TIMEOUT_MS, fetchImpl } = {}) {
   const base = String(baseUrl || "").replace(/\/+$/, "");
@@ -195,7 +201,7 @@ export function createApiClient({ baseUrl, getToken, timeoutMs = DEFAULT_TIMEOUT
         return { ok: true, version: body.version, value: body.value === undefined ? null : body.value, state: body.state };
       }
       const refused = typeof (body && body.error && body.error.refused) === "string" ? body.error.refused : null;
-      if (status === 409 && refused) return { ok: false, refused, version: body && body.version };
+      if (status === 409 && refused) return { ok: false, refused, version: body && body.version, ...detailOf(body && body.detail && body.detail.tradeCardIds) };
       throw failed(status, body, refused);
     },
 

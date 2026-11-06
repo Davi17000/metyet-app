@@ -55,12 +55,14 @@ export const STAGE_JOURNEY = Object.freeze({
   completed: Object.freeze({ first: 10, last: 10, complete: true }),
 });
 
-/* The last journey step production lets a Collector act on. */
-export const AVAILABLE_THROUGH = 1;
+/* The last journey step production lets a Collector act on. RESTATED
+   (M3A A3): Select Trade, step 2, now has its screen. */
+export const AVAILABLE_THROUGH = 2;
 
-/* The domain's own name for the stage after an agreed price, which is what a
-   Collector is told comes next. */
-export const NEXT_PLANNED_STAGE = Object.freeze({ "select-trade": "Select Trade" });
+/* The stage a deal is waiting in that production does not offer yet, by the
+   domain's own name — what a Collector is told comes next. RESTATED (M3A A3):
+   that was Select Trade; it is now Value Trade. */
+export const NEXT_PLANNED_STAGE = Object.freeze({ "value-trade": "Value Trade" });
 
 const own = (o, k) => typeof k === "string" && Object.prototype.hasOwnProperty.call(o, k);
 

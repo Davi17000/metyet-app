@@ -924,7 +924,7 @@ describe("E. The boundaries this batch did not cross", () => {
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(EXPOSED_COMMANDS.length, 31, "the production surface is not the size this batch declared");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37, "the production surface is not the size this batch declared");
     assert(EXPOSED_COMMANDS.includes("setCollectorCopyKept"), "PC has a control but no door");
     const { COMMAND_NAMES } = require("../domain/metyet-commands.js");
     const known = COMMAND_NAMES.has ? (n) => COMMAND_NAMES.has(n)

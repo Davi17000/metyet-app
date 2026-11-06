@@ -77,6 +77,8 @@ export default function ProductionApp({ state, onSignOut, onSaveProfile = null,
   onInspect = null, onEndInspection = null, onRequestPhotos = null,
   onOpenOffer = null, onCounterOffer = null, onAcceptOffer = null, onDeclineOffer = null,
   onWithdrawOffer = null, onSendMessage = null,
+  onSelectTrade = null, onDeselectTrade = null, onCloseSelection = null,
+  onHoldSelection = null, onReadyForSelection = null, onWithdrawTradeCard = null,
   joined = null, onDismissJoined = null }) {
   const who = describeActor(state);
 
@@ -98,7 +100,8 @@ export default function ProductionApp({ state, onSignOut, onSaveProfile = null,
       onBrowseCards={onBrowseCards}
       onInvite={onInvite} onRevokeInvite={onRevokeInvite} onRefresh={onRefresh}
       onCounterOffer={onCounterOffer} onAcceptOffer={onAcceptOffer} onDeclineOffer={onDeclineOffer}
-      onSendMessage={onSendMessage} />;
+      onSendMessage={onSendMessage}
+      onSelectTrade={onSelectTrade} onDeselectTrade={onDeselectTrade} onCloseSelection={onCloseSelection} />;
   }
 
   if (who.seat === "collector") {
@@ -109,6 +112,8 @@ export default function ProductionApp({ state, onSignOut, onSaveProfile = null,
       onRequestPhotos={onRequestPhotos}
       onOpenOffer={onOpenOffer} onCounterOffer={onCounterOffer} onAcceptOffer={onAcceptOffer}
       onWithdrawOffer={onWithdrawOffer} onRefresh={onRefresh} onSendMessage={onSendMessage}
+      onHoldSelection={onHoldSelection} onReadyForSelection={onReadyForSelection}
+      onWithdrawTradeCard={onWithdrawTradeCard}
       onCreateBinder={onCreateBinder} onRenameBinder={onRenameBinder}
       onArchiveBinder={onArchiveBinder}
       onFileObject={onFileObject} onUnfileObject={onUnfileObject}

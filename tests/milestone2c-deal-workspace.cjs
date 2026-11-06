@@ -156,7 +156,7 @@ describe("A. navigation", () => {
   });
   test("every one of the three actions opens the same workspace", async () => {
     for (const [moves, label] of [[[], "View Deal"], [[[NL, "proposePrice", { amount: 11 }]], "Review Counteroffer"],
-      [[[NL, "proposePrice", { amount: 11 }], [A, "acceptPrice"]], "View Agreement"]]) {
+      [[[NL, "proposePrice", { amount: 11 }], [A, "acceptPrice"]], "View Deal"]]) {   /* RESTATED (M3A A3, founder-authorized): an agreed price is followed by Select Trade, which production now offers — the partner choosing cards, said as that, with "View Deal". */
       const { st, oppId } = offered(moves);
       const s = await shell(st);
       await s.go("Deal Flow");
@@ -236,7 +236,8 @@ describe("C. the stage area", () => {
     const t = flat(s.ws());
     /* RESTATED (Milestone 2D.2 refinement): "Agreed price" beside the asking
        price, and the offer and counter that led there kept, nothing Latest. */
-    assert(/Market price agreed/.test(t) && /asking price \$12 Your offer \$10 Northline Cards' counter \$11 Agreed price \$11/.test(t), t);
+    /* RESTATED (M3A A3, founder-authorized): an agreed price is followed by Select Trade, which production now offers — the partner choosing cards, said as that, with "View Deal". */
+    assert(/Northline Cards is choosing cards/.test(t) && /asking price \$12 Your offer \$10 Northline Cards' counter \$11 Agreed price \$11/.test(t), t);
     assert(!/Latest/.test(flat(stage())), "a figure is still marked on the table after agreement");
     assert(!btn(stage(), "Accept $11") && !btn(stage(), "Withdraw offer"), "price actions remain after agreement");
   });
@@ -255,13 +256,14 @@ describe("C. the stage area", () => {
     eq(o.priceThread.map((e) => `${e.by}:${e.type}:${e.amount}`).join(), "collector:offer:10,tp:counter:11,collector:counter:10");
     assert(/Waiting for Northline Cards/.test(flat(s.ws())), "the workspace did not follow the server");
   });
-  test("agreed: no unresolved action and no next-stage button; Select Trade is named as unavailable", async () => {
+  /* RESTATED (M3A A3, founder-authorized): an agreed price is followed by Select Trade, which production now offers — the partner choosing cards, said as that, with "View Deal". */
+  test("agreed: no unresolved action and no next-stage button; Select Trade is under way", async () => {
     const { st } = offered([[NL, "proposePrice", { amount: 11 }], [A, "acceptPrice"]]);
     const s = await shell(st);
     await s.go("Deal Flow"); await s.cta("gA");
     const t = flat(s.ws());
     /* RESTATED (Milestone 2D.2 refinement): shorter, same meaning. */
-    assert(/Select Trade comes next, and isn't available in MetYet yet/.test(t), t);
+    assert(/Choosing cards to trade/.test(t) && /Northline Cards is choosing from your Trade\/Sell cards/.test(t), t);
     assert(/doesn't complete the deal/.test(t), t);
     assert(!/Continue|balance|cash difference \$|paid/i.test(t), t);
     /* RESTATED (Milestone 2D.2): the conversation below has its own

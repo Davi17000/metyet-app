@@ -196,7 +196,7 @@ describe("A. the door opened by exactly two", () => {
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(EXPOSED_COMMANDS.length, 31, "the production surface is not the size C5 intended");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37, "the production surface is not the size C5 intended");
     for (const name of ["updateInventoryCopy", "removeInventoryCopy"]) {
       assert(EXPOSED_COMMANDS.includes(name), `${name} is not offered`);
     }
@@ -259,10 +259,12 @@ describe("A. the door opened by exactly two", () => {
        that send them — the fourth time this guard fired for a declared reason. */
     /* …and P6-F4 B5's changeCollectingState, with the saved card's Submit Update. */
     /* …and Milestone 2D.1's sendDealMessage, a deal's conversation, founder-approved. */
-    eq(json(added.sort()), json(["acceptPrice", "addCopyPhotos", "cancelOpportunity", "changeCollectingState", "declineOffer",
-      "endReview", "fileObject", "proposePrice", "removeInventoryCopy",
-      "requestPhotos", "reviewCopy", "sendDealMessage", "setCollectorCopyKept", "startOpportunity", "unfileObject",
-      "updateInventoryCopy"]),
+    /* …and M3A A3's six, Select Trade's screens, founder-authorized. */
+    eq(json(added.sort()), json(["acceptPrice", "addCopyPhotos", "cancelOpportunity", "changeCollectingState", "closeTradeSelection",
+      "continueTradeSelection", "declineOffer", "deselectTradeCard",
+      "endReview", "fileObject", "holdTradeSelection", "proposePrice", "removeInventoryCopy",
+      "requestPhotos", "reviewCopy", "selectTradeCards", "sendDealMessage", "setCollectorCopyKept", "startOpportunity", "unfileObject",
+      "updateInventoryCopy", "withdrawTradeCard"]),
       "a door was opened that no batch declared");
     /* RE-PINNED (Batch 3C-1): exactly one door somebody else opened has been
        closed — `addBinderEntry`, by 3C-1, after 3B-1 removed its last caller —

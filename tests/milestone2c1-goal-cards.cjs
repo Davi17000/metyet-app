@@ -199,8 +199,9 @@ describe("B. progress", () => {
     eq(bars(a).length, 1, "not exactly one progress bar");
     const deal = byCls(a, "mcs-dg-deal")[0];
     eq(deal.props["data-opp"], mud);
-    eq(lines(a), "Market price agreed | [bar] | Select Trade not yet available");
-    eq(buttons(a).join("|"), "View Agreement", "not exactly one action");
+    /* RESTATED (M3A A3, founder-authorized): an agreed price is followed by Select Trade, which production now offers — the partner choosing cards, said as that, with "View Deal". */
+    eq(lines(a), "Select Trade | [bar] | Northline Cards is choosing cards");
+    eq(buttons(a).join("|"), "View Deal", "not exactly one action");
     assert(!/Deal complete|Completed|Continue/.test(flat(a)), "something past the price is implied");
   });
   test("an open price: Market Validation above the bar, whose turn below — the server's turn, both ways", async () => {
@@ -298,10 +299,11 @@ describe("D. no accordion, nothing nested", () => {
 
 /* ================================================================ E */
 describe("E. the one action", () => {
-  test("the agreed deal's View Agreement opens the workspace on that exact deal; Back returns to Deal Flow", async () => {
+  /* RESTATED (M3A A3, founder-authorized): an agreed price is followed by Select Trade, which production now offers — the partner choosing cards, said as that, with "View Deal". */
+  test("the agreed deal's View Deal opens the workspace on that exact deal; Back returns to Deal Flow", async () => {
     const { s, st, mud } = await landing();
     const before = JSON.stringify(st.get());
-    await s.press(s.goal("gM"), "View Agreement");
+    await s.press(s.goal("gM"), "View Deal");
     eq(s.ws() && s.ws().props["data-opp"], mud);
     eq(s.nav(), 0, "not full screen");
     await s.press(s.ws(), "Back to Deal Flow");
@@ -357,7 +359,8 @@ describe("E. the one action", () => {
     eq(buttons(card).join("|"), "View Deal");
     eq(bars(card).length, 1);
     /* Mudkip's deal stayed Mudkip's */
-    assert(/Market price agreed/.test(flat(s.goal("gM"))) && !/Market price agreed/.test(flat(card)), "statuses crossed Goals");
+    /* RESTATED (M3A A3, founder-authorized): an agreed price is followed by Select Trade, which production now offers — the partner choosing cards, said as that, with "View Deal". */
+    assert(/is choosing cards/.test(flat(s.goal("gM"))) && !/is choosing cards/.test(flat(card)), "statuses crossed Goals");
   });
   test("Back from View Matches returns to Deal Flow with every card as it was", async () => {
     const { s } = await landing();

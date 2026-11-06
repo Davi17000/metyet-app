@@ -302,16 +302,20 @@ describe("E. canonical stage → journey (deal-progress.js)", () => {
   test("the table", () => {
     const at = (stage) => { const p = PG.dealProgress({ stage }); return [p.done, p.label, p.available].join("|"); };
     eq(at("agree-price"), "0|Step 1 of 10 · Market Validation|true");
-    eq(at("select-trade"), "1|Step 2 of 10 · Select Trade|false");
+    /* RESTATED (M3A A3, founder-authorized): Select Trade has its screens, so step 2 is available. */
+    eq(at("select-trade"), "1|Step 2 of 10 · Select Trade|true");
     eq(at("value-trade"), "2|Steps 3–4 of 10 · Trade Market Validation, Trade %|false");
     eq(at("deal"), "4|Steps 5–7 of 10 · Final Cash Difference, Final Adjustment, Review & Confirmation|false");
     eq(at("fulfillment"), "7|Steps 8–9 of 10 · Meetup Coordination, Finalized Deal Summary|false");
     eq(at("completed"), "10|Completed|false");
   });
-  test("only step 1 is available; a later step is never drawn as available", () => {
-    eq(PG.AVAILABLE_THROUGH, 1);
+  /* RESTATED (M3A A3, founder-authorized): steps 1–2 — Market Validation and
+     Select Trade — are available; Value Trade onwards is still never drawn as
+     available, which is the half of this test that guards anything. */
+  test("only steps 1–2 are available; a later step is never drawn as available", () => {
+    eq(PG.AVAILABLE_THROUGH, 2);
     for (const stage of Object.keys(PG.STAGE_JOURNEY)) {
-      for (const s of PG.dealProgress({ stage }).steps) assert(s.available === (s.n === 1), `${stage} step ${s.n}`);
+      for (const s of PG.dealProgress({ stage }).steps) assert(s.available === (s.n <= 2), `${stage} step ${s.n}`);
     }
   });
   test("a range is never collapsed to one guessed step", () => {
@@ -333,21 +337,25 @@ describe("F. pricing language and the agreed state", () => {
        the asking price and "Your offer", the one on the table marked. */
     assert(/Northline Cards' asking price \$12/.test(t) && /Your offer Latest \$10/.test(t) && /Waiting for Northline Cards/.test(t), t);
   });
-  test("agreed: $11 apart from the $12 snapshot; Select Trade named as unavailable; no action past it", async () => {
+  /* RESTATED (M3A A3, founder-authorized): Select Trade has its screens now,
+     so an agreed price is followed by the partner choosing cards — said as
+     that, with "View Deal" — instead of "Select Trade not yet available".
+     The guard that matters is unchanged: nothing past the price is implied. */
+  test("agreed: $11 apart from the $12 snapshot; Select Trade under way; no action past it", async () => {
     const { st, oppId } = withDeal([[NL, "proposePrice", { amount: 11 }], [A, "acceptPrice"]]);
     const o = st.get().opportunities.find((x) => x.id === oppId);
     eq([o.listedPrice, o.agreedPrice, o.stage].join(), "12,11,select-trade");
     const { r } = await render(st, sends());
     const art = article(r, "gA");
-    assert(/Market price agreed .*Select Trade not yet available/.test(flat(art)), flat(art));
+    assert(/Select Trade .*Northline Cards is choosing cards/.test(flat(art)), flat(art));
     const deal = art.findAll((n) => n.props && n.props["data-opp"] === oppId)[0];
-    eq(buttons(deal).join("|"), "View Agreement", "an action other than viewing the agreement");
+    eq(buttons(deal).join("|"), "View Deal", "an action other than viewing the deal");
     assert(!buttons(art).includes("Make an offer"), "an offer can be started on an agreed Goal");
     const w = await workspace(st, oppId);
     const t = flat(w.root);
     /* RESTATED (Milestone 2D.2 refinement): same facts, the new words. */
     for (const part of [/asking price \$12/, /Agreed price \$11/, /Market Validation complete/,
-      /Select Trade comes next, and isn't available in MetYet yet/, /doesn't complete the deal/]) {
+      /Choosing cards to trade/, /Northline Cards is choosing from your Trade\/Sell cards/, /doesn't complete the deal/]) {
       assert(part.test(t), `${part}: ${t}`);
     }
     assert(!/Continue|Cash Difference \$|balance|Completed|paid/i.test(t), "something past the price is implied: " + t);

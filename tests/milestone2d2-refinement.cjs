@@ -176,7 +176,7 @@ describe("A. the price summary: every figure that matters, from the canonical de
     eq([o.listedPrice, o.agreedPrice, o.stage].join(), "12,11,select-trade");
     eq(s.rows().join("|"), "Northline Cards' asking price $12|Your offer $10|Northline Cards' counter $11|Agreed price $11");
     eq(s.buttons(), "", "price actions after agreement");
-    eq(s.turn(), "Market price agreed");
+    eq(s.turn(), "Northline Cards is choosing cards");   /* RESTATED (M3A A3, founder-authorized): Select Trade is in production, so after the price is agreed the Collector is told the shop is choosing cards, with View Deal. */
   });
   test("Northline accepts Casey's offer: Agreed price is Casey's $10, with no counter invented", async () => {
     const { st } = offered([[NL, "acceptPrice"]]);

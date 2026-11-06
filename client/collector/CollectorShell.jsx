@@ -518,6 +518,42 @@ const CSS = `
 .mcs-ws-stage .mcs-offer-do .mcs-go { flex:1 1 auto; min-height:44px; }
 .mcs .mcs-go.mcs-go-primary { background:var(--t1); border-color:var(--t1); color:#FFF; }
 .mcs-ws-note { margin:0; font-size:12.5px; color:var(--muted); line-height:1.45; }
+/* ---- freshness (M3A A3): a change a check found, said once; or the line
+   saying the latest could not be confirmed, with the way to try again. ---- */
+.mcs-fresh { margin:6px 0 0; font-size:13px; color:var(--t1); font-weight:600; }
+.mcs-fresh-fail { margin:8px 0 0; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:#FBF3E3;
+  display:flex; flex-direction:column; gap:8px; font-size:13px; color:var(--text); }
+.mcs-fresh-fail .mcs-go { min-height:44px; }
+/* ---- Select Trade (M3A A3) ----
+   Its own card in the Deal Workspace, under the prices: what is happening,
+   the cards the Trusted Partner chose — one physical copy per row, picture
+   first — then this Collector's one or two moves, a full finger high. */
+.mcs-sel { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+  padding:14px; display:flex; flex-direction:column; gap:10px; }
+.mcs-sel-say { margin:0; font-size:13.5px; color:var(--text); font-weight:600; line-height:1.45; }
+.mcs-sel-say.mine { color:var(--amber); }
+.mcs-sel-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
+.mcs-sel-copy { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding-top:8px; border-top:1px solid var(--line-soft); }
+.mcs-sel-copy:first-child { border-top:0; padding-top:0; }
+.mcs-sel-art { flex:0 0 40px; width:40px; height:56px; border-radius:4px; overflow:hidden; background:var(--line-soft);
+  display:flex; align-items:center; justify-content:center; }
+.mcs-sel-art img { width:100%; height:100%; object-fit:cover; display:block; }
+.mcs-sel-plate { font-size:7.5px; line-height:1.1; color:var(--muted); text-align:center; padding:2px; overflow:hidden;
+  overflow-wrap:anywhere; }
+.mcs-sel-id { flex:1 1 180px; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.mcs-sel-t { font-weight:700; font-size:14px; }
+.mcs-sel-s, .mcs-sel-f { font-size:12.5px; color:var(--muted); overflow-wrap:anywhere; }
+.mcs-sel-warn { font-size:12px; color:var(--amber); }
+.mcs-sel-tag { font-size:12px; font-weight:700; color:var(--t1); }
+.mcs-sel-tag.warn { color:var(--amber); }
+.mcs-sel-do { display:flex; flex-wrap:wrap; gap:8px; }
+.mcs-sel-do .mcs-go, .mcs-sel-copy .mcs-go { min-height:44px; }
+.mcs-sel-do .mcs-go { flex:1 1 auto; }
+.mcs-sel-confirm { padding:12px; border:1px solid var(--line); border-radius:10px; background:var(--line-soft);
+  display:flex; flex-direction:column; gap:10px; }
+.mcs-sel-line { margin:0; font-size:13px; color:var(--text); line-height:1.45; }
+.mcs-sel-out { margin:0; font-size:12px; color:var(--muted); }
+.mcs-sel-done { margin:0; font-size:12.5px; color:var(--t1); font-weight:600; }
 
 /* ---- the deal's conversation (Milestone 2D.2) ----
    Below the stage area and never above it: the deal's terms and moves come
@@ -1431,6 +1467,9 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
   /* A DEAL'S CONVERSATION (Milestone 2D.2): one message on one deal, handed
      to the Deal Workspace and nowhere else. */
   onSendMessage = null,
+  /* SELECT TRADE (M3A A3): "hold on", "ready" and taking a card back out —
+     the Deal Workspace's, and nowhere else's. */
+  onHoldSelection = null, onReadyForSelection = null, onWithdrawTradeCard = null,
   onArchiveBinder = null,
   /* WHERE A FILED THING GOES NEXT (Batch 3B-1). Bound at the entrance like
      every other command and handed down, so a section stays a surface that
@@ -1584,7 +1623,9 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
       {dealOpen ? (
         <DealWorkspace state={state} oppId={dealOpen} onBack={closeDeal} onBrowseCards={onBrowseCards}
           onCounterOffer={onCounterOffer} onAcceptOffer={onAcceptOffer} onWithdrawOffer={onWithdrawOffer}
-          onRefresh={onRefresh} onSendMessage={onSendMessage} />
+          onRefresh={onRefresh} onSendMessage={onSendMessage}
+          onHoldSelection={onHoldSelection} onReadyForSelection={onReadyForSelection}
+          onWithdrawTradeCard={onWithdrawTradeCard} />
       ) : matchesOpen ? (
         <GoalMatches key={matchesOpen.goalId} state={state} goalId={matchesOpen.goalId} compose={matchesOpen.compose}
           onBack={closeMatches} onBrowseCards={onBrowseCards}
@@ -1668,7 +1709,7 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
                          Inspect, Request Photos, Make an offer; Accept, Counter,
                          Withdraw. Everything downstream of an agreed price is
                          still a real domain command with no surface. */
-                      ? { onBrowseCards,
+                      ? { onBrowseCards, onRefresh,
                         onOpenDeal: (oppId) => openDeal(oppId),
                         onOpenMatches: (goalId) => openMatches(goalId),
                         onFindCards: () => setSection("browse"),

@@ -152,7 +152,7 @@ describe("C. nothing else moved", () => {
     }
   });
   test("no command, no section file and no shared component changed in this batch", () => {
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(EXPOSED_COMMANDS.length, 31, "the production door");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37, "the production door");
     const { execFileSync } = require("child_process");
     /* Measured over P6-1's own commit, not against the working tree — a later
        batch is allowed to change sections; P6-1 was not. */

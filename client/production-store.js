@@ -215,7 +215,7 @@ export function createProductionStore({ api } = {}) {
       lastError = null;
       lastRefusal = answer.refused;
       announce();
-      return { ok: false, refused: answer.refused };
+      return answer.detail ? { ok: false, refused: answer.refused, detail: answer.detail } : { ok: false, refused: answer.refused };   // `detail`: M3A A3, not stored
     }
     /* `adopt` reads `state` and `version` and nothing else, so anything else the
        reply carried — a credential — is handed to the caller and never stored. */

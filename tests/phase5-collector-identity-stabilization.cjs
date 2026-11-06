@@ -190,8 +190,12 @@ describe("A. What may go into a trade package", () => {
     }
     eq(D.collectorCopyStatus(offered, st.get().opportunities), "available",
       "the good copy in a refused set was selected anyway");
-    /* And the command is not reachable from production at all. */
-    assert(!EXPOSED_COMMANDS.includes("selectTradeCards"), "the trade command was exposed by this batch");
+    /* And the command is not reachable from production at all.
+       RESTATED (M3A A3, founder-authorized): it is a production door now, sent
+       by the shop's Select Trade. The rule above is the domain's and holds at
+       that door unchanged — a kept copy is refused with the one public answer
+       and nothing is written (tests/milestone3a3-tp-selection.cjs, J). */
+    assert(EXPOSED_COMMANDS.includes("selectTradeCards"), "Select Trade's door");
     assert(!EXPOSED_COMMANDS.includes("proposeTradeSelection"), "nor the retired one");
   });
 
@@ -697,7 +701,7 @@ describe("D. What this batch did not touch", () => {
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(EXPOSED_COMMANDS.length, 31, "the production surface changed size");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37, "the production surface changed size");
     const { COMMAND_NAMES } = require("../domain/metyet-commands.js");
     const known = (n) => [...COMMAND_NAMES].includes(n);
     for (const shut of ["proposeTradeSelection", "reviewTradeCard", "proposeMarketValue",

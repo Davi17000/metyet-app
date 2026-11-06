@@ -108,18 +108,19 @@ async function collector(st) {
 }
 
 /* ============================================================== A. THE SHOP */
-describe("A. an agreed price, and Select Trade not in production yet", () => {
-  test("Casey accepts Northline's $11: the shop is told the price is agreed and Select Trade is coming — not to wait on Casey", async () => {
+/* RESTATED (M3A A3, founder-authorized): Select Trade is in production now. After an agreed price the shop is told, in the server's words, that choosing cards is its move — and it can; the "coming soon" moved on to Value Trade (tests/milestone3a3-tp-selection.cjs). */
+describe("A. an agreed price, and then Select Trade", () => {
+  test("Casey accepts Northline's $11: the shop is told choosing cards is its move — not to wait on Casey", async () => {
     const { st, oppId } = offered([[NL, "proposePrice", { amount: 11 }], [A, "acceptPrice"]]);
     const o = st.get().opportunities.find((y) => y.id === oppId);
     eq([o.agreedPrice, o.stage].join(), "11,select-trade");
     eq(P.projectForActor(st.get(), NL).opportunities.find((y) => y.id === oppId).turn.reason, "select-trade", "the server's next move (RESTATED, M3A A1: choosing trade cards is the shop's own move now)");
     const s = await shop(st);
-    eq(s.tags(oppId).join("|"), "Price agreed · Select Trade coming soon|Primary goal");
+    eq(s.tags(oppId).join("|"), "Select Trade|Primary goal|Your move");
     const t = flat(s.rec(oppId));
-    assert(!/Waiting for Casey|Your move/.test(t), t);
-    eq(s.buttons(oppId).join("|"), "", "a deal action after agreement");
-    eq(flat(byCls(s.panelOf(oppId), "tps-ph")[0]).split(" ")[0].toLowerCase(), "in", "not In progress");
+    assert(!/Waiting for Casey|coming soon/.test(t), t);
+    assert(/Choose the cards you'd consider from Casey's Trade\/Sell cards/.test(t), t);
+    eq(flat(byCls(s.panelOf(oppId), "tps-ph")[0]).split(" ")[0].toLowerCase(), "ready", "not Ready to coordinate");
   });
   test("the agreed price is the record's largest figure, with the prices that led to it and what comes next", async () => {
     const { st, oppId } = offered([[NL, "proposePrice", { amount: 11 }], [A, "acceptPrice"]]);
@@ -129,19 +130,21 @@ describe("A. an agreed price, and Select Trade not in production yet", () => {
     eq(flat(byCls(box, "tps-agreed-row")[0]), "Agreed price $11");
     eq(byCls(box, "tps-offer-trail")[0].findAll((n) => n.type === "li").map(flat).join(" | "),
       "Casey's offer $10 | Your counter $11 | Casey accepted $11");
-    eq(flat(byCls(box, "tps-agreed-next")[0]), "Agreeing a price doesn't complete the deal. Select Trade is coming soon.");
+    eq(byCls(box, "tps-agreed-next").length, 0, "a coming-soon line under an agreed price");
+    assert(byCls(s.rec(oppId), "tps-sel").length === 1, "what comes next is the Select Trade panel");
   });
   test("the shop accepts Casey's $10: the same, at $10", async () => {
     const { st, oppId } = offered([[NL, "acceptPrice"]]);
     const s = await shop(st);
-    eq(s.tags(oppId)[0], "Price agreed · Select Trade coming soon");
+    eq(s.tags(oppId)[0], "Select Trade");
     eq(flat(byCls(s.rec(oppId), "tps-agreed-row")[0]), "Agreed price $10");
   });
 });
 
 /* ============================================================ B. BOTH SIDES */
 describe("B. both sides say the same agreement — the stored one", () => {
-  test("the Collector's Agreed price and the shop's are the stored agreedPrice; both say Select Trade isn't here yet", async () => {
+  /* RESTATED (M3A A3, founder-authorized): Select Trade is in production now. After an agreed price the shop is told, in the server's words, that choosing cards is its move — and it can; the "coming soon" moved on to Value Trade (tests/milestone3a3-tp-selection.cjs). */
+  test("the Collector's Agreed price and the shop's are the stored agreedPrice; both say Select Trade is under way", async () => {
     const { st, oppId } = offered([[NL, "proposePrice", { amount: 11 }], [A, "acceptPrice"]]);
     const stored = st.get().opportunities.find((y) => y.id === oppId).agreedPrice;
     const t = await shop(st);
@@ -150,8 +153,8 @@ describe("B. both sides say the same agreement — the stored one", () => {
     const collectorSays = byCls(c.ws(), "mcs-ws-prices")[0].children.map(flat).find((r) => /^Agreed price/.test(r));
     eq(shopSays, `Agreed price $${stored}`);
     eq(collectorSays, `Agreed price $${stored}`);
-    assert(/Select Trade comes next, and isn't available in MetYet yet/.test(flat(c.ws())), flat(c.ws()));
-    assert(/Select Trade is coming soon/.test(flat(t.rec(oppId))));
+    assert(/Northline Cards is choosing from your Trade\/Sell cards/.test(flat(c.ws())), flat(c.ws()));
+    assert(/Choose the cards you'd consider/.test(flat(t.rec(oppId))), flat(t.rec(oppId)));
   });
 });
 
@@ -197,8 +200,12 @@ describe("C. nothing else moved", () => {
   test("the source decides nothing: it reads turn and agreedPrice, compares no stage, and adds no action", () => {
     const src = fs.readFileSync(path.join(ROOT, "client/tp/sections/Opportunities.jsx"), "utf8");
     const fn = src.slice(src.indexOf("const agreedOn ="), src.indexOf("/* Whose turn, in two words."));
-    /* RESTATED (M3A A1): the reason is `select-trade` — the shop's own move to choose trade cards. */
-    assert(/turn\.reason === "select-trade"/.test(fn) && /agreedPrice/.test(fn), fn);
+    /* RESTATED (M3A A1): the reason is `select-trade` — the shop's own move to choose trade cards.
+       RESTATED (M3A A3, founder-authorized): that move has its control now, so
+       there is no "awaiting" state left here to read it — Select Trade reads
+       the turn in client/select-trade.jsx. The agreed state still reads only
+       agreedPrice, and still compares no stage and reaches no action. */
+    assert(/agreedPrice/.test(fn) && !/coming soon/.test(fn), fn);
     assert(!/\.stage|onAccept|onCounter|onDecline|onSend/.test(fn), "the agreed state compares a stage or reaches an action");
   });
 });

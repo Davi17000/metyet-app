@@ -242,7 +242,7 @@ describe("B. kept in the domain, closed at the door, and only one way in", () =>
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(EXPOSED_COMMANDS.length, 31, "the production surface is not 29");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + selectTradeCards, deselectTradeCard, closeTradeSelection, holdTradeSelection, continueTradeSelection, withdrawTradeCard (Select Trade's screens); — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37, "the production surface is not 29");
   });
 
   test("a legacy row can still be made past the door, by design", async () => {

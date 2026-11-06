@@ -61,7 +61,14 @@ const STALE = new Set(["not-your-turn", "wrong-stage", "terminal", "copy-unavail
    One command at a time per deal, and the button that sent it says so. A
    second press while the first is in flight does nothing — the store would
    refuse it anyway — and a refusal is shown beside the deal it was about. */
-export function useSender(onRefresh = null, report = null) {
+/* `options` (M3A A3), all optional, for a caller whose refusals need their own
+   words or their own reading: `sentence(code)` says a refusal in that screen's
+   words (falling back to the shared table), `onRefused(answer)` is handed the
+   whole refusal — Select Trade reads `detail` from it — and `refreshAlways`
+   re-reads after ANY refusal, for a screen where every refusal means the deal
+   is not what it showed. Every existing caller passes none and is unchanged. */
+export function useSender(onRefresh = null, report = null, options = {}) {
+  const say = (code) => (options.sentence && options.sentence(code)) || refusalSentence(code);
   const [busy, setBusy] = useState(null);
   const [trouble, setTrouble] = useState(null);
   /* The guard is a ref, not the `busy` state: two presses in the same instant
@@ -77,12 +84,13 @@ export function useSender(onRefresh = null, report = null) {
     try {
       const answer = await run();
       if (answer && answer.ok === false) {
-        setTrouble(refusalSentence(answer.refused));
+        setTrouble(say(answer.refused));
         /* Reported upward too: the re-read below can move this deal to another
            panel, or drop the copy altogether, and the message has to survive
            the move or the person is left with no answer at all. */
-        if (report) report(key, refusalSentence(answer.refused));
-        if (STALE.has(answer.refused) && onRefresh) {
+        if (report) report(key, say(answer.refused));
+        if (options.onRefused) options.onRefused(answer);
+        if ((options.refreshAlways || STALE.has(answer.refused)) && onRefresh) {
           try { await onRefresh(); } catch (error) { /* the message already says enough */ }
         }
         return false;

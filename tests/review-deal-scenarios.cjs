@@ -57,9 +57,10 @@ describe("C. Agreed Market Price", () => {
     eq(f.agreedMarketPrice, 11);
     eq(f.proposedMarketPrice, 12);
     eq(f.stage, "select-trade");
-    eq(f.collectorSays, "Market price agreed");
-    eq(f.collectorAction, "View Agreement");
-    eq(f.collectorProgress, "Market Validation complete · Next: Step 2 of 10 · Select Trade — not yet available");
+    /* RESTATED (M3A A3, founder-authorized): Select Trade is in production, so after the price is agreed the Collector is told the shop is choosing cards, with View Deal. */
+    eq(f.collectorSays, "Northline Cards is choosing cards");
+    eq(f.collectorAction, "View Deal");
+    eq(f.collectorProgress, "Market Validation complete · Next: Step 2 of 10 · Select Trade");   /* RESTATED (M3A A3): step 2 is available now */
     eq(f.partnerSees.priceBlock, null, "the shop still has price controls");
     eq(JSON.stringify(f.partnerSees.facts), JSON.stringify({ Listed: 12, Agreed: 11 }));
     assert(f.refusals.some((r) => /proposeTradeSelection → command-unavailable/.test(r)), JSON.stringify(f.refusals));
@@ -71,7 +72,7 @@ describe("D. three Primary Goals (Milestone 2C.1)", () => {
   test("the agreed Mudkip deal; Charizard matched by two connected Trusted Partners; Pikachu by nobody connected", async () => {
     const f = await each("d");
     eq(f.agreedMarketPrice, 11);
-    eq(f.collectorAction, "View Agreement");
+    eq(f.collectorAction, "View Deal");   /* RESTATED (M3A A3, founder-authorized): Select Trade is in production, so after the price is agreed the Collector is told the shop is choosing cards, with View Deal. */
     eq(JSON.stringify(f.goals), JSON.stringify({ charizard: "2 Trusted Partners · 2 copies", mudkip: "agreed", pikachu: "no match",
       reverse: "1 Trusted Partner · Firm on Price" }));
   });

@@ -506,20 +506,23 @@ describe("E. the command endpoint", () => {
     const accepted = await send(app, SUBJECTS.northline, { command: "acceptPrice", payload: { oppId } });
     eq(accepted.statusCode, 200, "the partner accepts over HTTP: " + accepted.body);
     /* RESTATED (M3A A1): TP-led selection — still unexposed, still proved shut
-       at the boundary, then run past it through the persisted command path. */
-    await closedOverHttp(app, SUBJECTS.northline, "selectTradeCards", { oppId, copyIds: ["b1"] });
-    await closedOverHttp(app, SUBJECTS.northline, "closeTradeSelection", { oppId });
+       at the boundary, then run past it through the persisted command path.
+       RESTATED AGAIN (M3A A3, founder-authorized): Select Trade is a
+       production door now, so it runs over HTTP seat by seat; the stage after
+       it, Value Trade, is the one still proved shut. */
     const steps = [
-      [ACTORS.northline, "selectTradeCards", { oppId, copyIds: ["b1"] }],
-      [ACTORS.casey, "continueTradeSelection", { oppId }],
-      [ACTORS.northline, "closeTradeSelection", { oppId }],
+      [SUBJECTS.northline, "selectTradeCards", { oppId, copyIds: ["b1"] }],
+      [SUBJECTS.casey, "continueTradeSelection", { oppId }],
+      [SUBJECTS.northline, "closeTradeSelection", { oppId }],
     ];
-    for (const [actor, command, payload] of steps) {
-      const res = await direct(repository, actor, command, payload);
-      eq(res.ok, true, `${command}: ${JSON.stringify(res.refused)}`);
+    for (const [who, command, payload] of steps) {
+      const res = await send(app, who, { command, payload });
+      eq(res.statusCode, 200, `${command} over HTTP: ${res.body}`);
     }
     const world = await repository.loadWorld();
     eq(world.opportunities[0].stage, "value-trade", "the deal advanced");
+    const row = world.opportunities[0].trade.cards[0].id;
+    await closedOverHttp(app, SUBJECTS.casey, "proposeMarketValue", { oppId, tradeCardId: row, amount: 100 });
     const caseyView = (await get(app, SUBJECTS.casey)).json().state.opportunities[0];
     assert(!("tradeRate" in caseyView), "and the partner's trade % never crossed");
   });

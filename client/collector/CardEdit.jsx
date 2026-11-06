@@ -102,6 +102,8 @@ const SAVED_WORDS = {
    card goes back to its saved state; nothing changed. */
 const STATE_WHY = {
   "goal-locked": "This card is part of an active deal, so it stays as it is until the deal ends.",
+  /* M3A A3: a Trusted Partner has chosen this copy for a deal (not yet held). */
+  "copy-in-deal": "A Trusted Partner has chosen this copy for a deal, so it stays Trade / Sell — with its grade, condition and photos as they are — until it's taken out of that deal.",
   "copy-reserved": "This copy is part of a deal, so it stays in your collection.",
   "copy-committed": "This copy is part of a deal, so it stays in your collection.",
   "copy-in-use": "This copy is part of a deal's record, so MetYet keeps it as a copy.",

@@ -54,6 +54,7 @@ import { savePartnerProfile, openCollectorInvitation, revokeCollectorInvitation,
   inspectCopy, endInspection, requestCopyPhotos, provideCopyPhotos, setCopyKept, changeCardState,
   renameBinder, setBinderArchived,
   refreshView, openOffer, counterOffer, acceptOffer, declineOffer, withdrawOffer,
+  selectTrade, deselectTrade, closeSelection, holdSelection, readyForSelection, withdrawTradeCard,
   sendDealMessage } from "../commands.js";
 
 /* Identity is read in exactly one place — client/actor.js — and re-exported
@@ -296,6 +297,15 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
   const onAcceptOffer = useMemo(() => (store ? acceptOffer(store) : null), [store]);
   const onDeclineOffer = useMemo(() => (store ? declineOffer(store) : null), [store]);
   const onWithdrawOffer = useMemo(() => (store ? withdrawOffer(store) : null), [store]);
+  /* Select Trade (M3A A3): the partner's three doors and the Collector's
+     three. Bound here like every other door; each screen is handed only its
+     own. */
+  const onSelectTrade = useMemo(() => (store ? selectTrade(store) : null), [store]);
+  const onDeselectTrade = useMemo(() => (store ? deselectTrade(store) : null), [store]);
+  const onCloseSelection = useMemo(() => (store ? closeSelection(store) : null), [store]);
+  const onHoldSelection = useMemo(() => (store ? holdSelection(store) : null), [store]);
+  const onReadyForSelection = useMemo(() => (store ? readyForSelection(store) : null), [store]);
+  const onWithdrawTradeCard = useMemo(() => (store ? withdrawTradeCard(store) : null), [store]);
   /* A DEAL'S CONVERSATION (Milestone 2D.2). Both seats get it: either
      participant may write on their own deal, and the server checks which. */
   const onSendMessage = useMemo(() => (store ? sendDealMessage(store) : null), [store]);
@@ -728,6 +738,7 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
       onCreateBinder, onRenameBinder, onArchiveBinder, onFileObject, onUnfileObject,
       onInspect, onEndInspection, onRequestPhotos,
       onOpenOffer, onCounterOffer, onAcceptOffer, onDeclineOffer, onWithdrawOffer, onSendMessage,
+      onSelectTrade, onDeselectTrade, onCloseSelection, onHoldSelection, onReadyForSelection, onWithdrawTradeCard,
       /* Phase 5 Batch 3A. Who they just joined, so the shell can greet them by
          it once. It is read from the server's own reply, it is cleared the
          moment they do anything else, and it grants nothing. */

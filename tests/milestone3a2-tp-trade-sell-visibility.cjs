@@ -528,8 +528,11 @@ describe("E. Read-only, through the doors that already exist", () => {
     assert(!/collectorCopyStatus|binderRowState|EXCLUSIVE_COPY_STATES|\.offered\b|\.keeping\b|\.market\b/.test(src), "a second status rule");
   });
   test("no trade or interest command became a production door", () => {
-    for (const cmd of ["selectTradeCards", "deselectTradeCard", "closeTradeSelection", "holdTradeSelection",
-      "continueTradeSelection", "withdrawTradeCard", "setInterest"]) eq(isExposed(cmd), false, cmd);
+    /* RESTATED (M3A A3, founder-authorized): Select Trade's six are doors now,
+       sent by the Opportunity and the Deal Workspace — never by the Collector
+       Network, which test 1 of this section keeps command-free. Interest and
+       every later stage stay shut. */
+    for (const cmd of ["setInterest", "chooseCashOnly", "proposeMarketValue", "acceptDeal"]) eq(isExposed(cmd), false, cmd);
   });
   test("the partner projection still carries no keep decision, private value or binder", () => {
     eq(json(P.FIELD_RULES.COLLECTOR_COPY_FOR_PARTNER),

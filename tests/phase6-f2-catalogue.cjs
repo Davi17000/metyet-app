@@ -196,7 +196,7 @@ describe("D. the door", () => {
     assert(!/tcgdex|pokemontcg|provider|source/i.test(JSON.stringify(r.body)), "a provider leaked");
   });
   test("nothing written: no command, no migration, the production door unchanged", () => {
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage — each founder-approved */ eq(EXPOSED_COMMANDS.length, 31);
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37);
     const migrations = fs.readdirSync(path.join(ROOT, "persistence/migrations"));
     assert(!migrations.some((m) => /pokemon|pokedex_list|f2/i.test(m)), "a migration was added");
     const repo = fs.readFileSync(path.join(ROOT, "persistence/catalog-repository.js"), "utf8");

@@ -330,6 +330,48 @@ const CSS = `
 .tps-go.quiet { background:#FFF; border-color:var(--line); color:var(--muted); font-weight:400; }
 .tps-go:disabled { opacity:.6; cursor:default; }
 
+/* ---- Select Trade (M3A A3) ----
+   Inside the deal's record, under the agreed price: what is happening, the
+   cards chosen for this deal, the Collector's Trade/Sell cards to choose from,
+   then the one next action. One physical copy per row — picture, name,
+   printing, grade, certificate, photographs — with its button at the end;
+   rows wrap to one column on a phone. */
+.tps-sel { margin:0 16px 15px; padding:11px 12px; border:1px solid var(--line); border-radius:6px;
+  display:flex; flex-direction:column; gap:8px; max-width:70ch; }
+.tps-sel-h { margin:0; font-family:'Archivo'; font-size:10.5px; font-weight:600; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--muted); }
+.tps-sel-say { font-size:13px; font-weight:600; color:var(--text); }
+.tps-sel-sub { font-size:11px; color:var(--faint); text-transform:uppercase; letter-spacing:.06em; margin-top:2px; }
+.tps-sel-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+.tps-sel-copy { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:6px 0;
+  border-top:1px dashed var(--line-soft); }
+.tps-sel-art { flex:0 0 40px; width:40px; height:56px; border-radius:3px; overflow:hidden; background:var(--line-soft);
+  display:flex; align-items:center; justify-content:center; }
+.tps-sel-art img { width:100%; height:100%; object-fit:cover; display:block; }
+.tps-sel-plate { font-size:7px; line-height:1.1; color:var(--muted); text-align:center; padding:2px; overflow:hidden;
+  overflow-wrap:anywhere; }
+.tps-sel-id { flex:1 1 220px; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.tps-sel-t { font-weight:600; }
+.tps-sel-s, .tps-sel-f { font-size:12px; color:var(--muted); overflow-wrap:anywhere; }
+.tps-sel-warn { font-size:12px; color:var(--amber); }
+.tps-sel-tag { font-size:12px; font-weight:600; color:var(--t1); }
+.tps-sel-tag.warn { color:var(--amber); }
+.tps-sel-do { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.tps-sel-do .tps-go, .tps-sel-do .tps-chip { min-height:44px; }
+.tps-sel-draft { font-size:12px; color:var(--amber); font-weight:600; }
+.tps-sel-line { font-size:12.5px; color:var(--text); line-height:1.45; }
+.tps-sel-confirm { padding:10px 11px; border:1px solid var(--amber-line); background:var(--amber-bg); border-radius:6px;
+  display:flex; flex-direction:column; gap:8px; }
+.tps-sel-done { font-size:12.5px; color:var(--t1); font-weight:600; }
+
+/* ---- freshness (M3A A3) ----
+   What a check found, said once and quietly on the deal it is about; and, if
+   checking failed, one line across the top with the way to try again. */
+.tps-fresh { margin:0 16px 10px; font-size:12.5px; color:var(--t1); font-weight:600; max-width:70ch; }
+.tps-fresh-fail { margin:0 0 12px; padding:10px 12px; border:1px solid var(--amber-line); background:var(--amber-bg);
+  border-radius:6px; display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; font-size:12.5px; color:var(--text); }
+.tps-fresh-fail .tps-go { min-height:40px; }
+
 /* ---- a deal's conversation (Milestone 2D.2) ----
    Under the price, behind one control. The shop's own messages tinted and to
    the right, the collector's plain and to the left, each saying who and when
@@ -391,7 +433,8 @@ export default function TrustedPartnerShell({ state, onSignOut, onSaveProfile = 
   onInvite = null, onRevokeInvite = null, onRefresh = null,
   onAddCopy = null, onEditCopy = null, onRetireCopy = null, onBrowseCards = null,
   onProvidePhotos = null,
-  onCounterOffer = null, onAcceptOffer = null, onDeclineOffer = null, onSendMessage = null }) {
+  onCounterOffer = null, onAcceptOffer = null, onDeclineOffer = null, onSendMessage = null,
+  onSelectTrade = null, onDeselectTrade = null, onCloseSelection = null }) {
   const [section, setSection] = useState(SECTIONS[0].id);
 
   const who = describeActor(state);
@@ -415,12 +458,13 @@ export default function TrustedPartnerShell({ state, onSignOut, onSaveProfile = 
      Batch 3B hands it three, and only three: the shop's answers to a price
      (Accept, Counter, Decline), plus a re-read for when an answer finds the
      deal has already moved. Milestone 2D.2 adds one more, `onSendMessage`: a
-     message on one deal's conversation, which moves nothing. */
+     message on one deal's conversation, which moves nothing. M3A A3 adds
+     Select Trade's three: choose cards, remove one, start valuing. */
   const extra = meta.id === "inventory"
     ? { onSaveProfile, onAddCopy, onEditCopy, onRetireCopy, onBrowseCards, onProvidePhotos }
     : meta.id === "collectors" ? { onInvite, onRevokeInvite, onRefresh, onBrowseCards }
       : meta.id === "opportunities" ? { onBrowseCards, onCounterOffer, onAcceptOffer, onDeclineOffer, onRefresh,
-        onSendMessage }
+        onSendMessage, onSelectTrade, onDeselectTrade, onCloseSelection }
         : null;
 
   return (

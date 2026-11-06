@@ -82,12 +82,15 @@ import { OfferEntry, PriceHistory, useSender, statusLine, termsLine, priceOnTabl
 import { rows, indexById, text, day, money, plural, cardTitle, cardSetLine,
   gradeLine, stageLabel, isKnownStage, tierLabel, supplyLine, byRecency } from "../present.js";
 import { DealConversation, dealThread, messagesOf } from "../../deal-conversation.jsx";
+import { useDealFreshness } from "../../deal-freshness.js";
+import { CopyRow, liveRows, choosableCopies, looksUnavailable, myMove, turnOf, isSelectingStage, isValuingStage,
+  selectRefusal } from "../../select-trade.jsx";
 
 const COMPLETED = "completed";
 
 export default function Opportunities({ state, onBrowseCards = null,
   onCounterOffer = null, onAcceptOffer = null, onDeclineOffer = null, onRefresh = null,
-  onSendMessage = null }) {
+  onSendMessage = null, onSelectTrade = null, onDeselectTrade = null, onCloseSelection = null }) {
   const all = rows(state && state.opportunities);
   const catalog = indexById(state && state.catalog);
   const goals = indexById(state && state.goals);
@@ -114,8 +117,11 @@ export default function Opportunities({ state, onBrowseCards = null,
      moves next is the server's `turn`, read by name. */
   const me = viewerSeat(state);
   const live = byRecency(all.filter((o) => o.stage !== COMPLETED && !isEndedDeal(o)), "updated");
-  const yourMove = live.filter((o) => myPriceMove(o, me));
-  const waiting = live.filter((o) => !myPriceMove(o, me));
+  /* Select Trade (M3A A3): choosing cards, or finishing the choice once the
+     Collector is ready, is the shop's move too — the server's `turn` says so. */
+  const selectMove = (o) => isSelectingStage(o) && myMove(o, me, "select-trade", "close-selection");
+  const yourMove = live.filter((o) => myPriceMove(o, me) || selectMove(o));
+  const waiting = live.filter((o) => !(myPriceMove(o, me) || selectMove(o)));
   const done = byRecency(all.filter((o) => o.stage === COMPLETED || isEndedDeal(o)), "completedAt", "updated");
 
   /* READY TO COORDINATE — the server's overlaps, minus the ones already being
@@ -132,6 +138,23 @@ export default function Opportunities({ state, onBrowseCards = null,
      moves panel keeps its conversation open. */
   const [talking, setTalking] = useState({});
   const toggleTalk = (oppId) => setTalking((held) => ({ ...held, [oppId]: !held[oppId] }));
+  /* Select Trade's on-screen draft, confirmation and refused rows, per deal
+     (M3A A3) — kept here so a deal that moves panel keeps them. */
+  const [selectUi, setSelectUi] = useState({});
+  /* FRESHNESS (M3A A3). Opening Opportunities, coming back to the page, and
+     every 15 seconds while it is visible, the live deals are read again; a
+     deal that changed says what happened, quietly, on its own record. An open
+     "Start valuing" confirmation on a deal that changed is closed — the cards
+     it named may not be the cards on the table. If a check fails, the deal
+     actions pause until one succeeds. */
+  const fresh = useDealFreshness({ state, seat: me, deals: live.map((o) => o.id), onRefresh,
+    nameOf: (id) => { const o = all.find((x) => x.id === id); return o ? who.get(o.collectorId) || null : null; },
+    /* A change also retires the last "Sent …" line: it was about the deal as it was. */
+    onChange: (id) => setSelectUi((held) => (!held[id] ? held
+      : held[id].confirming
+        ? { ...held, [id]: { ...held[id], done: null, confirming: false, said: "This deal changed while you were confirming — check the cards." } }
+        : { ...held, [id]: { ...held[id], done: null } })) });
+  const frozen = fresh.failed;
   const ready = rows(state && state.discoveries).filter((d) => !working.has(d.key));
 
   /* WHAT EACH ONE IS, ASKED FOR ONCE. The ids are in this projection already;
@@ -140,8 +163,15 @@ export default function Opportunities({ state, onBrowseCards = null,
      and never the catalogue. */
   /* Batch 3B: and the cards the deals below are about, so an offer names the
      exact card and version it is for. Still one request for the set. */
+  /* M3A A3: and the Collector's copies a Select Trade may show — their
+     Trade/Sell copies and the rows of deals choosing them. Still one request. */
+  const selecting = all.filter((o) => isSelectingStage(o) || isValuingStage(o));
+  const selectingFor = new Set(selecting.map((o) => o.collectorId));
   const readyIds = [...new Set([...ready.map((d) => d.canonicalCardId),
-    ...all.map((o) => o.canonicalCardId)].filter(Boolean))];
+    ...all.map((o) => o.canonicalCardId),
+    ...selecting.flatMap((o) => liveRows(o).map((r) => r.canonicalCardId)),
+    ...rows(state && state.collectorCopies).filter((b) => selectingFor.has(b.collectorId)).map((b) => b.canonicalCardId),
+  ].filter(Boolean))];
   const [named, setNamed] = useState({});
   useEffect(() => {
     if (!onBrowseCards || !readyIds.length) return undefined;
@@ -189,7 +219,7 @@ export default function Opportunities({ state, onBrowseCards = null,
        same card, however plausible it would look. */
     const copy = o.invId != null ? copies.get(o.invId) || null : null;
     const known = isKnownStage(o.stage);
-    const awaiting = awaitingTrade(o);
+    const valuing = isValuingStage(o);
     const grade = gradeLine(card);
     const subtitle = [cardSetLine(card), grade].filter(Boolean).join(" · ") || null;
     /* A deal on a catalogue card names it from the catalogue's description,
@@ -205,11 +235,11 @@ export default function Opportunities({ state, onBrowseCards = null,
         subtitle={exact || (cardTitle(card) ? `${cardTitle(card)}${subtitle ? ` — ${subtitle}` : ""}` : subtitle)}
         tags={
           <>
-            {awaiting ? <Tag tone="strong">Price agreed · Select Trade coming soon</Tag>
+            {valuing ? <Tag tone="strong">Cards held · Value Trade coming soon</Tag>
               : <Tag tone={known ? "strong" : "unknown"}>{stageLabel(o.stage)}</Tag>}
             {known ? null : <Tag>not a stage this version knows</Tag>}
             {goal ? <Tag>{tierLabel(goal.tier)}</Tag> : null}
-            {awaiting ? null : turnTag(o)}
+            {valuing ? null : turnTag(o)}
           </>
         }
         note={text(goal && goal.note)}
@@ -227,8 +257,9 @@ export default function Opportunities({ state, onBrowseCards = null,
           </>
         }
       >
+        {fresh.notes[o.id] ? <p className="tps-fresh" role="status">{fresh.notes[o.id]}</p> : null}
         {isUnresolved(o) || isEndedDeal(o) ? (
-          <PriceBlock deal={o} me={me} collector={who.get(o.collectorId) || "The collector"}
+          <PriceBlock deal={o} me={me} collector={who.get(o.collectorId) || "The collector"} frozen={frozen}
             onCounterOffer={onCounterOffer} onAcceptOffer={onAcceptOffer}
             onDeclineOffer={onDeclineOffer} onRefresh={onRefresh} report={sayAbout(o.id)} note={said[o.id] || null} />
         ) : null}
@@ -236,8 +267,12 @@ export default function Opportunities({ state, onBrowseCards = null,
           <div className="tps-agreed" aria-label="Agreed price">
             <p className="tps-agreed-row"><span>Agreed price</span><strong>{dollars(o.agreedPrice)}</strong></p>
             <PriceHistory cls="tps" deal={o} seat={me} other={who.get(o.collectorId) || "The collector"} />
-            {awaiting ? <p className="tps-agreed-next">Agreeing a price doesn't complete the deal. Select Trade is coming soon.</p> : null}
           </div>
+        ) : null}
+        {(isSelectingStage(o) || valuing) ? (
+          <SelectTradePanel deal={o} state={state} me={me} collector={who.get(o.collectorId) || null}
+            named={named} ui={selectUi} setUi={setSelectUi} onRefresh={onRefresh} frozen={frozen}
+            onSelectTrade={onSelectTrade} onDeselectTrade={onDeselectTrade} onCloseSelection={onCloseSelection} />
         ) : null}
         {said[o.id] && !(isUnresolved(o) || isEndedDeal(o))
           ? <p className="tps-offer-problem tps-offer-said" role="status">{said[o.id]}</p> : null}
@@ -247,15 +282,13 @@ export default function Opportunities({ state, onBrowseCards = null,
       </Record>
     );
   };
-  /* AN AGREED PRICE, AND NOTHING YET AFTER IT (Milestone 2D.3). The server's
-     turn says the next move is choosing trade cards (`select-trade` — since
-     M3A A1 the shop's own move, picking from the Collector's Trade/Sell cards),
-     and production has no Select Trade yet — so "Your move" would send the
-     shop looking for a control that does not exist. Said instead as what it
-     is. Read from `turn` and `agreedPrice`, the server's own fields; no stage
-     is compared and nothing is decided. */
+  /* AN AGREED PRICE (Milestone 2D.3). Until M3A A3 the move after it —
+     choosing trade cards — had no control in production, so this screen said
+     "Select Trade coming soon" instead of "Your move". A3 ships that control
+     (SelectTradePanel, below), so the deal now says its stage and whose move
+     it is like any other; the "coming soon" moved one stage on, to Value
+     Trade ("Cards held · Value Trade coming soon"). */
   const agreedOn = (o) => isLiveDeal(o) && !isUnresolved(o) && !!dollars(o.agreedPrice);
-  const awaitingTrade = (o) => agreedOn(o) && o.turn.reason === "select-trade";
   /* Whose turn, in two words. Only for live deals; a finished one has none. */
   const turnTag = (o) => {
     if (!isLiveDeal(o) || !o.turn.seat) return null;
@@ -265,9 +298,20 @@ export default function Opportunities({ state, onBrowseCards = null,
 
   return (
     <>
+      {fresh.failed ? (
+        <div className="tps-fresh-fail" role="alert">
+          <span>{fresh.ended ? "Your session has ended — sign in again to see the latest."
+            : "Couldn't check for updates — what's shown may be out of date. Deal actions are paused until MetYet can confirm the latest."}</span>
+          {fresh.ended ? null : <button type="button" className="tps-go quiet" onClick={() => fresh.refreshNow()}>Refresh deals</button>}
+        </div>
+      ) : null}
       {ready.length || yourMove.length ? (
         <Panel title="Ready to coordinate"
-          note={[yourMove.length ? plural(yourMove.length, "offer to answer", "offers to answer") : null,
+          note={[yourMove.filter((o) => myPriceMove(o, me)).length
+            ? plural(yourMove.filter((o) => myPriceMove(o, me)).length, "offer to answer", "offers to answer") : null,
+            /* M3A A3: a deal waiting on the shop's choice of cards is not an offer. */
+            yourMove.filter((o) => selectMove(o)).length
+              ? plural(yourMove.filter((o) => selectMove(o)).length, "deal to choose cards for", "deals to choose cards for") : null,
             ready.length ? plural(ready.length, "card", "cards") : null].filter(Boolean).join(" · ")}>
           {yourMove.map(line)}
           {ready.map(overlap)}
@@ -279,7 +323,9 @@ export default function Opportunities({ state, onBrowseCards = null,
         note={waiting.length ? plural(waiting.length, "opportunity", "opportunities") : null}
         empty={waiting.length ? null
           : (yourMove.length
-            ? "Nothing else in progress — the offers above are waiting on you."
+            ? (yourMove.some((o) => myPriceMove(o, me))
+              ? "Nothing else in progress — the offers above are waiting on you."
+              : "Nothing else in progress — the deals above are waiting on you.")
             : all.length
             ? "Nothing in progress. Everything you've coordinated is complete."
             : "Nothing in progress yet. An opportunity begins from a collector's goal.")}
@@ -302,12 +348,13 @@ export default function Opportunities({ state, onBrowseCards = null,
    always there on the shop's move, including on a copy listed Firm on Price:
    Firm binds the Collector's OPENING, not the shop's reply. */
 function PriceBlock({ deal, me, collector, onCounterOffer, onAcceptOffer, onDeclineOffer, onRefresh,
-  report = null, note = null }) {
+  report = null, note = null, frozen = false }) {
   const sender = useSender(onRefresh, report);
   const [countering, setCountering] = useState(false);
   const myMove = myPriceMove(deal, me);
   const onTable = priceOnTable(deal);
-  const busy = !!sender.busy;
+  /* `frozen` (M3A A3): the latest could not be confirmed, so nothing is sent. */
+  const busy = !!sender.busy || frozen;
   return (
     <div className="tps-offer" aria-label="Price">
       <p className="tps-offer-terms">{termsLine(deal)}</p>
@@ -365,5 +412,209 @@ function DealTalk({ deal, state, me, collector, open, onToggle, onSendMessage, o
           onSendMessage={onSendMessage} onRefresh={onRefresh} />
       </div>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------ SELECT TRADE
+   (M3A A3) The shop chooses which of the Collector's Trade/Sell copies to
+   consider for this deal. Everything here follows the server's `turn`:
+
+     select-trade     the shop's first choice. Gathered HERE, on screen, and
+                      labelled "Not sent yet" — the server treats the first
+                      choice as a message to the Collector, so it goes in ONE
+                      send. With nothing chosen, the send asks for more cards.
+     more-cards /
+     adding-cards     the Collector's move: they add cards or say they're
+                      ready. The shop waits; nothing to press.
+     close-selection  the Collector is ready. The shop may add a card (sent at
+                      once), remove one, and start valuing — after a
+                      confirmation, because closing HOLDS every chosen card for
+                      this deal alone.
+
+   CHOOSING IS NOT HOLDING. A chosen card can still be chosen in another deal;
+   only starting valuation holds it, and the screen says "held" only once the
+   server has confirmed that. A close the server refuses names this deal's own
+   rows it could not hold (`detail.tradeCardIds`), and those rows say so.
+
+   The draft, the confirmation and the refused rows are kept by Opportunities,
+   keyed by deal, so a re-read that moves the deal to another panel keeps them.
+
+   A RE-READ NEVER THROWS AWAY A CHOICE (M3A A3 freshness). An unsent choice
+   that is still choosable stays chosen. One that no longer is — held by a
+   deal, no longer offered, out of view — stays on screen, marked, from the
+   copy as it was when chosen, until the shop removes it; it is never sent and
+   never counted. `frozen`: the latest could not be confirmed, so nothing is
+   sent until it can. */
+function SelectTradePanel({ deal, state, me, collector, named, ui, setUi,
+  onSelectTrade, onDeselectTrade, onCloseSelection, onRefresh, frozen = false }) {
+  const view = ui[deal.id] || {};
+  const put = (patch) => setUi((held) => ({ ...held, [deal.id]: { ...(held[deal.id] || {}), ...patch } }));
+  /* What went wrong is reported up to Opportunities' per-deal memory, like
+     the price block's: a re-read can move this deal to another panel, which
+     remounts this one, and the message must survive the move. */
+  const sender = useSender(onRefresh, (key, message) => put({ said: message }), {
+    sentence: selectRefusal("tp", collector),
+    refreshAlways: true,
+    onRefused: (answer) => put({ blocked: answer.detail && Array.isArray(answer.detail.tradeCardIds) ? answer.detail.tradeCardIds : [],
+      confirming: false, done: null }),
+  });
+  const busy = !!sender.busy || frozen;
+  const copies = rows(state && state.collectorCopies).filter((b) => b.collectorId === deal.collectorId);
+  const copyOf = new Map(copies.map((b) => [b.id, b]));
+  const live = liveRows(deal);
+  const choosable = byRecency(choosableCopies(deal, copies), "addedAt");
+  const chosen = view.draft || [];
+  const draft = chosen.filter((id) => choosable.some((b) => b.id === id));
+  const lost = chosen.filter((id) => !draft.includes(id));
+  const drafted = view.drafted || {};
+  const blocked = new Set(view.blocked || []);
+  const sending = myMove(deal, me, "select-trade");
+  const closing = myMove(deal, me, "close-selection");
+  const holding = isValuingStage(deal);
+  const reason = turnOf(deal).reason;
+  const who = collector || "The collector";
+
+  const say = holding ? "These cards are held for this deal. Value Trade isn't available in MetYet yet."
+    : sending ? `Choose the cards you'd consider from ${who}'s Trade/Sell cards. Nothing is sent until you press Send.`
+      : closing ? `${who} is ready. Add or remove cards, then start valuing.`
+        : reason === "adding-cards" ? `${who} is adding cards. You can finish choosing when they say they're ready.`
+          : reason === "more-cards" ? `Waiting for ${who} to add cards or say they're ready.`
+            : `Waiting for ${who}.`;
+
+  const toggle = (id) => put(chosen.includes(id)
+    ? { draft: chosen.filter((x) => x !== id), done: null, said: null }
+    : { draft: [...chosen, id], drafted: { ...drafted, [id]: copyOf.get(id) || null }, done: null, said: null });
+  const send = async () => {
+    const ids = [...draft];
+    if (await sender.send(`select:${deal.id}`, () => onSelectTrade(deal.id, ids))) {
+      put({ draft: [], blocked: [], said: null, done: ids.length ? `Sent ${plural(ids.length, "card", "cards")} to ${who}.` : `Asked ${who} for more cards.` });
+    }
+  };
+  const add = async (id) => {
+    if (await sender.send(`add:${id}`, () => onSelectTrade(deal.id, [id]))) put({ done: "Added to this deal.", said: null });
+  };
+  const remove = async (rowId) => {
+    if (await sender.send(`remove:${rowId}`, () => onDeselectTrade(deal.id, rowId))) {
+      put({ blocked: [...blocked].filter((x) => x !== rowId), done: "Removed from this deal.", said: null });
+    }
+  };
+  const close = async () => {
+    const ids = live.map((r) => r.id);
+    if (await sender.send(`close:${deal.id}`, () => onCloseSelection(deal.id, ids))) {
+      put({ confirming: false, blocked: [], done: "These cards are now held for this deal.", said: null });
+    }
+  };
+  const card = (canonicalCardId) => (canonicalCardId ? named[canonicalCardId] || null : null);
+  const n = live.length;
+
+  return (
+    <section className="tps-sel" aria-label="Select Trade" data-select={deal.id}>
+      <h3 className="tps-sel-h">{holding ? "Cards held for this deal" : "Select Trade"}</h3>
+      <p className="tps-sel-say" role="status">{say}</p>
+
+      {live.length ? (
+        <>
+          <p className="tps-sel-sub">{holding ? "Held for this deal" : "Chosen for this deal"}</p>
+          <ul className="tps-sel-list" aria-label="Chosen for this deal">
+            {live.map((r) => {
+              const copy = copyOf.get(r.binderId) || null;
+              const gone = !holding && (blocked.has(r.id) || looksUnavailable(r, copy));
+              return (
+                <CopyRow key={r.id} cls="tps" row={r} copy={copy} card={card(r.canonicalCardId)}
+                  tag={gone ? "No longer available — remove it to continue" : holding ? "Held" : null} warn={gone}>
+                  {closing && onDeselectTrade ? (
+                    <button type="button" className="tps-go quiet" disabled={busy} onClick={() => remove(r.id)}>
+                      {sender.busy === `remove:${r.id}` ? "Removing…" : "Remove"}
+                    </button>
+                  ) : null}
+                </CopyRow>
+              );
+            })}
+          </ul>
+        </>
+      ) : null}
+
+      {(sending || closing) && !holding ? (
+        choosable.length ? (
+          <>
+            <p className="tps-sel-sub">{`${who}'s Trade/Sell cards`}</p>
+            <ul className="tps-sel-list" aria-label={`${who}'s Trade/Sell cards`}>
+              {choosable.map((b) => {
+                const on = draft.includes(b.id);
+                return (
+                  <CopyRow key={b.id} cls="tps" copy={b} card={card(b.canonicalCardId)}
+                    tag={b.status === "selected" ? "Also chosen in another of your deals" : null}>
+                    {sending ? (
+                      <button type="button" className={`tps-chip${on ? " on" : ""}`} aria-pressed={on} disabled={busy}
+                        onClick={() => toggle(b.id)}>{on ? "Chosen ✓" : "Choose"}</button>
+                    ) : onSelectTrade ? (
+                      <button type="button" className="tps-go quiet" disabled={busy} onClick={() => add(b.id)}>
+                        {sender.busy === `add:${b.id}` ? "Adding…" : "Add to this deal"}
+                      </button>
+                    ) : null}
+                  </CopyRow>
+                );
+              })}
+            </ul>
+          </>
+        ) : (
+          <p className="tps-sel-line">{`${who} has no other Trade/Sell cards to choose from right now.`}</p>
+        )
+      ) : null}
+
+      {sending && lost.length ? (
+        <>
+          <p className="tps-sel-sub">No longer available to choose</p>
+          <ul className="tps-sel-list" aria-label="No longer available to choose">
+            {lost.map((id) => {
+              const was = drafted[id] || copyOf.get(id) || { id };
+              return (
+                <CopyRow key={id} cls="tps" copy={was} card={card(was.canonicalCardId)} warn
+                  tag="No longer available to choose — it won't be sent">
+                  <button type="button" className="tps-go quiet" disabled={!!sender.busy} onClick={() => toggle(id)}>Remove from my choice</button>
+                </CopyRow>
+              );
+            })}
+          </ul>
+        </>
+      ) : null}
+
+      {sending && onSelectTrade ? (
+        <div className="tps-sel-do">
+          {draft.length ? <span className="tps-sel-draft">{`${plural(draft.length, "card", "cards")} chosen · Not sent yet`}</span> : null}
+          <button type="button" className="tps-go" disabled={busy || (lost.length > 0 && !draft.length)} onClick={send}>
+            {sender.busy === `select:${deal.id}` ? "Sending…"
+              : draft.length ? `Send ${plural(draft.length, "card", "cards")} to ${who}` : `Ask ${who} for more cards`}
+          </button>
+        </div>
+      ) : null}
+
+      {closing && onCloseSelection && !view.confirming ? (
+        <div className="tps-sel-do">
+          {n ? (
+            <button type="button" className="tps-go" disabled={busy}
+              onClick={() => { sender.clear(); put({ confirming: true, done: null, said: null }); }}>
+              {`Start valuing ${plural(n, "card", "cards")}`}
+            </button>
+          ) : <span className="tps-sel-line">Add a card to continue, or ask {who} in the conversation to offer more.</span>}
+        </div>
+      ) : null}
+      {closing && view.confirming ? (
+        <div className="tps-sel-confirm" role="group" aria-label="Start valuing">
+          <p className="tps-sel-line">
+            {`Start valuing ${n === 1 ? "this card" : `these ${n} cards`}? ${n === 1 ? "It'll" : "They'll"} be held for this deal and can't be chosen in another one. ${who} can still take a card out.`}
+          </p>
+          <div className="tps-sel-do">
+            <button type="button" className="tps-go" disabled={busy || !n} onClick={close}>
+              {sender.busy === `close:${deal.id}` ? "Starting…" : "Start valuing"}
+            </button>
+            <button type="button" className="tps-go quiet" disabled={busy} onClick={() => put({ confirming: false })}>Not yet</button>
+          </div>
+        </div>
+      ) : null}
+
+      {sender.trouble || view.said ? <p className="tps-offer-problem" role="status">{sender.trouble || view.said}</p>
+        : view.done ? <p className="tps-sel-done" role="status">{view.done}</p> : null}
+    </section>
   );
 }

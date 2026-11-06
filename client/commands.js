@@ -597,3 +597,47 @@ export function withdrawOffer(target) {
   }
   return (oppId) => target.execute("cancelOpportunity", { oppId });
 }
+
+/* SELECT TRADE (M3A A3). The partner chooses which of the Collector's
+   Trade/Sell copies to consider for one deal; the Collector says "hold on" or
+   "ready", and may take a card back out. Six doors, each one command.
+
+   THE FIRST CHOICE IS ONE SEND. `selectTrade` takes the whole list the partner
+   gathered on screen: the server treats the first selection as a message to
+   the Collector, so it is never sent a card at a time. Later additions go
+   through the same door with one id.
+
+   `closeSelection` SENDS WHAT WAS SHOWN. `tradeCardIds` are the deal's live
+   rows as the screen drew them; if the deal moved since, the server answers
+   `terms-changed` rather than holding cards nobody looked at. A refused close
+   may come back with `detail.tradeCardIds` — the caller's own rows it could
+   not hold. */
+const needsStore = (name, target) => {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError(`${name}: the production store is required`);
+  }
+};
+export function selectTrade(target) {
+  needsStore("selectTrade", target);
+  return (oppId, copyIds) => target.execute("selectTradeCards", { oppId, copyIds });
+}
+export function deselectTrade(target) {
+  needsStore("deselectTrade", target);
+  return (oppId, tradeCardId) => target.execute("deselectTradeCard", { oppId, tradeCardId });
+}
+export function closeSelection(target) {
+  needsStore("closeSelection", target);
+  return (oppId, tradeCardIds) => target.execute("closeTradeSelection", { oppId, expect: { tradeCardIds } });
+}
+export function holdSelection(target) {
+  needsStore("holdSelection", target);
+  return (oppId) => target.execute("holdTradeSelection", { oppId });
+}
+export function readyForSelection(target) {
+  needsStore("readyForSelection", target);
+  return (oppId) => target.execute("continueTradeSelection", { oppId });
+}
+export function withdrawTradeCard(target) {
+  needsStore("withdrawTradeCard", target);
+  return (oppId, tradeCardId) => target.execute("withdrawTradeCard", { oppId, tradeCardId });
+}

@@ -348,21 +348,22 @@ describe("B. the shop answers from Opportunities", () => {
     eq(json(north.posts), json(["acceptPrice"]), "one command");
     const r = await stored(ctx, o.id);
     eq([r.agreedPrice, r.stage].join("|"), "110|select-trade", "agreed and advanced");
-    const prog = panel(north, "In progress");
     /* RESTATED (Milestone 2D.3): Select Trade is not in production, so the
        shop is no longer told it is waiting on Casey — a move Casey cannot
-       make. It is told the price is agreed and what comes next. */
-    assert(prog && textOf(prog).includes("Price agreed · Select Trade coming soon") && !textOf(prog).includes("Waiting for Casey"),
-      "the shop is not told the price is agreed and Select Trade is coming");
-    assert(/Agreed price \$110/.test(textOf(prog).replace(/\s+/g, " ")), "the agreed price is not shown prominently");
-    const ready = panel(north, "Ready to coordinate");
-    assert(!ready || !record(ready, "Casey"), "Casey's offer is no longer waiting on the shop");
+       make. It is told the price is agreed and what comes next.
+       RESTATED (M3A A3, founder-authorized): Select Trade is in production now, so after the price is agreed the deal stays in Ready to coordinate as the shop's next move — choosing cards — and the Collector is told the shop is choosing. */
+    const rec = record(panel(north, "Ready to coordinate"), "Casey");
+    const said0 = textOf(rec).replace(/\s+/g, " ");
+    assert(rec && /Select Trade/.test(said0) && /Your move/.test(said0) && !/Waiting for Casey|coming soon/.test(said0),
+      "the shop is not told choosing cards is its move: " + said0);
+    assert(/Agreed price \$110/.test(said0), "the agreed price is not shown prominently");
+    assert(!button(rec, "Accept $110") && !button(rec, "Decline") && !button(rec, "Counter"), "Casey's offer is no longer waiting on the shop");
     await casey.refresh();
     const said = await dealSaid(casey);
     const box = wsRoot(casey);
     /* RESTATED (Milestone 2D.2 refinement): same facts, the new words. */
-    for (const part of ["Market price agreed", "Northline's asking price $120", "Your offer $110", "Agreed price $110",
-      "Select Trade comes next", "View Agreement"]) {
+    for (const part of ["Northline is choosing cards", "Northline's asking price $120", "Your offer $110", "Agreed price $110",
+      "Choosing cards to trade"]) {   /* RESTATED (M3A A3, founder-authorized): Select Trade is in production now, so after the price is agreed the deal stays in Ready to coordinate as the shop's next move — choosing cards — and the Collector is told the shop is choosing. */
       assert(said.includes(part), `the Collector is not told "${part}": ` + said);
     }
     assert(!button(box, "Withdraw offer") && !button(box, "Counter") && !button(box, "Accept"), "and no price controls after agreement");
@@ -594,9 +595,10 @@ describe("G. stale screens and repeated presses", () => {
     const stale = record(panel(tab, "Ready to coordinate"), "Casey");
     await press(tab, stale, "Decline");
     assert(flat(tab).includes("This deal has moved past agreeing a price. The latest is shown here."), "told: " + flat(tab));
-    assert(!panel(tab, "Ready to coordinate") || !record(panel(tab, "Ready to coordinate"), "Casey"),
-      "and the stale offer is gone after the re-read");
-    assert(record(panel(tab, "In progress"), "Casey"), "it is in progress now, where the message went with it");
+    /* RESTATED (M3A A3, founder-authorized): Select Trade is in production now, so after the price is agreed the deal stays in Ready to coordinate as the shop's next move — choosing cards — and the Collector is told the shop is choosing. */
+    const now = record(panel(tab, "Ready to coordinate"), "Casey");
+    assert(now && !button(now, "Decline") && !button(now, "Accept $100"), "and the stale offer is gone after the re-read");
+    assert(/Select Trade/.test(textOf(now)), "it is the shop's Select Trade move now, where the message went with it");
     eq((await stored(ctx, o.id)).agreedPrice, 100, "the first answer stands");
   });
   test("[12] an offer on a copy the shop has just removed is refused, and the screen catches up", async () => {
@@ -694,7 +696,8 @@ describe("I. the door and the client agree", () => {
     const tpShell = code("client/tp/TrustedPartnerShell.jsx");
     /* RESTATED (Milestone 2D.2): plus `onSendMessage`, the deal's
        conversation — a message, which answers no price. */
-    assert(/opportunities" \? \{ onBrowseCards, onCounterOffer, onAcceptOffer, onDeclineOffer, onRefresh,\s*onSendMessage \}/.test(tpShell),
+    /* RESTATED (M3A A3, founder-authorized): plus Select Trade's three. */
+    assert(/opportunities" \? \{ onBrowseCards, onCounterOffer, onAcceptOffer, onDeclineOffer, onRefresh,\s*onSendMessage, onSelectTrade, onDeselectTrade, onCloseSelection \}/.test(tpShell),
       "Opportunities is handed something other than the shop's three answers and the conversation");
     assert(!/onOpenOffer|onWithdrawOffer/.test(tpShell), "the shop's shell can reach the Collector's moves");
     const coShell = code("client/collector/CollectorShell.jsx");

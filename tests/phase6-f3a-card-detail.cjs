@@ -612,7 +612,10 @@ describe("F. the review-only artwork exception", () => {
       /* (M3A A1: TP-led trade selection — the Collector view's copy-state words
          and the store's command bindings; neither the importer nor an image
          rule.) */
-      "domain/collector-view.js", "domain/metyet-store.js", "domain/README.md"];
+      "domain/collector-view.js", "domain/metyet-store.js", "domain/README.md",
+      /* (M3A A3, founder-authorized: a refusal's `detail` carried through the
+         command transaction — neither the importer nor an image rule.) */
+      "persistence/command-transaction.js"];
     eq(changed.split("\n").filter((f) => f && !B5.includes(f)).join("\n"), "", "Stage 1 changed production catalogue, server or domain code");
   });
 });

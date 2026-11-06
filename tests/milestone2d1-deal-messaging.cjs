@@ -325,7 +325,8 @@ describe("B. authorization", () => {
       eq((await ctx.send("casey", cmd, { oppId: ctx.o1, partnerId: "p1", text: "x" })).refused, "command-unavailable", cmd);
     }
     assert(EXPOSED_COMMANDS.includes("sendDealMessage"));
-    eq(EXPOSED_COMMANDS.length, 31);
+    /* RESTATED (M3A A3, founder-authorized): + Select Trade's six. The legacy messaging commands above are still closed. */
+    eq(EXPOSED_COMMANDS.length, 37);
   });
 });
 

@@ -321,7 +321,7 @@ describe("C. no Price History in the workspace", () => {
   });
   test("agreed: the Agreed Market Price beside the Proposed Market Price, the next stage named; history kept", async () => {
     const w = world();
-    const s = await shell(w.st); await s.go("Deal Flow"); await s.press(s.goal("gM"), "View Agreement");
+    const s = await shell(w.st); await s.go("Deal Flow"); await s.press(s.goal("gM"), "View Deal");   /* RESTATED (M3A A3, founder-authorized): an agreed price is followed by Select Trade, which production now offers — the partner choosing cards, said as that, with "View Deal". */
     const stage = byCls(s.ws(), "mcs-ws-stage")[0];
     /* RESTATED (Milestone 2D.2 refinement): the offer and counter that led
        to the agreement stay beside it, so the context is never lost. */

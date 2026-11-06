@@ -85,6 +85,7 @@ import CardArt from "../../card-art.jsx";
 import { StateChip } from "../states.jsx";
 import { dealGlance, GoalProgress, OpeningOffer } from "../deal-parts.jsx";
 import { picturesOf, PhotoViewer } from "../card-viewer.jsx";
+import { useDealFreshness } from "../../deal-freshness.js";
 import { rows, text, money, plural, gradeLine, gradeProblem, gradeConflictLine,
   criteriaLine, printingLine } from "../present.js";
 
@@ -216,7 +217,11 @@ const tierChip = (goal) => (goal.tier === "primary"
 
 /* ============================================================ THE LANDING PAGE */
 export default function DealFlow({ state, onBrowseCards = null, onOpenDeal = null, onOpenMatches = null,
-  onFindCards = null, focus = null, onFocusUsed = null }) {
+  onFindCards = null, focus = null, onFocusUsed = null, onRefresh = null }) {
+  /* FRESHNESS (M3A A3): arriving at Deal Flow, or coming back to the page,
+     reads the server again, so each deal's status is the deal as it stands.
+     No clock here — the 15-second check belongs to an open deal. */
+  useDealFreshness({ state, seat: viewerSeat(state), onRefresh, poll: false });
   const goals = rows(state && state.goals);
   const partners = rows(state && state.partners);
   const me = viewerSeat(state);

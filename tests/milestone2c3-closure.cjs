@@ -214,7 +214,7 @@ describe("A. two printings of one card never read alike", () => {
     assert(/Reverse Holo · PSA 9 · Northline Cards/.test(flat(dialog(s))), flat(dialog(s)));
     await s.press(dialog(s), "Close");
     await s.press(s.gm(), "Back to Deal Flow");
-    await s.press(s.goal("gM"), "View Agreement");
+    await s.press(s.goal("gM"), "View Deal");   /* RESTATED (M3A A3, founder-authorized): an agreed price is followed by Select Trade, which production now offers — the partner choosing cards, said as that, with "View Deal". */
     assert(/Ruby & Sapphire · #60 · Normal · with Northline Cards/.test(flat(byCls(s.ws(), "mcs-ws-hd")[0])), flat(byCls(s.ws(), "mcs-ws-hd")[0]));
   });
 });
@@ -226,8 +226,8 @@ describe("B. nothing else moved", () => {
     eq(s.cards().map((a) => a.props["data-goal"]).join(), "gC,gM,gP,gR");
     eq(bars(s.goal("gM")).length, 1);
     eq(byCls(s.goal("gM"), "mcs-dg-progress")[0].findAll((n) => n.type === "p").map((p) => flat(p)).join(" | "),
-      "Market price agreed | Select Trade not yet available");
-    eq(buttons(s.goal("gM")).join("|"), "View Agreement");
+      "Select Trade | Northline Cards is choosing cards");   /* RESTATED (M3A A3, founder-authorized): an agreed price is followed by Select Trade, which production now offers — the partner choosing cards, said as that, with "View Deal". */
+    eq(buttons(s.goal("gM")).join("|"), "View Deal");
     eq(bars(s.goal("gR")).length, 0);
     eq(buttons(s.goal("gR")).join("|"), "View Matches");
     eq(flat(byCls(s.goal("gR"), "mcs-dg-match")[0]), "1 Trusted Partner matches");

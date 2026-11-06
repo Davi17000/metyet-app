@@ -890,6 +890,10 @@ describe("G. boundaries, and what did not change", () => {
          one plain-text message on one canonical opportunity, from one of its two
          participants. It changes no term of any deal; only Accept accepts. */
       "sendDealMessage",
+      /* AND SELECT TRADE'S SIX (M3A A3, founder-authorized), with the screens
+         that send them. Value Trade, Deal, Fulfillment and cash-only stay closed. */
+      "selectTradeCards", "deselectTradeCard", "closeTradeSelection",
+      "holdTradeSelection", "continueTradeSelection", "withdrawTradeCard",
     ].sort()), "a door was opened that nobody declared");
     const browserCode = code("client/browse/CardBrowser.jsx");
     assert(!EXPOSED_COMMANDS.some((c) => browserCode.includes(c)),

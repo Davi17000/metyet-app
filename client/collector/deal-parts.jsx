@@ -23,6 +23,7 @@
 import React, { useState } from "react";
 import { OfferEntry, readEntry, priceOnTable, isUnresolved, myPriceMove, dollars, lastPriceMove } from "../negotiation.jsx";
 import { dealProgress } from "./deal-progress.js";
+import { isSelectingStage, isValuingStage, myMove } from "../select-trade.jsx";
 import { STATE_STYLE } from "./states.jsx";
 
 /* ----------------------------------------------------- A DEAL, IN A GLANCE
@@ -39,6 +40,14 @@ export function dealGlance(deal, me, partner) {
     }
     return { mine: false, status: `Waiting for ${who}`, cta: "View Deal" };
   }
+  /* SELECT TRADE (M3A A3): the partner chooses, the Collector answers. Read
+     from the server's `turn` alone; nothing is decided. */
+  if (isSelectingStage(deal)) {
+    if (myMove(deal, me, "adding-cards")) return { mine: true, status: "Your turn · Adding cards", cta: "View Deal" };
+    if (myMove(deal, me, "more-cards", "trade-reviewed")) return { mine: true, status: `Your turn · ${who} chose cards`, cta: "View Deal" };
+    return { mine: false, status: `${who} is choosing cards`, cta: "View Deal" };
+  }
+  if (isValuingStage(deal)) return { mine: false, status: "Cards held for this deal", cta: "View Deal" };
   /* Agreed, and the next stage is one production does not offer yet. */
   const progress = dealProgress(deal);
   if (dollars(deal.agreedPrice) && progress && progress.known && progress.next) {
@@ -118,14 +127,15 @@ export function GoalProgress({ deal, glance }) {
    Present only while the price is open. Accept and Counter only when the
    server says it is this Collector's move; Withdraw whenever the price is
    still open. After agreement nothing is drawn. */
-export function NegotiationControls({ deal, me, sender, onCounterOffer, onAcceptOffer, onWithdrawOffer }) {
+/* `frozen` (M3A A3 freshness): the latest could not be confirmed, so no move is sent. */
+export function NegotiationControls({ deal, me, sender, onCounterOffer, onAcceptOffer, onWithdrawOffer, frozen = false }) {
   const [countering, setCountering] = useState(false);
   if (!isUnresolved(deal)) {
     return sender.trouble ? <p className="mcs-df-trouble" role="status">{sender.trouble}</p> : null;
   }
   const myMove = myPriceMove(deal, me);
   const onTable = priceOnTable(deal);
-  const busy = !!sender.busy;
+  const busy = !!sender.busy || frozen;
   return (
     <div className="mcs-offer mcs-offer-live" aria-label="Your offer">
       {countering ? (

@@ -519,7 +519,13 @@ function createApp({
     if (!result.ok) {
       request.log.info({ command, refused: result.refused }, "command refused");
       reply.code(409);
-      return { ...errorBody(apiError("command_refused", { refused: result.refused }), request.id), version: result.version };
+      /* A REFUSAL'S `detail` (M3A A3), beside `version` and only when the
+         domain gave one. Today that is closeTradeSelection naming the CALLER'S
+         OWN rows that could not be held — ids of the caller's own deal, which
+         they already hold, and nothing about who or what holds the card. It is
+         not the error's `detail`, which stays log-only. */
+      return { ...errorBody(apiError("command_refused", { refused: result.refused }), request.id), version: result.version,
+        ...(result.detail ? { detail: result.detail } : {}) };
     }
     /* AN INVITATION THAT IS OVER KEEPS NO ADDRESS (Phase 5 Batch 3B-2).
 
