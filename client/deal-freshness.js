@@ -138,9 +138,11 @@ export function useDealFreshness({ state, seat, deals = [], nameOf = () => null,
       fails.current = 0;
       setFail(false);
       if (!alive.current) return;
-      const now = next && typeof next === "object" ? next : stateRef.current;
+      /* `null`: the store dropped this answer because a newer one had already
+         arrived (F1) — the screen is newer than this check, so it says nothing. */
+      const now = next === null ? null : next && typeof next === "object" ? next : stateRef.current;
       const found = {};
-      for (const id of ids) {
+      for (const id of now ? ids : []) {
         const after = dealPrint(now, id, seat);
         if (!same(before.get(id), after)) found[id] = changeNote(before.get(id), after, seat, nameRef.current(id));
       }

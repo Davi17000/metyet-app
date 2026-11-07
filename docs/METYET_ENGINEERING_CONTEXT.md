@@ -420,10 +420,20 @@ later, not yet shipped, step holds it.
 
 ### Trade Selection, withdrawal and the lost shop card (M3A A1, founder-approved)
 
-Domain only — no trade command is on the production allow-list until the
-screens that send them ship (A3–A6). Production still stops at "Price agreed
-· Select Trade coming soon"; the shop's tag now reads the turn reason
-`select-trade`.
+**In production since M3A A3:** Select Trade's six commands are on the
+allow-list — `selectTradeCards`, `deselectTradeCard` and `closeTradeSelection`
+(sent from the shop's Opportunity) and `holdTradeSelection`,
+`continueTradeSelection` and `withdrawTradeCard` (sent from the Collector's
+Deal Workspace). `withdrawTradeCard` keeps its full domain permission (until
+final agreement); the product offers it on the Select Trade screen only.
+Value Trade, Deal, Fulfillment and `chooseCashOnly` stay closed until the
+screens that send them ship (A4–A6): after a successful close both seats see
+the cards held and "Value Trade isn't available in MetYet yet". A refused
+close names only the caller's own rows (`detail.tradeCardIds`). The shop's
+Collector Network shows each connected Collector's Trade/Sell copies,
+read-only (A2). An open deal re-reads the server on arrival, on return to the
+page and every 15 s while visible, deal by deal; a failed check pauses the
+deal's moves until one succeeds (A3 freshness).
 
 - **TP-led selection.** The partner selects specific copies from the
   Collector's Trade/Sell supply (`selectTradeCards`); the Collector never
@@ -459,11 +469,11 @@ screens that send them ship (A3–A6). Production still stops at "Price agreed
 - **Inventory identity.** A removed shop copy is never revived: re-adding the
   same card mints a new `invId`, and nothing (deals, holds, matches) carries
   over. The CSV import only adds.
-- **Deferred to A1P:** the prototype demo seed fabricates one Collector copy
-  reserved by two deals, so the whole-world `validateWorld` check of
-  "reserved by at most one" waits for A1P to re-seed (the commands enforce it
-  now). The two dev prototypes' Select Trade screens still call the retired
-  commands.
+- **Done in A1P:** the demo seed no longer holds one Collector copy in two
+  deals, so `validateWorld` now enforces "reserved or committed by at most one
+  active deal", "traded at most once" and "a traded copy is in no other
+  exclusive hold" — while shared SELECTION stays legal. Both dev prototypes'
+  Select Trade screens use the TP-led commands.
 
 ## 14. TP inventory ingestion --- deferred
 

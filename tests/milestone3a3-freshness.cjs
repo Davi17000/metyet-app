@@ -154,7 +154,12 @@ async function seat(ctx, token) {
   const fetchImpl = async (url, init = {}) => {
     const isCommand = (init.method || "GET") === "POST" && /\/api\/commands$/.test(String(url));
     if (isCommand) s.posts.push(JSON.parse(init.body).command);
-    if (/\/api\/view$/.test(String(url))) { s.views += 1; if (s.failViews) throw new TypeError("network lost"); }
+    if (/\/api\/view$/.test(String(url))) {
+      s.views += 1; if (s.failViews) throw new TypeError("network lost");
+      /* F1: read the world NOW, but hand the answer back only when released —
+         the late answer a slow network delivers after a newer one. */
+      if (s.holdView) { s.holdView = false; const res = await base(url, init); await new Promise((r) => { s.release = r; }); return res; }
+    }
     return base(url, init);
   };
   const api = API.createApiClient({ baseUrl: "http://localhost", getToken: async () => s.token, fetchImpl, timeoutMs: 60000 });
@@ -351,6 +356,35 @@ describe("4. A re-read never throws away an unsent choice", () => {
     assert(button(p, "Start valuing 1 card"), "the deal as it stands");
     eq(north.posts.length, 0, "something was sent");
     eq((await ctx.deal(ctx.nl)).stage, "select-trade");
+  });
+});
+
+/* ===================================================================== 4b */
+describe("4b. A check's answer that arrives after a newer one changes nothing (PR #82 audit, F1)", () => {
+  test("a check reads at v, the shop accepts a price on another deal (v+1), the check's answer lands late — dropped: no note, unsent choice intact", async () => {
+    const ctx = await world();
+    /* A second Northline deal, still on price — the shop's move. */
+    const g = await ctx.ok("casey", "addGoal", { canonicalCardId: ctx.cards.blas, tier: "primary", desired: { grade: "PSA 9" } });
+    const i = await ctx.ok("north", "addInventoryCopy", { copy: { canonicalCardId: ctx.cards.blas, grade: "PSA 9", ask: 120 } });
+    const nl2 = await ctx.ok("casey", "startOpportunity", { goalId: g, invId: i, amount: 110 });
+    const north = await seat(ctx, "north"); await go(north, "Opportunities");
+    await press(copyIn(shopPanel(north, ctx.nl), ctx.k.a), "Choose");
+    await press(copyIn(shopPanel(north, ctx.nl), ctx.k.b), "Choose");
+    const v = await ctx.version();
+    north.holdView = true;
+    const due = [...held]; held.clear();
+    let checking; await TR.act(async () => { checking = due[0].fn(); });      // the 15-second check leaves, reading v
+    const rec = north.root().findAll((n) => n.type === "article" && n.props.className === "tps-rec"
+      && n.findAll((m) => m.props && m.props["aria-label"] === "Price").length)[0];
+    await press(rec, "Accept $110");                                      // the shop's own command: v+1
+    assert((await ctx.version()) === v + 1, "the command did not land");
+    const after = flat(north.root());
+    await TR.act(async () => { north.release(); await checking; }); await settle();
+    eq(flat(north.root()), after, "the late answer changed the screen");
+    eq(json(noteOf(north.root())), "[]", "a dropped answer produced a note");
+    assert(/2 cards chosen · Not sent yet/.test(flat(shopPanel(north, ctx.nl))), "the unsent choice was disturbed");
+    eq(north.store.version(), v + 1, "the store went back to the older world");
+    eq((await ctx.deal(nl2)).agreedPrice, 110);
   });
 });
 
