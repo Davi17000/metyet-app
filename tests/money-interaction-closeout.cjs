@@ -27,6 +27,7 @@
 
 process.env.METYET_DEV = "1";
 
+const { reachValuationByFixture } = require("./helpers/trade-path.cjs");
 const { describe, test, assert, eq } = require("./run.cjs");
 const React = require("react");
 const TR = require("react-test-renderer");
@@ -94,9 +95,9 @@ const atDeal = ({ price = 1000, cards = [["ka", 500, 0.55]] } = {}) => {
     return { st, o, get, ids: [] };
   }
   const rows = cards.map(([cid], i) => M.emptyTradeCard(cid, null, null, "b-" + i));
-  st.actions.patchOpportunity(o, (x) => ({ ...x, stage: "select-trade",
-    trade: { ...x.trade, submitted: true, cards: rows } }));
-  st.actions.reviewTradeCards({ oppId: o, decision: "accepted", at: AT });
+  /* RESTATED (M3A A1): the partner now selects and closing selection reserves;
+     the retired Collector-proposes / reviewTradeCard path is replaced by the shared fixture. */
+  reachValuationByFixture(st, o, rows, AT);
   /* PHASE 1: the collector opens market value (D.cardOwner) and the Value Trade
      turn is one owner per Opportunity (D.nextActor), so each seat works through
      every card it holds before the other answers. The terms are unchanged. */

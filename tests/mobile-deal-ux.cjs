@@ -65,9 +65,14 @@ const opp = () => D.activeOppForGoal(goal().id, S().opportunities);
 const shown = () => {
   /* Embedded in a Goal the header carries no partner name, so the deal is
      identified by the card its strip names — which is always present. */
-  const strip = txt(cls(R, "mdl-cards")[0] || {});
+  /* RESTATED (M3A A1P): the strip also names the Collector's own trade cards
+     now that the seeded Select Trade deal holds the partner's choice, so the
+     deal is identified by the strip's FIRST entry — the card being bought —
+     among the viewer's own deals, not by any name anywhere in the strip. */
+  const first = cls(R, "mdl-card-n")[0];
+  const strip = first ? txt(first) : txt(cls(R, "mdl-cards")[0] || {});
   const v = collectorView(S(), "c12");
-  const live = S().opportunities.filter(D.isActive);
+  const live = S().opportunities.filter(D.isActive).filter((o) => o.collectorId === "c12");
   return live.find((o) => {
     const c = v.cardById(o.cardId);
     return c && strip.includes(c.name);
@@ -562,7 +567,8 @@ describe("F. Compression keeps the whole history", () => {
     assert(/flex: 0 0 72%/.test(COL), "and the next entry is visibly half-shown");
     openDeal({ stage: "value-trade" });
     const more = cls(R, "mdl-more")[0];
-    if (more) assert(/\+\d+ yours/.test(txt(more)), "counted: " + txt(more));
+    // the rendered text joins "+", the count and " yours" with spaces
+    if (more) assert(/\+\s?\d+ yours/.test(txt(more)), "counted: " + txt(more));
   });
 
   test("the photo viewer names the sides and invents no imagery", () => {

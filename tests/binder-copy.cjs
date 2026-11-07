@@ -105,12 +105,12 @@ describe("Trade Binder invariant — a copy needs both faces", () => {
     const r = render();
     goProfile(r, "James Rivera");
     const head = byClass(r, "cp-sec-h").find((n) => text(n).startsWith("Trade Binder"));
-    eq(text(byClassIn(head, "mono")[0]), "5", "total unchanged");
+    eq(text(byClassIn(head, "mono")[0]), "5", "total unchanged");   // RESTATED (M3A A1P final corrections): traded copies are history, not shelf
     eq(text(byClassIn(head, "cp-bind-open")[0]), "3 open to trade", "open count unchanged");
     click(btn(r, "All collectors"));
     const row = byClass(r, "tbl")[0].findAllByType("tr").find((tr) => text(tr).includes("Ellen Fisher"));
     const cells = row.findAllByType("td").map(text);
-    eq(cells[2] + "|" + cells[3] + "|" + cells[4], "3|6|5", "New / Total / Open all unchanged");
+    eq(cells[2] + "|" + cells[3] + "|" + cells[4], "3|6|5", "New / Total / Open all unchanged");   // RESTATED (M3A A1P final corrections): traded copies are history, not shelf
   });
 
   test("H. Open to trade still works on a newly added copy", () => {
@@ -211,12 +211,13 @@ describe("Copy continuity — the same physical copy through the deal", () => {
     click(btns(r, "").find((b) => b.props["aria-label"] === "Close"));
     click(off);                                          // 2. mark Open to trade
 
-    // 3-4. it becomes eligible, and the collector proposes it
+    // 3-4. it is eligible, and the partner selects it (RESTATED (M3A A1P): TP-led)
     click(btns(r, "Open").filter((b) => text(b).trim() === "Open")[0]);
     click(btns(r, "Accept $")[0]);                       // price agreed -> Select Trade draft
     const add = btns(r, "+ ").find((b) => text(b).includes(name));
     assert(add, `${name} is eligible in Select Trade: ` + btns(r, "+ ").map(text).join(","));
     click(add);
+    click(btns(r, "Send 1 card to")[0]);
 
     // 5-7. the proposed card carries the binder copy's photos into Select Trade
     const review = byClass(r, "st-card").map(text).join(" ");
@@ -225,14 +226,15 @@ describe("Copy continuity — the same physical copy through the deal", () => {
     eq(caps.join(","), "front,back", "both faces carried through to Select Trade");
     assert(!review.includes("not on file"), "neither photo was lost");
 
-    // 8-10. send the package, accept the card, and the same copy reappears in Value Trade
-    click(btns(r, "Send package for review")[0]);
-    btns(r, "Accept into trade").forEach((b) => click(b));   // clear every proposed card
+    // 8-10. RESTATED (M3A A1P): the Collector says they're ready (DEV simulation
+    // of their seat), the partner closes selection, and the same copy reappears
+    // in Value Trade. Strengthened: Value Trade must actually be reached.
+    click(btns(r, "Ready — you can finish choosing")[0]);
+    click(btns(r, "Start valuing 1 card")[0]);
     const ev = byClass(r, "vt-evidence")[0] || byClass(r, "vt-mkt-copy")[0];
-    if (ev) {
-      assert(text(ev).includes("collector photo"), "Value Trade shows the same physical copy");
-      assert(byClassIn(ev, "copyph").length >= 2, "front and back both survive into valuation");
-    }
+    assert(ev, "Value Trade was reached");
+    assert(text(ev).includes("collector photo"), "Value Trade shows the same physical copy");
+    assert(byClassIn(ev, "copyph").length >= 2, "front and back both survive into valuation");
   });
 
   test("Value Trade shows the same copy's photos beside the negotiation", () => {

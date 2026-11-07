@@ -20,7 +20,11 @@ visual polish. Local cleanup while touching a boundary is good; broad
 cleanup waits until the Collector loop is complete and before pilot.
 
 MetYet is a coordination layer for trusted collecting relationships, not
-a generic marketplace. Product framing: **"This isn't where
+a generic marketplace. (P6-F5A, founder decision) **Browse creates exposure.
+Binders create coherence. Goals express priority. Deal Flow coordinates
+action.** Discovery happens inside the trusted network only — a Collector
+sees what their *connected* Trusted Partners have *available*; there is no
+public listing, no unconnected shop, no ranking. Product framing: **"This isn't where
 relationships start --- it's where they continue."** Another durable
 principle: **any input/participation should benefit the person entering
 it and other relevant participants.**
@@ -48,6 +52,58 @@ physical facts.
 
 For new CollectorCopies there is no durable "Haven't decided." Once
 saved, disposition switches `PC ↔ Trade/Sell`.
+
+### Changing a card's collecting state (P6-F4 Batch 5, founder-approved)
+
+**Collector-facing: one card, four states. Underneath: Goal and
+CollectorCopy remain distinct records.** A saved card shows all four
+states; the Collector selects one and presses Submit Update. One
+server-authoritative, atomic command — `changeCollectingState({ goalId |
+collectorCopyId, from, to })` — carries it:
+
+- **Same type** (`Primary ↔ Secondary`, `PC ↔ Trade/Sell`): the same
+  record, under exactly the rules of `updateGoalTier` /
+  `setCollectorCopyKept` / `setCollectorCopyOffered`. The id is stable.
+- **Cross type** (Goal ↔ CollectorCopy): one commit writes the other kind
+  of record on the **same canonical printing**, re-points the **same
+  Binder membership row** at it (archived Binder included — a re-point is
+  not new filing), and removes the source. **The record id changes**; the
+  command returns the new one. Never a second visible card; never merged
+  with an existing record.
+- **Nothing discarded:** the new record carries `formerly`, an append-only
+  lineage of `{ kind, id, at, facts }` — every earlier record's full facts
+  (a copy's grade, condition, cert, value, photos, dates, disposition; a
+  Goal's tier, wanted grade, note, dates). Bounded at
+  `D.COLLECTING_LINEAGE_MAX` (64) by **refusal** (`lineage-full`), never by
+  truncation. Stored in the record's JSON attributes (no migration);
+  Collector-only — no partner allow-list names it.
+- **Changing state changes only state (B5.2):** the grade and condition
+  travel. A copy made from a Goal carries the Goal's saved configuration as
+  saved — Raw and its condition, or the graded grade — and nothing that was
+  not saved (a Raw Goal with no condition, or a Goal with no criteria,
+  yields a copy with no grade; nothing is fabricated). A Goal made from a
+  copy wants what the copy is. This is the Collector reusing what they
+  entered, by their own explicit action — **not** MetYet verifying a
+  physical card, and no projection or screen claims verification. Nothing is
+  asked after a state change; grade and condition stay independently
+  editable. What a Goal cannot hold (an earlier copy's certificate,
+  reference value, photos) stays in `formerly`; the copy's Copy details may
+  offer it quietly as a recovery that only fills the draft.
+- **Refused, changing nothing:** not the Collector's; unknown state
+  (`invalid-state`); stale screen (`state-changed`); legacy non-canonical
+  record (`state-change-unsupported`); Goal → copy while an active
+  opportunity names the Goal (`goal-locked`); copy → Goal while a deal
+  holds the copy (`copy-reserved` / `copy-committed`), if any trade ever
+  named it (`copy-in-use`), if a Trusted Partner marked interest
+  (`partner-interest` — partner relationships are never silently
+  discarded), if a Goal for the printing exists (`duplicate-goal`), or if
+  the copy lacks grade/condition (`criteria-required`).
+- **Retry-safe:** a repeat of a change that landed — including after a
+  lost answer, found through `formerly` — is answered as done, never done
+  twice; a race from a stale `from` is `state-changed`.
+
+Creating an additional Goal or copy is Browse's and Binder "+ Add cards"'
+job, not a state change.
 
 ## 3. Binder doctrine
 
@@ -265,7 +321,7 @@ There is a naming collision to resolve before transaction entry.
 mutation-sensitive; final agreement creates hard exclusivity; Pending is
 a separate availability boundary.
 
-## 13. Browse/Search direction --- later
+## 13. Browse/Search direction
 
 Observed Collector behavior: browse by Pokémon, set and artist; artwork
 is central. Product progression: **Exposure → Refinement → Curation**.
@@ -281,7 +337,145 @@ four-state/object-Binder doctrine. Do not recreate durable stateless
 interest or bare-card Binder membership. Reuse the discovery ideas
 later, reconciled with current invariants.
 
-## 14. TP inventory --- deferred
+### Trusted-network inventory discovery (P6-F5A, founder-approved)
+
+Supersedes the Phase 4 / Phase 5 rule that a Trusted Partner's copy is
+never shown outside Deal Flow and that Browse names no shop. **A Collector
+may discover available inventory from their connected Trusted Partners
+without first creating a Goal.** This is trusted-network discovery, not an
+unrestricted public marketplace:
+
+- **Who:** only partners with an accepted relationship to the Collector;
+  an unconnected shop is never named, counted or listed.
+- **What:** only copies whose status *for this Collector* is `available`
+  (the projection's `copyForViewer`); never archived, pending,
+  committed, sold or otherwise held. Exact printing (`canonicalCardId`)
+  only — a printing match is never a claim about grade or condition.
+- **Shown on the Browse card:** shop name, printing, grading, Proposed
+  Market Price (`ask`), Open to Offers / Firm on Price. **Never** the
+  certificate, photographs, cost or acquisition date.
+- **Language and scope (F5A.1):** Browse has two scopes directly under
+  the search — **All Cards | Trusted Partners** (default All Cards).
+  Trusted Partners is the server-side catalogue flag (`atMyShops`,
+  computed from the actor's own projection by `availableAtShops`), so
+  paging and search are exact and no request can widen it; switching keeps
+  the search and the Pokémon / set / artist chosen. The grid's quiet line
+  reads "With a Trusted Partner"; the card's section "Available from your
+  Trusted Partners", grouped under each partner's own name. Collector
+  Browse avoids storefront words ("shop") for this; identifiers keep
+  their names.
+- **Order:** grouped by shop, shops by name; within a shop by printing
+  then date added. Never ranked by price; nothing recommended.
+- **Looking is looking:** browsing creates no Goal, opportunity or offer.
+  Starting Market Validation still requires a Primary Goal; no Goal-free
+  offers.
+- **Known limitation:** opening a deal does not by itself mark a copy
+  unavailable — reservation happens only in deal steps not yet shipped
+  (`setCopyPending` is unexposed). F5A invents no reservation behaviour.
+
+### From discovery to Market Validation (P6-F5B, founder-approved)
+
+Discover card → express priority → make an offer → follow Deal Flow.
+Discovering a card is not wanting it: every step is the Collector's own.
+Each available copy on the Browse card shows one next step, read from the
+server's own answers (the Goal for that exact printing, `discoveries`,
+live deals via the projected turn):
+
+- matching **Primary** Goal (a discovery) → **Make an Offer**: opens Deal
+  Flow's existing composer on that exact copy; nothing is sent until the
+  Collector submits (`startOpportunity` with their amount or percentage);
+- **no Goal** → **Add as Primary Goal**: fills the card's own questions from
+  that copy (printing, grade/condition, looking, Primary); the Collector
+  still presses Add (`addGoal`); the card stays open and the copy then
+  offers Make an Offer; never an automatic opportunity;
+- **Secondary** Goal → **Make it Primary** (`changeCollectingState`);
+- a **live deal on the card** (any partner) → "under way with …" and **Open
+  in Deal Flow** (one live offer per card is the server's rule);
+- a **Primary Goal for another grade** → explained, with **Edit your Goal in
+  Binders**; the Goal is never changed to fit inventory — Collector
+  priorities drive opportunities, not the reverse.
+
+No new command. Eligibility stays `startOpportunity`'s.
+
+### Four prices, never one (Market Validation)
+
+1. **Proposed Market Price** — the partner's own valuation of a specific
+   copy (`inventory.ask`), captured on the opportunity when the Collector
+   opens (`listedPrice`, with `firmOnPrice`). A reference, not a verified
+   market price and not an agreement. Later shelf edits never move it.
+2. **Collector's Offer** — always the Collector's opening, in whole
+   dollars or a whole-number percentage of the captured price
+   (`priceThread[0]`). Firm on Price: the opening must equal the captured
+   price — still only an offer.
+3. **Agreed Market Price** — exists only once one party explicitly accepts
+   the other's latest proposal (`agreedPrice`, null until then), stored
+   apart from `listedPrice`. Nothing is auto-accepted, not even an offer at
+   the price. It is the card's value for later calculations — not the cash
+   that changes hands.
+4. **Final cash difference** — later: Agreed Market Price − total agreed
+   trade value, then any final adjustment. Not built in this batch.
+
+Opening a deal reserves nothing (B44): the copy stays available until a
+later, not yet shipped, step holds it.
+
+### Trade Selection, withdrawal and the lost shop card (M3A A1, founder-approved)
+
+**In production since M3A A3:** Select Trade's six commands are on the
+allow-list — `selectTradeCards`, `deselectTradeCard` and `closeTradeSelection`
+(sent from the shop's Opportunity) and `holdTradeSelection`,
+`continueTradeSelection` and `withdrawTradeCard` (sent from the Collector's
+Deal Workspace). `withdrawTradeCard` keeps its full domain permission (until
+final agreement); the product offers it on the Select Trade screen only.
+Value Trade, Deal, Fulfillment and `chooseCashOnly` stay closed until the
+screens that send them ship (A4–A6): after a successful close both seats see
+the cards held and "Value Trade isn't available in MetYet yet". A refused
+close names only the caller's own rows (`detail.tradeCardIds`). The shop's
+Collector Network shows each connected Collector's Trade/Sell copies,
+read-only (A2). An open deal re-reads the server on arrival, on return to the
+page and every 15 s while visible, deal by deal; a failed check pauses the
+deal's moves until one succeeds (A3 freshness).
+
+- **TP-led selection.** The partner selects specific copies from the
+  Collector's Trade/Sell supply (`selectTradeCards`); the Collector never
+  submits cards and cannot force one in. The Collector may say "hold on, I'm
+  adding more cards" any number of times (`holdTradeSelection`), adds cards
+  only by offering them in Browse, and says when they are ready
+  (`continueTradeSelection`). The partner may deselect (`deselectTradeCard`)
+  and closes selection (`closeTradeSelection`). Selection never writes
+  `offered` or `keeping`. `proposeTradeSelection` / `reviewTradeCard` are
+  retired (`superseded`).
+- **Selected is not reserved.** A selected copy's grade, condition,
+  certificate and existing photos are locked (`copy-in-deal`; an empty photo
+  slot may still be filled) and snapshotted on the row, and it cannot be
+  switched to PC — but other deals, the same partner's included, may select
+  it too. Closing selection reserves every selected copy atomically and moves
+  to Value Trade; any conflict refuses the close and changes nothing. Final
+  agreement commits; completion trades. All of it is derived from the deal's
+  stage (`binderRowState`); nothing is stored on the copy. No photograph is
+  required anywhere.
+- **Withdrawal.** The Collector may withdraw any selected card from one deal
+  until final agreement. History stays; Trade/Sell is untouched; other cards'
+  agreements stand; in Deal a `reset` entry voids standing figures and both
+  confirmations. The last card leaving Value Trade or Deal returns the deal to
+  Select Trade. Reselection is a new row. Cash only is never automatic.
+- **Stale screens.** `closeTradeSelection`, `proposeFinalBalance` and
+  `acceptDeal` take an optional `expect` and refuse `terms-changed`.
+- **The lost shop card.** A deal whose InventoryCopy is promised to another
+  deal (final agreement) or removed by the partner (before a price is agreed)
+  is ENDED in the same write, `outcome: "card-unavailable"`, `endedBy: null`.
+  One active deal per Goal now has no exception; a hold (`pendingFor`) ends
+  nothing; an ended deal never comes back. A rival can therefore tell "held
+  for now" from "gone" — by design — but not promised from sold.
+- **Inventory identity.** A removed shop copy is never revived: re-adding the
+  same card mints a new `invId`, and nothing (deals, holds, matches) carries
+  over. The CSV import only adds.
+- **Done in A1P:** the demo seed no longer holds one Collector copy in two
+  deals, so `validateWorld` now enforces "reserved or committed by at most one
+  active deal", "traded at most once" and "a traded copy is in no other
+  exclusive hold" — while shared SELECTION stays legal. Both dev prototypes'
+  Select Trade screens use the TP-led commands.
+
+## 14. TP inventory ingestion --- deferred
 
 Potential ingestion: manual lookup/add, CSV import from tools, dedicated
 integrations. Do not build this before the Collector loop is stable. TP

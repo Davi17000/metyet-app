@@ -353,7 +353,8 @@ describe("Copying changes nothing", () => {
     press(infoBtn(r));
     press(certBtn(r));
     eq(byClass(r, "st-card").length, before, "the card is still awaiting a decision");
-    assert(text(byClass(r, "st-card")[0]).includes("Would you accept"), "decision still open");
+    /* RESTATED (M3A A1P): the partner's open decision is now whether to keep the card. */
+    assert(text(byClass(r, "st-card")[0]).includes("Keep this card in the trade?"), "decision still open");
   });
 
   test("copying during negotiation preserves the counter inputs", () => {

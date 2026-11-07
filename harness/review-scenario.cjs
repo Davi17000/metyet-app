@@ -103,12 +103,16 @@ const build = (stopAt, onStop) => {
   A.agreePrice({ oppId, amount: 3900, by: "tp", at: DAY(4) });
   mark("price-agreed");
 
-  /* Trade: two copies proposed, both accepted by the partner. Submitting the
-     package reserves the exact copies; the partner's acceptance commits them. */
-  A.proposeTradeSelection({ oppId, binderIds: ["rev-copy-a", "rev-copy-b"], at: DAY(5) });
+  /* Trade: the partner selects two of the Collector's Trade/Sell copies, the
+     Collector says they are ready, and the partner closes selection — which
+     reserves both exact copies for this deal (M3A A1, TP-led selection; the
+     checkpoint names are kept so every scenario that reads them still finds
+     them). Commitment comes later, at final agreement. */
+  A.selectTradeCards({ oppId, copyIds: ["rev-copy-a", "rev-copy-b"], at: DAY(5) });
   mark("trade-selected");
   say("collector", "Adding the Blastoise and the Venusaur.", 5);
-  A.reviewTradeCards({ oppId, decision: "accepted", at: DAY(5) });
+  A.continueTradeSelection({ oppId, at: DAY(5) });
+  A.closeTradeSelection({ oppId, at: DAY(5) });
   mark("trade-accepted");
 
   /* Market value, per card, ending agreed. PHASE 1: the collector opens market

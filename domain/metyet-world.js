@@ -207,7 +207,25 @@ function validateWorld(state) {
   }
 
   /* ---------------------------------------------------------- GOALS AND COPIES */
+  /* A RECORD'S LINEAGE (P6-F4 Batch 5): what it was before a collecting-state
+     change crossed it between a Goal and an owned copy. Absent, or an array of
+     at most D.COLLECTING_LINEAGE_MAX entries, each naming the kind and id it
+     came from, when, and that record's facts as an object. */
+  const lineageOf = (r, path, who) => {
+    if (r.formerly === undefined) return;
+    if (!Array.isArray(r.formerly) || r.formerly.length > D.COLLECTING_LINEAGE_MAX) {
+      report("field.invalid", `${path}.formerly`, `${who}.formerly must be a list of at most ${D.COLLECTING_LINEAGE_MAX} entries.`);
+      return;
+    }
+    r.formerly.forEach((f, i) => {
+      if (!f || typeof f !== "object" || (f.kind !== "goal" && f.kind !== "copy") || !isId(f.id)
+        || typeof f.at !== "string" || !f.facts || typeof f.facts !== "object" || Array.isArray(f.facts)) {
+        report("field.invalid", `${path}.formerly[${i}]`, `${who}.formerly[${i}] must name a kind, an id, a time and its facts.`);
+      }
+    });
+  };
   for (const [g, path] of C.goals) {
+    lineageOf(g, path, `Goal "${g.id}"`);
     const who = `Goal "${g.id}"`;
     ref(collectors, g.collectorId, `${path}.collectorId`, "collector", who);
     /* A GOAL NAMES ITS CARD ONE WAY OR THE OTHER (Phase 5 Batch 7), on the same
@@ -284,6 +302,10 @@ function validateWorld(state) {
     if (!blank(i.archived) && typeof i.archived !== "boolean") {
       report("field.invalid", `${path}.archived`, `${who}.archived must be true or false.`);
     }
+    /* Absent is Open to Offers; stated, it is a boolean (Market Validation, Batch 1). */
+    if (!blank(i.firmOnPrice) && typeof i.firmOnPrice !== "boolean") {
+      report("field.invalid", `${path}.firmOnPrice`, `${who}.firmOnPrice must be true or false.`);
+    }
     /* OPTION B: pendingFor is deliberately allowed to go STALE — it names an
        opportunity that may since have ended, and copyPendingFor derives
        Available from that without a sweep. So this checks the shape only, never
@@ -296,6 +318,7 @@ function validateWorld(state) {
   }
   for (const [b, path] of C.collectorCopies) {
     const who = `CollectorCopy "${b.id}"`;
+    lineageOf(b, path, who);
     ref(collectors, b.collectorId, `${path}.collectorId`, "collector", who);
     /* A COPY NAMES ITS CARD ONE WAY OR THE OTHER (Phase 5 C2), on the rule an
        InventoryCopy has followed since Batch 6. Owning nothing is not owning,
@@ -503,12 +526,17 @@ function validateWorld(state) {
   }
 
   /* ---------------------------------------------------------- OPPORTUNITIES */
-  const holders = { goal: new Map(), committed: new Map(), sold: new Map() };
+  const holders = { goal: new Map(), committed: new Map(), sold: new Map(),
+    copyExclusive: new Map(), copyTraded: new Map() };
   const hold = (map, key, oppId) => map.set(key, [...(map.get(key) || []), oppId]);
 
   const allOpportunities = C.opportunities.map(([o]) => o);
   for (const [o, path] of C.opportunities) {
     const who = `Opportunity "${o.id}"`;
+    /* The captured Firm on Price, when present, is a boolean (Market Validation, Batch 2). */
+    if (o.firmOnPrice !== undefined && o.firmOnPrice !== null && typeof o.firmOnPrice !== "boolean") {
+      report("field.invalid", `${path}.firmOnPrice`, `${who}.firmOnPrice must be true or false.`);
+    }
     ref(collectors, o.collectorId, `${path}.collectorId`, "collector", who);
     ref(partners, o.partnerId, `${path}.partnerId`, "partner", who);
     /* AN OPPORTUNITY NAMES ITS CARD ONE WAY OR THE OTHER (Phase 5 Batch 8), on
@@ -538,16 +566,17 @@ function validateWorld(state) {
     if (goal && goal.collectorId !== o.collectorId) {
       ownerMismatch(`${path}.goalId`, `${who} belongs to collector "${o.collectorId}", but Goal "${o.goalId}" belongs to "${goal.collectorId}".`);
     }
-    /* ONE LIVE NEGOTIATION PER GOAL — read the way the domain now reads it.
-       `activeOppForGoal` stopped counting a negotiation whose copy has gone to
-       another deal or been sold, because such a deal can never conclude and was
-       stranding the Goal for ever. That means a Goal may legitimately hold a
-       lost record AND a new live one, so this must ask the same question or the
-       world the commands produce would be unstorable — the Option B lesson,
-       where exactly this predicate was left behind and turned a legal state
-       into a 500. */
-    if (active && isId(o.goalId) && !D.transactionallyLost(o, allOpportunities)) {
-      hold(holders.goal, o.goalId, o.id);
+    /* ONE LIVE NEGOTIATION PER GOAL, WITH NO EXCEPTION (M3A A1). Before A1 a
+       deal whose shop copy had gone to another deal or been sold stayed active
+       and was left out of this count, so a Goal could legitimately hold a lost
+       record AND a new live one. That deal is now ENDED by the event that lost
+       it (`endUnavailable`), so every active deal counts, and an active deal
+       that is lost is itself a violation — the command that made the card
+       unavailable should have ended it. */
+    if (active && isId(o.goalId)) hold(holders.goal, o.goalId, o.id);
+    if (active && D.transactionallyLost(o, allOpportunities)) {
+      report("invariant.lost-deal-active", path,
+        `${who} is still active, but its shop copy was promised to or sold by another deal; it should have ended as card-unavailable.`);
     }
 
     /* EXACT INVENTORY COPY, when bound: the partner's own copy of this card.
@@ -591,7 +620,23 @@ function validateWorld(state) {
     const cards = isObject(o.trade) ? o.trade.cards : undefined;
     if (!blank(cards) && !Array.isArray(cards)) report("field.invalid", `${path}.trade.cards`, `${who}.trade.cards must be an array.`);
     const rowIds = new Set();
+    /* M3A A1: one LIVE row per copy per deal. A copy withdrawn and then selected
+       again carries two rows — the withdrawn one as history, the new one live —
+       but never two live ones. Exclusive holds are counted across deals below
+       (M3A A1P). */
+    const liveCopies = new Set();
     list(cards).forEach((row, j) => {
+      if (isObject(row) && !blank(row.binderId) && D.TRADE.liveRow(row)) {
+        if (liveCopies.has(row.binderId)) {
+          report("invariant.copy-live-once-per-deal", `${path}.trade.cards[${j}]`,
+            `${who} holds collector copy "${row.binderId}" in more than one live trade row.`);
+        }
+        liveCopies.add(row.binderId);
+        /* Who holds this copy exclusively, counted across deals below. */
+        const st = D.binderRowState(o, row);
+        if (active && (st === "reserved" || st === "committed")) hold(holders.copyExclusive, row.binderId, o.id);
+        if (D.isCompleted(o) && st === "committed") hold(holders.copyTraded, row.binderId, o.id);
+      }
       const rp = `${path}.trade.cards[${j}]`;
       if (!isObject(row)) { report("record.not-object", rp, `${rp} must be an object.`); return; }
       const rowWho = `Trade row "${row.id}" of ${who}`;
@@ -655,6 +700,32 @@ function validateWorld(state) {
     (i, ids) => `InventoryCopy "${i}" is committed to ${ids.length} active opportunities (${ids.join(", ")}).`);
   once(holders.sold, "invariant.copy-sold-once",
     (i, ids) => `InventoryCopy "${i}" was sold by ${ids.length} completed opportunities (${ids.join(", ")}).`);
+  /* SELECTED BY MANY, HELD BY ONE (M3A A1P). A Collector copy may be SELECTED by
+     any number of active deals — selection is not a hold — but RESERVED (Value
+     Trade, Deal) or COMMITTED (final agreement) by at most one. A copy a
+     completed deal TRADED is gone: no other deal traded it too, and no active
+     deal may still RESERVE or COMMIT it. Another deal may still SELECT it — it
+     was selected there before this deal reserved it, and selection is not a
+     hold, so the completion is legitimate; that deal simply cannot close over
+     it (closeTradeSelection refuses copy-unavailable) until the partner
+     deselects it or the Collector withdraws it. Clearing such stale selections
+     automatically is a separate lifecycle decision. The commands make all of this
+     unreachable (selectTradeCards, closeTradeSelection and acceptDeal check
+     it under the world lock); this is the whole-world statement of it, so a
+     hand-built, imported or migrated world that breaks it is refused rather
+     than stored. */
+  once(holders.copyExclusive, "invariant.collector-copy-exclusive-once",
+    (b, ids) => `Collector copy "${b}" is reserved or committed by ${ids.length} active opportunities (${ids.join(", ")}); a copy is held by one deal at a time.`);
+  once(holders.copyTraded, "invariant.collector-copy-traded-once",
+    (b, ids) => `Collector copy "${b}" was traded by ${ids.length} completed opportunities (${ids.join(", ")}).`);
+  for (const [b, traded] of holders.copyTraded) {
+    const held = holders.copyExclusive.get(b) || [];
+    if (held.length) {
+      report("invariant.collector-copy-traded-in-use", "opportunities",
+        `Collector copy "${b}" was traded by ${traded.join(", ")} but is still reserved or committed by active opportunities (${held.join(", ")}).`);
+    }
+  }
+
 
   /* ---------------------------------------------------------- CONVERSATIONS */
   const threadKeys = new Set();
@@ -663,7 +734,16 @@ function validateWorld(state) {
     ref(collectors, t.collectorId, `${path}.collectorId`, "collector", who);
     /* D.threadKey throws on a partnerless thread, so this one breaks execute. */
     ref(partners, t.partnerId, `${path}.partnerId`, "partner", who);
-    const card = cardRef(t.cardId, `${path}.cardId`, who);
+    /* A DEAL'S OWN THREAD (Milestone 2D.1): no legacy card; keyed by its deal
+       alone, and that deal must exist (checked with the oppId below). */
+    const dealThread = t.cardId === null || t.cardId === undefined;
+    if (dealThread) {
+      if (blank(t.oppId)) report("ref.missing", `${path}.oppId`, `${who} names neither a card nor a deal.`);
+      else if (t.key !== D.dealThreadKey(t.oppId)) {
+        report("field.invalid", `${path}.key`, `${who} has key ${JSON.stringify(t.key)}; its deal gives "${D.dealThreadKey(t.oppId)}".`);
+      }
+    }
+    const card = dealThread ? null : cardRef(t.cardId, `${path}.cardId`, who);
     if (card && isId(t.collectorId) && isId(t.partnerId)) {
       const expected = D.threadKey(t.collectorId, t.partnerId, card);
       if (t.key !== expected) {

@@ -119,17 +119,22 @@ describe("A. Collapsed active-deal state", () => {
 
   test("the disclosure states the turn truthfully", () => {
     const r = mk();
+    /* RESTATED (M3A A1): at Select Trade the PARTNER moves first now — they
+       choose from the Collector's Trade/Sell cards — and the turn passes to the
+       Collector once a selection is sent. The disclosure follows the canonical
+       turn both ways. RESTATED AGAIN (M3A A1P): the seeded deal now opens on
+       the Collector's look at the partner's choice, so this checks the
+       Collector's turn first and the partner's after the selection is unsent. */
     const o = oppAt("select-trade");
     const g = goalOf(o);
+    eq(D.nextActor(liveFor(g)).actor, "collector", "the Collector owns the look at the partner's choice");
     assert(/Your move/.test(txt(cls(cardFor(r, g), "goal-deal")[0])),
-      "the collector's turn is stated");
+      "and the summary says it is their move");
 
-    const copy = S().collectorCopies.find((b) => b.collectorId === ME);
     TR.act(() => { acts().patchOpportunity(o.id, (x) => ({ ...x,
-      trade: { mode: "trade", submitted: true,
-        cards: [{ binderId: copy.id, cardId: copy.cardId, inclusion: "proposed" }] } })); });
+      trade: { submitted: false, cards: [], selection: {} } })); });
     let r2; TR.act(() => { r2 = TR.create(React.createElement(App)); });
-    eq(D.nextActor(liveFor(g)).actor, "partner", "the partner now owns the turn");
+    eq(D.nextActor(liveFor(g)).actor, "partner", "with nothing sent, the partner owns the turn");
     assert(/Waiting on/.test(txt(cls(cardFor(r2, g), "goal-deal")[0])),
       "and the summary says who we wait on");
   });
@@ -328,7 +333,7 @@ describe("F. Ending and completing", () => {
       cardId: o.cardId, by: "collector", text: "HISTORY", at: "2026-08-17" }); });
     const convs = S().conversations.length;
 
-    TR.act(() => { acts().endOpportunity(o.id, "collector", "2026-08-17"); });
+    TR.act(() => { acts().endOpportunity(o.id, "collector", "2026-08-17", "changed my mind"); }); /* Batch 3B.1: ending a price-agreed deal needs a reason. */
     let r; TR.act(() => { r = TR.create(React.createElement(App)); });
 
     const card = cardFor(r, g);

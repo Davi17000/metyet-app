@@ -8,8 +8,9 @@ if (!html.includes("MetYet") || html.length < 5000) { console.error("prod bundle
 
 const src = readFileSync("dist/MetYet.prod.js", "utf8");
 const need = ["Trade Binder", "Open to trade", "s Trade Binder", "No cards shared in their trade binder",
-  "No cards match your search", "Search trade binder...", "View all ", "Show fewer", "open to trade", "cp-bind-grid", "of listed price", "Send counter", "% of asking", "% of ", "Send market counter", "Reference value", "Add to Trade Binder", "View copy", "Trade Value", "View larger", "copyph-btn", "Their offer", "Trade %", "Send trade proposal", "Send trade counter", "on agreed market value", "Card Details", "Would you accept this card into the trade?", "Accepted cards move to Value Trade.", "Copy card information", "Copy PSA certification number", "Card info", "PSA Cert #", "execCommand", "textarea", "readonly"];
-const gone = ["Their $", "Trade Credit", "— credit ", "Propose your default", "trade value on ${nm}", "Valuation opens as soon as", "Collector value"];
+  "No cards match your search", "Search trade binder...", "View all ", "Show fewer", "open to trade", "cp-bind-grid", "of listed price", "Send counter", "% of asking", "% of ", "Send market counter", "Reference value", "Add to Trade Binder", "View copy", "Trade Value", "View larger", "copyph-btn", "Their offer", "Trade %", "Send trade proposal", "Send trade counter", "on agreed market value", "Card Details", "Keep this card in the trade?", "Selected cards move to Value Trade once you start valuing them.", "Copy card information", "Copy PSA certification number", "Card info", "PSA Cert #", "execCommand", "textarea", "readonly"];
+/* M3A A1P: TP-led selection retired the package review's wording. */
+const gone = ["Would you accept this card into the trade?", "Accepted cards move to Value Trade.", "Send package for review", "Their $", "Trade Credit", "— credit ", "Propose your default", "trade value on ${nm}", "Valuation opens as soon as", "Collector value"];
 const bad = ["Flag more", "Would consider"];
 for (const n of need) if (!src.includes(n)) { console.error("MISSING from prod bundle:", n); process.exit(1); }
 for (const b of [...bad, ...gone]) if (src.includes(b)) { console.error("STALE string in prod bundle:", b); process.exit(1); }

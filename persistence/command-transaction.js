@@ -3,7 +3,7 @@
 
      executeCommand(repository, { actor, command, payload, runtime })
        -> { ok: true,  value, version, world, changes }
-        | { ok: false, refused, version }
+        | { ok: false, refused, version [, detail] }
 
    The persistence half of the future server flow, with no HTTP in it:
 
@@ -63,7 +63,13 @@ async function executeCommand(repository, { actor, command, payload, runtime, al
       const world = await repository.loadWorld(tx);
       const result = C.execute(world, actor, command, payload, runtime);
       if (!result.ok) {
-        refusal = { ok: false, refused: result.refused, version };
+        /* A refusal may carry `detail` (M3A A3) — today only
+           closeTradeSelection's list of the caller's OWN conflicting rows,
+           which the domain already decided the caller may see. Passed on
+           untouched; a refusal without one is exactly as before. */
+        refusal = result.detail
+          ? { ok: false, refused: result.refused, version, detail: result.detail }
+          : { ok: false, refused: result.refused, version };
         throw ROLLBACK;
       }
       const check = validateWorld(result.state);

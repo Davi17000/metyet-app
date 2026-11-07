@@ -53,7 +53,9 @@ const SURFACES = [
   ["client/browse/CardBrowser.jsx", 'br-art', 'br-plate'],
   ["client/collector/sections/Collection.jsx", 'mcs-group-art', 'mcs-art-plate'],
   ["client/collector/sections/TrustedPartners.jsx", 'mcs-has-art', 'mcs-art-plate'],
-  ["client/collector/sections/Binder.jsx", 'mcs-group-art', 'mcs-art-plate'],
+  /* RE-PINNED (Phase 6 P6-2): Binders draws Phase 6 tiles; the class that
+     carries their fixed card-shaped box is mcs-otile-art. Same primitive. */
+  ["client/collector/sections/Binder.jsx", 'mcs-otile-art', 'mcs-art-plate'],
 ];
 
 /* WHY NOTHING BELOW ASKS "WHAT DID THIS BATCH CHANGE" (Phase 5 C7.1).
@@ -507,7 +509,10 @@ describe("D. all four deployed surfaces use it", () => {
     const { EXPOSED_COMMANDS } = require("../server/exposed-commands.js");
     /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
        name; any other change to the size still fails here. */
-    eq(EXPOSED_COMMANDS.length, 24, "the production door moved");
+    /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
+       commands joined the door with the Deal Flow and Opportunities controls
+       that send them, each named in the allow-list; any other move still fails. */
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37, "the production door moved");
     /* 49 → 50 in Option B (`setCopyPending`), and → 51 in the four-state batch
        (`setCollectorCopyKept`). C7.1's claim is the door above, which has not
        moved for either: the first is written, tested and deliberately unexposed,
@@ -522,7 +527,8 @@ describe("D. all four deployed surfaces use it", () => {
        rewriting this prose, so it sat directly above an assertion of 23 saying
        25. 3B-1 makes the number right, which would have let it become correct
        by accident — the reason it says is now the reason that happened. */
-    eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 53,
+    /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A1: + selectTradeCards, deselectTradeCard, holdTradeSelection, continueTradeSelection, closeTradeSelection (proposeTradeSelection and reviewTradeCard remain as refusing names) — each founder-approved */ eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 61,
       "the domain's command table moved");
   });
 });

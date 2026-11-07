@@ -134,6 +134,11 @@ function everyCommand(store, rec) {
      because a canonical Goal states which copy it wants. */
   x(C1, "updateGoalCriteria", { goalId: g, desired: { grade: "Raw", condition: "Near Mint" } });
   step("updateGoalCriteria", { goal: s().goals.find((q) => q.id === g) });
+  /* P6-F4 B5. Same-type, because this is a legacy `cardId` Goal and a
+     crossing needs a canonical printing; the crossing itself is
+     tests/phase6-f4-b5-collecting-state.cjs. */
+  x(C1, "changeCollectingState", { goalId: g, from: "primary", to: "secondary" });
+  step("changeCollectingState", { goal: s().goals.find((q) => q.id === g) });
   x(C1, "removeGoal", { goalId: g });
 
   const inv = x(TP1, "addInventoryCopy", { copy: { cardId: "k1", ask: 1000, cost: 700, acquired: "2020-05-05",
@@ -239,6 +244,11 @@ function everyCommand(store, rec) {
   step("proposePrice", { opp: opp(o) });
   x(C1, "acceptPrice", { oppId: o });
   step("acceptPrice", { opp: opp(o) });
+  /* MILESTONE 2D.1: a message on the deal's own thread — after agreement, which
+     is not the end of the conversation — carrying a forged `at` like the rest. */
+  const m = x(C1, "sendDealMessage", { oppId: o, text: "Agreed — let's talk trades", nonce: "n-1" });
+  const dealThread = () => s().conversations.find((t) => t.key === D.dealThreadKey(o));
+  step("sendDealMessage", { id: m, entry: dealThread().entries.find((e) => e.id === m), opp: opp(o) });
   /* THE ONE AVAILABILITY FACT A PARTNER CHOOSES (Option B). Set and released
      here so the script exercises both directions, and so the recorded shape
      shows a copy carrying `pendingFor` and then not. */
@@ -246,10 +256,23 @@ function everyCommand(store, rec) {
   step("setCopyPending", { copy: s().inventory.find((i) => i.invId === "i1") });
   x(TP1, "setCopyPending", { invId: "i1", oppId: null });
   step("releaseCopyPending", { copy: s().inventory.find((i) => i.invId === "i1") });
-  x(C1, "proposeTradeSelection", { oppId: o, binderIds: ["b1"] });
-  step("proposeTradeSelection", { opp: opp(o) });
-  x(TP1, "reviewTradeCard", { oppId: o, decision: "accepted" });
-  step("reviewTradeCard", { opp: opp(o) });
+  /* RESTATED (M3A A1): TP-led selection. The retired Collector-proposes pair
+     still answers by name — with `superseded`, and nothing written. */
+  for (const [actor, cmd, pay] of [[C1, "proposeTradeSelection", { oppId: o, binderIds: ["b1"] }],
+    [TP1, "reviewTradeCard", { oppId: o, decision: "accepted" }]]) {
+    ran.add(cmd);
+    const before = JSON.stringify(s());
+    const r = store.execute(actor, cmd, { at: FORGED_AT, ...pay });
+    if (r.ok || r.refused !== "superseded" || JSON.stringify(s()) !== before) throw new Error(`${cmd} should refuse superseded and write nothing`);
+  }
+  x(TP1, "selectTradeCards", { oppId: o, copyIds: ["b1"] });
+  step("selectTradeCards", { opp: opp(o) });
+  x(C1, "holdTradeSelection", { oppId: o });
+  step("holdTradeSelection", { opp: opp(o) });
+  x(C1, "continueTradeSelection", { oppId: o });
+  step("continueTradeSelection", { opp: opp(o) });
+  x(TP1, "closeTradeSelection", { oppId: o });
+  step("closeTradeSelection", { opp: opp(o) });
   const row = () => opp(o).trade.cards[0].id;
   x(C1, "proposeMarketValue", { oppId: o, tradeCardId: row(), amount: 300 });
   step("proposeMarketValue", { opp: opp(o) });
@@ -281,8 +304,12 @@ function everyCommand(store, rec) {
   /* Withdrawal: a second deal on another copy for the same (now satisfied) Goal. */
   const w = x(C1, "startOpportunity", { goalId: "g1", invId: "i2", amount: 950 });
   x(TP1, "acceptPrice", { oppId: w });
-  x(C1, "proposeTradeSelection", { oppId: w, binderIds: ["b2"] });
-  x(C1, "withdrawTradeCard", { oppId: w, tradeCardId: opp(w).trade.cards[0].id });
+  x(TP1, "selectTradeCards", { oppId: w, copyIds: ["b2"] });
+  x(C1, "continueTradeSelection", { oppId: w });
+  x(TP1, "deselectTradeCard", { oppId: w, tradeCardId: opp(w).trade.cards[0].id });
+  step("deselectTradeCard", { opp: opp(w) });
+  x(TP1, "selectTradeCards", { oppId: w, copyIds: ["b2"] });
+  x(C1, "withdrawTradeCard", { oppId: w, tradeCardId: opp(w).trade.cards[1].id });
   step("withdrawTradeCard", { opp: opp(w) });
 
   /* Cash only, then cancellation. */
@@ -290,8 +317,15 @@ function everyCommand(store, rec) {
   x(TP1, "acceptPrice", { oppId: k });
   x(C2, "chooseCashOnly", { oppId: k });
   step("chooseCashOnly", { opp: opp(k) });
-  x(C2, "cancelOpportunity", { oppId: k });
+  /* Batch 3B.1: the price is agreed, so ending it says why. */
+  x(C2, "cancelOpportunity", { oppId: k, reason: "changed my mind" });
   step("cancelOpportunity", { opp: opp(k) });
+
+  /* Market Validation Batch 2: an opening the partner declines. The cancelled
+     deal above freed the Goal's offer slot, so the same Goal may open again. */
+  const dk = x(C2, "startOpportunity", { goalId: "g2", invId: "i3", amount: 900 });
+  x(TP1, "declineOffer", { oppId: dk, reason: "not this one" });
+  step("declineOffer", { opp: opp(dk) });
 
   out.ids = { goal: g, inv, pr, rv, collectorCopies: b, invited, o, w, k };
   return out;
@@ -405,8 +439,10 @@ describe("B. every minted id comes from the injected runtime", () => {
        Restated, not loosened — the exact total is still asserted, and every new
        command is exercised by the script above like all the others.
        51 → 53 in Batch 3A (`fileObject`, `unfileObject`): object-level Binder
-       membership is a new durable fact, so it needed commands to state it. */
-    eq(C.COMMAND_NAMES.length, 53, "the command set");
+       membership is a new durable fact, so it needed commands to state it.
+       53 → 54 in Market Validation Batch 2 (`declineOffer`), exercised above.
+       55 → 56 in Milestone 2D.1 (`sendDealMessage`), exercised above. */
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A1: + selectTradeCards, deselectTradeCard, holdTradeSelection, continueTradeSelection, closeTradeSelection (proposeTradeSelection and reviewTradeCard remain as refusing names) — each founder-approved */ eq(C.COMMAND_NAMES.length, 61, "the command set");
   });
 
   test("each new record's id is exactly what the runtime handed out, with the record's prefix", () => {
@@ -428,9 +464,11 @@ describe("B. every minted id comes from the injected runtime", () => {
     assert(countedId("inv-").test(steps.inviteCollector.invitation.id), "invitation id");
     eq(steps.inviteCollector.invitation.id, steps.inviteCollector.id, "the command returns the invitation's own id");
     assert(countedId("e").test(steps.sendMessage.entry.id), "message entry id");
+    /* M2D.1: a deal message's id is the runtime's, and the command returns it */
+    assert(countedId("m").test(steps.sendDealMessage.id) && steps.sendDealMessage.entry.id === steps.sendDealMessage.id, "deal message id");
     assert(countedId("e").test(steps.recordNote.entry.id), "milestone entry id");
     assert(countedId("a").test(steps.recordNote.activity.id), "activity id");
-    assert(countedId("tck2-").test(steps.proposeTradeSelection.opp.trade.cards[0].id), "trade row id");
+    assert(countedId("tck2-").test(steps.selectTradeCards.opp.trade.cards[0].id), "trade row id");
     eq(steps.requestPhotos.request.id, ids.pr, "request id");
   });
 
@@ -474,13 +512,18 @@ describe("C. every authoritative timestamp is the injected runtime's time", () =
     revokeCollectorInvitation: (x) => [x.invitation.revokedAt],
     markBinderReviewed: (x) => [x.relationship.binderReviewedAt],
     sendMessage: (x) => [x.entry.at],
+    sendDealMessage: (x) => [x.entry.at],
     reachOut: (x) => [x.entry.at],
     recordNote: (x) => [x.entry.at, x.activity.date],
     startOpportunity: (x) => [x.opp.priceThread[0].at, x.opp.updated],
     proposePrice: (x) => [D.lastEntry(x.opp.priceThread).at, x.opp.updated],
     acceptPrice: (x) => [D.lastEntry(x.opp.priceThread).at, x.opp.updated],
-    proposeTradeSelection: (x) => [x.opp.updated],
-    reviewTradeCard: (x) => [x.opp.trade.cards[0].reviewedAt, x.opp.updated],
+    /* M3A A1: TP-led selection, each with its own stamp. */
+    selectTradeCards: (x) => [x.opp.trade.cards[0].selectedAt, x.opp.trade.selection.sentAt, x.opp.updated],
+    holdTradeSelection: (x) => [x.opp.trade.selection.heldAt, x.opp.updated],
+    continueTradeSelection: (x) => [x.opp.trade.selection.readyAt, x.opp.updated],
+    closeTradeSelection: (x) => [x.opp.trade.cards[0].reservedAt, x.opp.updated],
+    deselectTradeCard: (x) => [x.opp.trade.cards[0].deselectedAt, x.opp.updated],
     proposeMarketValue: (x) => [D.lastEntry(x.opp.trade.cards[0].valueThread).at],
     acceptMarketValue: (x) => [D.lastEntry(x.opp.trade.cards[0].valueThread).at],
     proposeTradePercent: (x) => [D.lastEntry(x.opp.trade.cards[0].percentThread).at],
@@ -492,9 +535,10 @@ describe("C. every authoritative timestamp is the injected runtime's time", () =
     confirmFulfillmentPlan: (x) => [x.opp.fulfillment.confirmedAt],
     confirmHandoff: (x) => [x.opp.completedAt, x.opp.updated],
     markDealViewed: (x) => [x.opp.viewedAt.collector.timeline],
-    withdrawTradeCard: (x) => [x.opp.trade.cards[0].withdrawnAt, x.opp.updated],
+    withdrawTradeCard: (x) => [x.opp.trade.cards[1].withdrawnAt, x.opp.updated],
     chooseCashOnly: (x) => [x.opp.trade.cashOnlyAt, x.opp.updated],
     cancelOpportunity: (x) => [x.opp.endedAt, x.opp.updated],
+    declineOffer: (x) => [x.opp.endedAt, x.opp.updated],
     /* Batch 3A. `filedAt` is the server's record of WHEN a Collector put this
        object here, so it is the runtime's time like every other authoritative
        stamp — not the browser's, and not a field the payload can carry. */

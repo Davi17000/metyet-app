@@ -193,8 +193,12 @@ const settle = async () => {
     await TR.act(async () => { await new Promise((done) => setTimeout(done, 0)); });
   }
 };
+/* RESTATED (Phase 6 P6-F2): a Phase 6 grid card names itself in its accessible
+   name ("Mudkip, Ruby & Sapphire #60") — the picture carries the name visually. */
 const findButton = (r, label) => buttons(r).find((n) => instText(n).trim() === label
-  || instText(n).includes(label) || (n.props["aria-label"] || "") === label);
+  || instText(n).includes(label) || (n.props["aria-label"] || "") === label
+  || (n.props["aria-label"] || "").startsWith(`${label}, `));
+const gridNames = (r) => buttons(r).map((n) => n.props["aria-label"] || "").filter((l) => /, /.test(l)).join(" | ");
 const press = async (r, label) => {
   const b = findButton(r, label);
   assert(b, `no button "${label}" among: ${buttons(r).map(instText).join(" | ")}`);
@@ -203,7 +207,11 @@ const press = async (r, label) => {
   await settle();
 };
 const typeInto = async (r, id, value) => {
-  const input = r.root.findAll((n) => n.type === "input").find((n) => n.props.id === id);
+  /* RESTATED (Phase 6 P6-F2): the old "Pokémon or card name" field
+     (mcs-br-q) is the Phase 6 search field now; typing a name finds the card
+     exactly as before. */
+  const input = r.root.findAll((n) => n.type === "input").find((n) => n.props.id === id
+    || (id === "mcs-br-q" && n.props["aria-label"] === "Search"));
   assert(input, `no input ${id}`);
   await TR.act(async () => { input.props.onChange({ target: { value } }); });
   await settle();
@@ -726,7 +734,7 @@ describe("D. the production door, and what is still shut", () => {
          Batch 3C-1 closed it by name once the release owner judged that window
          enough. `removeBinderEntry` stays — it is how a legacy row is removed. */
       "fileObject", "unfileObject",
-      "updateCollectorCopy", "updateGoalCriteria",
+      "updateCollectorCopy", "updateGoalCriteria", "changeCollectingState",
       "renameBinder", "setBinderArchived",
       /* AND THE TWO C5 ADDED (Phase 5 C5). `updateInventoryCopy` and
          `removeInventoryCopy` were written and tested in Batch 6 and shipped
@@ -752,10 +760,29 @@ describe("D. the production door, and what is still shut", () => {
          evidence in a live deal, and it changes no price, availability or
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
+      /* AND THE FIVE MARKET VALIDATION BATCH 3B ADDED, with the controls that
+         send them: a Collector's "Make an offer", "Counter", "Accept" and
+         "Withdraw offer" in Deal Flow, and a shop's "Accept", "Counter" and
+         "Decline" in Opportunities. Agreeing a price and nothing past it. */
+      "startOpportunity", "proposePrice", "acceptPrice", "declineOffer", "cancelOpportunity",
+      /* AND THE ONE MILESTONE 2D.1 ADDED (founder-approved): a deal's conversation —
+         one plain-text message on one canonical opportunity, from one of its two
+         participants. It changes no term of any deal; only Accept accepts. */
+      "sendDealMessage",
+      /* AND SELECT TRADE'S SIX (M3A A3, founder-authorized), with the screens
+         that send them: a shop's "Send / Add", "Remove" and "Start valuing" in
+         Opportunities; a Collector's "Hold on", "I'm ready" and "Take out of
+         this deal" in the Deal Workspace. Value Trade, Deal, Fulfillment and
+         cash-only stay closed. */
+      "selectTradeCards", "deselectTradeCard", "closeTradeSelection",
+      "holdTradeSelection", "continueTradeSelection", "withdrawTradeCard",
     ].sort()), "the production surface is not what C3.4 declared");
     /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
        name; any other change to the size still fails here. */
-    eq(EXPOSED_COMMANDS.length, 24);
+    /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
+       commands joined the door with the Deal Flow and Opportunities controls
+       that send them, each named in the allow-list; any other move still fails. */
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37);
     for (const name of EXPOSED_COMMANDS) {
       assert(C.COMMAND_NAMES.includes(name), `${name} is not a command`);
     }
@@ -799,8 +826,12 @@ describe("D. the production door, and what is still shut", () => {
      name — is named here explicitly rather than swept up in a list, so closing
      the Binder screen's doors cannot be mistaken for closing it too. */
   test("the deal lifecycle is still shut, and so is markBinderReviewed", async () => {
+    /* MARKET VALIDATION BATCH 3B opened the five price commands — opening an
+       offer, countering, accepting, declining and withdrawing — with the screens
+       that send them, so they left this list. Everything past an agreed price
+       (trade, values, the final balance, fulfilment, Pending) is still shut. */
     const ctx = await world();
-    for (const name of ["startOpportunity", "proposePrice", "acceptDeal",
+    for (const name of ["acceptDeal",
       "resolveCardIdentity", "setInterest", "markBinderReviewed"]) {
       assert(!EXPOSED_COMMANDS.includes(name), `${name} is exposed`);
       eq((await post(ctx.app, "casey", name, {})).json().error.refused, "command-unavailable", name);
@@ -931,12 +962,40 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
       r = TR.create(React.createElement(SHELL,
         { state, onSignOut() {}, onSpecify, onBrowseCards: door }));
     });
+    r.panelProps = { state, onSpecify, door };
     return { r, calls, state };
   };
 
+  /* RESTATED (P6-F3A Stage 2). Browse used to be this panel's door. From
+     Stage 2 a card from Browse opens the Phase 6 card, whose own questions end
+     in one command (tests/phase6-f3a-card-detail.cjs); the panel is now opened
+     by Binders and by Browse when it is filling a binder. What this section
+     proves is about the PANEL — what it shows when it opens, and that nothing
+     before Save writes — so it opens the panel itself, with exactly the props
+     Browse handed it: the card the catalogue read returns, its context, the
+     Collector's projection, and the same onCommit. Every assertion after
+     opening is unchanged. The two Browse-specific claims below are restated on
+     the Phase 6 card and on the binder-filling door. */
   const openCard = async (r, name) => {
-    await typeInto(r, "mcs-br-q", name);
-    await press(r, name);
+    const { state, onSpecify, door } = r.panelProps;
+    const found = (await door.find(`query=${encodeURIComponent(name)}`)).contexts
+      .filter((c) => c.cardName === name);
+    eq(found.length, 1, `one ${name} in the catalogue`);
+    const read = await door.read(found[0].cardContextId);
+    const printings = read.canonicalCards;
+    eq(printings.length, 1, `${name} has one printing`);
+    const context = { ...found[0], ...read, cards: printings };
+    await TR.act(async () => {
+      r.update(React.createElement(SPEC.default, { card: printings[0], context, state,
+        onCommit: onSpecify, onClose() {} }));
+    });
+    await settle(r);
+  };
+  const backToBrowse = async (r) => {
+    const b = buttons(r).find((n) => /mcs-cd-back/.test(n.props.className || ""));
+    assert(b, "the card has no way back: " + texts(r));
+    await TR.act(async () => { b.props.onClick(); });
+    await settle(r);
   };
 
   test("a card nobody has said anything about opens honestly empty", async () => {
@@ -1083,28 +1142,46 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
     const { r, calls } = await browsing(ctx, async () => ({ ok: true }));
     await typeInto(r, "mcs-br-q", "Mudkip");
     const afterSearch = calls.find;
-    const gridText = texts(r);
-    assert(gridText.includes("Mudkip"), "the grid did not fill");
+    assert(gridNames(r).includes("Mudkip"), "the grid did not fill");
 
+    /* RESTATED (P6-F3A): the Phase 6 card, opened, answered and closed twice. */
     await press(r, "Mudkip");
-    await press(r, "Cancel");
+    await press(r, "Raw");
+    await backToBrowse(r);
     await press(r, "Mudkip");
-    await press(r, "Cancel");
+    await backToBrowse(r);
 
     eq(calls.find, afterSearch,
       "the catalog was asked again — the grid remounted, and a person's place with it");
-    assert(texts(r).includes("Mudkip"), "the results are gone after a round trip");
+    assert(gridNames(r).includes("Mudkip"), "the results are gone after a round trip");
     /* The search box still holds what was typed: the session lives above the
-       section and nothing here rewrites it. */
-    const input = r.root.findAll((n) => n.type === "input").find((n) => n.props.id === "mcs-br-q");
+       section and nothing here rewrites it. (P6-F2: the Phase 6 search field.) */
+    const input = r.root.findAll((n) => n.type === "input").find((n) => n.props["aria-label"] === "Search");
     eq(input.props.value, "Mudkip", "the browsing session was rewritten");
   });
 
   test("the sheet is rendered after the grid and out of flow, so nothing moves behind it", async () => {
     const ctx = await world();
     await cards(ctx);
-    const { r } = await browsing(ctx, async () => ({ ok: true }));
-    await openCard(r, "Mudkip");
+    /* RESTATED (P6-F3A Stage 2, then P6-F4 B3): Browse opened this sheet only
+       while filling a binder; B3 retired that door — a binder's new card is
+       made on the Phase 6 card and filed into the binder. So Browse never
+       renders the sheet now, and the card is held to the order rule. */
+    const binderId = (await post(ctx.app, "casey", "createBinder", { name: "Mudkip Collection" })).json().value;
+    const state = await view(ctx.app, "casey");
+    const { door } = doorFor(ctx);
+    const BROWSE = build("client/collector/sections/Browse.jsx");
+    let session = BROWSE.newBrowseSession();
+    let r;
+    const draw = async () => TR.act(async () => {
+      const el = React.createElement(BROWSE.default, { state, session, onSession: (next) => { session = next; draw(); },
+        onSpecify: async () => ({ ok: true }), onBrowseCards: door, fillingBinder: { binderId, name: "Mudkip Collection" } });
+      if (r) r.update(el); else r = TR.create(el);
+    });
+    await draw();
+    await typeInto(r, "mcs-br-q", "Mudkip");
+    await press(r, "Mudkip");
+    assert(!texts(r).includes("Are you looking for it?"), "Browse opened the old panel");
 
     /* ORDER IS THE MECHANISM. A panel inserted BEFORE the grid pushes it down
        the page while the window's scroll offset stays put, which is exactly the
@@ -1117,18 +1194,27 @@ describe("E. the panel shows current truth, and writes nothing until Save", () =
       (n.children || []).forEach(walk);
     };
     walk(r.toJSON());
-    const grid = classes.findIndex((c) => c.split(" ").includes("mcs-br"));
+    /* RESTATED (P6-F2): the Phase 6 discovery screen is the grid's container. */
+    const grid = classes.findIndex((c) => c.split(" ").includes("mcs-disc"));
     const sheet = classes.findIndex((c) => c.split(" ").includes("mcs-spec-scrim"));
+    /* P6-F3A: and the Phase 6 card the panel is opened from, by the same rule. */
+    const card = classes.findIndex((c) => c.split(" ").includes("mcs-cd"));
     assert(grid >= 0, "the grid is not rendered");
-    assert(sheet >= 0, "the sheet is not rendered");
-    assert(grid < sheet, "the sheet is rendered above the grid and would push it down the page");
+    eq(sheet, -1, "Browse rendered the old sheet");
+    assert(card >= 0, "the card is not rendered");
+    assert(grid < card, "the card is rendered above the grid and would push it down the page");
 
     /* And it is taken out of flow by the stylesheet rather than by luck. */
     const css = read("client/collector/CollectorShell.jsx");
     assert(/\.mcs-spec-scrim\s*\{[^}]*position:fixed/.test(css.replace(/\s+/g, " ").replace(/ \{/g, "{")),
       "the sheet is not out of flow");
+    assert(/\.mcs-cd\s*\{[^}]*position:fixed/.test(css.replace(/\s+/g, " ").replace(/ \{/g, "{")),
+      "the card is not out of flow");
     /* NO SCROLL RESTORATION WAS BUILT, and none should have been: there is
-       nothing to restore when nothing moves. */
+       nothing to restore when nothing moves. (P6-F2: opening and closing a card
+       still moves nothing. client/browse/Discover.jsx does keep each VIEW's
+       scroll — the Pokédex, a set's cards — for moving BETWEEN views, as the
+       Phase 6 prototype does; that is a different problem and not this one.) */
     assert(!/scrollTo|scrollTop|scrollIntoView|scrollY|scrollRestoration/.test(code("client/collector/sections/Browse.jsx")
       + code("client/collector/CardSpecification.jsx") + code("client/collector/CollectorShell.jsx")),
     "scroll-restoration machinery was built for a problem that was removed instead");
@@ -1217,7 +1303,11 @@ describe("F. one button, a sequence of commands that already existed", () => {
     /* And nothing is mapped that the panel cannot produce — the card-level add
        above all. */
     const mapped = [...entrance.matchAll(/case "([a-z-]+)":/g)].map((m) => m[1]);
-    eq(json([...new Set(mapped)].sort()), json([...new Set(produced)].sort()),
+    /* (P6-F4 B5: and the saved card's page produces `change-state`, which the
+       entrance maps to changeCollectingState — the one step not the panel's.) */
+    const card = code("client/collector/CardEdit.jsx");
+    assert(/kind: "change-state"/.test(card), "the saved card's page no longer produces change-state");
+    eq(json([...new Set(mapped)].sort()), json([...new Set([...produced, "change-state"])].sort()),
       "the entrance maps a step nothing produces");
     assert(!/case "file"/.test(entrance), "the entrance maps the retired card-level add");
   });
@@ -1855,7 +1945,7 @@ describe("H. how somebody organises their collection is not a fact about a trade
 
   test("C3.3 wrote no migration: the newest is still somebody else's", () => {
     const names = fs.readdirSync(path.join(ROOT, "persistence", "migrations")).sort();
-    eq(names[names.length - 1], "0014_binder_memberships.sql",
+    /* RE-PINNED (Milestone 2D.1): the newest migration is now 0015, a deal's conversation — not this batch's. */ eq(names[names.length - 1], "0015_deal_conversations.sql",
       "C3.3 added a migration: " + names.join(","));
     /* `desired` lives in a Goal's attrs and needed no DDL; nothing else C3.3
        writes is a new shape. */

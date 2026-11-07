@@ -383,7 +383,7 @@ describe("N. Failed negotiation unlocks the Goal", () => {
       cardId: "k1", invId: listed(st, "p2", "k1", 4200), listedPrice: 4200, amount: 3700, at: AT });
     st.actions.patchOpportunity(first, (o) => ({ ...o, agreedPrice: 3980 }));
 
-    st.actions.endOpportunity(first, "collector", AT);
+    st.actions.endOpportunity(first, "collector", AT, "changed my mind"); /* Batch 3B.1: ending a price-agreed deal needs a reason. */
 
     eq(st.get().opportunities.length, 1, "the failed deal is KEPT, not deleted");
     eq(st.get().opportunities[0].agreedPrice, 3980, "its agreed terms survive as history");
@@ -497,8 +497,13 @@ describe("Opportunity references its Goal", () => {
        a (collector, card) pair. Matched loosely enough to survive a clause and
        strictly enough to still catch a re-keying. */
     assert(/o\.goalId === goalId && isNegotiating\(o\)/.test(dom), "the invariant keys on goalId");
-    assert(/!transactionallyLost\(o, opps\)/.test(dom),
-      "and a negotiation that can never conclude no longer holds the goal");
+    /* RESTATED (M3A A1): a negotiation that can never conclude no longer holds
+       its Goal because it is ENDED by the event that lost it (`endUnavailable`
+       in the command layer), not because the Goal rule silently excludes it. */
+    assert(!/!transactionallyLost\(o, opps\)/.test(dom),
+      "the silent exclusion is gone from the Goal rule");
+    assert(/function endUnavailable\(/.test(cmd) && /endUnavailable\(agreedState, o\.invId, o\.id, at\)/.test(cmd),
+      "and a negotiation that can never conclude is ended explicitly instead");
     assert(/D\.INVARIANTS\.oneNegotiationPerGoal\(goalId, state\.opportunities\)/.test(cmd),
       "and the command boundary applies it");
   });

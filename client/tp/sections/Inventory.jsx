@@ -256,7 +256,8 @@ export default function Inventory({ state, onSaveProfile = null,
               <>
                 {/* The certificate is the copy's, not the card's. */}
                 <Fact label={graded ? "Cert" : "Serial"} value={text(copy.cert)} mono />
-                <Fact label="Ask" value={money(copy.ask)} mono />
+                <Fact label="Proposed Market Price" value={money(copy.ask)} mono />
+                <Fact label="Pricing" value={copy.firmOnPrice === true ? "Firm on Price" : "Open to Offers"} />
                 {/* THIS copy's cost. Read from this row, by construction. */}
                 <Fact label="Your cost" value={money(copy.cost)} mono />
                 <Fact label="Acquired" value={day(copy.acquired)} mono />
@@ -369,7 +370,7 @@ function AddCopy({ browse, onAdd, onDone }) {
   const [looking, setLooking] = useState(false);
   const [context, setContext] = useState(null);
   const [chosen, setChosen] = useState(null);
-  const { facts, set, setGrade, rawNeedsCondition, payload } = useCopyFacts(BLANK_FACTS);
+  const { facts, set, setGrade, rawNeedsCondition, askProblem, payload } = useCopyFacts(BLANK_FACTS);
   const [problem, setProblem] = useState(null);
   const [saving, setSaving] = useState(false);
 
@@ -388,7 +389,7 @@ function AddCopy({ browse, onAdd, onDone }) {
   };
 
   const save = async () => {
-    if (!chosen || saving || rawNeedsCondition) return;
+    if (!chosen || saving || rawNeedsCondition || askProblem) return;
     setSaving(true); setProblem(null);
     try {
       const answer = await onAdd({ canonicalCardId: chosen.canonicalCardId, ...payload() });
@@ -447,7 +448,8 @@ function AddCopy({ browse, onAdd, onDone }) {
               {rawNeedsCondition ? (
                 <p className="tps-dim">A raw copy needs a condition before it can go on the shelf.</p>
               ) : null}
-              <button className="tps-edit" type="button" disabled={saving || rawNeedsCondition}
+              {askProblem ? <p className="tps-dim">{askProblem}</p> : null}
+              <button className="tps-edit" type="button" disabled={saving || rawNeedsCondition || !!askProblem}
                 onClick={save}>
                 {saving ? "Adding…" : "Add this copy"}
               </button>
@@ -485,7 +487,7 @@ function AddCopy({ browse, onAdd, onDone }) {
    THE PAYLOAD IS BUILT IN ONE PLACE for the same reason: "a graded copy sends
    no condition" is a sentence about what MetYet means, and two spellings of it
    is two chances to disagree. */
-const BLANK_FACTS = Object.freeze({ grade: "", condition: "", ask: "", cost: "", cert: "" });
+const BLANK_FACTS = Object.freeze({ grade: "", condition: "", ask: "", cost: "", cert: "", firmOnPrice: false });
 
 /* A copy's stored facts as this form's answers. A number that is absent is an
    empty box, never a zero: `0` and "nobody said" are different claims about an
@@ -504,6 +506,10 @@ const factsOf = (copy) => ({
   ask: asText(copy && copy.ask),
   cost: asText(copy && copy.cost),
   cert: asText(copy && copy.cert),
+  /* OPEN TO OFFERS UNLESS SAID OTHERWISE (Market Validation, Batch 1). A copy
+     written before this preference existed has no key and opens unchecked;
+     only an explicit `true` opens checked, so editing never changes it. */
+  firmOnPrice: !!(copy && copy.firmOnPrice === true),
 });
 
 function useCopyFacts(initial) {
@@ -522,6 +528,17 @@ function useCopyFacts(initial) {
      after the round trip. It is a courtesy, never the authority — the same
      payload is refused by the same rule whether or not this line exists. */
   const rawNeedsCondition = facts.grade === "Raw" && !facts.condition;
+  /* WHOLE DOLLARS, ASKED BEFORE THE REQUEST (Batch 2.1). A NEW price — typed
+     into an empty box, or changed from what the copy said — is a whole number
+     of dollars above zero. A price stored in cents before this rule and left
+     untouched is not a new price, so it never blocks a correction of anything
+     else. Never rounded: the box says what is wrong. Courtesy only; the domain
+     refuses the same payload either way. */
+  const askChanged = facts.ask !== initial.ask;
+  const askProblem = askChanged && facts.ask.trim() !== "" && !/^[1-9]\d*$/.test(facts.ask.trim())
+    ? (/^\d+$/.test(facts.ask.trim()) ? "A Proposed Market Price is above $0. Leave it blank if this copy is unpriced."
+      : "A Proposed Market Price is whole dollars — no cents.")
+    : null;
   /* WHAT THE FORM IS ENTITLED TO SAY ABOUT `condition`, WHICH IS NOT ALWAYS.
 
      Three cases, and the third is the one that bit. Raw: the condition is
@@ -542,11 +559,12 @@ function useCopyFacts(initial) {
     ...(facts.grade
       ? { condition: facts.grade === "Raw" ? (facts.condition || null) : null }
       : {}),
-    ask: facts.ask === "" ? null : Number(facts.ask),
+    ask: facts.ask.trim() === "" ? null : Number(facts.ask.trim()),
     cost: facts.cost === "" ? null : Number(facts.cost),
     cert: facts.cert || null,
+    firmOnPrice: facts.firmOnPrice === true,
   });
-  return { facts, set, setGrade, rawNeedsCondition, payload };
+  return { facts, set, setGrade, rawNeedsCondition, askProblem, payload };
 }
 
 function CopyFactFields({ facts, set, setGrade, disabled = false }) {
@@ -584,7 +602,18 @@ function CopyFactFields({ facts, set, setGrade, disabled = false }) {
         </label>
       ) : null}
       {field("Certificate", "cert", { inputMode: "numeric" })}
-      {field("Ask", "ask", { inputMode: "decimal" })}
+      {field("Proposed Market Price", "ask", { inputMode: "numeric" })}
+      {/* FIRM ON PRICE (Market Validation, Batch 1). Optional, unchecked by
+          default: an unchecked card is Open to Offers. A starting point, never a
+          policy step — nothing else here changes. */}
+      <label className="tps-field tps-check">
+        <span className="tps-check-row">
+          <input type="checkbox" checked={facts.firmOnPrice === true} disabled={disabled}
+            onChange={(e) => set("firmOnPrice", e.target.checked)} />
+          <span>Firm on Price</span>
+        </span>
+        <span className="tps-check-help">When enabled, Collectors can only initiate at your proposed market price. You'll still confirm the offer before proceeding.</span>
+      </label>
       {field("What it cost you", "cost", { inputMode: "decimal" })}
     </>
   );
@@ -598,7 +627,8 @@ const refusalSentence = (refused, grade, verb) => {
   if (refused === "card-unavailable") {
     return "That version is no longer one MetYet can add. Choose another.";
   }
-  if (refused === "invalid-amount") return "An amount has to be a number, and not a negative one.";
+  if (refused === "invalid-amount") return "A Proposed Market Price is whole dollars above $0, with no cents; other amounts can't be negative.";
+  if (refused === "invalid-pricing-preference") return "Firm on Price is either on or off. Check the box, or leave it clear.";
   if (refused === "grading-incoherent") {
     return grade === "Raw"
       ? "A raw copy needs a condition. Choose one."
@@ -637,12 +667,12 @@ const refusalSentence = (refused, grade, verb) => {
    CANCEL WRITES NOTHING. There is one `await` in this component and it is
    behind "Save changes". */
 function EditCopy({ copy, title, where, onSave, onDone }) {
-  const { facts, set, setGrade, rawNeedsCondition, payload } = useCopyFacts(factsOf(copy));
+  const { facts, set, setGrade, rawNeedsCondition, askProblem, payload } = useCopyFacts(factsOf(copy));
   const [problem, setProblem] = useState(null);
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
-    if (saving || rawNeedsCondition || !onSave) return;
+    if (saving || rawNeedsCondition || askProblem || !onSave) return;
     setSaving(true); setProblem(null);
     try {
       const answer = await onSave(copy.invId, payload());
@@ -675,7 +705,8 @@ function EditCopy({ copy, title, where, onSave, onDone }) {
       {rawNeedsCondition ? (
         <p className="tps-dim">A raw copy needs a condition.</p>
       ) : null}
-      <button className="tps-edit" type="button" disabled={saving || rawNeedsCondition}
+      {askProblem ? <p className="tps-dim">{askProblem}</p> : null}
+      <button className="tps-edit" type="button" disabled={saving || rawNeedsCondition || !!askProblem}
         onClick={save}>
         {saving ? "Saving…" : "Save changes"}
       </button>

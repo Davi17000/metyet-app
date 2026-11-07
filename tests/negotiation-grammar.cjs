@@ -25,6 +25,7 @@
 
 process.env.METYET_DEV = "1";
 
+const { reachValuationByFixture } = require("./helpers/trade-path.cjs");
 const { describe, test, assert, eq } = require("./run.cjs");
 const React = require("react");
 const TR = require("react-test-renderer");
@@ -76,9 +77,9 @@ const world = (n = 1) => {
   st.actions.agreePrice({ oppId: o, amount: 3990, by: "tp", at: AT });
   const rows = [M.emptyTradeCard("ka", null, null, "b-a")];
   if (n > 1) rows.push(M.emptyTradeCard("kb", null, null, "b-b"));
-  st.actions.patchOpportunity(o, (x) => ({ ...x, stage: "select-trade",
-    trade: { ...x.trade, submitted: true, cards: rows } }));
-  st.actions.reviewTradeCards({ oppId: o, decision: "accepted", at: AT });
+  /* RESTATED (M3A A1): the partner now selects and closing selection reserves;
+     the retired Collector-proposes / reviewTradeCard path is replaced by the shared fixture. */
+  reachValuationByFixture(st, o, rows, AT);
   const get = () => st.get().opportunities.find((x) => x.id === o);
   return { st, o, get, ids: rows.map((r) => r.id),
     card: (id) => get().trade.cards.find((c) => c.id === id) };
@@ -370,6 +371,13 @@ describe("E. Multi-card independence and identity", () => {
      at Value Trade closes the stage) is superseded. What remains true: a refused
      withdrawal changes nothing, history is preserved, and the stage still closes
      canonically when the last term settles. */
+  /* RESTATED (M3A A1). WAS: a card the partner had accepted was committed and
+     could not be withdrawn, so the call changed nothing. WHY IT CHANGED: the
+     founder decided the Collector may withdraw a card from a deal until final
+     agreement, including in valuation when the value on the table is not worth
+     it. WHAT STILL HOLDS: the withdrawn row keeps its history, the other card's
+     negotiation is untouched, and settling what is left closes the stage
+     canonically. */
   test("withdrawal preserves history and the stage rule", () => {
     const w = world(2);
     market(w, w.ids[0], "collector", "propose", 2050);
@@ -377,15 +385,14 @@ describe("E. Multi-card independence and identity", () => {
     market(w, w.ids[0], "tp", "accept");
     percent(w, w.ids[0], "tp", "propose", 0.9);
     eq(w.get().stage, "value-trade", "one row still unsettled");
-    const before = JSON.stringify(w.get());
+    const keep = JSON.stringify(w.card(w.ids[0]));
     w.st.actions.withdrawTradeCard({ oppId: w.o, tradeCardId: w.ids[1], at: AT });
-    eq(JSON.stringify(w.get()), before, "a committed copy cannot be withdrawn — nothing changes");
-    eq(w.card(w.ids[1]).inclusion, "accepted", "it stays committed");
-    market(w, w.ids[1], "tp", "accept");
-    percent(w, w.ids[1], "tp", "propose", 0.75);
+    eq(w.card(w.ids[1]).withdrawn, true, "the Collector may withdraw before final agreement");
+    eq(w.card(w.ids[1]).withdrawnStage, "value-trade", "recorded where it happened");
+    eq(w.card(w.ids[1]).valueThread.length, 1, "its history stays");
+    eq(JSON.stringify(w.card(w.ids[0])), keep, "the other card's negotiation is untouched");
+    eq(w.get().stage, "value-trade", "the remaining row is still unsettled");
     percent(w, w.ids[0], "collector", "accept");
-    eq(w.get().stage, "value-trade", "one row still unsettled");
-    percent(w, w.ids[1], "collector", "accept");
     eq(w.get().stage, "deal", "settling the last term closes the stage canonically");
     eq(w.card(w.ids[0]).valueThread.length, 2, "and history is untouched");
   });

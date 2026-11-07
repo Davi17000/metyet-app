@@ -220,11 +220,58 @@ const show = (state, section = null) => {
 /* WHAT YOUR CARDS USED TO BE IS TWO PRESSES NOW (binders batch): the tab, then
    the collection view. Binders opens on the binder library, because a tab
    called Binders should show binders; the cards are one chip away. */
+/* RESTATED (Phase 6 P6-2). The five view chips became state filters over
+   Your Cards, which is on the Binders screen itself, and each tile opens its
+   own facts in place when it cannot open the Card Specification (a card MetYet
+   cannot name). So "the shelf" is: the tab, the filter, and every tile's facts
+   opened — the same facts these tests always read, from the same rows. */
+const VIEW_TO_FILTER = { "All Cards": "All", "Trade/Sell": "Trade / Sell", "Primary Goals": "Primary",
+  "Secondary Goals": "Secondary" };
 const showCollection = (state, view = "All Cards") => {
   const r = show(state, "Binders");
-  clickText(r, view);
+  const filter = VIEW_TO_FILTER[view] || view;
+  const b = r.root.findAll((n) => n.type === "button" && instText(n).trim() === filter)[0];
+  if (filter !== "All") { assert(b, `no filter "${filter}"`); TR.act(() => { b.props.onClick(); }); }
   return r;
 };
+/* RESTATED (Phase 6 P6-3.1): a tile's facts now live in its Details SHEET,
+   one tile at a time, not opened in place beneath it. Reading a tile's record
+   opens its sheet, reads the card and its facts (not the Binder choice, whose
+   options name every binder), and closes it again — the same facts, from the
+   same rows, read from where they are now shown. */
+/* RESTATED AGAIN (P6-4): a tap on the card opens its sheet (there is no
+   separate Details link), and the copy's secondary facts sit behind "Copy
+   details". The same facts, from the same rows; the state choices and the
+   binder controls are not read, for the same reason the Binder choice was not. */
+/* RESTATED AGAIN (P6-F4 B2B): a tap opens the saved card's full-screen page.
+   The same facts, from the same rows, read from where the page shows them:
+   its identity and version, the grading it holds (the SELECTED choices only),
+   a contradiction if the copy has one, its certificate and reference value
+   (now editable fields — read as their values, the value as the screen's own
+   money format), and when it was added, its photos and its status. */
+const MONEY = (() => { try { return require("esbuild").buildSync({ entryPoints: [require("path").join(__dirname, "..", "client/collector/present.js")],
+  bundle: true, format: "cjs", write: false, logLevel: "silent" }); } catch (e) { return null; } })();
+const present = (() => { const mod = { exports: {} }; new Function("module", "exports", "require", MONEY.outputFiles[0].text)(mod, mod.exports, require); return mod.exports; })();
+const sheetOf = (r, li) => {
+  const b = li.findAll((n) => n.type === "button" && String(n.props.className || "").includes("mcs-otap"))[0];
+  if (!b || b.props["aria-haspopup"] !== "dialog") return "";
+  TR.act(() => { b.props.onClick({ preventDefault() {} }); });
+  const dlg = () => r.root.findAll((n) => n.type === "div" && n.props.role === "dialog"
+    && /^Your (Goal|copy): /.test(String(n.props["aria-label"] || "")))[0];
+  if (!dlg()) return "";
+  const page = dlg();
+  const read = (re) => page.findAll((n) => re.test(String(n.props.className || ""))).map((n) => instText(n));
+  const chosen = page.findAll((n) => n.type === "button" && n.props["aria-pressed"] === true && !n.props["data-st"]).map((n) => instText(n));
+  const inputs = page.findAll((n) => n.type === "input");
+  const cert = inputs[0] ? `Cert ${inputs[0].props.value}` : "";
+  const value = inputs[1] && inputs[1].props.value !== "" ? `Your reference value ${present.money(Number(inputs[1].props.value))}` : "";
+  const t = [...read(/^mcs-cd-ident$/), ...read(/^mcs-cd-established$/), ...chosen, ...read(/^mcs-oconflict$/), cert, value, ...read(/^mcs-ce-facts$/)].join(" ");
+  const back = page.findAll((n) => n.type === "button" && n.props.className === "mcs-cd-back")[0];
+  if (back) TR.act(() => { back.props.onClick(); });
+  return t;
+};
+const tileNodes = (r) => r.root.findAll((n) => n.type === "li" && String(n.props.className || "").includes("mcs-otile"));
+
 /* THE SECTION'S OWN TEXT, without the shell around it (C1). The navigation is
    on screen in every section, so an assertion about what a SECTION says has to
    be made of the section — otherwise a nav label is read as the section's own
@@ -237,9 +284,12 @@ const sectionText = (r) => {
 
 /* The rendered text of ONE record block, found by something inside it. */
 const recordWith = (r, needle) => {
-  const a = r.root.findAll((n) => n.type === "article").find((n) => instText(n).includes(needle));
+  /* A tile (P6-2) is a record too: one Goal or one copy, on its own terms. */
+  const a = r.root.findAll((n) => n.type === "article").map((n) => instText(n))
+    .concat(tileNodes(r).map((n) => `${instText(n)} ${sheetOf(r, n)}`))
+    .find((t) => t.includes(needle));
   assert(a, `no record containing "${needle}" — screen: ` + flat(r));
-  return instText(a).replace(/\s+/g, " ");
+  return a.replace(/\s+/g, " ");
 };
 const records = (r) => r.root.findAll((n) => n.type === "article")
   .map((n) => instText(n).replace(/\s+/g, " "));
@@ -348,14 +398,43 @@ describe("A. Goals — and the one place coordination appears", () => {
     assert(!/stage\s*===|stage\s*!==|STAGE_IX/.test(bare), "the shell compares stages");
   });
 
+  /* EXTENDED (Market Validation Batch 3B.1). Deal Flow renders a negotiation
+     through client/negotiation.jsx, which the Collector bundle ships, so the
+     rule above follows the code there rather than stopping at the folder.
+     Everything a screen ACTS on is the server's projected `turn` (whose move,
+     the price on the table, and the domain's own `active` / `priceOpen`).
+     ONE deliberate, named exception: `threadOf` opens the price history to
+     SHOW it — the list, and whether the last price was an offer or a counter,
+     for the wording. It decides no control and no amount. */
+  test("the shared negotiation code reconstructs no lifecycle either", () => {
+    const bare = code("client/negotiation.jsx");
+    assert(!/\.trade\b|\.deal\b|\.fulfillment\b|isNegotiating|turnFor|nextActor|STAGE_IX/.test(bare),
+      "the negotiation module opens structures or a turn engine of its own");
+    assert(!/stage\s*===|stage\s*!==|\.stage\b/.test(bare), "the negotiation module reads or compares stages");
+    assert(!/["'`](tp|collector|partner)["'`]/.test(bare), "the negotiation module names a seat");
+    const reads = bare.match(/priceThread/g) || [];
+    eq(reads.length, 1, "the price history is opened somewhere other than threadOf");
+    assert(/const threadOf = \(deal\) => \{\s*const thread = deal \? deal\.priceThread : null;/.test(bare),
+      "the one read of the history is not threadOf");
+    for (const field of ["seat", "reason", "amount", "active", "priceOpen"]) {
+      assert(new RegExp(`turnOf\\(deal\\)\\.${field}|t\\.${field}`).test(bare), `the turn's ${field} is not what is read`);
+    }
+    /* And the screens that use it do not open the history themselves. */
+    for (const rel of ["client/collector/sections/DealFlow.jsx", "client/tp/sections/Opportunities.jsx"]) {
+      assert(!/priceThread|nextActor|turnFor/.test(code(rel)), `${rel} reads the negotiation itself`);
+    }
+  });
+
   test("there is no Collector Opportunities product", () => {
     const r = show(FULL);
-    const labels = buttons(r).map(instText);
+    /* (P6-F5A.1: Browse's scope option "Trusted Partners" is a radio, not a section) */
+    const labels = buttons(r).filter((b) => b.props.role !== "radio").map(instText);
     eq(labels.filter((l) => NAV.some((n) => l.includes(n))).length, NAV.length,
       "a section appeared that the product does not offer");
     onEverySection(r, (shown) =>
       assert(!/opportunit/i.test(shown), "the word appears as a product: " + shown));
-    eq(SHELL_MOD.SECTIONS.map((x) => x.id).join(","), "browse,binder,partners,deal-flow");
+    /* RE-PINNED (Phase 6 P6-1): Deal Flow now precedes Trusted Partners. */
+    eq(SHELL_MOD.SECTIONS.map((x) => x.id).join(","), "browse,binder,deal-flow,partners");
     /* Restated in Batch 8.1, renamed in C2: Your Cards is declared deferred rather
        than offered, and "no Opportunities product" is unaffected by it. */
     /* RESTATED IN C3.4: Your Cards moved into the product and Goals moved out
@@ -377,10 +456,13 @@ describe("B. Your Cards", () => {
        owning-versus-offering sentence moved to the view that is actually about
        offering. Both halves are still asserted, which is why this is not a
        loosening: the claim did not go, it went where it is true. */
+    /* RESTATED (Phase 6 P6-2). The empty Your Cards says the two ways a card
+       gains meaning — wanting it and owning it — and no longer "file it":
+       doctrine §3 holds that adding to a Binder is not a way of adding a card
+       to MetYet, which the Phase 6 wording follows. */
     const all = flat(showCollection(EMPTY));
-    assert(/Nothing has meaning yet/.test(all), all);
-    assert(/file it/i.test(all) && /want it/i.test(all) && /own/i.test(all),
-      "All Cards does not say the three ways a card gains meaning: " + all);
+    assert(/Cards you.re looking for or own will appear here/.test(all), all);
+    assert(/Find one in Browse/.test(all), "and where to start: " + all);
     assert(!/error|failed|unavailable/i.test(all), "empty reads as broken: " + all);
 
     const trade = flat(showCollection(EMPTY, "Trade/Sell"));
@@ -532,7 +614,13 @@ describe("C. Trusted Partners", () => {
   test("no invitation, acceptance or relationship control exists", () => {
     const r = show(FULL, "Trusted Partners");
     const labels = buttons(r).map(instText);
-    eq(labels.length, NAV.length + 1, "an extra control appeared: " + labels.join(" | "));
+    /* RESTATED (P6-F1): on a phone the account bar became one account button
+       in the screen header, and the release notice a "What works today" link —
+       both open the account sheet and change nothing. They are named here, so
+       the count is still exact and any OTHER new control still fails. */
+    eq(buttons(r).filter((b) => /^Account: /.test(String(b.props["aria-label"] || ""))).length, 1, "no account button");
+    eq(labels.filter((l) => l.trim() === "What works today").length, 1, "no notice link");
+    eq(labels.length, NAV.length + 3, "an extra control appeared: " + labels.join(" | "));
     /* CONTROLS are what this forbids. "accepted" is the relationship STATUS the
        server sent, rendered as a tag — banning the substring flagged the
        projection's own word, which is data. So: no control carries an action
@@ -585,8 +673,24 @@ describe("C. Trusted Partners", () => {
        which is what a shop paid and when it bought: those never cross, and the
        projection strips them before they could. The scope narrows too: every
        file EXCEPT Deal Flow is still held to the whole original list. */
+    /* RESTATED (P6-F5A, founder decision): "Browse creates exposure." A
+       Collector may now see their CONNECTED shops' AVAILABLE copies of a card
+       on the Browse card (CardDetail) without a Goal — shop, printing,
+       grading, Proposed Market Price, Open to Offers / Firm on Price. So
+       CardDetail joins Deal Flow as a reader of `ask` and `invId`. What this
+       rule always protected still holds everywhere: the shop's own books
+       (`cost`, `acquired`) never cross, and the Browse card reads no copy's
+       certificate or photographs (asserted just below). */
+    /* RESTATED (Milestone 2C): the Deal Workspace is Deal Flow's own full-screen
+       view of ONE deal, and reads that deal's copy (`invId`) for its grading.
+       It reads no `ask` (asserted below), and the books rule holds for it too. */
     const exceptDealFlow = COLLECTOR_FILES
-      .filter((f) => !/DealFlow\.jsx$/.test(f)).map(code).join("\n");
+      .filter((f) => !/DealFlow\.jsx$/.test(f) && !/collector\/CardDetail\.jsx$/.test(f) && !/collector\/DealWorkspace\.jsx$/.test(f)).map(code).join("\n");
+    assert(!/\.ask\b|\["ask"\]/.test(code("client/collector/DealWorkspace.jsx")), "the Deal Workspace reads a copy's ask");
+    const browseCard = code(COLLECTOR_FILES.find((f) => /collector\/CardDetail\.jsx$/.test(f)));
+    for (const field of ["cert", "photos", "cost", "acquired"]) {
+      assert(!new RegExp(`\\.${field}\\b|\\["${field}"\\]`).test(browseCard), `the Browse card reads a shop copy's ${field}`);
+    }
     for (const field of ["ask", "cost", "acquired", "invId"]) {
       assert(!new RegExp(`\\.${field}\\b|\\["${field}"\\]`).test(exceptDealFlow),
         `a Collector surface other than Deal Flow reads a copy's ${field}`);
@@ -751,16 +855,30 @@ describe("F. nothing acts, nothing mutates, nothing forbidden is imported", () =
     const r = show(FULL);
     for (const s of ["Trusted Partners"]) {
       clickText(r, s);
-      eq(buttons(r).map(instText).length, NAV.length + 1, "an extra control appeared in " + s);
+      /* + the account button and "What works today" (P6-F1), both read-only */
+      eq(buttons(r).filter((b) => /^Account: /.test(String(b.props["aria-label"] || "")) || instText(b).trim() === "What works today").length, 2, "the account controls in " + s);
+      eq(buttons(r).map(instText).length, NAV.length + 3, "an extra control appeared in " + s);
     }
     /* A deferred Goals, handed no callbacks, still offers nothing to press. */
     eq(buttons(show(FULL, "Goals")).length, 0, "a deferred section offered a control");
     clickText(r, "Browse");
-    const browsing = buttons(r).map(instText).map((l) => l.trim());
+    /* (P6-F5A.1) the scope's two radios are checked by name below, apart from
+       the section buttons they share a word with */
+    const scopeLabels = buttons(r).filter((b) => b.props.role === "radio").map(instText).map((l) => l.trim());
+    eq(scopeLabels.join(","), "All Cards,Trusted Partners", "the Browse scope is not All Cards | Trusted Partners");
+    const browsing = buttons(r).filter((b) => b.props.role !== "radio").map(instText).map((l) => l.trim());
     /* A nav button carries its count ("2 Goals"), so it is matched by the label
        it contains rather than by equality. */
-    const own = browsing.filter((l) => !NAV.some((n) => l.includes(n)) && l !== "Sign out");
-    eq(own.join(","), "Pokémon,Set,Artist", "Browse grew a control: " + own.join(" | "));
+    /* the shell's chrome is excluded by name: nav, Sign out, and (P6-F1) the
+       account button — whose visible text is the Collector's initial — and
+       "What works today", both of which only open the account sheet */
+    const chrome = new Set(buttons(r).filter((x) => /^Account: /.test(String(x.props["aria-label"] || ""))).map((x) => instText(x).trim()));
+    const own = browsing.filter((l) => !NAV.some((n) => l.includes(n)) && l !== "Sign out" && l !== "What works today" && !chrome.has(l));
+    /* RESTATED (P6-F2): the Phase 6 doorways and the generation filter's "All"
+       (with no catalogue here there are no generations to add). */
+    /* RESTATED (P6-F5A, then F5A.1): and the scope — All Cards | Trusted
+       Partners — the one server-side filter, as a two-way control */
+    eq(own.join(","), "Pokémon,Sets,Artists,All", "Browse grew a control: " + own.join(" | "));
     const bare = COLLECTOR_FILES.map(code).join("\n");
     /* Binder entries, interests and invitations are still nobody's to write
        from here; each moves with its own batch. */

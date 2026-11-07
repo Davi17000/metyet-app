@@ -21,6 +21,7 @@
 
 process.env.METYET_DEV = "1";
 
+const { reachValuationByFixture } = require("./helpers/trade-path.cjs");
 const { describe, test, assert, eq } = require("./run.cjs");
 const fs = require("fs");
 const path = require("path");
@@ -66,11 +67,17 @@ const offering = (w, binderIds) => {
   const o = w.st.actions.startOpportunity({ goalId: g, collectorId: ME, partnerId: "nl",
     cardId: "kt", invId: "inv-1", listedPrice: 4000, amount: 3800, at: AT });
   w.st.actions.agreePrice({ oppId: o, amount: 3800, by: "tp", at: AT });
-  const rows = binderIds.map((bid) => M.emptyTradeCard("ka", null, null, bid));
+  /* RESTATED (M3A A1): the rows are the PARTNER'S selection now, sent to the
+     Collector who has said they are ready — the partner's final-review turn. */
+  const rows = binderIds.map((bid) => ({ ...M.emptyTradeCard("ka", null, null, bid),
+    inclusion: "accepted", by: "tp", selectedAt: AT }));
   w.st.actions.patchOpportunity(o, (x) => ({ ...x, stage: "select-trade",
-    trade: { ...x.trade, submitted: true, cards: rows } }));
+    trade: { ...x.trade, cards: rows, selection: { sentAt: AT, readyAt: AT } } }));
   return { o, rows };
 };
+/* …and the partner closing selection, which reserves the copies for the deal. */
+const claim = (w, o) => reachValuationByFixture(w.st, o,
+  w.st.get().opportunities.find((x) => x.id === o).trade.cards, AT);
 const stateOf = (w, bid) => w.view().collectorCopyState(bid).state;
 
 describe("A. Availability is derived from the deals themselves", () => {
@@ -80,68 +87,69 @@ describe("A. Availability is derived from the deals themselves", () => {
     eq(w.view().collectorCopyState("b1").opp, null, "and no deal is named");
   });
 
-  /* PHASE 1 (contract §4): submitting the package RESERVES each exact copy,
-     and one BinderCopy may sit in only one active submitted package at a time.
-     Superseded: "a proposed copy is not yet spoken for" (the same copy could sit
-     in several packages until a partner decided). A proposal is still not an
-     acceptance — reserved is not committed. */
-  test("a proposed copy is reserved, not yet committed", () => {
+  /* RESTATED (M3A A1). A partner's SELECTION locks the copy's specification
+     but does not hold it: the same copy may be selected by other deals until
+     one enters valuation. So the Collector's view says "selected", not "in a
+     deal". */
+  test("a selected copy is not yet held by the deal", () => {
     const w = world();
     offering(w, ["b1"]);
-    eq(stateOf(w, "b1"), "reserved", "submitted, but the partner has not accepted it");
+    eq(stateOf(w, "b1"), "selected", "selected, but not reserved");
     eq(stateOf(w, "b2"), "available", "its twin is untouched");
   });
 
-  test("acceptance into an active deal claims it", () => {
+  test("entering valuation claims it", () => {
     const w = world();
     const { o } = offering(w, ["b1"]);
-    w.st.actions.reviewTradeCards({ oppId: o, decision: "accepted", at: AT });
-    eq(stateOf(w, "b1"), "in-deal", "now it is committed");
+    claim(w, o);   // RESTATED (M3A A1): closing selection reserves the copy
+    eq(stateOf(w, "b1"), "in-deal", "now the deal holds it");
     eq(w.view().collectorCopyState("b1").opp.id, o, "and the deal is identified");
   });
 
   test("completion makes it traded", () => {
     const w = world();
     const { o } = offering(w, ["b1"]);
-    w.st.actions.reviewTradeCards({ oppId: o, decision: "accepted", at: AT });
+    claim(w, o);   // RESTATED (M3A A1): closing selection reserves the copy
     w.st.actions.patchOpportunity(o, (x) => ({ ...x, stage: "completed", completedAt: AT }));
     eq(stateOf(w, "b1"), "traded", "the card has gone");
   });
 
-  test("rejection and withdrawal release it", () => {
+  /* RESTATED (M3A A1). WAS: a card the partner had accepted stayed committed
+     and could not be withdrawn. NOW: the partner deselects, or the Collector
+     withdraws — at any point until final agreement, including once the deal
+     holds the card in valuation — and either releases it. */
+  test("deselection and withdrawal release it", () => {
     const rejected = world();
     const a = offering(rejected, ["b1"]);
-    rejected.st.actions.reviewTradeCards({ oppId: a.o, decision: "rejected", at: AT });
-    eq(stateOf(rejected, "b1"), "available", "a rejected card is still yours to offer");
+    rejected.st.actions.deselectTradeCard({ oppId: a.o, tradeCardId: a.rows[0].id, at: AT });
+    eq(stateOf(rejected, "b1"), "available", "a deselected card is still yours to offer");
 
-    /* PHASE 1 (contract §4): withdrawal is valid only while the copy is
-       Reserved; once the partner accepts it, it is committed and the collector
-       cannot withdraw it alone. */
     const gone = world();
     const b = offering(gone, ["b1"]);
     gone.st.actions.withdrawTradeCard({ oppId: b.o, tradeCardId: b.rows[0].id, at: AT });
     eq(stateOf(gone, "b1"), "available", "as is a withdrawn one");
 
-    const kept = world();
-    const c = offering(kept, ["b1"]);
-    kept.st.actions.reviewTradeCards({ oppId: c.o, decision: "accepted", at: AT });
-    kept.st.actions.withdrawTradeCard({ oppId: c.o, tradeCardId: c.rows[0].id, at: AT });
-    eq(stateOf(kept, "b1"), "in-deal", "while an accepted one stays committed");
+    const held = world();
+    const c = offering(held, ["b1"]);
+    claim(held, c.o);
+    eq(stateOf(held, "b1"), "in-deal", "held in valuation");
+    held.st.actions.withdrawTradeCard({ oppId: c.o, tradeCardId: c.rows[0].id, at: AT });
+    eq(stateOf(held, "b1"), "available", "and released by withdrawing it before final agreement");
   });
 
   test("an ended deal releases it too", () => {
     const w = world();
     const { o } = offering(w, ["b1"]);
-    w.st.actions.reviewTradeCards({ oppId: o, decision: "accepted", at: AT });
-    eq(stateOf(w, "b1"), "in-deal", "committed while the deal lives");
-    w.st.actions.endOpportunity(o, "collector", AT);
+    claim(w, o);   // RESTATED (M3A A1): closing selection reserves the copy
+    eq(stateOf(w, "b1"), "in-deal", "held while the deal lives");
+    w.st.actions.endOpportunity(o, "collector", AT, "changed my mind"); /* Batch 3B.1: ending a price-agreed deal needs a reason. */
     eq(stateOf(w, "b1"), "available", "and free once it does not");
   });
 
   test("two copies of one card stay independent", () => {
     const w = world();
     const { o } = offering(w, ["b1"]);
-    w.st.actions.reviewTradeCards({ oppId: o, decision: "accepted", at: AT });
+    claim(w, o);   // RESTATED (M3A A1): closing selection reserves the copy
     eq(stateOf(w, "b1"), "in-deal", "the offered copy");
     eq(stateOf(w, "b2"), "available", "its twin is untouched");
   });
@@ -192,7 +200,7 @@ describe("B. Trusted Partners is a relationship, not a CRM", () => {
 
   test("an ended deal is history, not an active goal", () => {
     const { w, o } = related();
-    w.st.actions.endOpportunity(o, "collector", AT);
+    w.st.actions.endOpportunity(o, "collector", AT, "changed my mind"); /* Batch 3B.1: ending a price-agreed deal needs a reason. */
     const rel = w.view().partnerRelationship("nl");
     eq(rel.active.length, 0, "it is over");
     eq(rel.history.length, 1, "and recorded");
@@ -241,7 +249,7 @@ describe("C. Cross-tab integrity", () => {
   test("the same binder copy reconciles from Binder and from the deal", () => {
     const w = world();
     const { o, rows } = offering(w, ["b1"]);
-    w.st.actions.reviewTradeCards({ oppId: o, decision: "accepted", at: AT });
+    claim(w, o);   // RESTATED (M3A A1): closing selection reserves the copy
     const fromDeal = w.view().myOpps().find((x) => x.id === o)
       .trade.cards.find((c) => c.binderId === "b1");
     const fromBinder = w.view().myCopies().find((b) => b.id === "b1");
@@ -292,7 +300,7 @@ describe("C. Cross-tab integrity", () => {
   test("a terminal deal is never reopened as active", () => {
     const w = world();
     const { o } = offering(w, ["b1"]);
-    w.st.actions.reviewTradeCards({ oppId: o, decision: "accepted", at: AT });
+    claim(w, o);   // RESTATED (M3A A1): closing selection reserves the copy
     w.st.actions.patchOpportunity(o, (x) => ({ ...x, stage: "completed", completedAt: AT }));
     const rel = w.view().partnerRelationship("nl");
     eq(rel.active.length, 0, "it stays finished");

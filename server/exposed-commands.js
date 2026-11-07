@@ -44,10 +44,12 @@
    the demo is not, and would be a much larger batch wearing this one's name.
 
    WHEN A COMMAND JOINS THIS LIST. When the product grows a surface that sends
-   it. The negotiation commands — `startOpportunity`, `proposePrice`,
-   `acceptPrice` and the rest of the deal lifecycle — are written, tested and
-   deliberately absent from this list, because no screen sends them yet. They
-   arrive here in the batch that gives them one.
+   it. Market Validation's five — `startOpportunity`, `proposePrice`,
+   `acceptPrice`, `declineOffer` and `cancelOpportunity` — arrived in Batch 3B
+   with the Deal Flow and Opportunities controls that send them. The rest of
+   the deal lifecycle (trade, values, the final balance, fulfilment) is still
+   written, tested and deliberately absent: no screen sends it yet — except
+   Select Trade's six, which arrived in M3A A3 with the screens that send them.
    ========================================================================== */
 
 /* THIS FILE REQUIRES NOTHING, and that is deliberate. It holds names, not
@@ -134,6 +136,11 @@ const EXPOSED_COMMANDS = Object.freeze([
   "removeBinderEntry",           // Collector → the legacy line, removing a card filed before 3B
   "updateCollectorCopy",         // Collector → Card Specification, correcting a copy
   "updateGoalCriteria",          // Collector → Card Specification, which copy is wanted
+  /* WHAT A CARD MEANS, IN ONE STEP (P6-F4 Batch 5). The saved card's page
+     shows all four states and Submit Update sends this: the same record for
+     Primary ↔ Secondary and PC ↔ Trade / Sell, and one atomic re-making —
+     same printing, same binder, lineage kept — across them. */
+  "changeCollectingState",       // Collector → a saved card, Submit Update
   /* MANAGING A BINDER AS AN OBJECT (Phase 5 C3.4). C3.1 wrote these two and
      C3.3 deliberately left them shut, because C3.3 let a person say where the
      card IN FRONT OF THEM belongs and nothing more — renaming a binder or
@@ -223,6 +230,47 @@ const EXPOSED_COMMANDS = Object.freeze([
   "reviewCopy",                  // Collector → Deal Flow, "Inspect"
   "endReview",                   // Collector → Deal Flow, "Done inspecting"
   "requestPhotos",               // Collector → Deal Flow, "Request photos"
+  /* MARKET VALIDATION (Batch 3B). Agreeing what one exact copy is worth, and
+     nothing past that. Every rule — who may open, whose turn it is, Firm on
+     Price, whole dollars, one active offer per card — is the domain's; this
+     only says the product now has a way to send them.
+     `cancelOpportunity` IS SENT ONLY AS "WITHDRAW OFFER", with no reason, and
+     only while the price is unresolved. Its domain rule (Batch 3B.1) is what
+     governs anything else sent through this door: while the price is open
+     only the Collector may use it (a partner is refused — its "no" is
+     `declineOffer`); once a price is agreed either participant may, but only
+     with a non-blank reason (`reason-required`). No screen sends that yet —
+     there is no End Deal control. */
+  "startOpportunity",            // Collector → Deal Flow, "Make an offer"
+  "proposePrice",                // Collector → Deal Flow / TP → Opportunities, "Counter"
+  "acceptPrice",                 // Collector → Deal Flow / TP → Opportunities, "Accept"
+  "declineOffer",                // TP → Opportunities, "Decline"
+  "cancelOpportunity",           // Collector → Deal Flow, "Withdraw offer"
+  /* A DEAL'S CONVERSATION (Milestone 2D.1). One plain-text message on one
+     canonical opportunity, from one of its two participants, while it is
+     active. The sender is the session's actor and the participants are the
+     deal's own; the payload names only the deal, the words and a nonce. It
+     changes no term of any deal — not a price, turn, stage or agreement — and
+     only Accept accepts. The legacy `sendMessage`, `reachOut` and
+     `recordNote` stay closed: they key a thread by a legacy catalogue card and
+     take participants from the payload. No screen sends this yet (2D.2). */
+  "sendDealMessage",             // Collector ↔ TP, a deal's conversation
+  /* SELECT TRADE (M3A A3, founder-authorized). The partner chooses specific
+     Trade/Sell copies of the Collector's for one deal; the Collector says
+     "hold on" or "ready", and may take a card back out. Every rule — whose
+     turn, which copies, that choosing is not holding, that closing holds every
+     chosen copy at once or nothing — is the domain's (M3A A1). A refused close
+     names the caller's OWN rows that could not be held, and nothing else.
+     `withdrawTradeCard` keeps its whole domain permission (until final
+     agreement); the product offers it on the Select Trade screen today.
+     `chooseCashOnly` and every Value Trade, Deal and Fulfillment command stay
+     closed: no screen sends them yet. */
+  "selectTradeCards",            // TP → Opportunities, "Send N cards" / "Add to this deal"
+  "deselectTradeCard",           // TP → Opportunities, "Remove"
+  "closeTradeSelection",         // TP → Opportunities, "Start valuing" (after a confirmation)
+  "holdTradeSelection",          // Collector → Deal Workspace, "Hold on, I'm adding cards"
+  "continueTradeSelection",      // Collector → Deal Workspace, "I'm ready"
+  "withdrawTradeCard",           // Collector → Deal Workspace, "Take out of this deal"
 ]);
 
 /* ONE ANSWER FOR TWO QUESTIONS, ON PURPOSE. A command that does not exist and a

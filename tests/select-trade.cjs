@@ -9,15 +9,23 @@ const { describe, test, assert, eq } = require("./run.cjs");
 const TR = require("react-test-renderer");
 const { render, text, allText, btn, btns, btnExact, click, byClass, byClassIn, goProfile } = require("./util.cjs");
 
-/* Alex Trinh's opportunity is seeded at Select Trade with a submitted package:
-   one card awaiting review and one already rejected. */
+/* RESTATED (M3A A1P) — TP-LED SELECTION. The partner chooses from the
+   Collector's Trade/Sell cards; the Collector may withdraw any card, hold to add
+   more, or say they're ready; the partner then deselects what they don't want
+   and starts valuing. Every test below keeps its original intent, restated in
+   that vocabulary:
+     to review / accepted / rejected   ->  selected / withdrawn / deselected
+     "Accept into trade" / "Reject"    ->  "Deselect" / "Start valuing"
+   Alex Trinh's opportunity is seeded at Select Trade on the partner's final
+   review: Espeon selected, Vaporeon already deselected. */
 const selectTrade = () => {
   const r = render();
   goProfile(r, "Alex Trinh");
   click(btns(r, "Open").filter((b) => text(b).trim() === "Open")[0]);
   return r;
 };
-/* A three-state package: one to review, one accepted, one rejected.
+/* A three-state selection: one selected (under review), one withdrawn by the
+   Collector, one deselected by the partner.
 
    PHASE 1: moved from James Rivera to Ellen Fisher. Every copy James has open
    to trade is reserved, committed or already Traded in another Opportunity, and
@@ -33,9 +41,10 @@ const mixedPackage = () => {
   click(btns(r, "Open").filter((b) => text(b).trim() === "Open")[0]);
   click(btns(r, "Accept $")[0]);                       // price agreed -> draft
   btns(r, "+ ").slice(0, 3).forEach((b) => click(btns(r, "+ ")[0]));
-  click(btns(r, "Send package for review")[0]);
-  click(btns(r, "Accept into trade")[0]);              // resolve one as accepted
-  click(btns(r, "Reject")[0]);                         // resolve one as rejected
+  click(btns(r, "Send 3 cards to")[0]);                // the partner's selection
+  click(btns(r, "Withdraw from this deal")[0]);        // the Collector withdraws one (DEV seat)
+  click(btns(r, "Ready — you can finish choosing")[0]); // and is ready
+  click(btns(r, "Deselect")[0]);                       // the partner deselects one
   return r;
 };
 
@@ -66,13 +75,15 @@ describe("Select Trade — future financial fields are absent", () => {
     const t = surfaceText(selectTrade());
     assert(!t.includes("Valuation opens"), "no stage-gate mechanics");
     assert(!t.includes("settled state"), "no internal vocabulary");
-    assert(t.includes("Accepted cards move to Value Trade."), "user-centered next step");
+    // RESTATED (M3A A1P): the next step, in the partner's terms
+    assert(t.includes("Starting valuation reserves the selected cards for this deal."), "user-centered next step");
   });
 
   test("the task copy names the collector and the job", () => {
     const t = surfaceText(selectTrade());
     assert(t.includes("Select Trade"), "stage name kept");
-    assert(t.includes("Review the cards Alex T. proposed for trade."), "task copy: " + t.slice(0, 120));
+    // RESTATED (M3A A1P): Alex is ready; the partner finishes choosing
+    assert(t.includes("Alex T. is ready. Finish choosing from their cards, then start valuing."), "task copy: " + t.slice(0, 120));
   });
 });
 
@@ -106,20 +117,27 @@ describe("Select Trade — the unresolved card is the unit of work", () => {
   });
 
   test("a raw card shows its condition instead of a grade", () => {
-    const r = mixedPackage();
+    /* RESTATED (M3A A1P), and strengthened: this used to return early when the
+       fixture held no raw card. James's Poliwrath is raw and free to choose. */
+    const r = render();
+    goProfile(r, "James Rivera");
+    click(btns(r, "Open").filter((b) => text(b).trim() === "Open")[0]);
+    click(btns(r, "Accept $")[0]);
+    click(btns(r, "+ ").find((b) => text(b).includes("Poliwrath")));
+    click(btns(r, "Send 1 card to")[0]);
     const poli = reviewCards(r).map(text).find((t) => t.includes("Poliwrath"));
-    if (!poli) return;                                  // fixture may have resolved it
-    assert(poli.includes("Raw") || poli.includes("Condition"), "condition shown: " + poli);
+    assert(poli, "Poliwrath is under review");
+    assert(poli.includes("Condition") && !/Grade/.test(poli), "condition shown: " + poli);
   });
 
   test("the decision is asked directly, with only inclusion actions", () => {
     const r = selectTrade();
     const c = reviewCards(r)[0];
-    assert(text(c).includes("Would you accept this card into the trade?"), "the prompt");
+    assert(text(c).includes("Keep this card in the trade?"), "the prompt");   // RESTATED (M3A A1P)
     const labels = c.findAllByType("button")
       .filter((b) => !b.props["aria-label"])            // exclude the photo enlarge triggers
       .map(text);
-    eq(labels.join(" | "), "Accept into trade | Reject", "inclusion actions only");
+    eq(labels.join(" | "), "Deselect", "inclusion actions only");
   });
 
   test("no negotiation controls leak onto the review card", () => {
@@ -186,11 +204,14 @@ describe("Select Trade — the physical copy is central", () => {
 });
 
 describe("Select Trade — resolved cards collapse", () => {
+  /* RESTATED (M3A A1P): a selected card stays under review until valuation
+     starts, so the card that collapses on the Collector's side is a WITHDRAWN
+     one — compact, labelled, with nothing left to decide. */
   test("an accepted card collapses to a compact resolved line", () => {
     const r = mixedPackage();
-    const ok = resolved(r).find((n) => String(n.props.className).includes("ok"));
+    const ok = resolved(r).find((n) => text(n).includes("Withdrawn"));
     assert(ok, "an accepted card is shown");
-    assert(text(ok).includes("Accepted into trade"), "clearly accepted: " + text(ok));
+    assert(groups(r).includes("Withdrawn by Ellen F."), "clearly accepted: " + text(ok));
     assert(byClassIn(ok, "st-photos").length === 0, "no full review panel");
     eq(ok.findAllByType("button").length, 0, "no decision controls");
   });
@@ -199,7 +220,7 @@ describe("Select Trade — resolved cards collapse", () => {
     const r = selectTrade();
     const no = resolved(r).find((n) => String(n.props.className).includes("no"));
     assert(no, "the rejected card is still listed");
-    assert(text(no).includes("Rejected"), "clearly rejected");
+    assert(text(no).includes("Deselected"), "clearly rejected");   // RESTATED (M3A A1P)
     assert(text(no).includes("Vaporeon"), "still identifiable: " + text(no));
     assert(byClassIn(no, "st-photos").length === 0, "collapsed, not a review panel");
   });
@@ -216,7 +237,7 @@ describe("Select Trade — resolved cards collapse", () => {
     const r = mixedPackage();
     reviewCards(r).forEach((c) => {
       assert(byClassIn(c, "st-photos").length === 1, "photos present");
-      assert(text(c).includes("Would you accept"), "and the decision is live");
+      assert(text(c).includes("Keep this card in the trade?"), "and the decision is live");   // RESTATED (M3A A1P)
     });
   });
 });
@@ -226,17 +247,18 @@ describe("Select Trade — ordering", () => {
     const r = mixedPackage();
     const g = groups(r);
     const i = (n) => g.indexOf(n);
-    assert(i("To review") >= 0, "a review group exists: " + g.join(","));
-    if (i("Accepted") >= 0) assert(i("To review") < i("Accepted"), "to review precedes accepted");
-    if (i("Rejected") >= 0) assert(i("To review") < i("Rejected"), "to review precedes rejected");
+    // RESTATED (M3A A1P), and strengthened: every group must be present
+    assert(i("Selected") >= 0, "a review group exists: " + g.join(","));
+    assert(i("Deselected") > i("Selected"), "to review precedes accepted");
+    assert(i("Withdrawn by Ellen F.") > i("Selected"), "to review precedes rejected");
   });
 
   test("accepted precedes rejected", () => {
     const r = mixedPackage();
     const g = groups(r);
-    if (g.includes("Accepted") && g.includes("Rejected")) {
-      assert(g.indexOf("Accepted") < g.indexOf("Rejected"), "accepted before rejected: " + g.join(","));
-    }
+    // RESTATED (M3A A1P): the partner's own decisions before the Collector's
+    assert(g.indexOf("Deselected") >= 0 && g.indexOf("Deselected") < g.indexOf("Withdrawn by Ellen F."),
+      "accepted before rejected: " + g.join(","));
   });
 
   test("grouping does not reorder the underlying package", () => {
@@ -250,43 +272,61 @@ describe("Select Trade — ordering", () => {
   test("the summary uses live counts", () => {
     const r = mixedPackage();
     const prog = text(byClass(r, "vt-progress")[0]);
-    assert(/\d+ accepted/.test(prog), "accepted count: " + prog);
-    assert(/\d+ rejected/.test(prog), "rejected count");
-    assert(!prog.includes("0 accepted") || true, "counts come from state");
+    // RESTATED (M3A A1P), and strengthened: the exact live counts
+    assert(/\d+ selected/.test(prog), "accepted count: " + prog);
+    assert(/\d+ deselected/.test(prog), "rejected count");
+    eq(prog, "1 selected · 1 deselected · 1 withdrawn", "counts come from state");
   });
 });
 
 describe("Select Trade — inclusion behaviour is unchanged", () => {
+  /* RESTATED (M3A A1P): the partner's per-card decision is now Deselect. */
   test("accepting records the decision and collapses the card", () => {
     const r = selectTrade();
     const before = reviewCards(r).length;
-    click(btns(r, "Accept into trade")[0]);
-    assert(allText(r).includes("accepted") || allText(r).includes("Accepted"), "decision recorded");
-    assert(reviewCards(r).length < before || byClass(r, "st-done").length > 1,
+    click(btns(r, "Deselect")[0]);
+    assert(allText(r).includes("You deselected Espeon"), "decision recorded");
+    assert(reviewCards(r).length < before && byClass(r, "st-done").length === 2,
       "the card left the review group");
   });
 
   test("rejecting records the decision", () => {
     const r = mixedPackage();
     const name = text(byClassIn(reviewCards(r)[0], "st-name")[0]);
-    click(btns(r, "Reject")[0]);
-    assert(allText(r).includes("rejected " + name), "the rejection was recorded: " + name);
+    click(btns(r, "Deselect")[0]);
+    assert(allText(r).includes("You deselected " + name), "the rejection was recorded: " + name);
   });
 
   test("resolving the last card advances the stage as before", () => {
+    /* RESTATED (M3A A1P): the stage advances when the partner starts valuing. */
     const r = selectTrade();
-    click(btns(r, "Accept into trade")[0]);
-    assert(allText(r).includes("Value Trade"), "the existing gate advanced the stage");
+    click(btns(r, "Start valuing 1 card")[0]);
+    assert(allText(r).includes("Selection closed — 1 card reserved, valuation open"), "the existing gate advanced the stage");
+    assert(byClass(r, "vt-mkt-copy").length === 1, "valuation is open");
   });
 
   test("rejecting every card does not open valuation", () => {
+    /* RESTATED (M3A A1P): deselecting everything and closing hands the choice
+       to the Collector (cash only, add more, or end) — it never opens valuation. */
     const r = selectTrade();
-    click(btns(r, "Reject")[0]);
-    // the existing gate closes the opportunity rather than advancing it
+    click(btns(r, "Deselect")[0]);
+    click(btns(r, "Close with no cards")[0]);
     const t = allText(r);
-    assert(t.includes("rejected Espeon"), "the rejection was recorded");
+    assert(t.includes("You deselected Espeon"), "the rejection was recorded");
+    assert(t.includes("No card was chosen, so nothing moves forward as trade."), "and the Collector decides next");
     eq(byClass(r, "vt-mkt-copy").length, 0, "no valuation surface opened");
     eq(byClass(r, "pn").length, 0, "and no negotiation surface");
+  });
+
+  test("closing sends exactly the selection the partner was looking at", () => {
+    /* A stale screen must not close a selection that changed under it, so the
+       close names the live rows it was rendered from (expect), and the domain
+       refuses it if they differ. */
+    const src = require("fs").readFileSync(require("path").join(__dirname, "..", "src", "MetYet.jsx"), "utf8");
+    assert(/const live = activeTradeCards\(o\)\.map\(\(c\) => c\.id\);\s*const r = act\(tpActor, "closeTradeSelection", \{ oppId, expect: \{ tradeCardIds: live \} \}/.test(src),
+      "the close carries the rendered selection");
+    assert(/R\.termsChanged/.test(require("fs").readFileSync(require("path").join(__dirname, "..", "domain", "metyet-commands.js"), "utf8")),
+      "and a mismatch is refused as terms-changed");
   });
 
   test("the Trade Binder CTA is preserved and secondary", () => {
@@ -302,7 +342,7 @@ describe("Select Trade — inclusion behaviour is unchanged", () => {
 describe("Value Trade still owns the financials", () => {
   test("after Select Trade completes, valuation shows the money again", () => {
     const r = selectTrade();
-    click(btns(r, "Accept into trade")[0]);
+    click(btns(r, "Start valuing 1 card")[0]);   // RESTATED (M3A A1P)
     const t = allText(r);
     assert(t.includes("Market Value"), "market value returns");
     assert(t.includes("Trade %"), "trade percentage returns");
@@ -311,7 +351,7 @@ describe("Value Trade still owns the financials", () => {
 
   test("the accepted physical copy is present in Value Trade", () => {
     const r = selectTrade();
-    click(btns(r, "Accept into trade")[0]);
+    click(btns(r, "Start valuing 1 card")[0]);   // RESTATED (M3A A1P)
     const copy = byClass(r, "vt-mkt-copy")[0];
     assert(copy, "the copy panel renders in valuation");
     assert(text(copy).includes("collector photo"), "the same physical copy");

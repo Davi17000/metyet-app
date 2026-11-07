@@ -915,14 +915,21 @@ describe("E. The boundaries this batch did not cross", () => {
   });
 
   test("[39] the allow-list grew by exactly one, and the transaction is shut", () => {
+    /* MARKET VALIDATION BATCH 3B opened the five price commands — opening an
+       offer, countering, accepting, declining and withdrawing — with the screens
+       that send them, so they left this list. Everything past an agreed price
+       (trade, values, the final balance, fulfilment, Pending) is still shut. */
     /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
        name; any other change to the size still fails here. */
-    eq(EXPOSED_COMMANDS.length, 24, "the production surface is not the size this batch declared");
+    /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
+       commands joined the door with the Deal Flow and Opportunities controls
+       that send them, each named in the allow-list; any other move still fails. */
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37, "the production surface is not the size this batch declared");
     assert(EXPOSED_COMMANDS.includes("setCollectorCopyKept"), "PC has a control but no door");
     const { COMMAND_NAMES } = require("../domain/metyet-commands.js");
     const known = COMMAND_NAMES.has ? (n) => COMMAND_NAMES.has(n)
       : (n) => [...COMMAND_NAMES].includes(n);
-    for (const shut of ["startOpportunity", "proposePrice", "acceptPrice", "acceptMarketValue",
+    for (const shut of ["acceptMarketValue",
       "proposeMarketValue", "acceptDeal", "setCopyPending", "proposeTradeSelection",
       "confirmHandoff", "setInterest", "sendMessage"]) {
       assert(known(shut), `${shut} is not a command, so this line asserts nothing`);
@@ -933,7 +940,7 @@ describe("E. The boundaries this batch did not cross", () => {
   test("[40] no migration, and no generic state field anywhere", () => {
     const migrations = fs.readdirSync(path.join(ROOT, "persistence/migrations"))
       .filter((f) => f.endsWith(".sql")).sort();
-    eq(migrations[migrations.length - 1], "0014_binder_memberships.sql", migrations.join(","));
+    /* RE-PINNED (Milestone 2D.1): the newest migration is now 0015, a deal's conversation — not this batch's. */ eq(migrations[migrations.length - 1], "0015_deal_conversations.sql", migrations.join(","));
     /* CLOSED DECISIONS: no generic `intent`, no generic `cardState`. What is
        forbidden is a FIELD — something written on a card, Goal or copy that
        joins the four truths into one. The word itself is not forbidden: the
@@ -976,7 +983,8 @@ describe("E. The boundaries this batch did not cross", () => {
     const mod = { exports: {} };
     new Function("module", "exports", "require", out.outputFiles[0].text)(mod, mod.exports, require);
     eq(mod.exports.SECTIONS.map((s) => s.label).join(" · "),
-      "Browse · Binders · Trusted Partners · Deal Flow", "the navigation moved");
+      /* RE-PINNED (Phase 6 P6-1): Deal Flow now precedes Trusted Partners. */
+      "Browse · Binders · Deal Flow · Trusted Partners", "the navigation moved");
   });
 });
 

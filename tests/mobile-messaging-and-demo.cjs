@@ -272,7 +272,8 @@ describe("C. The partner can be driven from the phone, in DEV only", () => {
       code(COL).indexOf("function Deal({", code(COL).indexOf("function MobileDeal(")));
     assert(/<SimulateTP o=\{o\} st=\{st\} \/>/.test(shell), "mounted, not reimplemented");
     eq((code(COL).match(/function SimulateTP\(/g) || []).length, 1, "one definition");
-    ["tradeMarketRespond", "tradePercentRespond", "dealAgree", "reviewTradeCards"]
+    /* RESTATED (M3A A1P): the selection moves replaced the review. */
+    ["tradeMarketRespond", "tradePercentRespond", "dealAgree", "selectTradeCards", "closeTradeSelection"]
       .forEach((a) => assert(!shell.includes(a), "no " + a + " restated in the shell"));
   });
 
@@ -363,7 +364,8 @@ describe("C. The partner can be driven from the phone, in DEV only", () => {
     assert(/A\.proposePrice\(/.test(counter) && !/priceThread/.test(counter),
       "the counter is a canonical command, never a thread write");
 
-    ["agreePrice", "reviewTradeCards", "tradeMarketRespond", "tradePercentRespond",
+    /* RESTATED (M3A A1P): TP-led selection in place of the retired review. */
+    ["agreePrice", "selectTradeCards", "closeTradeSelection", "tradeMarketRespond", "tradePercentRespond",
       "dealAdjustRespond", "dealAgree", "confirmHandoff", "sendMessage", "endOpportunity"]
       .forEach((a) => assert(sim.includes("A." + a), a + " goes through the action set"));
   });

@@ -1266,6 +1266,9 @@ const WHY = {
   "copy-committed": "That copy is committed to a deal.",
   "copy-reserved": "That copy is reserved for a deal.",
   "copy-in-use": "That copy is part of a deal.",
+  /* M3A A3: chosen by a Trusted Partner for a deal — its grade, condition,
+     certificate and photos stay as they were chosen until it is taken out. */
+  "copy-in-deal": "A Trusted Partner has chosen that copy for a deal, so its grade, condition, certificate and photos stay as they are until it's taken out of that deal.",
   "name-required": "A binder needs a name.",
   "card-unavailable": "MetYet can no longer use that version of the card.",
   "invalid-amount": "A reference value has to be a number, and not a negative one.",

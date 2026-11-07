@@ -90,6 +90,10 @@ const INVALID = Object.freeze({
   certForMany: "cert-for-many-copies",
   tooLarge: "amount-too-large",
   tooPrecise: "amount-too-precise",
+  /* Batch 2.1: MetYet prices in whole dollars. These two are about the
+     Proposed Market Price only; a shop's own cost keeps the rules above. */
+  priceNotWholeDollars: "price-not-whole-dollars",
+  priceNotPositive: "price-not-positive",
   tooMany: "quantity-too-large",
 });
 
@@ -492,6 +496,17 @@ function createMapper({ template } = {}) {
       const amount = readMoney(cells.get(field));
       if (amount.bad) {
         return bad(amount.bad, `${field} says "${text(cells.get(field))}", which is not an amount`, field);
+      }
+      /* THE PRICE IS WHOLE DOLLARS ABOVE ZERO (Batch 2.1). Refused with the
+         reason, never rounded: "$120.00" is 120 and imports; "$120.50" names
+         cents MetYet does not negotiate in, and the shop is told which row. */
+      if (amount.stated && field === "ask") {
+        if (!Number.isInteger(amount.amount)) {
+          return bad(INVALID.priceNotWholeDollars, `ask says "${text(cells.get(field))}", which has cents. Proposed Market Prices are whole dollars — remove the cents`, field);
+        }
+        if (amount.amount <= 0) {
+          return bad(INVALID.priceNotPositive, `ask says "${text(cells.get(field))}". A price of $0 is not a price — leave it blank if this copy is unpriced`, field);
+        }
       }
       if (amount.stated) money[field] = amount.amount;
     }

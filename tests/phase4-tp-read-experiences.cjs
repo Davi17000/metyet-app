@@ -196,7 +196,12 @@ describe("B. every join is by identifier, never by position", () => {
       { id: "gB", collectorId: "cB", cardId: "cardB", tier: "secondary", note: "BO WANTS BLASTOISE" },
       { id: "gA", collectorId: "cA", cardId: "cardA", tier: "primary", note: "ADA WANTS CHARIZARD" },
     ],
-    collectorCopies: [{ offered: true, id: "bB1", collectorId: "cB" }, { offered: true, id: "bB2", collectorId: "cB" }],
+    /* RESTATED (M3A A2): every copy the projection sends carries the `status`
+       it derived for this partner (collectorCopyForViewer), and the count now
+       reads it. These two were written before that field mattered here; they
+       are what the server sends for two free offered copies. */
+    collectorCopies: [{ offered: true, id: "bB1", collectorId: "cB", status: "available" },
+      { offered: true, id: "bB2", collectorId: "cB", status: "available" }],
   });
 
   test("each collector's own relationship note, date and goals attach to them", () => {
@@ -219,8 +224,13 @@ describe("B. every join is by identifier, never by position", () => {
        and no longer pretends to be. */
     /* RELABELLED: the number counts physical COPIES, and a Collector offering
        two copies of one card is offering two things. */
-    assert(/Copies offered 2/.test(bo), "Bo's offered-copy count: " + bo);
-    assert(!/Cards offered/.test(ada), "Ada was given a count she has not got: " + ada);
+    /* RESTATED AGAIN (M3A A2, founder-approved): the label is "Available to
+       trade" and it counts only copies whose status is `available` — supply.
+       A copy one of your deals is considering or holding is shown apart and
+       is not counted (tests/milestone3a2-tp-trade-sell-visibility.cjs). The
+       join this test exists for is unchanged: Bo's two, Ada's none. */
+    assert(/Available to trade 2/.test(bo), "Bo's available-copy count: " + bo);
+    assert(!/Available to trade/.test(ada), "Ada was given a count she has not got: " + ada);
   });
 
   test("a relationship for somebody else's collector attaches to nobody", () => {
@@ -561,8 +571,12 @@ describe("F. no mutation, no demo, no prototype, no diagnostics", () => {
     /* Batch 6 added the third: a Trusted Partner can now add a copy of a card
        they own, which is Inventory's own work. The shell declares `inventory`
        writable and always did. A FOURTH still fails here. */
+    /* Market Validation Batch 3B added the fourth deliberately: a shop counters
+       an offer from Opportunities, typing a price into the entry box both seats
+       share (client/negotiation.jsx). A FIFTH still fails here. */
     const WITH_FORMS = ["client/tp/sections/Profile.jsx",
-      "client/tp/sections/CollectorNetwork.jsx", "client/tp/sections/Inventory.jsx"];
+      "client/tp/sections/CollectorNetwork.jsx", "client/tp/sections/Inventory.jsx",
+      "client/tp/sections/Opportunities.jsx"];
     for (const rel of TP_FILES) {
       if (WITH_FORMS.includes(rel)) continue;
       assert(!/onSubmit|onChange|<input|<textarea/.test(code(rel)), `${rel} grew a way to type`);
@@ -572,7 +586,8 @@ describe("F. no mutation, no demo, no prototype, no diagnostics", () => {
        browser both seats now share, and a `<form>` went with it. So the rule is
        stated as what it protects: a file that may write has a way to type,
        whether it renders the inputs itself or composes something that does. */
-    const SHARED_FORM = { "client/tp/sections/Inventory.jsx": "client/browse/CardBrowser.jsx" };
+    const SHARED_FORM = { "client/tp/sections/Inventory.jsx": "client/browse/CardBrowser.jsx",
+      "client/tp/sections/Opportunities.jsx": "client/negotiation.jsx" };
     for (const rel of WITH_FORMS) {
       const own = /onSubmit|<input|<select/.test(code(rel));
       const shared = SHARED_FORM[rel] && /onSubmit/.test(code(SHARED_FORM[rel]))
@@ -582,7 +597,7 @@ describe("F. no mutation, no demo, no prototype, no diagnostics", () => {
     /* And each of those sections is one the shell declares can write: a form
        with no declared write is a surface claiming more than the build does. */
     const writable = SHELL_MOD.SECTIONS.filter((s) => s.writes).map((s) => s.id).sort().join(",");
-    eq(writable, "collectors,inventory", "the writable sections moved without the forms");
+    eq(writable, "collectors,inventory,opportunities", "the writable sections moved without the forms");
     /* Inventory renders that component rather than repeating it: there is one
        profile implementation in this product, and moving where it is reached
        from did not make a second. */

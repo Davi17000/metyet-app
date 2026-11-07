@@ -318,15 +318,22 @@ describe("C. the Collector: browse, specify, commit", () => {
       await TR.act(async () => { await new Promise((done) => setTimeout(done, 0)); });
     }
   };
+  /* RESTATED (Phase 6 P6-F2): a Phase 6 grid card names itself in its
+     accessible name — the picture carries the name visually. */
   const press = async (r, label) => {
     const b = buttons(r).find((n) => instText(n).trim() === label
-      || instText(n).includes(label) || (n.props["aria-label"] || "") === label);
+      || instText(n).includes(label) || (n.props["aria-label"] || "") === label
+      || (n.props["aria-label"] || "").startsWith(`${label}, `));
     assert(b, `no button "${label}" among: ${buttons(r).map(instText).join(" | ")}`);
     await TR.act(async () => { b.props.onClick(); });
     await settle(r);
   };
   const typeInto = async (r, id, value) => {
-    const input = r.root.findAll((n) => n.type === "input").find((n) => n.props.id === id);
+    /* RESTATED (Phase 6 P6-F2): the old "Pokémon or card name" field
+       (mcs-br-q) is the Phase 6 search field now; typing a name finds the card
+       exactly as before. */
+    const input = r.root.findAll((n) => n.type === "input").find((n) => n.props.id === id
+      || (id === "mcs-br-q" && n.props["aria-label"] === "Search"));
     assert(input, `no input ${id}`);
     await TR.act(async () => { input.props.onChange({ target: { value } }); });
     await settle(r);
@@ -370,19 +377,31 @@ describe("C. the Collector: browse, specify, commit", () => {
     return r;
   };
 
-  /* The panel's want control plus Save, which is what "says they are looking for
-     it" means from C3.3 onwards. A canonical Goal states which copy it wants, so
-     stating one is part of the flow rather than an extra step. */
-  const sayWanted = async (r, label, grade = "PSA 9") => {
-    await press(r, label);
-    const select = r.root.findAll((n) => n.type === "label")
-      .find((n) => instText(n).includes("Grade wanted"));
-    assert(select, "the panel did not ask which copy is wanted");
-    const el = select.findAll((n) => n.type === "select")[0];
-    await TR.act(async () => { el.props.onChange({ target: { value: grade } }); });
-    await settle(r);
-    await press(r, "Save");
+  /* RESTATED (P6-F3A Stage 2): a card from Browse opens as the Phase 6
+     full-screen card and is SAID there — the prototype's questions, then one
+     "Add to MetYet". The claims below are C1's: one command, at the end,
+     naming the exact canonical card, with the tier and the copy wanted. */
+  const answer = async (r, ...labels) => {
+    for (const label of labels) {
+      const b = buttons(r).find((n) => /mcs-cd-choice/.test(n.props.className || "")
+        && (n.findAll((x) => x.type === "b")[0] || { children: [] }).children.join("") === label);
+      assert(b, `the card does not offer "${label}": ` + texts(r));
+      await TR.act(async () => { b.props.onClick(); });
+      await settle(r);
+    }
   };
+  const add = async (r) => {
+    const b = buttons(r).find((n) => instText(n).trim() === "Add to MetYet");
+    assert(b, "the card has no Add to MetYet: " + texts(r));
+    assert(b.props["aria-disabled"] === false, "Add to MetYet is not ready: " + texts(r));
+    await press(r, "Add to MetYet");
+  };
+  /* Stage 2.1: the physical card first, the collecting state last. */
+  const lookingFor = async (r, tier, grade = "PSA 9") => {
+    await answer(r, "Graded", grade, "I'm looking for it", tier);
+    await add(r);
+  };
+
 
   /* SUPERSEDED BY C3.3 AND RESTATED. What this protected: that a person finds a
      card by browsing, opens it, says they are looking for it, and ONE command
@@ -403,12 +422,14 @@ describe("C. the Collector: browse, specify, commit", () => {
     };
     const r = await browsing(ctx, onSpecify);
     await typeInto(r, "mcs-br-q", "Blastoise");
-    assert(texts(r).includes("Blastoise"), "the grid did not fill: " + texts(r));
+    assert(buttons(r).some((n) => /^Blastoise, /.test(n.props["aria-label"] || "")), "the grid did not fill: " + texts(r));
 
     await press(r, "Blastoise");
     assert(texts(r).includes("Base Set"), "the card did not open: " + texts(r));
     /* One printing is not a choice, so there is nothing to ask. */
-    await sayWanted(r, "Actively hunting");
+    assert(texts(r).includes("Holo — the only version of this card."), texts(r));
+    eq(sent.length, 0, "opening the card wrote something");
+    await lookingFor(r, "Primary");
 
     eq(sent.length, 1, "one command, and only at the end");
     /* The panel speaks its own words — a Collector surface may not name a
@@ -424,48 +445,56 @@ describe("C. the Collector: browse, specify, commit", () => {
     eq(json(goals[0].desired), json({ grade: "PSA 9" }), "and it says which copy");
   });
 
-  test("the `+` and the card reach the same place", async () => {
+  test("the card is the one way in, and it reaches the same place the `+` did", async () => {
+    /* RESTATED (Phase 6 P6-F2): the Phase 6 grid has no `+` on its cards; the
+       card itself opens the card, which is where the `+` always led — so no
+       way of saying anything was lost, only a second door to it. */
     const ctx = await world();
     await shelfOfCards(ctx);
     const r = await browsing(ctx, async () => ({ ok: true }));
     await typeInto(r, "mcs-br-q", "Blastoise");
-    /* The fast path. */
-    await press(r, "Add Blastoise");
-    const viaPlus = texts(r);
-    assert(viaPlus.includes("Are you looking for it?"),
-      "`+` did not open specification: " + viaPlus);
-    await press(r, "Cancel");
-    /* And the slow one. */
+    assert(!buttons(r).some((n) => (n.props["aria-label"] || "") === "Add Blastoise"), "a `+` survived");
     await press(r, "Blastoise");
+    /* RESTATED (P6-F3A Stage 2, order per Stage 2.1): where the `+` led is now
+       the card's own questions — what it is, then what it means. */
+    assert(texts(r).includes("Raw or graded?"), "the card does not ask: " + texts(r));
+    await answer(r, "Raw", "Near Mint");
     const viaCard = texts(r);
-    assert(viaCard.includes("Are you looking for it?"), "the card did not open specification");
-    eq(viaPlus, viaCard, "the two ways in show different things");
+    assert(viaCard.includes("What does this card mean to you? I'm looking for it"), "the card does not ask: " + viaCard);
   });
 
   test("a card with several printings asks which, and will not commit until told", async () => {
     const ctx = await world();
     const made = await shelfOfCards(ctx);
     const sent = [];
-    const r = await browsing(ctx, async (p) => { sent.push(p); return { ok: true }; });
+    /* the card id is captured too: C1's last line used to read
+       `sent[0].canonicalCardId || …`, which could not fail when the panel sent
+       the step alone. */
+    const r = await browsing(ctx, async (p, canonicalCardId) => { sent.push({ ...p, canonicalCardId }); return { ok: true }; });
     await typeInto(r, "mcs-br-q", "Charizard");
     await press(r, "Charizard");
     const shown = texts(r);
     /* RESTATED (C3.3): the question is "Which one?" rather than "Which one are
        you looking for?", because the panel it opens is no longer only about
        looking — the same choice decides which card is filed and which card a
-       copy is a copy of. */
-    assert(/Which one\?/.test(shown), "it did not ask: " + shown);
+       copy is a copy of. RESTATED AGAIN (P6-F3A): the Phase 6 card asks it in
+       the prototype's words, "Which version?", with the prototype's names. */
+    assert(/Which version\?/.test(shown), "it did not ask: " + shown);
+    const ready = buttons(r).find((n) => instText(n).trim() === "Add to MetYet");
+    assert(ready && ready.props["aria-disabled"] === true, "Add was offered before a version was chosen");
+    await press(r, "Add to MetYet");
+    eq(sent.length, 0, "an unchosen version was sent");
+    assert(/Which version is it\?/.test(texts(r)), "the muted Add did not point at the question: " + texts(r));
 
     /* And nothing else is offered until it is answered: C1 asserted this by
        finding a disabled commit button, which is a stronger statement when the
        controls are not rendered at all. */
-    assert(!/Are you looking for it\?/.test(shown),
+    assert(!/What does this card mean to you\?/.test(shown),
       "it offered to specify a card before knowing which printing: " + shown);
-    await press(r, "first_edition");
-    await sayWanted(r, "Actively hunting");
+    await answer(r, "Holo · First Edition");
+    await lookingFor(r, "Primary");
     eq(sent.length, 1);
-    eq(sent[0].canonicalCardId || made.charizard.cards[0], made.charizard.cards[0],
-      "the printing that was chosen");
+    eq(sent[0].canonicalCardId, made.charizard.cards[0], "the printing that was chosen");
   });
 
   test("Secondary is the same road to the same kind of record", async () => {
@@ -476,14 +505,21 @@ describe("C. the Collector: browse, specify, commit", () => {
         { canonicalCardId, tier: step.tier, desired: step.desired })).json());
     await typeInto(r, "mcs-br-q", "Blastoise");
     await press(r, "Blastoise");
-    await sayWanted(r, "Keeping an eye out");
+    await lookingFor(r, "Secondary");
     const goals = (await ctx.repository.loadWorld()).goals;
     eq(goals.length, 1);
     eq(goals[0].tier, "secondary", "keeping an eye out is still explicit demand");
     eq(goals[0].canonicalCardId, made.blastoise.cards[0]);
   });
 
-  test("Browse tells a Collector nothing about who holds the card — not even a number", async () => {
+  /* RESTATED (P6-F5A, founder decision): "Browse creates exposure. Binders
+     create coherence. Goals express priority. Deal Flow coordinates action."
+     Browse now NAMES the Collector's connected shops that have the card
+     available, with the Proposed Market Price — not a count, and only shops
+     they are connected to. What C1 protected survives: an unconnected shop
+     is never named, and a shop's own books (cost) and the copy's certificate
+     never reach the Collector. */
+  test("Browse names only connected shops with the card available — never another shop, never a cost or certificate", async () => {
     /* C1 SHIPPED A COUNT HERE AND C5 REMOVED IT, so this test now asserts the
        absence its own original assertion would have forbidden. Three things
        were wrong with "1 of your Trusted Partners has this": it was anonymous
@@ -502,14 +538,21 @@ describe("C. the Collector: browse, specify, commit", () => {
     /* Northline is theirs; Second is not. Both stock the card. */
     await post(ctx.app, "north", "addInventoryCopy",
       { copy: { canonicalCardId: made.blastoise.cards[0], ask: 900, cost: 400, cert: "TP-CERT-1" } });
+    /* (P6-F5A) and Second — not Casey's — really does stock it, written as a
+       stored world (Second has no account here), so "never named" is tested */
+    const stocked = await ctx.repository.loadWorld();
+    await ctx.repository.saveWorld({ ...stocked, inventory: [...stocked.inventory,
+      { invId: "inv-second-1", partnerId: "p2", canonicalCardId: made.blastoise.cards[0], ask: 777, cost: 300, cert: "SECOND-CERT", addedAt: "2026-01-01", updatedAt: "2026-01-01" }] });
     const r = await browsing(ctx, async () => ({ ok: true }));
     await typeInto(r, "mcs-br-q", "Blastoise");
     await press(r, "Blastoise");
     const shown = texts(r);
     assert(!/of your Trusted Partners ha[sv]e? this/.test(shown), "the count came back: " + shown);
-    assert(!shown.includes("Northline"), "the partner was named");
-    assert(!shown.includes("900") && !shown.includes("400") && !shown.includes("TP-CERT-1"),
-      "a partner's own figures reached the Collector: " + shown);
+    assert(shown.includes("Northline"), "the connected shop is not named: " + shown);
+    assert(/Proposed Market Price \$900/.test(shown), "the connected shop's price is not shown: " + shown);
+    assert(!/\bSecond\b(?!ary)/.test(shown) && !shown.includes("777") && !shown.includes("SECOND-CERT"), "an unconnected shop or its copy reached the Collector");
+    assert(!shown.includes("400") && !shown.includes("TP-CERT-1"),
+      "a shop's cost or the copy's certificate reached the Collector: " + shown);
   });
 
   test("a card already on the list says so instead of offering to ask again", async () => {
@@ -517,23 +560,25 @@ describe("C. the Collector: browse, specify, commit", () => {
     const made = await shelfOfCards(ctx);
     await post(ctx.app, "casey", "addGoal",
       { canonicalCardId: made.blastoise.cards[0], tier: "primary", desired: { grade: "PSA 9" } });
-    const r = await browsing(ctx, async () => ({ ok: true }));
+    const sent = [];
+    const r = await browsing(ctx, async (p) => { sent.push(p); return { ok: true }; });
     await typeInto(r, "mcs-br-q", "Blastoise");
     await press(r, "Blastoise");
     /* RESTATED (C3.3). C1 answered "you already want this" by refusing to offer
-       the control again, which was right when the panel could do one thing. The
-       panel now opens on CURRENT TRUTH: the want it already holds is the one
-       selected, so there is nothing to add twice — and the person can still
-       change it, which they could not before. That is a stronger property than
-       a hidden button, and it is what is asserted. */
+       the control again; C3.3's panel opened on the want it already held.
+       RESTATED AGAIN (P6-F3A Stage 2), as the prototype does it: the card says
+       so in "MetYet remembers", and where "I'm looking for it" would be there is
+       "You're looking for it" — not a choice — so there is nothing to add twice.
+       Changing how hard is a Binders job (the four-state sheet). */
+    assert(/MetYet remembers Holo · Looking for it · Primary · PSA 9/.test(texts(r)), texts(r));
+    await answer(r, "Graded", "PSA 9");
     const shown = texts(r);
-    assert(shown.includes("Are you looking for it?"), shown);
-    const hunting = buttons(r).find((b) => instText(b).trim() === "Actively hunting");
-    assert(hunting && hunting.props["aria-pressed"] === true,
-      "the panel did not open on what the Collector already said: " + shown);
-    /* And Save has nothing to do, because nothing has been changed yet. */
-    const save = buttons(r).find((b) => instText(b).trim() === "Save");
-    assert(save && save.props.disabled, "an unchanged card offered to write something");
+    assert(/You're looking for it Primary · PSA 9 · Not in a binder/.test(shown), shown);
+    assert(!/I'm looking for it/.test(shown), "it offered to ask again: " + shown);
+    const addNow = buttons(r).find((b) => instText(b).trim() === "Add to MetYet");
+    eq(addNow.props["aria-disabled"], true, "an unchanged card offered to write something");
+    await press(r, "Add to MetYet");
+    eq(sent.length, 0, "a second goal was sent");
   });
 });
 
@@ -571,7 +616,8 @@ describe("D. cancel, and everything short of the last button", () => {
     };
     const Browse = load("client/collector/sections/Browse.jsx").default;
     const state = (await get(ctx.app, "casey", "/api/view")).json().state;
-    let session = load("client/browse/CardBrowser.jsx").EMPTY_SESSION;
+    /* RESTATED (P6-F2): the Collector's Browse session is Discover's own. */
+    let session = load("client/collector/sections/Browse.jsx").newBrowseSession();
     let r;
     const door = {
       find: async (q) => ctx.catalog.findCardContexts(
@@ -593,16 +639,20 @@ describe("D. cancel, and everything short of the last button", () => {
       });
     };
     await draw();
-    const input = r.root.findAll((n) => n.type === "input").find((n) => n.props.id === "mcs-br-q");
+    /* RESTATED (P6-F2): the Phase 6 search field, and the card itself (no `+`). */
+    const input = r.root.findAll((n) => n.type === "input").find((n) => n.props["aria-label"] === "Search");
     await TR.act(async () => { input.props.onChange({ target: { value: "Blastoise" } }); });
-    await draw();
+    for (let i = 0; i < 6; i += 1) { await TR.act(async () => { await new Promise((res) => setTimeout(res, 0)); }); await draw(); }
     const card = r.root.findAll((n) => n.type === "button")
-      .find((b) => (b.props["aria-label"] || "") === "Add Blastoise");
+      .find((b) => /^Blastoise, /.test(b.props["aria-label"] || ""));
     await TR.act(async () => { card.props.onClick(); });
+    for (let i = 0; i < 4; i += 1) await TR.act(async () => { await new Promise((res) => setTimeout(res, 0)); });
+    /* RESTATED (P6-F3A): the Phase 6 card closes the prototype's way, "‹ back". */
     const cancel = r.root.findAll((n) => n.type === "button")
-      .find((b) => (b.children || []).join("") === "Cancel");
+      .find((b) => /mcs-cd-back/.test(b.props.className || ""));
     assert(cancel, "no way to cancel");
     await TR.act(async () => { cancel.props.onClick(); });
+    assert(!r.root.findAll((n) => /^mcs-cd$/.test(n.props.className || "")).length, "the card stayed open");
 
     eq(sent.length, 0, "cancelling sent a command");
     eq((await ctx.repository.loadWorld()).goals.length, 0, "cancelling created a goal");
@@ -668,12 +718,16 @@ describe("E. the Trusted Partner: the same browser, a different ending", () => {
     eq(copy.grade, "PSA 9");
   });
 
-  test("both seats browse the same catalog through the same component", () => {
+  test("both seats browse the same catalog — the TP through CardBrowser, the Collector through Phase 6 Discover", () => {
+    /* RESTATED (Phase 6 P6-F2): the Collector's Browse is the Phase 6
+       discovery screen (client/browse/Discover.jsx) — founder-approved — and
+       the Trusted Partner keeps CardBrowser unchanged. Both are catalogue
+       browsing, both live in client/browse/, and both read the catalogue
+       through the same `browseCards` binding and nothing else. */
     const shared = "client/browse/CardBrowser.jsx";
     assert(fs.existsSync(path.join(ROOT, shared)), "there is no shared browser");
-    for (const rel of ["client/collector/sections/Browse.jsx", "client/tp/sections/Inventory.jsx"]) {
-      assert(/CardBrowser/.test(code(rel)), `${rel} does not use it`);
-    }
+    assert(/CardBrowser/.test(code("client/tp/sections/Inventory.jsx")), "the TP's Inventory does not use it");
+    assert(/from "\.\.\/\.\.\/browse\/Discover\.jsx"/.test(code("client/collector/sections/Browse.jsx")), "the Collector's Browse does not use Discover");
     /* And neither seat kept its own. The duplicated picker is gone from the
        Collector's Goals section too. */
     const goals = code("client/collector/sections/Goals.jsx");
@@ -707,7 +761,8 @@ describe("F. the browsing session", () => {
   });
 
   test("the Collector's session lives above the section, so leaving and coming back keeps it", () => {
-    assert(/const \[browseSession, setBrowseSession\] = useState\(EMPTY_SESSION\)/.test(SHELL),
+    /* RESTATED (P6-F2): the session is Discover's own shape, made by its factory. */
+    assert(/const \[browseSession, setBrowseSession\] = useState\(newBrowseSession\)/.test(SHELL),
       "the session is not held above the section");
     assert(/session: browseSession, onSession: setBrowseSession/.test(SHELL),
       "the session is not handed to Browse");
@@ -802,7 +857,7 @@ describe("G. boundaries, and what did not change", () => {
          Batch 3C-1 closed it by name once the release owner judged that window
          enough. `removeBinderEntry` stays — it is how a legacy row is removed. */
       "fileObject", "unfileObject",
-      "updateCollectorCopy", "updateGoalCriteria",
+      "updateCollectorCopy", "updateGoalCriteria", "changeCollectingState",
       /* C3.4b, the Binder library's two: rename one in place, put one away and
          bring it back. Deleting one is still nobody's door. */
       "renameBinder", "setBinderArchived",
@@ -826,6 +881,19 @@ describe("G. boundaries, and what did not change", () => {
          evidence in a live deal, and it changes no price, availability or
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
+      /* AND THE FIVE MARKET VALIDATION BATCH 3B ADDED, with the controls that
+         send them: a Collector's "Make an offer", "Counter", "Accept" and
+         "Withdraw offer" in Deal Flow, and a shop's "Accept", "Counter" and
+         "Decline" in Opportunities. Agreeing a price and nothing past it. */
+      "startOpportunity", "proposePrice", "acceptPrice", "declineOffer", "cancelOpportunity",
+      /* AND THE ONE MILESTONE 2D.1 ADDED (founder-approved): a deal's conversation —
+         one plain-text message on one canonical opportunity, from one of its two
+         participants. It changes no term of any deal; only Accept accepts. */
+      "sendDealMessage",
+      /* AND SELECT TRADE'S SIX (M3A A3, founder-authorized), with the screens
+         that send them. Value Trade, Deal, Fulfillment and cash-only stay closed. */
+      "selectTradeCards", "deselectTradeCard", "closeTradeSelection",
+      "holdTradeSelection", "continueTradeSelection", "withdrawTradeCard",
     ].sort()), "a door was opened that nobody declared");
     const browserCode = code("client/browse/CardBrowser.jsx");
     assert(!EXPOSED_COMMANDS.some((c) => browserCode.includes(c)),

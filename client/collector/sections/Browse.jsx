@@ -56,54 +56,79 @@
    they already own.
    ========================================================================== */
 
-import React, { useState } from "react";
-import CardBrowser from "../../browse/CardBrowser.jsx";
-import { Panel } from "../parts.jsx";
-import CardSpecification from "../CardSpecification.jsx";
+import React, { useEffect, useRef, useState } from "react";
+import CardDetail from "../CardDetail.jsx";
+import Discover, { newBrowseSession } from "../../browse/Discover.jsx";
 import { rows, text } from "../present.js";
 
+/* The session the shell keeps (P6-F2): Browse's own, defined beside it. */
+export { newBrowseSession };
+
 export default function Browse({ state, session, onSession, onSpecify = null,
-  onBrowseCards = null, fillingBinder = null, onDoneFilling = null }) {
-  const [context, setContext] = useState(null);      // the card context being specified
-  const [chosen, setChosen] = useState(null);        // the exact canonical card
+  onBrowseCards = null, fillingBinder = null, onDoneFilling = null, onCount = null,
+  onRefresh = null, onBackToBinder = null, onMakeOffer = null, onOpenDeal = null, onEditGoal = null }) {
+  /* P6-F3A: a card opens as the Phase 6 full-screen CardDetail. Its
+     neighbours are the Browse results it was opened from, so ‹ › walk them.
+     Its own questions end in one command (Stage 2); after the server says yes
+     it returns here, as the prototype does, with a note and the card marked.
+
+     ARRIVING FROM A BINDER'S "+ Add cards" (Phase 5 C3.4; P6-F4 B3) is the same
+     card with one more thing to do: the new Goal or copy is filed — by the id
+     the create returned — into the binder the Collector started from
+     (CardDetail `fileInto`). There is no second form: the Card Specification
+     door this mode used to open (B27) is retired. */
+  const [context, setContext] = useState(null);      // the card being shown: row + its printings
+  const [nav, setNav] = useState(null);              // { list, index, label } — where it was opened from
   const [problem, setProblem] = useState(null);
   const [opening, setOpening] = useState(false);
+  const [note, setNote] = useState(null);            // the prototype's acknowledgement, back on Browse
+  const [justId, setJustId] = useState(null);        // the card just added, marked in the grid
+  const [addedOnce, setAddedOnce] = useState(false); // "Add to MetYet wakes up as you answer." until the first Add
+  const reading = useRef(0);
 
-  /* WHAT THE COLLECTOR ALREADY WANTS, so a card they have already asked for
-     says so instead of offering to ask again. Their own goals, from their own
-     projection. */
-  const wanted = new Set(rows(state && state.goals).map((g) => g.canonicalCardId).filter(Boolean));
-  /* And what they already own or have filed, for the same reason: the grid
-     should say which cards the person has already said something about. */
-  const owned = new Set(rows(state && state.collectorCopies)
-    .map((b) => b.canonicalCardId).filter(Boolean));
+  useEffect(() => {
+    if (!note || fillingBinder) return undefined;   // from a binder it waits for a choice
+    const t = setTimeout(() => setNote(null), 4500);
+    return () => clearTimeout(t);
+  }, [note]);
 
-  /* THE HOLDER COUNT USED TO BE DERIVED HERE and handed to the specification
-     panel (Phase 5 C5 removed it; the panel's own comment says why). Browse
-     reads the catalogue and writes nothing, and it no longer computes anything
-     about a Collector's network either. */
+  const close = () => { setContext(null); setNav(null); setProblem(null); };
 
-  const close = () => { setContext(null); setChosen(null); setProblem(null); };
-
-  const open = async (row) => {
+  const show = async (row, list, label) => {
     if (!onBrowseCards || opening) return;
-    setOpening(true); setProblem(null); setChosen(null);
+    const ticket = ++reading.current;
+    setOpening(true); setProblem(null); setNote(null);
     try {
       const answer = await onBrowseCards.read(row.cardContextId);
-      const cards = rows(answer && answer.canonicalCards);
-      setContext({ ...row, cards });
-      setChosen(cards.length === 1 ? cards[0] : null);
-      if (!cards.length) setProblem("MetYet has no version of this card to look for yet.");
+      if (ticket !== reading.current) return;
+      const at = list.findIndex((r) => r.cardContextId === row.cardContextId);
+      setNav({ list, index: at < 0 ? 0 : at, label });
+      setContext({ ...row, ...((answer && answer.context) || {}), imageSmall: row.imageSmall, imageLarge: row.imageLarge,
+        cards: rows(answer && answer.canonicalCards) });
     } catch (error) {
-      setContext(null);
+      if (ticket !== reading.current) return;
       setProblem("That card could not be read. Try again in a moment.");
-    } finally { setOpening(false); }
+    } finally { if (ticket === reading.current) setOpening(false); }
+  };
+  const open = (row, list = [row], label = "Browse") => show(row, list, label);
+  const step = (d) => {
+    if (!nav) return;
+    const next = nav.list[nav.index + d];
+    if (next) show(next, nav.list, nav.label);
+  };
+  /* After the server said yes and the card held its beat: Browse, exactly where
+     it was, with the prototype's note and the card marked. */
+  const added = (ack) => {
+    const id = context && context.cardContextId;
+    const card = context ? [text(context.cardName), context.collectorNumber ? `#${context.collectorNumber}` : null].filter(Boolean).join(" ") : "";
+    close();
+    setAddedOnce(true);
+    setNote({ ...ack, card });
+    setJustId(id);
   };
 
-  const versions = rows(context && context.cards);
-
   return (
-    <Panel title="Browse" note={null}>
+    <div className="mcs-browse">
       {/* WHICH BINDER IS BEING FILLED, QUIETLY (Phase 5 C3.4). Somebody arrived
           here from a binder and is adding cards to it; the panel will tick that
           binder for them, and they can untick it. It is a note about where they
@@ -119,70 +144,39 @@ export default function Browse({ state, session, onSession, onSpecify = null,
           ) : null}
         </p>
       ) : null}
-      {/* THE GRID IS FIRST AND IS NEVER UNMOUNTED. The specification sheet is
-          its sibling and is rendered AFTER it, out of flow, so opening one
-          moves nothing behind it. That ordering is the whole of Browse
-          preservation: there is no state to save and none to restore. */}
-      <CardBrowser browse={onBrowseCards} prefix="mcs" session={session} onSession={onSession}
-        onChoose={open} chosenId={context && context.cardContextId} busy={opening} />
-
-      {context ? (
-        <div className="mcs-spec-scrim">
-          {/* WHICH PRINTING, BEFORE ANYTHING ELSE. A card context can hold
-              several canonical cards and every fact this panel writes names
-              exactly one of them, so the question is asked first and nothing
-              else is offered until it is answered. One printing is not a
-              choice, so there is nothing to ask. */}
-          {!chosen ? (
-            <div className="mcs-spec-panel">
-              <div className="mcs-spec-head">
-                <div>
-                  <strong>{text(context.cardName)}</strong>
-                  <p className="mcs-spec-sub">
-                    {[text(context.expansionName),
-                      context.collectorNumber ? `#${context.collectorNumber}` : null,
-                      text(context.artist)].filter(Boolean).join(" \u00b7 ")}
-                  </p>
-                </div>
-                <button className="mcs-go quiet" type="button" onClick={close}>Cancel</button>
-              </div>
-              {problem ? <p className="mcs-add-problem" role="alert">{problem}</p> : null}
-              {versions.length ? (
-                <>
-                  <p className="mcs-spec-ask">Which one?</p>
-                  <ul className="mcs-add-versions">
-                    {versions.map((card) => (
-                      <li key={card.canonicalCardId}>
-                        <button type="button" className="mcs-add-row"
-                          onClick={() => setChosen(card)}>
-                          {[card.printRun, card.finish, card.language].filter(Boolean).join(" \u00b7 ")
-                            || "Standard"}
-                          {wanted.has(card.canonicalCardId) || owned.has(card.canonicalCardId) ? (
-                            <span className="mcs-dim">
-                              {wanted.has(card.canonicalCardId) && owned.has(card.canonicalCardId)
-                                ? "on your list, and you own one"
-                                : wanted.has(card.canonicalCardId) ? "on your list" : "you own one"}
-                            </span>
-                          ) : null}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </>
+      {/* THE GRID IS FIRST AND IS NEVER UNMOUNTED. The card and the form are
+          its siblings, rendered AFTER it and out of flow, so opening one moves
+          nothing behind it: the results, their order and the page's scroll
+          are simply still there when the card closes. */}
+      <Discover state={state} browse={onBrowseCards} browsing={session || newBrowseSession()} onBrowsing={onSession}
+        onChoose={open} chosenId={context && context.cardContextId} justId={justId} busy={opening} onCount={onCount} />
+      {problem ? <p className="mcs-add-problem" role="alert">{problem}</p> : null}
+      {note && !context ? (
+        <div className="mcs-d-ack" role="status">
+          <button type="button" className="mcs-d-ack-body" onClick={() => setNote(null)}>
+            <b>{note.head}</b> <span>{[note.card, note.facts].filter(Boolean).join(" · ")}</span>
+            <span className="mcs-d-ack-value">{note.value}</span>
+          </button>
+          {/* FROM A BINDER: keep collecting, or go back to it (P6-F4 B3) */}
+          {fillingBinder ? (
+            <span className="mcs-d-ack-acts">
+              <button type="button" className="mcs-linkish" onClick={() => setNote(null)}>Add another</button>
+              {onBackToBinder ? (
+                <button type="button" className="mcs-go" onClick={onBackToBinder}>{`Back to ${text(fillingBinder.name) || "the binder"}`}</button>
               ) : null}
-            </div>
-          ) : (
-            <CardSpecification
-              card={chosen}
-              context={context}
-              state={state}
-              preselectBinder={fillingBinder ? fillingBinder.binderId : null}
-              onCommit={onSpecify}
-              onClose={close}
-            />
-          )}
+            </span>
+          ) : null}
         </div>
       ) : null}
-    </Panel>
+
+      {context ? (
+        <CardDetail key={context.cardContextId} context={context} state={state}
+          backLabel={(nav && nav.label) || "Browse"} position={nav ? nav.index : 0} total={nav ? nav.list.length : 1}
+          onStep={nav && nav.list.length > 1 ? step : null} onClose={close}
+          onSave={onSpecify} onAdded={added} wakeHint={!addedOnce} onRefresh={onRefresh}
+          onMakeOffer={onMakeOffer} onOpenDeal={onOpenDeal} onEditGoal={onEditGoal}
+          fileInto={fillingBinder ? { binderId: fillingBinder.binderId, name: text(fillingBinder.name) || "the binder" } : null} />
+      ) : null}
+    </div>
   );
 }

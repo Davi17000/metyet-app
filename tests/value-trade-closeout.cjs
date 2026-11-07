@@ -19,6 +19,7 @@
 
 process.env.METYET_DEV = "1";
 
+const { reachValuationByFixture } = require("./helpers/trade-path.cjs");
 const { describe, test, assert, eq } = require("./run.cjs");
 const React = require("react");
 const TR = require("react-test-renderer");
@@ -70,9 +71,9 @@ const world = (n = 1) => {
   st.actions.agreePrice({ oppId: o, amount: 3990, by: "tp", at: AT });
   const rows = [M.emptyTradeCard("ka", null, null, "b-a")];
   if (n > 1) rows.push(M.emptyTradeCard("kb", null, null, "b-b"));
-  st.actions.patchOpportunity(o, (x) => ({ ...x, stage: "select-trade",
-    trade: { ...x.trade, submitted: true, cards: rows } }));
-  st.actions.reviewTradeCards({ oppId: o, decision: "accepted", at: AT });
+  /* RESTATED (M3A A1): the partner now selects and closing selection reserves;
+     the retired Collector-proposes / reviewTradeCard path is replaced by the shared fixture. */
+  reachValuationByFixture(st, o, rows, AT);
   const get = () => st.get().opportunities.find((x) => x.id === o);
   return { st, o, get, ids: rows.map((r) => r.id),
     card: (id) => get().trade.cards.find((c) => c.id === id) };
@@ -370,25 +371,46 @@ describe("F. Removal, identity, and the lifecycle", () => {
     assert(!b, "no Remove from trade on a committed card");
   });
 
-  test("a committed card cannot be withdrawn; totals and history stand", () => {
+  /* RESTATED (M3A A1). WAS: a card the partner had accepted could not be
+     withdrawn, so the totals stood. WHY IT CHANGED: the founder decided the
+     Collector may withdraw a card until final agreement. WHAT STILL HOLDS: the
+     withdrawn card's history and agreed values stay readable, only the totals
+     move — and once both parties have given final agreement nothing can leave. */
+  test("a card may be withdrawn until final agreement; history stands either way", () => {
     const w = world(2);
     agreeMarkets(w, [[w.ids[0], 1804], [w.ids[1], 900]]);
     agreePercents(w, [[w.ids[0], 0.8], [w.ids[1], 0.75]]);
     eq(D.totalTradeValue(w.get()), 2118, "both counted");
     w.st.actions.withdrawTradeCard({ oppId: w.o, tradeCardId: w.ids[0], at: AT });
-    eq(D.totalTradeValue(w.get()), 2118, "refused: nothing leaves the totals");
+    eq(D.totalTradeValue(w.get()), Math.round(900 * 0.75), "withdrawn before final agreement: it leaves the totals");
     eq(w.card(w.ids[0]).valueThread.length, 2, "its history is intact");
     eq(w.card(w.ids[0]).agreedMarket, 1804, "and what was agreed is still readable");
+
+    const v = world(2);
+    agreeMarkets(v, [[v.ids[0], 1804], [v.ids[1], 900]]);
+    agreePercents(v, [[v.ids[0], 0.8], [v.ids[1], 0.75]]);
+    v.st.actions.dealAgree({ oppId: v.o, by: "tp", at: AT });
+    v.st.actions.dealAgree({ oppId: v.o, by: "collector", at: AT });
+    eq(D.finalAgreementGiven(v.get()), true, "both agreed");
+    const r = v.st.actions.withdrawTradeCard({ oppId: v.o, tradeCardId: v.ids[0], at: AT });
+    eq(r && r.refused, D.REFUSE.copyCommitted, "after final agreement it cannot be withdrawn");
+    eq(D.totalTradeValue(v.get()), 2118, "and nothing leaves the totals");
   });
 
-  test("withdrawing the last reserved card still advances canonically", () => {
+  /* RESTATED (M3A A1). WAS: withdrawing the last undecided card resolved the
+     selection by itself and moved the deal on. NOW: selection only closes by
+     the partner's explicit decision; a withdrawal in Select Trade moves nothing,
+     and closing then values exactly what is still selected. */
+  test("withdrawing during selection advances nothing; closing values what is left", () => {
     const w = world(2);
     w.st.actions.patchOpportunity(w.o, (x) => ({ ...x, stage: "select-trade",
-      trade: { ...x.trade, cards: x.trade.cards.map((c) => ({ ...c, inclusion: "proposed", reviewedAt: null })) } }));
-    w.st.actions.reviewTradeCards({ oppId: w.o, tradeCardId: w.ids[0], decision: "accepted", at: AT });
-    eq(w.get().stage, "select-trade", "one reserved card outstanding");
+      trade: { ...x.trade, selection: { sentAt: AT, readyAt: AT },
+        cards: x.trade.cards.map((c) => ({ ...c, reservedAt: null })) } }));
     w.st.actions.withdrawTradeCard({ oppId: w.o, tradeCardId: w.ids[1], at: AT });
-    eq(w.get().stage, "value-trade", "withdrawing it resolves the selection");
+    eq(w.get().stage, "select-trade", "nothing moves by itself");
+    eq(D.nextActor(w.get()).reason, "close-selection", "the decision stays the partner's to make");
+    eq(D.TRADE.liveTradeRows(w.get()).map((c) => c.id).join(), w.ids[0], "with only the card still selected");
+    /* (Closing itself is proven against real copies in milestone3a1-trade-domain.) */
   });
 
   test("rows are addressed by their own id", () => {

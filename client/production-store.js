@@ -116,7 +116,7 @@ export function createProductionStore({ api } = {}) {
   let lastError = null;
   let lastRefusal = null;
   let stale = false;
-  let inFlight = null;
+  let inFlight = null; let epoch = 0;   // epoch: answers adopted so far (M3A A3 F1)
   let running = null;          // the name of the command in flight, or null
 
   const subscribers = new Set();
@@ -128,18 +128,19 @@ export function createProductionStore({ api } = {}) {
      response, and there is no other line in this file that writes it — which is
      what makes "nothing here is optimistic" a property of the construction
      rather than a promise. */
-  const takeState = (answer) => {
+  const takeState = (answer, since = epoch) => {   // F1: an answer older than one adopted after it left is dropped (version orders; epoch survives a reset world)
+    if (since < epoch && typeof answer.version === "number" && typeof version === "number" && answer.version <= version) return false;
     state = answer.state;
-    version = answer.version === undefined ? version : answer.version;
+    version = answer.version === undefined ? version : answer.version; epoch += 1; return true;
   };
 
-  const adopt = (answer) => {
-    takeState(answer);
+  const adopt = (answer, since) => {
+    const taken = takeState(answer, since);
     status = STATUS.ready;
     lastError = null;
     lastRefusal = null;
     stale = false;
-    announce();
+    announce(); return taken;
   };
 
   const failed = (error) => {
@@ -160,7 +161,7 @@ export function createProductionStore({ api } = {}) {
   const reRead = async () => {
     try {
       if (inFlight) { await inFlight; return true; }
-      takeState(await api.view());
+      const since = epoch; takeState(await api.view(), since);
       return true;
     } catch (error) {
       return false;
@@ -184,7 +185,7 @@ export function createProductionStore({ api } = {}) {
        server last said, for as long as the answer is unknown. */
     announce();
 
-    let answer;
+    let answer; const since = epoch;
     try {
       answer = await send();
     } catch (error) {
@@ -215,11 +216,11 @@ export function createProductionStore({ api } = {}) {
       lastError = null;
       lastRefusal = answer.refused;
       announce();
-      return { ok: false, refused: answer.refused };
+      return answer.detail ? { ok: false, refused: answer.refused, detail: answer.detail } : { ok: false, refused: answer.refused };   // `detail`: M3A A3, not stored
     }
     /* `adopt` reads `state` and `version` and nothing else, so anything else the
        reply carried — a credential — is handed to the caller and never stored. */
-    adopt(answer);
+    adopt(answer, since);
     return answer;
   };
 
@@ -306,15 +307,15 @@ export function createProductionStore({ api } = {}) {
       if (inFlight) return inFlight;
       status = state === null ? STATUS.loading : status;
       announce();
-      inFlight = (async () => {
+      inFlight = (async () => { let taken = false; const since = epoch;
         try {
-          adopt(await api.view());
+          taken = adopt(await api.view(), since);
         } catch (error) {
           throw failed(error);
         } finally {
           inFlight = null;
         }
-        return state;
+        return taken ? state : null;   // null: a newer answer had already arrived (F1)
       })();
       return inFlight;
     },

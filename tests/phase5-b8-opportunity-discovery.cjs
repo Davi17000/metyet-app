@@ -500,7 +500,7 @@ describe("D. what stops an overlap, and what must never be erased", () => {
     eq((await found(ctx, "dana")).length, 1, "and comes back when they release it");
 
     /* And so does the promise itself. */
-    await acted(ctx, ACTOR.casey, "proposeTradeSelection", { oppId, binderIds: [] });
+    await acted(ctx, ACTOR.casey, "chooseCashOnly", { oppId });   // RESTATED (M3A A1): cash only is its own explicit choice
     await acted(ctx, ACTOR.north, "acceptDeal", { oppId });
     await acted(ctx, ACTOR.casey, "acceptDeal", { oppId });
     eq((await found(ctx, "dana")).length, 0,
@@ -525,7 +525,7 @@ describe("D. what stops an overlap, and what must never be erased", () => {
     eq(json(valued[0].invIds.slice().sort()), json([first, second].sort()),
       "and both copies are genuinely available");
 
-    await acted(ctx, ACTOR.casey, "proposeTradeSelection", { oppId, binderIds: [] });
+    await acted(ctx, ACTOR.casey, "chooseCashOnly", { oppId });   // RESTATED (M3A A1): cash only is its own explicit choice
     await acted(ctx, ACTOR.north, "acceptDeal", { oppId });
     await acted(ctx, ACTOR.casey, "acceptDeal", { oppId });
     const theirs = await found(ctx, "dana");
@@ -876,7 +876,9 @@ describe("G. B5, B6, B7 and the demo, as they were", () => {
     const commands = code("domain/metyet-commands.js");
     const starts = [...commands.matchAll(/opportunities:\s*\[\.\.\.list\(state\.opportunities\)/g)];
     eq(starts.length, 1, "exactly one command creates an Opportunity");
-    assert(/startOpportunity\(state, a, \{ goalId, invId, amount \}/.test(commands),
+    /* Market Validation Batch 2 added `percent`: an opening may be stated as a
+       share of the partner's price. Still a figure a person chose. */
+    assert(/startOpportunity\(state, a, \{ goalId, invId, amount(, percent)? \}/.test(commands),
       "and it is the collector's offer, which carries a figure a person chose");
   });
 });

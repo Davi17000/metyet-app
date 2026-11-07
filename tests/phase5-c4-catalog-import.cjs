@@ -983,7 +983,10 @@ describe("G. the boundaries hold", () => {
        command is reachable, and no route writes the schema. */
     /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
        name; any other change to the size still fails here. */
-    eq(EXPOSED_COMMANDS.length, 24, "the production surface is not the size C5 left it");
+    /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
+       commands joined the door with the Deal Flow and Opportunities controls
+       that send them, each named in the allow-list; any other move still fails. */
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37, "the production surface is not the size C5 left it");
     for (const name of ["catalogImport", "importCatalog", "putCanonicalCard",
       "putCardContext", "putExpansion", "recordSourceMapping", "resolveCardIdentity"]) {
       assert(!EXPOSED_COMMANDS.includes(name), `${name} is exposed`);
@@ -1017,7 +1020,7 @@ describe("G. the boundaries hold", () => {
 
   test("C4 wrote no migration: the newest is still somebody else's", () => {
     const migrations = fs.readdirSync(path.join(ROOT, "persistence", "migrations")).sort();
-    eq(migrations[migrations.length - 1], "0014_binder_memberships.sql", migrations.join(","));
+    /* RE-PINNED (Milestone 2D.1): the newest migration is now 0015, a deal's conversation — not this batch's. */ eq(migrations[migrations.length - 1], "0015_deal_conversations.sql", migrations.join(","));
     /* WHY THIS NAMES BOTH ENDS, AND WHAT IT COST TO LEARN (Phase 5 C7.1).
        C4's claim is about C4: a batch that adds an ingestion runner with its own
        tables already migrated has no business changing persistence. The

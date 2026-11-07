@@ -375,7 +375,8 @@ describe("C. One Collector's binder holds one Collector's things", () => {
     const oppId = okv(x(st, CASEY, "startOpportunity",
       { goalId: "g1", invId: "i1", amount: 26 }), "start");
     okv(x(st, TP, "acceptPrice", { oppId }), "agree");
-    okv(x(st, CASEY, "proposeTradeSelection", { oppId, binderIds: ["sell"] }), "package");
+    /* RESTATED (M3A A1): the partner selects the filed copy into its own deal. */
+    okv(x(st, TP, "selectTradeCards", { oppId, copyIds: ["sell"] }), "selection");
     const theirs = projectForActor(st.get(), TP);
     eq(JSON.stringify(theirs.binderMemberships), "[]", "a membership crossed to a partner");
     eq(JSON.stringify(theirs.binders), "[]", "a binder crossed");
@@ -1377,7 +1378,10 @@ describe("I. A capability with a surface, at last", () => {
       assert(EXPOSED_COMMANDS.includes(name),
         `${name} is not reachable, so no control can press it: ${EXPOSED_COMMANDS.join(",")}`);
     }
-    eq(EXPOSED_COMMANDS.length, 24, `the production surface is ${EXPOSED_COMMANDS.join(",")}`);
+    /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
+       commands joined the door with the Deal Flow and Opportunities controls
+       that send them, each named in the allow-list; any other move still fails. */
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + selectTradeCards, deselectTradeCard, closeTradeSelection, holdTradeSelection, continueTradeSelection, withdrawTradeCard (Select Trade's screens); — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37, `the production surface is ${EXPOSED_COMMANDS.join(",")}`);
     /* RE-PINNED (Batch 3C-1): THE CARD-LEVEL PAIR IS NO LONGER A PAIR. 3B-1
        kept `addBinderEntry` open for one release so a browser tab opened before
        that deploy kept working; that release shipped (`b658e7e`), the release
@@ -1393,7 +1397,8 @@ describe("I. A capability with a surface, at last", () => {
       assert([...C.COMMAND_NAMES].includes(name), `${name} is not a domain command`);
       eq(typeof C.COMMANDS[name], "function", `${name} has no implementation`);
     }
-    eq([...C.COMMAND_NAMES].length, 53, "the domain command table moved");
+    /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A1: + selectTradeCards, deselectTradeCard, holdTradeSelection, continueTradeSelection, closeTradeSelection (proposeTradeSelection and reviewTradeCard remain as refusing names) — each founder-approved */ eq([...C.COMMAND_NAMES].length, 61, "the domain command table moved");
     const st = world();
     const id = okv(x(st, CASEY, "fileObject", { binderId: "A", goalId: "g1" }), "file");
     eq(homeOf(st, "goalId", "g1").binderId, "A", "the command stopped working");
@@ -1477,13 +1482,17 @@ describe("I. A capability with a surface, at last", () => {
       "the door and the client disagree about what the product offers");
     /* RE-PINNED (Batch 3C-1): 25 → 24, both sides at once — `fileCardInBinder`
        left with the door it sent through. */
-    eq(sent.size, 24, `the client can send ${sent.size}`);
+    /* RE-PINNED (Market Validation Batch 3B): 24 → 29, both sides at once —
+       the five price bindings arrived with the screens that call them. */
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + selectTradeCards, deselectTradeCard, closeTradeSelection, holdTradeSelection, continueTradeSelection, withdrawTradeCard (Select Trade's screens); — each founder-approved */ eq(sent.size, 37, `the client can send ${sent.size}`);
     /* AND EVERY ONE OF THEM IS IMPORTED BY SOMETHING. This is the half the
        exact-set guard cannot see: a binding nothing imports satisfies it while
        being dead, which is what 3A's two thunks were. */
     const importers = require("fs").readFileSync(
       path.join(ROOT, "client/sign-in/SignIn.jsx"), "utf8");
-    for (const fn of ["fileObjectInBinder", "unfileObjectFromBinder"]) {
+    for (const fn of ["fileObjectInBinder", "unfileObjectFromBinder",
+      /* Market Validation Batch 3B's five, imported and bound where the others are. */
+      "openOffer", "counterOffer", "acceptOffer", "declineOffer", "withdrawOffer"]) {
       assert(new RegExp(fn).test(importers), `${fn} is exported and imported by nothing`);
     }
   });
@@ -1492,9 +1501,17 @@ describe("I. A capability with a surface, at last", () => {
     /* The batch is a change of SUBJECT in the UI. These are the counts it
        fixes, asserted together so a change to a screen cannot quietly arrive
        with a change to the schema or the refusal vocabulary. */
+    /* RE-PINNED (Milestone 2D.1, founder-approved): + 0015, a deal's conversation */
     eq(require("fs").readdirSync(path.join(ROOT, "persistence/migrations"))
-      .filter((f) => f.endsWith(".sql")).length, 14, "a migration moved");
-    eq(Object.keys(D.REFUSE).length, 44, "the refusal vocabulary moved");
+      .filter((f) => f.endsWith(".sql")).length, 15, "a migration moved");
+    /* 45 since Market Validation Batch 1, which added exactly one code,
+       `invalid-pricing-preference` (a TP's Firm on Price must be a boolean).
+       The pin still fails on any other change to the vocabulary. */
+    /* 46 since Market Validation Batch 2: `firm-on-price` (an opening on a Firm
+       copy must equal its captured Proposed Market Price). */
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + four message refusals (empty, too long, nonce required, nonce conflict); M3A A1: + copy-in-deal, terms-changed, superseded — each founder-approved */ eq(Object.keys(D.REFUSE).length, 58, "the refusal vocabulary moved");
+    eq(D.REFUSE.firmOnPrice, "firm-on-price", "Batch 2's one new refusal code");
+    eq(D.REFUSE.invalidPricingPreference, "invalid-pricing-preference", "Batch 1's one new refusal code");
     assert(D.REFUSE.invalidTarget === "invalid-target" && D.REFUSE.binderArchived === "binder-archived",
       "Batch 3A's two refusal codes changed");
     /* AND THE DOMAIN FILE IS UNTOUCHED BY THIS BATCH, which is the strongest

@@ -103,7 +103,7 @@ const closeCopy = (st) => {
   const id = okv(x(st, JORDAN, "startOpportunity",
     { goalId: "gJ", invId: "i1", amount: 26, at: AT }), "open");
   okv(x(st, TP, "acceptPrice", { oppId: id, at: AT }), "value");
-  okv(x(st, JORDAN, "proposeTradeSelection", { oppId: id, binderIds: [], at: AT }), "package");
+  okv(x(st, JORDAN, "chooseCashOnly", { oppId: id, at: AT }), "package");
   okv(x(st, TP, "acceptDeal", { oppId: id, at: AT }), "shop yes");
   okv(x(st, JORDAN, "acceptDeal", { oppId: id, at: AT }), "collector yes");
   return id;
@@ -402,9 +402,16 @@ describe("F. The transaction did not start", () => {
   });
 
   test("[22] the allow-list grew by exactly one, and the transaction is shut", () => {
+    /* MARKET VALIDATION BATCH 3B opened the five price commands — opening an
+       offer, countering, accepting, declining and withdrawing — with the screens
+       that send them, so they left this list. Everything past an agreed price
+       (trade, values, the final balance, fulfilment, Pending) is still shut. */
     /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
        name; any other change to the size still fails here. */
-    eq(EXPOSED_COMMANDS.length, 24, "the production surface is not the size this batch declared");
+    /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
+       commands joined the door with the Deal Flow and Opportunities controls
+       that send them, each named in the allow-list; any other move still fails. */
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37, "the production surface is not the size this batch declared");
     assert(EXPOSED_COMMANDS.includes("addCopyPhotos"), "the shop has no way to answer");
     /* EVERY NAME HERE IS A REAL COMMAND, checked the way `phase5-c5` checks it:
        an adversarial run found `reviewCopy2` in this list — not a command
@@ -412,9 +419,8 @@ describe("F. The transaction did not start", () => {
     const { COMMAND_NAMES } = require("../domain/metyet-commands.js");
     const known = COMMAND_NAMES.has ? (n) => COMMAND_NAMES.has(n)
       : (n) => [...COMMAND_NAMES].includes(n);
-    for (const shut of ["startOpportunity", "proposePrice", "acceptPrice", "acceptMarketValue",
-      "acceptDeal", "proposeTradeSelection", "setCopyPending", "cancelOpportunity",
-      "proposeFulfillment", "confirmHandoff", "sendMessage", "setInterest",
+    for (const shut of ["acceptMarketValue",
+      "acceptDeal", "proposeTradeSelection", "setCopyPending", "proposeFulfillment", "confirmHandoff", "sendMessage", "setInterest",
       "markBinderReviewed"]) {
       assert(known(shut), `${shut} is not a command, so this line asserts nothing`);
       assert(!EXPOSED_COMMANDS.includes(shut), `${shut} was exposed`);
@@ -425,7 +431,7 @@ describe("F. The transaction did not start", () => {
   test("[23] no migration, and no new durable fact", () => {
     const migrations = fs.readdirSync(path.join(ROOT, "persistence/migrations"))
       .filter((f) => f.endsWith(".sql")).sort();
-    eq(migrations[migrations.length - 1], "0014_binder_memberships.sql", migrations.join(","));
+    /* RE-PINNED (Milestone 2D.1): the newest migration is now 0015, a deal's conversation — not this batch's. */ eq(migrations[migrations.length - 1], "0015_deal_conversations.sql", migrations.join(","));
     const src = codeOf("domain/metyet-domain.js") + codeOf("domain/metyet-commands.js")
       + codeOf("domain/metyet-projection.js");
     for (const invented of ["acknowledged", "fulfilment", "photoTask", "notified",
@@ -460,7 +466,8 @@ describe("F. The transaction did not start", () => {
       D.REFUSE.criteriaMismatch, "a PSA 9 copy satisfied a PSA 10 goal");
     const SHELL = build("client/collector/CollectorShell.jsx");
     eq(SHELL.SECTIONS.map((s) => s.label).join(" · "),
-      "Browse · Binders · Trusted Partners · Deal Flow", "the Collector navigation moved");
+      /* RE-PINNED (Phase 6 P6-1): Deal Flow now precedes Trusted Partners. */
+      "Browse · Binders · Deal Flow · Trusted Partners", "the Collector navigation moved");
   });
 });
 
@@ -608,7 +615,11 @@ describe("G. The shop's screen", () => {
   });
 
   test("[33] and the shop's screen grew nothing else", () => {
-    const src = codeOf("client/tp/sections/Inventory.jsx");
+    /* ONE PHRASE IS EXEMPT, AND ONLY THAT PHRASE (Market Validation, Batch 1).
+       "Open to Offers" is the shelf's own status label for a copy that is not
+       Firm on Price — a description of the copy, not an offer control. Every
+       other "Offer" (a button, an inbox, an intent) still fails here. */
+    const src = codeOf("client/tp/sections/Inventory.jsx").replace(/Open to Offers/g, "");
     for (const gone of ["startOpportunity", "acceptPrice", "setCopyPending", "sendMessage",
       "Market Value", "Lead", "Buyer intent", "Offer", "Negotiation", "Conversion"]) {
       assert(!src.includes(gone), `Inventory grew ${gone}`);
@@ -895,8 +906,12 @@ describe("I. Over HTTP, against the real server", () => {
   });
 
   test("[49] the transaction is still unreachable from a browser", async () => {
+    /* MARKET VALIDATION BATCH 3B opened the five price commands — opening an
+       offer, countering, accepting, declining and withdrawing — with the screens
+       that send them, so they left this list. Everything past an agreed price
+       (trade, values, the final balance, fulfilment, Pending) is still shut. */
     const { app } = await served();
-    for (const shut of ["startOpportunity", "proposePrice", "acceptPrice", "acceptDeal",
+    for (const shut of ["acceptDeal",
       "setCopyPending", "proposeTradeSelection", "confirmHandoff", "sendMessage"]) {
       const res = await send(app, "north", shut, {});
       eq(res.statusCode, 409, `${shut} reached the domain`);

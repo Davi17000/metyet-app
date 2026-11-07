@@ -232,7 +232,7 @@ describe("Alternative Trusted Partners", () => {
       cardId: o.cardId, by: "collector", text: "WITH-ALTERNATIVE", at: "2026-08-16" }); });
     const convBefore = S().conversations.length;
 
-    TR.act(() => { acts().endOpportunity(o.id, "collector", "2026-08-16"); });
+    TR.act(() => { acts().endOpportunity(o.id, "collector", "2026-08-16", "changed my mind"); }); /* Batch 3B.1: ending a price-agreed deal needs a reason. */
 
     eq(S().conversations.length, convBefore, "ending the deal erased no conversation");
     const withCurrent = S().conversations.find((t) => t.entries.some((e) => e.text === "WITH-CURRENT"));

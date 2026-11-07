@@ -22,6 +22,7 @@ const C = require("../domain/metyet-commands.js");
 const { createStore } = require("../domain/metyet-store.js");
 const { collectorView } = require("../domain/collector-view.js");
 const TP = require("../dist/MetYet.cjs");
+const { selectAndClose } = require("./helpers/trade-path.cjs");
 
 const R = D.REFUSE;
 const AT = "2026-09-01";
@@ -84,8 +85,14 @@ const PLAN = { method: "meetup", date: "2026-09-20", time: "18:00", location: "C
 const STEPS = {
   "agree-price": (s) => ok(s.execute(C1, "startOpportunity", { goalId: "g1", invId: "i1", amount: 900, at: AT })),
   "select-trade": (s) => { const id = STEPS["agree-price"](s); ok(s.execute(TP1, "acceptPrice", { oppId: id, at: AT })); return id; },
-  "reserved": (s) => { const id = STEPS["select-trade"](s); ok(s.execute(C1, "proposeTradeSelection", { oppId: id, binderIds: ["b1"], at: AT })); return id; },
-  "value-trade": (s) => { const id = STEPS.reserved(s); ok(s.execute(TP1, "reviewTradeCard", { oppId: id, decision: "accepted", at: AT })); return id; },
+  /* RESTATED (M3A A1). The step names are kept so every table below still
+     finds them, but selection is TP-led now: "reserved" is the partner's
+     SELECTION of b1 (locked, not exclusive), "ready" is the Collector saying
+     they are ready, and "value-trade" is the partner closing selection — which
+     is what reserves b1 for this deal. */
+  "reserved": (s) => { const id = STEPS["select-trade"](s); ok(s.execute(TP1, "selectTradeCards", { oppId: id, copyIds: ["b1"], at: AT })); return id; },
+  "ready": (s) => { const id = STEPS.reserved(s); ok(s.execute(C1, "continueTradeSelection", { oppId: id, at: AT })); return id; },
+  "value-trade": (s) => { const id = STEPS.ready(s); ok(s.execute(TP1, "closeTradeSelection", { oppId: id, at: AT })); return id; },
   "deal": (s) => {
     const id = STEPS["value-trade"](s);
     const row = () => opp(s, id).trade.cards[0].id;
@@ -101,7 +108,8 @@ const STEPS = {
   "plan-agreed": (s) => { const id = STEPS["plan-proposed"](s); ok(s.execute(C1, "confirmFulfillmentPlan", { oppId: id, at: AT })); return id; },
   "handed-off": (s) => { const id = STEPS["plan-agreed"](s); ok(s.execute(TP1, "confirmHandoff", { oppId: id, at: AT })); return id; },
   "completed": (s) => { const id = STEPS["handed-off"](s); ok(s.execute(C1, "confirmHandoff", { oppId: id, at: AT })); return id; },
-  "cancelled": (s) => { const id = STEPS["value-trade"](s); ok(s.execute(C1, "cancelOpportunity", { oppId: id, at: AT })); return id; },
+  /* Batch 3B.1: a price is agreed by Value Trade, so ending it says why. */
+  "cancelled": (s) => { const id = STEPS["value-trade"](s); ok(s.execute(C1, "cancelOpportunity", { oppId: id, reason: "changed my mind", at: AT })); return id; },
 };
 const at = (stage) => { const s = world(); const id = STEPS[stage](s); return { s, id, row: () => (opp(s, id).trade.cards[0] || {}).id }; };
 
@@ -111,9 +119,16 @@ const at = (stage) => { const s = world(); const id = STEPS[stage](s); return { 
 const MATRIX = [
   { cmd: "proposePrice", stage: "agree-price", good: TP1, wrong: C1, outsider: TP3, pay: (x) => ({ oppId: x.id, amount: 950 }) },
   { cmd: "acceptPrice", stage: "agree-price", good: TP1, wrong: C1, outsider: TP2, pay: (x) => ({ oppId: x.id }) },
-  { cmd: "proposeTradeSelection", stage: "select-trade", good: C1, wrong: TP1, outsider: C2, pay: (x) => ({ oppId: x.id, binderIds: ["b1"] }) },
-  { cmd: "reviewTradeCard", stage: "reserved", good: TP1, wrong: C1, outsider: TP2, pay: (x) => ({ oppId: x.id, decision: "accepted" }) },
-  { cmd: "withdrawTradeCard", stage: "reserved", good: C1, wrong: TP1, outsider: C2, pay: (x) => ({ oppId: x.id, tradeCardId: x.row() }) },
+  /* RESTATED (M3A A1): TP-led selection replaces proposeTradeSelection /
+     reviewTradeCard in this matrix. */
+  { cmd: "selectTradeCards", stage: "select-trade", good: TP1, wrong: C1, outsider: TP2, pay: (x) => ({ oppId: x.id, copyIds: ["b1"] }) },
+  { cmd: "holdTradeSelection", stage: "reserved", good: C1, wrong: TP1, outsider: C2, pay: (x) => ({ oppId: x.id }) },
+  { cmd: "continueTradeSelection", stage: "reserved", good: C1, wrong: TP1, outsider: C2, pay: (x) => ({ oppId: x.id }) },
+  { cmd: "deselectTradeCard", stage: "ready", good: TP1, wrong: C1, outsider: TP2, pay: (x) => ({ oppId: x.id, tradeCardId: x.row() }) },
+  { cmd: "closeTradeSelection", stage: "ready", good: TP1, wrong: C1, outsider: TP2, pay: (x) => ({ oppId: x.id }) },
+  /* RESTATED (M3A A1): withdrawal is allowed until final agreement, so its
+     wrong stage is Fulfillment, not Deal. */
+  { cmd: "withdrawTradeCard", stage: "reserved", otherStage: "fulfillment", good: C1, wrong: TP1, outsider: C2, pay: (x) => ({ oppId: x.id, tradeCardId: x.row() }) },
   { cmd: "proposeMarketValue", stage: "value-trade", good: C1, wrong: TP1, outsider: C2, pay: (x) => ({ oppId: x.id, tradeCardId: x.row(), amount: 300 }) },
   { cmd: "proposeFinalBalance", stage: "deal", good: TP1, wrong: C1, outsider: TP2, pay: (x) => ({ oppId: x.id, amount: 450 }) },
   { cmd: "acceptDeal", stage: "deal", good: TP1, wrong: C1, outsider: TP2, pay: (x) => ({ oppId: x.id }) },
@@ -122,10 +137,11 @@ const MATRIX = [
   { cmd: "requestFulfillmentRevision", stage: "plan-proposed", good: C1, wrong: TP1, outsider: C2, pay: (x) => ({ oppId: x.id, note: "Sunday" }) },
   { cmd: "confirmHandoff", stage: "plan-agreed", good: TP1, wrong: C1, outsider: TP2, pay: (x) => ({ oppId: x.id }) },
   { cmd: "confirmHandoff", stage: "handed-off", good: C1, wrong: TP1, outsider: C2, pay: (x) => ({ oppId: x.id }), label: "receipt" },
-  { cmd: "cancelOpportunity", stage: "value-trade", good: C1, wrong: null, outsider: C2, pay: (x) => ({ oppId: x.id }) },
+  /* Batch 3B.1: at Value Trade the price is agreed, so the reason is part of a good request. */
+  { cmd: "cancelOpportunity", stage: "value-trade", good: C1, wrong: null, outsider: C2, pay: (x) => ({ oppId: x.id, reason: "changed my mind" }) },
 ];
 /* Value-stage commands that need a prior move are covered separately below. */
-const OTHER_STAGE = { "agree-price": "deal", "select-trade": "value-trade", reserved: "deal",
+const OTHER_STAGE = { "agree-price": "deal", "select-trade": "value-trade", reserved: "deal", ready: "deal",
   "value-trade": "agree-price", deal: "select-trade", fulfillment: "deal",
   "plan-proposed": "deal", "plan-agreed": "deal", "handed-off": "deal" };
 
@@ -145,8 +161,9 @@ describe("A. command × actor × stage matrix", () => {
       const r = x.s.execute(m.outsider, m.cmd, { ...m.pay(x), at: AT });
       no(r); eq(snap(x.s), before, "refusal changed nothing");
     });
-    if (OTHER_STAGE[m.stage] && m.cmd !== "cancelOpportunity") test(`${name}: the wrong stage is refused`, () => {
-      const x = at(OTHER_STAGE[m.stage]); const before = snap(x.s);
+    const otherStage = m.otherStage || OTHER_STAGE[m.stage];
+    if (otherStage && m.cmd !== "cancelOpportunity") test(`${name}: the wrong stage is refused`, () => {
+      const x = at(otherStage); const before = snap(x.s);
       const r = x.s.execute(m.good, m.cmd, { ...m.pay(x), at: AT });
       no(r); eq(snap(x.s), before, "refusal changed nothing");
     });
@@ -201,7 +218,7 @@ const tpOwner = (o) => TP.nextAction(o).owner;
 const collectorWho = (s, o) => collectorView(s.get(), o.collectorId).turnFor(o).who;
 
 describe("B. one canonical turn owner", () => {
-  const STATES = ["agree-price", "select-trade", "reserved", "value-trade", "deal",
+  const STATES = ["agree-price", "select-trade", "reserved", "ready", "value-trade", "deal",
     "fulfillment", "plan-proposed", "plan-agreed", "handed-off", "completed", "cancelled"];
   for (const stage of STATES) {
     test(`${stage}: both personas read the same actor, never both, never neither while work remains`, () => {
@@ -246,9 +263,8 @@ describe("B. one canonical turn owner", () => {
   test("Value Trade with several cards: one actor at a time, and the last mover keeps the turn while it holds a card", () => {
     const s = world();
     const id = STEPS["select-trade"](s);
-    ok(s.execute(C1, "proposeTradeSelection", { oppId: id, binderIds: ["b1", "b2"] }));
-    ok(s.execute(TP1, "reviewTradeCard", { oppId: id, decision: "accepted" }));
-    const [r1, r2] = opp(s, id).trade.cards.map((c) => c.id);
+    /* RESTATED (M3A A1): the partner selects both copies and closes selection. */
+    const [r1, r2] = selectAndClose((a, c, p) => s.execute(a, c, p), { tp: TP1, collector: C1, oppId: id, copyIds: ["b1", "b2"] });
     const actor = () => D.nextActor(opp(s, id)).actor;
     const never = () => { const o = opp(s, id); assert(!(tpOwner(o) === "tp" && collectorWho(s, o) === "me"), "never both"); };
     ok(s.execute(C1, "proposeMarketValue", { oppId: id, tradeCardId: r1, amount: 300 }));
@@ -271,8 +287,11 @@ describe("C. terminal immutability", () => {
   const ATTEMPTS = (x) => [
     [TP1, "proposePrice", { oppId: x.id, amount: 1 }], [C1, "proposePrice", { oppId: x.id, amount: 1 }],
     [TP1, "acceptPrice", { oppId: x.id }], [C1, "acceptPrice", { oppId: x.id }],
-    [C1, "proposeTradeSelection", { oppId: x.id, binderIds: ["b2"] }], [C1, "chooseCashOnly", { oppId: x.id }],
-    [TP1, "reviewTradeCard", { oppId: x.id, decision: "rejected" }],
+    /* RESTATED (M3A A1): the TP-led selection commands. */
+    [TP1, "selectTradeCards", { oppId: x.id, copyIds: ["b2"] }], [C1, "chooseCashOnly", { oppId: x.id }],
+    [TP1, "deselectTradeCard", { oppId: x.id, tradeCardId: x.row() }],
+    [C1, "holdTradeSelection", { oppId: x.id }], [C1, "continueTradeSelection", { oppId: x.id }],
+    [TP1, "closeTradeSelection", { oppId: x.id }],
     [C1, "withdrawTradeCard", { oppId: x.id, tradeCardId: x.row() }],
     [C1, "proposeMarketValue", { oppId: x.id, tradeCardId: x.row(), amount: 1 }],
     [TP1, "acceptMarketValue", { oppId: x.id, tradeCardId: x.row() }],
@@ -355,13 +374,18 @@ describe("E. TP InventoryCopy commitment", () => {
       "agreeing what it is worth leaves it available");
     ok(s.execute(TP1, "acceptPrice", { oppId: b }), "and the other deal may agree too");
     /* The promise is what claims it. */
-    ok(s.execute(C1, "proposeTradeSelection", { oppId: a, binderIds: [] }));
-    ok(s.execute(C2, "proposeTradeSelection", { oppId: b, binderIds: [] }), "both assemble");
+    ok(s.execute(C1, "chooseCashOnly", { oppId: a }));
+    ok(s.execute(C2, "chooseCashOnly", { oppId: b }), "both assemble");
     ok(s.execute(TP1, "acceptDeal", { oppId: a }));
     ok(s.execute(C1, "acceptDeal", { oppId: a }));
     eq(D.inventoryCopyStatus("i1", s.get().opportunities, s.get().inventory), "committed");
+    /* RESTATED (M3A A1). WAS: the rival deal stayed active and its acceptDeal
+       was refused copy-committed. NOW: the first deal's final agreement ENDED
+       the rival in the same write, as card-unavailable, so it is refused as
+       terminal — still a refusal that names no deal, collector or price. */
+    eq(opp(s, b).outcome, "card-unavailable", "the rival deal ended explicitly");
     const r = s.execute(TP1, "acceptDeal", { oppId: b });
-    no(r, R.copyCommitted, "second commitment refused");
+    no(r, R.terminal, "second commitment refused");
     eq(Object.keys(r).sort().join(","), "ok,refused", "the refusal carries no deal, collector or price");
     /* AND THE MUTATION GUARDS KEPT THE OLDER, WIDER WINDOW. Both of these were
        already refused back when only a price had been settled — moving the
@@ -373,7 +397,7 @@ describe("E. TP InventoryCopy commitment", () => {
   });
   test("cancellation releases the copy; completion makes it Sold", () => {
     const x = at("value-trade");
-    ok(x.s.execute(C1, "cancelOpportunity", { oppId: x.id }));
+    ok(x.s.execute(C1, "cancelOpportunity", { oppId: x.id, reason: "changed my mind" })); // Batch 3B.1: price agreed
     eq(D.inventoryCopyStatus("i1", x.s.get().opportunities, x.s.get().inventory), "available", "released");
     const y = at("completed");
     eq(D.inventoryCopyStatus("i1", y.s.get().opportunities, y.s.get().inventory), "sold");
@@ -383,40 +407,50 @@ describe("E. TP InventoryCopy commitment", () => {
   });
 });
 
-describe("E. BinderCopy reservation and commitment", () => {
-  test("draft reserves nothing; submission reserves; cross-deal reuse blocked", () => {
+/* RESTATED (M3A A1). WAS: the Collector's submitted package reserved its copies,
+   the partner's acceptance committed them, and an accepted card could not be
+   withdrawn. NOW: the partner's selection locks a copy without reserving it;
+   closing selection reserves it; final agreement commits it; and the Collector
+   may withdraw a card until final agreement. The four tests below pin the same
+   lifecycle at its new boundaries. */
+describe("E. Collector copy selection, reservation and commitment", () => {
+  test("no selection holds nothing; selection is shared; closing selection reserves and blocks reuse", () => {
     const s = world();
     const a = STEPS["select-trade"](s);
     ok(s.execute(C1, "startOpportunity", { goalId: "g6", invId: "i6", amount: 700 }));
     const b = s.get().opportunities.find((o) => o.goalId === "g6").id;
     ok(s.execute(TP1, "acceptPrice", { oppId: b }));
-    eq(D.collectorCopyStatus("b1", s.get().opportunities), "available", "nothing submitted: draft reserves nothing");
-    ok(s.execute(C1, "proposeTradeSelection", { oppId: a, binderIds: ["b1"] }));
+    eq(D.collectorCopyStatus("b1", s.get().opportunities), "available", "nothing selected holds nothing");
+    no(s.execute(TP1, "selectTradeCards", { oppId: b, copyIds: ["b3"] }), R.notFound, "only the deal Collector's own copies");
+    ok(s.execute(TP1, "selectTradeCards", { oppId: a, copyIds: ["b1"] }));
+    eq(D.collectorCopyStatus("b1", s.get().opportunities), "selected");
+    ok(s.execute(TP1, "selectTradeCards", { oppId: b, copyIds: ["b1"] }), "selection is not exclusive");
+    ok(s.execute(C1, "continueTradeSelection", { oppId: a }));
+    ok(s.execute(TP1, "closeTradeSelection", { oppId: a }));
     eq(D.collectorCopyStatus("b1", s.get().opportunities), "reserved");
-    no(s.execute(C1, "proposeTradeSelection", { oppId: b, binderIds: ["b1"] }), R.copyReserved, "cannot submit elsewhere");
     no(s.execute(C1, "removeCollectorCopy", { copyId: "b1" }), R.copyReserved);
-    no(s.execute(C1, "proposeTradeSelection", { oppId: b, binderIds: ["b3"] }), R.notOwner, "only your own copies");
   });
-  test("reserved withdrawal allowed before acceptance and releases the copy", () => {
+  test("withdrawal before valuation releases the copy and keeps the row as history", () => {
     const x = at("reserved");
     ok(x.s.execute(C1, "withdrawTradeCard", { oppId: x.id, tradeCardId: x.row() }));
     eq(D.collectorCopyStatus("b1", x.s.get().opportunities), "available", "released");
     const o = opp(x.s, x.id);
     eq(o.trade.cards.length, 1, "the row stays as history");
-    eq(o.stage, "deal", "nothing left to review: the package resolves to cash");
+    eq(o.stage, "select-trade", "nothing turns into cash by itself");
   });
-  test("partner acceptance commits; committed withdrawal, removal and reuse blocked; cert locked", () => {
+  test("reservation locks the specification; withdrawal is allowed until final agreement and refused after", () => {
     const x = at("value-trade");
-    eq(D.collectorCopyStatus("b1", x.s.get().opportunities), "committed");
-    no(x.s.execute(C1, "withdrawTradeCard", { oppId: x.id, tradeCardId: x.row() }), R.copyCommitted, "no unilateral withdrawal");
-    no(x.s.execute(C1, "removeCollectorCopy", { copyId: "b1" }), R.copyCommitted);
-    no(x.s.execute(C1, "updateCollectorCopy", { copyId: "b1", patch: { cert: "PSA 77" } }), R.copyCommitted);
+    eq(D.collectorCopyStatus("b1", x.s.get().opportunities), "reserved");
+    no(x.s.execute(C1, "removeCollectorCopy", { copyId: "b1" }), R.copyReserved);
+    no(x.s.execute(C1, "updateCollectorCopy", { copyId: "b1", patch: { cert: "PSA 77" } }), R.copyInDeal);
     ok(x.s.execute(C1, "updateCollectorCopy", { copyId: "b1", patch: { market: 360 } }), "private value still editable");
     ok(x.s.execute(C1, "startOpportunity", { goalId: "g6", invId: "i6", amount: 700 }));
     const b = x.s.get().opportunities.find((o) => o.goalId === "g6").id;
     ok(x.s.execute(TP1, "acceptPrice", { oppId: b }));
-    no(x.s.execute(C1, "proposeTradeSelection", { oppId: b, binderIds: ["b1"] }), R.copyCommitted);
-    ["deal", "fulfillment", "plan-agreed"].forEach((stage) => {
+    no(x.s.execute(TP1, "selectTradeCards", { oppId: b, copyIds: ["b1"] }), R.copyUnavailable, "reserved elsewhere");
+    const d = at("deal");
+    ok(d.s.execute(C1, "withdrawTradeCard", { oppId: d.id, tradeCardId: d.row() }), "deal-stage withdrawal is allowed");
+    ["fulfillment", "plan-agreed"].forEach((stage) => {
       const y = at(stage);
       no(y.s.execute(C1, "withdrawTradeCard", { oppId: y.id, tradeCardId: y.row() }), R.copyCommitted, `no withdrawal in ${stage}`);
     });
@@ -524,12 +558,14 @@ describe("G. seeded randomized invariant checks", () => {
           const row = pick(((o.trade && o.trade.cards) || []).concat([{}]));
           /* Mostly moves that fit the stage, some that do not, rare cancellation. */
           const BY_STAGE = { "agree-price": ["proposePrice", "acceptPrice", "acceptPrice"],
-            "select-trade": ["proposeTradeSelection", "reviewTradeCard", "reviewTradeCard", "withdrawTradeCard", "chooseCashOnly"],
+            "select-trade": ["selectTradeCards", "deselectTradeCard", "holdTradeSelection", "continueTradeSelection",
+              "closeTradeSelection", "closeTradeSelection", "withdrawTradeCard", "chooseCashOnly"],   // RESTATED (M3A A1)
             "value-trade": ["proposeMarketValue", "acceptMarketValue", "proposeTradePercent", "acceptTradePercent", "withdrawTradeCard"],
             deal: ["proposeFinalBalance", "acceptDeal", "acceptDeal"],
             fulfillment: ["proposeFulfillment", "confirmFulfillmentPlan", "requestFulfillmentRevision", "confirmHandoff", "confirmHandoff"],
             completed: ["acceptPrice", "proposeFinalBalance", "confirmHandoff", "cancelOpportunity"] };
-          const ALL = ["proposePrice", "acceptPrice", "proposeTradeSelection", "reviewTradeCard", "withdrawTradeCard",
+          const ALL = ["proposePrice", "acceptPrice", "selectTradeCards", "deselectTradeCard", "holdTradeSelection",
+            "continueTradeSelection", "closeTradeSelection", "withdrawTradeCard",
             "proposeMarketValue", "acceptMarketValue", "proposeTradePercent", "acceptTradePercent",
             "proposeFinalBalance", "acceptDeal", "proposeFulfillment", "confirmFulfillmentPlan",
             "requestFulfillmentRevision", "confirmHandoff", "chooseCashOnly"];
@@ -537,7 +573,7 @@ describe("G. seeded randomized invariant checks", () => {
           cmd = roll < 0.02 ? "cancelOpportunity" : roll < 0.8 ? pick(BY_STAGE[o.stage] || ALL) : pick(ALL);
           pay = { oppId: o.id, tradeCardId: row.id, amount: Math.round(rnd() * 1200) - 100,
             percent: Math.round(rnd() * 100) / 100, decision: pick(["accepted", "rejected"]),
-            binderIds: pick([[], ["b1"], ["b2"], ["b1", "b2"], ["b3"]]), plan: pick([PLAN, {}]),
+            copyIds: pick([[], ["b1"], ["b2"], ["b1", "b2"], ["b3"]]), plan: pick([PLAN, {}]),
             reason: pick(["", "because"]), at: "2026-09-" + (10 + (step % 18)) };
         } else if (rnd() < 0.5) {
           /* Re-open deals as earlier ones end, so the walk keeps covering the lifecycle. */
@@ -571,11 +607,16 @@ describe("G. seeded randomized invariant checks", () => {
            never conclude, so it stops holding its Goal and the Collector may
            legitimately open a new one elsewhere. The rule did not loosen — a
            Goal still has at most one negotiation that could actually finish. */
+        /* RESTATED (M3A A1): a lost negotiation is now ENDED by the event that
+           lost it, so every negotiating deal counts — no exception — and no
+           active deal may be lost. */
         const perGoal = {};
         now.opportunities
-          .filter((x) => D.isNegotiating(x) && !D.transactionallyLost(x, now.opportunities))
+          .filter((x) => D.isNegotiating(x))
           .forEach((x) => { perGoal[x.goalId] = (perGoal[x.goalId] || 0) + 1; });
         Object.values(perGoal).forEach((n) => assert(n <= 1, `step ${step}: two live deals on one goal`));
+        now.opportunities.filter(D.isActive).forEach((x) =>
+          assert(!D.transactionallyLost(x, now.opportunities), `step ${step}: ${x.id} is active but lost its card`));
         /* NO InventoryCopy PROMISED TWICE (Option B). This used to count
            settled prices, because settling used to be the commitment. It is
            not: two collectors may both agree what one card is worth. What no
@@ -590,24 +631,38 @@ describe("G. seeded randomized invariant checks", () => {
         now.opportunities.filter((x) => x.stage === "completed" && x.invId != null)
           .forEach((x) => { sold[x.invId] = (sold[x.invId] || 0) + 1; });
         Object.values(sold).forEach((n) => assert(n <= 1, `step ${step}: an InventoryCopy sold twice`));
-        /* no BinderCopy reserved/committed in two active packages */
+        /* no Collector copy reserved/committed in two active deals — RESTATED
+           (M3A A1): a SELECTED copy may be in several deals at once; only the
+           exclusive holds are counted. And never two live rows for one copy in
+           one deal. */
         const held = {};
-        now.opportunities.filter(D.isActive).forEach((x) => ((x.trade && x.trade.cards) || []).forEach((row) => {
-          if (D.binderRowState(x, row)) held[row.binderId] = (held[row.binderId] || 0) + 1;
-        }));
+        now.opportunities.filter(D.isActive).forEach((x) => {
+          const live = new Set();
+          ((x.trade && x.trade.cards) || []).forEach((row) => {
+            const st = D.binderRowState(x, row);
+            if (st === "reserved" || st === "committed") held[row.binderId] = (held[row.binderId] || 0) + 1;
+            if (st) { assert(!live.has(row.binderId), `step ${step}: ${row.binderId} live twice in ${x.id}`); live.add(row.binderId); }
+          });
+        });
         Object.entries(held).forEach(([b, n]) => assert(n <= 1, `step ${step}: ${b} held by two active packages`));
         /* stage prerequisites and no stale final agreement */
         for (const x of now.opportunities) {
           const ix = D.STAGE_IX[x.stage];
           if (ix >= D.STAGE_IX["select-trade"]) assert(x.agreedPrice != null, `step ${step}: ${x.stage} without a price`);
-          if (ix >= D.STAGE_IX["deal"]) assert(x.trade && x.trade.submitted, `step ${step}: ${x.stage} without a submitted package`);
+          /* RESTATED (M3A A1): Deal is reached by an explicit cash-only choice or
+             by valuing a TP selection; there is no "submitted package" any more. */
+          if (ix >= D.STAGE_IX["deal"]) assert(x.trade && (x.trade.mode === "cash" || D.acceptedTradeCards(x).length > 0),
+            `step ${step}: ${x.stage} with neither cash only nor a live trade card`);
           if (ix >= D.STAGE_IX["deal"] && x.trade.mode !== "cash") {
             assert(D.acceptedTradeCards(x).every(D.cardSettled), `step ${step}: ${x.stage} with unsettled cards`);
           }
           if (x.stage === "deal") assert(!x.deal.collectorAgreed, `step ${step}: collector agreement did not advance`);
           if (ix >= D.STAGE_IX["fulfillment"]) {
             assert(x.deal.tpAgreed && x.deal.collectorAgreed, `step ${step}: ${x.stage} without both final agreements`);
-            const standing = (x.deal.adjThread || []).filter((e) => e.type === "propose").pop();
+            /* Only what came after the last reset is on the table (M3A A1). */
+            const thread = x.deal.adjThread || [];
+            const lastReset = thread.map((e) => e.type).lastIndexOf("reset");
+            const standing = thread.slice(lastReset + 1).filter((e) => e.type === "propose").pop();
             if (standing) eq(x.deal.agreedAdj, standing.amount, `step ${step}: agreed figure is not the last proposal`);
           }
           if (x.stage === "completed") assert(x.fulfillment.collectorConfirmedPlan && x.fulfillment.tpHandoff

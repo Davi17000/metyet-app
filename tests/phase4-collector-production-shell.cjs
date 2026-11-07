@@ -98,7 +98,8 @@ const PARTNER = "p-9k2m";
    product. Binders now holds those as derived views, so the scaffold comes
    down. The screen was not deleted either — `sections/Collection.jsx` is the
    component Binders composes. */
-const NAV = ["Browse", "Binders", "Trusted Partners", "Deal Flow"];
+/* RE-PINNED (Phase 6 P6-1): Deal Flow now precedes Trusted Partners. */
+const NAV = ["Browse", "Binders", "Deal Flow", "Trusted Partners"];
 const TP_NAV = ["Collector Network", "Inventory", "Opportunities"];
 
 /* ---------------------------------------------------- the real projection */
@@ -318,7 +319,10 @@ describe("B. identity comes from the projection, and nowhere else", () => {
     assert(!shown.includes("Attacker") && !shown.includes("attacker@example.com"), shown);
     assert(looksLikeCollectorShell(r), "a prop changed the product: " + shown);
 
-    for (const rel of [...COLLECTOR_FILES, "client/production-app.jsx", "client/actor.js"]) {
+    /* EXTENDED (Market Validation Batch 3B.1): the negotiation module both
+       seats render with is Collector code too, so it is held to the same rule
+       — it may not name a seat any more than a section may. */
+    for (const rel of [...COLLECTOR_FILES, "client/production-app.jsx", "client/actor.js", "client/negotiation.jsx"]) {
       const bare = code(rel);
       assert(!/localStorage|sessionStorage|indexedDB|document\.cookie/.test(bare), `${rel} reads storage`);
       assert(!/location\.(search|hash|pathname|href)|URLSearchParams/.test(bare), `${rel} reads the URL`);
@@ -360,10 +364,12 @@ describe("C. the shell: its sections, and counts that are row counts", () => {
      unreachable rather than merely counted. */
   test("the sections are the product's own, in its own words", () => {
     const r = show(FULL);
-    const labels = buttons(r).map(instText).filter((s) => NAV.some((n) => s.includes(n)));
+    /* (P6-F5A.1: Browse's scope option "Trusted Partners" is a radio, not a section) */
+    const labels = buttons(r).filter((b) => b.props.role !== "radio").map(instText).filter((s) => NAV.some((n) => s.includes(n)));
     eq(labels.length, NAV.length, "no section more, none fewer: " + labels.join(" | "));
     NAV.forEach((n, i) => assert(labels[i].includes(n), `section ${i} is not ${n}`));
-    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "browse,binder,partners,deal-flow");
+    /* RE-PINNED (Phase 6 P6-1): Deal Flow now precedes Trusted Partners. */
+    eq(SHELL_MOD.SECTIONS.map((s) => s.id).join(","), "browse,binder,deal-flow,partners");
     /* SUPERSEDED AND RESTATED (Phase 5 C3.4).
        What this protected: that a section which could never hold anything was
        declared deferred rather than shown — Your Cards promised a Collector
@@ -514,8 +520,9 @@ describe("C. the shell: its sections, and counts that are row counts", () => {
     clickText(r, "Binders");
     assert(/haven't made a binder yet/.test(flat(r)), flat(r));
     /* And the collection view one press away has its own honest sentence. */
-    clickText(r, "All Cards");
-    assert(/Nothing has meaning yet/.test(flat(r)), flat(r));
+    /* RESTATED (Phase 6 P6-2): Your Cards sits on the Binders screen itself,
+       and its empty sentence says the two ways a card gains meaning. */
+    assert(/Cards you.re looking for or own will appear here/.test(flat(r)), flat(r));
     clickText(r, "Trusted Partners");
     assert(/no Trusted Partners yet/.test(flat(r)), flat(r));
     const all = flat(r);
@@ -653,13 +660,19 @@ describe("E. navigation, session and loading", () => {
     const apiCalls = () => calls.filter((c) => c.url.startsWith(APP)).length;
     const worldReads = () => calls.filter((c) => c.url.startsWith(APP)
       && c.url.includes("/api/view")).length;
-    eq(apiCalls(), 1, "one call, on arrival");
+    /* RESTATED (Phase 6 P6-F2): the landing is the visual Pokédex, so arrival
+       is one world read AND one page of it — exactly two, still bounded, and
+       still nothing more for moving around (or coming back to Browse). */
+    const pokedexReads = () => calls.filter((c) => c.url.startsWith(APP) && c.url.includes("/api/pokemon")).length;
+    eq(apiCalls(), 2, "one world read and one Pokédex page, on arrival");
     eq(worldReads(), 1, "one read, on arrival");
+    eq(pokedexReads(), 1, "one Pokédex page, on arrival");
 
     clickText(r, "Trusted Partners"); await flush(r);
     clickText(r, "Binders"); await flush(r);
+    clickText(r, "Browse"); await flush(r);
 
-    eq(apiCalls(), 1, "moving around asked the server again");
+    eq(apiCalls(), 2, "moving around asked the server again");
     eq(worldReads(), 1, "moving around asked the server for the world again");
     assert(calls.every((c) => !c.url.includes("/api/commands")),
       "moving around sent a command");
@@ -750,12 +763,20 @@ describe("F. no demo, no prototype, no store, no domain", () => {
        section with controls INSIDE it (three doorways and a search), so the
        count is taken where the shell's chrome is the whole of what is on
        screen: a section that offers nothing of its own. */
-    const labels = buttons(show(REAL, "Trusted Partners")).map(instText);
-    eq(labels.length, NAV.length + 1, "an extra control appeared: " + labels.join(" | "));
+    const shown = buttons(show(REAL, "Trusted Partners"));
+    const labels = shown.map(instText);
+    /* RESTATED (P6-F1): on a phone the account bar became one account button
+       in the screen header, and the release notice a "What works today" link —
+       both open the account sheet and change nothing. They are named here, so
+       the count is still exact and any OTHER new control still fails. */
+    eq(shown.filter((b) => /^Account: /.test(String(b.props["aria-label"] || ""))).length, 1, "no account button");
+    eq(labels.filter((l) => l.trim() === "What works today").length, 1, "no notice link");
+    eq(labels.length, NAV.length + 3, "an extra control appeared: " + labels.join(" | "));
     assert(labels.some((l) => l.includes("Sign out")));
     /* And Browse's own controls are Browse's, named so a reader can see them. */
+    /* RESTATED (P6-F2): the Phase 6 doorways — Pokémon, Sets, Artists. */
     const browsing = buttons(show(REAL)).map(instText);
-    eq(browsing.filter((l) => ["Pokémon", "Set", "Artist"].includes(l.trim())).length, 3,
+    eq(browsing.filter((l) => ["Pokémon", "Sets", "Artists"].includes(l.trim())).length, 3,
       "the doorways changed: " + browsing.join(" | "));
   });
 

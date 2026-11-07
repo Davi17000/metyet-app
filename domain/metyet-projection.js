@@ -164,7 +164,9 @@ const GOAL_FOR_PARTNER = ["id", "collectorId", "cardId", "canonicalCardId", "tie
   "note", "since", "createdAt", "confirmedAt", "secondarySince", "desired"];
 const PREFERENCE_FOR_PARTNER = ["collectorId", "tags"];
 
-/* An InventoryCopy as a Collector sees it: identity, ask, photos.
+/* An InventoryCopy as a Collector sees it: identity, ask, photos — and, since
+   Market Validation Batch 1, whether the partner is Firm on Price (named here,
+   and normalised to a boolean where the list is applied, below).
    `cost`, `acquired`, `note` and any unlisted field are partner-private.
 
    `canonicalCardId` joined the list in Batch 6 because it IS the identity now —
@@ -175,7 +177,7 @@ const PREFERENCE_FOR_PARTNER = ["collectorId", "tags"];
    tell whether they want it. What stayed off the list is what it always was —
    what the partner paid, when they got it, and what they wrote to themselves. */
 const INVENTORY_FOR_COLLECTOR = ["invId", "partnerId", "cardId", "canonicalCardId",
-  "grade", "condition", "ask", "cert", "photos", "addedAt", "archived"];
+  "grade", "condition", "ask", "cert", "photos", "addedAt", "archived", "firmOnPrice"];
 
 /* A CollectorCopy as a partner sees it: identity, photos, cert. The reference
    value (`market`) and any unlisted field are collector-private.
@@ -220,14 +222,35 @@ function ownReadPosition(out, seat) {
   return out;
 }
 
-/* A trade package is the collector's private draft until submitted (contract §3
-   "Draft negotiation input — own, until submitted"; §4 Select Trade). Commands
-   submit a package in one step, so canonical state normally never holds an
-   unsubmitted one — but a record that does must not reach the partner. */
-const submittedRows = (o) => (o.trade && o.trade.submitted === true ? list(o.trade.cards) : []);
+/* WHICH TRADE ROWS THE PARTNER SEES (M3A A1). Since selection became TP-led
+   every row is one the partner wrote — a selection — so the partner sees them
+   all. The one exception is a legacy Collector draft: a `proposed` row in a
+   package nobody submitted was the Collector's private input (contract §3), and
+   a record still holding one must not reach the partner. */
+const partnerVisibleRow = (o) => (row) => !(row && row.inclusion === "proposed" && !(o.trade && o.trade.submitted === true));
+const submittedRows = (o) => list(o.trade && o.trade.cards).filter(partnerVisibleRow(o));
+/* WHERE A DEAL STANDS, DECIDED HERE (Market Validation, Batch 3B / 3B.1).
+   The domain has one turn engine, `D.nextActor`, and named lifecycle
+   predicates; the screens must not grow second copies of either. So each
+   participant's copy of a deal carries the answers:
+     seat       who acts next (`tp`, `collector`, or null when nobody does)
+     reason     the turn engine's own word for why
+     amount     the price on the table when the move is a price, else null
+     active     D.isActive — not ended, not completed
+     priceOpen  D.priceUnresolved — live and still agreeing a price
+   Both participants already know everything these are computed from — they
+   are read from the full record BEFORE the partner's view hides an
+   unsubmitted trade, and say nothing about what is in the trade. */
+const withTurn = (out, o) => {
+  const t = D.nextActor(o);
+  out.turn = { seat: D.seatOfActor(t.actor), reason: t.reason,
+    amount: t.reason === "price" && typeof t.amount === "number" ? t.amount : null,
+    active: D.isActive(o), priceOpen: D.priceUnresolved(o) };
+  return out;
+};
 const opportunityForPartner = (o) => {
-  const out = clone(o);
-  if (out.trade && out.trade.submitted !== true) out.trade = { ...out.trade, cards: [] };
+  const out = withTurn(clone(o), o);
+  if (out.trade && Array.isArray(out.trade.cards)) out.trade = { ...out.trade, cards: out.trade.cards.filter(partnerVisibleRow(o)) };
   return ownReadPosition(out, "tp");
 };
 
@@ -247,10 +270,28 @@ const opportunityForPartner = (o) => {
    the same whether another partner's deal on a copy is reserved, committed or
    completed — and the same as if the owner had simply removed it. The owner of
    a copy takes part in every deal that holds it, so owners keep full status. */
+/* SELECTED IS NOBODY ELSE'S BUSINESS (M3A A1). A copy another deal has merely
+   SELECTED is still available to every other partner and reads exactly as if
+   no deal had touched it, so no partner can learn that a rival is considering
+   it. Only an EXCLUSIVE hold elsewhere — reserved, committed, traded — closes
+   it, and then a partner who had selected it themselves is told plainly that it
+   is unavailable, never why. The viewer's own holds keep their own word. */
 const UNAVAILABLE = "unavailable";
 function copyForViewer(row, { own, world, inSupply, referenced }) {
   if (own !== "available") return { ...row, status: own };
   if (world === "available" && inSupply) return { ...row, status: "available" };
+  if (referenced) return { ...row, status: UNAVAILABLE };
+  return null;
+}
+/* THE SAME RULE FOR A COLLECTOR'S COPY SEEN BY A PARTNER, WITH ONE MORE WORD
+   (M3A A1). `selected` is not a hold: another deal's selection leaves the copy
+   exactly as available as before, so it is read as `available` on both sides
+   of the comparison, and the viewer's own selection keeps its own word. */
+function collectorCopyForViewer(row, { own, world, inSupply, referenced }) {
+  if (D.EXCLUSIVE_COPY_STATES.includes(own)) return { ...row, status: own };
+  if (D.EXCLUSIVE_COPY_STATES.includes(world)) return referenced ? { ...row, status: UNAVAILABLE } : null;
+  if (own === "selected") return { ...row, status: own };
+  if (inSupply) return { ...row, status: "available" };
   if (referenced) return { ...row, status: UNAVAILABLE };
   return null;
 }
@@ -302,6 +343,18 @@ const COLLECTIONS = ["catalog", "collectors", "partners", "relationships", "invi
      section cannot appear unnoticed" a real guard rather than a list to edit. */
   "binderMemberships",
   "interests", "opportunities", "conversations", "activity", "photoRequests", "copyReviews"];
+/* A participant's own threads (each projection already filters to them).
+   A deal message's `nonce` (Milestone 2D.1) is how its SENDER recognises a
+   retry; it is nothing to the other participant, so it reaches only the
+   seat that wrote it. Everything else in a thread is shared by both. */
+const threadsFor = (threads, seat) => clone(threads).map((t) => (Array.isArray(t.entries)
+  ? { ...t, entries: t.entries.map((e) => {
+    if (!e || e.nonce === undefined || e.by === seat) return e;
+    const { nonce, ...rest } = e;
+    return rest;
+  }) }
+  : t));
+
 const SECTIONS = ["actor", ...COLLECTIONS, "counterparties", "discoveries"];
 const empty = () => {
   const out = { actor: null };
@@ -387,7 +440,10 @@ function projectForCollector(state, me) {
     }
   }
   const inventory = list(state.inventory)
-    .map((i) => withGrading(copyForViewer(pick(i, INVENTORY_FOR_COLLECTOR), {
+    /* `firmOnPrice` is projected as a boolean, never as the stored value: a copy
+       written before Market Validation has no key at all and is Open to Offers,
+       and a Collector should not have to know that (Batch 1). */
+    .map((i) => withGrading(copyForViewer({ ...pick(i, INVENTORY_FOR_COLLECTOR), firmOnPrice: i.firmOnPrice === true }, {
       /* `own` asks the question of THIS collector's own deals, so a copy
          pending for somebody else's is simply not pending to them — which is
          how "Pending for your deal" and a bare "unavailable" come out of one
@@ -462,8 +518,8 @@ function projectForCollector(state, me) {
     interests: list(state.interests)
       .filter((x) => myCopyIds.has(x.binderId) && related(x.partnerId))
       .map((x) => pick(x, INTEREST_FOR_COLLECTOR)),
-    opportunities: opportunities.map((o) => ownReadPosition(omit(o, OPPORTUNITY_PARTNER_PRIVATE), "collector")),
-    conversations: clone(conversations),
+    opportunities: opportunities.map((o) => ownReadPosition(withTurn(omit(o, OPPORTUNITY_PARTNER_PRIVATE), o), "collector")),
+    conversations: threadsFor(conversations, "collector"),
     activity: [],                                          // D-4: partner-private
     photoRequests: clone(photoRequests),
     copyReviews: clone(copyReviews),
@@ -508,7 +564,7 @@ function projectForPartner(state, me) {
   const referencedCopies = new Set(opportunities.flatMap(submittedRows)
     .map((row) => row.binderId).filter((x) => x != null));
   const collectorCopies = list(state.collectorCopies)
-    .map((b) => withGrading(copyForViewer(pick(b, COLLECTOR_COPY_FOR_PARTNER), {
+    .map((b) => withGrading(collectorCopyForViewer(pick(b, COLLECTOR_COPY_FOR_PARTNER), {
       own: D.collectorCopyStatus(b.id, opportunities),
       world: D.collectorCopyStatus(b.id, allOpps),
       inSupply: inNetwork(b.collectorId) && b.offered === true,
@@ -560,7 +616,7 @@ function projectForPartner(state, me) {
     binderMemberships: [],
     interests: clone(list(state.interests).filter((x) => x.partnerId === pid)),
     opportunities: opportunities.map(opportunityForPartner),
-    conversations: clone(conversations),
+    conversations: threadsFor(conversations, "tp"),
     activity: clone(list(state.activity).filter((a) => a.partnerId === pid)),   // D-4
     photoRequests: clone(photoRequests),
     copyReviews: [],                               // a collector's own review workflow
@@ -586,5 +642,15 @@ const FIELD_RULES = Object.freeze({
   COLLECTOR_COPY_FOR_PARTNER, INTEREST_FOR_COLLECTOR, OPPORTUNITY_PARTNER_PRIVATE,
 });
 
-module.exports = { projectForActor, FIELD_RULES, PROJECTED_COLLECTIONS: COLLECTIONS,
+/* AT MY SHOPS (P6-F5A): the printings a Collector's view says a connected
+   Trusted Partner has AVAILABLE — read off a FINISHED projection, so it can
+   only ever narrow what that actor was already authorised to see. Not a
+   Collector: nothing. Pending, unavailable or any other status: not here. */
+function availableAtShops(view) {
+  if (!view || !view.actor || view.actor.seat !== "collector") return [];
+  return [...new Set(list(view.inventory).filter((i) => i && i.status === "available" && i.canonicalCardId)
+    .map((i) => i.canonicalCardId))];
+}
+
+module.exports = { availableAtShops, projectForActor, FIELD_RULES, PROJECTED_COLLECTIONS: COLLECTIONS,
   PROJECTION_SECTIONS: SECTIONS, UNAVAILABLE };

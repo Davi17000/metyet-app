@@ -75,7 +75,7 @@ export const SECTIONS = Object.freeze([
     sub: "Who you're serving, and what you know about them" },
   { id: "inventory", label: "Inventory", title: "Inventory", writes: true,
     sub: "What you have and how it connects to collector demand" },
-  { id: "opportunities", label: "Opportunities", title: "Opportunities",
+  { id: "opportunities", label: "Opportunities", title: "Opportunities", writes: true,
     sub: "What you're actively coordinating, and what's waiting at each stage" },
 ]);
 
@@ -271,6 +271,10 @@ const CSS = `
 .tps-fields { display:flex; flex-wrap:wrap; gap:14px 18px; padding:15px 16px; }
 .tps-field { display:flex; flex-direction:column; gap:4px; flex:1 1 220px; min-width:0; }
 .tps-field.wide { flex-basis:100%; }
+.tps-check { flex-basis:100%; }
+.tps-check-row { display:flex; align-items:center; gap:8px; color:var(--text); font-size:13px; }
+.tps-check-row input { width:auto; padding:0; margin:0; }
+.tps-check-help { color:var(--faint); font-size:11.5px; }
 .tps-field-l { font-family:'Archivo',system-ui,sans-serif; font-size:9.5px; letter-spacing:.07em;
   text-transform:uppercase; color:var(--faint); font-weight:600; }
 .tps-field-h { color:var(--faint); font-size:11.5px; }
@@ -288,6 +292,124 @@ const CSS = `
 .tps-problem { margin:0 16px 14px; padding:9px 11px; background:var(--amber-bg);
   border:1px solid var(--amber-line); border-radius:5px; color:var(--amber); max-width:70ch; }
 .tps-aside { color:var(--faint); font-size:12px; max-width:70ch; }
+/* ---- the price: an offer, where it stands, and the shop's move (Batch 3B) ----
+   Inside the opportunity's own record. Buttons are the form buttons above in
+   two weights, and everything wraps, so a phone gets one column. */
+.tps-offer { margin:0 16px 15px; padding:11px 12px; border:1px solid var(--line); border-radius:6px;
+  display:flex; flex-direction:column; gap:7px; max-width:70ch; }
+.tps-offer-terms { margin:0; font-size:12px; color:var(--muted); }
+.tps-offer-status { margin:0; font-size:13px; font-weight:600; color:var(--text); }
+.tps-offer-trail { margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:2px;
+  font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
+.tps-offer-trail .mine { color:var(--text); }
+.tps-offer-do, .tps-offer-mode { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.tps-offer-entry { display:flex; flex-direction:column; gap:8px; margin:0; }
+.tps-offer-field { display:flex; align-items:center; gap:6px; max-width:220px; }
+.tps-offer-field input { flex:1; min-width:0; padding:8px 10px; border:1px solid var(--line); border-radius:5px;
+  font-size:14px; font-variant-numeric:tabular-nums; }
+.tps-offer-unit { color:var(--muted); font-weight:600; }
+.tps-offer-line { margin:0; font-size:12px; color:var(--muted); }
+.tps-offer-problem { margin:0; font-size:12px; color:var(--amber); }
+/* The price moves are the record's primary actions: a full finger's height
+   (Milestone 2D.3). They already wrap, so 320px stacks them, never crowds. */
+.tps-offer-do .tps-go, .tps-offer-mode .tps-chip { min-height:44px; }
+.tps-offer-field input { min-height:44px; box-sizing:border-box; }
+/* An agreed price (Milestone 2D.3): the figure first and large, the prices
+   that led to it under it, then what comes next. */
+.tps-agreed { margin:0 16px 15px; padding:11px 12px; border:1px solid #CBE0E2; border-radius:6px; background:var(--t1-bg);
+  display:flex; flex-direction:column; gap:7px; max-width:70ch; }
+.tps-agreed-row { margin:0; display:flex; justify-content:space-between; align-items:baseline; gap:12px; color:var(--t1); }
+.tps-agreed-row span { font-size:13px; font-weight:600; }
+.tps-agreed-row strong { font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; }
+.tps-agreed-next { margin:0; font-size:12.5px; color:var(--text); line-height:1.45; }
+.tps-chip { background:#FFF; border:1px solid var(--line); color:var(--muted); border-radius:999px;
+  padding:5px 11px; font-size:12px; }
+.tps-chip.on { border-color:var(--t1); color:var(--t1); font-weight:600; }
+.tps-go { background:var(--t1); border:1px solid var(--t1); color:#FFF; border-radius:5px;
+  padding:8px 15px; font-weight:600; font-size:13px; }
+.tps-go.quiet { background:#FFF; border-color:var(--line); color:var(--muted); font-weight:400; }
+.tps-go:disabled { opacity:.6; cursor:default; }
+
+/* ---- Select Trade (M3A A3) ----
+   Inside the deal's record, under the agreed price: what is happening, the
+   cards chosen for this deal, the Collector's Trade/Sell cards to choose from,
+   then the one next action. One physical copy per row — picture, name,
+   printing, grade, certificate, photographs — with its button at the end;
+   rows wrap to one column on a phone. */
+.tps-sel { margin:0 16px 15px; padding:11px 12px; border:1px solid var(--line); border-radius:6px;
+  display:flex; flex-direction:column; gap:8px; max-width:70ch; }
+.tps-sel-h { margin:0; font-family:'Archivo'; font-size:10.5px; font-weight:600; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--muted); }
+.tps-sel-say { font-size:13px; font-weight:600; color:var(--text); }
+.tps-sel-sub { font-size:11px; color:var(--faint); text-transform:uppercase; letter-spacing:.06em; margin-top:2px; }
+.tps-sel-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+.tps-sel-copy { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:6px 0;
+  border-top:1px dashed var(--line-soft); }
+.tps-sel-art { flex:0 0 40px; width:40px; height:56px; border-radius:3px; overflow:hidden; background:var(--line-soft);
+  display:flex; align-items:center; justify-content:center; }
+.tps-sel-art img { width:100%; height:100%; object-fit:cover; display:block; }
+.tps-sel-plate { font-size:7px; line-height:1.1; color:var(--muted); text-align:center; padding:2px; overflow:hidden;
+  overflow-wrap:anywhere; }
+.tps-sel-id { flex:1 1 220px; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.tps-sel-t { font-weight:600; }
+.tps-sel-s, .tps-sel-f { font-size:12px; color:var(--muted); overflow-wrap:anywhere; }
+.tps-sel-warn { font-size:12px; color:var(--amber); }
+.tps-sel-tag { font-size:12px; font-weight:600; color:var(--t1); }
+.tps-sel-tag.warn { color:var(--amber); }
+.tps-sel-do { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.tps-sel-do .tps-go, .tps-sel-do .tps-chip { min-height:44px; }
+.tps-sel-draft { font-size:12px; color:var(--amber); font-weight:600; }
+.tps-sel-line { font-size:12.5px; color:var(--text); line-height:1.45; }
+.tps-sel-confirm { padding:10px 11px; border:1px solid var(--amber-line); background:var(--amber-bg); border-radius:6px;
+  display:flex; flex-direction:column; gap:8px; }
+.tps-sel-done { font-size:12.5px; color:var(--t1); font-weight:600; }
+
+/* ---- freshness (M3A A3) ----
+   What a check found, said once and quietly on the deal it is about; and, if
+   checking failed, one line across the top with the way to try again. */
+.tps-fresh { margin:0 16px 10px; font-size:12.5px; color:var(--t1); font-weight:600; max-width:70ch; }
+.tps-fresh-fail { margin:0 0 12px; padding:10px 12px; border:1px solid var(--amber-line); background:var(--amber-bg);
+  border-radius:6px; display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; font-size:12.5px; color:var(--text); }
+.tps-fresh-fail .tps-go { min-height:40px; }
+
+/* ---- a deal's conversation (Milestone 2D.2) ----
+   Under the price, behind one control. The shop's own messages tinted and to
+   the right, the collector's plain and to the left, each saying who and when
+   in words. The box is 16px so a phone does not zoom into it. */
+.tps-talk { margin:0 16px 15px; max-width:70ch; }
+.tps-talk-toggle { background:#FFF; border:1px solid var(--line); color:var(--t1); border-radius:5px;
+  padding:7px 12px; min-height:36px; font-size:12.5px; font-weight:600; }
+.tps-talk-toggle[aria-expanded="true"] { border-color:var(--t1); background:var(--t1-bg); }
+.tps-msg { margin-top:9px; padding:11px 12px; border:1px solid var(--line); border-radius:6px;
+  display:flex; flex-direction:column; gap:9px; background:#FFF; }
+.tps-msg-hd { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+.tps-msg-h { margin:0; font-family:'Archivo'; font-size:10.5px; font-weight:600; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--muted); }
+.tps-msg-check { border:0; background:none; padding:4px 0; color:var(--t1); font-size:12px; font-weight:600; }
+.tps-msg-check:disabled { color:var(--faint); cursor:default; }
+.tps-msg-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:7px; }
+.tps-msg-item { max-width:88%; align-self:flex-start; background:#F7F8FA; border:1px solid var(--line-soft);
+  border-radius:10px 10px 10px 3px; padding:7px 10px; }
+.tps-msg-item.mine { align-self:flex-end; background:var(--t1-bg); border-color:#CBE0E2; border-radius:10px 10px 3px 10px; }
+.tps-msg-meta { margin:0 0 2px; display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; font-size:11px; color:var(--muted); }
+.tps-msg-who { font-weight:700; color:var(--text); }
+.tps-msg-item.mine .tps-msg-who { color:var(--t1); }
+.tps-msg-text { margin:0; font-size:13px; line-height:1.45; white-space:pre-wrap; overflow-wrap:anywhere; }
+.tps-msg-empty, .tps-msg-closed { margin:0; font-size:12.5px; color:var(--muted); }
+.tps-msg-form { display:flex; flex-direction:column; gap:6px; margin:0; border-top:1px solid var(--line-soft); padding-top:9px; }
+.tps-msg-label { font-size:12px; font-weight:600; color:var(--text); }
+.tps-msg-in { width:100%; min-height:68px; resize:vertical; font-family:inherit; font-size:16px; line-height:1.4;
+  border:1px solid var(--line); border-radius:5px; padding:8px 10px; color:var(--text); background:#FFF; }
+.tps-msg-in:focus-visible { outline:2px solid var(--t1); outline-offset:1px; border-color:var(--t1); }
+.tps-msg-in[readonly] { background:#F7F8FA; color:var(--muted); }
+.tps-msg-count { margin:0; font-size:11.5px; color:var(--muted); text-align:right; }
+.tps-msg-problem, .tps-msg-trouble { margin:0; font-size:12px; color:var(--amber); }
+.tps-msg-do { display:flex; align-items:flex-start; gap:10px; }
+.tps-msg-help { flex:1; margin:0; font-size:11.5px; color:var(--faint); }
+.tps-msg-send { flex:0 0 auto; min-height:40px; min-width:80px; background:var(--t1); border:1px solid var(--t1);
+  color:#FFF; border-radius:5px; padding:8px 15px; font-weight:600; font-size:13px; }
+.tps-msg-send:disabled { opacity:.5; cursor:default; }
+.tps-msg-sr, .tps-msg-vh { position:absolute; width:1px; height:1px; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
 
 /* ---- a phone ---- */
 @media (max-width:860px) {
@@ -303,13 +425,16 @@ const CSS = `
   .tps-top, .tps-ro { padding-left:16px; padding-right:16px; }
   .tps-scroll { padding:14px 12px 36px; }
   .tps-rec, .tps-ph, .tps-empty, .tps-foot-note { padding-left:13px; padding-right:13px; }
+  .tps-talk { margin-left:13px; margin-right:13px; }
 }
 `;
 
 export default function TrustedPartnerShell({ state, onSignOut, onSaveProfile = null,
   onInvite = null, onRevokeInvite = null, onRefresh = null,
   onAddCopy = null, onEditCopy = null, onRetireCopy = null, onBrowseCards = null,
-  onProvidePhotos = null }) {
+  onProvidePhotos = null,
+  onCounterOffer = null, onAcceptOffer = null, onDeclineOffer = null, onSendMessage = null,
+  onSelectTrade = null, onDeselectTrade = null, onCloseSelection = null }) {
   const [section, setSection] = useState(SECTIONS[0].id);
 
   const who = describeActor(state);
@@ -329,11 +454,17 @@ export default function TrustedPartnerShell({ state, onSignOut, onSaveProfile = 
      overlaps the server sent name cards by id, and a card nobody can read the
      name of is not something a Trusted Partner can go and look on the shelf
      for. It is a way to ASK WHAT A CARD IS CALLED — not a way to write, and
-     the section is handed no command, exactly as before. */
+     the section is handed no command, exactly as before.
+     Batch 3B hands it three, and only three: the shop's answers to a price
+     (Accept, Counter, Decline), plus a re-read for when an answer finds the
+     deal has already moved. Milestone 2D.2 adds one more, `onSendMessage`: a
+     message on one deal's conversation, which moves nothing. M3A A3 adds
+     Select Trade's three: choose cards, remove one, start valuing. */
   const extra = meta.id === "inventory"
     ? { onSaveProfile, onAddCopy, onEditCopy, onRetireCopy, onBrowseCards, onProvidePhotos }
     : meta.id === "collectors" ? { onInvite, onRevokeInvite, onRefresh, onBrowseCards }
-      : meta.id === "opportunities" ? { onBrowseCards }
+      : meta.id === "opportunities" ? { onBrowseCards, onCounterOffer, onAcceptOffer, onDeclineOffer, onRefresh,
+        onSendMessage, onSelectTrade, onDeselectTrade, onCloseSelection }
         : null;
 
   return (

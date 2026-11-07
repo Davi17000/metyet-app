@@ -199,7 +199,7 @@ describe("B. Discovery answers with the copies she described", () => {
     eq(seen(st).length, 1, "and released, it is again");
 
     okv(x(st, TP, "acceptPrice", { oppId: b, at: AT }), "value");
-    okv(x(st, B, "proposeTradeSelection", { oppId: b, binderIds: [], at: AT }), "package");
+    okv(x(st, B, "chooseCashOnly", { oppId: b, at: AT }), "package");
     okv(x(st, TP, "acceptDeal", { oppId: b, at: AT }), "tp yes");
     okv(x(st, B, "acceptDeal", { oppId: b, at: AT }), "collector yes");
     eq(seen(st).length, 0, "committed is not an answer");
@@ -281,7 +281,7 @@ describe("D. A negotiation that can never conclude stops holding the Goal", () =
   const rivalWins = (st) => {
     const b = okv(x(st, B, "startOpportunity", { goalId: "gB", invId: "i1", amount: 27, at: AT }), "B opens");
     okv(x(st, TP, "acceptPrice", { oppId: b, at: AT }), "value");
-    okv(x(st, B, "proposeTradeSelection", { oppId: b, binderIds: [], at: AT }), "package");
+    okv(x(st, B, "chooseCashOnly", { oppId: b, at: AT }), "package");
     okv(x(st, TP, "acceptDeal", { oppId: b, at: AT }), "tp yes");
     okv(x(st, B, "acceptDeal", { oppId: b, at: AT }), "collector yes");
     return b;
@@ -326,22 +326,19 @@ describe("D. A negotiation that can never conclude stops holding the Goal", () =
       "she may pursue the card elsewhere");
   });
 
-  test("[19b] but DELETING the Goal still waits for the dead deal to be closed", () => {
-    /* THE REGRESSION THIS EXISTS FOR. Releasing the negotiation lock is not the
-       same as releasing the REFERENCE: an active Opportunity names the Goal,
-       and `validateWorld` requires that name to resolve. Deleting it produced a
-       world the persistence layer refuses — a 500, not a refusal, which is the
-       precise failure Option B was fixed for. The way through is to cancel,
-       which is one command away and is the honest record anyway. */
+  /* RESTATED (M3A A1). WAS: the dead deal stayed ACTIVE, so it still named
+     the Goal and deleting the Goal had to wait until the Collector cancelled it.
+     NOW: the rival's final agreement ENDS the dead deal as card-unavailable, so
+     it no longer holds the Goal in any sense — and an ended deal's Goal
+     reference is history, which the validator lets outlive the Goal. */
+  test("[19b] and DELETING the Goal no longer waits: the dead deal is already ended", () => {
     const st = twoShops();
     const a = okv(x(st, A, "startOpportunity", { goalId: "gA", invId: "i1", amount: 26, at: AT }), "she opens");
     sell(st, rivalWins(st));
-    nov(x(st, A, "removeGoal", { goalId: "gA", at: AT }), D.REFUSE.goalLocked,
-      "deleting would have left an Opportunity naming nothing");
+    eq(st.get().opportunities.find((o) => o.id === a).outcome, "card-unavailable", "the dead deal ended");
+    okv(x(st, A, "removeGoal", { goalId: "gA", at: AT }), "so the Goal may go");
     assert(validateWorld(st.get()).ok, "and the world is still storable");
-    okv(x(st, A, "cancelOpportunity", { oppId: a, reason: "lost it", at: AT }), "she closes the dead deal");
-    okv(x(st, A, "removeGoal", { goalId: "gA", at: AT }), "and then the Goal goes");
-    assert(validateWorld(st.get()).ok, "and it is still storable after");
+    eq(st.get().opportunities.find((o) => o.id === a).goalId, "gA", "the ended deal still names it, as history");
   });
 
   test("[19c] losing is PERMANENT: the rival cancelling does not resurrect it", () => {
@@ -364,8 +361,10 @@ describe("D. A negotiation that can never conclude stops holding the Goal", () =
       && D.isNegotiating(o) && !D.transactionallyLost(o, st.get().opportunities));
     eq(live.length, 1, "one Goal still has exactly one live negotiation");
     eq(live[0].id, a2, "and it is the replacement, not the superseded one");
-    assert(D.transactionallyLost(st.get().opportunities.find((o) => o.id === a1),
-      st.get().opportunities), "the superseded conversation stayed lost");
+    /* RESTATED (M3A A1): permanent because it was ENDED, not because the
+       predicate remembers a cancelled promise. */
+    const first = st.get().opportunities.find((o) => o.id === a1);
+    assert(!D.isActive(first) && first.outcome === "card-unavailable", "the superseded conversation stayed ended");
     assert(validateWorld(st.get()).ok, "and the world is storable");
   });
 
@@ -403,26 +402,35 @@ describe("D. A negotiation that can never conclude stops holding the Goal", () =
       D.REFUSE.goalLocked, "and its Goal is still locked");
   });
 
-  test("[20][21] the losing record remains, untouched and un-faked", () => {
+  /* RESTATED (M3A A1). WAS: the losing record stayed byte-identical and
+     active — "only the LOCK was released" — and the honest way out was for the
+     Collector to cancel it. WHY IT CHANGED: the founder ruled out a deal that is
+     apparently active while silently excluded. NOW: it is ENDED with the
+     ordinary ending fields and outcome card-unavailable; nothing else on it is
+     touched, nobody is recorded as having ended it, and there is nothing left
+     for the Collector to cancel. */
+  test("[20][21] the losing record remains, ended explicitly and otherwise untouched", () => {
     const st = twoShops();
     const a = okv(x(st, A, "startOpportunity", { goalId: "gA", invId: "i1", amount: 26, at: AT }), "she opens");
-    const before = JSON.stringify(st.get().opportunities.find((o) => o.id === a));
+    const before = st.get().opportunities.find((o) => o.id === a);
     rivalWins(st);
     const after = st.get().opportunities.find((o) => o.id === a);
-    eq(JSON.stringify(after), before, "the losing record was rewritten");
+    const ENDING = ["declined", "endedBy", "endedAt", "endedStage", "endedReason", "outcome", "updated"];
+    const strip = (o) => JSON.stringify(Object.fromEntries(Object.entries(o).filter(([k]) => !ENDING.includes(k))));
+    eq(strip(after), strip(before), "only the ending fields were written");
     eq(after.stage, "agree-price", "it is where it was");
-    eq(after.declined, false, "and nothing faked a decline");
-    assert(after.endedAt === undefined || after.endedAt === null, "nor an ending");
-    assert(D.isActive(after), "it is still an active record; only the LOCK was released");
+    eq(after.endedStage, "agree-price", "and the ending says so");
+    eq(after.outcome, "card-unavailable", "ended because the card went elsewhere");
+    eq(after.endedBy, null, "and not by either person");
+    assert(!D.isActive(after), "it is no longer an active record");
   });
 
-  test("[23] cancellation still works, and is still the honest way out", () => {
+  test("[23] there is nothing left to cancel, and nothing to fake", () => {
     const st = twoShops();
     const a = okv(x(st, A, "startOpportunity", { goalId: "gA", invId: "i1", amount: 26, at: AT }), "she opens");
     rivalWins(st);
-    okv(x(st, A, "cancelOpportunity", { oppId: a, reason: "lost the race", at: AT }), "she may close it");
-    const after = st.get().opportunities.find((o) => o.id === a);
-    eq(after.declined, true, "and then it IS declined, because she said so");
+    nov(x(st, A, "cancelOpportunity", { oppId: a, reason: "lost the race", at: AT }), D.REFUSE.terminal, "already ended");
+    eq(st.get().opportunities.find((o) => o.id === a).endedReason, null, "and no reason was put in her mouth");
   });
 
   test("no new durable state, no sweep, no lifecycle field", () => {
@@ -451,7 +459,15 @@ const build = (rel) => {
   new Function("module", "exports", "require", out.outputFiles[0].text)(mod, mod.exports, require);
   return mod.exports;
 };
-const DealFlow = build("client/collector/sections/DealFlow.jsx").default;
+const DF_MOD = build("client/collector/sections/DealFlow.jsx");
+const DealFlow = DF_MOD.default;
+/* RE-PINNED (Milestone 2C.1): the copies moved from the Goal's accordion to
+   View Matches, one full screen per Goal. What a Collector can reach from
+   Deal Flow is the landing page plus each Goal's matches, so that is what is
+   rendered: the landing, then every Goal's View Matches beneath it. */
+const Reachable = (props) => React.createElement(React.Fragment, null,
+  React.createElement(DealFlow, props),
+  ...(props.state.goals || []).map((g) => React.createElement(DF_MOD.GoalMatches, { ...props, key: g.id, goalId: g.id })));
 const SHELL = build("client/collector/CollectorShell.jsx");
 
 const texts = (r) => {
@@ -473,7 +489,7 @@ const door = { describe: async (ids) => ({ cards: ids.map((id) => CARDS[id]).fil
 const render = async (st, actor = A) => {
   const state = P.projectForActor(st.get(), actor);
   let r;
-  await TR.act(async () => { r = TR.create(React.createElement(DealFlow, { state, onBrowseCards: door })); });
+  await TR.act(async () => { r = TR.create(React.createElement(Reachable, { state, onBrowseCards: door })); });
   for (let i = 0; i < 10; i += 1) {
     await TR.act(async () => { await new Promise((done) => setTimeout(done, 0)); });
   }
@@ -506,8 +522,11 @@ describe("E. The surface shows the copies, and only those", () => {
     const shown = texts(r);
     assert(shown.includes("Charizard"), "the card is named: " + shown);
     assert(shown.includes("Northline") && shown.includes("Silver Vale"), "both shops: " + shown);
-    assert(shown.includes("CERT-ONE") && shown.includes("CERT-TWO"), "both copies: " + shown);
-    assert(/2 copies that match/.test(shown), "and counted as copies: " + shown);
+    /* RE-PINNED (Milestone 2B): a copy is told apart by its facts and price,
+       not its certificate, and the count is of Trusted Partners. */
+    eq(r.root.findAll((n) => n.type === "li" && n.props.className === "mcs-df-copy").length, 2, "both copies");
+    assert(/\$4,200/.test(shown) && /\$4,400/.test(shown), "both copies' prices: " + shown);
+    assert(/2 Trusted Partners match/.test(shown), "and counted as Trusted Partners: " + shown);
   });
 
   test("[27] a copy that does not qualify is not rendered", async () => {
@@ -518,8 +537,9 @@ describe("E. The surface shows the copies, and only those", () => {
         copy({ invId: "i2", grade: "PSA 8", cert: "HIDDEN" })] });
     const { r } = await render(st);
     const shown = texts(r);
-    assert(shown.includes("SHOWN"), "the qualifying copy is there");
-    assert(!shown.includes("HIDDEN"), "a copy she did not ask for was rendered: " + shown);
+    const inv = r.root.findAll((n) => n.type === "li" && n.props.className === "mcs-df-copy").map((n) => n.props["data-inv"]);
+    eq(inv.join(","), "i1", "only the qualifying copy is there");
+    assert(!/PSA 8/.test(shown), "a copy she did not ask for was rendered: " + shown);
   });
 
   test("[28] the authorized copy facts render", async () => {
@@ -528,9 +548,11 @@ describe("E. The surface shows the copies, and only those", () => {
       inventory: [copy({ grade: "PSA 9", cert: "CERT-X", ask: 4200, photos: PH })] });
     const { r } = await render(st);
     const shown = texts(r);
-    for (const fact of ["Northline", "PSA 9", "CERT-X"]) {
+    for (const fact of ["Northline", "PSA 9", "Proposed Market Price", "Open to Offers"]) {
       assert(shown.includes(fact), `${fact} is missing: ` + shown);
     }
+    /* RE-PINNED (Milestone 2B): the certificate is not shown in Deal Flow. */
+    assert(!shown.includes("CERT-X"), "a partner's certificate reached Deal Flow: " + shown);
     assert(/4,?200/.test(shown), "the asking price is missing: " + shown);
   });
 
@@ -558,7 +580,12 @@ describe("E. The surface shows the copies, and only those", () => {
     const st = world({ goals: [goal({ desired: { grade: "PSA 9" } })],
       inventory: [copy({ grade: "PSA 9" })] });
     const { r } = await render(st);
-    eq(r.root.findAll((n) => n.type === "button").length, 0, "Deal Flow grew a button");
+    /* RESTORED (Milestone 2C.1): no accordion, so every button counts again;
+       handed no command and no way to open anything, nothing is drawn —
+       RE-PINNED (Milestone 2C.2) — but a copy's picture, which opens a viewer
+       on this screen and sends nothing. */
+    eq(r.root.findAll((n) => n.type === "button" && !String(n.props.className || "").includes("mcs-pv-thumb")).length, 0,
+      "Deal Flow grew a button");
     eq(r.root.findAll((n) => n.type === "form").length, 0, "and a form");
     const src = fs.readFileSync(path.join(ROOT, "client/collector/sections/DealFlow.jsx"), "utf8")
       .replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
@@ -582,7 +609,7 @@ describe("E. The surface shows the copies, and only those", () => {
       "the no-goals silence");
 
     const nobodyHasIt = world({ goals: [goal({ desired: { grade: "PSA 9" } })], inventory: [] });
-    assert(/None of your shops has this one/i.test(texts((await render(nobodyHasIt)).r)),
+    assert(/None of your Trusted Partners has this one/i.test(texts((await render(nobodyHasIt)).r)),
       "the nobody-has-it silence");
 
     /* The one worth explaining: they have the card, in another form. */
@@ -603,16 +630,19 @@ describe("E. The surface shows the copies, and only those", () => {
     const st = world({ goals: [goal({ desired: { grade: "PSA 9" } })],
       inventory: [copy({ grade: "PSA 9" })] });
     const shown = texts((await render(st)).r);
-    assert(/You asked for PSA 9/.test(shown), "the criteria line is wrong: " + shown);
-    assert(!/any grade or condition/.test(shown), "it fell back to the unstated wording: " + shown);
+    /* RE-PINNED (Milestone 2B): the Goal's heading states the criteria. */
+    const want = (r) => r.root.findAll((n) => n.props && n.props.className === "mcs-dg-want").map(function inner(n) { return typeof n === "string" ? n : (n.children || []).map(inner).join(""); }).join("|");
+    const one = (await render(st)).r;
+    eq(want(one), "PSA 9", "the criteria line is wrong: " + shown);
+    assert(!/any grade or condition/i.test(shown), "it fell back to the unstated wording: " + shown);
 
     const both = world({ goals: [goal({ desired: { grade: "Raw", condition: "Near Mint" } })],
       inventory: [copy({ grade: "Raw", condition: "Near Mint" })] });
-    assert(/You asked for Raw · Near Mint/.test(texts((await render(both)).r)), "both criteria");
+    eq(want((await render(both)).r), "Raw · Near Mint", "both criteria");
 
     /* And a Goal that genuinely stated nothing still says so. */
     const neither = world({ goals: [goal({})], inventory: [copy({ grade: "PSA 9" })] });
-    assert(/any grade or condition/.test(texts((await render(neither)).r)), "the unstated case");
+    eq(want((await render(neither)).r), "Any grade or condition", "the unstated case");
   });
 
   test("[UI] two Goals for one card do not cancel each other's silence out", async () => {
@@ -644,17 +674,23 @@ describe("E. The surface shows the copies, and only those", () => {
 /* ============================================ F. what must not have moved */
 describe("F. The boundary this batch did not cross", () => {
   test("[33] the production allow-list is unchanged", () => {
+    /* MARKET VALIDATION BATCH 3B opened the five price commands — opening an
+       offer, countering, accepting, declining and withdrawing — with the screens
+       that send them, so they left this list. Everything past an agreed price
+       (trade, values, the final balance, fulfilment, Pending) is still shut. */
     /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
        name; any other change to the size still fails here. */
-    eq(EXPOSED_COMMANDS.length, 24, "a command was exposed by this batch");
+    /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
+       commands joined the door with the Deal Flow and Opportunities controls
+       that send them, each named in the allow-list; any other move still fails. */
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37, "a command was exposed by this batch");
     /* THE TRANSACTION IS WHAT MUST STAY CLOSED. `reviewCopy`, `endReview` and
        `requestPhotos` left this loop when the qualification batch gave them a
        surface in Deal Flow, and `addCopyPhotos` left it when photo fulfilment
        gave the shop one for answering them; they qualify a copy and settle
        nothing. Everything that prices, reserves or advances a deal is still
        unreachable. */
-    for (const closed of ["startOpportunity",
-      "proposePrice", "acceptPrice", "cancelOpportunity", "setCopyPending", "acceptDeal",
+    for (const closed of ["setCopyPending", "acceptDeal",
       "proposeTradeSelection", "confirmHandoff"]) {
       assert(!EXPOSED_COMMANDS.includes(closed), `${closed} was exposed`);
     }
@@ -665,7 +701,8 @@ describe("F. The boundary this batch did not cross", () => {
     /* 51 → 53 in Batch 3A (`fileObject`, `unfileObject`). The deal flow is
        untouched: filing a copy in a Binder is organising, not dealing, and a
        copy in a live deal is filed and unfiled exactly as any other. */
-    eq(COMMAND_NAMES.length, 53, "a command was added or removed");
+    /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A1: + selectTradeCards, deselectTradeCard, holdTradeSelection, continueTradeSelection, closeTradeSelection (proposeTradeSelection and reviewTradeCard remain as refusing names) — each founder-approved */ eq(COMMAND_NAMES.length, 61, "a command was added or removed");
   });
 
   test("[11][34][35][36] Option B's availability model is untouched", () => {
@@ -684,12 +721,14 @@ describe("F. The boundary this batch did not cross", () => {
     assert(validateWorld(st.get()).ok, "two agreed values on one copy became unstorable");
 
     /* Final agreement is still the hard boundary, and still blocks a second. */
-    okv(x(st, A, "proposeTradeSelection", { oppId: a, binderIds: [], at: AT }), "A packages");
-    okv(x(st, B, "proposeTradeSelection", { oppId: b, binderIds: [], at: AT }), "B packages");
+    okv(x(st, A, "chooseCashOnly", { oppId: a, at: AT }), "A packages");
+    okv(x(st, B, "chooseCashOnly", { oppId: b, at: AT }), "B packages");
     okv(x(st, TP, "acceptDeal", { oppId: a, at: AT }), "tp yes to A");
     okv(x(st, A, "acceptDeal", { oppId: a, at: AT }), "A yes");
     eq(D.inventoryCopyStatus("i1", st.get().opportunities, st.get().inventory), "committed", "promised");
-    nov(x(st, TP, "acceptDeal", { oppId: b, at: AT }), D.REFUSE.copyCommitted,
+    /* RESTATED (M3A A1): A's promise ended B's deal in the same write. */
+    eq(st.get().opportunities.find((o) => o.id === b).outcome, "card-unavailable", "B's deal ended explicitly");
+    nov(x(st, TP, "acceptDeal", { oppId: b, at: AT }), D.REFUSE.terminal,
       "a second promise is still refused");
   });
 
@@ -701,9 +740,12 @@ describe("F. The boundary this batch did not cross", () => {
         grade: "PSA 8", offered: true, photos: PH }] });
     const a = okv(x(st, A, "startOpportunity", { goalId: "gA", invId: "i1", amount: 26, at: AT }), "opens");
     okv(x(st, TP, "acceptPrice", { oppId: a, at: AT }), "value");
-    okv(x(st, A, "proposeTradeSelection", { oppId: a, binderIds: ["kA1"], at: AT }), "offers her card");
+    /* RESTATED (M3A A1): the partner selects her card and closing selection reserves it. */
+    okv(x(st, TP, "selectTradeCards", { oppId: a, copyIds: ["kA1"], at: AT }), "the partner selects her card");
+    okv(x(st, A, "continueTradeSelection", { oppId: a, at: AT }), "she is ready");
+    okv(x(st, TP, "closeTradeSelection", { oppId: a, at: AT }), "selection closes");
     eq(D.collectorCopyStatus("kA1", st.get().opportunities), "reserved",
-      "her own copy is still held by the package");
+      "her own copy is held by the deal");
   });
 
   test("[38] the privacy shaping from the cleanup batch still holds", () => {

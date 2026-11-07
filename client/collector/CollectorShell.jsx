@@ -60,11 +60,13 @@
 import React, { useState } from "react";
 import { describeActor } from "../actor.js";
 import { rows } from "./present.js";
-import { EMPTY_SESSION } from "../browse/CardBrowser.jsx";
+import { STATE_CSS } from "./states.jsx";
+import { newBrowseSession } from "./sections/Browse.jsx";
 import Browse from "./sections/Browse.jsx";
 import Binder from "./sections/Binder.jsx";
 import Goals from "./sections/Goals.jsx";
-import DealFlow from "./sections/DealFlow.jsx";
+import DealFlow, { GoalMatches } from "./sections/DealFlow.jsx";
+import DealWorkspace from "./DealWorkspace.jsx";
 
 import TrustedPartners from "./sections/TrustedPartners.jsx";
 
@@ -109,12 +111,9 @@ export const SECTIONS = Object.freeze([
      about them rather than about MetYet. It deliberately does not count the
      collection: "how organised am I" and "how much do I have" are different
      questions, and the views say their own numbers. */
-  { id: "binder", label: "Binders", count: "binders", view: Binder,
+  { id: "binder", label: "Binders", count: "binders", unit: ["binder", "binders"], view: Binder,
     title: "Binders",
     sub: "Your collection, and where each card belongs" },
-  { id: "partners", label: "Trusted Partners", count: "partners", view: TrustedPartners,
-    title: "Trusted Partners",
-    sub: "The shops you deal with" },
   /* WHAT YOUR SHOPS ACTUALLY HAVE (true-match batch). Last, because it is the
      end of the sentence the other four begin: find a card, say what you want,
      know who you deal with — and then, here, which of them has the thing you
@@ -131,8 +130,10 @@ export const SECTIONS = Object.freeze([
      row count of one collection and never something the shell reasoned its way
      to.
 
-     AND IT IS FOUR TABS. Browse, Binders, Trusted Partners, Deal Flow — the
-     approved navigation, now actually true. Deal Flow arrived while Your Cards
+     AND IT IS FOUR TABS. Browse, Binders, Deal Flow, Trusted Partners — the
+     approved navigation (reordered in Phase 6 P6-1: Deal Flow is where a
+     Collector acts, so it sits beside the two places they find and keep cards;
+     Trusted Partners, the network they act within, closes the row). Deal Flow arrived while Your Cards
      was still a tab of its own, because deleting Your Cards before Binders
      could hold what it did would have taken away the only way to see what you
      own to make a navigation diagram true early. Binders can hold it now: the
@@ -140,7 +141,12 @@ export const SECTIONS = Object.freeze([
      the fifth tab is gone rather than deferred. */
   { id: "deal-flow", label: "Deal Flow", count: null, view: DealFlow,
     title: "Deal Flow",
-    sub: "Which of your shops has the card you asked for" },
+    sub: "Your collecting goals and where they stand." },
+  /* THE NETWORK (Phase 6 P6-1: last). The shops this Collector deals with —
+     reference rather than a place to act, so it follows Deal Flow. */
+  { id: "partners", label: "Trusted Partners", count: "partners", unit: ["partner", "partners"], view: TrustedPartners,
+    title: "Trusted Partners",
+    sub: "The shops you deal with" },
 ]);
 
 /* BUILT AND NOT YET REACHABLE — AND, AS OF C3.4, NOTHING IS.
@@ -181,14 +187,14 @@ const CSS = `
 .mcs { --bg:#F7F9FA; --panel:#FFF; --line:#DFE4EA; --line-soft:#EDF0F4; --text:#131922;
   --muted:#616B7A; --faint:#8B95A3; --t1:#0B5D66; --t1-bg:#E6F0F1; --amber:#9A6408;
   --amber-bg:#FBF3E3; --amber-line:#EBD9B4; --rail:#0A1014;
-  font-family:'Public Sans',system-ui,sans-serif; color:var(--text); font-size:14px;
+  font-family:var(--font-ui); color:var(--text); font-size:14px;
   line-height:1.5; background:var(--bg); min-height:100vh;
   display:flex; flex-direction:column; -webkit-font-smoothing:antialiased; }
 .mcs *,.mcs *::before,.mcs *::after { box-sizing:border-box; }
 .mcs button { font-family:inherit; font-size:inherit; cursor:pointer; }
 .mcs :focus-visible { outline:2px solid var(--t1); outline-offset:2px; }
 .mcs p { margin:0; }
-.mcs .disp { font-family:'Archivo',system-ui,sans-serif; }
+.mcs .disp { font-family:var(--font-display); }
 
 /* ---- browse: the doorways, the grid and the specification panel (C1) ---- */
 .mcs-br { display:flex; flex-direction:column; gap:10px; }
@@ -322,34 +328,292 @@ const CSS = `
 .mcs-view.quiet { color:var(--muted); font-weight:500; }
 .mcs-find { display:flex; gap:8px; align-items:center; margin:0 0 12px; padding:0 16px; }
 .mcs-find .mcs-in { flex:1 1 auto; min-width:0; }
-.mcs-binder-name { margin:0 0 10px; padding:0 16px; font-family:'Archivo', system-ui, sans-serif;
+.mcs-binder-name { margin:0 0 10px; padding:0 16px; font-family:var(--font-display);
   font-size:16px; font-weight:700; color:var(--text); }
 
-/* ---- deal flow: the copies your shops have (true-match batch) ----
+/* ---- deal flow: one card per Goal (Milestone 2C.1) ----
 
-   ARTWORK-FORWARD AT THE GOAL, PLAIN AT THE COPY. The card is the thing a
-   person recognises, so it keeps the same 5/7 tile every other collector
-   surface uses; a physical copy is a row of facts and gets no picture of its
-   own, because a photograph of THIS slab is what Request Photos is for and that
-   is not this batch. Each copy reads as one line on a phone and stays one line
-   on a desktop — grade first, because it is what the Collector asked about. */
-.mcs-df-copies { list-style:none; margin:0; padding:0 16px 14px; display:flex;
-  flex-direction:column; gap:6px; }
-.mcs-df-copy { display:flex; flex-wrap:wrap; gap:4px 10px; align-items:baseline;
-  padding:8px 10px; background:var(--line-soft); border-radius:7px; }
-.mcs-df-shop { font-weight:600; font-size:12.5px; color:var(--text); }
-.mcs-df-facts { display:flex; flex-wrap:wrap; gap:4px 10px; align-items:baseline;
-  min-width:0; font-size:12px; color:var(--muted); }
-.mcs-df-grade { color:var(--t1); font-weight:600; }
-.mcs-df-ask { margin-left:auto; color:var(--text); font-variant-numeric:tabular-nums; }
+   PHONE FIRST (390 wide), several Goals in view at once. Each Goal is one
+   card with a hairline border and no nested boxes: the art beside the name,
+   set and number, what was asked for and the Primary mark; one line for who
+   matches; for an active deal, the stage, a quiet ten-step bar and the
+   status; then one full-width button. */
+.mcs-dg-sec { margin:12px 0 18px; }
+.mcs-dg-h2 { margin:0 0 8px; font-family:var(--font-display); font-size:10.5px; font-weight:700;
+  letter-spacing:.09em; text-transform:uppercase; color:var(--muted); }
+.mcs-dg-sec .mcs-empty { margin:0; }
+.mcs-dg-list { display:flex; flex-direction:column; gap:12px; }
+.mcs-dg { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px;
+  display:flex; flex-direction:column; gap:10px; scroll-margin-top:76px; }
+.mcs-dg:focus { outline:none; }
+.mcs-dg:focus-visible { box-shadow:0 0 0 2px var(--t1); }
+.mcs-dg-top { display:flex; gap:12px; align-items:flex-start; min-width:0; }
+.mcs-dg-art { flex:0 0 60px; width:60px; aspect-ratio:5/7; display:flex; align-items:center; justify-content:center;
+  background:var(--line-soft); border-radius:6px; overflow:hidden; }
+.mcs-dg-art img { width:100%; height:100%; object-fit:contain; }
+.mcs-dg-art .mcs-art-plate { overflow-wrap:normal; word-break:normal; hyphens:manual; font-size:8.5px; padding:3px; }
+.mcs-dg-id { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.mcs-dg-name { margin:0; font-family:var(--font-display); font-size:16px; font-weight:700; line-height:1.25;
+  color:var(--text); overflow-wrap:normal; word-break:normal; }
+.mcs-dg-set, .mcs-dg-want { margin:0; font-size:12.5px; line-height:1.35; color:var(--muted); }
+.mcs-dg-want { color:var(--text); }
+.mcs-dg-marks { display:flex; flex-wrap:wrap; gap:6px; margin-top:3px; }
+.mcs-dg-marks .mcs-mk { font-size:10.5px; padding:1px 7px; }
+.mcs-dg-match { margin:0; font-size:13px; font-weight:600; color:var(--text); }
+.mcs-dg-match.none { font-weight:500; color:var(--muted); }
+.mcs-dg-near, .mcs-dg-ended { margin:-6px 0 0; font-size:12px; line-height:1.4; color:var(--muted); }
+.mcs-dg-sec.quiet .mcs-dg { background:transparent; }
+
+/* the active deal: stage, bar, status — then the one button */
+.mcs-dg-deal { display:flex; flex-direction:column; gap:10px; padding-top:10px; border-top:1px solid var(--line-soft); }
+.mcs-dg-progress { display:flex; flex-direction:column; gap:4px; }
+.mcs-dg-plabel { margin:0; font-size:12.5px; font-weight:600; color:var(--text); }
+.mcs-dg-pnext { margin:0; font-size:11.5px; color:var(--muted); }
+.mcs-dg-status { margin:0; font-size:12.5px; color:var(--muted); }
+.mcs-dg-status.mine { color:var(--amber); font-weight:700; }
+.mcs-dg-bar { --done:var(--t1); display:grid; grid-template-columns:repeat(10, 1fr); gap:3px; }
+.mcs-dg-progress.card .mcs-dg-bar { gap:2px; }
+.mcs-dg-seg { height:6px; border-radius:3px; background:var(--line-soft); }
+.mcs-dg-progress.card .mcs-dg-seg { height:4px; }
+.mcs-dg-seg.done { background:var(--done); }
+.mcs-dg-seg.current { background:var(--done); opacity:.45; }
+.mcs-dg-seg.current.planned { background:none; opacity:1; border:1px dashed var(--muted); }
+.mcs .mcs-go.mcs-dg-cta { width:100%; min-height:44px; text-align:center; justify-content:center; }
+.mcs .mcs-go.mcs-dg-cta.mine { background:var(--t1); border-color:var(--t1); color:#FFF; }
+
+.mcs-dg-none { display:flex; flex-direction:column; align-items:flex-start; gap:10px; }
+
+/* ---- view matches: one Goal's matching copies, full screen (Milestone 2C.1) ---- */
+.mcs-gm-sum { margin:0; display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:13px; font-weight:600; color:var(--text); }
+.mcs-gm-sum .mcs-mk { font-size:10.5px; padding:1px 7px; }
+.mcs-gm-partner { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; }
+/* copies held from before — apart from the matches, and quieter */
+.mcs-gm-held { display:flex; flex-direction:column; gap:8px; padding:12px; border:1px dashed var(--line); border-radius:12px; }
+.mcs-gm-pname { display:flex; align-items:center; gap:8px; margin:0 0 8px; font-family:inherit; font-weight:700; font-size:14px; color:var(--text); }
+/* the copy's picture is the way to look at it (Milestone 2C.2) */
+.mcs-df-copy > .mcs-pv-thumb { flex:0 0 48px; }
+.mcs-pv-thumb { position:relative; width:48px; padding:0; border:0; background:none; border-radius:6px; cursor:zoom-in;
+  display:flex; flex-direction:column; align-items:stretch; gap:3px; }
+.mcs-pv-art { width:48px; aspect-ratio:5/7; display:flex; align-items:center; justify-content:center;
+  background:#FFF; border:1px solid var(--line); border-radius:5px; overflow:hidden; }
+.mcs-pv-art img { width:100%; height:100%; object-fit:cover; }
+.mcs-pv-art .mcs-art-plate { font-size:7.5px; overflow-wrap:normal; word-break:normal; }
+.mcs-pv-tag { font-size:9.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; text-align:center; color:var(--muted); }
+.mcs-pv-scrim { position:fixed; inset:0; z-index:40; background:rgba(10,16,20,.72); display:flex;
+  align-items:center; justify-content:center; padding:16px; }
+.mcs-pv { width:100%; max-width:420px; max-height:100%; overflow:auto; background:var(--panel); border-radius:14px;
+  padding:14px; display:flex; flex-direction:column; gap:10px; }
+.mcs-pv-hd { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+.mcs-pv-title { margin:0; display:flex; flex-direction:column; min-width:0; }
+.mcs-pv-title strong { font-family:var(--font-display); font-size:16px; }
+.mcs-pv-title span { font-size:12.5px; color:var(--muted); }
+.mcs-pv-stage { display:flex; align-items:center; justify-content:center; background:var(--line-soft); border-radius:10px;
+  min-height:200px; }
+.mcs-pv-big { width:min(100%, 300px); aspect-ratio:5/7; max-height:58vh; display:flex; align-items:center; justify-content:center; }
+.mcs-pv-big img { display:block; width:100%; height:100%; object-fit:contain; }
+.mcs-pv-big .mcs-art-plate { font-size:16px; }
+.mcs-pv-empty, .mcs-pv-says { margin:0; font-size:13px; line-height:1.45; color:var(--muted); }
+.mcs .mcs-pv-hd .mcs-go { min-height:44px; }
+.mcs .mcs-go.mcs-pv-ask { min-height:44px; }
+
+/* the opening offer (Milestone 2C.2) */
+.mcs-oo { flex-basis:100%; display:flex; flex-direction:column; gap:10px; margin-top:4px; padding:12px;
+  background:var(--panel); border:1px solid var(--line); border-radius:10px; }
+.mcs-oo-basis, .mcs-oo-result { margin:0; display:flex; justify-content:space-between; align-items:baseline; gap:10px;
+  font-size:13px; color:var(--muted); }
+.mcs-oo-basis strong { font-size:15px; color:var(--text); font-variant-numeric:tabular-nums; }
+.mcs-oo-result { padding-top:8px; border-top:1px solid var(--line-soft); color:var(--text); }
+.mcs-oo-result strong { font-size:18px; color:var(--t1); font-variant-numeric:tabular-nums; }
+.mcs-oo-mode { display:grid; grid-template-columns:1fr 1fr; gap:0; border:1px solid var(--line); border-radius:9px; overflow:hidden; }
+.mcs-oo-mode button { appearance:none; border:0; background:var(--panel); color:var(--text); font:inherit; font-size:13px;
+  font-weight:600; min-height:40px; cursor:pointer; }
+.mcs-oo-mode button + button { border-left:1px solid var(--line); }
+.mcs-oo-mode button.on, .mcs-oo-mode button.on:hover { background:var(--t1); color:#FFF; }
+.mcs-oo-field { display:flex; align-items:center; gap:6px; border:1px solid var(--line); border-radius:9px; padding:0 12px;
+  background:#FFF; }
+.mcs-oo-field:focus-within { border-color:var(--t1); box-shadow:0 0 0 2px var(--t1-bg); }
+/* the field carries the focus ring, so the input inside it does not draw a second */
+.mcs .mcs-oo-field input:focus-visible { outline:none; }
+.mcs-oo-field input { flex:1; min-width:0; border:0; outline:none; background:none; font:inherit; font-size:16px;
+  font-weight:600; min-height:44px; font-variant-numeric:tabular-nums; }
+.mcs-oo-unit { font-size:16px; font-weight:600; color:var(--muted); }
+.mcs-oo-hint, .mcs-oo-note { margin:0; font-size:12.5px; line-height:1.45; color:var(--muted); }
+.mcs-oo-problem { margin:0; font-size:12.5px; color:var(--amber); }
+.mcs-oo-do { display:flex; flex-wrap:wrap; gap:8px; }
+.mcs-oo-do .mcs-go { min-height:44px; }
+.mcs-oo-do .mcs-go-primary { flex:1 1 auto; }
+.mcs-dg-tag { font-size:10.5px; font-weight:600; padding:0 7px; border-radius:999px; color:var(--t1);
+  background:var(--t1-bg); border:1px solid #CBE0E2; }
+.mcs-df-copies { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+.mcs-df-copy { display:flex; flex-wrap:wrap; gap:4px 10px; align-items:flex-start;
+  padding:9px 10px; background:var(--line-soft); border-radius:8px; }
+.mcs-df-copy.in-deal { box-shadow:inset 3px 0 0 var(--t1); }
+.mcs-df-facts { flex:1; display:flex; flex-direction:column; gap:1px; min-width:0; font-size:12px; color:var(--muted); }
+.mcs-df-grade { color:var(--text); font-weight:600; font-size:13px; }
+.mcs-df-price { display:flex; flex-direction:column; align-items:flex-end; }
+.mcs-df-ask { color:var(--text); font-weight:700; font-size:15px; font-variant-numeric:tabular-nums; }
+.mcs-df-pl { font-size:10.5px; color:var(--muted); }
 .mcs-df-note { flex-basis:100%; font-size:11.5px; color:var(--amber); }
-/* QUALIFICATION CONTROLS, ON THEIR OWN LINE UNDER THE COPY THEY ACT ON. The
-   facts above read left to right; these wrap to a full row so a press is never
-   next to a number it might be mistaken for. */
-.mcs-df-do { flex-basis:100%; display:flex; flex-wrap:wrap; gap:8px;
-  align-items:center; margin-top:6px; }
-.mcs-df-state { font-size:11.5px; color:var(--dim); }
+.mcs-df-do { flex-basis:100%; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.mcs-df-do:empty { display:none; }
+.mcs-df-do .mcs-go { padding:7px 12px; font-size:13px; }
+.mcs-df-do .mcs-df-state { flex-basis:100%; }
+.mcs-df-state { font-size:11.5px; color:var(--muted); }
 .mcs-df-trouble { font-size:11.5px; color:var(--amber); }
+/* ---- the Deal Workspace: one deal, full screen (Milestone 2C) ----
+
+   The whole Collector screen, not a drawer: a header that stays while the
+   deal scrolls under it (back, the card, the partner, whose turn, progress),
+   then the current stage's terms and actions, then the conversation's
+   reserved place. Nothing is fixed to the bottom, so a phone keyboard opened
+   by the Counter box never covers the action it belongs to. */
+.mcs-ws { flex:1; display:flex; flex-direction:column; min-height:100vh; background:var(--bg); }
+.mcs-ws-hd { position:sticky; top:0; z-index:5; background:var(--panel); border-bottom:1px solid var(--line);
+  padding:10px 16px 12px; display:flex; flex-direction:column; gap:8px; }
+.mcs-ws-top { display:flex; align-items:center; gap:10px; min-width:0; }
+.mcs-ws-back { flex:0 0 auto; width:44px; height:44px; margin-left:-10px; border:0; background:none;
+  border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--text); }
+.mcs-ws-arrow { width:11px; height:11px; border-left:2.5px solid currentColor; border-bottom:2.5px solid currentColor;
+  transform:rotate(45deg); margin-left:4px; }
+.mcs-ws-artbtn { flex:0 0 44px; position:relative; width:44px; min-height:50px; padding:0; border:0; background:none;
+  border-radius:6px; display:flex; align-items:center; justify-content:center; cursor:zoom-in;
+  -webkit-tap-highlight-color:transparent; }
+.mcs-ws-artbtn:focus-visible { outline:2px solid var(--t1); outline-offset:2px; }
+.mcs-ws-artbtn::after { content:""; position:absolute; right:0; bottom:0; width:14px; height:14px; border-radius:50%;
+  background:var(--panel) no-repeat center/9px 9px; box-shadow:0 0 0 1px var(--line);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1 4V1h3M9 6v3H6M1 1l3 3M9 9L6 6' fill='none' stroke='%23616B7A' stroke-width='1.4'/%3E%3C/svg%3E"); }
+.mcs-ws-art { flex:0 0 36px; width:36px; aspect-ratio:5/7; display:flex; align-items:center; justify-content:center;
+  background:var(--line-soft); border-radius:4px; overflow:hidden; }
+.mcs-ws-art img { width:100%; height:100%; object-fit:contain; }
+.mcs-ws-art .mcs-art-plate { font-size:7px; overflow-wrap:normal; word-break:normal; }
+.mcs-ws-id { flex:1; min-width:0; }
+.mcs-ws-title { margin:0; font-family:var(--font-display); font-size:18px; font-weight:700; line-height:1.2;
+  color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mcs-ws-title:focus { outline:none; }
+.mcs-ws-sub { margin:1px 0 0; font-size:12.5px; line-height:1.35; color:var(--muted); }
+.mcs-ws-turn { margin:0; font-size:15px; font-weight:700; color:var(--text); }
+.mcs-ws-turn.mine { color:var(--amber); }
+.mcs-ws-turn.ended { color:var(--muted); font-weight:600; }
+.mcs-dg-progress.compact .mcs-dg-plabel { font-size:12.5px; }
+.mcs-ws-body { flex:1; display:flex; flex-direction:column; gap:12px; padding:14px 16px 32px; }
+.mcs-ws-stage, .mcs-msg { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+  padding:14px; display:flex; flex-direction:column; gap:10px; }
+.mcs-ws-h2 { margin:0; font-family:var(--font-display); font-size:10.5px; font-weight:700; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--muted); }
+.mcs-ws-terms { margin:0; font-size:13px; color:var(--text); font-weight:600; }
+.mcs-ws-prices { margin:0; display:grid; grid-template-columns:1fr auto; gap:0; }
+.mcs-ws-prices div { display:contents; }
+.mcs-ws-prices dt, .mcs-ws-prices dd { padding:7px 0; border-top:1px solid var(--line-soft); }
+.mcs-ws-prices div:first-child dt, .mcs-ws-prices div:first-child dd { border-top:0; }
+.mcs-ws-prices dt { font-size:13px; color:var(--muted); }
+.mcs-ws-prices dd { margin:0; text-align:right; font-size:16px; font-weight:600; font-variant-numeric:tabular-nums; }
+.mcs-ws-prices .latest dt, .mcs-ws-prices .latest dd { color:var(--text); font-weight:700; }
+.mcs-ws-prices .latest dd { font-size:18px; }
+.mcs-ws-latest { margin-left:4px; padding:1px 6px; border-radius:999px; background:var(--line-soft); color:var(--muted);
+  font-size:10.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; vertical-align:1px; }
+.mcs-ws-prices .agreed dt { color:var(--t1); font-weight:600; }
+.mcs-ws-prices .agreed dd { color:var(--t1); font-weight:700; font-size:18px; }
+.mcs-ws-say { margin:0; font-size:13px; color:var(--muted); line-height:1.45; }
+.mcs-ws-stage .mcs-offer-live { margin:0; border:0; padding:0; }
+.mcs-ws-stage .mcs-offer-do .mcs-go { flex:1 1 auto; min-height:44px; }
+.mcs .mcs-go.mcs-go-primary { background:var(--t1); border-color:var(--t1); color:#FFF; }
+.mcs-ws-note { margin:0; font-size:12.5px; color:var(--muted); line-height:1.45; }
+/* ---- freshness (M3A A3): a change a check found, said once; or the line
+   saying the latest could not be confirmed, with the way to try again. ---- */
+.mcs-fresh { margin:6px 0 0; font-size:13px; color:var(--t1); font-weight:600; }
+.mcs-fresh-fail { margin:8px 0 0; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:#FBF3E3;
+  display:flex; flex-direction:column; gap:8px; font-size:13px; color:var(--text); }
+.mcs-fresh-fail .mcs-go { min-height:44px; }
+/* ---- Select Trade (M3A A3) ----
+   Its own card in the Deal Workspace, under the prices: what is happening,
+   the cards the Trusted Partner chose — one physical copy per row, picture
+   first — then this Collector's one or two moves, a full finger high. */
+.mcs-sel { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+  padding:14px; display:flex; flex-direction:column; gap:10px; }
+.mcs-sel-say { margin:0; font-size:13.5px; color:var(--text); font-weight:600; line-height:1.45; }
+.mcs-sel-say.mine { color:var(--amber); }
+.mcs-sel-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
+.mcs-sel-copy { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding-top:8px; border-top:1px solid var(--line-soft); }
+.mcs-sel-copy:first-child { border-top:0; padding-top:0; }
+.mcs-sel-art { flex:0 0 40px; width:40px; height:56px; border-radius:4px; overflow:hidden; background:var(--line-soft);
+  display:flex; align-items:center; justify-content:center; }
+.mcs-sel-art img { width:100%; height:100%; object-fit:cover; display:block; }
+.mcs-sel-plate { font-size:7.5px; line-height:1.1; color:var(--muted); text-align:center; padding:2px; overflow:hidden;
+  overflow-wrap:anywhere; }
+.mcs-sel-id { flex:1 1 180px; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.mcs-sel-t { font-weight:700; font-size:14px; }
+.mcs-sel-s, .mcs-sel-f { font-size:12.5px; color:var(--muted); overflow-wrap:anywhere; }
+.mcs-sel-warn { font-size:12px; color:var(--amber); }
+.mcs-sel-tag { font-size:12px; font-weight:700; color:var(--t1); }
+.mcs-sel-tag.warn { color:var(--amber); }
+.mcs-sel-do { display:flex; flex-wrap:wrap; gap:8px; }
+.mcs-sel-do .mcs-go, .mcs-sel-copy .mcs-go { min-height:44px; }
+.mcs-sel-do .mcs-go { flex:1 1 auto; }
+.mcs-sel-confirm { padding:12px; border:1px solid var(--line); border-radius:10px; background:var(--line-soft);
+  display:flex; flex-direction:column; gap:10px; }
+.mcs-sel-line { margin:0; font-size:13px; color:var(--text); line-height:1.45; }
+.mcs-sel-out { margin:0; font-size:12px; color:var(--muted); }
+.mcs-sel-done { margin:0; font-size:12.5px; color:var(--t1); font-weight:600; }
+
+/* ---- the deal's conversation (Milestone 2D.2) ----
+   Below the stage area and never above it: the deal's terms and moves come
+   first. Bubbles are restrained — the Collector's own tinted and to the right,
+   the partner's plain and to the left — and each says who and when in words,
+   so the colour is never the only signal. The box is 16px so a phone does not
+   zoom into it, and Send is a full thumb's height. */
+.mcs-msg-hd { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+.mcs-msg-h { margin:0; font-family:var(--font-display); font-size:10.5px; font-weight:700; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--muted); }
+.mcs-msg-check { border:0; background:none; padding:6px 0; min-height:32px; color:var(--t1); font-size:12.5px;
+  font-weight:600; }
+.mcs-msg-check[disabled] { color:var(--faint); }
+.mcs-msg-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
+.mcs-msg-item { max-width:88%; align-self:flex-start; background:var(--bg); border:1px solid var(--line-soft);
+  border-radius:12px 12px 12px 4px; padding:8px 11px; }
+.mcs-msg-item.mine { align-self:flex-end; background:var(--t1-bg); border-color:#CBE0E2; border-radius:12px 12px 4px 12px; }
+.mcs-msg-meta { margin:0 0 2px; display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; font-size:11.5px; color:var(--muted); }
+.mcs-msg-who { font-weight:700; color:var(--text); }
+.mcs-msg-item.mine .mcs-msg-who { color:var(--t1); }
+.mcs-msg-text { margin:0; font-size:14px; line-height:1.45; white-space:pre-wrap; overflow-wrap:anywhere; }
+.mcs-msg-empty, .mcs-msg-closed { margin:0; font-size:13px; color:var(--muted); line-height:1.45; }
+.mcs-msg-form { display:flex; flex-direction:column; gap:6px; margin:0; border-top:1px solid var(--line-soft); padding-top:10px; }
+.mcs-msg-label { font-size:12.5px; font-weight:600; color:var(--text); }
+.mcs-msg-in { width:100%; min-height:72px; resize:vertical; font:inherit; font-size:16px; line-height:1.4;
+  border:1px solid var(--line); border-radius:8px; padding:9px 11px; background:#FFF; color:var(--text); }
+.mcs-msg-in:focus-visible { outline:2px solid var(--t1); outline-offset:1px; border-color:var(--t1); }
+.mcs-msg-in[readonly] { background:var(--bg); color:var(--muted); }
+.mcs-msg-count { margin:0; font-size:12px; color:var(--muted); text-align:right; font-variant-numeric:tabular-nums; }
+.mcs-msg-problem, .mcs-msg-trouble { margin:0; font-size:12.5px; color:var(--amber); line-height:1.4; }
+.mcs-msg-do { display:flex; align-items:flex-start; gap:10px; }
+.mcs-msg-help { flex:1; margin:0; font-size:12px; color:var(--faint); line-height:1.4; }
+.mcs-msg-send { flex:0 0 auto; min-height:44px; min-width:88px; padding:10px 16px; border-radius:10px;
+  border:1px solid var(--t1); background:var(--t1); color:#FFF; font-weight:700; }
+.mcs-msg-send[disabled] { opacity:.5; cursor:default; }
+.mcs-msg-sr, .mcs-msg-vh { position:absolute; width:1px; height:1px; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+
+/* ---- making an offer, and the offer under its Goal (Batch 3B) ----
+   On the copy it is for, a full row under the copy's own controls; under the
+   Goal, a box above the copies. One column at every width. */
+.mcs-offer { flex-basis:100%; display:flex; flex-direction:column; gap:7px; margin:8px 0 2px;
+  padding:11px 12px; border:1px solid var(--line); border-radius:8px; }
+.mcs-offer-live { margin:0 16px 12px; }
+.mcs-offer-card { margin:0; font-size:13px; font-weight:600; color:var(--text); }
+.mcs-offer-terms { margin:0; font-size:12px; color:var(--muted); }
+.mcs-offer-status { margin:0; font-size:13px; font-weight:600; color:var(--text); }
+.mcs-offer-trail { margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:2px;
+  font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
+.mcs-offer-trail .mine { color:var(--text); }
+.mcs-offer-do, .mcs-offer-mode { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.mcs-offer-entry { display:flex; flex-direction:column; gap:8px; margin:0; }
+.mcs-offer-field { display:flex; align-items:center; gap:6px; max-width:220px; }
+.mcs-offer-field input { flex:1; min-width:0; padding:10px 12px; border:1px solid var(--line); border-radius:6px;
+  font-size:16px; font-variant-numeric:tabular-nums; }
+.mcs-offer-unit { color:var(--muted); font-weight:600; }
+.mcs-offer-line { margin:0; font-size:12px; color:var(--muted); }
+.mcs-offer-problem { margin:0; font-size:12px; color:var(--amber); }
+.mcs-chip { background:#FFF; border:1px solid var(--line); color:var(--muted); border-radius:999px;
+  padding:7px 12px; font-size:12.5px; }
+.mcs-chip.on { border-color:var(--accent); color:var(--text); font-weight:600; }
 /* THE THREE THINGS A PERSON CAN MEAN ABOUT ONE COPY. A row, because they are
    one question with three answers rather than three separate switches. */
 .mcs-disp { display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 0; }
@@ -377,15 +641,17 @@ const CSS = `
 .mcs-top { background:var(--panel); border-bottom:1px solid var(--line); padding:14px 16px;
   display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
 .mcs-brand { display:flex; align-items:center; gap:8px; }
-.mcs-mark { width:16px; height:16px; position:relative; display:block; flex:0 0 16px; }
-.mcs-mark i { position:absolute; width:10px; height:10px; border:1.5px solid #4E8C93; display:block; }
-.mcs-mark i:first-child { top:0; left:0; }
-.mcs-mark i:last-child { bottom:0; right:0; border-color:#0A1014; }
-.mcs-word { font-family:'Archivo'; font-weight:700; font-size:15px; letter-spacing:-.01em; }
+/* Scoped to the brand (P6-2): .mcs-mark is also the card version chip, and
+   the unscoped 16px width squeezed every chip's text on top of the next. */
+.mcs-brand .mcs-mark { width:16px; height:16px; position:relative; display:block; flex:0 0 16px; }
+.mcs-brand .mcs-mark i { position:absolute; width:10px; height:10px; border:1.5px solid #4E8C93; display:block; }
+.mcs-brand .mcs-mark i:first-child { top:0; left:0; }
+.mcs-brand .mcs-mark i:last-child { bottom:0; right:0; border-color:#0A1014; }
+.mcs-word { font-family:var(--font-display); font-weight:700; font-size:15px; letter-spacing:-.01em; }
 .mcs-me { margin-left:auto; text-align:right; min-width:0; }
 .mcs-me .n { font-weight:600; font-size:13.5px; }
 .mcs-me .r { color:var(--faint); font-size:10.5px; letter-spacing:.07em; text-transform:uppercase;
-  font-family:'Archivo'; font-weight:600; }
+  font-family:var(--font-display); font-weight:600; }
 .mcs-out { background:none; border:1px solid var(--line); color:var(--muted); border-radius:7px;
   padding:6px 11px; font-size:13px; }
 .mcs-out:hover { border-color:#B9C4CE; color:var(--text); }
@@ -401,7 +667,7 @@ const CSS = `
 
 .mcs-body { flex:1; display:flex; min-width:0; }
 .mcs-main { flex:1; min-width:0; padding:18px 16px 92px; }
-.mcs-h { font-family:'Archivo'; font-size:20px; font-weight:700; letter-spacing:-.02em; margin:0; }
+.mcs-h { font-family:var(--font-display); font-size:20px; font-weight:700; letter-spacing:-.02em; margin:0; }
 .mcs-sub { color:var(--muted); font-size:13.5px; margin-top:2px; }
 
 /* ---- panels and records ---- */
@@ -409,7 +675,7 @@ const CSS = `
   margin-top:16px; max-width:760px; overflow:hidden; }
 .mcs-ph { display:flex; align-items:baseline; gap:10px; padding:12px 16px;
   border-bottom:1px solid var(--line-soft); }
-.mcs-ph h2 { font-family:'Archivo'; font-size:10.5px; font-weight:700; letter-spacing:.09em;
+.mcs-ph h2 { font-family:var(--font-display); font-size:10.5px; font-weight:700; letter-spacing:.09em;
   text-transform:uppercase; color:var(--muted); margin:0; }
 .mcs-pnote { margin-left:auto; font-size:11.5px; color:var(--faint); }
 .mcs-empty { padding:22px 16px; color:var(--muted); max-width:58ch; }
@@ -464,7 +730,7 @@ const CSS = `
 
 .mcs-facts { display:flex; flex-wrap:wrap; gap:6px 18px; margin-top:10px; }
 .mcs-fact { display:flex; gap:6px; align-items:baseline; min-width:0; }
-.mcs-fact-l { font-family:'Archivo',system-ui,sans-serif; font-size:9.5px; letter-spacing:.07em;
+.mcs-fact-l { font-family:var(--font-display); font-size:9.5px; letter-spacing:.07em;
   text-transform:uppercase; color:var(--faint); font-weight:700; white-space:nowrap; }
 .mcs-fact-v { font-size:13px; font-variant-numeric:tabular-nums; }
 
@@ -491,7 +757,7 @@ const CSS = `
 .mcs-i { flex:1; background:none; border:0; color:#8C99A6; padding:11px 6px 13px;
   display:flex; flex-direction:column; align-items:center; gap:3px; }
 .mcs-i .l { font-size:11.5px; }
-.mcs-i .c { font-family:'Archivo'; font-weight:700; font-size:15px; line-height:1; }
+.mcs-i .c { font-family:var(--font-display); font-weight:700; font-size:15px; line-height:1; }
 .mcs-i.on { color:#FFF; }
 .mcs-i.on .c { color:#7FC2C9; }
 
@@ -506,12 +772,704 @@ const CSS = `
   .mcs-main { padding:24px 28px 40px; }
   .mcs-body { flex-direction:row-reverse; }
 }
+
+/* ==========================================================================
+   PHASE 6 VISUAL FOUNDATION (P6-1)
+   The frozen Phase 6 prototype (phase6-prototype-01 @ fca2c61) is the visual
+   and interaction reference; production's palette and type are kept. This
+   layer comes LAST on purpose: it restyles the classes the screens already
+   use, so no section changed its markup or behaviour to receive it.
+     tokens      the Phase 6 canvas and radii; the three tokens earlier rules
+                 used without ever defining (--ink, --accent, --dim); and font
+                 stacks that fall back to the system face, because production
+                 loads no web font and a bare 'Archivo' fell back to serif
+     header      the screen title stays in view as the screen scrolls
+     tab bar     light, label-first, a teal rule over the current tab; the
+                 count is a small badge; clears the iPhone home indicator
+     sidebar     the same four, light, from 860px
+     pills       one pill control for doorways, views and choices: white, and
+                 filled dark when pressed
+     grid        two columns on a phone, more as the screen widens
+     sheet       the bottom sheet: Phase 6 corners and a grab handle; a side
+                 panel on a wide screen. .mcs-sheet* names the primitive and
+                 shares every rule with the Card Specification sheet
+     feedback    acknowledgements are one rounded, quiet note (.mcs-toast,
+                 shared with the existing saved / filling / joined notes)
+   ========================================================================== */
+.mcs { --bg:#EEF1F4; --ink:var(--text); --accent:var(--t1); --dim:var(--faint);
+  --font-ui:'Public Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --font-display:'Archivo',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --r-card:12px; --r-sheet:18px; --tabbar-h:58px; }
+
+/* the top of a phone: compact */
+.mcs-top { padding:10px 16px; gap:10px; }
+.mcs-word { font-size:16px; }
+.mcs-me .n { font-size:13px; }
+.mcs-out { border-radius:10px; padding:6px 12px; }
+
+/* notices read as notes, not as a band across the screen */
+.mcs-ro, .mcs-joined { margin:12px 16px 0; border-radius:10px; padding:9px 12px;
+  font-size:12px; line-height:1.4; gap:4px 8px; }
+.mcs-ro { border:1px solid var(--amber-line); }
+.mcs-joined { border:1px solid #CFE3E5; }
+
+/* the screen: a sticky title, then its content */
+.mcs-main { padding:0 16px calc(var(--tabbar-h) + 32px + env(safe-area-inset-bottom, 0px)); }
+.mcs-hd { position:sticky; top:0; z-index:5; display:flex; align-items:baseline; gap:10px;
+  margin:0 -16px; padding:16px 16px 6px; background:var(--bg); }
+.mcs-h { font-size:22px; line-height:1.2; }
+.mcs-hd-count { margin-left:auto; color:var(--faint); font-size:12px; white-space:nowrap; }
+.mcs-sub { margin-top:0; font-size:13px; }
+/* Browse's controls sit inside a panel; give them the panel's own gutter. */
+.mcs-panel .mcs-br { padding:12px 16px 16px; }
+.mcs-panel { border-radius:14px; margin-top:14px; }
+
+/* the tab bar, Phase 6: light, label first, a rule over the current tab */
+.mcs-nav { background:#FFF; border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom, 0px); box-shadow:0 -6px 18px rgba(10,16,20,.05); }
+.mcs-i { color:var(--faint); font-weight:600; min-height:var(--tabbar-h); padding:9px 4px 11px;
+  justify-content:center; gap:4px; }
+.mcs-i .l { order:1; font-size:12px; line-height:1.15; text-align:center; }
+/* On a phone the tab bar is labels only, as in Phase 6: the count moves to the
+   screen's header. It is still in the markup, and is shown in the sidebar. */
+.mcs-i .c { display:none; order:2; font-family:var(--font-ui); font-size:10.5px; font-weight:700; line-height:1;
+  padding:2px 6px; border-radius:999px; background:var(--line-soft); color:var(--muted); }
+.mcs-i.on { color:var(--t1); box-shadow:inset 0 2px 0 var(--t1); }
+.mcs-i.on .c { background:var(--t1-bg); color:var(--t1); }
+
+/* pills: one control for doorways, collection views and two-way choices */
+.mcs-br-door, .mcs-view, .mcs-chip { border:1px solid var(--line); background:#FFF; color:var(--muted);
+  border-radius:999px; padding:6px 12px; font-size:12.5px; font-weight:600; white-space:nowrap; }
+.mcs-br-door.on, .mcs-view[aria-pressed="true"], .mcs-chip.on { background:var(--text);
+  border-color:var(--text); color:#FFF; }
+.mcs-view.quiet { font-weight:500; }
+.mcs-br-doors, .mcs-views { flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; padding-bottom:2px; }
+.mcs-br-doors::-webkit-scrollbar, .mcs-views::-webkit-scrollbar { display:none; }
+
+/* the card grid: two up on a phone */
+.mcs-br-grid { grid-template-columns:1fr 1fr; gap:14px 12px; }
+.mcs-br-card { border-radius:var(--r-card); padding:6px; box-shadow:0 1px 2px rgba(10,16,20,.05); }
+.mcs-br-art, .mcs-group-art { border-radius:8px; }
+.mcs-br-name { font-size:13.5px; }
+
+/* buttons: Phase 6 corners */
+.mcs-go, .mcs-br-page { border-radius:10px; }
+
+/* the bottom sheet (and its primitive) */
+.mcs-sheet-scrim { position:fixed; inset:0; z-index:30; display:flex; align-items:flex-end;
+  justify-content:center; }
+.mcs-sheet { background:var(--panel); width:100%; max-width:640px; max-height:88vh; overflow:auto;
+  display:flex; flex-direction:column; gap:16px; }
+.mcs-spec-scrim, .mcs-sheet-scrim { background:rgba(10,16,20,.32); }
+.mcs-spec-panel, .mcs-sheet { border-top:0; border-radius:var(--r-sheet) var(--r-sheet) 0 0;
+  padding:10px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+  box-shadow:0 -10px 30px rgba(10,16,20,.14); }
+.mcs-spec-panel::before, .mcs-sheet::before { content:""; flex:0 0 auto; display:block; width:36px;
+  height:4px; border-radius:999px; background:var(--line); margin:0 auto 2px; }
+
+/* feedback: one quiet, rounded note */
+.mcs-toast, .mcs-spec-saved, .mcs-filling { background:var(--t1-bg); color:var(--t1);
+  border:1px solid #CFE3E5; border-radius:10px; padding:9px 12px; font-size:12.5px; }
+.mcs-toast.warn, .mcs-spec-conflict { background:var(--amber-bg); color:var(--amber);
+  border:1px solid var(--amber-line); border-radius:10px; }
+
+/* ---- the Binders screen, Phase 6 (P6-2) ----
+   Search and state filters, then three disclosures: the binders (one opens in
+   place), Unfiled, and Your Cards. Tiles are the Collector's own Goals and
+   copies — a picture, then why it matters and where it lives. */
+.mcs-bcontrols { position:sticky; top:52px; z-index:4; background:var(--bg); margin:0 -16px;
+  padding:4px 16px 2px; }
+.mcs-bcontrols .mcs-find { padding:0; margin:0 0 8px; }
+.mcs-bcontrols .mcs-in { border-radius:12px; background:#FFF; font-size:16px; padding:9px 12px; }
+.mcs-lenses { padding:0; margin:0 0 8px; }
+.mcs-bsection { margin-top:10px; }
+.mcs-sechead { display:flex; align-items:baseline; gap:8px; width:100%; text-align:left; border:0;
+  background:none; padding:6px 0 10px 18px; position:relative; font-family:var(--font-display);
+  font-size:11.5px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); }
+.mcs-sechead::before { content:"▸"; position:absolute; left:0; top:4px; font-size:14px;
+  transition:transform .15s; }
+.mcs-sechead[aria-expanded="true"]::before { transform:rotate(90deg); }
+.mcs-sechead .mcs-bmatch { margin-left:auto; text-transform:none; letter-spacing:0; }
+.mcs-covers { display:flex; flex-direction:column; gap:10px; }
+/* THE BINDER IS THE COVER (P6-F4 B1; prototype .bcover, fca2c61 index.html
+   L237–243, 272–283): one bordered cover holds the row AND, once opened, its
+   cards — the cards are inside the binder, not detached beneath it. */
+.mcs-binders { max-width:1040px; }
+.mcs-bcover { display:block; width:100%; text-align:left; border:1px solid var(--line); background:#FFF;
+  border-radius:16px; }
+.mcs-bcover.open { border-color:var(--t1); }
+.mcs-bhead-row { display:flex; align-items:center; }
+.mcs-bhead { display:block; flex:1 1 auto; min-width:0; text-align:left; border:0; background:none; position:relative;
+  padding:12px 12px 12px 30px; line-height:1.45; }
+.mcs-bhead-row .mcs-more { flex:0 0 auto; padding:10px 14px; font-size:18px; }
+.mcs-bmenu { display:flex; flex-direction:column; margin:0 10px 8px auto; width:min(260px,calc(100% - 20px)); background:#FFF;
+  border:1px solid var(--line); border-radius:12px; box-shadow:0 10px 30px rgba(16,22,27,.12); overflow:hidden; }
+.mcs-bmenu button { border:0; background:#FFF; text-align:left; padding:11px 14px; font-size:13.5px; color:var(--text); }
+.mcs-bmenu button + button { border-top:1px solid var(--line-soft); }
+.mcs-bmenu button:hover { background:var(--line-soft); }
+.mcs-bhead::before { content:"▸"; position:absolute; left:12px; top:11px; color:var(--muted);
+  font-size:15px; transition:transform .15s; }
+.mcs-bcover.open .mcs-bhead::before { transform:rotate(90deg); }
+.mcs-bline { display:flex; align-items:baseline; justify-content:space-between; gap:8px; min-width:0; }
+.mcs-bline b { font-size:15.5px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mcs-bline span { color:var(--faint); font-size:12.5px; white-space:nowrap; }
+.mcs-bmatch { display:block; margin-top:3px; font-size:11.5px; color:var(--t1); font-weight:600; }
+.mcs-bbody { padding:0 10px 10px; }
+.mcs-btools { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:10px; }
+.mcs-btools .mcs-bsum { margin:0; }
+.mcs-badd { flex:0 0 auto; font-weight:600; white-space:nowrap; }
+.mcs-openb { display:block; margin:8px 0 0; font-size:12.5px; }
+.mcs-newcover { display:block; width:100%; text-align:center; color:var(--t1); font-weight:600; background:none;
+  border:1px dashed var(--line); border-radius:16px; padding:12px; line-height:1.45; }
+.mcs-newb { margin:0; }
+.mcs-away { align-self:flex-start; font-size:12.5px; }
+.mcs-bempty { margin:0 0 10px; }
+.mcs-results { margin-top:14px; padding-top:12px; border-top:1px solid var(--line); }
+.mcs-rhead { margin:0 0 2px; font-family:var(--font-display); font-size:11.5px; font-weight:700;
+  letter-spacing:.07em; text-transform:uppercase; color:var(--muted); }
+.mcs-rcount { margin:0 0 8px; font-size:12px; color:var(--muted); font-weight:600; }
+/* the tiles: three across on a phone, as in Phase 6's library; on a wider
+   screen a fixed card size, never stretched to fill (P6-3.1) */
+.mcs-ogrid { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(3, minmax(0, 1fr));
+  gap:14px 10px; }
+.mcs-otile { display:flex; flex-direction:column; min-width:0; }
+.mcs-otap { display:block; width:100%; border:0; background:none; padding:0; text-align:left; }
+button.mcs-otap { cursor:pointer; }
+.mcs-otile-art { display:flex; align-items:center; justify-content:center; aspect-ratio:63/88; width:100%;
+  border-radius:8px; overflow:hidden; background:var(--line-soft); box-shadow:0 1px 2px rgba(10,16,20,.08); }
+.mcs-otile-art img { width:100%; height:100%; object-fit:cover; }
+/* the caption (prototype .library .ometa / .state / .mk / .oloc / .oq) */
+.mcs-ometa { display:flex; flex-direction:column; gap:1px; margin-top:4px; min-width:0; }
+.mcs-oname { font-size:12.5px; font-weight:600; line-height:1.25; color:var(--text);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mcs-onum { font-weight:400; color:var(--muted); }
+.mcs-ostate { display:flex; flex-wrap:wrap; align-items:center; gap:2px 6px; font-size:10.5px; line-height:1.35; }
+.mcs-ostate .mcs-mk { line-height:1.15; }
+.mcs-oloc { display:block; font-size:10.5px; color:var(--text); font-weight:600; line-height:1.3; }
+.mcs-oloc.unf { color:var(--muted); font-weight:500; }
+.mcs-oqual { font-size:11px; color:var(--text); }
+.mcs-mk { display:inline-block; font-size:9.5px; font-weight:600; padding:0 6px; border-radius:999px;
+  border:1px solid currentColor; background:#FFF; }
+.mcs-mk-owned, .mcs-mk-goal { color:var(--muted); }
+/* THE FOUR STATES (P6-F4 B2A): one mapping, client/collector/states.jsx —
+   the icon and outline in the state's colour, its label in a darker ink of the
+   same hue on a faint tint. */
+${STATE_CSS}
+.mcs-mk.mcs-st { display:inline-flex; align-items:center; gap:3px; color:var(--st-ink); border-color:var(--st);
+  background:var(--st-tint); }
+.mcs-st .mcs-sticon, [data-st] .mcs-sticon { color:var(--st); flex:0 0 auto; }
+.mcs-state .mcs-chead, .mcs-cd-choice .mcs-chead { display:flex; align-items:center; gap:6px; color:inherit; font-size:inherit; }
+.mcs-state[data-st].on { border-color:var(--st); background:var(--st-tint); }
+.mcs-state[data-st].on b { color:var(--st-ink); }
+.mcs-cd-choice[data-st].on { border-color:var(--st); background:var(--st-tint); }
+.mcs-cd-choice[data-st].on b { color:var(--st-ink); }
+/* A SAVED CARD'S PAGE (P6-F4 B2B): CardDetail's structure, plus where it lives,
+   its details, and a quiet way to remove it */
+/* + ADD CARDS (P6-F4 B3): the chooser, and the picker of their own cards (prototype .picker / .otile.sel / .check) */
+.mcs-addto { display:flex; flex-direction:column; gap:10px; }
+.mcs-addto .mcs-addto-opt { min-height:64px; }
+.mcs-addto .mcs-addto-opt span { display:block; color:var(--muted); font-size:12.5px; }
+.mcs-pick .mcs-cd-hd { gap:12px; }
+.mcs-pick .mcs-pick-title { font-size:16px; }
+.mcs-pick p.mcs-pick-note { margin:0 0 8px; font-size:12.5px; color:var(--muted); }
+.mcs-pick .mcs-pick-find { margin:0 0 8px; padding:0; }
+.mcs-pick .mcs-pick-lenses { display:flex; gap:6px; overflow-x:auto; margin:0 0 10px; }
+.mcs-ptile { position:relative; border:2px solid transparent; border-radius:12px; padding:2px; }
+.mcs-ptile.sel { border-color:var(--t1); background:var(--t1-bg); }
+.mcs-ptile.inthis { opacity:.55; }
+.mcs-ptile .mcs-otap { position:relative; }
+.mcs-pcheck { position:absolute; top:6px; right:6px; z-index:2; width:24px; height:24px; border-radius:50%; background:rgba(255,255,255,.92);
+  border:1.5px solid var(--line); display:flex; align-items:center; justify-content:center; font-weight:800; color:#FFF; font-size:13px; }
+.mcs-ptile.sel .mcs-pcheck { background:var(--t1); border-color:var(--t1); }
+.mcs-oloc.elsewhere { color:var(--amber); }
+.mcs-pick .mcs-pick-confirm { border:1px solid var(--amber-line); background:var(--amber-bg); border-radius:12px; padding:10px 12px; }
+.mcs-pick .mcs-pick-confirm p { margin:0 0 8px; font-size:13px; color:var(--text); }
+.mcs-snack-wrap.over-page { bottom:calc(132px + env(safe-area-inset-bottom, 0px)); }
+/* the record's own pair, side by side and thumb-sized (B2B.1) */
+.mcs-ce .mcs-ce-pair .mcs-cd-choice { min-height:64px; }
+/* all four states, two by two (B4): the record's own pair first; the other
+   pair opens the guided step, so it wears a dashed edge — it adds, not edits */
+.mcs-ce .mcs-ce-four { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.mcs-ce .mcs-ce-four .mcs-cd-choice { min-height:60px; padding:9px 12px; }
+/* its history (B5; B5.2): a quiet recovery in Copy details, never under the states */
+.mcs-ce p.mcs-ce-restore { margin:0 0 10px; display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:12.5px; color:var(--muted); }
+.mcs-ce p.mcs-ce-history { margin:-6px 0 14px; font-size:12.5px; color:var(--muted); }
+.mcs-ce .mcs-ce-home { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.mcs-ce .mcs-ce-home b { font-size:15px; }
+.mcs-ce .mcs-ce-home .mcs-go { min-height:44px; min-width:96px; }
+.mcs-ce p.mcs-ce-note { margin:8px 0 0; font-size:12.5px; }
+.mcs-ce .mcs-ce-field { display:flex; flex-direction:column; gap:4px; margin:0 0 10px; font-size:12.5px; color:var(--muted); }
+.mcs-ce .mcs-ce-field .mcs-in { font-size:16px; border-radius:12px; padding:9px 12px; }
+.mcs-ce p.mcs-ce-facts { margin:0; font-size:12.5px; color:var(--muted); }
+.mcs-ce .mcs-ce-remove { margin:4px 0 0; }
+.mcs-ce .mcs-ce-remove .mcs-linkish { color:var(--muted); font-size:13px; }
+.mcs-ce .mcs-ce-confirm { border:1px solid var(--amber-line); background:var(--amber-bg); border-radius:12px; padding:10px 12px;
+  display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.mcs-ce .mcs-ce-confirm p { flex-basis:100%; margin:0; font-size:13px; color:var(--text); }
+.mcs-mk-earlier { color:var(--faint); border-style:dashed; }
+.mcs-ohome { color:var(--text); font-weight:600; } .mcs-ohome.unf { color:var(--muted); font-weight:500; }
+.mcs-oq { font-size:10.5px; line-height:1.3; color:var(--muted); overflow:hidden;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+/* THE CARD SHEET (P6-4) — mobile first: thumb-sized choices, the card on
+   top, one column, nothing technical until asked for. */
+.mcs-osheet { position:relative; max-height:92vh; gap:14px; padding-top:12px; }
+.mcs-x { position:absolute; top:8px; right:8px; width:44px; height:44px; border:0; border-radius:999px;
+  background:var(--line-soft); color:var(--text); font-size:16px; }
+.mcs-ohero { display:flex; justify-content:center; padding-top:6px; }
+.mcs-ohero-art { width:96px; aspect-ratio:63/88; display:flex; align-items:center; justify-content:center;
+  border-radius:10px; overflow:hidden; background:var(--line-soft); box-shadow:0 8px 22px rgba(10,16,20,.14); }
+.mcs-ohero-art img { width:100%; height:100%; object-fit:cover; }
+.mcs-oident { text-align:center; }
+.mcs-oident h2 { margin:0; font-family:var(--font-display); font-size:21px; }
+.mcs-oident p { margin:3px 0 0; color:var(--muted); font-size:13px; }
+.mcs-osect { display:flex; flex-direction:column; gap:8px; border-top:1px solid var(--line-soft); padding-top:12px; }
+.mcs-osect h3 { margin:0; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+.mcs-opair { display:flex; flex-direction:column; gap:5px; }
+.mcs-opair-t { font-size:12px; color:var(--faint); }
+.mcs-states { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.mcs-state { min-height:56px; display:flex; flex-direction:column; align-items:flex-start; justify-content:center;
+  gap:2px; text-align:left; padding:8px 12px; border:1.5px solid var(--line); border-radius:12px; background:#FFF;
+  color:var(--text); }
+.mcs-state b { font-size:15px; } .mcs-state span { font-size:12px; color:var(--muted); }
+.mcs-state.on { border-color:var(--t1); background:var(--t1-bg); }
+.mcs-state.on b { color:var(--t1); }
+.mcs-state.saving { border-style:dashed; border-color:var(--t1); }
+.mcs-state.across { background:transparent; border-style:dashed; opacity:.62; }
+.mcs-state.justset { box-shadow:0 0 0 3px rgba(23,102,110,.18); }
+.mcs-stateack { margin:0; min-height:18px; font-size:13px; color:var(--t1); font-weight:600; }
+.mcs-across { background:var(--line-soft); border-radius:12px; padding:10px 12px; font-size:13px; }
+.mcs-across p { margin:0 0 8px; }
+.mcs-oconfig { margin:0; display:flex; gap:8px; align-items:baseline; font-size:14px; }
+.mcs-oconfig span { color:var(--muted); font-size:12.5px; }
+.mcs-onote { margin:0; font-size:12.5px; }
+.mcs-ohome { margin:0; font-size:15px; font-weight:600; }
+.mcs-oacts { margin:0; display:flex; flex-wrap:wrap; gap:8px; }
+.mcs-oacts .mcs-go, .mcs-ochoice { min-height:44px; }
+.mcs-omove { display:flex; flex-direction:column; gap:6px; }
+.mcs-omove p { margin:0; font-size:12.5px; }
+.mcs-ochoice { text-align:left; padding:10px 14px; border:1px solid var(--line); border-radius:12px; background:#FFF;
+  font-size:15px; font-weight:600; color:var(--text); }
+.mcs-omore { align-self:flex-start; border:0; background:none; padding:6px 0; font-weight:600; color:var(--t1); font-size:14px; }
+.mcs-omore::before { content:"▸ "; } .mcs-omore[aria-expanded="true"]::before { content:"▾ "; }
+.mcs-ofull { align-self:flex-start; min-height:44px; }
+/* the confirmation bar: above the tab bar, above an open sheet, below a
+   filing in progress; only the bar itself takes touches */
+.mcs-snack-wrap { position:fixed; left:0; right:0; z-index:45; pointer-events:none; display:flex; justify-content:center;
+  padding:0 12px; bottom:calc(var(--tabbar-h) + 10px + env(safe-area-inset-bottom, 0px)); }
+/* the prototype's quiet teal note (.toast.float, fca2c61 index.html L136,
+   162–164), with production's Undo (A6) inside it */
+.mcs-snack { pointer-events:auto; margin:0; display:flex; align-items:center; gap:10px; width:100%; max-width:480px;
+  background:var(--t1-bg); color:var(--t1); border:1px solid #CFE3E5; border-radius:10px; padding:10px 12px;
+  font-size:12.5px; line-height:1.45; box-shadow:0 8px 20px rgba(10,16,20,.12); animation:mcs-cd-reveal .25s ease-out; }
+.mcs-snack:has(.mcs-undo), .mcs-snack:has(.mcs-snack-x) { padding:4px 4px 4px 12px; }
+.mcs-snack span { flex:1 1 auto; min-width:0; }
+.mcs-snack.mcs-toast { background:var(--t1-bg); color:var(--t1); border-color:#CFE3E5; }
+.mcs-snack.warn { background:var(--amber-bg); color:var(--amber); border-color:var(--amber-line); }
+.mcs-undo, .mcs-snack-x { flex:0 0 auto; min-height:40px; min-width:44px; border:0; border-radius:8px; background:none;
+  color:var(--t1); font-weight:700; padding:0 12px; }
+.mcs-snack.warn .mcs-snack-x { color:var(--amber); }
+.mcs-undo:disabled { opacity:.5; }
+/* Details, as a sheet (P6-3.1) */
+.mcs-detail-head { display:flex; gap:12px; align-items:flex-start; }
+.mcs-detail-art { flex:0 0 84px; width:84px; aspect-ratio:63/88; display:flex; align-items:center; justify-content:center;
+  border-radius:8px; overflow:hidden; background:var(--line-soft); }
+.mcs-detail-art img { width:100%; height:100%; object-fit:cover; }
+.mcs-detail-id { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.mcs-detail-id strong { font-size:16px; }
+.mcs-detail-facts { display:flex; flex-direction:column; gap:6px; }
+/* an opened binder: back, its name, add, and one quiet menu */
+.mcs-bview-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:4px 0 6px; }
+.mcs-bview-head .mcs-binder-name { padding:0; margin:0; flex:1 1 auto; min-width:0; }
+.mcs-back { font-weight:600; text-decoration:none; }
+.mcs-more { border:0; background:none; color:var(--muted); font-size:16px; letter-spacing:1px; padding:0 2px; }
+.mcs-menu { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 10px; }
+.mcs-ostatus { font-size:10.5px; font-weight:600; color:var(--t1); }
+.mcs-oconflict { font-size:10.5px; color:var(--amber); }
+.mcs-oview { align-self:flex-start; font-size:11px; padding:0; }
+.mcs-ofacts { display:flex; flex-direction:column; gap:2px; margin-top:4px; padding:6px 8px; border-radius:8px;
+  background:#FFF; border:1px solid var(--line); }
+.mcs-ofacts .mcs-fact { font-size:11px; }
+/* ---- filing (P6-3): pick a card up, put it where it belongs ---- */
+.mcs-otap.holdable { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+.mcs-otap.holdable img { -webkit-user-drag:none; pointer-events:none; }
+.mcs-otile.lifted { opacity:.28; }
+.mcs-otile.filing { opacity:.6; }
+.mcs-otile.landed .mcs-otile-art { animation:mcs-landed 1.2s ease-out; }
+@keyframes mcs-landed { 0% { transform:scale(1.06); box-shadow:0 0 0 3px var(--t1); } 100% { transform:none; } }
+.mcs-filing { position:fixed; inset:0; z-index:60; background:rgba(245,247,249,.95); display:flex;
+  flex-direction:column; padding:14px 16px calc(16px + env(safe-area-inset-bottom, 0px)); touch-action:none;
+  -webkit-user-select:none; user-select:none; }
+.mcs-fhead { margin-bottom:10px; } .mcs-fhead b { display:block; font-size:16px; }
+.mcs-fhead span { color:var(--muted); font-size:12px; }
+.mcs-dests { display:flex; flex-direction:column; gap:8px; overflow:auto; flex:1; max-width:520px; width:100%; margin:0 auto; }
+.mcs-dest { border:1.5px solid var(--line); background:#FFF; border-radius:14px; padding:14px; min-height:52px;
+  display:flex; flex-direction:column; justify-content:center; cursor:pointer;
+  transition:background .08s, border-color .08s, transform .08s; }
+.mcs-dest b { font-size:15px; } .mcs-dest span { font-size:11.5px; color:var(--faint); }
+.mcs-dest.over { border-color:var(--t1); background:var(--t1-bg); transform:scale(1.015); }
+.mcs-dest.off { opacity:.45; border-style:dashed; cursor:default; }
+.mcs-dest.cancel { margin-top:auto; text-align:center; align-items:center; background:#F4F6F8; }
+.mcs-dest.cancel.over { background:#E9EDF1; border-color:var(--muted); }
+/* + New binder, as a destination (prototype .dest.new) */
+.mcs-dest.new { border-style:dashed; color:var(--t1); }
+/* the Move chooser: the same destinations, as buttons (P6-F4 B2A) */
+.mcs-choose .mcs-dest { text-align:left; font:inherit; color:var(--text); cursor:pointer; display:flex; flex-direction:column; }
+.mcs-choose .mcs-dest.new { color:var(--t1); }
+.mcs-choose .mcs-dest:disabled { cursor:default; }
+.mcs-choose .mcs-dest:not(:disabled):active { border-color:var(--t1); background:var(--t1-bg); }
+.mcs-newbin-scrim { z-index:65; }
+.mcs-omove-btn { min-width:96px; }
+.mcs-ghost { position:fixed; width:92px; transform:translate(-50%,-60%) rotate(-3deg) scale(1.04); pointer-events:none;
+  z-index:61; filter:drop-shadow(0 12px 18px rgba(10,16,20,.35)); }
+.mcs-undo { margin-left:8px; font-weight:600; }
+.mcs-ohomeset { margin-top:4px; } .mcs-ohomeset select { font-size:13px; padding:6px 8px; }
+.mcs-viewmode { padding:0; margin:0 0 10px; }
+.mcs-bsum { margin:0 0 10px; font-size:12.5px; color:var(--muted); } .mcs-bsum b { color:var(--text); font-size:15px; }
+
+@media (min-width:600px) {
+  .mcs-br-grid { grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); }
+  .mcs-ogrid { grid-template-columns:repeat(auto-fill, minmax(132px, 152px)); gap:18px 14px; justify-content:start; }
+  .mcs-osheet { border-radius:var(--r-sheet); margin-bottom:24px; max-height:86vh; }
+  .mcs-ohero-art { width:132px; }
+}
+
+/* a wide screen: the same four down the side, light */
+@media (min-width:860px) {
+  .mcs-nav { background:var(--panel); border-top:0; border-right:1px solid var(--line);
+    box-shadow:none; padding:14px 10px; }
+  .mcs-i { min-height:0; color:var(--muted); box-shadow:none; justify-content:flex-start; padding:10px 12px; }
+  .mcs-i .l { font-size:13.5px; text-align:left; }
+  .mcs-i .c { display:inline-block; }
+  .mcs-i:hover { background:var(--line-soft); }
+  .mcs-i.on { color:var(--t1); background:var(--t1-bg); box-shadow:none; }
+  .mcs-main { padding:0 28px 40px; }
+  /* The sidebar on the left, where the Trusted Partner's is: the earlier
+     row-reverse put the Collector's on the right. */
+  .mcs-body { flex-direction:row; }
+  .mcs-hd { margin:0 -28px; padding:22px 28px 6px; }
+  /* the card (P6-F3A), in a phone-width column: the prototype is a phone */
+  .mcs-cd-hd, .mcs-cd-scroll, .mcs-cd-dock { width:100%; max-width:560px; margin:0 auto; box-sizing:border-box; }
+  .mcs-d-ack { left:auto; right:24px; bottom:20px; max-width:420px; }
+  /* the account bar and banner are on screen here (P6-F1): no phone controls */
+  .mcs .mcs-acct, .mcs .mcs-scope { display:none; }   /* .mcs: outranks the base rules, which come later */
+  /* no tab bar here: the confirmation sits at the foot of the window */
+  .mcs-snack-wrap { bottom:20px; justify-content:flex-start; padding-left:264px; }
+  /* clear of the card sheet, which opens as a panel on the right here */
+  .mcs-snack { max-width:min(480px, max(280px, calc(100vw - 760px))); }
+  .mcs-ro, .mcs-joined { margin:12px 28px 0; }
+  .mcs-sheet-scrim { align-items:stretch; justify-content:flex-end; }
+  .mcs-spec-panel, .mcs-sheet { border-radius:0; border-left:1px solid var(--line); width:min(460px,100%);
+    max-height:100vh; padding:16px; box-shadow:-10px 0 30px rgba(10,16,20,.10); }
+  .mcs-spec-panel::before, .mcs-sheet::before { display:none; }
+}
+
+
+/* ============================================================================
+   P6-F1 — THE PHASE 6 PHONE, RESTORED (fidelity recovery)
+   Reference: the frozen prototype (fca2c61) index.html. Values below are the
+   prototype's own, named where they come from; production-only needs (four
+   tabs, 16px search text) are recorded in docs/PHASE6_APPROVED_DEVIATIONS.md.
+   ========================================================================== */
+/* the no-picture card, ported from the prototype's .art (every width). Named
+   mcs-cardph: .mcs-ph is the shell's PANEL HEAD (parts.jsx), and sharing the
+   name turned every panel head into a card (found in review, fixed before P6-F2). */
+.mcs .mcs-cardph { --h:200; --h2:180; position:relative; display:flex; flex-direction:column; align-items:stretch;
+  justify-content:flex-start; aspect-ratio:63/88; border-radius:9px; overflow:hidden; padding:6%;
+  background:linear-gradient(160deg,hsl(var(--h) 55% 62%),hsl(var(--h2) 50% 45%));
+  box-shadow:0 1px 2px rgba(0,0,0,.18), inset 0 0 0 3px hsl(48 70% 72%); color:#0B1620; font-size:13px; line-height:1.2; }
+.mcs-cardph-top { display:flex; justify-content:space-between; gap:4px; font-size:.8em; min-width:0; }
+.mcs-cardph-top b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mcs-cardph-window { flex:1; margin:6% 0; border-radius:4px; display:flex; align-items:center; justify-content:center;
+  background:radial-gradient(circle at 50% 35%,hsl(var(--h2) 70% 88%),hsl(var(--h) 45% 70%)); box-shadow:inset 0 0 0 2px rgba(0,0,0,.12); }
+.mcs-cardph-pose { width:86%; } .mcs-cardph-pose .body { fill:hsl(var(--h) 70% 52%); } .mcs-cardph-pose .fin { fill:hsl(var(--h) 75% 40%); }
+.mcs-cardph-pose .eye { fill:#0B1620; } .mcs-cardph-pose .cheek { fill:hsl(28 90% 60%); } .mcs-cardph-pose .shadow { fill:rgba(0,0,0,.15); }
+.mcs-cardph-pose.p1 { transform:scaleX(-1); } .mcs-cardph-pose.p2 { transform:rotate(-8deg); } .mcs-cardph-pose.p3 { transform:scale(.8) translateY(6px); }
+.mcs-cardph-pose.p4 { transform:scaleX(-1) rotate(6deg); }
+.mcs-cardph-foot { display:flex; justify-content:space-between; gap:4px; font-size:.68em; opacity:.85; min-width:0; }
+.mcs-cardph-foot span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mcs-cardph-none { position:absolute; left:8%; right:8%; bottom:16%; text-align:center; font-size:.62em; color:rgba(11,22,32,.65);
+  background:rgba(255,255,255,.6); border-radius:4px; padding:1px 0; }
+/* the card sheet's picture is still P6-4's 96px (its rebuild is P6-F2): the
+   placeholder's type scales to it rather than overflowing */
+.mcs .mcs-ohero-art.mcs-cardph { font-size:11.5px; padding:6px; }  /* 6% of its own 96px: a % pads by the PARENT's width */
+
+/* the account button and sheet; the one-line notice (phone only, see below) */
+.mcs-acct { flex:0 0 auto; width:44px; height:44px; margin:-8px -8px -8px 0; border:0; background:none; padding:6px;
+  display:inline-flex; align-items:center; justify-content:center; align-self:center; }
+.mcs-acct span { width:30px; height:30px; border-radius:999px; background:var(--t1-bg); color:var(--t1);
+  font-weight:700; font-size:13px; display:inline-flex; align-items:center; justify-content:center; }
+.mcs-acct-sheet { gap:14px; }
+.mcs-acct-who { display:flex; align-items:center; gap:12px; }
+.mcs-acct-who > span:last-child { display:flex; flex-direction:column; }
+.mcs-acct-big { width:44px; height:44px; border-radius:999px; background:var(--t1-bg); color:var(--t1); font-weight:700;
+  font-size:18px; display:inline-flex; align-items:center; justify-content:center; }
+.mcs-acct-scope { display:flex; flex-direction:column; gap:6px; font-size:13px; color:var(--text); }
+.mcs-acct-scope .dim { color:var(--muted); }
+.mcs-scope { margin:0 0 10px; font-size:12px; color:var(--muted); }
+
+@media (max-width:859px) {
+  /* the phone panel is white (prototype .phone); #EEF1F4 was its STAGE */
+  .mcs { --bg:#FFF; --tabbar-h:47px; }
+  /* no account bar and no banner on the phone: the account button and the
+     one-line notice carry them */
+  .mcs-top, .mcs-ro { display:none; }
+  /* the screen title (prototype .hd: 22px, 18px above, 10px below) */
+  .mcs-hd { padding:14px 16px 8px; align-items:center; }
+  .mcs-at-browse > .mcs-sub, .mcs-at-binder > .mcs-sub { display:none; }
+  /* search and filters (prototype .library .narrow / .lenses / .filters) */
+  .mcs-bcontrols { top:52px; padding:0 16px; }
+  .mcs-bcontrols .mcs-find { margin:0 0 8px; }
+  .mcs-bcontrols .mcs-in { background:#F7F9FA; border:1px solid var(--line); border-radius:12px; padding:5px 11px; }
+  .mcs-lenses { margin:0; padding:0 0 8px; gap:6px; }
+  .mcs-lenses .mcs-view { padding:5px 10px; font-size:12px; }
+  /* the disclosures (prototype .sechead / .unfhead / .unfiled) */
+  .mcs-bsection { margin-top:0; }
+  .mcs-unfiled { margin-top:8px; }
+  .mcs-bsection.mcs-results { margin-top:14px; }
+  .mcs-sechead { padding:4px 0 10px 18px; font-family:inherit; font-size:11px; font-weight:600; letter-spacing:.06em; }
+  .mcs-sechead::before { top:2px; }
+  .mcs-rhead { font-family:inherit; font-size:11px; letter-spacing:.06em; }
+  /* the grid (prototype .library .grid, .otile) */
+  .mcs-ogrid { gap:10px 8px; }
+  .mcs-otile { padding:4px; }
+  /* the tab bar (prototype .tabbar: 12px / 14px, labels on one line) — four
+     tabs, each as wide as its label needs, the rest shared */
+  .mcs-i { flex:1 1 auto; min-height:0; padding:12px 4px 14px; }
+  .mcs-i .l { font-size:13px; line-height:20px; white-space:nowrap; }
+}
+
+/* ============================================================================
+   P6-F2 — BROWSE, FROM THE PROTOTYPE (fca2c61 index.html: .narrow.unified,
+   .chips, .suggestions, .tabs, .gens/.filters, .tiles, .rows/.rowbtn/.fan,
+   .grid/.cell/.cap, .markers, .more, .empty). Values are the prototype's; the
+   search text is 16px (register B3: iPhone Safari zooms below 16px).
+   ========================================================================== */
+/* the account button sits at the right edge whether or not a count is there */
+.mcs-hd .mcs-acct { margin-left:auto; }
+.mcs-hd .mcs-hd-count + .mcs-acct { margin-left:0; }
+
+.mcs-browse { max-width:1040px; }
+.mcs-dsearch { position:relative; margin:4px 0 12px; }
+.mcs-dsearch-in { width:100%; box-sizing:border-box; padding:11px 34px 11px 14px; border:1px solid var(--t1); border-radius:12px;
+  background:#FFF; font-size:16px; color:var(--text); font-family:inherit; }
+.mcs-dclear { position:absolute; right:6px; top:50%; transform:translateY(-50%); border:0; background:none; font-size:18px;
+  color:var(--muted); width:36px; height:36px; }
+.mcs-dchips { display:flex; flex-wrap:wrap; gap:6px; margin:-4px 0 12px; }
+.mcs-dchip { border:1px solid var(--t1); background:var(--t1-bg); color:var(--t1); border-radius:999px; padding:5px 10px;
+  font-size:12.5px; font-weight:600; }
+.mcs-dchip.clearall { border-color:var(--line); background:#FFF; color:var(--muted); font-weight:500; }
+.mcs-dsugg { list-style:none; margin:-4px 0 12px; padding:0; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+.mcs-dsugg li + li { border-top:1px solid var(--line-soft); }
+.mcs-dsugg button { width:100%; text-align:left; border:0; background:#FFF; padding:9px 12px; display:flex; gap:6px; align-items:baseline;
+  color:var(--text); font-size:14px; }
+.mcs-dsugg .sk { color:var(--faint); font-size:11.5px; width:52px; flex:none; }
+.mcs-dsugg .sn { margin-left:auto; color:var(--faint); font-size:11.5px; white-space:nowrap; }
+.mcs-dtabs { display:flex; gap:6px; margin-bottom:14px; }
+.mcs-dtabs button { flex:1; padding:9px 0; border:1px solid var(--line); border-radius:999px; background:#FFF; font-weight:600;
+  color:var(--muted); font-size:14px; }
+.mcs-dtabs button.on { background:var(--text); color:#FFF; border-color:var(--text); }
+.mcs-dgens { display:flex; gap:6px; overflow-x:auto; padding:2px 0 10px; margin:-2px 0 10px; scrollbar-width:none; }
+.mcs-dgens::-webkit-scrollbar { display:none; }
+.mcs-dgens button { white-space:nowrap; padding:6px 11px; border-radius:999px; border:1px solid var(--line); background:#FFF;
+  font-size:12.5px; font-weight:600; color:var(--muted); }
+.mcs-dgens button.on { background:var(--text); color:#FFF; border-color:var(--text); }
+.mcs-dtiles { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:14px; }
+.mcs-dtile { border:0; background:none; padding:0; text-align:left; width:100%; color:var(--text); }
+.mcs-dtile b { display:block; margin-top:6px; font-size:15px; }
+.mcs-dtile > span:last-child { color:var(--faint); font-size:12px; }
+.mcs-dtile-art, .mcs-dcell-art { display:flex; align-items:center; justify-content:center; aspect-ratio:63/88; width:100%;
+  border-radius:9px; overflow:hidden; background:var(--line-soft); }
+.mcs-dtile-art img, .mcs-dcell-art img { width:100%; height:100%; object-fit:cover; }
+.mcs-drows { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px; }
+.mcs-drow { display:flex; gap:14px; align-items:center; width:100%; text-align:left; border:1px solid var(--line); background:#FFF;
+  border-radius:14px; padding:10px; color:var(--text); }
+.mcs-drow-t { display:flex; flex-direction:column; min-width:0; }
+.mcs-drow-t b { font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mcs-drow-t span { color:var(--faint); font-size:12px; }
+.mcs-dfan { display:flex; flex:0 0 auto; }
+.mcs-dfan-art { width:56px; flex:0 0 56px; margin-right:-26px; aspect-ratio:63/88; display:flex; border-radius:6px; overflow:hidden; }
+.mcs-dfan-art:last-child { margin-right:0; }
+.mcs .mcs-dfan-art.mcs-cardph { padding:3px; border-radius:6px; }
+.mcs-dfan .mcs-cardph-top, .mcs-dfan .mcs-cardph-foot, .mcs-dfan .mcs-cardph-none { display:none; }
+.mcs-dgrid { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:14px 12px; }
+.mcs-dcell { border:0; background:none; padding:0; text-align:left; width:100%; border-radius:12px; color:var(--text); }
+.mcs-dcell.on { outline:2px solid var(--t1); outline-offset:3px; }
+.mcs-dcap { display:flex; justify-content:space-between; gap:6px; color:var(--faint); font-size:11.5px; margin-top:5px; }
+.mcs-dcap span:first-child { min-width:0; }   /* wraps, as the prototype's caption does */
+.mcs-dcap span:last-child { white-space:nowrap; }
+.mcs-dmarks { display:flex; flex-wrap:wrap; gap:4px; margin-top:5px; }
+.mcs-cd .mcs-cd-shops { margin:4px 0 18px; border:1px solid var(--line); border-radius:14px; padding:10px 12px; background:#FFF; }
+.mcs-cd .mcs-cd-shops h4 { margin:0 0 6px; font-size:13px; color:var(--t1); display:flex; align-items:center; gap:6px; }
+.mcs-cd .mcs-cd-shops h4::before { content:""; width:7px; height:7px; border-radius:50%; background:var(--t1); }
+.mcs-cd .mcs-cd-shops ul { list-style:none; margin:0; padding:0; }
+.mcs-cd .mcs-cd-shops li.mcs-cd-shop { padding:8px 0; }
+.mcs-cd .mcs-cd-shops li.mcs-cd-shop + li.mcs-cd-shop { border-top:1px solid var(--line-soft); }
+.mcs-cd .mcs-cd-shops .mcs-cd-shop-name { display:block; font-size:14px; color:var(--text); margin:0 0 2px; }
+.mcs-cd .mcs-cd-shops li li { display:flex; flex-direction:column; gap:1px; padding:5px 0 5px 10px; font-size:13px; color:var(--muted);
+  border-left:2px solid var(--line-soft); }
+.mcs-cd .mcs-cd-shop-hd { display:flex; justify-content:space-between; gap:8px; color:var(--text); }
+.mcs-cd .mcs-cd-shop-ok { font-size:11.5px; font-weight:600; color:var(--t1); }
+.mcs-cd .mcs-cd-shop-price { color:var(--text); }
+/* the next step on a shop's copy (P6-F5B): Make an Offer is the one filled
+   action; the rest are quiet, and Open in Deal Flow is a link, not a button */
+.mcs-cd .mcs-cd-next { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:6px; }
+.mcs-cd .mcs-cd-next .mcs-go { min-height:38px; }
+.mcs-cd .mcs-cd-offer { border:0; border-radius:10px; padding:9px 14px; min-height:40px; font-weight:700; font-size:13.5px;
+  background:var(--t1); color:#FFF; }
+.mcs-cd .mcs-cd-next-note { flex-basis:100%; font-size:12.5px; color:var(--text); }
+.mcs-cd .mcs-cd-next-problem { flex-basis:100%; font-size:12.5px; color:var(--amber); }
+.mcs-cd p.mcs-cd-noshop { margin:0 0 16px; font-size:12.5px; color:var(--muted); }
+/* AT MY SHOPS (P6-F5A): one quiet filter, and one quiet line under a card a
+   connected shop has available — the artwork stays the thing you see */
+/* the scope (F5A.1): a compact two-way segmented control under the search */
+.mcs-dscope { display:flex; gap:0; margin:-2px 0 12px; padding:3px; border-radius:12px; background:var(--line-soft); }
+.mcs-dscope-opt { flex:1; border:0; background:transparent; border-radius:9px; padding:7px 10px; font-size:13.5px; font-weight:600;
+  color:var(--muted); min-height:36px; }
+.mcs-dscope-opt.on { background:#FFF; color:var(--t1); box-shadow:0 1px 3px rgba(10,16,20,.12); }
+.mcs-dscope-opt:focus-visible { outline:2px solid var(--t1); outline-offset:1px; }
+.mcs-dshop { display:flex; align-items:center; gap:5px; margin-top:4px; font-size:10.5px; font-weight:600; color:var(--t1); }
+.mcs-dshop::before { content:""; width:6px; height:6px; border-radius:50%; background:var(--t1); flex:0 0 auto; }
+.mcs-dmarks .mcs-mk { font-size:10.5px; }
+.mcs-dmore { display:block; width:100%; border:0; background:none; text-align:center; color:var(--faint); font-size:12px; margin:14px 0; min-height:44px; }
+.mcs-dempty { color:var(--faint); font-size:12.5px; margin-top:18px; text-align:center; }
+@media (min-width:600px) {
+  .mcs-dtiles, .mcs-dgrid { grid-template-columns:repeat(auto-fill, minmax(150px, 180px)); justify-content:start; }
+}
+
+/* ============================================================================
+   P6-F3A — THE CARD, FROM THE PROTOTYPE (fca2c61 index.html: .detail L78–81,
+   .hd.over L34, .back L33, .stepper L36/123, .minihead L35, .hero L82,
+   .art.size-hero L59, .art.real L168–169, .imgnote L189, .ident L83,
+   .remembered L84–86, .q L88, .choice L94–96/173, .wrap L93, .cannot L172,
+   .established L87, .spacer L100, .dock L101, .hint L102, .add L103–106).
+   The prototype's card sits over its whole phone, tab bar included; so does
+   this one — above the tab bar, below the Card Specification and the bar.
+   ========================================================================== */
+.mcs-cd { position:fixed; inset:0; z-index:28; background:var(--panel); display:flex; flex-direction:column;
+  animation:mcs-cd-rise .22s ease-out; }
+@keyframes mcs-cd-rise { from { transform:translateY(16px); } to { transform:none; } }
+.mcs-cd-hd { display:flex; align-items:center; gap:10px; padding:14px 16px 8px; border-bottom:1px solid transparent; }
+.mcs-cd-back { border:0; background:none; color:var(--t1); padding:0; font-weight:600; font-size:14px; min-width:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mcs-cd-mini { display:flex; align-items:center; gap:7px; min-width:0; animation:mcs-cd-reveal .2s ease-out; }
+.mcs-cd-mini b { font-size:14px; white-space:nowrap; } .mcs-cd-mini > span { color:var(--muted); font-size:12px; white-space:nowrap; }
+.mcs-cd-step { margin-left:auto; display:flex; align-items:center; gap:8px; opacity:.55; }
+.mcs-cd-step:hover { opacity:1; }
+.mcs-cd-step button { border:1px solid var(--line); background:#FFF; border-radius:8px; width:28px; height:28px; color:var(--text);
+  font-size:14px; line-height:1; padding:0; }
+.mcs-cd-step button:disabled { opacity:.3; }
+.mcs-cd-scroll { flex:1; overflow-y:auto; padding:0 18px; }
+.mcs-cd-hero { padding:4px 0 12px; }
+.mcs-cd-frame { position:relative; display:block; width:72%; margin:0 auto; }
+.mcs-cd-art.hero { display:flex; flex-direction:column; width:100%; aspect-ratio:63/88; overflow:hidden;
+  border-radius:4.5%/3.3%; box-shadow:0 1px 3px rgba(0,0,0,.25); }
+.mcs-cd-art.hero:not(.mcs-cardph) { background:#1B2430; }
+/* the prototype's sheen (index.html .sheen L67–70) */
+.mcs-cd-sheen { position:absolute; inset:0; pointer-events:none; mix-blend-mode:soft-light; background-size:250% 250%;
+  border-radius:4.5%/3.3%; animation:mcs-cd-sheen 6s ease-in-out infinite; }
+.mcs-cd-frame.holo .mcs-cd-sheen { background-image:linear-gradient(115deg,transparent 20%,rgba(255,120,200,.75) 35%,rgba(120,220,255,.8) 50%,rgba(255,240,120,.75) 65%,transparent 80%); }
+.mcs-cd-frame.rev .mcs-cd-sheen { background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.45) 0 6px,transparent 6px 14px);
+  -webkit-mask:linear-gradient(#000,#000) content-box,linear-gradient(#000,#000); -webkit-mask-composite:xor; mask-composite:exclude; padding:6%; }
+@keyframes mcs-cd-sheen { 0%,100% { background-position:0% 0%; } 50% { background-position:100% 100%; } }
+.mcs-cd-art img { display:block; width:100%; height:100%; object-fit:cover; }
+.mcs .mcs-cd-art.hero.mcs-cardph { border-radius:14px; font-size:18px; }
+.mcs-cd-art.mini { display:flex; width:26px; flex:0 0 26px; aspect-ratio:63/88; overflow:hidden; border-radius:3px; }
+.mcs .mcs-cd-art.mini.mcs-cardph { padding:2px; border-radius:3px; }
+.mcs-cd-art.mini .mcs-cardph-top, .mcs-cd-art.mini .mcs-cardph-foot, .mcs-cd-art.mini .mcs-cardph-none { display:none; }
+.mcs-cd p.mcs-cd-imgnote { text-align:center; color:var(--faint); font-size:11.5px; margin:-6px 0 10px; }
+.mcs-cd-ident h2 { margin:0; font-size:22px; font-family:inherit; }
+.mcs-cd-ident p { margin:2px 0 10px; color:var(--muted); font-size:14px; }
+.mcs-cd-remembered { background:var(--t1-bg); border-radius:12px; padding:10px 12px; margin:6px 0 14px; }
+.mcs-cd-remembered h4 { margin:0 0 4px; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--t1); }
+.mcs-cd-remembered ul { margin:0; padding-left:16px; } .mcs-cd-remembered li { font-size:13px; }
+.mcs-cd-q { margin:6px 0 18px; } .mcs-cd-q h3 { margin:0 0 8px; font-size:15px; }
+.mcs-cd-wrap { display:flex; flex-wrap:wrap; gap:8px; }
+.mcs-cd-choice { text-align:left; border:1.5px solid var(--line); background:#FFF; border-radius:12px; padding:10px 12px;
+  transition:border-color .15s, background .15s; color:var(--text); }
+.mcs-cd-choice b { display:block; font-size:14px; }
+.mcs-cd-choice.on { border-color:var(--t1); background:var(--t1-bg); }
+.mcs-cd p.mcs-cd-cannot { margin:0 0 8px; color:var(--muted); }
+.mcs-cd p.mcs-cd-established { color:var(--muted); font-size:13px; margin:4px 0 14px; }
+.mcs-cd-spacer { height:20px; }
+.mcs-cd-dock { border-top:1px solid var(--line); padding:10px 16px calc(16px + env(safe-area-inset-bottom, 0px)); background:#FFF; }
+.mcs-cd p.mcs-cd-hint { margin:0 0 8px; text-align:center; font-size:13px; color:var(--t1); } .mcs-cd p.mcs-cd-hint.quiet { color:var(--faint); }
+.mcs-cd-add { width:100%; padding:15px; border-radius:14px; border:0; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+  background:#E6EAEE; color:#9AA3AE; font-size:14px; transition:background .25s, color .25s, transform .25s, box-shadow .25s;
+  -webkit-tap-highlight-color:transparent; }
+.mcs-cd-add.ready { background:var(--t1); color:#FFF; box-shadow:0 6px 16px rgba(11,93,102,.28); }
+/* Stage 2 — the questions (prototype index.html .reveal L89, .nudge L90, .row/.col
+   L91–92, .choice span/.known L95–97, .choice:disabled L173, .add.pop L106,
+   .add.added L157, .hint.ack L158, .toast.float L162–164, .cell.just L160–161) */
+.mcs-cd-reveal { animation:mcs-cd-reveal .28s ease-out; }
+.mcs-cd-q.nudge { animation:mcs-cd-nudge 1.1s ease-out; border-radius:12px; }
+@keyframes mcs-cd-nudge { 0% { box-shadow:0 0 0 0 rgba(11,93,102,0); } 30% { box-shadow:0 0 0 6px rgba(11,93,102,.18); } 100% { box-shadow:0 0 0 0 rgba(11,93,102,0); } }
+.mcs-cd-row { display:flex; gap:8px; } .mcs-cd-row .mcs-cd-choice { flex:1; }
+.mcs-cd-col { display:flex; flex-direction:column; gap:8px; }
+.mcs-cd-choice span { display:block; color:var(--muted); font-size:12.5px; }
+/* the prototype's body line-height (1.45), which its buttons inherit and a browser's buttons reset */
+.mcs-cd-choice { line-height:1.45; }
+.mcs-cd-choice.known { border-style:dashed; background:#F7F9FA; cursor:default; }
+.mcs-cd-choice:disabled { opacity:.55; cursor:not-allowed; border-style:dashed; }
+.mcs-cd-add.pop { transform:translateY(-2px) scale(1.015); }
+.mcs-cd-add.added { background:#1F6F4A; color:#FFF; box-shadow:0 6px 16px rgba(31,111,74,.25); }
+.mcs-cd p.mcs-cd-hint.ack { color:#1F6F4A; font-weight:600; }
+.mcs-cd p.mcs-cd-hint.problem { color:var(--amber); }
+.mcs-d-ack { position:fixed; left:12px; right:12px; bottom:calc(var(--tabbar-h, 0px) + 10px + env(safe-area-inset-bottom, 0px)); z-index:27;
+  margin:0; padding:10px 12px; text-align:left; display:block; background:var(--t1-bg); color:var(--t1); border:1px solid #CFE3E5; border-radius:10px;
+  font-size:12.5px; box-shadow:0 8px 20px rgba(10,16,20,.12); animation:mcs-cd-reveal .25s ease-out; }
+.mcs-d-ack b { color:var(--t1); }
+.mcs-d-ack .mcs-d-ack-body { border:0; background:none; padding:0; text-align:left; font:inherit; color:inherit; display:block; width:100%; }
+.mcs-d-ack .mcs-d-ack-acts { display:flex; justify-content:flex-end; align-items:center; gap:12px; margin-top:8px; }
+.mcs-d-ack .mcs-d-ack-acts .mcs-go { min-height:40px; } .mcs-d-ack span { color:var(--muted); font-size:12px; }
+.mcs-d-ack .mcs-d-ack-value { display:block; margin:3px 0 0; color:var(--text); font-size:12.5px; }
+.mcs-dcell.just { animation:mcs-d-just 2.4s ease-out; }
+@keyframes mcs-d-just { 0% { box-shadow:0 0 0 0 rgba(11,93,102,0); } 15% { box-shadow:0 0 0 5px rgba(11,93,102,.35); } 100% { box-shadow:0 0 0 0 rgba(11,93,102,0); } }
+@keyframes mcs-cd-reveal { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
 `;
+
+/* THE NOTICE HAS TO BE TRUE, AND BATCH 7 CHANGED WHAT IS TRUE. Goals can now
+   be set, changed and removed from here, so a blanket "read-only" would be a
+   lie — and "Goals … arrive in a later release" doubly so. What is still
+   read-only is everything else, and the notice says which. IT ONLY SAYS SO
+   WHEN IT CAN: handed no callback, this shell can change nothing, and
+   claiming otherwise would be the same lie in the other direction.
+   ONE WORDING, THREE PLACES (P6-F1): the banner on a wide screen, the account
+   sheet on a phone, and — shortened, never changed — the one-line note. */
+function scopeNotice(onAddGoal, onOpenOffer) {
+  return onAddGoal ? (
+    <>
+      <span>Your goals are yours to change — say what you&apos;re looking for and how hard.</span>
+      <span className="dim">{onOpenOffer
+        ? "Offers are yours to make and answer in Deal Flow. Everything else here is read-only for now: trades and messages arrive later."
+        : "Everything else here is read-only for now: trades and messages arrive later."}</span>
+    </>
+  ) : (
+    <>
+      <span>Read-only for now — everything here is what MetYet holds for you.</span>
+      <span className="dim">Goals, trades and messages arrive in a later release.</span>
+    </>
+  );
+}
+/* The phone's one line, for the screens it is true of. */
+function scopeLine(sectionId, onAddGoal) {
+  if (!onAddGoal) return "Read-only for now — everything here is what MetYet holds for you.";
+  /* Not on Deal Flow (Milestone 2C.1): its cards say where each deal stands,
+     and the account sheet still says what works today. */
+  return sectionId === "partners" ? "Trades and messages arrive later." : null;
+}
 
 export default function CollectorShell({ state, onSignOut, joined = null, onDismissJoined = null,
   onAddGoal = null, onSetPriority = null, onRemoveGoal = null, onBrowseCards = null,
   onSpecify = null, onCreateBinder = null, onRenameBinder = null,
   onInspect = null, onEndInspection = null, onRequestPhotos = null,
+  onOpenOffer = null, onCounterOffer = null, onAcceptOffer = null, onWithdrawOffer = null,
+  onRefresh = null,
+  /* A DEAL'S CONVERSATION (Milestone 2D.2): one message on one deal, handed
+     to the Deal Workspace and nowhere else. */
+  onSendMessage = null,
+  /* SELECT TRADE (M3A A3): "hold on", "ready" and taking a card back out —
+     the Deal Workspace's, and nowhere else's. */
+  onHoldSelection = null, onReadyForSelection = null, onWithdrawTradeCard = null,
   onArchiveBinder = null,
   /* WHERE A FILED THING GOES NEXT (Batch 3B-1). Bound at the entrance like
      every other command and handed down, so a section stays a surface that
@@ -527,7 +1485,10 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
      empty search box. It holds a doorway, what was typed, which set or artist
      is open, the page and the rows — and nothing durable: it is gone when the
      tab is closed, which is exactly what a browsing session should be. */
-  const [browseSession, setBrowseSession] = useState(EMPTY_SESSION);
+  const [browseSession, setBrowseSession] = useState(newBrowseSession);
+  /* How many cards Browse is showing, for the count beside its title (P6-F2,
+     as the prototype puts it); null when it is showing the doorways. */
+  const [browseCount, setBrowseCount] = useState(null);
   /* WHICH BINDER IS BEING FILLED, IF ONE IS (Phase 5 C3.4). "Add cards" in a
      binder sends a person to Browse, and this is the note they carry: a binder
      id and its name, held here for the same reason the browsing session is —
@@ -540,8 +1501,50 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
      Collector can untick; Save still writes only the difference, and Cancel
      still writes nothing. */
   const [fillingBinder, setFillingBinder] = useState(null);
+  /* the binder to open on arrival in Binders, after "Back to <binder>" (P6-F4 B3) */
+  const [returnTo, setReturnTo] = useState(null);
+  /* FROM A SHOP'S COPY TO DEAL FLOW, OR TO THE GOAL IN BINDERS (P6-F5B): the
+     exact copy (or Goal) is carried, and the destination opens on it once. */
+  const [dealFocus, setDealFocus] = useState(null);
+  const [binderFocus, setBinderFocus] = useState(null);
+
+  /* THE DEAL WORKSPACE (Milestone 2C): which ONE opportunity is open full
+     screen, by its own id — and VIEW MATCHES (Milestone 2C.1): which ONE
+     Goal's matching copies are, by the Goal's id, with the copy to open the
+     offer composer on when Browse's Make an Offer sent them. Back from
+     either lands on that Goal's card in Deal Flow. Presentation state in
+     memory, like the rest of this shell; the deal and the copies are always
+     the server's projection.
+
+     NOT IN THE ADDRESS BAR. The product reads the URL in exactly one place —
+     the entrance, where an invitation's credential arrives in the fragment —
+     and that boundary is held by test. So the workspace is not a URL, the
+     browser's own Back does not close it, and a reload (which signs out: the
+     session is never stored) returns to the first screen. */
+  const [dealOpen, setDealOpen] = useState(null);
+  const [matchesOpen, setMatchesOpen] = useState(null);
+  const openDeal = (oppId) => { setMatchesOpen(null); setDealOpen(oppId); };
+  const closeDeal = () => {
+    const was = dealOpen;
+    const o = rows(state && state.opportunities).find((x) => x.id === was);
+    setDealOpen(null);
+    setSection("deal-flow");
+    if (o && o.goalId != null) setDealFocus({ goalId: o.goalId, returnFrom: was });
+  };
+  const openMatches = (goalId, compose = null) => setMatchesOpen({ goalId, compose });
+  const closeMatches = () => {
+    const was = matchesOpen;
+    setMatchesOpen(null);
+    setSection("deal-flow");
+    if (was) setDealFocus({ goalId: was.goalId, returnFrom: true });
+  };
 
   const who = describeActor(state);
+  /* THE ACCOUNT, ON A PHONE (P6-F1). The Phase 6 phone has no account bar:
+     the screen is the collection. Who is signed in, what this release can
+     and cannot do, and Sign out move into one sheet behind a small button in
+     the screen's own header — one tap away, never in the way. */
+  const [accountOpen, setAccountOpen] = useState(false);
   /* Row counts of collections the SERVER scoped to this Collector. Nothing
      here decides what any of them mean — which is why there is no
      opportunities count: "active" is a judgement, and it is the server's. */
@@ -592,28 +1595,43 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
         </div>
       ) : null}
 
-      {/* THE NOTICE HAS TO BE TRUE, AND BATCH 7 CHANGED WHAT IS TRUE. Goals can
-          now be set, changed and removed from here, so a blanket "read-only"
-          would be a lie — and "Goals … arrive in a later release" doubly so.
-          What is still read-only is everything else, and the notice says which.
+      {/* The notice (see scopeNotice). On a phone it moves to the account
+          sheet and, where it applies, one line under the screen title. */}
+      <div className="mcs-ro" role="note">{scopeNotice(onAddGoal, onOpenOffer)}</div>
 
-          IT ONLY SAYS SO WHEN IT CAN. Handed no callback, this shell can change
-          nothing, and claiming otherwise would be the same lie in the other
-          direction. */}
-      <div className="mcs-ro" role="note">
-        {onAddGoal ? (
-          <>
-            <span>Your goals are yours to change — say what you&apos;re looking for and how hard.</span>
-            <span className="dim">Everything else here is read-only for now: trades and messages arrive later.</span>
-          </>
-        ) : (
-          <>
-            <span>Read-only for now — everything here is what MetYet holds for you.</span>
-            <span className="dim">Goals, trades and messages arrive in a later release.</span>
-          </>
-        )}
-      </div>
+      {accountOpen ? (
+        <div className="mcs-sheet-scrim" role="dialog" aria-modal="true" aria-label="Account"
+          onClick={(e) => { if (e.target === e.currentTarget) setAccountOpen(false); }}
+          onKeyDown={(e) => { if (e.key === "Escape") setAccountOpen(false); }}>
+          <div className="mcs-sheet mcs-acct-sheet">
+            <div className="mcs-acct-who">
+              <span className="mcs-acct-big" aria-hidden="true">{(who.name || "?").trim().charAt(0).toUpperCase()}</span>
+              <span><strong>{who.name || "Your account"}</strong><span className="mcs-dim">Collector</span></span>
+            </div>
+            <div className="mcs-acct-scope" role="note">
+              <strong>What works today</strong>
+              {scopeNotice(onAddGoal, onOpenOffer)}
+            </div>
+            <p className="mcs-goal-do">
+              <button className="mcs-go" type="button" onClick={onSignOut}>Sign out</button>
+              <button className="mcs-go quiet" type="button" autoFocus onClick={() => setAccountOpen(false)}>Close</button>
+            </p>
+          </div>
+        </div>
+      ) : null}
 
+      {dealOpen ? (
+        <DealWorkspace state={state} oppId={dealOpen} onBack={closeDeal} onBrowseCards={onBrowseCards}
+          onCounterOffer={onCounterOffer} onAcceptOffer={onAcceptOffer} onWithdrawOffer={onWithdrawOffer}
+          onRefresh={onRefresh} onSendMessage={onSendMessage}
+          onHoldSelection={onHoldSelection} onReadyForSelection={onReadyForSelection}
+          onWithdrawTradeCard={onWithdrawTradeCard} />
+      ) : matchesOpen ? (
+        <GoalMatches key={matchesOpen.goalId} state={state} goalId={matchesOpen.goalId} compose={matchesOpen.compose}
+          onBack={closeMatches} onBrowseCards={onBrowseCards}
+          onEndInspection={onEndInspection} onRequestPhotos={onRequestPhotos}
+          onOpenOffer={onOpenOffer} onOpenDeal={(oppId) => openDeal(oppId)} onRefresh={onRefresh} />
+      ) : (
       <div className="mcs-body">
         <nav className="mcs-nav" aria-label="Collector">
           {SECTIONS.map((s) => (
@@ -626,9 +1644,35 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
             </button>
           ))}
         </nav>
-        <main className="mcs-main" key={section}>
-          <h1 className="mcs-h disp">{meta.title}</h1>
+        <main className={`mcs-main mcs-at-${meta.id}`} key={section}>
+          {/* THE SCREEN'S OWN HEADER (Phase 6 P6-1). The title stays in view
+              while the screen scrolls, as in the Phase 6 prototype; the line
+              under it scrolls away with the content it introduces. */}
+          <header className="mcs-hd">
+            <h1 className="mcs-h disp">{meta.title}</h1>
+            {/* The same row count the tab carries, in words (Phase 6 puts it
+                here, beside the title, and keeps the phone's tab bar to labels). */}
+            {meta.count && meta.unit ? (
+              <span className="mcs-hd-count">
+                {`${counts[meta.id]} ${counts[meta.id] === 1 ? meta.unit[0] : meta.unit[1]}`}
+              </span>
+            ) : meta.id === "browse" && browseCount != null ? (
+              <span className="mcs-hd-count">{`${browseCount.toLocaleString()} ${browseCount === 1 ? "card" : "cards"}`}</span>
+            ) : null}
+            <button type="button" className="mcs-acct" aria-haspopup="dialog"
+              aria-label={`Account: ${who.name || "Your account"}`} onClick={() => setAccountOpen(true)}>
+              <span aria-hidden="true">{(who.name || "?").trim().charAt(0).toUpperCase()}</span>
+            </button>
+          </header>
           <p className="mcs-sub">{meta.sub}</p>
+          {/* WHAT DOES NOT WORK YET, SAID WHERE IT MATTERS (P6-F1). On a phone
+              the full notice lives in the account sheet; a screen whose
+              features are limited says so in one line. Binders and Browse
+              need none when Goals can be changed — everything there works. */}
+          {scopeLine(meta.id, onAddGoal) ? (
+            <p className="mcs-scope">{scopeLine(meta.id, onAddGoal)}{" "}
+              <button type="button" className="mcs-linkish" onClick={() => setAccountOpen(true)}>What works today</button></p>
+          ) : null}
           {/* Goals is the one section a person can change something from
               (Batch 7), so it is the one that receives callbacks. Every other
               section is handed the projection and nothing else. */}
@@ -640,12 +1684,17 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
           <View state={state} {...(meta.id === "goals"
             ? { onAddGoal, onSetPriority, onRemoveGoal, onBrowseCards }
             : meta.id === "browse"
-              ? { onSpecify, onBrowseCards, session: browseSession, onSession: setBrowseSession,
-                fillingBinder, onDoneFilling: () => setFillingBinder(null) }
+              ? { onSpecify, onBrowseCards, session: browseSession, onSession: setBrowseSession, onCount: setBrowseCount,
+                fillingBinder, onDoneFilling: () => setFillingBinder(null), onRefresh,
+                onBackToBinder: () => { setReturnTo(fillingBinder); setFillingBinder(null); setSection("binder"); },
+                onMakeOffer: onOpenOffer ? (f) => { setSection("deal-flow"); openMatches(f.goalId, f); } : null,
+                onOpenDeal: (f) => { setDealFocus({ ...f, compose: false }); setSection("deal-flow"); },
+                onEditGoal: (goalId) => { setBinderFocus(`g:${goalId}`); setSection("binder"); } }
               : meta.id === "binder"
                   ? { onSpecify, onBrowseCards, onCreateBinder, onRenameBinder,
-                    onArchiveBinder, fillingBinder, onFileObject, onUnfileObject,
-                    onAddCards: (into) => { setFillingBinder(into); setSection("browse"); } }
+                    onArchiveBinder, fillingBinder: fillingBinder || returnTo, onFileObject, onUnfileObject, onRefresh,
+                    onAddCards: (into) => { setReturnTo(null); setFillingBinder(into); setSection("browse"); },
+                    focusKey: binderFocus, onFocusUsed: () => setBinderFocus(null) }
                   : meta.id === "partners"
                     /* Trusted Partners asks the catalog what the cards a shop
                        has for you are called, and takes nothing else (Phase 5
@@ -653,18 +1702,22 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
                        a question and offers no way to act on the answer. */
                     ? { onBrowseCards }
                     : meta.id === "deal-flow"
-                      /* AND THE QUALIFICATION COMMANDS (this batch). Deal Flow
-                         was handed no command while Inspect and Request Photos
-                         were unexposed, because a control that cannot work is a
-                         promise the product has not kept. They work now, so it
-                         gets exactly those three and no more: Agree Market
-                         Value, Pending and everything downstream of them are
-                         still real domain commands with no surface, and this
-                         screen still stops at the line before a transaction. */
-                      ? { onBrowseCards, onInspect, onEndInspection, onRequestPhotos }
+                      /* ORIENTATION ONLY (Milestone 2C.1). The landing page
+                         sends nothing: its cards open the one deal in the Deal
+                         Workspace, or the one Goal's matches in View Matches,
+                         and those two screens are handed the commands above —
+                         Inspect, Request Photos, Make an offer; Accept, Counter,
+                         Withdraw. Everything downstream of an agreed price is
+                         still a real domain command with no surface. */
+                      ? { onBrowseCards, onRefresh,
+                        onOpenDeal: (oppId) => openDeal(oppId),
+                        onOpenMatches: (goalId) => openMatches(goalId),
+                        onFindCards: () => setSection("browse"),
+                        focus: dealFocus, onFocusUsed: () => setDealFocus(null) }
                       : {})} />
         </main>
       </div>
+      )}
     </div>
   );
 }

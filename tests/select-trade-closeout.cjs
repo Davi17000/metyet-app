@@ -59,7 +59,9 @@ const atSelectTrade = (rows) => {
     catalog: [A_CARD, TARGET],
     collectors: [{ id: "casey", name: "Casey", prefs: [] }],
     partners: [{ id: "nl", name: "Northline Cards" }],
-    goals: [], collectorCopies: [], binders: [], binderEntries: [], interests: [], conversations: [], opportunities: [],
+    goals: [], binders: [], binderEntries: [], interests: [], conversations: [], opportunities: [],
+    /* RESTATED (M3A A1): a real offered copy, so the partner's close can reserve it. */
+    collectorCopies: [{ id: "b-a", collectorId: "casey", cardId: "ka", offered: true }],
     preferences: [], photoRequests: [], copyReviews: [],
     inventory: [{ invId: "inv-1", partnerId: "nl", cardId: "kt", ask: 4200,
       archived: false, photos: { front: "f", back: "b" } }],
@@ -69,7 +71,8 @@ const atSelectTrade = (rows) => {
     cardId: "kt", invId: "inv-1", listedPrice: 4200, amount: 3990, at: AT });
   st.actions.agreePrice({ oppId: o, amount: 3990, by: "tp", at: AT });
   st.actions.patchOpportunity(o, (x) => ({ ...x, stage: "select-trade",
-    trade: { ...x.trade, submitted: rows.length > 0, cards: rows } }));
+    trade: { ...x.trade, submitted: rows.length > 0, cards: rows,
+      selection: rows.length ? { sentAt: AT, readyAt: AT } : {} } }));
   const get = () => st.get().opportunities.find((x) => x.id === o);
   return { st, o, get, rows: () => get().trade.cards };
 };
@@ -106,8 +109,9 @@ const emptyPackage = (x) => ({ ...x, trade: { ...x.trade, submitted: false, card
 describe("A. Cash-only is the empty-package path", () => {
   test("the contradiction is refused at the action, not just hidden", () => {
     /* Reproduces the browser bug: before this, the deal advanced to `deal` with
-       mode "cash" and a row still at "proposed". */
-    const w = atSelectTrade([row()]);
+       mode "cash" and a row still in the trade. RESTATED (M3A A1): the live row
+       is the partner's selection now. */
+    const w = atSelectTrade([row({ inclusion: "accepted" })]);
     const res = w.st.actions.chooseCashOnly({ oppId: w.o, at: AT });
     eq(res.refused, D.REFUSE.tradeCardsSelected, "a direct caller cannot create it");
     eq(w.get().stage, "select-trade", "the deal did not advance");
@@ -134,7 +138,7 @@ describe("A. Cash-only is the empty-package path", () => {
   });
 
   test("removing the cards makes it valid again", () => {
-    const w = atSelectTrade([row()]);
+    const w = atSelectTrade([row({ inclusion: "accepted" })]);   // RESTATED (M3A A1): a selected card
     eq(w.st.actions.chooseCashOnly({ oppId: w.o, at: AT }).refused,
       D.REFUSE.tradeCardsSelected, "blocked while the card is in");
     w.st.actions.patchOpportunity(w.o, (x) => ({ ...x, trade: { ...x.trade, cards: [] } }));
@@ -152,7 +156,12 @@ describe("A. Cash-only is the empty-package path", () => {
   });
 
   test("the button is absent while cards are in the trade", () => {
-    render();
+    /* RESTATED (M3A A1): the demo seed still carries a legacy Collector
+       proposal, which holds nothing any more (A1P re-seeds it); the partner's
+       selection is put in its place so the rule under test — no cash-only while
+       cards are live — is still exercised on the real screen. */
+    render((x) => ({ ...x, trade: { ...x.trade,
+      cards: x.trade.cards.map((c) => ({ ...c, inclusion: "accepted" })) } }));
     assert(D.TRADE.liveTradeRows(opp()).length > 0, "the seeded package has cards");
     assert(!labels().some((t) => /Continue without trade/.test(t)),
       "so the contradictory choice is not offered");
@@ -264,17 +273,24 @@ describe("C. Redundant surfaces are gone", () => {
 });
 
 describe("D. Nothing upstream or downstream regressed", () => {
+  /* RESTATED (M3A A1): selection closes by the partner's explicit command. */
   test("the close-selection rule still runs", () => {
-    const w = atSelectTrade([row()]);
-    w.st.actions.reviewTradeCards({ oppId: w.o, decision: "accepted", at: AT });
+    const w = atSelectTrade([row({ inclusion: "accepted" })]);
+    w.st.actions.closeTradeSelection({ oppId: w.o, at: AT });
     eq(w.get().stage, "value-trade", "the prior pass's fix is intact");
   });
 
-  test("all-rejected still becomes a cash purchase", () => {
-    const w = atSelectTrade([row()]);
-    w.st.actions.reviewTradeCards({ oppId: w.o, decision: "rejected", at: AT });
-    eq(w.get().stage, "deal", "nothing left to value");
-    eq(w.get().trade.mode, "cash", "so it settles in cash");
+  /* RESTATED (M3A A1). WAS: all-rejected became a cash purchase by itself.
+     NOW: cash only is the Collector's explicit choice; an empty close hands
+     them that decision rather than making it. */
+  test("all-deselected hands the Collector the cash decision", () => {
+    const w = atSelectTrade([row({ inclusion: "accepted" })]);
+    w.st.actions.deselectTradeCard({ oppId: w.o, tradeCardId: w.rows()[0].id, at: AT });
+    w.st.actions.closeTradeSelection({ oppId: w.o, at: AT });
+    eq(w.get().stage, "select-trade", "nothing left to value, and nothing chosen for them");
+    eq(D.nextActor(w.get()).reason, "trade-reviewed", "the Collector decides");
+    w.st.actions.chooseCashOnly({ oppId: w.o, at: AT });
+    eq(w.get().trade.mode, "cash", "so it settles in cash, by choice");
   });
 
   test("cards still use the canonical shape and identity", () => {
@@ -295,7 +311,9 @@ describe("D. Nothing upstream or downstream regressed", () => {
        card instead of a legacy one. The pin is the same pin — submission builds
        every row with the shared factory and hand-builds none — and it is now
        stricter, because it also fixes which reference is passed. */
-    assert(/D\.emptyTradeCard\(b\.cardId, b\.photos, b\.cert, bid, b\.canonicalCardId\)/.test(cmd),
+    /* RESTATED (M3A A1): the factory is now called by the partner's selection,
+       with the copy's grade and condition as the row's snapshot. */
+    assert(/D\.emptyTradeCard\(b\.cardId, b\.photos, b\.cert, bid, b\.canonicalCardId,\s*\{ grade: b\.grade, condition: b\.condition \}\)/.test(cmd),
       "the shared factory");
     assert(!/inclusion: "proposed"/.test(src) && !/inclusion: "proposed"/.test(cmd), "not a hand-built row");
   });

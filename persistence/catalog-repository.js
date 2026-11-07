@@ -44,6 +44,24 @@ const list = (value) => (Array.isArray(value) ? value : []);
 const DEFAULT_PAGE_SIZE = 24;
 const MAX_PAGE_SIZE = 100;
 
+/* NUMBER ORDER WITHIN A SET (P6-F2, D3). Printed numbers are text and stay
+   text, but a person reads them as numbers: 1, 2 … 10, 11 … 100, not 1, 10,
+   100, 11. So: the letters before the first digit ("" for plain numbers, then
+   "SV", "TG"…), then the first run of digits as a number, then the whole text
+   (so "4" sorts before "4a", and "004" beside "4" deterministically). The
+   caller adds its own final tie-break (the context id), which is what keeps
+   pages stable when two rows agree on everything else. Only the order of
+   cards INSIDE a set changed; sets are still ordered as they were. */
+const NUMBER_ORDER = (col) => `regexp_replace(${col}, '[0-9].*$', ''),
+           nullif(substring(${col} from '[0-9]{1,9}'), '')::int nulls last, ${col}`;
+
+/* NATIONAL POKÉDEX GENERATIONS (P6-F2, D1): the last number of each, the same
+   fixed ranges the Phase 6 prototype uses (fca2c61 main.jsx GEN_LAST_DEX). A
+   generation is when a species was INTRODUCED, never a card's set. A number
+   past the last range belongs to no generation and appears only under "all". */
+const GEN_LAST_DEX = Object.freeze([151, 251, 386, 493, 649, 721, 809, 905, 1025]);
+const generationOf = (dex) => { const i = GEN_LAST_DEX.findIndex((last) => dex <= last); return i < 0 ? null : i + 1; };
+
 const CONTEXT_FIELDS = ["card_context_id", "expansion_id", "collector_number", "card_name",
   "discriminator", "artist", "rarity", "supertype", "subtypes", "pokedex_numbers"];
 /* Qualified explicitly rather than cleverly: these selects join the expansions
@@ -286,7 +304,7 @@ function createCatalogRepository(db, { newId } = {}) {
        the first active printing that has an image, ordered by id so the same
        context always shows the same picture. A context with no images yields
        null and the caller draws the card's name instead. */
-    async findCardContexts({ query, expansionId, expansion, artist, pokedex,
+    async findCardContexts({ query, expansionId, expansion, artist, pokedex, number, canonicalCardIds,
       page = 1, pageSize = DEFAULT_PAGE_SIZE } = {}) {
       const size = Math.min(Math.max(Number(pageSize) || DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
       const at = Math.max(Number(page) || 1, 1);
@@ -311,6 +329,32 @@ function createCatalogRepository(db, { newId } = {}) {
       if (Number.isFinite(Number(pokedex)) && text(pokedex)) {
         add("c.pokedex_numbers @> $?::jsonb", JSON.stringify([Number(pokedex)]));
       }
+      /* THE PRINTED NUMBER, EXACTLY (P6-F2, D2). `collector_number` is text and
+         stays text: "4", "004", "TG04" and "SV004" are different printed
+         numbers. The one equivalence is leading zeros between two ALL-DIGIT
+         numbers ("4" is "004"), because that is the same thing printed two
+         ways; "4" never matches "TG04", "40" or "4a". Composes with every
+         other filter as one more AND, like the rest. */
+      if (text(number)) {
+        const n = text(number);
+        if (/^[0-9]+$/.test(n)) {
+          add("(c.collector_number ~ '^[0-9]+$' and ltrim(c.collector_number, '0') = ltrim($?, '0'))", n);
+        } else {
+          add("lower(c.collector_number) = $?", n.toLowerCase());
+        }
+      }
+      /* ONLY THESE PRINTINGS (P6-F5A, "At my shops"): a context is listed when
+         one of its canonical cards is in the set. The set is the caller's to
+         decide — the route computes it from the actor's own projection — and
+         this repository neither knows nor asks why. An empty set lists nothing,
+         rather than everything. */
+      if (Array.isArray(canonicalCardIds)) {
+        if (!canonicalCardIds.length) where.push("false");
+        else {
+          add(`exists (select 1 from metyet_catalog.canonical_cards s
+            where s.card_context_id = c.card_context_id and s.canonical_card_id = any($?::text[]))`, canonicalCardIds.map(String));
+        }
+      }
       const clause = where.length ? `where ${where.join(" and ")}` : "";
       const from = `from metyet_catalog.card_contexts c
          join metyet_catalog.expansions e on e.expansion_id = c.expansion_id`;
@@ -326,13 +370,75 @@ function createCatalogRepository(db, { newId } = {}) {
              and k.image_small is not null
            order by k.canonical_card_id limit 1) art on true
          ${clause}
-         order by e.code, c.collector_number, c.card_name
+         order by e.code, ${NUMBER_ORDER("c.collector_number")}, c.card_name, c.card_context_id
          limit ${size} offset ${(at - 1) * size}`, params);
       return {
         contexts: rows.map((r) => ({ ...contextRow(r),
           expansionName: r.expansion_name, expansionCode: r.expansion_code,
           imageSmall: r.image_small || null, imageLarge: r.image_large || null })),
         page: at, pageSize: size, total: totalRows.length ? totalRows[0].n : 0,
+      };
+    },
+
+    /* THE POKÉMON DOORWAY'S OWN LIST — THE POKÉDEX (P6-F2, D1).
+
+       Derived from the catalogue and nothing else, exactly as the frozen
+       prototype derives it (fca2c61 fixtures.js): every National Pokédex number
+       some card context carries is one Pokémon; its name is that species'
+       plainest card name (shortest, then alphabetical — "Mudkip" before
+       "Mudkip ☆" and "Team Aqua's Mudkip"); its picture is its most recent card
+       that has one (else its most recent card), chosen deterministically; its
+       count is how many card contexts show it. No species table, no bundled
+       list, no migration, no write.
+
+       BOUNDED BY THE POKÉDEX, NOT BY THE CATALOGUE. The database aggregates
+       every context down to one row per Pokédex number — about a thousand —
+       and only those rows leave it; generation, name search and paging are
+       applied to them here. A page is at most MAX_PAGE_SIZE. */
+    async findPokemon({ query, generation, page = 1, pageSize = DEFAULT_PAGE_SIZE } = {}) {
+      const size = Math.min(Math.max(Number(pageSize) || DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
+      const at = Math.max(Number(page) || 1, 1);
+      const rows = await read(
+        `with art as (
+           select distinct on (k.card_context_id) k.card_context_id, k.image_small
+           from metyet_catalog.canonical_cards k
+           where k.status = 'active' and k.image_small is not null
+           order by k.card_context_id, k.canonical_card_id),
+         dex as (
+           select (d.n)::int as dex, c.card_context_id, c.card_name, c.collector_number,
+                  e.code as expansion_code, e.name as expansion_name, e.release_date, art.image_small
+           from metyet_catalog.card_contexts c
+           join metyet_catalog.expansions e on e.expansion_id = c.expansion_id
+           cross join lateral jsonb_array_elements_text(c.pokedex_numbers) as d(n)
+           left join art on art.card_context_id = c.card_context_id
+           where d.n ~ '^[0-9]{1,6}$'),
+         species as (
+           select dex, count(*)::int as card_count,
+                  (array_agg(card_name order by length(card_name), card_name))[1] as name
+           from dex group by dex),
+         face as (
+           select distinct on (dex) dex, card_context_id, card_name, collector_number, expansion_name, image_small
+           from dex
+           order by dex, (image_small is not null) desc, release_date desc nulls last, expansion_code desc,
+                    ${NUMBER_ORDER("collector_number")}, card_context_id)
+         select s.dex, s.name, s.card_count, f.card_context_id, f.card_name, f.collector_number,
+                f.expansion_name, f.image_small
+         from species s join face f on f.dex = s.dex
+         where s.dex > 0
+         order by s.dex`, []);
+      const all = rows.map((r) => ({
+        pokedexNumber: Number(r.dex), name: r.name, generation: generationOf(Number(r.dex)), cardCount: r.card_count,
+        face: { cardContextId: r.card_context_id, cardName: r.card_name, collectorNumber: r.collector_number,
+          expansionName: r.expansion_name, imageSmall: r.image_small || null },
+      }));
+      const gen = Number(generation);
+      const needle = text(query) ? text(query).toLowerCase() : null;
+      const shown = all.filter((p) => (!(gen >= 1) || p.generation === gen)
+        && (!needle || p.name.toLowerCase().includes(needle)));
+      return {
+        pokemon: shown.slice((at - 1) * size, at * size),
+        generations: [...new Set(all.map((p) => p.generation).filter(Boolean))].sort((a, b) => a - b),
+        page: at, pageSize: size, total: shown.length,
       };
     },
 

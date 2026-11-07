@@ -217,6 +217,11 @@ export const photoNote = (photos) => {
   return has.length === 2 ? "Front and back" : (has[0] === "front" ? "Front only" : "Back only");
 };
 
+/* The version words and the printing line live in client/printing.js
+   (Milestone 2D.3), so the Trusted Partner's workspace names a printing in
+   the same words without reaching into this app. */
+export { versionLabel, printingLine } from "../printing.js";
+
 /* ---------------------------------------------------------------- LABELS */
 
 /* Canonical stage ids with the product's own words. Presentation for a value

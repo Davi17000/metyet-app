@@ -193,7 +193,10 @@ describe("A. the door opened by exactly two", () => {
   test("the allow-list, and the two C5 itself added", async () => {
     /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
        name; any other change to the size still fails here. */
-    eq(EXPOSED_COMMANDS.length, 24, "the production surface is not the size C5 intended");
+    /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
+       commands joined the door with the Deal Flow and Opportunities controls
+       that send them, each named in the allow-list; any other move still fails. */
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37, "the production surface is not the size C5 intended");
     for (const name of ["updateInventoryCopy", "removeInventoryCopy"]) {
       assert(EXPOSED_COMMANDS.includes(name), `${name} is not offered`);
     }
@@ -206,6 +209,10 @@ describe("A. the door opened by exactly two", () => {
   });
 
   test("no dormant command came through the same door", async () => {
+    /* MARKET VALIDATION BATCH 3B opened the five price commands — opening an
+       offer, countering, accepting, declining and withdrawing — with the screens
+       that send them, so they left this list. Everything past an agreed price
+       (trade, values, the final balance, fulfilment, Pending) is still shut. */
     const ctx = await world();
     /* The deal lifecycle, the legacy catalogue writer, and the two inventory
        commands C5 did NOT ship. Each is a real command and each is refused
@@ -215,8 +222,8 @@ describe("A. the door opened by exactly two", () => {
        Trusted Partner one. That was recorded here as a gap rather than a
        decision — the only command that FULFILS a photo request, with no screen
        to send it from — and closing it is what that batch was for. */
-    for (const name of ["startOpportunity", "proposePrice", "acceptPrice", "acceptDeal",
-      "confirmHandoff", "cancelOpportunity", "sendMessage", "reachOut", "setInterest",
+    for (const name of ["acceptDeal",
+      "confirmHandoff", "sendMessage", "reachOut", "setInterest",
       "resolveCardIdentity", "inviteCollector"]) {
       assert(COMMAND_NAMES.has ? COMMAND_NAMES.has(name) : [...COMMAND_NAMES].includes(name),
         `${name} is not a command, so this test is asserting nothing`);
@@ -248,8 +255,16 @@ describe("A. the door opened by exactly two", () => {
        guard has now fired three times for three different right reasons — which
        is the whole point of measuring the delta against the file as dc2fd25
        actually had it rather than against a literal. */
-    eq(json(added.sort()), json(["addCopyPhotos", "endReview", "fileObject", "removeInventoryCopy",
-      "requestPhotos", "reviewCopy", "setCollectorCopyKept", "unfileObject", "updateInventoryCopy"]),
+    /* …and the five Market Validation Batch 3B opened with the price controls
+       that send them — the fourth time this guard fired for a declared reason. */
+    /* …and P6-F4 B5's changeCollectingState, with the saved card's Submit Update. */
+    /* …and Milestone 2D.1's sendDealMessage, a deal's conversation, founder-approved. */
+    /* …and M3A A3's six, Select Trade's screens, founder-authorized. */
+    eq(json(added.sort()), json(["acceptPrice", "addCopyPhotos", "cancelOpportunity", "changeCollectingState", "closeTradeSelection",
+      "continueTradeSelection", "declineOffer", "deselectTradeCard",
+      "endReview", "fileObject", "holdTradeSelection", "proposePrice", "removeInventoryCopy",
+      "requestPhotos", "reviewCopy", "selectTradeCards", "sendDealMessage", "setCollectorCopyKept", "startOpportunity", "unfileObject",
+      "updateInventoryCopy", "withdrawTradeCard"]),
       "a door was opened that no batch declared");
     /* RE-PINNED (Batch 3C-1): exactly one door somebody else opened has been
        closed — `addBinderEntry`, by 3C-1, after 3B-1 removed its last caller —
@@ -798,8 +813,11 @@ describe("F2. the controls, pressed", () => {
     const sent = [];
     const r = await shelf(ctx, sent, await view(ctx.app, "north"));
     await pressText(r, "Edit");
-    const ask = r.root.findAll((n) => n.type === "input")
-      .find((n) => n.props.inputMode === "decimal");
+    /* Found by its label, not its keyboard: since Batch 2.1 the price box is a
+       whole-dollar (numeric) field, and "decimal" now belongs to the cost box. */
+    const ask = r.root.findAll((n) => n.type === "label"
+      && texts(n).join(" ").includes("Proposed Market Price"))
+      .map((l) => l.findAll((n) => n.type === "input")[0]).find(Boolean);
     assert(ask, "no ask field");
     await TR.act(async () => { ask.props.onChange({ target: { value: "3900" } }); });
     await pressText(r, "Save changes");
@@ -980,10 +998,12 @@ describe("G. what the product says", () => {
         { state, onSignOut() {}, onSpecify: async () => ({ ok: true }), onBrowseCards: door }));
     });
     const typeInto = async (id, value) => {
-      const input = r.root.findAll((n) => n.type === "input").find((n) => n.props.id === id);
+      /* RESTATED (Phase 6 P6-F2): mcs-br-q is the Phase 6 search field now. */
+      const input = r.root.findAll((n) => n.type === "input").find((n) => n.props.id === id
+        || (id === "mcs-br-q" && n.props["aria-label"] === "Search"));
       assert(input, `no input ${id}`);
       await TR.act(async () => { input.props.onChange({ target: { value } }); });
-      await TR.act(async () => {});
+      for (let i = 0; i < 4; i += 1) await TR.act(async () => { await new Promise((res) => setTimeout(res, 0)); });
     };
     const pressText = async (label) => {
       const b = r.root.findAll((n) => n.type === "button")
@@ -997,15 +1017,31 @@ describe("G. what the product says", () => {
     /* A CHECKLIST LINE WITH TWO PRINTINGS ASKS WHICH, and the count only ever
        appeared once one was chosen — so stopping here would assert the absence
        of something that was never going to be present. Choose one. */
-    await pressText("unlimited");
+    /* RESTATED (P6-F3A): the Phase 6 card asks "Which version?" in the
+       prototype's words — "Holo · Unlimited" beside "Holo · First Edition"
+       (Stage 2.1 names the print run when it tells two versions apart) — then
+       what the card is (Raw · Near Mint), then what it means. */
+    const tapChoice = async (label) => {
+      const c = r.root.findAll((n) => n.type === "button")
+        .find((n) => /mcs-cd-choice/.test(n.props.className || "") && n.findAll((x) => x.type === "b")[0]
+          && n.findAll((x) => x.type === "b")[0].children.join("") === label);
+      assert(c, `no "${label}" to choose`);
+      await TR.act(async () => { c.props.onClick(); });
+      await TR.act(async () => {});
+    };
+    await tapChoice("Holo · Unlimited");
+    await tapChoice("Raw");
+    await tapChoice("Near Mint");
     const shown = texts(r.root).join(" ");
-    /* The panel is open AND past the chooser: these two strings belong to the
-       section the count used to sit in. Without them this test proves nothing,
-       which is how the first draft of it managed to pass while stopping early. */
-    assert(/Are you looking for it\?/.test(shown), "the panel did not reach the goal section: "
+    /* The card is open AND past the chooser: these strings belong to the
+       questions the count used to sit beside (P6-F3A Stage 2: the card's own
+       goal and copy questions, where the panel's two sections were). Without
+       them this test proves nothing, which is how the first draft of it managed
+       to pass while stopping early. */
+    assert(/What does this card mean to you\?/.test(shown), "the card did not reach its questions: "
       + shown.slice(0, 500));
-    assert(/Do you have one\?/.test(shown), "the panel did not reach the copies section: "
-      + shown.slice(0, 500));
+    assert(/I'm looking for it/.test(shown), "the card did not reach the goal question: " + shown.slice(0, 500));
+    assert(/I own it/.test(shown), "the card did not reach the copy question: " + shown.slice(0, 500));
     assert(!/of your Trusted Partners ha[sv]e? this/.test(shown),
       "the count is still rendered from Browse: " + shown.slice(0, 500));
   });
@@ -1048,7 +1084,7 @@ describe("H. nothing else moved", () => {
 
   test("C5 wrote no migration: the newest is still somebody else's", async () => {
     const files = fs.readdirSync(path.join(ROOT, "persistence/migrations")).sort();
-    eq(files[files.length - 1], "0014_binder_memberships.sql", "C5 added or renamed a migration");
+    /* RE-PINNED (Milestone 2D.1): the newest migration is now 0015, a deal's conversation — not this batch's. */ eq(files[files.length - 1], "0015_deal_conversations.sql", "C5 added or renamed a migration");
   });
 
   test("the domain's command table did not grow", async () => {
@@ -1059,7 +1095,8 @@ describe("H. nothing else moved", () => {
        51 → 53 in Batch 3A (`fileObject`, `unfileObject`), for the same reason:
        there was no existing command that could name a Goal's or a copy's
        Binder, because until 3A no row could hold one. */
-    eq([...COMMAND_NAMES].length, 53, "C5 wrote a command instead of shipping two that existed");
+    /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A1: + selectTradeCards, deselectTradeCard, holdTradeSelection, continueTradeSelection, closeTradeSelection (proposeTradeSelection and reviewTradeCard remain as refusing names) — each founder-approved */ eq([...COMMAND_NAMES].length, 61, "C5 wrote a command instead of shipping two that existed");
   });
 
   test("no new route, and the catalogue import is still unreachable", async () => {

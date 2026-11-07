@@ -33,6 +33,7 @@ const fs = require("fs");
 const path = require("path");
 const { PGlite } = require("@electric-sql/pglite");
 const C = require("../domain/metyet-commands.js");
+const D = require("../domain/metyet-domain.js");
 const RT = require("../domain/metyet-runtime.js");
 const { createStore } = require("../domain/metyet-store.js");
 const { projectForActor } = require("../domain/metyet-projection.js");
@@ -177,8 +178,11 @@ const DEAL = [
   [C1, "startOpportunity", () => ({ goalId: "g1", invId: "i1", amount: 900 })],
   [TP1, "proposePrice", (w) => ({ oppId: opp(w).id, amount: 980 })],
   [C1, "acceptPrice", (w) => ({ oppId: opp(w).id })],
-  [C1, "proposeTradeSelection", (w) => ({ oppId: opp(w).id, binderIds: ["b1"] })],
-  [TP1, "reviewTradeCard", (w) => ({ oppId: opp(w).id, decision: "accepted" })],
+  /* RESTATED (M3A A1): TP-led selection, through the persisted path. */
+  [TP1, "selectTradeCards", (w) => ({ oppId: opp(w).id, copyIds: ["b1"] })],
+  [C1, "holdTradeSelection", (w) => ({ oppId: opp(w).id })],
+  [C1, "continueTradeSelection", (w) => ({ oppId: opp(w).id })],
+  [TP1, "closeTradeSelection", (w) => ({ oppId: opp(w).id, expect: { tradeCardIds: [row(w)] } })],
   [C1, "proposeMarketValue", (w) => ({ oppId: opp(w).id, tradeCardId: row(w), amount: 300 })],
   [TP1, "acceptMarketValue", (w) => ({ oppId: opp(w).id, tradeCardId: row(w) })],
   [TP1, "proposeTradePercent", (w) => ({ oppId: opp(w).id, tradeCardId: row(w), percent: 0.8 })],
@@ -415,7 +419,16 @@ describe("B. round-trip fidelity", () => {
     eq(refs.length, tradeRows.length, "one ref row per trade row");
     const shared = (await pg.query(`select binder_id, count(distinct opportunity_id)::int as deals
       from metyet.opportunity_trade_refs group by binder_id having count(distinct opportunity_id) > 1`)).rows;
-    assert(shared.length >= 5, "binder copies referenced by several deals persisted: " + shared.length);
+    /* RESTATED (M3A A1P): the A1P seed no longer reuses copies illegally
+       (two deals holding one copy, or a traded copy back in play), so what is
+       shared now is only what may be — a copy SELECTED by several deals. One
+       such copy is enough to prove the schema does not forbid it. */
+    assert(shared.length >= 1, "binder copies referenced by several deals persisted: " + shared.length);
+    for (const { binder_id } of shared) {
+      const holders = world.opportunities.filter((o) => ((o.trade && o.trade.cards) || [])
+        .some((c) => c.binderId === binder_id && ["reserved", "committed", "traded"].includes(D.binderRowState(o, c))));
+      assert(holders.length <= 1, binder_id + " is held exclusively by at most one deal");
+    }
     const { repo: r2, pg: pg2 } = await fresh();
     await r2.saveWorld(seed());
     await drive(r2, DEAL.slice(0, 5));
@@ -489,7 +502,7 @@ describe("C. durable commands", () => {
   test("history persists: a completed deal keeps the id of a Goal removed afterwards", async () => {
     const { repo, pg } = await fresh();
     await repo.saveWorld(seed());
-    await drive(repo, DEAL.slice(0, 18));
+    await drive(repo, DEAL.slice(0, 20));   // M3A A1: selection is four steps now, so completion is step 20
     const r = await executeCommand(repo, { actor: C1, command: "removeGoal", payload: { goalId: "g1" }, runtime: runtime() });
     assert(r.ok, "a satisfied Goal can be removed: " + r.refused);
     const back = await repo.loadWorld();

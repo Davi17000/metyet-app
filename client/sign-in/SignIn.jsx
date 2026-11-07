@@ -51,9 +51,11 @@ import { savePartnerProfile, openCollectorInvitation, revokeCollectorInvitation,
   setGoalCriteria, addOwnedCopy, updateOwnedCopy, setCopyOffered, removeOwnedCopy,
   createBinder, unfileCardFromBinder,
   fileObjectInBinder, unfileObjectFromBinder,
-  inspectCopy, endInspection, requestCopyPhotos, provideCopyPhotos, setCopyKept,
+  inspectCopy, endInspection, requestCopyPhotos, provideCopyPhotos, setCopyKept, changeCardState,
   renameBinder, setBinderArchived,
-  refreshView } from "../commands.js";
+  refreshView, openOffer, counterOffer, acceptOffer, declineOffer, withdrawOffer,
+  selectTrade, deselectTrade, closeSelection, holdSelection, readyForSelection, withdrawTradeCard,
+  sendDealMessage } from "../commands.js";
 
 /* Identity is read in exactly one place — client/actor.js — and re-exported
    here because this module's own tests have always asked it that question.
@@ -219,6 +221,7 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
     const copy = { add: addOwnedCopy(store), update: updateOwnedCopy(store),
       offered: setCopyOffered(store), keeping: setCopyKept(store),
       remove: removeOwnedCopy(store) };
+    const meaning = changeCardState(store);
     const binder = { create: createBinder(store),
       unfile: unfileCardFromBinder(store),
       /* WHERE A THING LIVES (Batch 3B-1), beside where a CARD was filed. Only
@@ -260,6 +263,8 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
         case "keeping": return copy.keeping(step.copyId, step.keeping);
         case "forget-copy": return copy.remove(step.copyId);
         case "record-copy": return copy.add({ canonicalCardId, ...step.copy });
+        /* WHAT A SAVED CARD MEANS (P6-F4 Batch 5): one command, either way. */
+        case "change-state": return meaning({ goalId: step.goalId, collectorCopyId: step.collectorCopyId, from: step.from, to: step.to });
         /* A step this build does not know is not guessed at. It cannot happen
            from the panel in this bundle, and if it ever does the answer is a
            refusal rather than a command chosen by resemblance. */
@@ -283,6 +288,27 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
   const onInspect = useMemo(() => (store ? inspectCopy(store) : null), [store]);
   const onEndInspection = useMemo(() => (store ? endInspection(store) : null), [store]);
   const onRequestPhotos = useMemo(() => (store ? requestCopyPhotos(store) : null), [store]);
+  /* Market Validation (Batch 3B): the five price moves, bound once. Each seat's
+     shell hands on only its own — the Collector opens, counters, accepts and
+     withdraws; the shop counters, accepts and declines. The server checks the
+     seat regardless. */
+  const onOpenOffer = useMemo(() => (store ? openOffer(store) : null), [store]);
+  const onCounterOffer = useMemo(() => (store ? counterOffer(store) : null), [store]);
+  const onAcceptOffer = useMemo(() => (store ? acceptOffer(store) : null), [store]);
+  const onDeclineOffer = useMemo(() => (store ? declineOffer(store) : null), [store]);
+  const onWithdrawOffer = useMemo(() => (store ? withdrawOffer(store) : null), [store]);
+  /* Select Trade (M3A A3): the partner's three doors and the Collector's
+     three. Bound here like every other door; each screen is handed only its
+     own. */
+  const onSelectTrade = useMemo(() => (store ? selectTrade(store) : null), [store]);
+  const onDeselectTrade = useMemo(() => (store ? deselectTrade(store) : null), [store]);
+  const onCloseSelection = useMemo(() => (store ? closeSelection(store) : null), [store]);
+  const onHoldSelection = useMemo(() => (store ? holdSelection(store) : null), [store]);
+  const onReadyForSelection = useMemo(() => (store ? readyForSelection(store) : null), [store]);
+  const onWithdrawTradeCard = useMemo(() => (store ? withdrawTradeCard(store) : null), [store]);
+  /* A DEAL'S CONVERSATION (Milestone 2D.2). Both seats get it: either
+     participant may write on their own deal, and the server checks which. */
+  const onSendMessage = useMemo(() => (store ? sendDealMessage(store) : null), [store]);
   const onRenameBinder = useMemo(() => (store ? renameBinder(store) : null), [store]);
   const onArchiveBinder = useMemo(() => (store ? setBinderArchived(store) : null), [store]);
   /* WHERE A FILED THING GOES NEXT (Batch 3B-1). The Binder view's `Move` and
@@ -711,6 +737,8 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
       onBrowseCards, onAddGoal, onSetPriority, onRemoveGoal, onSpecify,
       onCreateBinder, onRenameBinder, onArchiveBinder, onFileObject, onUnfileObject,
       onInspect, onEndInspection, onRequestPhotos,
+      onOpenOffer, onCounterOffer, onAcceptOffer, onDeclineOffer, onWithdrawOffer, onSendMessage,
+      onSelectTrade, onDeselectTrade, onCloseSelection, onHoldSelection, onReadyForSelection, onWithdrawTradeCard,
       /* Phase 5 Batch 3A. Who they just joined, so the shell can greet them by
          it once. It is read from the server's own reply, it is cleared the
          moment they do anything else, and it grants nothing. */

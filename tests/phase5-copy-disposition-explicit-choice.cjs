@@ -720,8 +720,10 @@ describe("D. A copy already stored saying nothing keeps working", () => {
     const oppId = okv(x(st, CASEY, "startOpportunity",
       { goalId: "g1", invId: "i1", amount: 26 }), "start");
     okv(x(st, TP, "acceptPrice", { oppId }), "agree");
-    eq(code(x(st, CASEY, "proposeTradeSelection", { oppId, binderIds: ["legacy"] })),
-      D.REFUSE.copyNotOffered, "a copy nobody has offered entered a trade package");
+    /* RESTATED (M3A A1): the door is the partner's selection now, and a
+       non-owner gets the one public answer. */
+    eq(code(x(st, TP, "selectTradeCards", { oppId, copyIds: ["legacy"] })),
+      D.REFUSE.copyUnavailable, "a copy nobody has offered entered a trade package");
     /* `setInterest` is the same answer from the other side, also unchanged. */
     eq(code(x(st, TP, "setInterest", { binderId: "legacy", on: true })),
       D.REFUSE.notFound, "a partner took an interest in a copy nobody has offered");
@@ -782,11 +784,13 @@ describe("E. The transaction rules and the vocabulary are where they were", () =
     const oppId = okv(x(st, CASEY, "startOpportunity",
       { goalId: "g1", invId: "i1", amount: 26 }), "start");
     okv(x(st, TP, "acceptPrice", { oppId }), "agree");
-    eq(code(x(st, CASEY, "proposeTradeSelection", { oppId, binderIds: [kept] })),
-      D.REFUSE.copyNotOffered, "a PC copy entered a trade package");
-    eq(code(x(st, CASEY, "proposeTradeSelection", { oppId, binderIds: [bare] })),
-      D.REFUSE.photosRequired, "photographs stopped being required at the door");
-    okv(x(st, CASEY, "proposeTradeSelection", { oppId, binderIds: [ready] }), "the real one");
+    /* RESTATED (M3A A1): the partner selects. A PC copy is still barred (the
+       public answer, since the partner is not its owner); the photograph
+       requirement was retired by the founder for the pilot, so an offered copy
+       without photographs is now selectable too. */
+    eq(code(x(st, TP, "selectTradeCards", { oppId, copyIds: [kept] })),
+      D.REFUSE.copyUnavailable, "a PC copy entered a trade package");
+    okv(x(st, TP, "selectTradeCards", { oppId, copyIds: [bare, ready] }), "both offered copies, photographed or not");
   });
 
   test("[31] `copyDisposition` still has three answers, because worlds still do", () => {

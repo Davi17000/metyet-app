@@ -118,13 +118,15 @@ describe("B. The scenario is built from canonical actions", () => {
        by hand at all. */
     const patches = (src.match(/A\.patchOpportunity/g) || []).length;
     eq(patches, 0, "no raw patch remains");
-    assert(/A\.proposeTradeSelection\(/.test(src), "the package goes through the command");
+    /* RESTATED (M3A A1): the partner's selection goes through the command. */
+    assert(/A\.selectTradeCards\(/.test(src), "the selection goes through the command");
   });
 
   test("progression uses canonical actions", () => {
     const src = code(fs.readFileSync(
       path.join(ROOT, "harness", "review-scenario.cjs"), "utf8"));
-    ["agreePrice", "reviewTradeCards", "tradeMarketRespond", "tradePercentRespond",
+    /* RESTATED (M3A A1): TP-led selection replaces the review. */
+    ["agreePrice", "selectTradeCards", "continueTradeSelection", "closeTradeSelection", "tradeMarketRespond", "tradePercentRespond",
       "dealAdjustRespond", "dealAgree", "proposeFulfillment", "confirmHandoff"]
       .forEach((a) => assert(src.includes("A." + a), a + " drives the deal"));
   });

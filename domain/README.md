@@ -100,12 +100,14 @@ somewhere you can get it wrong:
 **The photograph requirement moved.** It used to be at the door
 (`addBinderCopy` refused a copy without both faces), which put an *evaluation*
 rule in front of an *ownership* fact and meant a Collector with a shoebox and no
-lightbox could record nothing at all. It now lives in `proposeTradeSelection`,
-the first moment a specific physical copy is handed to somebody else to put a
-value on — the same standard `startOpportunity` already applies to the partner's
-copy on the other side. `INVARIANTS.copyPhotographed` is now the single
-predicate for both seats; `binderCopyPhotographed` was the same expression under
-a second name and is gone.
+lightbox could record nothing at all. It then lived in `proposeTradeSelection`,
+the first moment a specific physical copy was handed to somebody else to put a
+value on. **M3A A1 retired it for trades**: the partner now selects from the
+Collector's Trade/Sell copies (`selectTradeCards`) whether or not they are
+photographed; photographs that exist are snapshotted on the trade row and locked
+while the copy is selected (`copy-in-deal`). `INVARIANTS.copyPhotographed` is
+still the single predicate for both seats; `binderCopyPhotographed` was the same
+expression under a second name and is gone.
 
 ### Naming debt, written down rather than rediscovered
 
@@ -797,7 +799,8 @@ record* visible and adds nobody to the network.
 unread position and discovery are all computed from the records that imply
 them. `offered` is the exception that proves it: it is *stored*, because it is
 not derivable from anything — it is a statement its owner makes. It sits beside
-a derived status (`available` / `reserved` / `committed` / `traded`) and answers
+a derived status (`available` / `selected` / `reserved` / `committed` / `traded`
+since M3A A1 — read from the deal's stage by `binderRowState`) and answers
 a different question: that one says what a DEAL has done to a copy, this one
 says what its OWNER is willing to do with it. Storing the second one as a
 status column beside the first would invite somebody to write the first one

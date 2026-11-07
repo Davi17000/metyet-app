@@ -19,7 +19,7 @@ explicitly *not* be copied forward.
 | **Invitation** | `inviteId` | `partnerId` | A Trusted Partner's offer to connect, delivered by link or QR code. Accepting it creates the Relationship; the invitation is not the relationship. |
 | **Card Identity** | `cardId` | — | The abstract printing. Not a physical thing. |
 | **InventoryCopy** | `invId` | `partnerId` | One physical copy a partner holds. Photos encouraged, not required. |
-| **BinderCopy** | `binderId` | `collectorId` | One physical copy a collector will trade. Both faces photographed. |
+| **BinderCopy** | `binderId` | `collectorId` | One physical copy a collector owns (a CollectorCopy). Its disposition — Trade/Sell (`offered`), PC (`keeping`) or unstated — is said in Browse. Photos optional (M3A A1). |
 | **Goal** | `goalId` | `collectorId` | What a collector wants, at an exact identity. Primary or Secondary. |
 | **Preference** | — | `collectorId` | Broad affinity tags. Not a Goal. |
 | **TPInterest** | (`partnerId`, `binderId`) | `partnerId` | A relationship, not a flag. |
@@ -184,9 +184,9 @@ removed if otherwise allowed; completion satisfies it (§6).
 |---|---|---|
 | Secondary / Primary Goal *(Goal tier)* | nothing — this is intent | Secondary: the collector promotes it. Primary: the collector opens a negotiation |
 | Review Card *(pre-deal, optional)* | nothing — context about one exact copy | — (creates no Opportunity) |
-| Agree on Price | the price of the card being bought | both accept a figure; the exact InventoryCopy becomes committed |
-| Select Trade | *which* copies are included — no values. Submitting the package reserves each copy; the partner accepting a copy commits it, after which the collector cannot withdraw it | the partner has reviewed every proposal |
-| Value Trade | per card: market value, then trade %. Accepted copies stay committed | every accepted card has both terms |
+| Agree on Price | the price of the card being bought | both accept a figure. The InventoryCopy stays available until final agreement (Option B) |
+| Select Trade *(TP-led, M3A A1)* | *which* copies are included — no values. The **partner selects** specific copies from the Collector's Trade/Sell supply; selection locks each copy's material specification but does not reserve it. The Collector may ask for time to add more cards (any number of times), adds them only by offering them in Browse, and says when they are ready. The Collector may withdraw any selected card | the partner closes selection after the Collector is ready — which **reserves** every selected copy for this deal, atomically — or, with nothing selected, the Collector chooses cash only or ends the deal |
+| Value Trade | per card: market value, then trade %. Reserved copies stay reserved; the Collector may withdraw any card until final agreement | every live card has both terms |
 | Deal | the cash balance, and an optional final concession | the partner gives final agreement to the current economic state, then the collector does; changing the figure restarts confirmation |
 | Fulfillment | the in-person handoff | the collector confirms the partner's plan; the partner confirms the handoff; the collector confirms receipt |
 | Completed | — | terminal |
@@ -250,39 +250,51 @@ without changing the lifecycle.
 A copy's status is derived from the Opportunities that reference that exact copy
 (§6). Nothing is written to the copy when a deal moves.
 
-| | InventoryCopy (partner) | BinderCopy (collector) |
+| | InventoryCopy (partner) | BinderCopy (collector) — M3A A1 |
 |---|---|---|
-| **Available** | not committed, not archived | not reserved, not committed |
-| **Reserved** | — | in a submitted trade package of an active Opportunity, not yet accepted by the partner |
-| **Committed** | price agreed in an active Opportunity | accepted by the partner into an active Opportunity's trade |
+| **Available** | not committed, not archived | no live row in an active Opportunity |
+| **Pending** | the partner is holding it for one Opportunity (`pendingFor`) | — |
+| **Selected** | — | a live row in an active Opportunity at Select Trade. Specification locked; **not exclusive** — other Opportunities may select it too |
+| **Reserved** | — | a live row in an active Opportunity at Value Trade or Deal. Exclusive to that Opportunity |
+| **Committed** | both parties gave final agreement in an active Opportunity | the same, for an Opportunity holding the copy |
 | **After Completed** | **Sold** — no longer available supply | **Traded** — no longer available Binder supply |
-| **After Cancelled** | released: available again | released: available again |
+| **After Cancelled / ended** | released: available again | released: available again |
 
-- A committed copy is committed to **one** Opportunity at a time. It cannot be
-  committed to another. A committed InventoryCopy cannot be removed or archived,
-  and a committed BinderCopy cannot be withdrawn by the collector alone or
-  removed from the Binder.
-- While a copy is committed, nothing that would change *which copy* the parties
-  believe they are negotiating over — its card identity or its certification —
-  may change, until the deal completes or is cancelled.
-- **One exact BinderCopy may participate in only one active submitted trade
-  package at a time.**
-  - *Draft.* Before the collector submits the trade package, selecting or
-    deselecting a copy is private draft input. It reserves nothing.
-  - *Reserved.* Submitting the package reserves each copy in it for that
-    Opportunity. A reserved copy cannot be submitted into another active
-    Opportunity. It remains the collector's and is not yet accepted into the
-    trade. It is released if the partner rejects it, the collector withdraws it
-    before the partner accepts it (where the Select Trade workflow permits), or
-    the Opportunity is cancelled.
-  - *Committed.* When the partner accepts it into the trade, it is committed to
-    that Opportunity. The collector cannot withdraw it unilaterally or remove it
-    from the Binder, it cannot be submitted or committed into another
-    Opportunity, and its identity and certification are locked. It stays
-    committed until the Opportunity completes, when it becomes Traded, or is
-    cancelled, when it is released. No pilot action changes an accepted trade
-    package; any future change would have to be an explicit, mutual
-    renegotiation.
+- A committed InventoryCopy is committed to **one** Opportunity at a time and
+  cannot be removed or archived. A price-agreed InventoryCopy cannot be removed
+  either (`copyInLiveDeal`); before a price is agreed it can, and doing so ends
+  the Opportunities on it (below).
+- **TP-led selection (M3A A1).** The partner selects specific copies from the
+  Collector's Trade/Sell supply. Selecting never changes `offered` or `keeping`,
+  and the Collector cannot put a card into a deal. A kept (PC) or unstated copy
+  can never be selected.
+  - *Selected.* The copy's material specification — grade, condition,
+    certification and the photographs already on it — is **locked**, and a
+    snapshot (with `canonicalCardId`) is kept on the trade row. It may be
+    selected in other Opportunities, with other partners or the same one. It
+    cannot be switched to PC.
+  - *Reserved.* When the partner closes selection the copy is reserved for that
+    Opportunity, atomically with every other selected copy and the move to
+    Value Trade; a conflict refuses the close and changes nothing. No other
+    Opportunity — including another with the same partner — may then select or
+    reserve it.
+  - *Committed* at final agreement; *Traded* at completion.
+  - **The specification lock** lasts while any active Opportunity selects,
+    reserves or commits the copy, and for ever once traded. An empty photo slot
+    may still be filled; a filled one cannot be replaced or removed. The
+    Collector's private value and notes stay editable. `canonicalCardId` is
+    immutable on every copy at all times.
+- **Withdrawal (M3A A1).** The Collector may withdraw any selected card from one
+  Opportunity until both parties have given final agreement — in Select Trade,
+  or in Value Trade or Deal when the value on the table is not worth it. The row
+  stays as history (`withdrawnStage`); the copy's Trade/Sell disposition is
+  untouched; this Opportunity's selection or reservation is released; other
+  cards' agreements stand. In Deal, a `reset` entry voids every standing figure
+  and both confirmations. If the last live card leaves during Value Trade or
+  Deal, the Opportunity returns to Select Trade. A withdrawn copy may be selected
+  again in the same Opportunity as a new row. **Cash only is never chosen
+  automatically.** After final agreement a card cannot be withdrawn; the
+  cancellation rules apply.
 - Completion never deletes a copy. The completed Opportunity is the historical
   record connecting the transferred copies to the agreed terms.
 - Received trade cards do **not** become partner inventory automatically. A
@@ -313,6 +325,24 @@ penalties or legal consequences.
   cancelled, reopened or amended; a cancelled deal cannot be resumed. Negotiating
   again means opening a new Opportunity.
 
+### When the partner's card becomes unavailable (M3A A1)
+
+An Opportunity whose InventoryCopy can no longer be had is **ended**, explicitly,
+never left apparently active. In the same write as the event, every other active
+Opportunity on that copy is ended with the ordinary ending fields and
+`outcome: "card-unavailable"` (`endedBy: null` — nobody ended it):
+
+- when another Opportunity reaches **final agreement** on the copy, and
+- when the partner **removes** the copy from inventory (allowed only before a
+  price is agreed; after that the partner must cancel).
+
+The ended Opportunity keeps its whole history, holds nothing (its Goal is free,
+its trade cards are released, specification locks lift unless another active
+Opportunity still selects the copy), and refuses every later command as
+terminal. It never comes back, even if the winning Opportunity is later
+cancelled. A temporary hold (`pendingFor`) ends nothing. The Collector is told
+only that the card is no longer available.
+
 ---
 
 ## 5. Invariants
@@ -322,20 +352,22 @@ Enforce them **in the action**, not in a button's disabled state.
 
 1. **One active negotiation per Goal.** A collector may talk to every Trusted
    Partner holding the card, but may negotiate with only one at a time.
-   Alternatives stay visible; only the offer is limited.
+   Alternatives stay visible; only the offer is limited. There is no exception:
+   a negotiation whose card went elsewhere is ENDED (`card-unavailable`, §4), not
+   silently excluded (M3A A1).
 2. **Reach out never creates an Opportunity.** Conversation and negotiation are
    different acts.
 3. **TP Interest is not a commitment.** It means "I would consider this copy in a
    trade" — not an offer, reservation, valuation, or demand.
 4. **TP Interest references an exact BinderCopy**, never a card identity.
-5. **A BinderCopy requires both photographed faces.** Enforced at creation, so
-   nothing downstream ever has to re-ask or handle a partial copy. (InventoryCopy
-   photos are encouraged, not required.)
+5. **Photographs are optional (M3A A1).** Neither owning, offering nor being
+   selected for a trade requires a photograph. Photographs that exist on a
+   selected copy are snapshotted and locked (§4).
 6. **Select Trade establishes no value.** Which copies, not what they are worth.
-7. **Interest orders Select Trade; it does not gate it.** Every binder copy is
-   eligible. Letting a partner's willingness decide what a collector may *offer*
-   is backwards. (A copy already reserved or committed in another active
-   Opportunity is not available to submit — §4.)
+7. **The partner selects; only Trade/Sell copies are eligible (M3A A1).** A kept
+   or unstated copy can never be selected, and the Collector cannot force a card
+   into a deal. A copy reserved or committed by another active Opportunity is
+   not available to select (§4); a copy merely selected elsewhere is.
 8. **The collector's reference value never reaches a partner.**
 9. **Agreed terms are preserved downstream.** Once a price, a card value or a
    trade percentage is agreed, no later stage may silently change it. The Deal
@@ -352,31 +384,39 @@ Enforce them **in the action**, not in a button's disabled state.
 13. **A negotiation opens only from a Primary Goal, and holds it there.** Review
     Card and reach out never open one. While the Opportunity is active, its Goal
     cannot be demoted to Secondary or removed.
-14. **Agreeing the price commits the exact InventoryCopy.** A committed copy
-    cannot be committed to a second Opportunity, and cannot be removed or
-    archived while committed.
-15. **A committed copy keeps its identity.** The card identity and certification
-    of a committed InventoryCopy or BinderCopy cannot change until completion or
-    cancellation.
+14. **Final agreement commits the exact InventoryCopy (Option B).** A committed
+    copy cannot be committed to a second Opportunity, and cannot be removed or
+    archived while committed; the moment it is committed, every other active
+    Opportunity on it ends as `card-unavailable` (§4, M3A A1).
+15. **A copy in a deal keeps its identity.** The card identity and certification
+    of a price-agreed or committed InventoryCopy cannot change; a BinderCopy's
+    grade, condition, certification and existing photographs cannot change from
+    the moment a partner selects it until no active Opportunity holds it, and
+    `canonicalCardId` never changes (M3A A1).
 16. **Handoff follows a confirmed plan.** The partner proposes the in-person plan
     and the collector confirms it before the handoff can be confirmed.
 17. **Completed is final; cancelling after agreement needs a reason.** A completed
     Opportunity cannot be cancelled or reopened. Cancelling after both final
     agreements requires a reason and is recorded as cancelled after agreement.
-18. **One BinderCopy, one active trade package.** Submitting a trade package
-    reserves each exact BinderCopy in it; the partner's acceptance commits it. A
-    reserved or committed copy cannot be submitted into another active
-    Opportunity. Draft selection reserves nothing. A committed copy cannot be
-    withdrawn unilaterally or removed from the Binder; it stays committed until
-    the Opportunity completes or is cancelled.
+18. **Selected by many, reserved by one (M3A A1).** A BinderCopy may be selected
+    by any number of active Opportunities, but reserved or committed by at most
+    one: closing selection reserves atomically and refuses — changing nothing —
+    if any selected copy is held elsewhere. A Collector may withdraw a card until
+    final agreement; a withdrawn card leaves its history, keeps its Trade/Sell
+    disposition, and voids the dependent cash terms and confirmations. A
+    selected, reserved or committed copy cannot be removed from the Binder or
+    switched to PC. (The whole-world check of this rule joins `validateWorld`
+    when the prototype demo seed stops fabricating a double hold — A1P.)
 19. **Two-sided confirmations are ordered.** At final agreement in Deal and at the
     handoff in Fulfillment, the Trusted Partner confirms first and the Collector
     second. The Collector's final agreement advances the deal to Fulfillment;
     the Collector's receipt completes it.
 20. **Change the deal → reconfirm the deal.** A final agreement holds only for the
-    economic state it confirmed. Any change to the final cash figure clears every
-    earlier final agreement, and confirmation restarts with the partner. A stale
-    confirmation never advances the Opportunity.
+    economic state it confirmed. Any change to the final cash figure — or a card
+    withdrawn in Deal — clears every earlier final agreement, and confirmation
+    restarts with the partner. A stale confirmation never advances the
+    Opportunity; a caller that sends `expect` (balance, trade card ids) is
+    refused `terms-changed` if the deal moved (M3A A1).
 
 ---
 
@@ -430,7 +470,10 @@ addBinderCopy · updateBinderCopy · removeBinderCopy
 setInterest
 reachOut · sendMessage
 startOpportunity · proposePrice · acceptPrice
-proposeTradeSelection · withdrawTradeCard · reviewTradeCard
+selectTradeCards · deselectTradeCard                     (partner, M3A A1)
+holdTradeSelection · continueTradeSelection              (collector, M3A A1)
+closeTradeSelection                                      (partner, M3A A1)
+withdrawTradeCard · chooseCashOnly                       (collector)
 proposeMarketValue · acceptMarketValue
 proposeTradePercent · acceptTradePercent
 proposeFinalBalance · acceptDeal
@@ -443,17 +486,30 @@ cancelOpportunity
 has an active Opportunity. `startOpportunity` refuses a second negotiation on the
 same goal, a Secondary Goal, and a partner the collector has no Relationship
 with. `acceptPrice` refuses an InventoryCopy already committed elsewhere.
-`proposeTradeSelection` refuses a BinderCopy already reserved or committed in
-another active Opportunity. `withdrawTradeCard` is valid only for a Reserved
-BinderCopy and refuses a Committed one. `removeInventoryCopy` refuses a committed
-copy, and `removeBinderCopy` refuses a committed copy. `updateInventoryCopy` and
-`updateBinderCopy` refuse identity or certification changes to a committed copy.
-`addBinderCopy` refuses a copy without both photos. `proposeFinalBalance`
+`selectTradeCards` (partner only) refuses a copy that is not the deal
+Collector's (`not-found`), not offered or held exclusively elsewhere (one public
+answer, `copy-unavailable`), or already live in the deal; a copy withdrawn from
+the deal may be selected again as a new row. `closeTradeSelection` refuses until
+the Collector is ready, and re-checks every selected copy — any conflict refuses
+the whole close (`copy-unavailable`, naming only the caller's own rows) and
+changes nothing; a stale `expect` refuses `terms-changed`. `withdrawTradeCard`
+is valid for any live row until final agreement, then refuses `copy-committed`.
+`chooseCashOnly` refuses while any card is selected. `proposeTradeSelection`
+and `reviewTradeCard` are retired and refuse `superseded`.
+`removeInventoryCopy` refuses a price-agreed or committed copy, and otherwise
+ends every active Opportunity on it as `card-unavailable`. `removeBinderCopy`
+refuses a copy any trade has named. `updateInventoryCopy` refuses identity or
+certification changes to a copy in a live deal. `updateBinderCopy` refuses
+grade, condition, certification or existing-photo changes while the copy is
+selected, reserved, committed or traded (`copy-in-deal`), and `setCollectorCopyKept`
+refuses for the same copies. `proposeFinalBalance`
 refuses outside the Deal stage; a new figure supersedes the current economic
 state and clears every final agreement already given. `acceptDeal` refuses
 outside the Deal stage, refuses the collector's agreement until the partner has
 agreed to the current economic state, and never counts an agreement given to a
-superseded state. `confirmHandoff` refuses until the collector has confirmed the
+superseded state; the collector's final agreement ends every other active
+Opportunity on the InventoryCopy as `card-unavailable`. Both take an optional
+`expect` and refuse `terms-changed` when the deal moved. `confirmHandoff` refuses until the collector has confirmed the
 plan, and refuses the collector's receipt until the partner has confirmed the
 handoff. `cancelOpportunity` refuses a Completed Opportunity, and requires a
 reason once both final agreements have been given. These refusals belong to the

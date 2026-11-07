@@ -69,7 +69,9 @@ function createStore(seed, options = {}) {
   /* ------------------------------------------------ THE AUTHORITATIVE BOUNDARY */
   const execute = (actor, command, payload) => {
     const r = C.execute(s, actor, command, payload, runtime);
-    if (!r.ok) return { ok: false, refused: r.refused };
+    /* `detail` is the one thing a refusal may carry besides its code — today
+       only closeTradeSelection's list of the caller's own conflicting rows. */
+    if (!r.ok) return r.detail ? { ok: false, refused: r.refused, detail: r.detail } : { ok: false, refused: r.refused };
     if (r.state !== s) set(r.state);
     return { ok: true, value: r.value };
   };
@@ -193,10 +195,23 @@ function createStore(seed, options = {}) {
     requestFulfillmentRevision: ({ oppId, note, at }) =>
       legacy(seatActor(opp(oppId), "collector"), "requestFulfillmentRevision", { oppId, note, at }),
     confirmHandoff: ({ oppId, by, at }) => legacy(seatActor(opp(oppId), by), "confirmHandoff", { oppId, at }),
+    /* RETIRED (M3A A1). The Collector-proposes / partner-accepts selection is
+       gone from the domain; these two bindings stay only so the dev prototypes
+       that still call them receive the `superseded` refusal rather than a
+       crash, until A1P moves them to TP-led selection. */
     reviewTradeCards: ({ oppId, tradeCardId, decision, at }) =>
       legacy(seatActor(opp(oppId), "tp"), "reviewTradeCard", { oppId, tradeCardId, decision, at }),
     proposeTradeSelection: ({ oppId, binderIds, at }) =>
       legacy(seatActor(opp(oppId), "collector"), "proposeTradeSelection", { oppId, binderIds, at }),
+    /* TP-LED SELECTION (M3A A1). */
+    selectTradeCards: ({ oppId, copyIds, at }) =>
+      legacy(seatActor(opp(oppId), "tp"), "selectTradeCards", { oppId, copyIds, at }),
+    deselectTradeCard: ({ oppId, tradeCardId, at }) =>
+      legacy(seatActor(opp(oppId), "tp"), "deselectTradeCard", { oppId, tradeCardId, at }),
+    holdTradeSelection: ({ oppId, at }) => legacy(seatActor(opp(oppId), "collector"), "holdTradeSelection", { oppId, at }),
+    continueTradeSelection: ({ oppId, at }) => legacy(seatActor(opp(oppId), "collector"), "continueTradeSelection", { oppId, at }),
+    closeTradeSelection: ({ oppId, expect, at }) =>
+      legacy(seatActor(opp(oppId), "tp"), "closeTradeSelection", { oppId, expect, at }),
     withdrawTradeCard: ({ oppId, tradeCardId, at }) =>
       legacy(seatActor(opp(oppId), "collector"), "withdrawTradeCard", { oppId, tradeCardId, at }),
     chooseCashOnly: ({ oppId, at }) => legacy(seatActor(opp(oppId), "collector"), "chooseCashOnly", { oppId, at }),

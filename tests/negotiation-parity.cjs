@@ -17,6 +17,7 @@
    in it, so those paths now address the trade-card row id.
    ========================================================================= */
 
+const { reachValuationByFixture } = require("./helpers/trade-path.cjs");
 const { describe, test, assert, eq } = require("./run.cjs");
 const fs = require("fs");
 const path = require("path");
@@ -54,9 +55,9 @@ const world = (cardIds = ["ka"]) => {
     cardId: "kt", invId: "inv-1", listedPrice: 4200, amount: 3990, at: AT });
   st.actions.agreePrice({ oppId: o, amount: 3990, by: "tp", at: AT });
   const rows = cardIds.map((cid, i) => M.emptyTradeCard(cid, null, null, "b-" + i));
-  st.actions.patchOpportunity(o, (x) => ({ ...x, stage: "select-trade",
-    trade: { ...x.trade, submitted: true, cards: rows } }));
-  st.actions.reviewTradeCards({ oppId: o, decision: "accepted", at: AT });
+  /* RESTATED (M3A A1): the partner now selects and closing selection reserves;
+     the retired Collector-proposes / reviewTradeCard path is replaced by the shared fixture. */
+  reachValuationByFixture(st, o, rows, AT);
   const get = () => st.get().opportunities.find((x) => x.id === o);
   return { st, o, get, ids: rows.map((r) => r.id),
     card: (id) => get().trade.cards.find((c) => c.id === id) };
@@ -202,20 +203,25 @@ describe("C. Identity: a negotiation belongs to a row", () => {
 
   test("inclusion and removal address rows too", () => {
     const tp = code(TP);
-    assert(/const tpReviewInclusion = \(oppId, rowId, action\)/.test(tp),
-      "review is per row");
-    assert(/const tradeRemoveCard = \(oppId, rowId\)/.test(tp), "as is removal");
-    assert(/tpReviewInclusion\(opp\.id, tc\.id,/.test(tp), "and the call sites pass it");
+    /* RESTATED (M3A A1P): the partner's per-row decision is now deselection,
+       and the Collector's per-row retraction is withdrawal. */
+    assert(/const tpDeselect = \(oppId, rowId\)/.test(tp), "review is per row");
+    assert(/const collectorWithdrawCard = \(oppId, rowId\)/.test(tp), "as is removal");
+    assert(/tpDeselect\(opp\.id, tc\.id\)/.test(tp), "and the call sites pass it");
   });
 
-  test("a review decision touches one row only", () => {
+  /* RESTATED (M3A A1). WAS: the partner's review of one Collector-proposed row
+     (`reviewTradeCards` with a tradeCardId). WHY IT CHANGED: the review is
+     retired; the partner now deselects its own selection. WHAT STILL HOLDS: a
+     decision addressed to one trade row id touches that row only, even when its
+     twin is the same card. */
+  test("a deselection touches one row only", () => {
     const w = world(["ka", "ka"]);
     w.st.actions.patchOpportunity(w.o, (x) => ({ ...x, stage: "select-trade",
-      trade: { ...x.trade, cards: x.trade.cards.map((c) => ({ ...c, inclusion: "proposed" })) } }));
-    w.st.actions.reviewTradeCards({ oppId: w.o, tradeCardId: w.ids[0],
-      decision: "rejected", at: AT });
+      trade: { ...x.trade, selection: { sentAt: AT, readyAt: AT } } }));
+    w.st.actions.deselectTradeCard({ oppId: w.o, tradeCardId: w.ids[0], at: AT });
     eq(w.card(w.ids[0]).inclusion, "rejected", "the decided row");
-    eq(w.card(w.ids[1]).inclusion, "proposed", "and its twin is untouched");
+    eq(w.card(w.ids[1]).inclusion, "accepted", "and its twin is untouched");
   });
 
   test("a binderId addresses nothing", () => {

@@ -305,6 +305,17 @@ export function setCopyKept(target) {
   return (copyId, keeping) => target.execute("setCollectorCopyKept", { copyId, keeping });
 }
 
+/* WHAT A SAVED CARD MEANS (P6-F4 Batch 5): one of the four states, from the
+   one the screen showed. The server decides whether that is an edit of the
+   same record or one atomic re-making as the other kind. */
+export function changeCardState(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("changeCardState: the production store is required");
+  }
+  return ({ goalId, collectorCopyId, from, to }) => target.execute("changeCollectingState",
+    goalId ? { goalId, from, to } : { collectorCopyId, from, to });
+}
+
 export function removeOwnedCopy(target) {
   if (!target || typeof target.execute !== "function") {
     throw new TypeError("removeOwnedCopy: the production store is required");
@@ -438,6 +449,8 @@ export function browseCards(target) {
        it and still does not. */
     expansions: (query) => target.findCards(query, "expansions"),
     artists: (query) => target.findCards(query, "artists"),
+    /* The Pokédex (P6-F2): which Pokémon the catalogue has cards of. */
+    pokemon: (query) => target.findCards(query, "pokemon"),
   };
 }
 
@@ -518,4 +531,113 @@ export function provideCopyPhotos(target) {
     ...(faces && faces.front !== undefined ? { front: faces.front } : {}),
     ...(faces && faces.back !== undefined ? { back: faces.back } : {}),
   });
+}
+
+/* ------------------------------------- MARKET VALIDATION (Batch 3B)
+   AGREEING WHAT ONE EXACT COPY IS WORTH. A Collector opens with an offer on a
+   copy their Primary Goal matches; the shop accepts, counters or declines; the
+   Collector accepts, counters or withdraws. Five commands, and every rule about
+   them — who may send which, whose turn it is, Firm on Price, whole dollars,
+   one active offer per card — is the server's. These only carry the words.
+
+   A PRICE IS DOLLARS OR A PERCENTAGE, NEVER BOTH. `price` is `{ amount }` (a
+   whole number of dollars) or `{ percent }` (a fraction of the price the shop
+   listed when the offer opened, e.g. 0.9). Whichever one the person used is
+   the only one sent: the server resolves a percentage to whole dollars and
+   records both, so nothing here rounds anything.
+
+   THE ACTOR IS NOT IN THE PAYLOAD, and neither is the shop: the server reads
+   the seat from the session and the shop from the copy.
+
+   `withdrawOffer` SENDS NO REASON, ON PURPOSE. It is the Collector taking back
+   an offer that was never agreed, and Deal Flow offers it only then. Ending a
+   deal after the price is agreed is a different decision with its own screen,
+   which this batch does not build. (The server requires a reason for that
+   from the moment a price is agreed, Batch 3B.1.) */
+const priceOf = (price) => (price && price.percent !== undefined
+  ? { percent: price.percent } : { amount: price ? price.amount : undefined });
+
+export function openOffer(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("openOffer: the production store is required");
+  }
+  return (goalId, invId, price) => target.execute("startOpportunity", { goalId, invId, ...priceOf(price) });
+}
+export function counterOffer(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("counterOffer: the production store is required");
+  }
+  return (oppId, price) => target.execute("proposePrice", { oppId, ...priceOf(price) });
+}
+export function acceptOffer(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("acceptOffer: the production store is required");
+  }
+  return (oppId) => target.execute("acceptPrice", { oppId });
+}
+/* A DEAL'S CONVERSATION (Milestone 2D.1). One message on one deal. `nonce`
+   is generated once per composed message and sent again unchanged on a retry,
+   so a press whose answer was lost is not a second message. The sender is
+   whoever is signed in; nothing here names a participant. */
+export function sendDealMessage(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("sendDealMessage: the production store is required");
+  }
+  return (oppId, text, nonce) => target.execute("sendDealMessage", { oppId, text, nonce });
+}
+export function declineOffer(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("declineOffer: the production store is required");
+  }
+  return (oppId) => target.execute("declineOffer", { oppId });
+}
+export function withdrawOffer(target) {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError("withdrawOffer: the production store is required");
+  }
+  return (oppId) => target.execute("cancelOpportunity", { oppId });
+}
+
+/* SELECT TRADE (M3A A3). The partner chooses which of the Collector's
+   Trade/Sell copies to consider for one deal; the Collector says "hold on" or
+   "ready", and may take a card back out. Six doors, each one command.
+
+   THE FIRST CHOICE IS ONE SEND. `selectTrade` takes the whole list the partner
+   gathered on screen: the server treats the first selection as a message to
+   the Collector, so it is never sent a card at a time. Later additions go
+   through the same door with one id.
+
+   `closeSelection` SENDS WHAT WAS SHOWN. `tradeCardIds` are the deal's live
+   rows as the screen drew them; if the deal moved since, the server answers
+   `terms-changed` rather than holding cards nobody looked at. A refused close
+   may come back with `detail.tradeCardIds` — the caller's own rows it could
+   not hold. */
+const needsStore = (name, target) => {
+  if (!target || typeof target.execute !== "function") {
+    throw new TypeError(`${name}: the production store is required`);
+  }
+};
+export function selectTrade(target) {
+  needsStore("selectTrade", target);
+  return (oppId, copyIds) => target.execute("selectTradeCards", { oppId, copyIds });
+}
+export function deselectTrade(target) {
+  needsStore("deselectTrade", target);
+  return (oppId, tradeCardId) => target.execute("deselectTradeCard", { oppId, tradeCardId });
+}
+export function closeSelection(target) {
+  needsStore("closeSelection", target);
+  return (oppId, tradeCardIds) => target.execute("closeTradeSelection", { oppId, expect: { tradeCardIds } });
+}
+export function holdSelection(target) {
+  needsStore("holdSelection", target);
+  return (oppId) => target.execute("holdTradeSelection", { oppId });
+}
+export function readyForSelection(target) {
+  needsStore("readyForSelection", target);
+  return (oppId) => target.execute("continueTradeSelection", { oppId });
+}
+export function withdrawTradeCard(target) {
+  needsStore("withdrawTradeCard", target);
+  return (oppId, tradeCardId) => target.execute("withdrawTradeCard", { oppId, tradeCardId });
 }

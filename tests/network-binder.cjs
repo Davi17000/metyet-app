@@ -65,15 +65,33 @@ describe("Navigation", () => {
 describe("Aggregation and network scoping", () => {
   test("every binder card in the network appears exactly once", () => {
     const r = binderTab();
-    eq(cards(r).length, 34, "all seeded binder copies");
+    /* RESTATED (M3A A1P): 34 base copies plus 3 second-deal copies
+       (SECOND_DEAL_COPIES_SEED). The 12 copies completed trades handed over
+       (TRADED_COPIES_SEED) are real records but history, not shelf (A1P final
+       corrections), so the Network Binder does not list them. */
+    eq(cards(r).length, 37, "all seeded binder copies that can still be traded");
+    /* RESTATED (M3A A1P): one Collector may now own two copies of one card (a
+       traded copy beside the one still in their binder, or a second-deal
+       copy), so "exactly once" is checked per copy: each card-and-owner pair
+       renders exactly as many times as that owner holds copies of the card. */
     const ids = cards(r).map((n) => text(byClassIn(n, "nb-t")[0]) + "|" + text(byClassIn(n, "nb-who")[0]));
-    eq(new Set(ids).size, ids.length, "no duplicates");
+    const seen = {};
+    ids.forEach((k) => { seen[k] = (seen[k] || 0) + 1; });
+    eq(Object.values(seen).reduce((a, b) => a + b, 0), 37, "no duplicates");
+    const world = require("../dist/MetYet.cjs").buildCanonicalSeed();
+    const held = {};
+    const DD = require("../domain/metyet-domain.js");
+    world.collectorCopies.filter((b) => DD.collectorCopyStatus(b.id, world.opportunities) !== "traded")
+      .forEach((b) => { const k = b.cardId + "|" + b.collectorId; held[k] = (held[k] || 0) + 1; });
+    eq(Object.keys(seen).length, Object.keys(held).length, "one entry per card-and-owner pair");
+    eq(Object.values(seen).sort().join(), Object.values(held).sort().join(),
+      "each rendered as many times as its owner holds copies, never more");
   });
 
   test("the summary counts cards, collectors and new additions from real data", () => {
     const r = binderTab();
     const t = text(byClass(r, "nb-sum")[0]);
-    assert(/34 cards across 13 collectors/.test(t), "counts match the data: " + t);
+    assert(/37 cards across 13 collectors/.test(t), "counts match the data: " + t);   // RESTATED (M3A A1P final corrections): traded copies are history, not shelf
     assert(/\d+ new since your last review/.test(t), "and the new count is derived");
   });
 
@@ -313,7 +331,7 @@ describe("The per-collector binder is unaffected", () => {
   test("the profile Trade Binder still works", () => {
     const r = render();
     goProfile(r, "Ellen Fisher");
-    eq(byClass(r, "cp-bind").length, 6, "her binder still renders in relationship context");
+    eq(byClass(r, "cp-bind").length, 6, "her binder still renders in relationship context");   // RESTATED (M3A A1P final corrections): traded copies are history, not shelf
     assert(byClass(r, "cp-bind-view").length === 6, "with its own View copy actions");
     const h = byClass(r, "cp-sec-h").find((n) => text(n).startsWith("Trade Binder"));
     assert(/Trade Binder 6/.test(text(h)), "and its count");
@@ -600,6 +618,52 @@ describe("Seed covers the real sourcing situations", () => {
 /* Every person-shaped string on this page must state its relationship, because the
    surface mixes two perspectives: cards your collectors own, and interest that is
    yours. A name with no stated relationship is the failure mode being guarded. */
+describe("A traded copy is history, not shelf (M3A A1P final corrections)", () => {
+  const D = require("../domain/metyet-domain.js");
+  const { projectForActor } = require("../domain/metyet-projection.js");
+  const { createStore } = require("../domain/metyet-store.js");
+  const M = require("../dist/MetYet.cjs");
+  const world = () => createStore(M.buildCanonicalSeed()).get();
+  const PSELF = () => { const w = world(); return projectForActor(w, { partnerId: w.partners[0].id }); };
+
+  test("the partner's projection still carries every traded record, untouched", () => {
+    const traded = PSELF().collectorCopies.filter((cc) => cc.status === "traded");
+    eq(traded.length, 12, "the twelve copies completed trades handed over are still records");
+  });
+  test("neither the Network Binder nor its counts nor its demand ranking include them", () => {
+    const r = binderTab();
+    const shelf = PSELF().collectorCopies.filter((cc) => cc.status !== "traded");
+    eq(cards(r).length, shelf.length, "one tile per copy that can still be traded");
+    eq(toggles(r).filter(Boolean).length, shelf.length, "and an Open to trade control only on those");
+    assert(new RegExp(shelf.length + " cards across").test(allText(r)), "the summary counts the shelf: " + allText(r).slice(0, 120));
+  });
+  test("no profile Trade Binder offers Open to trade on a traded copy", () => {
+    const w = world();
+    const v = PSELF();
+    const tradedBy = {};
+    v.collectorCopies.filter((cc) => cc.status === "traded").forEach((cc) => { tradedBy[cc.collectorId] = (tradedBy[cc.collectorId] || 0) + 1; });
+    const owners = Object.keys(tradedBy);
+    assert(owners.length >= 3, "several collectors completed trades: " + owners.join(","));
+    for (const cid of owners) {
+      const name = w.collectors.find((c) => c.id === cid).name;
+      const r = render(); goProfile(r, name);
+      const shelf = v.collectorCopies.filter((cc) => cc.collectorId === cid && cc.status !== "traded").length;
+      eq(byClass(r, "cp-bind").length, shelf, `${name}: tiles are the shelf only`);
+      eq(byClass(r, "cp-bind-x").length, shelf, `${name}: no Open to trade on a traded copy`);
+      assert(new RegExp("Trade Binder " + shelf).test(allText(r)), `${name}: the heading counts the shelf`);
+    }
+  });
+  test("the copy's record and its deal still read it: the filter is presentation only", () => {
+    const w = world();
+    const done = w.opportunities.filter((o) => D.isCompleted(o) && D.TRADE.liveTradeRows(o).length);
+    assert(done.length > 0, "completed trades exist");
+    for (const o of done) for (const row of D.TRADE.liveTradeRows(o)) {
+      assert(w.collectorCopies.some((b) => b.id === row.binderId), `${o.id}: ${row.binderId} still exists`);
+      eq(D.collectorCopyStatus(row.binderId, w.opportunities), "traded", `${row.binderId} reads traded`);
+    }
+  });
+});
+
 describe("Copy is unambiguous about whose perspective is whose", () => {
   test("the owner line states the relationship, never a bare name", () => {
     const r = binderTab();

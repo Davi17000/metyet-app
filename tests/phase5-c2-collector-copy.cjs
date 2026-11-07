@@ -485,7 +485,11 @@ describe("D. leaving your hands is not changing your mind", () => {
        leaves `offered` false just as the withdrawal did. The known edge case —
        that neither command consults the deal's hold on the copy — is unchanged
        by this batch and is documented, not fixed, here. */
-    eq((await keep(ctx.app, "casey", w.copyId)).statusCode, 200);
+    /* RESTATED (M3A A1): the edge case is closed — the founder decided a copy a
+       deal is considering cannot be switched to PC until it is withdrawn, so the
+       statement is now refused `copy-in-deal`, and the copy stays Trade/Sell. */
+    eq((await keep(ctx.app, "casey", w.copyId)).json().error.refused, "copy-in-deal");
+    eq((await copyOf(ctx, w.copyId)).offered, true, "still Trade/Sell");
     assert(await copyOf(ctx, w.copyId), "the copy is still there");
     eq((await drop(ctx.app, "casey", w.copyId)).json().error.refused, "copy-reserved",
       "and still cannot be deleted out from under the deal");
@@ -495,16 +499,16 @@ describe("D. leaving your hands is not changing your mind", () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const w = await reservedCopy(ctx, cards);
-    const accepted = await direct(ctx, ACTOR.north, "reviewTradeCard",
-      { oppId: w.oppId, tradeCardId: w.tradeCardId, decision: "accept" });
-    assert(!accepted.refused, json(accepted));
+    await committedCopy(ctx, w);   // RESTATED (M3A A1): committed at final agreement, not at acceptance
     eq((await drop(ctx.app, "casey", w.copyId)).json().error.refused, "copy-committed",
       "a committed copy is the deal's record now");
   });
 });
 
 /* A Collector's copy inside a live trade package, built the long way — through
-   the real negotiation commands, so the locks under test are the real ones. */
+   the real negotiation commands, so the locks under test are the real ones.
+   RESTATED (M3A A1): TP-led — the partner selects the copy, the Collector is
+   ready, the partner closes selection, and the copy is RESERVED for this deal. */
 async function reservedCopy(ctx, cards) {
   /* The copy states the grade the Goal asks for: since the true-match batch a
      Goal's stated criteria constrain both Discovery and startOpportunity, and
@@ -521,14 +525,30 @@ async function reservedCopy(ctx, cards) {
   const oppId = opened.value;
   const priced = await direct(ctx, ACTOR.north, "acceptPrice", { oppId });
   assert(!priced.refused, "acceptPrice: " + json(priced));
-  const sent = await direct(ctx, ACTOR.casey, "proposeTradeSelection", { oppId, binderIds: [copyId] });
-  assert(!sent.refused, "proposeTradeSelection: " + json(sent));
+  for (const [actor, command, payload] of [[ACTOR.north, "selectTradeCards", { oppId, copyIds: [copyId] }],
+    [ACTOR.casey, "continueTradeSelection", { oppId }], [ACTOR.north, "closeTradeSelection", { oppId }]]) {
+    const r = await direct(ctx, actor, command, payload);
+    assert(!r.refused, command + ": " + json(r));
+  }
 
   const world = await ctx.repository.loadWorld();
   const opp = world.opportunities.find((o) => o.id === oppId);
   const row = opp.trade.cards.find((c) => c.binderId === copyId);
   assert(row, "the package names the copy");
   return { invId, goalId, copyId, oppId, tradeCardId: row.id };
+}
+
+/* …and the same copy promised: valued, then agreed by both (M3A A1). */
+async function committedCopy(ctx, w) {
+  const steps = [[ACTOR.casey, "proposeMarketValue", { oppId: w.oppId, tradeCardId: w.tradeCardId, amount: 3000 }],
+    [ACTOR.north, "acceptMarketValue", { oppId: w.oppId, tradeCardId: w.tradeCardId }],
+    [ACTOR.north, "proposeTradePercent", { oppId: w.oppId, tradeCardId: w.tradeCardId, percent: 0.8 }],
+    [ACTOR.casey, "acceptTradePercent", { oppId: w.oppId, tradeCardId: w.tradeCardId }],
+    [ACTOR.north, "acceptDeal", { oppId: w.oppId }], [ACTOR.casey, "acceptDeal", { oppId: w.oppId }]];
+  for (const [actor, command, payload] of steps) {
+    const r = await direct(ctx, actor, command, payload);
+    assert(!r.refused, command + ": " + json(r));
+  }
 }
 
 /* ============================================================== E */
@@ -548,7 +568,13 @@ describe("E. photographs, where the requirement went", () => {
     assert(!r.refused, json(r));
   });
 
-  test("offering an unphotographed card is allowed; putting it in a trade is not", async () => {
+  /* RESTATED (M3A A1). WAS: a copy without both faces could be offered but not
+     put into a trade (`photos-required`). WHY IT CHANGED: the founder removed
+     the photo requirement for the pilot — a partner selects from what the
+     Collector offers, photographed or not. WHAT STILL HOLDS: the photographs a
+     copy has are snapshotted on the row and locked while it is selected, and
+     an empty slot may still be filled. */
+  test("offering an unphotographed card is allowed, and so is a partner selecting it", async () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const invId = (await post(ctx.app, "north", "addInventoryCopy",
@@ -562,14 +588,14 @@ describe("E. photographs, where the requirement went", () => {
     const oppId = (await direct(ctx, ACTOR.casey, "startOpportunity", { goalId, invId, amount: 9000 })).value;
     assert(!(await direct(ctx, ACTOR.north, "acceptPrice", { oppId })).refused);
 
-    const refused = await direct(ctx, ACTOR.casey, "proposeTradeSelection", { oppId, binderIds: [copyId] });
-    eq(refused.refused, D.REFUSE.photosRequired,
-      "a partner cannot be asked to value a card they cannot see");
-    const still = (await ctx.repository.loadWorld()).opportunities.find((o) => o.id === oppId);
-    assert(!(still.trade && still.trade.submitted), "and nothing was submitted");
+    const selected = await direct(ctx, ACTOR.north, "selectTradeCards", { oppId, copyIds: [copyId] });
+    assert(!selected.refused, "no photograph is required to be considered: " + json(selected));
+    const row = (await ctx.repository.loadWorld()).opportunities.find((o) => o.id === oppId).trade.cards[0];
+    eq(row.photos.front, "only-one-face", "the face it has is snapshotted");
+    eq(row.photos.back, null, "and the missing one is recorded as missing");
   });
 
-  test("add the second face and the same trade operation proceeds", async () => {
+  test("add the second face while selected; an existing face stays locked", async () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const invId = (await post(ctx.app, "north", "addInventoryCopy",
@@ -580,16 +606,13 @@ describe("E. photographs, where the requirement went", () => {
       offered: true, photos: { front: "only-one-face" } })).json().value;
     const oppId = (await direct(ctx, ACTOR.casey, "startOpportunity", { goalId, invId, amount: 9000 })).value;
     await direct(ctx, ACTOR.north, "acceptPrice", { oppId });
-    eq((await direct(ctx, ACTOR.casey, "proposeTradeSelection", { oppId, binderIds: [copyId] })).refused,
-      D.REFUSE.photosRequired, "refused while half photographed");
+    assert(!(await direct(ctx, ACTOR.north, "selectTradeCards", { oppId, copyIds: [copyId] })).refused, "selected");
 
     const shot = await direct(ctx, ACTOR.casey, "updateCollectorCopy",
-      { copyId, patch: { photos: PHOTOS } });
-    assert(!shot.refused, json(shot));
-    const sent = await direct(ctx, ACTOR.casey, "proposeTradeSelection", { oppId, binderIds: [copyId] });
-    assert(!sent.refused, "the same operation, now allowed: " + json(sent));
-    const opp = (await ctx.repository.loadWorld()).opportunities.find((o) => o.id === oppId);
-    assert(opp.trade.submitted, "and the package is submitted");
+      { copyId, patch: { photos: { front: "only-one-face", back: "the-back" } } });
+    assert(!shot.refused, "an empty slot may be filled: " + json(shot));
+    eq((await direct(ctx, ACTOR.casey, "updateCollectorCopy", { copyId, patch: { photos: PHOTOS } })).refused,
+      D.REFUSE.copyInDeal, "replacing a face the partner selected against is refused");
   });
 
   test("grade and condition are read in one place, provider-neutrally", () => {
@@ -647,7 +670,7 @@ describe("F. `offered` did not replace the derived status", () => {
       "the deal's answer is still derived, from the deals");
   });
 
-  test("the full derivation still moves: available, reserved, committed, traded", async () => {
+  test("the full derivation still moves: available, reserved, committed", async () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const opps = async () => (await ctx.repository.loadWorld()).opportunities;
@@ -656,22 +679,21 @@ describe("F. `offered` did not replace the derived status", () => {
       offered: true, photos: PHOTOS })).json().value;
     eq(D.collectorCopyStatus(fresh, await opps()), "available", "nothing holds it");
 
+    /* RESTATED (M3A A1): selected → reserved (valuation) → committed (final agreement). */
     const w = await reservedCopy(ctx, cards);
-    eq(D.collectorCopyStatus(w.copyId, await opps()), "reserved", "submitted in a package");
-    await direct(ctx, ACTOR.north, "reviewTradeCard",
-      { oppId: w.oppId, tradeCardId: w.tradeCardId, decision: "accept" });
-    eq(D.collectorCopyStatus(w.copyId, await opps()), "committed", "accepted into the trade");
+    eq(D.collectorCopyStatus(w.copyId, await opps()), "reserved", "reserved on entering valuation");
+    await committedCopy(ctx, w);
+    eq(D.collectorCopyStatus(w.copyId, await opps()), "committed", "committed at final agreement");
   });
 
   test("withdrawing an offer does not rewrite a deal's answer", async () => {
     const ctx = await world();
     const cards = await charizard(ctx);
     const w = await reservedCopy(ctx, cards);
-    await direct(ctx, ACTOR.north, "reviewTradeCard",
-      { oppId: w.oppId, tradeCardId: w.tradeCardId, decision: "accept" });
-    /* RE-PINNED: "stop offering" is now "say I am keeping it". Still permitted
-       mid-deal, still changes nothing about the deal — see the comment above. */
-    eq((await keep(ctx.app, "casey", w.copyId)).statusCode, 200, "the owner may still say it");
+    await committedCopy(ctx, w);
+    /* RESTATED (M3A A1): saying "I am keeping it" while a deal holds the copy is
+       refused `copy-in-deal` now — and either way the deal's answer is untouched. */
+    eq((await keep(ctx.app, "casey", w.copyId)).json().error.refused, "copy-in-deal", "refused while the deal holds it");
     eq(D.collectorCopyStatus(w.copyId, (await ctx.repository.loadWorld()).opportunities), "committed",
       "and the deal's hold on the copy is untouched");
     const row = (await ctx.repository.loadWorld()).opportunities
@@ -686,7 +708,8 @@ describe("F. `offered` did not replace the derived status", () => {
     const seen = async () => (await get(ctx.app, "north", "/api/view")).json().state.collectorCopies;
 
     eq((await seen()).find((b) => b.id === w.copyId).status, "reserved", "their own deal's answer");
-    await keep(ctx.app, "casey", w.copyId);
+    /* RESTATED (M3A A1): the switch to PC is refused while the deal holds the copy. */
+    eq((await keep(ctx.app, "casey", w.copyId)).json().error.refused, "copy-in-deal", "refused mid-deal");
     const after = (await seen()).find((b) => b.id === w.copyId);
     /* `offered` gates SUPPLY. A copy the partner's own submitted package names
        is not reaching them as supply — it is reaching them as part of a deal
@@ -695,7 +718,7 @@ describe("F. `offered` did not replace the derived status", () => {
        their own proposal used to be. Their own deal's answer stays theirs. */
     assert(after, "the copy vanished from a deal the partner is in");
     eq(after.status, "reserved", "and their own deal's answer is unchanged");
-    eq(after.offered, false, "though they are told it is no longer on offer");
+    eq(after.offered, true, "and it is still on offer, because the switch was refused");
   });
 
   test("a copy ANOTHER collector's deal holds still reads only `unavailable`", async () => {
@@ -854,7 +877,7 @@ describe("H. the doors this batch opened, and no others", () => {
          Batch 3C-1 closed it by name once the release owner judged that window
          enough. `removeBinderEntry` stays — it is how a legacy row is removed. */
       "fileObject", "unfileObject",
-      "updateCollectorCopy", "updateGoalCriteria",
+      "updateCollectorCopy", "updateGoalCriteria", "changeCollectingState",
       /* C3.4b — managing a binder as an object, now that there is a screen. */
       "renameBinder", "setBinderArchived",
       /* AND THE TWO C5 ADDED (Phase 5 C5). `updateInventoryCopy` and
@@ -881,10 +904,29 @@ describe("H. the doors this batch opened, and no others", () => {
          evidence in a live deal, and it changes no price, availability or
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
+      /* AND THE FIVE MARKET VALIDATION BATCH 3B ADDED, with the controls that
+         send them: a Collector's "Make an offer", "Counter", "Accept" and
+         "Withdraw offer" in Deal Flow, and a shop's "Accept", "Counter" and
+         "Decline" in Opportunities. Agreeing a price and nothing past it. */
+      "startOpportunity", "proposePrice", "acceptPrice", "declineOffer", "cancelOpportunity",
+      /* AND THE ONE MILESTONE 2D.1 ADDED (founder-approved): a deal's conversation —
+         one plain-text message on one canonical opportunity, from one of its two
+         participants. It changes no term of any deal; only Accept accepts. */
+      "sendDealMessage",
+      /* AND SELECT TRADE'S SIX (M3A A3, founder-authorized), with the screens
+         that send them: a shop's "Send / Add", "Remove" and "Start valuing" in
+         Opportunities; a Collector's "Hold on", "I'm ready" and "Take out of
+         this deal" in the Deal Workspace. Value Trade, Deal, Fulfillment and
+         cash-only stay closed. */
+      "selectTradeCards", "deselectTradeCard", "closeTradeSelection",
+      "holdTradeSelection", "continueTradeSelection", "withdrawTradeCard",
     ].sort()), "the production surface is not what this batch declared");
     /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
        name; any other change to the size still fails here. */
-    eq(EXPOSED_COMMANDS.length, 24, "and nothing arrived unnamed");
+    /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
+       commands joined the door with the Deal Flow and Opportunities controls
+       that send them, each named in the allow-list; any other move still fails. */
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37, "and nothing arrived unnamed");
   });
 
   test("every exposed name is a real command, and the client sends exactly these", () => {
@@ -944,11 +986,15 @@ describe("H. the doors this batch opened, and no others", () => {
   });
 
   test("no legacy or future command became reachable", async () => {
+    /* MARKET VALIDATION BATCH 3B opened the five price commands — opening an
+       offer, countering, accepting, declining and withdrawing — with the screens
+       that send them, so they left this list. Everything past an agreed price
+       (trade, values, the final balance, fulfilment, Pending) is still shut. */
     const ctx = await world();
     /* `addCopyPhotos` left this loop when photo fulfilment gave it a Trusted
        Partner surface — it is the only command that closes a photo request. */
     for (const name of ["resolveCardIdentity", "addBinderCopy", "updateBinderCopy",
-      "removeBinderCopy", "setInterest", "startOpportunity", "proposeTradeSelection",
+      "removeBinderCopy", "setInterest", "proposeTradeSelection",
       "markBinderReviewed"]) {
       assert(!EXPOSED_COMMANDS.includes(name), `${name} is exposed`);
       await closedOverHttp(ctx, "casey", name, {});

@@ -89,7 +89,7 @@ const valued = (st, actor, goalId, amount) => {
   return id;
 };
 const promised = (st, actor, oppId) => {
-  okv(x(st, actor, "proposeTradeSelection", { oppId, binderIds: [], at: AT }), "package");
+  okv(x(st, actor, "chooseCashOnly", { oppId, at: AT }), "package");
   okv(x(st, TP, "acceptDeal", { oppId, at: AT }), "partner yes");
   okv(x(st, actor, "acceptDeal", { oppId, at: AT }), "collector yes");
   return oppId;
@@ -237,7 +237,8 @@ describe("A. What a partner may still restate about a card in a live deal", () =
     const a = valued(st, A, "gA", 26);
     nov(x(st, TP, "updateInventoryCopy", { invId: "i1", patch: { grade: "PSA 10" }, at: AT }),
       D.REFUSE.copyCommitted, "closed while somebody is pricing against it");
-    okv(x(st, A, "cancelOpportunity", { oppId: a, at: AT }), "the deal ends");
+    /* Batch 3B.1: the price is agreed, so ending it says why. */
+    okv(x(st, A, "cancelOpportunity", { oppId: a, reason: "changed my mind", at: AT }), "the deal ends");
     okv(x(st, TP, "updateInventoryCopy", { invId: "i1", patch: { grade: "PSA 10" }, at: AT }),
       "and the shop owns its own card again");
     eq(copyOf(st).grade, "PSA 10", "the correction landed");
@@ -321,11 +322,17 @@ describe("B. What a collector may learn about somebody else's deal", () => {
     }
   });
 
-  test("[B6] a rival holding a LIVE deal on the copy learns no more", () => {
-    /* The second channel: Jordan opened his own pursuit while the copy was
-       available, which Option B permits, and can act on it at every stage. */
+  /* RESTATED (M3A A1). WAS: pending, committed and sold were indistinguishable
+     from inside a rival deal — each answered copy-unavailable. WHY IT CHANGED:
+     the founder decided a deal that has lost the shop's card must END
+     explicitly (card-unavailable) and be understandable to both parties, while
+     a temporary hold must NOT end it. So "held for now" and "gone" are now
+     different things a rival can see, by design. WHAT STILL HOLDS: promised and
+     sold remain indistinguishable to the rival, a hold still says nothing about
+     why, and no refusal or projection names the other deal or collector. */
+  test("[B6] a rival holding a LIVE deal on the copy learns no more than held-or-gone", () => {
     const seen = new Set();
-    for (const name of ["pending", "committed", "sold"]) {
+    for (const name of ["committed", "sold"]) {
       const st = world();
       const b = valued(st, B, "gB", 27);
       const a = okv(x(st, A, "startOpportunity", { goalId: "gA", invId: "i1", amount: 26, at: AT }), "Casey opens");
@@ -335,11 +342,21 @@ describe("B. What a collector may learn about somebody else's deal", () => {
         promised(st, A, a);
         if (name === "sold") completed(st, A, a);
       }
-      const answer = code(x(st, B, "proposeTradeSelection", { oppId: b, binderIds: [], at: AT }));
-      eq(answer, D.REFUSE.copyUnavailable, `${name}: his own deal is blocked, without saying by what`);
-      seen.add(answer);
+      const answer = code(x(st, B, "chooseCashOnly", { oppId: b, at: AT }));
+      eq(answer, D.REFUSE.terminal, `${name}: his own deal has ended, without saying by what`);
+      const mine = P.projectForActor(st.get(), B).opportunities.find((o) => o.id === b);
+      eq(mine.outcome, "card-unavailable", `${name}: and his view says only that the card is unavailable`);
+      assert(!JSON.stringify(mine).includes(a), `${name}: naming no rival deal`);
+      seen.add(answer + "|" + mine.outcome);
     }
-    eq(seen.size, 1, "the three states are indistinguishable from inside a rival deal too");
+    eq(seen.size, 1, "promised and sold are indistinguishable from inside a rival deal");
+    /* A hold is not loss: the rival's deal stays open and is told only that the card is unavailable for now. */
+    const st = world();
+    const b = valued(st, B, "gB", 27);
+    const a = okv(x(st, A, "startOpportunity", { goalId: "gA", invId: "i1", amount: 26, at: AT }), "Casey opens");
+    okv(x(st, TP, "setCopyPending", { invId: "i1", oppId: a, at: AT }), "pend");
+    eq(code(x(st, B, "chooseCashOnly", { oppId: b, at: AT })), D.REFUSE.copyUnavailable, "pending: blocked, not ended");
+    eq(D.isActive(st.get().opportunities.find((o) => o.id === b)), true, "and still his deal");
   });
 
   test("[B7] no refusal carries an id, a price, a stage or any other payload", () => {
@@ -377,7 +394,7 @@ describe("B. What a collector may learn about somebody else's deal", () => {
     okv(x(st, TP, "setCopyPending", { invId: "i1", oppId: a, at: AT }), "pended for HER deal");
     eq(status(st), "pending", "the copy is pending");
     okv(x(st, TP, "acceptPrice", { oppId: a, at: AT }), "and her deal carries on");
-    okv(x(st, A, "proposeTradeSelection", { oppId: a, binderIds: [], at: AT }), "through the package");
+    okv(x(st, A, "chooseCashOnly", { oppId: a, at: AT }), "through the package");
     okv(x(st, TP, "acceptDeal", { oppId: a, at: AT }), "to the partner's yes");
     okv(x(st, A, "acceptDeal", { oppId: a, at: AT }), "and her own");
     eq(status(st), "committed", "pending for you never blocked you");
@@ -499,11 +516,13 @@ describe("B. What a collector may learn about somebody else's deal", () => {
     /* The one rule that must survive every refactor of how refusals are worded. */
     const st = world();
     const b = valued(st, B, "gB", 27);
-    okv(x(st, B, "proposeTradeSelection", { oppId: b, binderIds: [], at: AT }), "Jordan assembles first");
+    okv(x(st, B, "chooseCashOnly", { oppId: b, at: AT }), "Jordan assembles first");
     promised(st, A, valued(st, A, "gA", 26));
     /* The partner is the OWNER here, so they get the precise word — that is the
        whole of the shaping rule, and the refusal itself is what matters. */
-    nov(x(st, TP, "acceptDeal", { oppId: b, at: AT }), D.REFUSE.copyCommitted,
+    /* RESTATED (M3A A1): the first promise ENDED Jordan's deal in the same write. */
+    eq(st.get().opportunities.find((o) => o.id === b).outcome, "card-unavailable", "Jordan's deal ended explicitly");
+    nov(x(st, TP, "acceptDeal", { oppId: b, at: AT }), D.REFUSE.terminal,
       "the second promise is still refused");
     /* Jordan is answered by the turn rule before the copy rule even runs, which
        is leak-free for a different reason — `not-your-turn` says nothing about

@@ -99,9 +99,12 @@ snap("offer");                                                        // collect
 x(store, TP, "proposePrice", { oppId, amount: 3800 });
 snap("counter");                                                      // partner's counter on the table
 x(store, J, "acceptPrice", { oppId });
-x(store, J, "proposeTradeSelection", { oppId, binderIds: ["cc3"] });
+/* RESTATED (M3A A1): the partner selects the card, the Collector is ready, the
+   partner closes selection — TP-led, in place of propose-then-review. */
+x(store, TP, "selectTradeCards", { oppId, copyIds: ["cc3"] });
 snap("select-trade");
-x(store, TP, "reviewTradeCard", { oppId, tradeCardId: rowId(), decision: "accepted" });
+x(store, J, "continueTradeSelection", { oppId });
+x(store, TP, "closeTradeSelection", { oppId });
 x(store, J, "proposeMarketValue", { oppId, tradeCardId: rowId(), amount: 500 });
 snap("value-trade");
 x(store, TP, "acceptMarketValue", { oppId, tradeCardId: rowId() });

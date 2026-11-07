@@ -53,6 +53,15 @@ describe("Collector Network — column layout", () => {
   });
 });
 
+/* RESTATED (M3A A1P) — TOTAL BINDER COUNTS. The seed used to let a completed
+   trade "hand over" the very copies the same Collector's live deals still held,
+   so one record was both traded and in play. A1P gives each completed trade the
+   copies it actually traded (TRADED_COPIES_SEED in src/MetYet.jsx); those
+   copies are history, not shelf (A1P final corrections): the partner's binder
+   lists, Total binder and the demand ranking read only copies that can still be
+   traded, so Ellen, James and Alex keep their pre-A1P totals (6, 5, 2). Casey Lin
+   2 -> 3 for the second Rayquaza-deal copy (SECOND_DEAL_COPIES_SEED): a
+   reserved copy belongs to one deal, so her two live valuations hold two. */
 describe("Collector Network — the three binder columns", () => {
   const triple = (r, name) => [cellText(r, name, "newb"), cellText(r, name, "total"), cellText(r, name, "open")].join(" | ");
 
@@ -61,7 +70,7 @@ describe("Collector Network — the three binder columns", () => {
     eq(triple(r, "Ellen Fisher"), "3 | 6 | 5", "three new, six shared, five open");
     eq(triple(r, "James Rivera"), "2 | 5 | 3", "two of James's five are unflagged");
     eq(triple(r, "Alex Trinh"), "1 | 2 | 2", "both of Alex's are open to trade");
-    eq(triple(r, "Casey Lin"), "1 | 2 | 1", "a new unreviewed copy alongside her flagged one");
+    eq(triple(r, "Casey Lin"), "1 | 3 | 1", "a new unreviewed copy alongside her flagged one");
   });
 
   /* PHASE 2 BATCH 2: an invited collector is not a network member until they

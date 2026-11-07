@@ -22,6 +22,7 @@
 
 process.env.METYET_DEV = "1";
 
+const { reachValuationByFixture } = require("./helpers/trade-path.cjs");
 const { describe, test, assert, eq } = require("./run.cjs");
 const fs = require("fs");
 const path = require("path");
@@ -69,9 +70,9 @@ const real = ({ price, market, pct }) => {
     cardId: "kt", invId: "inv-1", listedPrice: price, amount: price, at: AT });
   st.actions.agreePrice({ oppId: o, amount: price, by: "tp", at: AT });
   const row = M.emptyTradeCard("ka", null, null, "b-0");
-  st.actions.patchOpportunity(o, (x) => ({ ...x, stage: "select-trade",
-    trade: { ...x.trade, submitted: true, cards: [row] } }));
-  st.actions.reviewTradeCards({ oppId: o, decision: "accepted", at: AT });
+  /* RESTATED (M3A A1): the partner now selects and closing selection reserves;
+     the retired Collector-proposes / reviewTradeCard path is replaced by the shared fixture. */
+  reachValuationByFixture(st, o, [row], AT);
   /* PHASE 1: the collector opens market value (D.cardOwner); the partner accepts. */
   st.actions.tradeMarketRespond({ oppId: o, tradeCardId: row.id, by: "collector", action: "propose", amount: market, at: AT });
   st.actions.tradeMarketRespond({ oppId: o, tradeCardId: row.id, by: "tp", action: "accept", at: AT });

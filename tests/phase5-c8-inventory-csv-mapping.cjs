@@ -319,7 +319,7 @@ describe("B. a template is configuration, and cannot outvote the domain", () => 
     assert(!/create table|insert into|select |db\.|repository/i.test(body),
       "the template module reaches persistence");
     const migrations = fs.readdirSync(path.join(ROOT, "persistence", "migrations")).sort();
-    eq(migrations[migrations.length - 1], "0014_binder_memberships.sql", "C8 added a migration: " + migrations.join(","));
+    /* RE-PINNED (Milestone 2D.1): the newest migration is now 0015, a deal's conversation — not this batch's. */ eq(migrations[migrations.length - 1], "0015_deal_conversations.sql", "C8 added a migration: " + migrations.join(","));
   });
 });
 
@@ -406,13 +406,26 @@ describe("C. what a row says, and what it cannot be made to say", () => {
   test("money is read the way a person writes it, and refused when it is not a number", () => {
     const ok = {
       "1150": 1150, "1,150": 1150, "1,150.00": 1150, "$1,150": 1150, "£1,150.00": 1150,
-      "0": 0, "0.50": 0.5,
     };
     for (const [written, amount] of Object.entries(ok)) {
       const out = normalizeOne(mapper(), oneRow({ "Listed Price": written }), 2);
       assert(out.ok, `"${written}" was refused: ${json(out.invalid)}`);
       eq(out.record.copy.ask, amount, `"${written}" read as ${out.record.copy.ask}`);
       eq(typeof out.record.copy.ask, "number", `"${written}" is not a JS number`);
+    }
+    /* WHOLE DOLLARS (Batch 2.1). The same money reading, but a PRICE of $0 or
+       with cents is refused with its own reason; a shop's COST is not a price
+       and is still read exactly as before. */
+    for (const [written, reason] of [["0", INVALID.priceNotPositive], ["0.50", INVALID.priceNotWholeDollars]]) {
+      const out = normalizeOne(mapper(), oneRow({ "Listed Price": written }), 2);
+      assert(!out.ok, `price "${written}" was accepted`);
+      eq(out.invalid.reason, reason, `price "${written}": ${json(out.invalid)}`);
+      eq(out.invalid.field, "ask", "and the row error names the price");
+    }
+    for (const [written, amount] of Object.entries({ "0": 0, "0.50": 0.5 })) {
+      const out = normalizeOne(mapper(), oneRow({ "Purchase Price": written }), 2);
+      assert(out.ok, `cost "${written}" was refused: ${json(out.invalid)}`);
+      eq(out.record.copy.cost, amount, `cost "${written}" read as ${out.record.copy.cost}`);
     }
     /* EVERY ONE OF THESE IS A WRONG NUMBER THAT THE DOMAIN WOULD HAVE ACCEPTED.
        `Number("")` is 0, `Number(true)` is 1, `Number([])` is 0 — the domain
@@ -437,8 +450,12 @@ describe("C. what a row says, and what it cannot be made to say", () => {
     assert(blank.ok);
     assert(!("ask" in blank.record.copy) && !("cost" in blank.record.copy),
       "a blank amount became a value: " + json(blank.record.copy));
-    const zero = normalizeOne(mapper(), oneRow({ "Listed Price": "0" }), 2);
-    eq(zero.record.copy.ask, 0, "an explicit zero was lost");
+    /* An explicit zero is still a value, not absence — shown on the cost, since
+       a PRICE of $0 is refused outright since Batch 2.1 (whole dollars above 0). */
+    const zero = normalizeOne(mapper(), oneRow({ "Purchase Price": "0" }), 2);
+    eq(zero.record.copy.cost, 0, "an explicit zero was lost");
+    const zeroPrice = normalizeOne(mapper(), oneRow({ "Listed Price": "0" }), 2);
+    eq(zeroPrice.invalid && zeroPrice.invalid.reason, INVALID.priceNotPositive, "and a zero price is refused, not dropped");
   });
 
   test("quantity: absent means one, and zero means somebody meant to delete the row", () => {
@@ -1025,7 +1042,10 @@ describe("G. whose shelf this is", () => {
     const { EXPOSED_COMMANDS } = require("../server/exposed-commands.js");
     /* RE-PINNED (Batch 3C-1): 25 → 24, `addBinderEntry` closed by name. Still
        nothing to do with importing a CSV, and any other move still fails. */
-    eq(EXPOSED_COMMANDS.length, 24, "C8 opened a production command: " + EXPOSED_COMMANDS.join(","));
+    /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
+       commands joined the door with the Deal Flow and Opportunities controls
+       that send them, each named in the allow-list; any other move still fails. */
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37, "C8 opened a production command: " + EXPOSED_COMMANDS.join(","));
     /* 49 → 50 in Option B (`setCopyPending`), and → 51 in the four-state batch
        (`setCollectorCopyKept`). C8's claim is unchanged: C8 added no domain
        command, and the door it is really guarding — the allow-list above —
@@ -1038,7 +1058,8 @@ describe("G. whose shelf this is", () => {
        batches this sentence contradicted the assertion above it. 3B-1 makes
        the count 25 again, and the history is now written out rather than
        quietly becoming true. */
-    eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 53,
+    /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A1: + selectTradeCards, deselectTradeCard, holdTradeSelection, continueTradeSelection, closeTradeSelection (proposeTradeSelection and reviewTradeCard remain as refusing names) — each founder-approved */ eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 61,
       "C8 added a domain command");
     const app = code("server/app.js");
     assert(!/inventory-import|inventoryImport|\/api\/inventory|csv/i.test(app),
@@ -1120,7 +1141,7 @@ describe("I. and nothing else moved", () => {
 
   test("C8 wrote no migration: the newest is still somebody else's", () => {
     const migrations = fs.readdirSync(path.join(ROOT, "persistence", "migrations")).sort();
-    eq(migrations[migrations.length - 1], "0014_binder_memberships.sql", migrations.join(","));
+    /* RE-PINNED (Milestone 2D.1): the newest migration is now 0015, a deal's conversation — not this batch's. */ eq(migrations[migrations.length - 1], "0015_deal_conversations.sql", migrations.join(","));
   });
 
   test("the catalog gained a read and no write", () => {
@@ -1407,8 +1428,14 @@ describe("K. the ways a bad row used to get in", () => {
       assert(!out.ok, `"${written}" was accepted as money`);
       eq(out.invalid.reason, INVALID.tooPrecise, `"${written}": ${json(out.invalid)}`);
     }
-    /* And two places still work, because that is what a price is. */
-    eq(normalizeOne(mapper(), noCert("1150.99"), 2).record.copy.ask, 1150.99);
+    /* Two places are still MONEY (a cost may have them), but since Batch 2.1 a
+       PRICE is whole dollars: refused with a reason that says so, never rounded. */
+    const cents = normalizeOne(mapper(), noCert("1150.99"), 2);
+    assert(!cents.ok, "a price with cents was accepted");
+    eq(cents.invalid.reason, INVALID.priceNotWholeDollars, json(cents.invalid));
+    assert(/whole dollars/.test(cents.invalid.detail) && /1150\.99/.test(cents.invalid.detail), "the row error says what was wrong and what to do: " + cents.invalid.detail);
+    eq(normalizeOne(mapper(), oneRow({ "Cert Number": "", Grader: "", Grade: "", Condition: "NM",
+      "Purchase Price": "1150.99" }), 2).record.copy.cost, 1150.99, "a cost with cents still reads");
   });
 
   test("one row cannot mean five hundred copies, and one run cannot mean thousands", async () => {

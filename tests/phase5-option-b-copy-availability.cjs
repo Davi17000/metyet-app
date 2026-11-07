@@ -40,6 +40,7 @@ const D = require("../domain/metyet-domain.js");
 const P = require("../domain/metyet-projection.js");
 const { createStore } = require("./fixture-store.cjs");
 const RT = require("../domain/metyet-runtime.js");
+const { selectAndClose, tradeOrCash } = require("./helpers/trade-path.cjs");
 
 const AT = "2026-09-28";
 let seq = 0;
@@ -92,12 +93,13 @@ const valued = (st, actor, goalId, invId, amount) => {
   return id;
 };
 /* …and one that has been promised. */
+/* RESTATED (M3A A1): TP-led selection (selectAndClose) or an explicit cash-only
+   choice, in place of the Collector's package and the partner's review. */
 const promised = (st, actor, oppId, binderIds) => {
-  okv(x(st, actor, "proposeTradeSelection", { oppId, binderIds: binderIds || [], at: AT }), "package");
+  tradeOrCash((a, c, p) => x(st, a, c, p), { tp: TP, collector: actor, oppId, copyIds: binderIds || [] });
   if (binderIds && binderIds.length) {
     const o = st.get().opportunities.find((o2) => o2.id === oppId);
     for (const row of o.trade.cards) {
-      okv(x(st, TP, "reviewTradeCard", { oppId, tradeCardId: row.id, decision: "accept", at: AT }), "accept card");
       okv(x(st, actor, "proposeMarketValue", { oppId, tradeCardId: row.id, amount: 20, at: AT }), "value");
       okv(x(st, TP, "acceptMarketValue", { oppId, tradeCardId: row.id, at: AT }), "value ok");
       okv(x(st, TP, "proposeTradePercent", { oppId, tradeCardId: row.id, percent: 0.7, at: AT }), "pct");
@@ -216,7 +218,10 @@ describe("C. Pending is the one availability fact a partner chooses", () => {
       { id: "gA2", collectorId: "casey", canonicalCardId: "cc-x", tier: "primary", desired: { grade: "PSA 9" } },
       { id: "gB", collectorId: "jordan", canonicalCardId: "cc-x", tier: "primary", desired: { grade: "PSA 9" } }] });
     const a = valued(st, A, "gA", "i1", 27);
-    const other = valued(st, A, "gA2", "i2", 31);
+    /* Market Validation Batch 2: one Collector may hold only one active offer
+       per exact card, so the deal about a DIFFERENT copy is the other
+       Collector's — which is all this assertion needs. */
+    const other = valued(st, B, "gB", "i2", 31);
     nov(x(st, TP, "setCopyPending", { invId: "i1", oppId: "nope", at: AT }), D.REFUSE.notFound,
       "an invented deal");
     nov(x(st, TP, "setCopyPending", { invId: "i1", oppId: other, at: AT }), D.REFUSE.identityMismatch,
@@ -254,7 +259,7 @@ describe("C. Pending is the one availability fact a partner chooses", () => {
     const st = world();
     const a = valued(st, A, "gA", "i1", 27);
     x(st, TP, "setCopyPending", { invId: "i1", oppId: a, at: AT });
-    okv(x(st, A, "proposeTradeSelection", { oppId: a, binderIds: [], at: AT }), "A picks cash");
+    okv(x(st, A, "chooseCashOnly", { oppId: a, at: AT }), "A picks cash");
     okv(x(st, TP, "acceptDeal", { oppId: a, at: AT }), "and the deal proceeds");
     eq(copyRow(st, A).status, "pending", "A sees it as pending — for their deal");
   });
@@ -352,9 +357,12 @@ describe("D. A promise is what a card cannot carry twice", () => {
     const b = valued(st, B, "gB", "i1", 26);
     /* B assembles their deal FIRST, so both reach the promise boundary and it
        is that guard — not the earlier package guard — under test. */
-    okv(x(st, B, "proposeTradeSelection", { oppId: b, binderIds: [], at: AT }), "B picks cash first");
+    okv(x(st, B, "chooseCashOnly", { oppId: b, at: AT }), "B picks cash first");
     promised(st, A, a);
-    nov(x(st, TP, "acceptDeal", { oppId: b, at: AT }), D.REFUSE.copyCommitted,
+    /* RESTATED (M3A A1): A's final agreement ENDED B's deal in the same write,
+       as card-unavailable, so B's agreement is refused as terminal. */
+    eq(st.get().opportunities.find((o) => o.id === b).outcome, "card-unavailable", "B's deal ended explicitly");
+    nov(x(st, TP, "acceptDeal", { oppId: b, at: AT }), D.REFUSE.terminal,
       "and then the card has already been promised");
     assert(!D.finalAgreementGiven(st.get().opportunities.find((o) => o.id === b)),
       "and nothing was written to B's deal");
@@ -364,9 +372,9 @@ describe("D. A promise is what a card cannot carry twice", () => {
     const st = world();
     const a = valued(st, A, "gA", "i1", 27);
     const b = valued(st, B, "gB", "i1", 26);
-    okv(x(st, B, "proposeTradeSelection", { oppId: b, binderIds: [], at: AT }), "B picks cash first");
+    okv(x(st, B, "chooseCashOnly", { oppId: b, at: AT }), "B picks cash first");
     completed(st, A, promised(st, A, a));
-    nov(x(st, TP, "acceptDeal", { oppId: b, at: AT }), D.REFUSE.copyUnavailable, "the card is gone");
+    nov(x(st, TP, "acceptDeal", { oppId: b, at: AT }), D.REFUSE.terminal, "the card is gone, and B's deal with it (RESTATED, M3A A1)");
     eq(st.get().opportunities.filter((o) => o.stage === "completed" && o.invId === "i1").length, 1,
       "exactly one deal completed on this physical card");
   });
@@ -377,8 +385,11 @@ describe("D. A promise is what a card cannot carry twice", () => {
     const a = valued(st, A, "gA", "i1", 27);
     completed(st, A, promised(st, A, a));
     const b = oppOf(st, "jordan").id;
-    nov(x(st, TP, "proposePrice", { oppId: b, amount: 29, at: AT }), D.REFUSE.copyUnavailable, "no new figures");
-    nov(x(st, TP, "acceptPrice", { oppId: b, at: AT }), D.REFUSE.copyUnavailable, "nothing accepted");
+    /* RESTATED (M3A A1): B's deal was ended as card-unavailable when A's was
+       promised, so its own commands answer terminal; the copy-level commands
+       below still answer copy-unavailable. */
+    nov(x(st, TP, "proposePrice", { oppId: b, amount: 29, at: AT }), D.REFUSE.terminal, "no new figures");
+    nov(x(st, TP, "acceptPrice", { oppId: b, at: AT }), D.REFUSE.terminal, "nothing accepted");
     nov(x(st, B, "reviewCopy", { invId: "i1", at: AT }), D.REFUSE.copyUnavailable, "no review");
     nov(x(st, B, "requestPhotos", { invId: "i1", at: AT }), D.REFUSE.copyUnavailable, "no photographs");
     /* RE-PINNED by the true-match batch. This used to answer
@@ -392,7 +403,14 @@ describe("D. A promise is what a card cannot carry twice", () => {
       "B's goal is free again, rather than held by a deal that lost");
   });
 
-  test("[3][19] the losing conversation is kept, not rewritten or deleted", () => {
+  /* RESTATED (M3A A1). WAS: the losing conversation stayed active and
+     undeclined — "not marked as a failure nobody chose" — and B closed it
+     themselves. WHY IT CHANGED: the founder ruled out a deal that is apparently
+     active while silently excluded; it now ENDS explicitly when the card is
+     promised elsewhere. WHAT STILL HOLDS: nothing about it is rewritten or
+     deleted, the stage it reached is recorded, nobody is named as having ended
+     it, and the card stays legible to B. */
+  test("[3][19] the losing conversation is kept, ended explicitly, not rewritten or deleted", () => {
     const st = world();
     okv(x(st, B, "startOpportunity", { goalId: "gB", invId: "i1", amount: 26, at: AT }), "B was talking");
     const a = valued(st, A, "gA", "i1", 27);
@@ -400,9 +418,12 @@ describe("D. A promise is what a card cannot carry twice", () => {
     const b = oppOf(st, "jordan");
     assert(b, "B's deal still exists");
     eq(b.stage, "agree-price", "at the stage it actually reached");
-    eq(b.declined, false, "not marked as a failure nobody chose");
+    eq(b.endedStage, "agree-price", "and the ending records it");
+    eq(b.outcome, "card-unavailable", "ended because the card is gone");
+    eq(b.endedBy, null, "and not by anybody");
+    eq(b.priceThread.length, 1, "its offer is still on record");
     eq(copyRow(st, B).status, "unavailable", "and the card is still legible to them");
-    okv(x(st, B, "cancelOpportunity", { oppId: b.id, at: AT }), "B may close it themselves");
+    nov(x(st, B, "cancelOpportunity", { oppId: b.id, at: AT }), D.REFUSE.terminal, "there is nothing left to close");
   });
 
   test("a promised copy still refuses a new pursuit", () => {
@@ -442,7 +463,8 @@ describe("E. What a partner may still change, and when", () => {
   test("[20] and release when the deal ends", () => {
     const st = world();
     const a = valued(st, A, "gA", "i1", 27);
-    okv(x(st, A, "cancelOpportunity", { oppId: a, at: AT }), "ended");
+    /* Batch 3B.1: the price is agreed, so ending it says why. */
+    okv(x(st, A, "cancelOpportunity", { oppId: a, reason: "changed my mind", at: AT }), "ended");
     okv(x(st, TP, "updateInventoryCopy", { invId: "i1", patch: { cert: "PSA-999" }, at: AT }),
       "the certificate is the shop's again");
   });
@@ -462,7 +484,7 @@ describe("F. What this batch must not have touched", () => {
   test("[21][22] agreed market value survives the final adjustment", () => {
     const st = world();
     const a = valued(st, A, "gA", "i1", 27);
-    okv(x(st, A, "proposeTradeSelection", { oppId: a, binderIds: [], at: AT }), "cash");
+    okv(x(st, A, "chooseCashOnly", { oppId: a, at: AT }), "cash");
     okv(x(st, TP, "acceptDeal", { oppId: a, at: AT }), "partner first");
     okv(x(st, A, "proposeFinalBalance", { oppId: a, amount: 25, at: AT }), "would you do 25");
     okv(x(st, TP, "acceptDeal", { oppId: a, at: AT }), "partner again");
@@ -494,7 +516,11 @@ describe("F. What this batch must not have touched", () => {
 
 /* ============================== G. the collector's own cards did not change */
 describe("G. Collector trade-copy exclusivity, unchanged", () => {
-  test("[25] a copy offered into one deal cannot enter another", () => {
+  /* RESTATED (M3A A1). WAS: the Collector's package reserved a copy at
+     submission. NOW: a partner's SELECTION is shared and only entering
+     valuation reserves — so the exclusivity this section protects begins at
+     `closeTradeSelection`, and it holds against every other deal. */
+  test("[25] a copy reserved by one deal cannot enter another", () => {
     const st = world({ goals: [
       { id: "gA", collectorId: "casey", canonicalCardId: "cc-x", tier: "primary", desired: { grade: "PSA 9" } },
       { id: "gA2", collectorId: "casey", canonicalCardId: "cc-w", tier: "primary", desired: { grade: "PSA 9" } }],
@@ -503,20 +529,21 @@ describe("G. Collector trade-copy exclusivity, unchanged", () => {
       { invId: "i2", partnerId: "nl", canonicalCardId: "cc-w", ask: 40, grade: "PSA 9", photos: PH }] });
     const a = valued(st, A, "gA", "i1", 27);
     const b = valued(st, A, "gA2", "i2", 38);
-    okv(x(st, A, "proposeTradeSelection", { oppId: a, binderIds: ["kA1"], at: AT }), "into the first");
+    selectAndClose((ac, c, p) => x(st, ac, c, p), { tp: TP, collector: A, oppId: a, copyIds: ["kA1"] });
     eq(D.collectorCopyStatus("kA1", st.get().opportunities), "reserved", "and it is reserved");
-    nov(x(st, A, "proposeTradeSelection", { oppId: b, binderIds: ["kA1"], at: AT }), D.REFUSE.copyReserved,
+    nov(x(st, TP, "selectTradeCards", { oppId: b, copyIds: ["kA1"], at: AT }), D.REFUSE.copyUnavailable,
       "so it cannot go into the second");
-    nov(x(st, A, "proposeTradeSelection", { oppId: b, binderIds: ["kA2", "kA2"], at: AT }), D.REFUSE.copyInUse,
-      "nor twice into one package");
-    okv(x(st, A, "proposeTradeSelection", { oppId: b, binderIds: ["kA2"], at: AT }), "a different copy is fine");
+    nov(x(st, TP, "selectTradeCards", { oppId: b, copyIds: ["kA2", "kA2"], at: AT }), D.REFUSE.copyInUse,
+      "nor twice into one selection");
+    okv(x(st, TP, "selectTradeCards", { oppId: b, copyIds: ["kA2"], at: AT }), "a different copy is fine");
   });
 
   test("[26][27] cancellation releases it; completion makes it traded", () => {
     const st = world();
     const a = valued(st, A, "gA", "i1", 27);
-    okv(x(st, A, "proposeTradeSelection", { oppId: a, binderIds: ["kA1"], at: AT }), "offered");
-    okv(x(st, A, "cancelOpportunity", { oppId: a, at: AT }), "ended");
+    okv(x(st, TP, "selectTradeCards", { oppId: a, copyIds: ["kA1"], at: AT }), "selected");
+    /* Batch 3B.1: the price is agreed, so ending it says why. */
+    okv(x(st, A, "cancelOpportunity", { oppId: a, reason: "changed my mind", at: AT }), "ended");
     eq(D.collectorCopyStatus("kA1", st.get().opportunities), "available", "released");
 
     const st2 = world();
@@ -565,8 +592,11 @@ describe("G. Collector trade-copy exclusivity, unchanged", () => {
     const st = world();
     const a = okv(x(st, A, "startOpportunity", { goalId: "gA", invId: "i1", amount: 25, at: AT }), "open");
     okv(x(st, TP, "removeInventoryCopy", { invId: "i1", at: AT }), "the shop takes it off the shelf");
-    nov(x(st, TP, "proposePrice", { oppId: a, amount: 26, at: AT }), D.REFUSE.copyUnavailable, "no figures");
-    nov(x(st, TP, "acceptPrice", { oppId: a, at: AT }), D.REFUSE.copyUnavailable, "and nothing accepted");
+    /* RESTATED (M3A A1): taking the card off the shelf ENDS the deal on it, as
+       card-unavailable, in the same write — so its commands answer terminal. */
+    eq(oppOf(st, "casey").outcome, "card-unavailable", "ended explicitly");
+    nov(x(st, TP, "proposePrice", { oppId: a, amount: 26, at: AT }), D.REFUSE.terminal, "no figures");
+    nov(x(st, TP, "acceptPrice", { oppId: a, at: AT }), D.REFUSE.terminal, "and nothing accepted");
   });
 
   test("a promised copy cannot then be marked Pending for the deal that lost it", () => {
@@ -616,8 +646,10 @@ describe("G. Collector trade-copy exclusivity, unchanged", () => {
        a package here would RESERVE their own cards to a deal that can never
        complete, and they could then neither withdraw them nor offer them
        elsewhere. */
-    nov(x(st, B, "proposeTradeSelection", { oppId: b, binderIds: [], at: AT }),
-      D.REFUSE.copyUnavailable, "the package is refused");
+    /* RESTATED (M3A A1): Jordan's deal was ENDED when Casey's was promised, so
+       there is no live deal left to reserve anything into. */
+    nov(x(st, B, "chooseCashOnly", { oppId: b, at: AT }),
+      D.REFUSE.terminal, "the package is refused");
   });
 
   test("both seats' labels know the word", () => {
@@ -681,12 +713,16 @@ describe("H. The boundary is only moved where every holder of it moved", () => {
     promised(st, A, valued(st, A, "gA", "i1", 26));
     const state = st.get();
     const loser = state.opportunities.find((o) => o.id === b);
+    /* RESTATED (M3A A1): the commands now END the losing deal, so the forgery
+       has to undo that too — and the world is then rejected twice over: two
+       promises on one copy, and an active deal whose card is promised away. */
+    loser.declined = false; delete loser.outcome;
     loser.deal = { tpAgreed: true, collectorAgreed: true };
     loser.stage = "fulfillment";
     const check = validateWorld(state);
     assert(!check.ok, "two promises on one copy is not a storable world");
-    eq((check.errors || []).map((e) => e.code).join(),
-      "invariant.copy-committed-once", "and it fails for the right reason");
+    const codes = (check.errors || []).map((e) => e.code);
+    assert(codes.includes("invariant.copy-committed-once"), "and it fails for the right reason: " + codes.join());
   });
 
   test("pendingFor is shape-checked, without being freshness-checked", () => {
@@ -709,32 +745,33 @@ describe("H. The boundary is only moved where every holder of it moved", () => {
        number for Casey's card and learn nothing until the very last click. */
     const st = world();
     const b = valued(st, B, "gB", "i1", 27);
-    okv(x(st, B, "proposeTradeSelection", { oppId: b, binderIds: [], at: AT }), "B assembles");
+    okv(x(st, B, "chooseCashOnly", { oppId: b, at: AT }), "B assembles");
     okv(x(st, TP, "acceptDeal", { oppId: b, at: AT }), "the partner says yes to B");
     promised(st, A, valued(st, A, "gA", "i1", 26));
     eq(status(st), "committed", "the copy is Casey's now");
+    /* RESTATED (M3A A1): B's deal ended when the copy was promised to Casey. */
     nov(x(st, B, "proposeFinalBalance", { oppId: b, amount: 25, at: AT }),
-      D.REFUSE.copyUnavailable, "so no final figure may be put on it");
+      D.REFUSE.terminal, "so no final figure may be put on it");
     const o = st.get().opportunities.find((z) => z.id === b);
     eq(((o.deal || {}).adjThread || []).length, 0, "and nothing was written to the thread");
   });
 
-  test("a partner may still REJECT a trade card in a deal that has lost the copy", () => {
-    /* Rejecting releases the collector's copy — the same shape as
-       withdrawTradeCard, which is deliberately unguarded. Guarding before the
-       verdict was read shut the partner out of closing down a dead deal. */
+  /* RESTATED (M3A A1): the partner's way to hand a card back is now
+     `deselectTradeCard`, and like the old rejection it is not blocked by the
+     shop's copy being held for somebody else. */
+  test("a partner may still DESELECT a trade card in a deal whose shop copy is held for someone else", () => {
     const st = world({ collectorCopies: [
       { id: "kA1", collectorId: "casey", canonicalCardId: "cc-y", grade: "PSA 8", offered: true, photos: PH },
       { id: "kB1", collectorId: "jordan", canonicalCardId: "cc-y", grade: "PSA 8", offered: true, photos: PH }] });
     const a = valued(st, A, "gA", "i1", 26);
     const b = valued(st, B, "gB", "i1", 27);
-    okv(x(st, B, "proposeTradeSelection", { oppId: b, binderIds: ["kB1"], at: AT }), "B offers a card");
+    okv(x(st, TP, "selectTradeCards", { oppId: b, copyIds: ["kB1"], at: AT }), "the partner selects Jordan's card");
+    okv(x(st, B, "continueTradeSelection", { oppId: b, at: AT }), "Jordan is ready");
     const row = st.get().opportunities.find((z) => z.id === b).trade.cards[0];
     okv(x(st, TP, "setCopyPending", { invId: "i1", oppId: a, at: AT }), "the partner pends it for Casey");
-    okv(x(st, TP, "reviewTradeCard", { oppId: b, tradeCardId: row.id, decision: "reject", at: AT }),
+    okv(x(st, TP, "deselectTradeCard", { oppId: b, tradeCardId: row.id, at: AT }),
       "the partner may still hand Jordan's card back");
-    assert(!D.TRADE.liveTradeRows(st.get().opportunities.find((z) => z.id === b))
-      .some((c) => c.id === row.id && c.inclusion === "proposed"),
+    assert(!D.TRADE.liveTradeRows(st.get().opportunities.find((z) => z.id === b)).some((c) => c.id === row.id),
       "and the row is genuinely released, not merely un-refused");
     eq(D.collectorCopyStatus("kB1", st.get().opportunities), "available",
       "so Jordan's own card is his again");
@@ -751,8 +788,9 @@ describe("H. The boundary is only moved where every holder of it moved", () => {
     eq(status(st), "available", "the pend no longer speaks for it");
     eq((copyRow(st, A) || {}).status, "unavailable",
       "and Casey is told what the commands will actually say");
+    /* RESTATED (M3A A1): archiving ended Casey's deal as card-unavailable. */
     nov(x(st, A, "proposePrice", { oppId: a, amount: 25, at: AT }),
-      D.REFUSE.copyUnavailable, "which is this");
+      D.REFUSE.terminal, "which is this");
   });
 });
 

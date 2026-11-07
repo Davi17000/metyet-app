@@ -1,0 +1,627 @@
+/* ============================================================================
+   CARD DETAIL — THE PHASE 6 CARD, FROM BROWSE (P6-F3A)
+
+   A port of the frozen prototype's `CardDetail` (phase6-prototype-01 @ fca2c61,
+   prototypes/phase6-01-browse-add/main.jsx L341–627: blankAnswers, planFor,
+   nextUnanswered, Choice, Section, Remembered, CardDetail, ackFor; styles
+   index.html L31–36, 78–106, 136, 155–173, 189), on production data:
+
+     header      "‹ <where you came from>" · the quiet ‹ › stepper through the
+                 Browse results · once the picture scrolls away, a small copy
+                 of the card rides in the header (prototype: scrollTop > 300)
+     hero        the card's picture at 72% width
+     identity    name; set · number · artist
+     remembers   what this Collector already wants or owns of this card
+     questions   THE FOUNDER-APPROVED ORDER (Stage 2.1), a deliberate refinement
+                 of the prototype's: first WHICH card (Which version?), then
+                 WHAT it is physically (Raw or graded? · condition or grade),
+                 then WHAT IT MEANS (What does this card mean to you? → Primary
+                 or Secondary, or Personal collection or Trade / Sell). The
+                 collecting state is always the last decision before Add. Each
+                 question appears only once the one before it is answered, and
+                 changing an answer clears exactly what depended on it.
+     dock        "Add to MetYet", pinned; it wakes when every answer is given
+
+   ONE ADD IS ONE COMMAND (Stage 2), the same two the prototype planned:
+   a Goal is `start-looking` (addGoal), a copy is `record-copy`
+   (addCollectorCopy) — the steps the Collector's entrance already maps
+   (client/sign-in/SignIn.jsx). Nothing is written before Add; nothing is
+   claimed until the server has answered; a second tap while one is in flight
+   sends nothing. NO BINDER HERE (prototype Iteration 2): where a card belongs
+   is a separate job, done in Binders.
+
+   A card picture is only what the catalogue holds for a printing (C7.1): this
+   file names no provider, builds no URL, and draws through CardArt.
+   ========================================================================== */
+import React, { useEffect, useRef, useState } from "react";
+import CardArt from "../card-art.jsx";
+import { rows, text, gradeLine, criteriaLine, versionLabel } from "./present.js";
+import { explain } from "./CardSpecification.jsx";
+import { dollars, isLiveDeal } from "../negotiation.jsx";
+import { StateIcon } from "./states.jsx";
+
+/* The version words live in present.js (Milestone 2C.3), so Deal Flow and the
+   Deal Workspace name a printing the same way this card does. */
+export { versionLabel };
+const TIER = { primary: "Primary", secondary: "Secondary" };
+
+/* The vocabulary the domain already has (D.GRADED_VALUES, D.CONDITION_VALUES),
+   in the prototype's order: PSA 10 first. Not widened here — another grading
+   company is a product decision, not a button. A test holds these to the
+   domain's lists. */
+export const GRADES = ["PSA 10", "PSA 9", "PSA 8", "PSA 7", "PSA 6", "PSA 5", "PSA 4", "PSA 3", "PSA 2", "PSA 1"];
+export const CONDITIONS = ["Near Mint", "Lightly Played", "Moderately Played", "Heavily Played", "Damaged"];
+
+/* The prototype's qualText. */
+export const qualText = (d) => (!d ? "" : d.grade && d.grade !== "Raw" ? d.grade
+  : d.condition ? `Raw · ${d.condition}` : d.grade === "Raw" ? "Raw" : "");
+
+/* What MetYet knows about one printing (prototype knownFor), from this
+   Collector's own projection. A binder is told apart by its id, never by its
+   name: two binders may share one. */
+function knownFor(state, canonicalCardId) {
+  const binders = rows(state && state.binders);
+  const memberships = rows(state && state.binderMemberships);
+  const binderOf = (key, id) => {
+    const m = memberships.find((x) => x[key] === id);
+    return (m && binders.find((x) => x.id === m.binderId)) || null;
+  };
+  const goal = rows(state && state.goals).find((g) => g.canonicalCardId === canonicalCardId) || null;
+  const goalHome = goal ? binderOf("goalId", goal.id) : null;
+  return {
+    goal: goal && { tier: goal.tier, desired: goal.desired || {}, home: goalHome ? text(goalHome.name) : null },
+    copies: rows(state && state.collectorCopies).filter((c) => c.canonicalCardId === canonicalCardId).map((c) => {
+      const home = binderOf("collectorCopyId", c.id);
+      return { what: c.offered === true ? "Trade / Sell" : c.keeping === true ? "Personal collection" : "Owned",
+        facts: gradeLine(c), binderId: home && home.id, home: home ? text(home.name) : null };
+    }),
+  };
+}
+
+/* "MetYet remembers" (prototype Remembered): per version, the Goal and the
+   copies, alike copies counted. */
+function remembered(state, cards) {
+  const lines = [];
+  for (const card of cards) {
+    const label = versionLabel(card, cards);
+    const k = knownFor(state, card.canonicalCardId);
+    if (k.goal) {
+      lines.push([label, "Looking for it", TIER[k.goal.tier] || null, criteriaLine(k.goal.desired) || null, k.goal.home]
+        .filter(Boolean).join(" · "));
+    }
+    const groups = [];
+    for (const c of k.copies) {
+      const g = groups.find((x) => x.what === c.what && x.facts === c.facts && x.binderId === c.binderId);
+      if (g) g.n += 1; else groups.push({ ...c, n: 1 });
+    }
+    for (const g of groups) {
+      lines.push([label, g.n > 1 ? `${g.n} copies` : "You own it", g.what, g.facts || null, g.home].filter(Boolean).join(" · "));
+    }
+  }
+  return lines;
+}
+
+/* THE ANSWERS (prototype blankAnswers), in the order they are asked. `kind`,
+   `condition` and `grade` describe the physical card and serve both
+   branches; `priority` answers a Goal and `disposition` a copy. One printing
+   is not a choice. */
+const blankAnswers = (cards) => ({
+  printing: cards.length === 1 ? cards[0].canonicalCardId : null,
+  kind: null, condition: null, grade: null, intent: null, priority: null, disposition: null,
+});
+/* WHAT EACH ANSWER INVALIDATES when it changes — only what depended on it. */
+const CLEARS = {
+  kind: { condition: null, grade: null, intent: null, priority: null, disposition: null },
+  condition: { intent: null, priority: null, disposition: null },
+  grade: { intent: null, priority: null, disposition: null },
+  intent: { priority: null, disposition: null },
+  priority: {},
+  disposition: {},
+};
+/* The answers after one more is given: an unchanged answer changes nothing. */
+export const answered = (a, field, value) => (a[field] === value ? a : { ...a, [field]: value, ...CLEARS[field] });
+/* The physical card is described once the applicable condition or grade is given. */
+const described = (a) => (a.kind === "raw" && Boolean(a.condition)) || (a.kind === "graded" && Boolean(a.grade));
+
+/* THE ONE STEP THE ANSWERS DESCRIBE (prototype planFor), in the words the
+   Collector's entrance turns into a command. */
+export function stepFor(a) {
+  if (!a.printing || !a.kind || !a.intent) return null;
+  if (a.intent === "looking") {
+    const desired = a.kind === "graded" ? { grade: a.grade } : { grade: "Raw", condition: a.condition };
+    return { kind: "start-looking", tier: a.priority, desired };
+  }
+  const facts = a.kind === "raw" ? { grade: "Raw", condition: a.condition } : { grade: a.grade, condition: null };
+  return { kind: "record-copy", copy: { ...facts, offered: a.disposition === "trade", keeping: a.disposition === "pc" } };
+}
+
+/* The next thing not yet answered (prototype nextUnanswered) — what a tap on
+   the muted button points at. Every one of them is required. */
+export function nextUnanswered(cards, a, existingGoal) {
+  if (!cards.length) return ["print", "MetYet can't record this card yet."];
+  if (!a.printing) return ["print", "Which version is it?"];
+  if (!a.kind) return ["kind", "Raw or graded?"];
+  if (a.kind === "raw" && !a.condition) return ["condition", "What condition is it?"];
+  if (a.kind === "graded" && !a.grade) return ["grade", "Which grade is it?"];
+  if (!a.intent) return ["intent", "What does this card mean to you?"];
+  if (a.intent === "looking") {
+    if (existingGoal) return ["intent", "You're already looking for this version."];
+    if (!a.priority) return ["priority", "How important is this one?"];
+  } else if (!a.disposition) return ["disposition", "What's this card to you?"];
+  return null;
+}
+
+/* The prototype's acknowledgement (ackFor): the meaning, its value, then Browse. */
+export function ackFor(card, a, siblings = []) {
+  const print = versionLabel(card, siblings);
+  const physical = a.kind === "raw" ? `Raw · ${a.condition}` : a.kind === "graded" ? a.grade : null;
+  if (a.intent === "looking") return { head: `${TIER[a.priority]} goal ✓`,
+    facts: `${physical} · ${print}`,
+    value: "Your Trusted Partners can now see what you're looking for." };
+  if (a.disposition === "trade") return { head: "Trade / Sell ✓", facts: [physical, print].filter(Boolean).join(" · "),
+    value: "Your Trusted Partners can now see you'd move this one." };
+  return { head: "Personal collection ✓", facts: [physical, print].filter(Boolean).join(" · "),
+    value: "MetYet remembered this one. Only you can see it." };
+}
+
+/* `st`: one of the four collecting states, worn in the shared visual language
+   (states.jsx) — only on the tier and disposition choices that ARE those states. */
+export function Choice({ on, onClick, title, sub, disabled, extra, st }) {
+  return (
+    <button type="button" className={`mcs-cd-choice${on ? " on" : ""}${extra ? ` ${extra}` : ""}`} aria-pressed={!!on}
+      disabled={disabled} onClick={onClick} data-st={st || undefined}>
+      {st ? <span className="mcs-chead"><StateIcon kind={st} size={14} /><b>{title}</b></span> : <b>{title}</b>}
+      {sub ? <span>{sub}</span> : null}
+    </button>
+  );
+}
+export function Section({ id, title, focus, children }) {
+  return (
+    <section className={`mcs-cd-q mcs-cd-reveal${focus === id ? " nudge" : ""}`} data-q={id}>
+      {title ? <h3>{title}</h3> : null}
+      {children}
+    </section>
+  );
+}
+
+/* THE HOLD (prototype commit): a short, perceptible beat on the card after the
+   server has said yes, then Browse. */
+const HOLD_MS = 900;
+
+export default function CardDetail({ context, state, backLabel = "Browse", position = 0, total = 1,
+  onStep = null, onClose, onSave = null, onAdded = null, wakeHint = true, fileInto = null, onRefresh = null,
+  onMakeOffer = null, onOpenDeal = null, onEditGoal = null }) {
+  /* ADDING FROM A BINDER (P6-F4 B3): `fileInto` is { binderId, name } — the
+     binder the Collector started from. After the server has confirmed the new
+     Goal or copy, the card files THAT record (the id the create returned) into
+     it: two existing commands, in order, each confirmed. If the filing fails,
+     the record exists and Retry filing sends the filing again — never the
+     create. If the create's answer is lost, the projection is re-read before
+     anything is sent again. */
+  const stateRef = useRef(state); stateRef.current = state;
+  const [unfiled, setUnfiled] = useState(null);   // { id, idKey, ack } — made, not yet filed (Retry filing)
+  const cards = rows(context && context.cards);
+  /* what connected shops have available of THESE printings (P6-F5A) */
+  const printIds = new Set(cards.map((c) => c.canonicalCardId));
+  const partnerRows = rows(state && state.partners);
+  const partnersHere = partnerRows.length > 0;
+  const shopName = (pid) => text((partnerRows.find((p) => p && p.id === pid) || {}).name) || "A Trusted Partner";
+  /* GROUPED BY SHOP, shops in name order; within a shop, the card's own
+     printing order, then when the copy was added. Never ranked by price. */
+  const printOrder = (id) => cards.findIndex((c) => c.canonicalCardId === id);
+  const shopRows = rows(state && state.inventory)
+    .filter((i) => i && i.status === "available" && printIds.has(i.canonicalCardId))
+    .sort((x, y) => shopName(x.partnerId).localeCompare(shopName(y.partnerId)) || String(x.partnerId).localeCompare(String(y.partnerId))
+      || printOrder(x.canonicalCardId) - printOrder(y.canonicalCardId) || String(x.addedAt || "").localeCompare(String(y.addedAt || ""))
+      || String(x.invId).localeCompare(String(y.invId)));
+  const shopGroups = shopRows.reduce((acc, i) => {
+    const last = acc[acc.length - 1];
+    if (last && last.partnerId === i.partnerId) last.copies.push(i); else acc.push({ partnerId: i.partnerId, copies: [i] });
+    return acc;
+  }, []);
+  /* THE NEXT STEP ON EACH COPY (P6-F5B), from the server's own answers: the
+     Collector's Goal for that exact printing, `discoveries` (which copies the
+     server says match a Goal), and their own live deals. Nothing here decides
+     eligibility — startOpportunity does, again, when the offer is sent. */
+  const myGoals = rows(state && state.goals);
+  const discoveries = rows(state && state.discoveries);
+  /* live = the server's own projected turn says so (isLiveDeal), as Deal Flow reads it */
+  const liveDeals = rows(state && state.opportunities).filter((o) => o && isLiveDeal(o));
+  const nextFor = (copy) => {
+    const live = liveDeals.find((o) => o.canonicalCardId === copy.canonicalCardId);
+    if (live) return { kind: "live", opp: live };
+    const goal = myGoals.find((g) => g.canonicalCardId === copy.canonicalCardId);
+    if (!goal) return { kind: "add" };
+    if (goal.tier !== "primary") return { kind: "promote", goal };
+    const match = discoveries.some((d) => d && d.goalId === goal.id && rows(d.invIds).includes(copy.invId));
+    return match ? { kind: "offer", goal } : { kind: "mismatch", goal };
+  };
+  const [promoting, setPromoting] = useState(null);   // the copy whose "Make it Primary" is in flight
+  const [nextProblem, setNextProblem] = useState(null);
+  const stayOpen = useRef(false);                      // Add as Primary Goal keeps the card open
+  const [a, setA] = useState(() => blankAnswers(cards));
+  const [focus, setFocus] = useState(null);
+  const [hint, setHint] = useState(null);
+  const [justReady, setJustReady] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(null);       // acknowledgement, once the server said yes
+  const [problem, setProblem] = useState(null);   // the server's refusal, in words
+  const [compact, setCompact] = useState(false);
+  const scroller = useRef(null);
+  const sending = useRef(false);                  // one Add, however many taps
+  const alive = useRef(true);
+  useEffect(() => () => { alive.current = false; }, []);
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    if (typeof window !== "undefined" && window.addEventListener) window.addEventListener("keydown", onKey);
+    return () => { if (typeof window !== "undefined" && window.removeEventListener) window.removeEventListener("keydown", onKey); };
+  }, [onClose]);
+
+  const set = (patch) => { setHint(null); setFocus(null); setProblem(null); setA((x) => ({ ...x, ...patch })); };
+  /* CHANGE AN ANSWER, LOSE WHAT DEPENDED ON IT (prototype Iteration 3) — and
+     only that. Re-pressing the answer already given changes nothing. */
+  const choose = (field, value) => { if (a[field] !== value) set(answered(a, field, value)); };
+
+  /* THE CARD HOLDS STILL DURING ITS ACKNOWLEDGEMENT: the projection has already
+     changed; the card keeps showing what was just given until Browse returns. */
+  const world = saved ? saved.before : state;
+  const chosen = cards.find((c) => c.canonicalCardId === a.printing) || null;
+  const known = chosen ? knownFor(world, chosen.canonicalCardId) : { goal: null, copies: [] };
+  const existingGoal = known.goal;
+  const missing = nextUnanswered(cards, a, existingGoal);
+  const step = stepFor(a);
+  const ready = Boolean(onSave) && !missing && Boolean(step) && !saved && !saving && !unfiled;
+
+  const wasReady = useRef(false);
+  useEffect(() => {
+    let t = null;
+    if (ready && !wasReady.current) { setJustReady(true); t = setTimeout(() => { if (alive.current) setJustReady(false); }, 700); }
+    wasReady.current = ready;
+    return () => { if (t) clearTimeout(t); };
+  }, [ready]);
+
+  const nudge = () => {
+    if (!missing) return;
+    setFocus(missing[0]); setHint(missing[1]);
+    const el = scroller.current && scroller.current.querySelector && scroller.current.querySelector(`[data-q="${missing[0]}"]`);
+    if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
+  /* The record a create made: the id it returned. If that answer was lost,
+     the re-read projection is asked — a Goal is one per card, so it is found
+     exactly; a copy is the ONE new copy of this card, or nothing is assumed. */
+  const madeId = (step0, answer, beforeState) => {
+    if (answer && typeof answer.value === "string" && answer.value) return { id: answer.value, sure: true };
+    const isGoal = step0.kind === "start-looking";
+    const was = new Set(rows(beforeState && (isGoal ? beforeState.goals : beforeState.collectorCopies)).map((x) => x.id));
+    const now = rows(stateRef.current && (isGoal ? stateRef.current.goals : stateRef.current.collectorCopies))
+      .filter((x) => x.canonicalCardId === chosen.canonicalCardId && !was.has(x.id));
+    return now.length === 1 ? { id: now[0].id, sure: true } : { id: null, sure: false, many: now.length > 1 };
+  };
+  const fileMade = async (id, isGoal, ack, before) => {
+    const fileStep = { kind: "file-object", binderId: fileInto.binderId, ...(isGoal ? { goalId: id } : { collectorCopyId: id }) };
+    let answer;
+    try { answer = await onSave(fileStep, chosen.canonicalCardId); }
+    catch (error) { answer = { ok: false, refused: "lost-contact" }; }
+    if (!alive.current) return;
+    if (answer && answer.ok === false) {
+      setUnfiled({ id, isGoal, ack, before });
+      setProblem(`${ack.head.replace(/ ✓$/, "")} saved — but it couldn't go into ${fileInto.name}: `
+        + (answer.refused === "lost-contact" ? "MetYet lost contact. It may be there already; Retry filing checks."
+          : answer.refused === "binder-archived" ? "that binder has been put away. It's Unfiled."
+            : "MetYet would not file it. It's Unfiled."));
+      return;
+    }
+    setUnfiled(null); setProblem(null);
+    const filed = { ...ack, facts: `${ack.facts} · in ${fileInto.name}` };
+    setSaved({ ...filed, before });
+    setTimeout(() => { if (alive.current && onAdded) onAdded(filed, chosen); }, HOLD_MS);
+  };
+  /* RETRY FILING: the same record, the filing only. */
+  const retryFiling = async () => {
+    if (!unfiled || sending.current) return;
+    sending.current = true; setSaving(true); setProblem(null);
+    try {
+      /* a filing whose answer was lost may have landed: look first */
+      if (onRefresh) { try { await onRefresh(); } catch (e) { /* said below if it matters */ } await new Promise((d) => setTimeout(d, 0)); }
+      const home = rows(stateRef.current && stateRef.current.binderMemberships)
+        .find((m) => (unfiled.isGoal ? m.goalId : m.collectorCopyId) === unfiled.id);
+      if (home && home.binderId === fileInto.binderId) {
+        const filed = { ...unfiled.ack, facts: `${unfiled.ack.facts} · in ${fileInto.name}` };
+        setUnfiled(null); setSaved({ ...filed, before: unfiled.before });
+        setTimeout(() => { if (alive.current && onAdded) onAdded(filed, chosen); }, HOLD_MS);
+        return;
+      }
+      await fileMade(unfiled.id, unfiled.isGoal, unfiled.ack, unfiled.before);
+    } finally {
+      sending.current = false;
+      if (alive.current) setSaving(false);
+    }
+  };
+
+  const add = async () => {
+    if (unfiled) { await retryFiling(); return; }
+    if (saved || sending.current || !onSave) return;
+    if (!ready) { nudge(); return; }
+    sending.current = true; setSaving(true); setProblem(null);
+    const before = state;
+    const ack = ackFor(chosen, a, cards);
+    try {
+      let answer;
+      try { answer = await onSave(step, chosen.canonicalCardId); }
+      catch (error) {
+        if (!fileInto || !onRefresh) throw error;
+        /* NOT KNOWN WHETHER IT WAS MADE: look, don't resend */
+        try { await onRefresh(); } catch (e) { /* the screen says what it knows */ }
+        await new Promise((d) => setTimeout(d, 0));
+        const found = madeId(step, null, before);
+        if (!alive.current) return;
+        if (!found.sure) {
+          setProblem(found.many ? "MetYet lost contact. Check Binders before trying again — this may have been saved."
+            : "MetYet lost contact, and nothing was saved. Your answers are still here.");
+          return;
+        }
+        answer = { ok: true, value: found.id };
+      }
+      if (!alive.current) return;
+      if (answer && answer.ok === false) { setProblem(explain(step, answer.refused, [])); return; }
+      if (fileInto) {
+        const made = madeId(step, answer, before);
+        if (!made.sure) { setProblem("Saved — but MetYet can't tell which record it made, so it hasn't been filed. Check Binders."); setSaved({ ...ack, before }); return; }
+        await fileMade(made.id, step.kind === "start-looking", ack, before);
+        return;
+      }
+      setSaved({ ...ack, before });
+      /* FROM A SHOP'S COPY (Add as Primary Goal): the card stays, so the same
+         copy can offer Make an Offer once the projection carries the Goal. */
+      if (stayOpen.current) return;
+      setTimeout(() => { if (alive.current && onAdded) onAdded(ack, chosen); }, HOLD_MS);
+    } catch (error) {
+      if (alive.current) setProblem("MetYet lost contact, so nothing was saved. Your answers are still here.");
+    } finally {
+      sending.current = false;
+      if (alive.current) setSaving(false);
+    }
+  };
+
+  /* The picture: the chosen version's, else the card's. A version whose
+     picture is the same as another version's is the CARD's picture, and says
+     so (prototype: "Card picture — this version may look different."). */
+  const pictureOf = (c) => (c ? c.imageLarge || c.imageSmall || null : null);
+  const cardPicture = (context && (context.imageLarge || context.imageSmall)) || pictureOf(cards.find(pictureOf)) || null;
+  const imageShown = (chosen && pictureOf(chosen)) || cardPicture;
+  const shared = chosen && cards.length > 1 && (!pictureOf(chosen)
+    || cards.some((c) => c !== chosen && pictureOf(c) === pictureOf(chosen)));
+  /* THE FINISH, SHOWN ON THE CARD'S OWN PICTURE (prototype CardArt `fx`). */
+  const fx = !chosen || !shared ? "" : chosen.finish === "reverse_holofoil" ? " rev"
+    : chosen.finish === "holofoil" || chosen.finish === "cosmos_holofoil" ? " holo" : "";
+  /* ADD AS PRIMARY GOAL: the card's own questions, answered from this copy —
+     its printing, its grade or condition, looking, Primary. Nothing is sent:
+     the Collector still presses Add. */
+  const prefillFrom = (copy) => {
+    const g = text(copy.grade);
+    const raw = g === "Raw";
+    stayOpen.current = true;
+    setHint(null); setFocus(null); setProblem(null); setNextProblem(null);
+    setA({ ...blankAnswers(cards), printing: copy.canonicalCardId,
+      kind: g ? (raw ? "raw" : "graded") : null,
+      condition: raw ? text(copy.condition) || null : null, grade: g && !raw ? g : null,
+      intent: "looking", priority: "primary" });
+    setJustReady(true);
+  };
+  /* MAKE IT PRIMARY: the approved state change, same Goal, same binder. */
+  const PROMOTE_WHY = { "goal-locked": "This Goal is part of an active deal, so it stays as it is.",
+    "state-changed": "This Goal changed elsewhere. The latest is shown.", "not-found": "This Goal changed elsewhere. The latest is shown." };
+  const promote = async (goal, invId) => {
+    if (!onSave || promoting) return;
+    setPromoting(invId); setNextProblem(null);
+    try {
+      const answer = await onSave({ kind: "change-state", goalId: goal.id, from: goal.tier, to: "primary" }, goal.canonicalCardId);
+      if (!alive.current) return;
+      if (answer && answer.ok === false) {
+        setNextProblem({ invId, message: PROMOTE_WHY[answer.refused] || "MetYet would not change it." });
+        if (onRefresh && (answer.refused === "state-changed" || answer.refused === "not-found")) { try { await onRefresh(); } catch (e) { /* said */ } }
+      }
+    } catch (error) {
+      if (onRefresh) { try { await onRefresh(); } catch (e) { /* said below */ } }
+      if (alive.current) setNextProblem({ invId, message: "MetYet lost contact. The latest is shown — check before trying again." });
+    } finally {
+      if (alive.current) setPromoting(null);
+    }
+  };
+  const nextStep = (copy) => {
+    const n = nextFor(copy);
+    const trouble = nextProblem && nextProblem.invId === copy.invId ? <span className="mcs-cd-next-problem" role="alert">{nextProblem.message}</span> : null;
+    if (n.kind === "offer") {
+      return onMakeOffer ? (
+        <span className="mcs-cd-next">
+          <button type="button" className="mcs-cd-offer" onClick={() => onMakeOffer({ goalId: n.goal.id, invId: copy.invId })}>Make an Offer</button>
+        </span>) : null;
+    }
+    if (n.kind === "live") {
+      return (
+        <span className="mcs-cd-next">
+          <span className="mcs-cd-next-note">{`Your offer for this card is under way with ${shopName(n.opp.partnerId)}.`}</span>
+          {onOpenDeal ? <button type="button" className="mcs-linkish" onClick={() => onOpenDeal({ goalId: n.opp.goalId })}>Open in Deal Flow</button> : null}
+        </span>);
+    }
+    if (n.kind === "add") {
+      return onSave && !fileInto ? (
+        <span className="mcs-cd-next">
+          <button type="button" className="mcs-go quiet" onClick={() => prefillFrom(copy)}>Add as Primary Goal</button>
+        </span>) : null;
+    }
+    if (n.kind === "promote") {
+      return onSave ? (
+        <span className="mcs-cd-next">
+          <span className="mcs-cd-next-note">You&apos;re interested in this card (Secondary).</span>
+          <button type="button" className="mcs-go quiet" disabled={!!promoting} aria-busy={promoting === copy.invId}
+            onClick={() => promote(n.goal, copy.invId)}>{promoting === copy.invId ? "Saving…" : "Make it Primary"}</button>
+          {trouble}
+        </span>) : null;
+    }
+    return (
+      <span className="mcs-cd-next">
+        <span className="mcs-cd-next-note">{`Your Goal is for ${criteriaLine(n.goal.desired) || "a different copy"}; this copy is ${gradeLine(copy) || "not graded as stated"}.`}</span>
+        {onEditGoal ? <button type="button" className="mcs-linkish" onClick={() => onEditGoal(n.goal.id)}>Edit your Goal in Binders</button> : null}
+      </span>);
+  };
+
+  const name = text(context && context.cardName) || "This card";
+  const number = text(context && context.collectorNumber);
+  const ident = [text(context && context.expansionName), number, text(context && context.artist)].filter(Boolean).join(" · ");
+  const lines = remembered(world, cards);
+  const art = (size) => (
+    <CardArt src={imageShown} name={name} wrap={`mcs-cd-art ${size}`} plate="mcs-art-plate" decorative
+      card={{ key: context && context.cardContextId, set: context && context.expansionName, number }} />
+  );
+
+  return (
+    <div className="mcs-cd" role="dialog" aria-modal="true" aria-label={`${name}${ident ? `, ${ident}` : ""}`}>
+      <header className="mcs-cd-hd">
+        <button type="button" className="mcs-cd-back" onClick={onClose}>‹ {backLabel}</button>
+        {compact ? (
+          <span className="mcs-cd-mini">{art("mini")}<b>{name}</b><span>{chosen ? versionLabel(chosen, cards) : number ? `#${number}` : ""}</span></span>
+        ) : null}
+        {/* ONE CARD IS THE SUBJECT (prototype): no "3 of 9"; the arrows stay, quiet. */}
+        <span className="mcs-cd-step">
+          <button type="button" aria-label="Previous card" disabled={!onStep || position <= 0} onClick={() => onStep(-1)}>‹</button>
+          <button type="button" aria-label="Next card" disabled={!onStep || position >= total - 1} onClick={() => onStep(1)}>›</button>
+        </span>
+      </header>
+      <div className="mcs-cd-scroll" ref={scroller} onScroll={(e) => setCompact(e.currentTarget.scrollTop > 300)}>
+        <div className="mcs-cd-hero">
+          <span className={`mcs-cd-frame${fx}`}>{art("hero")}{fx ? <span className="mcs-cd-sheen" aria-hidden="true" /> : null}</span>
+        </div>
+        {shared ? <p className="mcs-cd-imgnote">Card picture — this version may look different.</p> : null}
+        <div className="mcs-cd-ident">
+          <h2>{name}</h2>
+          {ident ? <p>{ident}</p> : null}
+        </div>
+        {lines.length ? (
+          <div className="mcs-cd-remembered">
+            <h4>MetYet remembers</h4>
+            <ul>{lines.map((l) => <li key={l}>{l}</li>)}</ul>
+          </div>
+        ) : null}
+
+        {/* AT YOUR SHOPS (P6-F5A): copies a connected Trusted Partner has
+            AVAILABLE, of this card's own printings — straight from the
+            projection, which the server already limited to connected shops,
+            live copies and this Collector's view of their status. Looking
+            changes nothing: no Goal, no deal. */}
+        {shopRows.length ? (
+          <section className="mcs-cd-shops" aria-label="Available from your Trusted Partners">
+            <h4>Available from your Trusted Partners</h4>
+            <ul>{shopGroups.map((g) => (
+              <li key={g.partnerId} className="mcs-cd-shop" data-shop={g.partnerId}>
+                <b className="mcs-cd-shop-name">{shopName(g.partnerId)}</b>
+                <ul>{g.copies.map((i) => {
+                  const print = cards.find((c) => c.canonicalCardId === i.canonicalCardId);
+                  const price = dollars(i.ask);
+                  return (
+                    <li key={i.invId} data-inv={i.invId}>
+                      <span className="mcs-cd-shop-hd"><span>{[print ? versionLabel(print, cards) : null, gradeLine(i) || "Grade not stated"].filter(Boolean).join(" · ")}</span>
+                        <span className="mcs-cd-shop-ok">Available</span></span>
+                      <span className="mcs-cd-shop-price">{[price ? `Proposed Market Price ${price}` : "No price listed",
+                        i.firmOnPrice === true ? "Firm on Price" : "Open to Offers"].join(" · ")}</span>
+                      {nextStep(i)}
+                    </li>);
+                })}</ul>
+              </li>))}</ul>
+          </section>
+        ) : partnersHere ? (
+          <p className="mcs-cd-noshop">None of your Trusted Partners has this card available right now.</p>
+        ) : null}
+
+        {!cards.length ? (
+          <Section id="print" title="Which version?" focus={focus}>
+            <p className="mcs-cd-cannot">MetYet can&apos;t record this card yet.</p>
+          </Section>
+        ) : cards.length > 1 ? (
+          <Section id="print" title="Which version?" focus={focus}>
+            <div className="mcs-cd-wrap" role="group" aria-label="Which version?">
+              {cards.map((c) => (
+                <Choice key={c.canonicalCardId} on={a.printing === c.canonicalCardId} title={versionLabel(c, cards)}
+                  onClick={() => a.printing !== c.canonicalCardId && set({ ...blankAnswers(cards), printing: c.canonicalCardId })} />
+              ))}
+            </div>
+          </Section>
+        ) : (
+          <p className="mcs-cd-established">{versionLabel(cards[0], cards)} — the only version of this card.</p>
+        )}
+
+        {/* 2. WHAT IT IS, PHYSICALLY. */}
+        {chosen ? (<>
+          <Section id="kind" title="Raw or graded?" focus={focus}>
+            <div className="mcs-cd-row">
+              <Choice on={a.kind === "raw"} title="Raw" onClick={() => choose("kind", "raw")} />
+              <Choice on={a.kind === "graded"} title="Graded" onClick={() => choose("kind", "graded")} />
+            </div>
+          </Section>
+          {a.kind === "raw" ? (
+            <Section id="condition" title="In what condition?" focus={focus}>
+              <div className="mcs-cd-wrap">{CONDITIONS.map((c) => <Choice key={c} on={a.condition === c} title={c} onClick={() => choose("condition", c)} />)}</div>
+            </Section>
+          ) : null}
+          {a.kind === "graded" ? (
+            <Section id="grade" title="Which grade?" focus={focus}>
+              <div className="mcs-cd-wrap">{GRADES.map((g) => <Choice key={g} on={a.grade === g} title={g} onClick={() => choose("grade", g)} />)}</div>
+            </Section>
+          ) : null}
+        </>) : null}
+
+        {/* 3. WHAT IT MEANS — always the last decision before Add. */}
+        {chosen && described(a) ? (
+          <Section id="intent" title="What does this card mean to you?" focus={focus}>
+            <div className="mcs-cd-col">
+              {existingGoal ? (
+                <div className="mcs-cd-choice known">
+                  <b>You&apos;re looking for it</b>
+                  <span>{[TIER[existingGoal.tier], qualText(existingGoal.desired) || null].filter(Boolean).join(" · ")}
+                    {existingGoal.home ? ` · ${existingGoal.home}` : " · Not in a binder"}</span>
+                </div>
+              ) : (
+                <Choice on={a.intent === "looking"} title="I'm looking for it" sub="Help my Trusted Partners know what I want."
+                  onClick={() => choose("intent", "looking")} />
+              )}
+              <Choice on={a.intent === "own"} title={known.copies.length ? "I own another one" : "I own it"}
+                sub="Keep track of my copy." onClick={() => choose("intent", "own")} />
+            </div>
+          </Section>
+        ) : null}
+        {described(a) && a.intent === "looking" && !existingGoal ? (
+          <Section id="priority" title="How important is this one?" focus={focus}>
+            <div className="mcs-cd-col">
+              <Choice st="primary" on={a.priority === "primary"} title="Primary" sub="I'm actively looking for this." onClick={() => choose("priority", "primary")} />
+              <Choice st="secondary" on={a.priority === "secondary"} title="Secondary" sub="I'm interested in this card." onClick={() => choose("priority", "secondary")} />
+            </div>
+          </Section>
+        ) : null}
+        {described(a) && a.intent === "own" ? (
+          <Section id="disposition" title="What's this card to you?" focus={focus}>
+            <div className="mcs-cd-col">
+              <Choice st="pc" on={a.disposition === "pc"} title="Personal collection" sub="I'm keeping this one." onClick={() => choose("disposition", "pc")} />
+              <Choice st="trade" on={a.disposition === "trade"} title="Trade / Sell" sub="I'd consider moving it." onClick={() => choose("disposition", "trade")} />
+            </div>
+          </Section>
+        ) : null}
+
+        <div className="mcs-cd-spacer" />
+      </div>
+
+      <div className="mcs-cd-dock">
+        {fileInto && !saved && !unfiled && !problem ? <p className="mcs-cd-hint quiet mcs-cd-into">{`Adding to ${fileInto.name}`}</p> : null}
+        {problem ? <p className="mcs-cd-hint problem" role="alert">{problem}</p>
+          : hint && !saved ? <p className="mcs-cd-hint">{hint}</p>
+            : !ready && !saved && !saving && wakeHint && cards.length > 0 && onSave
+              ? <p className="mcs-cd-hint quiet">Add to MetYet wakes up as you answer.</p> : null}
+        {saved ? <p className="mcs-cd-hint ack" role="status">{saved.head}{saved.facts ? ` · ${saved.facts}` : ""}</p> : null}
+        <button type="button" className={`mcs-cd-add${ready || saving || unfiled ? " ready" : ""}${justReady ? " pop" : ""}${saved ? " added" : ""}`}
+          aria-disabled={!(ready || (unfiled && !saving))} aria-busy={saving} onClick={add}>
+          {saved ? (fileInto ? `✓ Added to ${fileInto.name}` : "✓ Added to MetYet") : unfiled ? "Retry filing" : "Add to MetYet"}
+        </button>
+      </div>
+    </div>
+  );
+}

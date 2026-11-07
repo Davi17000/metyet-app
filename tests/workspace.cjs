@@ -227,8 +227,10 @@ describe("E. Next Step is stage-aware and truthful", () => {
     const r = openOpp(render(), "Alex Trinh");
     const t = text(nextStep(r));
     assert(t.includes("Next step · Trusted Partner"), "ownership: " + t.slice(0, 60));
-    assert(t.includes("accept or reject"), "the decision");
-    assert(t.includes("let them know your decision"), "supporting detail");
+    /* RESTATED (M3A A1P): the partner's decision in Select Trade is to finish
+       choosing and start valuing — there is no accept/reject of a package. */
+    assert(t.includes("finish choosing"), "the decision");
+    assert(t.includes("reserves the selected cards"), "supporting detail");
   });
 
   test("a collector turn reads as waiting, with no actionable control", () => {
@@ -252,7 +254,8 @@ describe("E. Next Step is stage-aware and truthful", () => {
     const status = byClassIn(nextStep(r), "ws-owner-s")[0];
     if (!status) return;
     const shown = text(status);
-    assert(/\d+ (accepted|to review|of)/.test(shown), "derived counts: " + shown);
+    // RESTATED (M3A A1P): counts are now "N selected · M deselected"
+    assert(/\d+ (selected|deselected|withdrawn)/.test(shown), "derived counts: " + shown);
     assert(text(stageWork(r)).includes(shown.split(" · ")[0]), "matching the stage's own summary");
   });
 });
@@ -260,7 +263,7 @@ describe("E. Next Step is stage-aware and truthful", () => {
 describe("F. Every stage fits the framework", () => {
   const STAGES = [
     ["James Rivera", "Agree on Price", ["Send counter", "Accept $"]],
-    ["Alex Trinh", "Select Trade", ["Accept into trade", "Reject"]],
+    ["Alex Trinh", "Select Trade", ["Deselect", "Start valuing"]],   // RESTATED (M3A A1P): TP-led final review
     ["Hiro Tanaka", "Value Trade", ["Market Value", "Trade %"]],
     ["Nina Alvarez", "Deal", ["Cash balance"]],
     ["Casey Lin", "Fulfillment", ["handoff"]],
@@ -458,7 +461,7 @@ describe("Scroll architecture — one deal, one vertical scroll", () => {
 describe("Scroll architecture — stage content expands", () => {
   const STRESS = [
     ["James Rivera", "Agree on Price", ["Next step", "Listed price", "Send counter"]],
-    ["Alex Trinh", "Select Trade", ["Card Details", "Accept into trade", "Reject", "Trade Binder"]],
+    ["Alex Trinh", "Select Trade", ["Card Details", "Deselect", "Start valuing", "Trade Binder"]],   // RESTATED (M3A A1P)
     ["Hiro Tanaka", "Value Trade", ["Market Value", "Trade %", "Trade Value", "collector photo"]],
     ["Nina Alvarez", "Deal", ["Listed price", "Agreed price", "Cash balance"]],
     ["Hiro Tanaka", "Fulfillment", ["Total trade value"]],

@@ -21,6 +21,7 @@
 
 process.env.METYET_DEV = "1";
 
+const { reachValuationByFixture } = require("./helpers/trade-path.cjs");
 const { describe, test, assert, eq } = require("./run.cjs");
 const React = require("react");
 const TR = require("react-test-renderer");
@@ -77,9 +78,9 @@ const world = (reviewed = true) => {
   const a = M.emptyTradeCard("ka", null, null, "b-a");
   const b = M.emptyTradeCard("kb", null, null, "b-b");
   if (reviewed) {
-    st.actions.patchOpportunity(o, (x) => ({ ...x, stage: "select-trade",
-      trade: { ...x.trade, submitted: true, cards: [a, b] } }));
-    st.actions.reviewTradeCards({ oppId: o, decision: "accepted", at: AT });
+    /* RESTATED (M3A A1): the partner now selects and closing selection reserves;
+       the retired Collector-proposes / reviewTradeCard path is replaced by the shared fixture. */
+    reachValuationByFixture(st, o, [a, b], AT);
   } else {
     st.actions.patchOpportunity(o, (x) => ({ ...x, trade: { ...x.trade, submitted: true,
       cards: [{ ...a, inclusion: "accepted" }, { ...b, inclusion: "accepted" }] } }));
@@ -322,9 +323,12 @@ describe("C. Demo progression uses only real moves", () => {
     const src = code(COL).slice(code(COL).indexOf("function DemoPartnerResponse("),
       code(COL).indexOf("function SimulateTP("));
     assert(/const A = st\.simulate;/.test(src), "it uses the canonical action set");
-    ["agreePrice", "reviewTradeCards", "tradeMarketRespond", "tradePercentRespond",
+    /* RESTATED (M3A A1P): the partner's Select Trade moves are selectTradeCards
+       and closeTradeSelection; the retired review is gone. */
+    ["agreePrice", "selectTradeCards", "closeTradeSelection", "tradeMarketRespond", "tradePercentRespond",
       "dealAdjustRespond", "dealAgree", "proposeFulfillment", "confirmHandoff"]
       .forEach((a) => assert(new RegExp("A\\." + a + "\\(").test(src), a + " is canonical"));
+    assert(!/A\.reviewTradeCards\(/.test(src), "and the retired review is not called");
     assert(!/patchOpportunity/.test(src), "and nothing is patched directly");
     assert(!/stage:/.test(src), "no stage is written");
   });
@@ -358,16 +362,20 @@ describe("D. Guards hold across the pass", () => {
       assert(!new RegExp(f + "\\s*[:=]").test(handlers), "no direct write to " + f));
   });
 
-  test("the trade-card review is a canonical action", () => {
+  /* RESTATED (M3A A1). WAS: the partner's review of Collector-proposed cards
+     (`reviewTradeCards` over `D.TRADE.decide`) decided every undecided row at
+     once. WHY IT CHANGED: the Collector no longer proposes; the partner selects
+     (`selectTradeCards`), and the review command is retired. WHAT STILL HOLDS:
+     the partner's inclusion decision is a canonical action over the shared
+     domain — it is refused as `superseded` rather than patched, and the store
+     binding for the TP-led command exists. */
+  test("the trade-card selection is a canonical action", () => {
     const w = world();
-    assert(typeof w.st.actions.reviewTradeCards === "function", "the action exists");
-    assert(typeof D.TRADE.decide === "function", "over a shared rule");
+    assert(typeof w.st.actions.selectTradeCards === "function", "the TP-led action exists");
+    assert(typeof D.TRADE.liveTradeRows === "function", "over a shared rule");
     const st2 = world(false);
-    st2.st.actions.patchOpportunity(st2.o, (x) => ({ ...x, trade: { ...x.trade,
-      cards: x.trade.cards.map((c) => ({ ...c, inclusion: "proposed" })) } }));
-    st2.st.actions.reviewTradeCards({ oppId: st2.o, decision: "accepted", at: AT });
-    eq(st2.get().trade.cards.every((c) => c.inclusion === "accepted"), true,
-      "undecided rows are decided together");
+    const r = st2.st.actions.reviewTradeCards({ oppId: st2.o, decision: "accepted", at: AT });
+    eq(r && r.refused, "superseded", "the retired review is refused, not silently applied");
   });
 
   test("the lifecycle and economics are unchanged", () => {

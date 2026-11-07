@@ -86,13 +86,16 @@ describe("Trade Binder as the working surface", () => {
   test("it opens expanded, showing the cards", () => {
     const r = profile();
     assert(tiles(r).length > 0, "cards render immediately, not behind a disclosure");
+    /* RESTATED (M3A A1P final corrections): each completed trade trades copies
+       of its own (TRADED_COPIES_SEED). Those are history — the partner's binder
+       lists only copies that can still be traded — so Ellen's shelf is six. */
     eq(tiles(r).length, 6, "all six of Ellen's copies");
   });
 
   test("the heading carries the count and the availability summary", () => {
     const r = profile();
     const h = sections(r)[0];
-    assert(/Trade Binder 6/.test(h), "total count: " + h);
+    assert(/Trade Binder 6/.test(h), "total count: " + h);   // RESTATED (M3A A1P final corrections): traded copies are history, not shelf
     assert(/5 open to trade/.test(h), "and how much is available");
   });
 
@@ -216,7 +219,7 @@ describe("Nothing else changed", () => {
     const r = render();
     const row = byClass(r, "tbl")[0].findAllByType("tr").find((tr) => text(tr).includes("Ellen Fisher"));
     const cells = row.findAllByType("td").map(text);
-    eq(cells[3] + "|" + cells[4], "6|5", "total binder and open-to-trade match the profile heading");
+    eq(cells[3] + "|" + cells[4], "6|5", "total binder and open-to-trade match the profile heading");   // RESTATED (M3A A1P final corrections): traded copies are history, not shelf
   });
 });
 

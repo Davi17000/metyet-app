@@ -171,6 +171,8 @@ const texts = (r) => {
     }
   };
   walk(r.toJSON());
+  /* and each tile's Details sheet (P6-3.1), read in turn */
+  for (const li of tileNodes(r)) out.push(sheetOf(r, li));
   return out.join(" ").replace(/\s+/g, " ");
 };
 const buttons = (r) => r.root.findAll((n) => n.type === "button");
@@ -233,6 +235,54 @@ const doorFor = (ctx) => {
 };
 
 
+
+/* RESTATED (Phase 6 P6-2). Your Cards is on the Binders screen itself: every
+   Goal and copy is a tile (state · home · identity · its own grading), each
+   copy's facts open in place from its "Details" link, and the old view chips
+   are state filters. These helpers reach the same rows these tests always
+   read; what each test asserts about them is unchanged unless it says so. */
+const openDetails = async () => { await settle(); };
+/* RESTATED (Phase 6 P6-3.1): a tile's facts now live in its Details SHEET,
+   one tile at a time, not opened in place beneath it. Reading a tile's record
+   opens its sheet, reads the card and its facts (not the Binder choice, whose
+   options name every binder), and closes it again — the same facts, from the
+   same rows, read from where they are now shown. */
+/* RESTATED AGAIN (P6-4): a tap on the card opens its sheet (there is no
+   separate Details link), and the copy's secondary facts sit behind "Copy
+   details". The same facts, from the same rows; the state choices and the
+   binder controls are not read, for the same reason the Binder choice was not. */
+/* RESTATED AGAIN (P6-F4 B2B): a tap opens the saved card's full-screen page.
+   The same facts, from the same rows, read from where the page shows them:
+   its identity and version, the grading it holds (the SELECTED choices only),
+   a contradiction if the copy has one, its certificate and reference value
+   (now editable fields — read as their values, the value as the screen's own
+   money format), and when it was added, its photos and its status. */
+const MONEY = (() => { try { return require("esbuild").buildSync({ entryPoints: [require("path").join(__dirname, "..", "client/collector/present.js")],
+  bundle: true, format: "cjs", write: false, logLevel: "silent" }); } catch (e) { return null; } })();
+const present = (() => { const mod = { exports: {} }; new Function("module", "exports", "require", MONEY.outputFiles[0].text)(mod, mod.exports, require); return mod.exports; })();
+const sheetOf = (r, li) => {
+  const b = li.findAll((n) => n.type === "button" && String(n.props.className || "").includes("mcs-otap"))[0];
+  if (!b || b.props["aria-haspopup"] !== "dialog") return "";
+  TR.act(() => { b.props.onClick({ preventDefault() {} }); });
+  const dlg = () => r.root.findAll((n) => n.type === "div" && n.props.role === "dialog"
+    && /^Your (Goal|copy): /.test(String(n.props["aria-label"] || "")))[0];
+  if (!dlg()) return "";
+  const page = dlg();
+  const read = (re) => page.findAll((n) => re.test(String(n.props.className || ""))).map((n) => instText(n));
+  const chosen = page.findAll((n) => n.type === "button" && n.props["aria-pressed"] === true && !n.props["data-st"]).map((n) => instText(n));
+  const inputs = page.findAll((n) => n.type === "input");
+  const cert = inputs[0] ? `Cert ${inputs[0].props.value}` : "";
+  const value = inputs[1] && inputs[1].props.value !== "" ? `Your reference value ${present.money(Number(inputs[1].props.value))}` : "";
+  const t = [...read(/^mcs-cd-ident$/), ...read(/^mcs-cd-established$/), ...chosen, ...read(/^mcs-oconflict$/), cert, value, ...read(/^mcs-ce-facts$/)].join(" ");
+  const back = page.findAll((n) => n.type === "button" && n.props.className === "mcs-cd-back")[0];
+  if (back) TR.act(() => { back.props.onClick(); });
+  return t;
+};
+const tileNodes = (r) => r.root.findAll((n) => n.type === "li" && String(n.props.className || "").includes("mcs-otile"));
+
+/* each tile with its Details sheet's facts (P6-3.1) */
+const tilesOf = (r) => tileNodes(r).map((n) => `${instText(n)} ${sheetOf(r, n)}`.replace(/\s+/g, " "));
+
 /* ============================================================== A */
 describe("A. a card you own is called what the catalog calls it", () => {
 
@@ -250,7 +300,8 @@ describe("A. a card you own is called what the catalog calls it", () => {
        a tab called Binders should show binders, and the collection views are
        one chip away. The shelf this suite is about is "All Cards". */
     await press(r, "Binders");
-    await press(r, extra.view || "All Cards");
+    if (extra.view) await press(r, extra.view);
+    await openDetails(r);
     return { r, calls, state };
   };
 
@@ -299,7 +350,7 @@ describe("A. a card you own is called what the catalog calls it", () => {
           expansions: async () => ({ expansions: [] }), artists: async () => ({ artists: [] }) } }));
     });
     await press(r, "Binders");
-    await press(r, "All Cards");
+    await openDetails(r);
     const shown = texts(r);
     assert(/PSA 77/.test(shown), "the copy vanished with its caption: " + shown);
     assert(/PSA 9/.test(shown), "the copy's own grading vanished too: " + shown);
@@ -318,7 +369,7 @@ describe("B. the card is a heading; the copies are the records", () => {
       r = TR.create(React.createElement(SHELL, { state, onSignOut() {}, onBrowseCards: door }));
     });
     await press(r, "Binders");
-    await press(r, "All Cards");
+    await openDetails(r);
     return r;
   };
 
@@ -330,7 +381,9 @@ describe("B. the card is a heading; the copies are the records", () => {
     /* RE-PINNED: All Cards is wider than the old shelf, so its empty sentence
        names the three ways a card gains meaning rather than only owning. The
        owning-versus-offering claim moved to Trade/Sell, where it is true. */
-    assert(/Nothing has meaning yet/.test(shown), shown);
+    /* RESTATED (P6-2): the empty Your Cards names the two ways a card gains
+       meaning (doctrine §3: filing is not one). */
+    assert(/Cards you.re looking for or own will appear here/.test(shown), shown);
     assert(!/Offered only/.test(shown), "a filter was offered for an empty shelf");
   });
 
@@ -349,9 +402,10 @@ describe("B. the card is a heading; the copies are the records", () => {
 
     const r = await showing(ctx);
     const shown = texts(r);
-    /* One heading for the card. */
-    eq((shown.match(/Mudkip/g) || []).length, 1, "the card was named once per copy: " + shown);
-    assert(/2 copies/.test(shown), "the heading does not say how many: " + shown);
+    /* RESTATED (P6-2): no card heading — each copy is its own tile, and each
+       tile names the card, so there are two Mudkip tiles and no count. */
+    const tiles = tilesOf(r).filter((t) => /Mudkip/.test(t));
+    eq(tiles.length, 2, "two copies are two tiles: " + tiles);
     /* Two records, each with its own everything. */
     assert(/PSA 9/.test(shown) && /Raw · Damaged/.test(shown), "both gradings: " + shown);
     assert(/CERT-A/.test(shown) && /SER-B/.test(shown), "both certificates: " + shown);
@@ -360,7 +414,8 @@ describe("B. the card is a heading; the copies are the records", () => {
        Collector's own words rather than in an absence. The screen used to read
        "Offered" and "Not offered", which described a copy somebody had decided
        to keep in exactly the same words as one they had never mentioned. */
-    assert(/Offered/.test(shown) && /Keeping/.test(shown), "a disposition is per copy: " + shown);
+    /* RESTATED (P6-2): in the four states' own words — Trade / Sell and PC. */
+    assert(/Trade \/ Sell/.test(shown) && /\bPC\b/.test(shown), "a disposition is per copy: " + shown);
     assert(!/Not offered/.test(shown), "an absence is still being reported as an answer: " + shown);
   });
 
@@ -372,13 +427,13 @@ describe("B. the card is a heading; the copies are the records", () => {
     await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "PSA 9" });
     await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "Raw", condition: "Damaged" });
     const r = await showing(ctx);
-    /* The heading is the element that carries the card's name; find it and
-       assert what it does NOT say. */
-    const heads = r.root.findAll((n) => n.props && n.props.className === "mcs-group-head");
-    eq(heads.length, 1);
-    const head = instText(heads[0]);
-    assert(/Mudkip/.test(head), "the heading does not name the card: " + head);
-    assert(!/PSA|Raw|Damaged/.test(head), "the heading carries a grading: " + head);
+    /* RESTATED (P6-2): there is no card heading to carry a grade; each copy's
+       tile carries its OWN grading and never the other copy's. */
+    const tiles = tilesOf(r).filter((t) => /Mudkip/.test(t));
+    eq(tiles.length, 2, "two copies, two tiles");
+    const nine = tiles.find((t) => /PSA 9/.test(t)); const raw = tiles.find((t) => /Raw/.test(t));
+    assert(nine && !/Raw|Damaged/.test(nine), "the PSA 9 tile carries the other copy's grading: " + nine);
+    assert(raw && !/PSA 9/.test(raw), "the raw tile carries the other copy's grading: " + raw);
     /* And it does not source grading from the catalogue either. */
     assert(!/gradeLine\(known\)|gradeLine\(legacy\)|isGraded\(known\)/
       .test(code("client/collector/sections/Collection.jsx")),
@@ -410,7 +465,7 @@ describe("C. what you are offering is a filter, not a place", () => {
       r = TR.create(React.createElement(SHELL, { state, onSignOut() {}, onBrowseCards: door }));
     });
     await press(r, "Binders");
-    await press(r, "All Cards");
+    await openDetails(r);
     return r;
   };
 
@@ -434,14 +489,14 @@ describe("C. what you are offering is a filter, not a place", () => {
        copies being offered, and nothing is lost by looking at it. */
     const r = await showing(ctx);
     assert(/YES-1/.test(texts(r)) && /NO-1/.test(texts(r)) && /NO-2/.test(texts(r)), "all three show first");
-    await press(r, "Trade/Sell");
+    await press(r, "Trade / Sell");
     const filtered = texts(r);
     assert(/YES-1/.test(filtered), "the offered copy went missing: " + filtered);
     assert(!/NO-1/.test(filtered), "an unoffered copy of the same card survived the filter");
     assert(!/NO-2/.test(filtered), "an unoffered copy of another card survived the filter");
     assert(!/Charizard/.test(filtered), "a card with nothing offered kept its heading");
-    /* And nothing was lost: All Cards still has all three. */
-    await press(r, "All Cards");
+    /* And nothing was lost: All still has all three. */
+    await press(r, "All");
     const back = texts(r);
     assert(/YES-1/.test(back) && /NO-1/.test(back) && /NO-2/.test(back),
       "going back to All Cards lost a copy: " + back);
@@ -453,7 +508,7 @@ describe("C. what you are offering is a filter, not a place", () => {
     await own(ctx.app, "casey", { canonicalCardId: made.mudkip, grade: "PSA 9", offered: true });
     const before = json(await load(ctx));
     const r = await showing(ctx);
-    await press(r, "Trade/Sell");
+    await press(r, "Trade / Sell");
     eq(json(await load(ctx)), before, "filtering wrote something");
     const w = await load(ctx);
     assert(!("tradeBinders" in w) && !("tradeBinder" in w), "a Trade Binder was persisted");
@@ -479,14 +534,16 @@ describe("D. wanting a card you own is ordinary, and both are shown", () => {
       r = TR.create(React.createElement(SHELL, { state, onSignOut() {}, onBrowseCards: door }));
     });
     await press(r, "Binders");
-    await press(r, "All Cards");
+    await openDetails(r);
     const shown = texts(r);
     assert(/HAVE-1/.test(shown), "the copy: " + shown);
-    assert(/Actively hunting/.test(shown),
-      "owning one hid the fact that a better one is still wanted: " + shown);
+    /* RESTATED (P6-2): the Goal is its own tile, in its state's word. */
+    const tiles = tilesOf(r);
+    const goal = tiles.find((t) => /Primary/.test(t)); const copy = tiles.find((t) => /HAVE-1/.test(t));
+    assert(goal, "owning one hid the fact that a better one is still wanted: " + tiles);
+    assert(/PSA 10/.test(goal), "the Goal's wanted grade is the Goal's: " + goal);
     /* The desired grade is the GOAL's, and is not shown as the copy's. */
-    const heads = r.root.findAll((n) => n.props && n.props.className === "mcs-group-head");
-    assert(!/PSA 10/.test(instText(heads[0])), "the wanted grade was shown as a fact about a copy");
+    assert(copy && !/PSA 10/.test(copy), "the wanted grade was shown as a fact about a copy: " + copy);
   });
 });
 
@@ -504,8 +561,17 @@ describe("E. the same specification capability, opened from the shelf", () => {
         { state, onSignOut() {}, onBrowseCards: door, onSpecify }));
     });
     await press(r, "Binders");
-    await press(r, "All Cards");
     return r;
+  };
+  /* RESTATED (P6-2): a tile's picture is how the card is opened. */
+  const openTile = async (r, needle) => {
+    const tile = r.root.findAll((n) => n.type === "li" && String(n.props.className || "").includes("mcs-otile"))
+      .find((n) => instText(n).includes(needle));
+    assert(tile, `no tile for ${needle}`);
+    await TR.act(async () => { tile.findAll((n) => n.type === "button")[0].props.onClick({ preventDefault() {} }); });
+    await settle();
+    /* RESTATED (P6-4, then P6-F4 B2B): a tap opens the saved card's own page,
+       which edits it in place ("Open full card" is gone). */
   };
 
   test("Open shows the card's current truth, and Cancel writes nothing", async () => {
@@ -517,18 +583,20 @@ describe("E. the same specification capability, opened from the shelf", () => {
     const sent = [];
     const r = await shelf(ctx, async (step) => { sent.push(step); return { ok: true }; });
 
-    await press(r, "Open");
-    const shown = texts(r);
-    /* RE-PINNED (Batch 3B-1): the panel no longer asks a card-level Binder
-       question, because a card is no longer the subject of organisation. The
-       proof it opened is the question it still asks. */
-    assert(/Are you looking for it\?/.test(shown), "the panel did not open: " + shown);
-    assert(/Are you looking for it\?/.test(shown), "the panel is a different one: " + shown);
-    /* It opened on what the Collector already said. */
-    const keeping = buttons(r).find((b) => instText(b).trim() === "Keeping an eye out");
-    eq(keeping.props["aria-pressed"], true, "the panel did not open on the current tier");
+    /* RESTATED (P6-F4 B2B): the Goal's tile opens ITS page, on what it already says */
+    await openTile(r, "Secondary");
+    await settle();
+    const pageOf = () => r.root.findAll((n) => n.props && n.props.role === "dialog" && /^Your Goal: Mudkip/.test(String(n.props["aria-label"] || "")))[0];
+    const page = pageOf();
+    /* (the failure message is built only on failure: texts() opens each tile's page to read it) */
+    if (!page) assert(false, "the page did not open: " + texts(r));
+    const pressed = r.root.findAll((n) => n.type === "button" && n.props["aria-pressed"] === true).map((n) => instText(n).trim());
+    assert(pressed.includes("Graded") && pressed.includes("PSA 9"), "the page did not open on the wanted grade: " + pressed);
+    eq(r.root.findAll((n) => n.type === "button" && n.props["data-st"] === "secondary")[0].props["aria-pressed"], true, "the page did not open on the current tier");
 
-    await press(r, "Cancel");
+    const back = r.root.findAll((n) => n.type === "button" && n.props.className === "mcs-cd-back")[0];
+    await TR.act(async () => { back.props.onClick(); }); await settle();
+    eq(r.root.findAll((n) => n.props && n.props.role === "dialog" && /^Your Goal: /.test(String(n.props["aria-label"] || ""))).length, 0, "it did not close");
     eq(sent.length, 0, "opening or closing the panel sent a command");
     eq(json(await load(ctx)), before, "opening or closing the panel wrote something");
   });
@@ -557,8 +625,9 @@ describe("E. the same specification capability, opened from the shelf", () => {
     const r = await shelf(ctx, async () => ({ ok: true }));
     const shown = texts(r);
     assert(/Legacy One/.test(shown), "the demo copy did not render: " + shown);
-    assert(!buttons(r).some((b) => instText(b).trim() === "Open"),
-      "a copy with no canonical card offered to specify one");
+    /* RESTATED (P6-2): its picture opens its facts, never the specification. */
+    await openTile(r, "Legacy One");
+    assert(!/Are you looking for it\?/.test(texts(r)), "a copy with no canonical card offered to specify one");
   });
 });
 
@@ -594,7 +663,8 @@ describe("F. reachable at last, and what that did not change", () => {
        exactly the move C2 made when Trade Binder became Your Cards: one
        concept, one file, a third name, nothing deleted. */
     const ids = SHELL_MOD.SECTIONS.map((s) => s.id);
-    eq(ids.join(","), "browse,binder,partners,deal-flow", "the navigation is not the four");
+    /* RE-PINNED (Phase 6 P6-1): Deal Flow now precedes Trusted Partners. */
+    eq(ids.join(","), "browse,binder,deal-flow,partners", "the navigation is not the four");
     assert(!ids.includes("my-cards"), "Your Cards is still a destination");
     eq(SHELL_MOD.DEFERRED_SECTIONS.map((s) => s.id).join(","), "goals",
       "removing a tab must not quietly park it in the deferred list either");
@@ -643,7 +713,6 @@ describe("F. reachable at last, and what that did not change", () => {
         { state, onSignOut() {}, onBrowseCards: door }));
     });
     await press(r, "Binders");
-    await press(r, "All Cards");
     eq(json(await load(ctx)), before, "looking at your own cards wrote something");
     /* No Goal, so no overlap — looking at a card you own is not wanting it. */
     eq((await view(ctx.app, "casey")).discoveries.length, 0);
@@ -668,7 +737,7 @@ describe("F. reachable at last, and what that did not change", () => {
 
   test("no migration, and no new durable concept", async () => {
     const names = fs.readdirSync(path.join(ROOT, "persistence", "migrations")).sort();
-    eq(names[names.length - 1], "0014_binder_memberships.sql", "C3.4a added a migration: " + names.join(","));
+    /* RE-PINNED (Milestone 2D.1): the newest migration is now 0015, a deal's conversation — not this batch's. */ eq(names[names.length - 1], "0015_deal_conversations.sql", "C3.4a added a migration: " + names.join(","));
     const { PROJECTED_COLLECTIONS } = require("../domain/metyet-projection.js");
     assert(!PROJECTED_COLLECTIONS.some((c) => /trade|offered|shelf/i.test(c)),
       "a new collection appeared: " + PROJECTED_COLLECTIONS.join(","));

@@ -200,8 +200,9 @@ describe("B. The partner can be answered, canonically", () => {
        canonical actions only, and no field patching. */
     assert(/const A = st\.simulate;/.test(src), "it uses the canonical action set");
     assert(/A\.agreePrice\(\{ oppId: o\.id/.test(src), "price agreement is canonical");
+    /* RESTATED (M3A A1P): selectTradeCards / closeTradeSelection replace the review. */
     ["tradeMarketRespond", "tradePercentRespond", "dealAgree", "proposeFulfillment",
-      "confirmHandoff", "reviewTradeCards"].forEach((a) =>
+      "confirmHandoff", "selectTradeCards", "closeTradeSelection"].forEach((a) =>
       assert(new RegExp("A\\." + a + "\\(").test(src), a + " is canonical too"));
     assert(!/patchOpportunity/.test(src), "and patches no fields directly");
     assert(!/stage:/.test(src), "and writes no stage");
@@ -220,9 +221,15 @@ describe("B. The partner can be answered, canonically", () => {
     const accept = box.findAllByType("button").find((b) => /accepts/.test(txt(b)));
     assert(accept, "an accept response");
     click(accept);
-    /* The control disappears because the partner now has nothing left to
-       answer — which is the correct consequence, not a missing response. */
-    eq(cls(r, "dpr").length, 0, "no stale response lingers once the move is made");
+    /* RESTATED (M3A A1P). The price response disappears because the partner
+       has nothing left to answer on price. In TP-led selection the partner's
+       NEXT move is its own — choosing the Collector's cards — so the box now
+       offers that instead; what must never linger is the stale accept. */
+    const after = cls(r, "dpr");
+    assert(!after.some((n) => n.findAllByType("button").some((b) => /accepts/.test(txt(b)))),
+      "no stale response lingers once the move is made");
+    assert(after.length === 0 || after.some((n) => /chooses from your Trade\/Sell cards/.test(txt(n))),
+      "and the only response left is the partner's next real move");
     /* What matters is that the deal really moved, by the domain's own rules. */
     const shown = cls(r, "goal").map(txt).join(" | ");
     assert(/Select Trade/.test(shown),

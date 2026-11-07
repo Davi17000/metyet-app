@@ -71,7 +71,8 @@ const TP_NAV = ["Collector Network", "Inventory", "Opportunities"];
    expresses priority, which is read where the card is rather than beside it.
    This list is what the routing tests below use to recognise the Collector app,
    so it is the navigation as the product now ships it. */
-const CO_NAV = ["Browse", "Binders", "Trusted Partners", "Deal Flow"];
+/* Phase 6 P6-1 order (this list is read without regard to order). */
+const CO_NAV = ["Browse", "Binders", "Deal Flow", "Trusted Partners"];
 
 /* ------------------------------------------------------------- rendering */
 

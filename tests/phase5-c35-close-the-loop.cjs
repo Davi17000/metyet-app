@@ -797,7 +797,7 @@ describe("F. the boundaries hold", () => {
          Batch 3C-1 closed it by name once the release owner judged that window
          enough. `removeBinderEntry` stays — it is how a legacy row is removed. */
       "fileObject", "unfileObject",
-      "updateCollectorCopy", "updateGoalCriteria",
+      "updateCollectorCopy", "updateGoalCriteria", "changeCollectingState",
       "renameBinder", "setBinderArchived",
       /* AND THE TWO C5 ADDED (Phase 5 C5). `updateInventoryCopy` and
          `removeInventoryCopy` were written and tested in Batch 6 and shipped
@@ -823,16 +823,33 @@ describe("F. the boundaries hold", () => {
          evidence in a live deal, and it changes no price, availability or
          Pending. Listed here because this pin reads the LIVE allow-list. */
       "addCopyPhotos",
+      /* AND THE FIVE MARKET VALIDATION BATCH 3B ADDED, with the controls that
+         send them: a Collector's "Make an offer", "Counter", "Accept" and
+         "Withdraw offer" in Deal Flow, and a shop's "Accept", "Counter" and
+         "Decline" in Opportunities. Agreeing a price and nothing past it. */
+      "startOpportunity", "proposePrice", "acceptPrice", "declineOffer", "cancelOpportunity",
+      /* AND THE ONE MILESTONE 2D.1 ADDED (founder-approved): a deal's conversation —
+         one plain-text message on one canonical opportunity, from one of its two
+         participants. It changes no term of any deal; only Accept accepts. */
+      "sendDealMessage",
+      /* AND SELECT TRADE'S SIX (M3A A3, founder-authorized), with the screens
+         that send them. Value Trade, Deal, Fulfillment and cash-only stay closed. */
+      "selectTradeCards", "deselectTradeCard", "closeTradeSelection",
+      "holdTradeSelection", "continueTradeSelection", "withdrawTradeCard",
     ].sort()), "C3.5 changed the production surface");
     /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
        name; any other change to the size still fails here. */
-    eq(EXPOSED_COMMANDS.length, 24);
+    /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
+       commands joined the door with the Deal Flow and Opportunities controls
+       that send them, each named in the allow-list; any other move still fails. */
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37);
     /* 49 → 50 in Option B (`setCopyPending`). What this line guards is the
        door above, which has not moved: the new command is not exposed.
        51 → 53 in Batch 3A (`fileObject`, `unfileObject`), and this time the
        door DID move — both are listed above. The pin is re-stated rather than
        loosened: the surface is still named command by command. */
-    eq(C.COMMAND_NAMES.length, 53, "a command was added or removed");
+    /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A1: + selectTradeCards, deselectTradeCard, holdTradeSelection, continueTradeSelection, closeTradeSelection (proposeTradeSelection and reviewTradeCard remain as refusing names) — each founder-approved */ eq(C.COMMAND_NAMES.length, 61, "a command was added or removed");
   });
 
   test("C3.5 opened no door — the whole file is what it was", () => {
@@ -856,11 +873,15 @@ describe("F. the boundaries hold", () => {
   });
 
   test("the deal lifecycle is still shut, and so is everything C3.5 might have wanted", async () => {
+    /* MARKET VALIDATION BATCH 3B opened the five price commands — opening an
+       offer, countering, accepting, declining and withdrawing — with the screens
+       that send them, so they left this list. Everything past an agreed price
+       (trade, values, the final balance, fulfilment, Pending) is still shut. */
     const ctx = await world();
     /* `reviewCopy`, `endReview` and `requestPhotos` left this list when the
          qualification batch gave them a surface in Deal Flow. What must stay shut
          is the TRANSACTION, and it is still shut. */
-      for (const name of ["startOpportunity", "proposePrice", "acceptPrice", "acceptDeal",
+      for (const name of ["acceptDeal",
       "setInterest", "sendMessage", "reachOut", "markBinderReviewed"]) {
       assert(!EXPOSED_COMMANDS.includes(name), `${name} is exposed`);
       eq((await post(ctx.app, "casey", name, {})).json().error.refused,
@@ -870,7 +891,7 @@ describe("F. the boundaries hold", () => {
 
   test("no migration, and no new durable concept", async () => {
     const migrations = fs.readdirSync(path.join(ROOT, "persistence", "migrations")).sort();
-    eq(migrations[migrations.length - 1], "0014_binder_memberships.sql", migrations.join(","));
+    /* RE-PINNED (Milestone 2D.1): the newest migration is now 0015, a deal's conversation — not this batch's. */ eq(migrations[migrations.length - 1], "0015_deal_conversations.sql", migrations.join(","));
     const ctx = await world();
     await oneOverlap(ctx);
     const stored = await load(ctx);
@@ -925,9 +946,10 @@ describe("F. the boundaries hold", () => {
   });
 
   test("navigation is exactly what C3.4 left, on both seats", () => {
-    eq(COLLECTOR_SHELL.SECTIONS.map((s) => s.id).join(","), "browse,binder,partners,deal-flow");
+    /* RE-PINNED (Phase 6 P6-1): Deal Flow now precedes Trusted Partners. */
+    eq(COLLECTOR_SHELL.SECTIONS.map((s) => s.id).join(","), "browse,binder,deal-flow,partners");
     eq(COLLECTOR_SHELL.SECTIONS.map((s) => s.label).join(" · "),
-      "Browse · Binders · Trusted Partners · Deal Flow");
+      "Browse · Binders · Deal Flow · Trusted Partners");
     eq(COLLECTOR_SHELL.DEFERRED_SECTIONS.map((s) => s.id).join(","), "goals",
       "the deferral list moved");
     /* Goals is still not a destination, and Goals.jsx is still not deleted —
