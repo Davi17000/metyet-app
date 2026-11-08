@@ -475,6 +475,41 @@ deal's moves until one succeeds (A3 freshness).
   exclusive hold" — while shared SELECTION stays legal. Both dev prototypes'
   Select Trade screens use the TP-led commands.
 
+### Relationship ending: loss of capability, not loss of record (M3B, founder-approved 2026-11-08)
+
+**Approved future requirement — NOT implemented.** No relationship-ending
+command exists yet. When one is built, ending a Collector–Trusted Partner
+relationship must:
+
+- make every deal between the two that is not already completed permanently
+  terminal, whatever its stage — Fulfillment included;
+- record `relationship-ended` as each such deal's outcome, preserving the
+  stage it ended at and its history;
+- release every outstanding reservation held by those deals;
+- leave neither party able to reopen or continue those deals in MetYet;
+  re-establishing the relationship never reactivates them;
+- leave completed deals completed;
+- keep history readable by the original participants, within the existing
+  privacy boundaries;
+- never present a recorded physical transfer as reversed because the
+  relationship ended. Unresolved real-world obligations are settled outside
+  MetYet.
+
+This supersedes the earlier recommendation that Fulfillment continue after a
+relationship ends.
+
+**Interim safeguard (M3B B2.5, in code now).** Until that lifecycle exists,
+`metyet-commands.js` refuses new deal commitments with `no-relationship` when
+the deal's own pair has no current accepted relationship: `proposePrice`,
+`acceptPrice`, the four Value Trade valuation commands, `chooseCashOnly`,
+`proposeFinalBalance`, `acceptDeal`, and marking a shop copy pending (as
+`startOpportunity`, `selectTradeCards` and `closeTradeSelection` already
+did). Ways out stay open (withdraw, decline, deselect, hold, cancel, decline
+offer, releasing a pending mark), as do deal messages, read marks and
+Fulfillment for finally agreed deals. Nothing is ended or released
+automatically. The guard is not the final lifecycle: the future command
+replaces "Fulfillment continues" with termination as above.
+
 ## 14. TP inventory ingestion --- deferred
 
 Potential ingestion: manual lookup/add, CSV import from tools, dedicated
