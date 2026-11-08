@@ -100,7 +100,9 @@ export const copyName = (card, copy) => (card && text(card.cardName))
    photographs, then whatever the caller puts beside it (a tag, a button). The
    row is keyed and marked by the COPY's id, so two copies of one printing are
    always two rows. */
-export function CopyRow({ cls, copy = null, row = null, card = null, tag = null, warn = false, children = null, id = null }) {
+/* `body` (M3B B3), optional: more about the row under it — Value Trade puts a
+   card's figures, history and answers there. Without it the row is unchanged. */
+export function CopyRow({ cls, copy = null, row = null, card = null, tag = null, warn = false, children = null, id = null, body = null }) {
   const src = copy || row || {};
   const g = gradingOf(copy, row);
   const cert = g.graded ? text(src.cert) : null;
@@ -120,6 +122,7 @@ export function CopyRow({ cls, copy = null, row = null, card = null, tag = null,
         {tag ? <span className={`${cls}-sel-tag${warn ? " warn" : ""}`}>{tag}</span> : null}
       </span>
       {children ? <span className={`${cls}-sel-do`}>{children}</span> : null}
+      {body ? <div className={`${cls}-vt-body`}>{body}</div> : null}
     </li>
   );
 }

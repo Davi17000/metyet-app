@@ -512,7 +512,7 @@ describe("D. all four deployed surfaces use it", () => {
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37, "the production door moved");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six; M3B B3: + Value Trade's five — each founder-approved */ eq(EXPOSED_COMMANDS.length, 42, "the production door moved");
     /* 49 → 50 in Option B (`setCopyPending`), and → 51 in the four-state batch
        (`setCollectorCopyKept`). C7.1's claim is the door above, which has not
        moved for either: the first is written, tested and deliberately unexposed,

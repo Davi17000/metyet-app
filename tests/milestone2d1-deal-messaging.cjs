@@ -326,7 +326,7 @@ describe("B. authorization", () => {
     }
     assert(EXPOSED_COMMANDS.includes("sendDealMessage"));
     /* RESTATED (M3A A3, founder-authorized): + Select Trade's six. The legacy messaging commands above are still closed. */
-    eq(EXPOSED_COMMANDS.length, 37);
+    /* M3B B3: + Value Trade's five, founder-approved */ eq(EXPOSED_COMMANDS.length, 42);
   });
 });
 

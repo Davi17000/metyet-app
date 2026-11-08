@@ -522,7 +522,22 @@ describe("E. the command endpoint", () => {
     const world = await repository.loadWorld();
     eq(world.opportunities[0].stage, "value-trade", "the deal advanced");
     const row = world.opportunities[0].trade.cards[0].id;
-    await closedOverHttp(app, SUBJECTS.casey, "proposeMarketValue", { oppId, tradeCardId: row, amount: 100 });
+    /* RESTATED AGAIN (M3B B3, founder-authorized): Value Trade is a
+       production door now, so its card is valued over HTTP seat by seat; the
+       stage after it, Deal, is the one still proved shut. */
+    const valued = [
+      [SUBJECTS.casey, "proposeMarketValue", { oppId, tradeCardId: row, amount: 100 }],
+      [SUBJECTS.northline, "acceptMarketValue", { oppId, tradeCardId: row }],
+      [SUBJECTS.northline, "proposeTradePercent", { oppId, tradeCardId: row, percent: 0.8 }],
+      [SUBJECTS.casey, "acceptTradePercent", { oppId, tradeCardId: row }],
+    ];
+    for (const [who, command, payload] of valued) {
+      const res = await send(app, who, { command, payload });
+      eq(res.statusCode, 200, `${command} over HTTP: ${res.body}`);
+    }
+    eq((await repository.loadWorld()).opportunities[0].stage, "deal", "every card valued: the deal advanced to Deal");
+    await closedOverHttp(app, SUBJECTS.northline, "proposeFinalBalance", { oppId, amount: 0 });
+    await closedOverHttp(app, SUBJECTS.northline, "acceptDeal", { oppId });
     const caseyView = (await get(app, SUBJECTS.casey)).json().state.opportunities[0];
     assert(!("tradeRate" in caseyView), "and the partner's trade % never crossed");
   });

@@ -474,7 +474,7 @@ describe("H. accessibility and shape", () => {
 describe("I. boundaries", () => {
   test("the section still names no command; the page uses the step words it was handed", () => {
     const { EXPOSED_COMMANDS } = require("../server/exposed-commands.js");
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37, "the production door is unchanged");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six; M3B B3: + Value Trade's five — each founder-approved */ eq(EXPOSED_COMMANDS.length, 42, "the production door is unchanged");
     for (const f of ["client/collector/sections/Binder.jsx", "client/collector/CardEdit.jsx"]) {
       const src = fs.readFileSync(path.join(ROOT, f), "utf8");
       for (const c of EXPOSED_COMMANDS) assert(!new RegExp(`["']${c}["']`).test(src), `${f} names ${c}`);

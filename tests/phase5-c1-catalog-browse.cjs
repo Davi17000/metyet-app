@@ -894,6 +894,9 @@ describe("G. boundaries, and what did not change", () => {
          that send them. Value Trade, Deal, Fulfillment and cash-only stay closed. */
       "selectTradeCards", "deselectTradeCard", "closeTradeSelection",
       "holdTradeSelection", "continueTradeSelection", "withdrawTradeCard",
+      /* AND VALUE TRADE'S FIVE (M3B B3, founder-authorized), with the shop's
+         Value Trade screen that sends them. Deal, Fulfillment and cash-only stay closed. */
+      "proposeMarketValue", "acceptMarketValue", "proposeTradePercent", "acceptTradePercent", "declineTradeCard",
     ].sort()), "a door was opened that nobody declared");
     const browserCode = code("client/browse/CardBrowser.jsx");
     assert(!EXPOSED_COMMANDS.some((c) => browserCode.includes(c)),

@@ -426,9 +426,10 @@ allow-list — `selectTradeCards`, `deselectTradeCard` and `closeTradeSelection`
 `continueTradeSelection` and `withdrawTradeCard` (sent from the Collector's
 Deal Workspace). `withdrawTradeCard` keeps its full domain permission (until
 final agreement); the product offers it on the Select Trade screen only.
-Value Trade, Deal, Fulfillment and `chooseCashOnly` stay closed until the
-screens that send them ship (A4–A6): after a successful close both seats see
-the cards held and "Value Trade isn't available in MetYet yet". A refused
+Deal, Fulfillment and `chooseCashOnly` stay closed until the screens that
+send them ship. Value Trade's commands opened in M3B B3 with the shop's
+screen (below); until B4 the Collector's side of a successful close still
+says "Value Trade isn't available in MetYet yet". A refused
 close names only the caller's own rows (`detail.tradeCardIds`). The shop's
 Collector Network shows each connected Collector's Trade/Sell copies,
 read-only (A2). An open deal re-reads the server on arrival, on return to the
@@ -474,6 +475,55 @@ deal's moves until one succeeds (A3 freshness).
   active deal", "traded at most once" and "a traded copy is in no other
   exclusive hold" — while shared SELECTION stays legal. Both dev prototypes'
   Select Trade screens use the TP-led commands.
+
+### Value Trade, card by card (M3B, founder-approved)
+
+**Built: domain (B1), server boundary (B2), relationship guard (B2.5), the
+Trusted Partner's screen (B3). Not built: the Collector's screen (B4).**
+
+- **Two steps per held card.** Its market value — the Collector opens it,
+  then whoever is answering a proposal — then the trade percentage of it the
+  shop credits — the shop opens it, the same back-and-forth. Accepting takes
+  the other side's standing proposal; nothing is auto-accepted. A card's
+  credit exists only once both are agreed: `Math.round(market × percent)`.
+  When every card still in the deal is agreed, the deal moves to Deal.
+- **Whole numbers (D1).** A proposed market value is whole dollars above $0;
+  a proposed percentage is a whole 1–100%, still stored as the fraction
+  (0.8). Anything else is refused `invalid-amount`, never rounded. Screens
+  refuse it before sending; the dev prototypes still pass decimals through
+  and now get that refusal.
+- **Whose move.** Each card has a pending seat (`cardOwner`); the deal has
+  one turn — when both seats have cards waiting, whoever moved last keeps the
+  turn while they still hold a card, and with no history the partner goes
+  first. Every trade row in both people's views carries `owner` (the
+  domain's `cardOwner`, projected; never stored). A card waiting on you is
+  "your move" only when the deal's turn is also yours; otherwise "you're
+  next". Screens read `owner` and `turn`; they never work out a turn.
+- **The shop may decline a card (D2, D7, D8)** — `declineTradeCard`, at any
+  turn, in Value Trade only, on a card still in the deal. The row becomes
+  `rejected` with `declinedAt`/`declinedStage` and its history kept; its
+  hold is released and it stops counting; no other card changes. No card left:
+  back to Select Trade. Every remaining card agreed: on to Deal. An optional
+  note, one line of at most 140 characters (spaces collapsed, counted by
+  character), is stored as `declineNote` and seen by both. Nothing is written
+  to a copy or the shelf.
+- **The cash on screen is provisional.** The agreed price minus the credits
+  of the cards whose values are both agreed (`calculatedBalance`): positive,
+  the Collector pays the shop; negative, the shop pays the Collector. The
+  final balance is Deal's.
+- **Production (B3).** The five — `proposeMarketValue`, `acceptMarketValue`,
+  `proposeTradePercent`, `acceptTradePercent`, `declineTradeCard` — are on
+  the allow-list (42), sent by the Trusted Partner's Opportunities. No
+  default rate is ever filled in for the shop's percentage. A deal whose
+  cards are all agreed shows them read-only, "Deal coming soon": no Deal
+  control. Deal, Fulfillment and `chooseCashOnly` stay closed.
+- **B3 ALONE IS NOT RELEASABLE.** The Collector opens every market value, and
+  her screen is B4; without it no card can move. B3 and B4 ship together in
+  one M3B PR, merged and deployed only after both seats' Value Trade is
+  complete and tested, and only with further founder approval. B4 hands the
+  Collector four of the same bindings (open and counter a market value,
+  accept it, counter and accept a %) plus the existing withdraw — no
+  allow-list change.
 
 ### Relationship ending: loss of capability, not loss of record (M3B, founder-approved 2026-11-08)
 

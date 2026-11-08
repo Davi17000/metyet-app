@@ -9,6 +9,10 @@
    proposeMarketValue, acceptMarketValue, proposeTradePercent,
    acceptTradePercent and declineTradeCard — open in B3/B4 with their screens.
 
+   (M3B B3 opened the five with the shop's screen, founder-authorized; this
+   suite now runs every test through the production server itself — see THE
+   DOOR below — and section A pins the opened door.)
+
    What B2 proves now, through the real HTTP server, the real token check, the
    real transaction and every migration, is that opening them will not open
    anything else: a second copy of the server is loaded with the production
@@ -45,28 +49,14 @@ const ROOT = path.join(__dirname, "..");
 const json = (v) => JSON.stringify(v);
 const VALUE_TRADE = ["proposeMarketValue", "acceptMarketValue", "proposeTradePercent", "acceptTradePercent", "declineTradeCard"];
 
-/* ------------------------------------------------------- THE TEST-ONLY DOOR
-   `server/app.js` reads `isExposed` from exposed-commands.js when it loads. A
-   fresh copy of app.js is loaded while the module cache holds a stand-in list
-   (production's + the five); both cache entries are then put back, so every
-   other require in this process — and the production `createApp` above — sees
-   the real list. */
-const createAppWithValueTrade = (() => {
-  const EXPOSED_PATH = require.resolve("../server/exposed-commands.js");
-  const APP_PATH = require.resolve("../server/app.js");
-  const realExposed = require.cache[EXPOSED_PATH];
-  const realApp = require.cache[APP_PATH];
-  const list = Object.freeze([...EXPOSED_COMMANDS, ...VALUE_TRADE]);
-  const stand = new module.constructor(EXPOSED_PATH);
-  Object.assign(stand, { filename: EXPOSED_PATH, loaded: true,
-    exports: { EXPOSED_COMMANDS: list, isExposed: (c) => typeof c === "string" && list.includes(c) } });
-  require.cache[EXPOSED_PATH] = stand;
-  delete require.cache[APP_PATH];
-  try { return require(APP_PATH).createApp; } finally {
-    require.cache[EXPOSED_PATH] = realExposed;
-    require.cache[APP_PATH] = realApp;
-  }
-})();
+/* ------------------------------------------------------- THE DOOR (M3B B3)
+   B2 built a test-only copy of the server here — production's allow-list plus
+   the five, through Node's module cache — because the five were not yet
+   production doors. M3B B3 opened them with the shop's Value Trade screen
+   (founder-authorized), so production's own list now carries exactly them and
+   the stand-in is retired: `door` IS the production server, and every test
+   below runs through the real allow-list. */
+const createAppWithValueTrade = createApp;
 
 /* ------------------------------------------------------------- THE SERVER */
 const SUBJECT = { north: "sub-north", silver: "sub-silver", faraway: "sub-far", casey: "sub-casey", jordan: "sub-jordan" };
@@ -168,35 +158,47 @@ const r_ = (oppId, tradeCardId, extra) => ({ oppId, tradeCardId, ...(extra || {}
 
 /* ======================================================================= A */
 describe("A. The door: production stays shut; the test door adds exactly five", () => {
-  test("production's list is unchanged at 37 and names none of the five, nor Deal, Fulfillment or cash-only", () => {
-    eq(EXPOSED_COMMANDS.length, 37, "the production allow-list moved");
-    for (const c of [...VALUE_TRADE, "chooseCashOnly", "proposeFinalBalance", "acceptDeal", "proposeFulfillment", "confirmHandoff"]) {
+  /* RESTATED (M3B B3, founder-authorized): the five are production doors
+     now, opened with the Trusted Partner's Value Trade screen that sends
+     them; Deal, Fulfillment and cash-only stay shut. */
+  test("production's list is 42: the five are on it, and Deal, Fulfillment and cash-only are not", () => {
+    eq(EXPOSED_COMMANDS.length, 42, "the production allow-list");
+    for (const c of VALUE_TRADE) assert(EXPOSED_COMMANDS.includes(c), `${c} is not exposed in production`);
+    for (const c of ["chooseCashOnly", "proposeFinalBalance", "acceptDeal", "proposeFulfillment", "confirmHandoff"]) {
       assert(!EXPOSED_COMMANDS.includes(c), `${c} is exposed in production`);
     }
     assert(VALUE_TRADE.every((c) => COMMAND_NAMES.includes(c)), "every one of the five is a real domain command");
-    eq(require("../server/exposed-commands.js").EXPOSED_COMMANDS.length, 37, "the stand-in list leaked into this process");
   });
-  test("the production server refuses all five exactly as it refuses a command that does not exist", async () => {
+  test("the production server lets each of the five through to the domain, which still decides; Deal stays shut", async () => {
     const ctx = await world();
     const [row] = await ctx.toValuation([ctx.k.char]);
     const before = await ctx.version();
-    const unknown = await ctx.send(ctx.apps.production, "casey", "noSuchCommand", {});
     for (const c of VALUE_TRADE) {
-      const who = c === "declineTradeCard" || c === "acceptMarketValue" ? "north" : "casey";
+      /* The wrong seat for each: the domain's refusal, not the door's. */
+      const who = c === "declineTradeCard" || c === "acceptMarketValue" ? "casey" : "north";
       const r = await ctx.send(ctx.apps.production, who, c, { oppId: ctx.nl, tradeCardId: row, amount: 200, percent: 0.8 });
       eq(r.status, 409, c);
-      eq(json(r.body.error && r.body.error.refused), json(unknown.body.error.refused), `${c} answers apart from an unknown command`);
+      assert(r.body.error.refused !== "command-unavailable", `${c} is still shut at the door`);
+    }
+    for (const c of ["proposeFinalBalance", "acceptDeal", "chooseCashOnly"]) {
+      const r = await ctx.send(ctx.apps.production, "north", c, { oppId: ctx.nl, amount: 0 });
       eq(r.body.error.refused, "command-unavailable", c);
     }
-    eq(await ctx.version(), before, "a closed door wrote the world");
+    eq(await ctx.version(), before, "a refusal wrote the world");
   });
-  test("nothing in client/ sends the five yet — they open in B3/B4 with their screens", () => {
+  test("only client/commands.js sends the five, and only the shop's shell is handed them", () => {
     const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory()
       ? walk(path.join(dir, e.name)) : /\.(js|jsx)$/.test(e.name) ? [path.join(dir, e.name)] : []));
     for (const f of walk(path.join(ROOT, "client"))) {
       const src = fs.readFileSync(f, "utf8");
-      for (const c of VALUE_TRADE) assert(!src.includes(`"${c}"`), `${path.relative(ROOT, f)} sends ${c}`);
+      const rel = path.relative(ROOT, f);
+      for (const c of VALUE_TRADE) {
+        if (rel === path.join("client", "commands.js")) assert(src.includes(`execute("${c}"`), `${c} has no sender`);
+        else assert(!src.includes(`"${c}"`), `${rel} names ${c}`);
+      }
     }
+    const co = fs.readFileSync(path.join(ROOT, "client/collector/CollectorShell.jsx"), "utf8");
+    assert(!/onProposeMarket|onAcceptMarket|onProposePercent|onAcceptPercent|onDeclineCard/.test(co), "the Collector's shell is handed Value Trade before B4");
   });
 });
 

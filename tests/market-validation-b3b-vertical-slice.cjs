@@ -697,11 +697,14 @@ describe("I. the door and the client agree", () => {
     /* RESTATED (Milestone 2D.2): plus `onSendMessage`, the deal's
        conversation — a message, which answers no price. */
     /* RESTATED (M3A A3, founder-authorized): plus Select Trade's three. */
-    assert(/opportunities" \? \{ onBrowseCards, onCounterOffer, onAcceptOffer, onDeclineOffer, onRefresh,\s*onSendMessage, onSelectTrade, onDeselectTrade, onCloseSelection \}/.test(tpShell),
+    /* RESTATED (M3B B3, founder-authorized): plus Value Trade's five. */
+    assert(/opportunities" \? \{ onBrowseCards, onCounterOffer, onAcceptOffer, onDeclineOffer, onRefresh,\s*onSendMessage, onSelectTrade, onDeselectTrade, onCloseSelection,\s*onProposeMarket, onAcceptMarket, onProposePercent, onAcceptPercent, onDeclineCard \}/.test(tpShell),
       "Opportunities is handed something other than the shop's three answers and the conversation");
     assert(!/onOpenOffer|onWithdrawOffer/.test(tpShell), "the shop's shell can reach the Collector's moves");
     const coShell = code("client/collector/CollectorShell.jsx");
     assert(!/onDeclineOffer/.test(coShell), "the Collector's shell can reach the shop's decline");
+    /* M3B B3: nor the shop's decline of a trade card — B4 decides what the Collector's screen is handed. */
+    assert(!/onDeclineCard|onProposeMarket|onAcceptMarket|onProposePercent|onAcceptPercent/.test(coShell), "the Collector's shell is handed Value Trade before B4");
     const dealFlow = code("client/collector/sections/DealFlow.jsx");
     assert(!/\.execute\(|store\./.test(dealFlow), "Deal Flow reaches for the store");
     assert(!/\.execute\(|store\./.test(code("client/tp/sections/Opportunities.jsx")), "Opportunities reaches for the store");

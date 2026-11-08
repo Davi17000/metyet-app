@@ -393,7 +393,7 @@ describe("D. boundaries", () => {
   });
   test("the client names no new command; the allow-list is unchanged", () => {
     const { EXPOSED_COMMANDS } = require("../server/exposed-commands.js");
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37);
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six; M3B B3: + Value Trade's five — each founder-approved */ eq(EXPOSED_COMMANDS.length, 42);
     const src = read("client/collector/sections/Binder.jsx").replace(/\/\*[\s\S]*?\*\//g, "");
     for (const c of EXPOSED_COMMANDS) assert(!new RegExp(`["']${c}["']`).test(src), `Binder names ${c}`);
   });

@@ -196,7 +196,7 @@ describe("A. the door opened by exactly two", () => {
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37, "the production surface is not the size C5 intended");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six; M3B B3: + Value Trade's five — each founder-approved */ eq(EXPOSED_COMMANDS.length, 42, "the production surface is not the size C5 intended");
     for (const name of ["updateInventoryCopy", "removeInventoryCopy"]) {
       assert(EXPOSED_COMMANDS.includes(name), `${name} is not offered`);
     }
@@ -260,9 +260,10 @@ describe("A. the door opened by exactly two", () => {
     /* …and P6-F4 B5's changeCollectingState, with the saved card's Submit Update. */
     /* …and Milestone 2D.1's sendDealMessage, a deal's conversation, founder-approved. */
     /* …and M3A A3's six, Select Trade's screens, founder-authorized. */
-    eq(json(added.sort()), json(["acceptPrice", "addCopyPhotos", "cancelOpportunity", "changeCollectingState", "closeTradeSelection",
-      "continueTradeSelection", "declineOffer", "deselectTradeCard",
-      "endReview", "fileObject", "holdTradeSelection", "proposePrice", "removeInventoryCopy",
+    /* …and M3B B3's five, Value Trade's shop screen, founder-authorized. */
+    eq(json(added.sort()), json(["acceptMarketValue", "acceptPrice", "acceptTradePercent", "addCopyPhotos", "cancelOpportunity", "changeCollectingState", "closeTradeSelection",
+      "continueTradeSelection", "declineOffer", "declineTradeCard", "deselectTradeCard",
+      "endReview", "fileObject", "holdTradeSelection", "proposeMarketValue", "proposePrice", "proposeTradePercent", "removeInventoryCopy",
       "requestPhotos", "reviewCopy", "selectTradeCards", "sendDealMessage", "setCollectorCopyKept", "startOpportunity", "unfileObject",
       "updateInventoryCopy", "withdrawTradeCard"]),
       "a door was opened that no batch declared");

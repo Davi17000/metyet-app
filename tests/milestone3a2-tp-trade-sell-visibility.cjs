@@ -532,7 +532,11 @@ describe("E. Read-only, through the doors that already exist", () => {
        sent by the Opportunity and the Deal Workspace — never by the Collector
        Network, which test 1 of this section keeps command-free. Interest and
        every later stage stay shut. */
-    for (const cmd of ["setInterest", "chooseCashOnly", "proposeMarketValue", "acceptDeal"]) eq(isExposed(cmd), false, cmd);
+    /* RESTATED (M3B B3, founder-authorized): Value Trade's five are doors
+       too, sent by the shop's Opportunity — still never by the Collector
+       Network. */
+    eq(isExposed("proposeMarketValue"), true, "Value Trade's door");
+    for (const cmd of ["setInterest", "chooseCashOnly", "acceptDeal"]) eq(isExposed(cmd), false, cmd);
   });
   test("the partner projection still carries no keep decision, private value or binder", () => {
     eq(json(P.FIELD_RULES.COLLECTOR_COPY_FOR_PARTNER),

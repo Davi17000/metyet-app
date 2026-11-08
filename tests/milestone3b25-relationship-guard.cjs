@@ -208,20 +208,11 @@ describe("B. The domain: what stays true", () => {
 });
 
 /* ================================================================ SERVER */
-const VALUE_TRADE = ["proposeMarketValue", "acceptMarketValue", "proposeTradePercent", "acceptTradePercent", "declineTradeCard"];
-/* The test-only door, exactly as tests/milestone3b2-value-trade-server.cjs
-   builds it: production's list plus the five, through the module cache. */
-const createAppWithValueTrade = (() => {
-  const EXPOSED_PATH = require.resolve("../server/exposed-commands.js");
-  const APP_PATH = require.resolve("../server/app.js");
-  const realExposed = require.cache[EXPOSED_PATH], realApp = require.cache[APP_PATH];
-  const list = Object.freeze([...EXPOSED_COMMANDS, ...VALUE_TRADE]);
-  const stand = new module.constructor(EXPOSED_PATH);
-  Object.assign(stand, { filename: EXPOSED_PATH, loaded: true,
-    exports: { EXPOSED_COMMANDS: list, isExposed: (c) => typeof c === "string" && list.includes(c) } });
-  require.cache[EXPOSED_PATH] = stand; delete require.cache[APP_PATH];
-  try { return require(APP_PATH).createApp; } finally { require.cache[EXPOSED_PATH] = realExposed; require.cache[APP_PATH] = realApp; }
-})();
+/* THE DOOR (M3B B3). B2.5 built the same test-only door as the B2 suite —
+   production's list plus the five — because the five were not yet production
+   doors. M3B B3 opened them with the shop's Value Trade screen, so `door` IS
+   the production server now and the stand-in is retired. */
+const createAppWithValueTrade = createApp;
 const SUBJECT = { north: "sub-north", silver: "sub-silver", casey: "sub-casey" };
 let pglite = null;
 async function server() {
@@ -321,7 +312,8 @@ describe("C. Through the real server", () => {
       assert(!EXPOSED_COMMANDS.includes(c), `${c} became exposed`);
       await ctx.refused("production", "casey", c, { oppId: ctx.oppId }, "command-unavailable", c);
     }
-    eq(EXPOSED_COMMANDS.length, 37, "the production allow-list moved");
+    /* M3B B3: + Value Trade's five, opened with the shop's screen (founder-authorized). */
+    eq(EXPOSED_COMMANDS.length, 42, "the production allow-list moved");
   });
 });
 

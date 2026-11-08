@@ -1495,13 +1495,16 @@ describe("F. the two new doors", () => {
          that send them. Value Trade, Deal, Fulfillment and cash-only stay closed. */
       "selectTradeCards", "deselectTradeCard", "closeTradeSelection",
       "holdTradeSelection", "continueTradeSelection", "withdrawTradeCard",
+      /* AND VALUE TRADE'S FIVE (M3B B3, founder-authorized), with the shop's
+         Value Trade screen that sends them. Deal, Fulfillment and cash-only stay closed. */
+      "proposeMarketValue", "acceptMarketValue", "proposeTradePercent", "acceptTradePercent", "declineTradeCard",
     ].sort()), "the production surface is not what C3.4 declared");
     /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
        name; any other change to the size still fails here. */
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37);
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six; M3B B3: + Value Trade's five — each founder-approved */ eq(EXPOSED_COMMANDS.length, 42);
     for (const name of EXPOSED_COMMANDS) {
       assert(C.COMMAND_NAMES.includes(name), `${name} is not a command`);
     }
