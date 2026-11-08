@@ -656,6 +656,22 @@ function validateWorld(state) {
       } else if (rowLegacy) {
         cardRef(row.cardId, `${rp}.cardId`, rowWho);
       }
+      /* A PARTNER'S DECLINE (M3B D2) belongs to a row the partner passed on — a
+         rejected row — and to nothing else: a live row carrying a decline would
+         be counted in the deal while saying it was declined, and a row both
+         declined and withdrawn would claim two people took it out. The note is
+         one short line or absent. */
+      const declined = !blank(row.declinedAt) || !blank(row.declinedStage) || !blank(row.declineNote);
+      if (declined && row.inclusion !== "rejected") {
+        report("invariant.decline-on-rejected-row", rp, `${rowWho} carries a decline but is not a rejected row.`);
+      }
+      if (declined && row.withdrawn === true) {
+        report("invariant.decline-not-withdrawn", rp, `${rowWho} is both declined by the partner and withdrawn by the Collector.`);
+      }
+      if (!blank(row.declineNote) && (typeof row.declineNote !== "string" || !row.declineNote.trim()
+        || [...row.declineNote].length > 140)) {
+        report("field.invalid", `${rp}.declineNote`, `${rowWho}.declineNote must be a line of at most 140 characters.`);
+      }
       if (blank(row.binderId)) return;
       const b = ref(collectorCopies, row.binderId, `${rp}.binderId`, "collector copy", rowWho);
       if (b && b.collectorId !== o.collectorId) {

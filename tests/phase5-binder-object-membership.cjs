@@ -1398,7 +1398,7 @@ describe("I. A capability with a surface, at last", () => {
       eq(typeof C.COMMANDS[name], "function", `${name} has no implementation`);
     }
     /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A1: + selectTradeCards, deselectTradeCard, holdTradeSelection, continueTradeSelection, closeTradeSelection (proposeTradeSelection and reviewTradeCard remain as refusing names) — each founder-approved */ eq([...C.COMMAND_NAMES].length, 61, "the domain command table moved");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A1: + selectTradeCards, deselectTradeCard, holdTradeSelection, continueTradeSelection, closeTradeSelection (proposeTradeSelection and reviewTradeCard remain as refusing names); M3B B1: + declineTradeCard — each founder-approved */ eq([...C.COMMAND_NAMES].length, 62, "the domain command table moved");
     const st = world();
     const id = okv(x(st, CASEY, "fileObject", { binderId: "A", goalId: "g1" }), "file");
     eq(homeOf(st, "goalId", "g1").binderId, "A", "the command stopped working");

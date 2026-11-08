@@ -585,10 +585,13 @@ describe("G. Production boundary, privacy and money are unchanged", () => {
   test("credit, the balance and its sign are computed exactly as before", () => {
     const st = world(); const a = agreed(st, CASEY, "gC", "i1", NL, 300);
     const [r1, r2] = toValuation(st, a, NL, CASEY, ["k1", "k2"]);
-    settleAll(st, a, NL, CASEY, [[r1, 250.5, 0.85], [r2, 199, 0.7]]);
+    /* RESTATED (M3B D1, founder-approved): market values are whole dollars now,
+       so $250.50 is refused (tests/milestone3b1-value-trade-domain.cjs). $251 at
+       85% is $213.35 — the rounding of the credit is still what is tested. */
+    settleAll(st, a, NL, CASEY, [[r1, 251, 0.85], [r2, 199, 0.7]]);
     const o = opp(st, a);
-    eq(D.tradeValueOf(rowsOf(st, a)[0]), Math.round(250.5 * 0.85), "credit rounding");
-    eq(D.calculatedBalance(o), 300 - Math.round(250.5 * 0.85) - Math.round(199 * 0.7), "balance");
+    eq(D.tradeValueOf(rowsOf(st, a)[0]), Math.round(251 * 0.85), "credit rounding");
+    eq(D.calculatedBalance(o), 300 - Math.round(251 * 0.85) - Math.round(199 * 0.7), "balance");
     assert(D.calculatedBalance(o) < 0, "a negative balance is still a balance");
     no(x(st, NL, "proposeFinalBalance", { oppId: a, amount: -49.5 }), "invalid-amount", "still whole dollars");
     okv(x(st, NL, "proposeFinalBalance", { oppId: a, amount: -50 }), "whole-dollar negative figure");

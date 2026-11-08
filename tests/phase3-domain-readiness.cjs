@@ -311,6 +311,13 @@ function everyCommand(store, rec) {
   x(TP1, "selectTradeCards", { oppId: w, copyIds: ["b2"] });
   x(C1, "withdrawTradeCard", { oppId: w, tradeCardId: opp(w).trade.cards[1].id });
   step("withdrawTradeCard", { opp: opp(w) });
+  /* M3B B1: the partner declines a card in Value Trade. The same copy is chosen
+     again (a new row) — the Collector said she was ready earlier in this deal,
+     so the partner may close at once — and the partner declines it. */
+  x(TP1, "selectTradeCards", { oppId: w, copyIds: ["b2"] });
+  x(TP1, "closeTradeSelection", { oppId: w });
+  x(TP1, "declineTradeCard", { oppId: w, tradeCardId: opp(w).trade.cards[2].id, note: "Not this one." });
+  step("declineTradeCard", { opp: opp(w) });
 
   /* Cash only, then cancellation. */
   const k = x(C2, "startOpportunity", { goalId: "g2", invId: "i3", amount: 1000 });
@@ -442,7 +449,7 @@ describe("B. every minted id comes from the injected runtime", () => {
        membership is a new durable fact, so it needed commands to state it.
        53 → 54 in Market Validation Batch 2 (`declineOffer`), exercised above.
        55 → 56 in Milestone 2D.1 (`sendDealMessage`), exercised above. */
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A1: + selectTradeCards, deselectTradeCard, holdTradeSelection, continueTradeSelection, closeTradeSelection (proposeTradeSelection and reviewTradeCard remain as refusing names) — each founder-approved */ eq(C.COMMAND_NAMES.length, 61, "the command set");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A1: + selectTradeCards, deselectTradeCard, holdTradeSelection, continueTradeSelection, closeTradeSelection (proposeTradeSelection and reviewTradeCard remain as refusing names); M3B B1: + declineTradeCard — each founder-approved */ eq(C.COMMAND_NAMES.length, 62, "the command set");
   });
 
   test("each new record's id is exactly what the runtime handed out, with the record's prefix", () => {
@@ -536,6 +543,7 @@ describe("C. every authoritative timestamp is the injected runtime's time", () =
     confirmHandoff: (x) => [x.opp.completedAt, x.opp.updated],
     markDealViewed: (x) => [x.opp.viewedAt.collector.timeline],
     withdrawTradeCard: (x) => [x.opp.trade.cards[1].withdrawnAt, x.opp.updated],
+    declineTradeCard: (x) => [x.opp.trade.cards[2].declinedAt, x.opp.updated],
     chooseCashOnly: (x) => [x.opp.trade.cashOnlyAt, x.opp.updated],
     cancelOpportunity: (x) => [x.opp.endedAt, x.opp.updated],
     declineOffer: (x) => [x.opp.endedAt, x.opp.updated],

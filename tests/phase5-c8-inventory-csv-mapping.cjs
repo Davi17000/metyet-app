@@ -1059,7 +1059,7 @@ describe("G. whose shelf this is", () => {
        the count 25 again, and the history is now written out rather than
        quietly becoming true. */
     /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A1: + selectTradeCards, deselectTradeCard, holdTradeSelection, continueTradeSelection, closeTradeSelection (proposeTradeSelection and reviewTradeCard remain as refusing names) — each founder-approved */ eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 61,
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A1: + selectTradeCards, deselectTradeCard, holdTradeSelection, continueTradeSelection, closeTradeSelection (proposeTradeSelection and reviewTradeCard remain as refusing names); M3B B1: + declineTradeCard — each founder-approved */ eq(Object.keys(require("../domain/metyet-commands.js").COMMANDS).length, 62,
       "C8 added a domain command");
     const app = code("server/app.js");
     assert(!/inventory-import|inventoryImport|\/api\/inventory|csv/i.test(app),

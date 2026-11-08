@@ -702,7 +702,7 @@ describe("F. The boundary this batch did not cross", () => {
        untouched: filing a copy in a Binder is organising, not dealing, and a
        copy in a live deal is filed and unfiled exactly as any other. */
     /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A1: + selectTradeCards, deselectTradeCard, holdTradeSelection, continueTradeSelection, closeTradeSelection (proposeTradeSelection and reviewTradeCard remain as refusing names) — each founder-approved */ eq(COMMAND_NAMES.length, 61, "a command was added or removed");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A1: + selectTradeCards, deselectTradeCard, holdTradeSelection, continueTradeSelection, closeTradeSelection (proposeTradeSelection and reviewTradeCard remain as refusing names); M3B B1: + declineTradeCard — each founder-approved */ eq(COMMAND_NAMES.length, 62, "a command was added or removed");
   });
 
   test("[11][34][35][36] Option B's availability model is untouched", () => {
