@@ -98,6 +98,24 @@ const isRelated = (state, partnerId, collectorId) => list(state.relationships)
   .some((r) => r.partnerId === partnerId && r.collectorId === collectorId
     && (r.status == null || r.status === "accepted"));
 
+/* NO NEW COMMITMENT OUTSIDE A TRUSTED RELATIONSHIP (M3B B2.5, founder-approved).
+   Starting a deal and choosing or holding a Collector's cards have always
+   needed a current relationship; every later step that makes or changes a
+   commitment — a price, a trade value, a percentage, cash only, the final
+   balance, final agreement, and a shop marking its card pending for the deal —
+   now asks the same question of the deal's own two parties and refuses with
+   `no-relationship` when the answer is no.
+
+   WAYS OUT STAY OPEN, ON PURPOSE. Withdrawing a card, declining one,
+   deselecting, holding, ending the deal or declining the offer, releasing a
+   pending mark, deal messages and marking a deal viewed are not commitments:
+   they are how either person releases themselves — and the Collector their
+   cards — from a negotiation that can no longer finish. A deal already finally
+   agreed is an obligation made while the trust held, so Fulfillment and
+   handoff are untouched. Nothing here ends a deal or releases a hold by
+   itself. */
+const pairTrusted = (state, o) => isRelated(state, o.partnerId, o.collectorId);
+
 const cardById = (state, id) => list(state.catalog).find((c) => c.id === id) || null;
 const oppById = (state, id) => list(state.opportunities).find((o) => o.id === id) || null;
 const seatOf = (a) => a.seat;
@@ -970,6 +988,7 @@ const COMMANDS = {
     if (o.partnerId !== a.partnerId) return refuse(R.notParticipant);
     if (o.invId !== invId) return refuse(R.identityMismatch);
     if (!D.isActive(o)) return refuse(R.terminal);
+    if (!pairTrusted(state, o)) return refuse(R.noRelationship);
     return copy.pendingFor === wanted ? done(state, invId) : set(wanted);
   },
 
@@ -2136,6 +2155,7 @@ const COMMANDS = {
     const at = ctx.at;
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
+    if (!pairTrusted(state, o)) return refuse(R.noRelationship);
     if (o.stage !== "agree-price") return refuse(R.wrongStage);
     /* THE CARD HAS TO STILL BE THERE (Option B, Item 0). Until now two people
        could go on proposing figures for a card that had been sold and handed
@@ -2177,6 +2197,7 @@ const COMMANDS = {
     const at = ctx.at;
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
+    if (!pairTrusted(state, o)) return refuse(R.noRelationship);
     if (o.stage !== "agree-price") return refuse(R.wrongStage);
     /* THE CARD HAS TO STILL BE PURSUABLE BY THIS DEAL — and, since Option B,
        that no longer means "nobody else has agreed a value on it". Two
@@ -2478,6 +2499,7 @@ const COMMANDS = {
     const at = ctx.at;
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
+    if (!pairTrusted(state, o)) return refuse(R.noRelationship);
     if (o.stage !== "deal") return refuse(R.wrongStage);
     if (termsChanged(o, expect)) return refuse(R.termsChanged);
     /* The FINAL cash figure is the strongest statement either side makes about
@@ -2509,6 +2531,7 @@ const COMMANDS = {
     const at = ctx.at;
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
+    if (!pairTrusted(state, o)) return refuse(R.noRelationship);
     if (o.stage !== "deal") return refuse(R.wrongStage);
     if (!turnFor(a, o, "final")) return refuse(R.notYourTurn);
     /* AGREEMENT IS TO WHAT THE CALLER SAW (M3A A1). A screen that sends
@@ -2667,6 +2690,7 @@ function valueStep(state, a, { oppId, tradeCardId, amount, percent }, ctx, phase
   const at = ctx.at;
   const { o, refused } = oppGate(state, a, oppId);
   if (refused) return refuse(refused);
+  if (!pairTrusted(state, o)) return refuse(R.noRelationship);
   if (o.stage !== "value-trade") return refuse(R.wrongStage);
   /* NO NEW ECONOMIC STATEMENTS ABOUT A CARD THAT IS GONE. The same argument
      `proposePrice` makes: valuing a trade card is valuing it AGAINST the
@@ -2713,6 +2737,7 @@ COMMANDS.chooseCashOnly = (state, a, { oppId }, ctx) => {
   if (a.seat !== "collector") return refuse(R.notOwner);
   const { o, refused } = oppGate(state, a, oppId);
   if (refused) return refuse(refused);
+  if (!pairTrusted(state, o)) return refuse(R.noRelationship);
   if (o.stage !== "select-trade") return refuse(R.wrongStage);
   const gone = copyBlockedFor(state, o, a);
   if (gone) return refuse(gone);
