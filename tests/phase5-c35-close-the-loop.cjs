@@ -836,20 +836,23 @@ describe("F. the boundaries hold", () => {
          that send them. Value Trade, Deal, Fulfillment and cash-only stay closed. */
       "selectTradeCards", "deselectTradeCard", "closeTradeSelection",
       "holdTradeSelection", "continueTradeSelection", "withdrawTradeCard",
+      /* AND VALUE TRADE'S FIVE (M3B B3, founder-authorized), with the shop's
+         Value Trade screen that sends them. Deal, Fulfillment and cash-only stay closed. */
+      "proposeMarketValue", "acceptMarketValue", "proposeTradePercent", "acceptTradePercent", "declineTradeCard",
     ].sort()), "C3.5 changed the production surface");
     /* RE-PINNED (Batch 3C-1): 25 → 24. `addBinderEntry` left the door by
        name; any other change to the size still fails here. */
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37);
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six; M3B B3: + Value Trade's five — each founder-approved */ eq(EXPOSED_COMMANDS.length, 42);
     /* 49 → 50 in Option B (`setCopyPending`). What this line guards is the
        door above, which has not moved: the new command is not exposed.
        51 → 53 in Batch 3A (`fileObject`, `unfileObject`), and this time the
        door DID move — both are listed above. The pin is re-stated rather than
        loosened: the surface is still named command by command. */
     /* 53 → 54 in Market Validation Batch 2: `declineOffer`, the Trusted Partner's distinct "no" while a market value is unresolved. */ 
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A1: + selectTradeCards, deselectTradeCard, holdTradeSelection, continueTradeSelection, closeTradeSelection (proposeTradeSelection and reviewTradeCard remain as refusing names) — each founder-approved */ eq(C.COMMAND_NAMES.length, 61, "a command was added or removed");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A1: + selectTradeCards, deselectTradeCard, holdTradeSelection, continueTradeSelection, closeTradeSelection (proposeTradeSelection and reviewTradeCard remain as refusing names); M3B B1: + declineTradeCard — each founder-approved */ eq(C.COMMAND_NAMES.length, 62, "a command was added or removed");
   });
 
   test("C3.5 opened no door — the whole file is what it was", () => {

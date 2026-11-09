@@ -47,7 +47,11 @@ export function dealPrint(state, dealId, seat) {
   const deal = list(state && state.opportunities).find((o) => o.id === dealId) || null;
   if (!deal) return { gone: true };
   const t = deal.turn || {};
-  const rows = tradeRows(deal).map((r) => [r.id, r.binderId, r.inclusion || null, r.withdrawn === true, r.reservedAt || null]);
+  /* M3B B3: and where each card's valuation stands — whose move on it, and
+     what is agreed — appended, so the positions above keep their meaning. */
+  const rows = tradeRows(deal).map((r) => [r.id, r.binderId, r.inclusion || null, r.withdrawn === true, r.reservedAt || null,
+    r.owner || null, r.agreedMarket == null ? null : r.agreedMarket, r.agreedPercent == null ? null : r.agreedPercent,
+    (Array.isArray(r.valueThread) ? r.valueThread.length : 0) + (Array.isArray(r.percentThread) ? r.percentThread.length : 0)]);
   const named = new Set(rows.map((r) => r[1]));
   const copies = list(state.collectorCopies)
     .filter((b) => (seat === "tp" ? b.collectorId === deal.collectorId : named.has(b.id)))
@@ -73,7 +77,9 @@ export function changeNote(before, after, seat, other) {
     if (after.reason === "close-selection" && seat === "tp") return `Updated — ${who} is ready.`;
     if (after.reason === "adding-cards" && seat === "tp") return `Updated — ${who} is adding cards.`;
     if (after.reason === "more-cards" && seat !== "tp") return `Updated — ${who} chose cards.`;
-    if (after.reason === "value" || after.reason === "values-settled") return "Updated — the chosen cards are now held for this deal.";
+    if ((after.reason === "value" || after.reason === "values-settled") && before.reason !== "value") return "Updated — the chosen cards are now held for this deal.";
+    /* M3B B3: valuation finished — every card's value agreed. */
+    if ((after.reason === "final" || after.reason === "agreed") && before.reason === "value") return "Updated — every card's value is agreed.";
     if (after.reason === "select-trade" && before.reason === "price") return "Updated — the price was agreed.";
   }
   if (after.live.length < before.live.length) {
@@ -81,6 +87,9 @@ export function changeNote(before, after, seat, other) {
   }
   if (after.live.length > before.live.length) return seat === "tp" ? "Updated — a card was added." : `Updated — ${who} added a card.`;
   if (before.amount !== after.amount && after.amount != null) return `Updated — ${who} answered on price.`;
+  /* M3B B3: a move on a card's value — a proposal, a counter or an accept. */
+  const valued = (p) => p.rows.map((r) => [r[0], r[5], r[6], r[7], r[8]]);
+  if (!same(valued(before), valued(after))) return `Updated — ${who} answered on a card's value.`;
   if (!same(before.copies, after.copies)) return "Updated — a card's availability changed.";
   return "Updated — the latest is shown.";
 }

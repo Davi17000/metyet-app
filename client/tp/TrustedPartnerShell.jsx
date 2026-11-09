@@ -55,6 +55,7 @@ import { rows } from "./present.js";
 import CollectorNetwork from "./sections/CollectorNetwork.jsx";
 import Inventory from "./sections/Inventory.jsx";
 import Opportunities from "./sections/Opportunities.jsx";
+import { summaryCss } from "../deal-summary.jsx";
 
 /* The three sections, in the product's own order: inputs before their
    consequences. Each one is recurring work a Trusted Partner opens MetYet to
@@ -364,6 +365,29 @@ const CSS = `
   display:flex; flex-direction:column; gap:8px; }
 .tps-sel-done { font-size:12.5px; color:var(--t1); font-weight:600; }
 
+/* ---- value trade (M3B B3) ----
+   Each held card with its figures, history and next step under it, then the
+   provisional cash. Same frame as Select Trade; the card's detail runs the
+   full width under its picture and name. */
+.tps-vt-body { flex:1 1 100%; display:flex; flex-direction:column; gap:7px; padding-left:50px; min-width:0; }
+.tps-vt-facts { margin:0; display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:4px 12px; }
+.tps-vt-facts div { display:flex; flex-direction:column; gap:1px; min-width:0; }
+.tps-vt-facts dt { font-size:10.5px; color:var(--faint); text-transform:uppercase; letter-spacing:.06em; }
+.tps-vt-facts dd { margin:0; font-size:12.5px; color:var(--text); font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.tps-vt-trail { margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:2px;
+  font-size:12px; color:var(--muted); }
+.tps-vt-trail .mine { color:var(--text); }
+.tps-vt-note { font-size:12.5px; color:var(--text); font-style:italic; overflow-wrap:anywhere; }
+.tps-vt-notefield { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--muted); }
+.tps-vt-notefield textarea { font:inherit; font-size:13px; color:var(--text); padding:8px 10px; border:1px solid var(--line);
+  border-radius:5px; background:#fff; resize:vertical; min-height:44px; box-sizing:border-box; width:100%; }
+.tps-vt-count { align-self:flex-end; font-variant-numeric:tabular-nums; }
+.tps-vt-count.over { color:var(--amber); font-weight:600; }
+/* The Deal Summary (M3B B4): the shared component's own stylesheet, the
+   same as the Collector's, set in line with the panels above it. */
+${summaryCss("tps", { margin: "0 16px 15px", phoneMargin: "0 -10px 12px" })}
+@media (max-width: 520px) { .tps-vt-body { padding-left:0; } }
+
 /* ---- freshness (M3A A3) ----
    What a check found, said once and quietly on the deal it is about; and, if
    checking failed, one line across the top with the way to try again. */
@@ -434,7 +458,8 @@ export default function TrustedPartnerShell({ state, onSignOut, onSaveProfile = 
   onAddCopy = null, onEditCopy = null, onRetireCopy = null, onBrowseCards = null,
   onProvidePhotos = null,
   onCounterOffer = null, onAcceptOffer = null, onDeclineOffer = null, onSendMessage = null,
-  onSelectTrade = null, onDeselectTrade = null, onCloseSelection = null }) {
+  onSelectTrade = null, onDeselectTrade = null, onCloseSelection = null,
+  onProposeMarket = null, onAcceptMarket = null, onProposePercent = null, onAcceptPercent = null, onDeclineCard = null }) {
   const [section, setSection] = useState(SECTIONS[0].id);
 
   const who = describeActor(state);
@@ -459,12 +484,15 @@ export default function TrustedPartnerShell({ state, onSignOut, onSaveProfile = 
      (Accept, Counter, Decline), plus a re-read for when an answer finds the
      deal has already moved. Milestone 2D.2 adds one more, `onSendMessage`: a
      message on one deal's conversation, which moves nothing. M3A A3 adds
-     Select Trade's three: choose cards, remove one, start valuing. */
+     Select Trade's three: choose cards, remove one, start valuing. M3B B3 adds
+     Value Trade's five, card by card: accept or counter a market value,
+     propose, accept or counter a percentage, and decline one card. */
   const extra = meta.id === "inventory"
     ? { onSaveProfile, onAddCopy, onEditCopy, onRetireCopy, onBrowseCards, onProvidePhotos }
     : meta.id === "collectors" ? { onInvite, onRevokeInvite, onRefresh, onBrowseCards }
       : meta.id === "opportunities" ? { onBrowseCards, onCounterOffer, onAcceptOffer, onDeclineOffer, onRefresh,
-        onSendMessage, onSelectTrade, onDeselectTrade, onCloseSelection }
+        onSendMessage, onSelectTrade, onDeselectTrade, onCloseSelection,
+        onProposeMarket, onAcceptMarket, onProposePercent, onAcceptPercent, onDeclineCard }
         : null;
 
   return (

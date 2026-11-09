@@ -79,6 +79,7 @@ export default function ProductionApp({ state, onSignOut, onSaveProfile = null,
   onWithdrawOffer = null, onSendMessage = null,
   onSelectTrade = null, onDeselectTrade = null, onCloseSelection = null,
   onHoldSelection = null, onReadyForSelection = null, onWithdrawTradeCard = null,
+  onProposeMarket = null, onAcceptMarket = null, onProposePercent = null, onAcceptPercent = null, onDeclineCard = null,
   joined = null, onDismissJoined = null }) {
   const who = describeActor(state);
 
@@ -101,7 +102,9 @@ export default function ProductionApp({ state, onSignOut, onSaveProfile = null,
       onInvite={onInvite} onRevokeInvite={onRevokeInvite} onRefresh={onRefresh}
       onCounterOffer={onCounterOffer} onAcceptOffer={onAcceptOffer} onDeclineOffer={onDeclineOffer}
       onSendMessage={onSendMessage}
-      onSelectTrade={onSelectTrade} onDeselectTrade={onDeselectTrade} onCloseSelection={onCloseSelection} />;
+      onSelectTrade={onSelectTrade} onDeselectTrade={onDeselectTrade} onCloseSelection={onCloseSelection}
+      onProposeMarket={onProposeMarket} onAcceptMarket={onAcceptMarket} onProposePercent={onProposePercent}
+      onAcceptPercent={onAcceptPercent} onDeclineCard={onDeclineCard} />;
   }
 
   if (who.seat === "collector") {
@@ -114,6 +117,8 @@ export default function ProductionApp({ state, onSignOut, onSaveProfile = null,
       onWithdrawOffer={onWithdrawOffer} onRefresh={onRefresh} onSendMessage={onSendMessage}
       onHoldSelection={onHoldSelection} onReadyForSelection={onReadyForSelection}
       onWithdrawTradeCard={onWithdrawTradeCard}
+      onProposeMarket={onProposeMarket} onAcceptMarket={onAcceptMarket}
+      onProposePercent={onProposePercent} onAcceptPercent={onAcceptPercent}
       onCreateBinder={onCreateBinder} onRenameBinder={onRenameBinder}
       onArchiveBinder={onArchiveBinder}
       onFileObject={onFileObject} onUnfileObject={onUnfileObject}

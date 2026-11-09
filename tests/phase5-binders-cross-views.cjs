@@ -541,8 +541,9 @@ describe("F. What did not move", () => {
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + selectTradeCards, deselectTradeCard, closeTradeSelection, holdTradeSelection, continueTradeSelection, withdrawTradeCard (Select Trade's screens); — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37, "a command was exposed that no batch declared");
-    for (const closed of ["acceptMarketValue", "acceptDeal", "setCopyPending", "proposeFulfillment", "confirmHandoff"]) {
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + selectTradeCards, deselectTradeCard, closeTradeSelection, holdTradeSelection, continueTradeSelection, withdrawTradeCard (Select Trade's screens); M3B B3: + Value Trade's five — each founder-approved */ eq(EXPOSED_COMMANDS.length, 42, "a command was exposed that no batch declared");
+    /* M3B B3 opened Value Trade's five with the shop's screen (founder-authorized); everything else here stays shut. */
+    for (const closed of ["acceptDeal", "setCopyPending", "proposeFulfillment", "confirmHandoff"]) {
       assert(!EXPOSED_COMMANDS.includes(closed), `${closed} was exposed`);
     }
   });

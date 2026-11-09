@@ -240,12 +240,26 @@ const submittedRows = (o) => list(o.trade && o.trade.cards).filter(partnerVisibl
      priceOpen  D.priceUnresolved — live and still agreeing a price
    Both participants already know everything these are computed from — they
    are read from the full record BEFORE the partner's view hides an
-   unsubmitted trade, and say nothing about what is in the trade. */
+   unsubmitted trade, and say nothing about what is in the trade.
+
+   AND WHOSE MOVE ON EACH CARD (M3B B3, founder-approved). Value Trade is
+   negotiated card by card, so the deal's one `turn` is not enough to say which
+   cards are waiting on whom. Each trade row carries `owner` — the domain's own
+   `D.cardOwner(row)`: "tp" or "collector" when that seat answers next on the
+   card, null when nobody does (agreed, declined, withdrawn, never selected).
+   Read off the stored row, so it is the same for both participants and tells
+   neither anything the row's own history does not; the screens combine it with
+   `turn` and never work it out. Written onto a fresh row object — the stored
+   record is never touched. */
+const withOwners = (trade) => (trade && Array.isArray(trade.cards)
+  ? { ...trade, cards: trade.cards.map((c) => (c && typeof c === "object" ? { ...c, owner: D.cardOwner(c) } : c)) }
+  : trade);
 const withTurn = (out, o) => {
   const t = D.nextActor(o);
   out.turn = { seat: D.seatOfActor(t.actor), reason: t.reason,
     amount: t.reason === "price" && typeof t.amount === "number" ? t.amount : null,
     active: D.isActive(o), priceOpen: D.priceUnresolved(o) };
+  if (out.trade) out.trade = withOwners(out.trade);
   return out;
 };
 const opportunityForPartner = (o) => {

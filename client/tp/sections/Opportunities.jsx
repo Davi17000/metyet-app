@@ -50,6 +50,12 @@
    server's (`turn`, projected from the domain's one turn engine); this file
    reads it and never works it out.
 
+   VALUE TRADE (M3B B3). Once the chosen cards are held, each is valued here,
+   card by card — accept or counter its market value, propose or answer its
+   trade %, or decline it — following each card's `owner` and the deal's
+   `turn`, both the server's (ValueTradePanel, below). A deal whose cards are
+   all agreed shows them read-only: Deal has no control in MetYet yet.
+
    ---------------------------------------------------------------------------
    AND NOW THE PART THAT COMES BEFORE ANY OF THAT (Phase 5 Batch 8).
 
@@ -83,14 +89,19 @@ import { rows, indexById, text, day, money, plural, cardTitle, cardSetLine,
   gradeLine, stageLabel, isKnownStage, tierLabel, supplyLine, byRecency } from "../present.js";
 import { DealConversation, dealThread, messagesOf } from "../../deal-conversation.jsx";
 import { useDealFreshness } from "../../deal-freshness.js";
+import { DealSummary } from "../../deal-summary.jsx";
+import { dealGradeLine } from "../../printing.js";
 import { CopyRow, liveRows, choosableCopies, looksUnavailable, myMove, turnOf, isSelectingStage, isValuingStage,
   selectRefusal } from "../../select-trade.jsx";
+import { isDealingStage, valuedRows, leftRows, cardState, waitingOn, historyOf,
+  creditOf, creditAt, tidyNote, noteLength, NOTE_MAX, valueRefusal, usd, pctText, ValueEntry } from "../../value-trade.jsx";
 
 const COMPLETED = "completed";
 
 export default function Opportunities({ state, onBrowseCards = null,
   onCounterOffer = null, onAcceptOffer = null, onDeclineOffer = null, onRefresh = null,
-  onSendMessage = null, onSelectTrade = null, onDeselectTrade = null, onCloseSelection = null }) {
+  onSendMessage = null, onSelectTrade = null, onDeselectTrade = null, onCloseSelection = null,
+  onProposeMarket = null, onAcceptMarket = null, onProposePercent = null, onAcceptPercent = null, onDeclineCard = null }) {
   const all = rows(state && state.opportunities);
   const catalog = indexById(state && state.catalog);
   const goals = indexById(state && state.goals);
@@ -120,8 +131,11 @@ export default function Opportunities({ state, onBrowseCards = null,
   /* Select Trade (M3A A3): choosing cards, or finishing the choice once the
      Collector is ready, is the shop's move too — the server's `turn` says so. */
   const selectMove = (o) => isSelectingStage(o) && myMove(o, me, "select-trade", "close-selection");
-  const yourMove = live.filter((o) => myPriceMove(o, me) || selectMove(o));
-  const waiting = live.filter((o) => !(myPriceMove(o, me) || selectMove(o)));
+  /* Value Trade (M3B B3): the deal's turn is the shop's, on its cards. */
+  const valueMove = (o) => isValuingStage(o) && myMove(o, me, "value");
+  const anyMove = (o) => myPriceMove(o, me) || selectMove(o) || valueMove(o);
+  const yourMove = live.filter(anyMove);
+  const waiting = live.filter((o) => !anyMove(o));
   const done = byRecency(all.filter((o) => o.stage === COMPLETED || isEndedDeal(o)), "completedAt", "updated");
 
   /* READY TO COORDINATE — the server's overlaps, minus the ones already being
@@ -141,6 +155,9 @@ export default function Opportunities({ state, onBrowseCards = null,
   /* Select Trade's on-screen draft, confirmation and refused rows, per deal
      (M3A A3) — kept here so a deal that moves panel keeps them. */
   const [selectUi, setSelectUi] = useState({});
+  /* Value Trade's open answer box, decline confirmation, note and last word,
+     per deal (M3B B3) — kept here for the same reason. */
+  const [valueUi, setValueUi] = useState({});
   /* FRESHNESS (M3A A3). Opening Opportunities, coming back to the page, and
      every 15 seconds while it is visible, the live deals are read again; a
      deal that changed says what happened, quietly, on its own record. An open
@@ -150,10 +167,19 @@ export default function Opportunities({ state, onBrowseCards = null,
   const fresh = useDealFreshness({ state, seat: me, deals: live.map((o) => o.id), onRefresh,
     nameOf: (id) => { const o = all.find((x) => x.id === id); return o ? who.get(o.collectorId) || null : null; },
     /* A change also retires the last "Sent …" line: it was about the deal as it was. */
-    onChange: (id) => setSelectUi((held) => (!held[id] ? held
-      : held[id].confirming
-        ? { ...held, [id]: { ...held[id], done: null, confirming: false, said: "This deal changed while you were confirming — check the cards." } }
-        : { ...held, [id]: { ...held[id], done: null } })) });
+    onChange: (id) => {
+      setSelectUi((held) => (!held[id] ? held
+        : held[id].confirming
+          ? { ...held, [id]: { ...held[id], done: null, confirming: false, said: "This deal changed while you were confirming — check the cards." } }
+          : { ...held, [id]: { ...held[id], done: null } }));
+      /* An open answer or decline was about the card as it was: closed, and
+         said, so nothing is sent against figures nobody is looking at. */
+      setValueUi((held) => (!held[id] ? held
+        : held[id].entry || held[id].declining
+          ? { ...held, [id]: { ...held[id], entry: null, declining: null, done: null,
+            said: "This deal changed while you were answering — check the card and try again." } }
+          : { ...held, [id]: { ...held[id], done: null } }));
+    } });
   const frozen = fresh.failed;
   const ready = rows(state && state.discoveries).filter((d) => !working.has(d.key));
 
@@ -165,7 +191,7 @@ export default function Opportunities({ state, onBrowseCards = null,
      exact card and version it is for. Still one request for the set. */
   /* M3A A3: and the Collector's copies a Select Trade may show — their
      Trade/Sell copies and the rows of deals choosing them. Still one request. */
-  const selecting = all.filter((o) => isSelectingStage(o) || isValuingStage(o));
+  const selecting = all.filter((o) => isSelectingStage(o) || isValuingStage(o) || isDealingStage(o));
   const selectingFor = new Set(selecting.map((o) => o.collectorId));
   const readyIds = [...new Set([...ready.map((d) => d.canonicalCardId),
     ...all.map((o) => o.canonicalCardId),
@@ -220,12 +246,15 @@ export default function Opportunities({ state, onBrowseCards = null,
     const copy = o.invId != null ? copies.get(o.invId) || null : null;
     const known = isKnownStage(o.stage);
     const valuing = isValuingStage(o);
+    /* Every card valued: the deal is in Deal, which has no control in MetYet
+       yet (M3B B3) — the values are shown read-only, and no "Your move". */
+    const dealing = isDealingStage(o) && valuedRows(o).length > 0;
     const grade = gradeLine(card);
     const subtitle = [cardSetLine(card), grade].filter(Boolean).join(" · ") || null;
     /* A deal on a catalogue card names it from the catalogue's description,
        with this copy's own grade; a legacy one keeps the line above. */
     const exact = !card && o.canonicalCardId
-      ? [cardLine(named[o.canonicalCardId] || null), copy ? gradeLine(copy) : null].filter(Boolean).join(" · ") || null
+      ? [cardLine(named[o.canonicalCardId] || null), copy ? dealGradeLine(copy) : null].filter(Boolean).join(" · ") || null
       : null;
 
     return (
@@ -235,11 +264,11 @@ export default function Opportunities({ state, onBrowseCards = null,
         subtitle={exact || (cardTitle(card) ? `${cardTitle(card)}${subtitle ? ` — ${subtitle}` : ""}` : subtitle)}
         tags={
           <>
-            {valuing ? <Tag tone="strong">Cards held · Value Trade coming soon</Tag>
+            {dealing ? <Tag tone="strong">Values agreed · Deal coming soon</Tag>
               : <Tag tone={known ? "strong" : "unknown"}>{stageLabel(o.stage)}</Tag>}
             {known ? null : <Tag>not a stage this version knows</Tag>}
             {goal ? <Tag>{tierLabel(goal.tier)}</Tag> : null}
-            {valuing ? null : turnTag(o)}
+            {dealing ? null : turnTag(o)}
           </>
         }
         note={text(goal && goal.note)}
@@ -269,10 +298,29 @@ export default function Opportunities({ state, onBrowseCards = null,
             <PriceHistory cls="tps" deal={o} seat={me} other={who.get(o.collectorId) || "The collector"} />
           </div>
         ) : null}
-        {(isSelectingStage(o) || valuing) ? (
+        {isSelectingStage(o) ? (
           <SelectTradePanel deal={o} state={state} me={me} collector={who.get(o.collectorId) || null}
             named={named} ui={selectUi} setUi={setSelectUi} onRefresh={onRefresh} frozen={frozen}
             onSelectTrade={onSelectTrade} onDeselectTrade={onDeselectTrade} onCloseSelection={onCloseSelection} />
+        ) : null}
+        {/* The last card left while it was being valued: the deal is back to
+            choosing cards, and the shop is told why (M3B B3). */}
+        {isSelectingStage(o) && valueUi[o.id] && valueUi[o.id].emptied ? (
+          <p className="tps-sel-done" role="status">{valueUi[o.id].emptied}</p>
+        ) : null}
+        {valuing || dealing ? (
+          <ValueTradePanel deal={o} state={state} me={me} collector={who.get(o.collectorId) || null}
+            named={named} ui={valueUi} setUi={setValueUi} onRefresh={onRefresh} frozen={frozen}
+            carried={selectUi[o.id] || null}
+            onProposeMarket={onProposeMarket} onAcceptMarket={onAcceptMarket}
+            onProposePercent={onProposePercent} onAcceptPercent={onAcceptPercent} onDeclineCard={onDeclineCard} />
+        ) : null}
+        {/* THE DEAL SUMMARY (M3B B4): the very component the Collector's Deal
+            Workspace renders, from this seat — the same cards, figures and
+            bottom line, "You Owe" / "You Receive" said from where you sit. */}
+        {valuing || dealing ? (
+          <DealSummary cls="tps" deal={o} seat={me} featured={{ card: named[o.canonicalCardId] || null, copy }}
+            named={named} copies={new Map(rows(state && state.collectorCopies).map((b) => [b.id, b]))} />
         ) : null}
         {said[o.id] && !(isUnresolved(o) || isEndedDeal(o))
           ? <p className="tps-offer-problem tps-offer-said" role="status">{said[o.id]}</p> : null}
@@ -312,6 +360,9 @@ export default function Opportunities({ state, onBrowseCards = null,
             /* M3A A3: a deal waiting on the shop's choice of cards is not an offer. */
             yourMove.filter((o) => selectMove(o)).length
               ? plural(yourMove.filter((o) => selectMove(o)).length, "deal to choose cards for", "deals to choose cards for") : null,
+            /* M3B B3: nor is a deal whose cards are waiting on the shop's values. */
+            yourMove.filter((o) => valueMove(o)).length
+              ? plural(yourMove.filter((o) => valueMove(o)).length, "deal to value cards for", "deals to value cards for") : null,
             ready.length ? plural(ready.length, "card", "cards") : null].filter(Boolean).join(" · ")}>
           {yourMove.map(line)}
           {ready.map(overlap)}
@@ -615,6 +666,218 @@ function SelectTradePanel({ deal, state, me, collector, named, ui, setUi,
 
       {sender.trouble || view.said ? <p className="tps-offer-problem" role="status">{sender.trouble || view.said}</p>
         : view.done ? <p className="tps-sel-done" role="status">{view.done}</p> : null}
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------ VALUE TRADE
+   (M3B B3) The cards held for this deal, valued one by one: each card's market
+   value, then the percentage of it the shop credits. Everything that may be
+   pressed follows the server:
+
+     a card's `owner`  which seat answers next on THAT card (domain cardOwner)
+     the deal's `turn` which seat moves now. When both have cards waiting, the
+                       turn says who goes first; a card waiting on the shop
+                       while the turn is the Collector's says "You're next"
+
+   On the shop's move a card offers exactly its next step: Accept or Counter
+   the Collector's market value; Propose a % (the shop opens percentages, and
+   nothing is filled in for it — not even the shop's default rate); Accept or
+   Counter the Collector's %. Decline is offered on every card still in the
+   deal, at any turn, after a confirmation, with an optional note the
+   Collector sees; it takes out that one card and nothing else.
+
+   THE CASH IS PROVISIONAL AND SAYS SO. The agreed price minus the credits of
+   the cards whose values are BOTH agreed; a card still being valued counts
+   for nothing yet. Who pays whom is said in words.
+
+   WHEN VALUING ENDS. Every card agreed: the deal is in Deal, which has no
+   control in MetYet yet — the values stay here, read-only, and nothing more is
+   offered. No card left: the deal is back to choosing cards (SelectTradePanel).
+
+   The open answer box, the decline confirmation, its note and the last word
+   are kept by Opportunities, keyed by deal; a re-read that changes the deal
+   closes an open box and says so. `frozen`: the latest could not be confirmed,
+   so nothing is sent until it can. */
+function ValueTradePanel({ deal, state, me, collector, named, ui, setUi, onRefresh, frozen = false, carried = null,
+  onProposeMarket, onAcceptMarket, onProposePercent, onAcceptPercent, onDeclineCard }) {
+  const view = ui[deal.id] || {};
+  const put = (patch) => setUi((held) => ({ ...held, [deal.id]: { ...(held[deal.id] || {}), ...patch } }));
+  const who = collector || "The collector";
+  const sender = useSender(onRefresh, (key, message) => put({ said: message }), {
+    sentence: valueRefusal("tp", collector),
+    refreshAlways: true,
+    onRefused: () => put({ entry: null, declining: null, done: null }),
+  });
+  const busy = !!sender.busy || frozen;
+  const dealing = isDealingStage(deal);
+  const copies = rows(state && state.collectorCopies).filter((b) => b.collectorId === deal.collectorId);
+  const copyOf = new Map(copies.map((b) => [b.id, b]));
+  const live = valuedRows(deal);
+  const left = leftRows(deal);
+  const t = turnOf(deal);
+  const mine = waitingOn(deal, "tp");
+  const theirs = waitingOn(deal, "collector");
+  const card = (canonicalCardId) => (canonicalCardId ? named[canonicalCardId] || null : null);
+  const cards = (n) => plural(n, "card", "cards");
+
+  const say = dealing ? "Every card's value is agreed. Next comes Deal, which isn't available in MetYet yet."
+    : t.reason === "value" && t.seat === "tp" ? `Your move — ${cards(mine)} waiting on you.`
+      : t.reason === "value" && t.seat === "collector"
+        ? (mine ? `Waiting for ${who} first — ${cards(theirs)}. You're next on ${cards(mine)}.`
+          : `Waiting for ${who} — ${cards(theirs)}.`)
+        : `Waiting for ${who}.`;
+
+  const act = async (key, run, done, extra = {}) => {
+    if (await sender.send(key, run)) put({ entry: null, declining: null, note: "", said: null, done, ...extra });
+  };
+  const decline = (row) => {
+    const note = tidyNote(view.note);
+    const last = live.length === 1;
+    return act(`decline:${row.id}`, () => onDeclineCard(deal.id, row.id, note),
+      last ? null : "Declined. The other cards are unchanged.",
+      last ? { emptied: "You declined the last card, so this deal is back to choosing cards." } : { emptied: null });
+  };
+
+  const tagOf = (st) => (st.kind === "agreed" ? "Agreed"
+    : st.kind === "declined" ? "Declined by you"
+      : st.kind === "withdrawn" ? `Taken out by ${who}`
+        : st.kind === "answer" || st.kind === "open" ? (st.now ? "Your move" : `You're next, after ${who}`)
+          : st.kind === "await" || st.kind === "await-open" ? `Waiting for ${who}` : null);
+
+  const marketFact = (row, st) => (row.agreedMarket != null ? `${usd(row.agreedMarket)} agreed`
+    : st.phase !== "market" ? "Not agreed"
+      : st.kind === "answer" ? `${who} proposed ${usd(st.standing)}`
+        : st.kind === "await" ? `You proposed ${usd(st.standing)}`
+          : st.kind === "await-open" ? `Waiting for ${who} to propose one` : "Not agreed");
+  const percentFact = (row, st) => (row.agreedPercent != null ? `${pctText(row.agreedPercent)} agreed`
+    : st.phase === "market" ? "After the market value is agreed"
+      : st.phase !== "percent" ? "Not agreed"
+        : st.kind === "answer" ? `${who} countered ${pctText(st.standing)}`
+          : st.kind === "await" ? `You proposed ${pctText(st.standing)}`
+            : st.kind === "open" ? "Yours to propose" : "Not agreed");
+
+  const body = (row, st, out) => {
+    const trail = historyOf(row, "tp", who);
+    const credit = creditOf(row);
+    const entry = view.entry && view.entry.rowId === row.id ? view.entry : null;
+    const confirming = view.declining === row.id;
+    const can = !out && !dealing;
+    return (
+      <>
+        <dl className="tps-vt-facts">
+          <div><dt>Market value</dt><dd>{marketFact(row, st)}</dd></div>
+          <div><dt>Trade %</dt><dd>{percentFact(row, st)}</dd></div>
+          <div><dt>Trade credit</dt><dd>{credit != null ? usd(credit) : out ? "Not counted" : "Not agreed yet"}</dd></div>
+        </dl>
+        {st.kind === "declined" && text(row.declineNote) ? <p className="tps-vt-note">{`Your note: “${row.declineNote}”`}</p> : null}
+        {trail.length ? (
+          <ol className="tps-vt-trail" aria-label="Value history">
+            {trail.map((e, i) => <li key={i} className={e.mine ? "mine" : "theirs"}>{e.line}</li>)}
+          </ol>
+        ) : null}
+        {can && st.now && !entry && !confirming ? (
+          <div className="tps-sel-do">
+            {st.kind === "answer" && st.phase === "market" && onAcceptMarket ? (
+              <button type="button" className="tps-go" disabled={busy}
+                onClick={() => act(`accept-market:${row.id}`, () => onAcceptMarket(deal.id, row.id),
+                  `Accepted ${usd(st.standing)} as this card's market value.`)}>
+                {sender.busy === `accept-market:${row.id}` ? "Accepting…" : `Accept ${usd(st.standing)}`}
+              </button>
+            ) : null}
+            {st.kind === "answer" && st.phase === "percent" && onAcceptPercent ? (
+              <button type="button" className="tps-go" disabled={busy}
+                onClick={() => act(`accept-percent:${row.id}`, () => onAcceptPercent(deal.id, row.id),
+                  `Agreed ${pctText(st.standing)} — ${usd(creditAt(row.agreedMarket, Math.round(st.standing * 100)))} trade credit.`)}>
+                {sender.busy === `accept-percent:${row.id}` ? "Accepting…" : `Accept ${pctText(st.standing)}`}
+              </button>
+            ) : null}
+            {st.kind === "answer" && (st.phase === "market" ? onProposeMarket : onProposePercent) ? (
+              <button type="button" className="tps-go quiet" disabled={busy}
+                onClick={() => { sender.clear(); put({ entry: { rowId: row.id, mode: st.phase }, declining: null, done: null, said: null }); }}>
+                Counter
+              </button>
+            ) : null}
+            {st.kind === "open" && st.phase === "percent" && onProposePercent ? (
+              <button type="button" className="tps-go" disabled={busy}
+                onClick={() => { sender.clear(); put({ entry: { rowId: row.id, mode: "percent" }, declining: null, done: null, said: null }); }}>
+                Propose a %
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        {can && entry ? (
+          <ValueEntry cls="tps" mode={entry.mode} market={row.agreedMarket} busy={busy}
+            verb={entry.mode === "market" ? "Send counter" : st.kind === "open" ? "Propose" : "Send counter"}
+            onCancel={() => { sender.clear(); put({ entry: null }); }}
+            onSubmit={(value) => (entry.mode === "market"
+              ? act(`counter-market:${row.id}`, () => onProposeMarket(deal.id, row.id, value), `Sent ${usd(value)} to ${who}.`)
+              : act(`percent:${row.id}`, () => onProposePercent(deal.id, row.id, value), `Sent ${value}% to ${who}.`))} />
+        ) : null}
+        {can && onDeclineCard && !entry && !confirming ? (
+          <div className="tps-sel-do">
+            <button type="button" className="tps-go quiet" disabled={busy}
+              onClick={() => { sender.clear(); put({ declining: row.id, entry: null, note: "", done: null, said: null }); }}>
+              Decline this card
+            </button>
+          </div>
+        ) : null}
+        {can && confirming ? (
+          <div className="tps-sel-confirm" role="group" aria-label="Decline this card">
+            <p className="tps-sel-line">
+              {`Decline this card? It leaves this deal and its history stays. ${live.length > 1
+                ? "The other cards stay as they are." : "It's the last card, so the deal goes back to choosing cards."} ${who} will see that you declined it.`}
+            </p>
+            <label className="tps-vt-notefield">
+              <span>{`Note to ${who} (optional)`}</span>
+              <textarea rows={2} value={view.note || ""} aria-label={`Note to ${who} (optional)`}
+                onChange={(e) => put({ note: e.target.value })} />
+              <span className={`tps-vt-count${noteLength(view.note) > NOTE_MAX ? " over" : ""}`}>{`${noteLength(view.note)}/${NOTE_MAX}`}</span>
+            </label>
+            {noteLength(view.note) > NOTE_MAX ? <p className="tps-offer-problem" role="status">{`A note can be at most ${NOTE_MAX} characters.`}</p> : null}
+            <div className="tps-sel-do">
+              <button type="button" className="tps-go" disabled={busy || noteLength(view.note) > NOTE_MAX} onClick={() => decline(row)}>
+                {sender.busy === `decline:${row.id}` ? "Declining…" : "Decline card"}
+              </button>
+              <button type="button" className="tps-go quiet" disabled={!!sender.busy} onClick={() => put({ declining: null, note: "" })}>Keep it</button>
+            </div>
+          </div>
+        ) : null}
+      </>
+    );
+  };
+
+  const rowOf = (row, out) => {
+    const st = cardState(deal, row, "tp");
+    return (
+      <CopyRow key={row.id} cls="tps" row={row} copy={copyOf.get(row.binderId) || null} card={card(row.canonicalCardId)}
+        tag={tagOf(st)} warn={st.now === true} body={body(row, st, out)} />
+    );
+  };
+
+  return (
+    <section className="tps-sel tps-vt" aria-label="Value Trade" data-value={deal.id}>
+      <h3 className="tps-sel-h">{dealing ? "Values agreed" : "Value Trade"}</h3>
+      <p className="tps-sel-say" role="status">{say}</p>
+
+      {live.length ? (
+        <ul className="tps-sel-list" aria-label="Cards in this deal">{live.map((r) => rowOf(r, false))}</ul>
+      ) : null}
+
+      {left.length ? (
+        <>
+          <p className="tps-sel-sub">Out of this deal</p>
+          <ul className="tps-sel-list" aria-label="Out of this deal">{left.map((r) => rowOf(r, true))}</ul>
+        </>
+      ) : null}
+
+      {sender.trouble || view.said ? <p className="tps-offer-problem" role="status">{sender.trouble || view.said}</p>
+        : view.done ? <p className="tps-sel-done" role="status">{view.done}</p>
+          /* Select Trade's last word, until this panel has one of its own: the
+             close that brought the deal here ("now held"), or an answer that
+             was lost on the way — said once the server confirms, as in A3. */
+          : carried && carried.said ? <p className="tps-offer-problem" role="status">{carried.said}</p>
+            : carried && carried.done ? <p className="tps-sel-done" role="status">{carried.done}</p> : null}
     </section>
   );
 }

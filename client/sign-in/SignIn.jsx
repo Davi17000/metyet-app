@@ -55,6 +55,7 @@ import { savePartnerProfile, openCollectorInvitation, revokeCollectorInvitation,
   renameBinder, setBinderArchived,
   refreshView, openOffer, counterOffer, acceptOffer, declineOffer, withdrawOffer,
   selectTrade, deselectTrade, closeSelection, holdSelection, readyForSelection, withdrawTradeCard,
+  proposeMarketValue, acceptMarketValue, proposeTradePercent, acceptTradePercent, declineCard,
   sendDealMessage } from "../commands.js";
 
 /* Identity is read in exactly one place — client/actor.js — and re-exported
@@ -306,6 +307,14 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
   const onHoldSelection = useMemo(() => (store ? holdSelection(store) : null), [store]);
   const onReadyForSelection = useMemo(() => (store ? readyForSelection(store) : null), [store]);
   const onWithdrawTradeCard = useMemo(() => (store ? withdrawTradeCard(store) : null), [store]);
+  /* Value Trade (M3B B3): five doors, card by card. Bound here once; the
+     shop's Opportunities is handed all five. The Collector's screen (B4) will
+     be handed four of these same bindings. */
+  const onProposeMarket = useMemo(() => (store ? proposeMarketValue(store) : null), [store]);
+  const onAcceptMarket = useMemo(() => (store ? acceptMarketValue(store) : null), [store]);
+  const onProposePercent = useMemo(() => (store ? proposeTradePercent(store) : null), [store]);
+  const onAcceptPercent = useMemo(() => (store ? acceptTradePercent(store) : null), [store]);
+  const onDeclineCard = useMemo(() => (store ? declineCard(store) : null), [store]);
   /* A DEAL'S CONVERSATION (Milestone 2D.2). Both seats get it: either
      participant may write on their own deal, and the server checks which. */
   const onSendMessage = useMemo(() => (store ? sendDealMessage(store) : null), [store]);
@@ -739,6 +748,7 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
       onInspect, onEndInspection, onRequestPhotos,
       onOpenOffer, onCounterOffer, onAcceptOffer, onDeclineOffer, onWithdrawOffer, onSendMessage,
       onSelectTrade, onDeselectTrade, onCloseSelection, onHoldSelection, onReadyForSelection, onWithdrawTradeCard,
+      onProposeMarket, onAcceptMarket, onProposePercent, onAcceptPercent, onDeclineCard,
       /* Phase 5 Batch 3A. Who they just joined, so the shell can greet them by
          it once. It is read from the server's own reply, it is cleared the
          moment they do anything else, and it grants nothing. */

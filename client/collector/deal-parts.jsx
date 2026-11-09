@@ -24,6 +24,7 @@ import React, { useState } from "react";
 import { OfferEntry, readEntry, priceOnTable, isUnresolved, myPriceMove, dollars, lastPriceMove } from "../negotiation.jsx";
 import { dealProgress } from "./deal-progress.js";
 import { isSelectingStage, isValuingStage, myMove } from "../select-trade.jsx";
+import { isDealingStage } from "../value-trade.jsx";
 import { STATE_STYLE } from "./states.jsx";
 
 /* ----------------------------------------------------- A DEAL, IN A GLANCE
@@ -47,7 +48,14 @@ export function dealGlance(deal, me, partner) {
     if (myMove(deal, me, "more-cards", "trade-reviewed")) return { mine: true, status: `Your turn · ${who} chose cards`, cta: "View Deal" };
     return { mine: false, status: `${who} is choosing cards`, cta: "View Deal" };
   }
-  if (isValuingStage(deal)) return { mine: false, status: "Cards held for this deal", cta: "View Deal" };
+  /* VALUE TRADE (M3B B4): the deal's turn says whether the Collector moves
+     now; a card waiting on them while it is the partner's turn is not yet. */
+  if (isValuingStage(deal)) {
+    if (myMove(deal, me, "value")) return { mine: true, status: "Your turn · Value your trade cards", cta: "View Deal" };
+    return { mine: false, status: `Waiting for ${who} · Valuing trade cards`, cta: "View Deal" };
+  }
+  /* Every card valued: Deal is next and has no screen yet. */
+  if (isDealingStage(deal)) return { mine: false, status: "Trade values agreed", cta: "View Deal" };
   /* Agreed, and the next stage is one production does not offer yet. */
   const progress = dealProgress(deal);
   if (dollars(deal.agreedPrice) && progress && progress.known && progress.next) {
@@ -64,7 +72,7 @@ export function Progress({ progress, compact = false }) {
     return progress.stage ? <p className="mcs-dg-plabel">{progress.stage}</p> : null;
   }
   const next = progress.finished
-    ? `Next: ${progress.label}${progress.available ? "" : " — not yet available"}` : null;
+    ? `Now: ${progress.label}${progress.available ? "" : " — not yet available"}` : null;
   return (
     <div className={`mcs-dg-progress${compact ? " compact" : ""}`}>
       <p className="mcs-dg-plabel">{progress.finished || progress.label}</p>
@@ -117,7 +125,7 @@ export function GoalProgress({ deal, glance }) {
     <div className="mcs-dg-progress card">
       <p className="mcs-dg-plabel">{above}</p>
       <Bar progress={progress} label={`Deal progress: ${above}`}
-        text={progress.finished ? `${progress.finished}. Next: ${progress.label}${progress.available ? "" : ", not yet available"}` : progress.label} />
+        text={progress.finished ? `${progress.finished}. Now: ${progress.label}${progress.available ? "" : ", not yet available"}` : progress.label} />
       <p className={`mcs-dg-status${glance.mine ? " mine" : ""}`}>{below}</p>
     </div>
   );

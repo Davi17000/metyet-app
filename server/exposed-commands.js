@@ -49,7 +49,8 @@
    with the Deal Flow and Opportunities controls that send them. The rest of
    the deal lifecycle (trade, values, the final balance, fulfilment) is still
    written, tested and deliberately absent: no screen sends it yet — except
-   Select Trade's six, which arrived in M3A A3 with the screens that send them.
+   Select Trade's six, which arrived in M3A A3 with the screens that send them,
+   and Value Trade's five, which arrived in M3B B3 with the shop's screen.
    ========================================================================== */
 
 /* THIS FILE REQUIRES NOTHING, and that is deliberate. It holds names, not
@@ -263,14 +264,28 @@ const EXPOSED_COMMANDS = Object.freeze([
      names the caller's OWN rows that could not be held, and nothing else.
      `withdrawTradeCard` keeps its whole domain permission (until final
      agreement); the product offers it on the Select Trade screen today.
-     `chooseCashOnly` and every Value Trade, Deal and Fulfillment command stay
-     closed: no screen sends them yet. */
+     `chooseCashOnly` and every Deal and Fulfillment command stay closed: no
+     screen sends them yet. */
   "selectTradeCards",            // TP → Opportunities, "Send N cards" / "Add to this deal"
   "deselectTradeCard",           // TP → Opportunities, "Remove"
   "closeTradeSelection",         // TP → Opportunities, "Start valuing" (after a confirmation)
   "holdTradeSelection",          // Collector → Deal Workspace, "Hold on, I'm adding cards"
   "continueTradeSelection",      // Collector → Deal Workspace, "I'm ready"
   "withdrawTradeCard",           // Collector → Deal Workspace, "Take out of this deal"
+  /* VALUE TRADE (M3B B3, founder-authorized). Each held card's market value,
+     then its trade percentage, proposed and answered card by card, and the
+     shop's decline of one card. They join with the Trusted Partner's Value
+     Trade screen, which sends all five. Every rule — whose move on each card
+     and on the deal, whole dollars and whole 1–100%, that a decline touches
+     only its own card, the trusted relationship (B2.5) — is the domain's
+     (M3B B1). The Collector's screen sends four of the same five through the
+     same bindings and is M3B B4; THIS IS NOT A RELEASABLE TWO-SEAT EXPERIENCE
+     until B4 ships with it, so B3 merges and deploys only together with B4. */
+  "proposeMarketValue",          // TP → Opportunities, "Counter" on a card's market value
+  "acceptMarketValue",           // TP → Opportunities, "Accept $N" on a card's market value
+  "proposeTradePercent",         // TP → Opportunities, "Propose a %" / "Counter" on a card's %
+  "acceptTradePercent",          // TP → Opportunities, "Accept N%" on a card's %
+  "declineTradeCard",            // TP → Opportunities, "Decline this card" (after a confirmation)
 ]);
 
 /* ONE ANSWER FOR TWO QUESTIONS, ON PURPOSE. A command that does not exist and a

@@ -61,6 +61,7 @@ import React, { useState } from "react";
 import { describeActor } from "../actor.js";
 import { rows } from "./present.js";
 import { STATE_CSS } from "./states.jsx";
+import { summaryCss } from "../deal-summary.jsx";
 import { newBrowseSession } from "./sections/Browse.jsx";
 import Browse from "./sections/Browse.jsx";
 import Binder from "./sections/Binder.jsx";
@@ -554,6 +555,27 @@ const CSS = `
 .mcs-sel-line { margin:0; font-size:13px; color:var(--text); line-height:1.45; }
 .mcs-sel-out { margin:0; font-size:12px; color:var(--muted); }
 .mcs-sel-done { margin:0; font-size:12.5px; color:var(--t1); font-weight:600; }
+
+/* ---- Value Trade (M3B B4) ----
+   Select Trade's card, each held card with its figures, history and next step
+   under it. Every control a full finger high. */
+.mcs-vt-body { flex:1 1 100%; display:flex; flex-direction:column; gap:8px; min-width:0; }
+.mcs-vt-facts { margin:0; display:grid; grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)); gap:4px 12px; }
+.mcs-vt-facts div { display:flex; flex-direction:column; gap:1px; min-width:0; }
+.mcs-vt-facts dt { font-size:10.5px; color:var(--faint); text-transform:uppercase; letter-spacing:.06em; }
+.mcs-vt-facts dd { margin:0; font-size:13px; color:var(--text); font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.mcs-vt-trail { margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:2px; font-size:12px; color:var(--muted); }
+.mcs-vt-trail .mine { color:var(--text); }
+.mcs-vt-note { margin:0; font-size:13px; font-style:italic; color:var(--text); overflow-wrap:anywhere; }
+.mcs-vt-next { margin:0; font-size:12.5px; color:var(--muted); line-height:1.45; }
+.mcs-vt-sub { margin:4px 0 0; font-size:11px; color:var(--faint); text-transform:uppercase; letter-spacing:.06em; }
+.mcs-vt .mcs-offer-field input { min-height:44px; font-size:16px; }
+.mcs-vt .mcs-offer-do .mcs-go { min-height:44px; }
+
+/* ---- the Deal Summary (M3B B4) ----
+   Receipt-shaped: the card being bought large and first, the trade-ins as
+   short lines, and the bottom line set apart. One column at phone width. */
+${summaryCss("mcs")}
 
 /* ---- the deal's conversation (Milestone 2D.2) ----
    Below the stage area and never above it: the deal's terms and moves come
@@ -1440,7 +1462,7 @@ function scopeNotice(onAddGoal, onOpenOffer) {
     <>
       <span>Your goals are yours to change — say what you&apos;re looking for and how hard.</span>
       <span className="dim">{onOpenOffer
-        ? "Offers are yours to make and answer in Deal Flow. Everything else here is read-only for now: trades and messages arrive later."
+        ? "Offers, trade cards and their values, and messages are yours in Deal Flow. Confirming a deal and arranging the handoff arrive later."
         : "Everything else here is read-only for now: trades and messages arrive later."}</span>
     </>
   ) : (
@@ -1455,7 +1477,7 @@ function scopeLine(sectionId, onAddGoal) {
   if (!onAddGoal) return "Read-only for now — everything here is what MetYet holds for you.";
   /* Not on Deal Flow (Milestone 2C.1): its cards say where each deal stands,
      and the account sheet still says what works today. */
-  return sectionId === "partners" ? "Trades and messages arrive later." : null;
+  return sectionId === "partners" ? "Confirming a deal and arranging the handoff arrive later." : null;
 }
 
 export default function CollectorShell({ state, onSignOut, joined = null, onDismissJoined = null,
@@ -1470,6 +1492,10 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
   /* SELECT TRADE (M3A A3): "hold on", "ready" and taking a card back out —
      the Deal Workspace's, and nowhere else's. */
   onHoldSelection = null, onReadyForSelection = null, onWithdrawTradeCard = null,
+  /* VALUE TRADE (M3B B4): opening and countering a card's market value,
+     accepting the partner's, and countering or accepting its %. The Deal
+     Workspace's, and nowhere else's. Declining a card is the shop's alone. */
+  onProposeMarket = null, onAcceptMarket = null, onProposePercent = null, onAcceptPercent = null,
   onArchiveBinder = null,
   /* WHERE A FILED THING GOES NEXT (Batch 3B-1). Bound at the entrance like
      every other command and handed down, so a section stays a surface that
@@ -1625,7 +1651,9 @@ export default function CollectorShell({ state, onSignOut, joined = null, onDism
           onCounterOffer={onCounterOffer} onAcceptOffer={onAcceptOffer} onWithdrawOffer={onWithdrawOffer}
           onRefresh={onRefresh} onSendMessage={onSendMessage}
           onHoldSelection={onHoldSelection} onReadyForSelection={onReadyForSelection}
-          onWithdrawTradeCard={onWithdrawTradeCard} />
+          onWithdrawTradeCard={onWithdrawTradeCard}
+          onProposeMarket={onProposeMarket} onAcceptMarket={onAcceptMarket}
+          onProposePercent={onProposePercent} onAcceptPercent={onAcceptPercent} />
       ) : matchesOpen ? (
         <GoalMatches key={matchesOpen.goalId} state={state} goalId={matchesOpen.goalId} compose={matchesOpen.compose}
           onBack={closeMatches} onBrowseCards={onBrowseCards}

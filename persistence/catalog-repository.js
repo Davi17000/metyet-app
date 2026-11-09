@@ -549,7 +549,8 @@ function createCatalogRepository(db, { newId } = {}) {
       const rows = await read(`select k.canonical_card_id, k.print_run, k.finish, k.language,
           k.stamp, k.print_variation, k.image_small, k.image_large, k.status,
           c.card_context_id, c.collector_number, c.card_name, c.artist, c.rarity,
-          e.name as expansion_name, e.code as expansion_code, e.series as expansion_series
+          e.name as expansion_name, e.code as expansion_code, e.series as expansion_series,
+          e.printed_total as expansion_printed_total
         from metyet_catalog.canonical_cards k
         join metyet_catalog.card_contexts c on c.card_context_id = k.card_context_id
         join metyet_catalog.expansions e on e.expansion_id = c.expansion_id
@@ -562,6 +563,10 @@ function createCatalogRepository(db, { newId } = {}) {
         expansionCode: r.expansion_code,
         expansionSeries: r.expansion_series,
         collectorNumber: r.collector_number,
+        /* The release's printed total — the "165" of "173/165" (M3B B4). It is
+           the expansion's own nullable column, read as it is; null means the
+           catalog does not hold one, and a reader shows the bare number. */
+        expansionPrintedTotal: r.expansion_printed_total == null ? null : Number(r.expansion_printed_total),
         artist: r.artist,
         rarity: r.rarity,
         printRun: r.print_run,

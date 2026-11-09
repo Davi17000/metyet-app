@@ -34,16 +34,21 @@ import { useSender, statusLine, viewerSeat, isUnresolved, myPriceMove, dollars,
 import CardArt from "../card-art.jsx";
 import { dealProgress } from "./deal-progress.js";
 import { dealGlance, Progress, NegotiationControls } from "./deal-parts.jsx";
-import { rows, text, gradeLine, printingLine } from "./present.js";
+import { rows, text, printingLine } from "./present.js";
+import { dealGradeLine } from "../printing.js";
 import { picturesOf, PhotoViewer } from "./card-viewer.jsx";
 import { DealConversation } from "../deal-conversation.jsx";
 import { useDealFreshness } from "../deal-freshness.js";
 import { CopyRow, liveRows, takenOut, myMove, turnOf, isSelectingStage, isValuingStage,
-  selectRefusal } from "../select-trade.jsx";
+  selectRefusal, tradeRows } from "../select-trade.jsx";
+import { isDealingStage, valuedRows } from "../value-trade.jsx";
+import { DealSummary } from "../deal-summary.jsx";
+import ValueTradeArea from "./value-trade-area.jsx";
 
 export default function DealWorkspace({ state, oppId, onBack, onBrowseCards = null,
   onCounterOffer = null, onAcceptOffer = null, onWithdrawOffer = null, onRefresh = null,
-  onSendMessage = null, onHoldSelection = null, onReadyForSelection = null, onWithdrawTradeCard = null }) {
+  onSendMessage = null, onHoldSelection = null, onReadyForSelection = null, onWithdrawTradeCard = null,
+  onProposeMarket = null, onAcceptMarket = null, onProposePercent = null, onAcceptPercent = null }) {
   const me = viewerSeat(state);
   const deal = rows(state && state.opportunities).find((o) => o.id === oppId) || null;
   const partner = deal ? rows(state && state.partners).find((p) => p.id === deal.partnerId) || null : null;
@@ -55,8 +60,15 @@ export default function DealWorkspace({ state, oppId, onBack, onBrowseCards = nu
      deal is live. A change the check finds is said once, under whose turn it
      is; if checking fails, the deal's moves pause until it succeeds. */
   const live = !!deal && !isEndedDeal(deal) && !!(deal.turn && deal.turn.active);
+  /* Value Trade's open box, confirmation and last word (M3B B4), kept here so
+     a change the check finds can close an open box and say why. */
+  const [vt, setVt] = useState({});
+  useEffect(() => { setVt({}); }, [oppId]);
   const fresh = useDealFreshness({ state, seat: me, deals: live ? [oppId] : [], onRefresh, arrival: oppId,
-    nameOf: () => partnerName });
+    nameOf: () => partnerName,
+    onChange: () => setVt((held) => (held.entry || held.confirming
+      ? { ...held, entry: null, confirming: null, done: null, said: "This deal changed while you were answering — check the card and try again." }
+      : { ...held, done: null })) });
   const frozen = fresh.failed;
 
   /* The card's name and printing, asked of the catalogue the way every other
@@ -75,6 +87,25 @@ export default function DealWorkspace({ state, oppId, onBack, onBrowseCards = nu
     })();
     return () => { current = false; };
   }, [cardId, onBrowseCards]);
+
+  /* M3B B4: and the names of the cards held for it, once for the set, for
+     Value Trade and the Deal Summary. */
+  const tradeIds = deal ? [...new Set(tradeRows(deal).map((r) => r.canonicalCardId).filter(Boolean))] : [];
+  const [named, setNamed] = useState({});
+  useEffect(() => {
+    if (!onBrowseCards || !tradeIds.length) return undefined;
+    let current = true;
+    (async () => {
+      try {
+        const answer = await onBrowseCards.describe(tradeIds);
+        if (!current) return;
+        const next = {};
+        for (const c of rows(answer && answer.cards)) next[c.canonicalCardId] = c;
+        setNamed((held) => ({ ...held, ...next }));
+      } catch (error) { /* a row without a caption is still the copy */ }
+    })();
+    return () => { current = false; };
+  }, [tradeIds.join(","), onBrowseCards]);
 
   /* Arriving starts at the top of the deal, with focus on its title, so a
      keyboard or screen reader starts there rather than on a button that no
@@ -118,6 +149,9 @@ export default function DealWorkspace({ state, oppId, onBack, onBrowseCards = nu
   }
 
   const progress = dealProgress(deal);
+  const valuing = isValuingStage(deal);
+  /* Every card valued: Deal, which has no control yet — shown read-only. */
+  const dealing = isDealingStage(deal) && valuedRows(deal).length > 0;
   const glance = isEndedDeal(deal) ? null : dealGlance(deal, me, partnerName);
   const printing = printingLine(card);
   const pics = picturesOf(copy, card);
@@ -157,11 +191,28 @@ export default function DealWorkspace({ state, oppId, onBack, onBrowseCards = nu
       <div className="mcs-ws-body">
         <StageArea deal={deal} me={me} partnerName={partnerName} copy={copy} progress={progress}
           sender={sender} onCounterOffer={onCounterOffer} onAcceptOffer={onAcceptOffer}
-          onWithdrawOffer={onWithdrawOffer} frozen={frozen} />
-        {isSelectingStage(deal) || isValuingStage(deal) ? (
+          onWithdrawOffer={onWithdrawOffer} frozen={frozen} valuing={valuing || dealing} />
+        {isSelectingStage(deal) ? (
           <SelectTradeArea key={deal.id} deal={deal} state={state} me={me} partnerName={partnerName} frozen={frozen}
             onBrowseCards={onBrowseCards} onRefresh={onRefresh} onHoldSelection={onHoldSelection}
             onReadyForSelection={onReadyForSelection} onWithdrawTradeCard={onWithdrawTradeCard} />
+        ) : null}
+        {/* The last card left while it was being valued (M3B B4): back to
+            choosing cards, and the Collector is told why. */}
+        {isSelectingStage(deal) && vt.emptied ? <p className="mcs-sel-done mcs-vt-emptied" role="status">{vt.emptied}</p> : null}
+        {/* VALUE TRADE AND THE DEAL SUMMARY (M3B B4). The cards valued one by
+            one, then what the deal comes to, as a receipt reads. */}
+        {valuing || dealing ? (
+          <ValueTradeArea deal={deal} state={state} me={me} partnerName={partnerName} named={named}
+            ui={vt} setUi={setVt} frozen={frozen} onRefresh={onRefresh}
+            onProposeMarket={onProposeMarket} onAcceptMarket={onAcceptMarket}
+            onProposePercent={onProposePercent} onAcceptPercent={onAcceptPercent}
+            onWithdrawTradeCard={onWithdrawTradeCard} />
+        ) : null}
+        {valuing || dealing ? (
+          <DealSummary cls="mcs" deal={deal} seat={me}
+            featured={{ card, copy }} named={named}
+            copies={new Map(rows(state && state.collectorCopies).map((b) => [b.id, b]))} />
         ) : null}
         {/* Keyed by the deal: a draft, a nonce and a send in flight belong to
             ONE deal, and are never carried onto another one opened after. */}
@@ -185,11 +236,13 @@ export default function DealWorkspace({ state, oppId, onBack, onBrowseCards = nu
    agreement and after a deal ends, so the context is never lost. The moves
    are the shared `NegotiationControls`; what may be pressed is the server's
    `turn`, never these rows. */
-function StageArea({ deal, me, partnerName, copy, progress, sender, onCounterOffer, onAcceptOffer, onWithdrawOffer, frozen = false }) {
+/* `valuing` (M3B B4): past Select Trade the cards' own area says what comes
+   next, so the price area does not repeat it. */
+function StageArea({ deal, me, partnerName, copy, progress, sender, onCounterOffer, onAcceptOffer, onWithdrawOffer, frozen = false, valuing = false }) {
   const open = isUnresolved(deal);
   const ended = isEndedDeal(deal);
   const agreed = !open && dollars(deal.agreedPrice);
-  const terms = [copy ? gradeLine(copy) : null,
+  const terms = [copy ? dealGradeLine(copy) : null,
     deal.firmOnPrice === true ? "Firm on Price" : deal.firmOnPrice === false ? "Open to Offers" : null]
     .filter(Boolean).join(" · ");
   const prices = priceRows(deal, me, partnerName);
@@ -212,7 +265,7 @@ function StageArea({ deal, me, partnerName, copy, progress, sender, onCounterOff
       {open && !myPriceMove(deal, me) ? (
         <p className="mcs-ws-say">{`${partnerName} can accept, counter or decline.`}</p>
       ) : null}
-      {agreed && !ended ? (
+      {agreed && !ended && !valuing ? (
         <p className="mcs-ws-say">
           {"Agreeing a price doesn't complete the deal."}
           {progress && progress.next ? ` ${progress.next} comes next, and isn't available in MetYet yet.` : null}
@@ -271,7 +324,10 @@ function SelectTradeArea({ deal, state, me, partnerName, onBrowseCards, onRefres
   }, [ids.join(","), onBrowseCards]);
 
   const mine = myMove(deal, me, "more-cards", "adding-cards");
-  const say = valuing ? "These cards are held for this deal. Value Trade isn't available in MetYet yet."
+  /* M3B B4: Value Trade has its own area now, so this one is drawn only while
+     cards are being chosen; the held-cards wording stays for a stage it has
+     never seen reaching it. */
+  const say = valuing ? "These cards are held for this deal."
     : reason === "adding-cards" ? `You're adding cards. Mark cards Trade / Sell in your Binders, then tell ${who} you're ready.`
       : reason === "more-cards" ? (live.length
         ? `${who} chose ${live.length === 1 ? "a card" : `${live.length} cards`} to consider. Add more Trade/Sell cards, or tell ${who} you're ready.`

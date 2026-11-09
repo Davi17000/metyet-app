@@ -432,7 +432,9 @@ describe("K. no production door yet", () => {
     for (const c of ["startOpportunity", "proposePrice", "acceptPrice", "declineOffer", "cancelOpportunity"]) {
       assert(EXPOSED_COMMANDS.includes(c), `${c} is not on the production allow-list`);
     }
-    for (const c of ["proposeTradeSelection", "chooseCashOnly", "proposeMarketValue", "acceptMarketValue",
+    /* M3B B3 (founder-authorized) opened Value Trade's five with the shop's
+       screen; everything past them is still shut. */
+    for (const c of ["proposeTradeSelection", "chooseCashOnly",
       "acceptDeal", "proposeFinalBalance", "proposeFulfillment", "confirmHandoff", "setCopyPending"]) {
       assert(!EXPOSED_COMMANDS.includes(c), `${c} reached the production allow-list`);
     }

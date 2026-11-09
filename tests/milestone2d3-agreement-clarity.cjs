@@ -263,7 +263,8 @@ describe("D. a printing in words on the shop's side", () => {
     const { st, oppId } = offered();
     const s = await shop(st);
     const sub = flat(byCls(s.rec(oppId), "tps-rec-s")[0]);
-    eq(sub, "Mudkip · Ruby & Sapphire · #60 · Normal · Raw · Near Mint");
+    /* RESTATED (M3B B4 polish): a deal says a raw copy one way — "Near Mint · Ungraded". */
+    eq(sub, "Mudkip · Ruby & Sapphire · #60 · Normal · Near Mint · Ungraded");
     assert(!/non_holo|not_applicable|\ben\b/.test(flat(s.rec(oppId))), flat(s.rec(oppId)));
   });
   test("one helper for both workspaces: the Collector's re-exports it, and neither imports the other", () => {

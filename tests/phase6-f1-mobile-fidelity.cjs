@@ -106,7 +106,9 @@ describe("B. the account, one tap away", () => {
     const d = dialog(r);
     assert(d && d.props["aria-modal"] === "true", "no modal account sheet");
     const t = flat(d);
-    for (const s of ["Casey Lin", "Collector", "What works today", "Your goals are yours to change", "trades and messages arrive later"]) assert(t.includes(s), `missing "${s}": ${t}`);
+    /* RESTATED (M3B B4 polish): trades and messages now work; what arrives later is confirming a deal and the handoff. */
+    for (const s of ["Casey Lin", "Collector", "What works today", "Your goals are yours to change", "Confirming a deal and arranging the handoff arrive later"]) assert(t.includes(s), `missing "${s}": ${t}`);
+    assert(!/trades and messages arrive later/i.test(t), "the sheet still says trades and messages arrive later: " + t);
     TR.act(() => { d.findAll((n) => n.type === "button" && flat(n) === "Sign out")[0].props.onClick(); });
     eq(out, 1, "Sign out did not sign out");
   });
@@ -127,7 +129,7 @@ describe("C. the release notice: its words kept, said where they are true", () =
     const r = render(LIVE);
     for (const tab of ["Browse", "Binders"]) { go(r, tab); eq(scope(r), null, `${tab} carries a notice line`); }
   });
-  test("Trusted Partners says trades and messages arrive later; Deal Flow carries no line", () => {
+  test("Trusted Partners says what arrives later; Deal Flow carries no line", () => {
     const r = render(LIVE);
     /* RESTATED (Milestone 2C.1, founder brief): Deal Flow's landing page is a
        title, one subtitle and its Goal cards — the line and its "What works
@@ -136,7 +138,8 @@ describe("C. the release notice: its words kept, said where they are true", () =
     go(r, "Deal Flow");
     eq(scope(r), null, "Deal Flow carries a notice line");
     go(r, "Trusted Partners");
-    assert(scope(r) && /^Trades and messages arrive later\. What works today$/.test(flat(scope(r))), `Trusted Partners: ${scope(r) && flat(scope(r))}`);
+    /* RESTATED (M3B B4 polish): trades and messages arrived; the line names what has not. */
+    assert(scope(r) && /^Confirming a deal and arranging the handoff arrive later\. What works today$/.test(flat(scope(r))), `Trusted Partners: ${scope(r) && flat(scope(r))}`);
   });
   test("a shell that can change nothing says so on every screen", () => {
     const r = render();
@@ -147,10 +150,11 @@ describe("C. the release notice: its words kept, said where they are true", () =
   });
   test("the wording is the banner's own, one source for every place it appears", () => {
     const src = fs.readFileSync(path.join(ROOT, "client/collector/CollectorShell.jsx"), "utf8");
-    eq((src.match(/Offers are yours to make and answer in Deal Flow\. Everything else here is read-only for now: trades and messages arrive later\./g) || []).length, 1, "the notice was copied, and can drift");
+    /* RESTATED (M3B B4 polish): the notice's new wording, still written once. */
+    eq((src.match(/Offers, trade cards and their values, and messages are yours in Deal Flow\. Confirming a deal and arranging the handoff arrive later\./g) || []).length, 1, "the notice was copied, and can drift");
     const r = render(LIVE);
     eq(flat(r.root.findAll((n) => n.props && n.props.className === "mcs-ro")[0]),
-      "Your goals are yours to change — say what you're looking for and how hard. Offers are yours to make and answer in Deal Flow. Everything else here is read-only for now: trades and messages arrive later.", "the desktop banner changed");
+      "Your goals are yours to change — say what you're looking for and how hard. Offers, trade cards and their values, and messages are yours in Deal Flow. Confirming a deal and arranging the handoff arrive later.", "the desktop banner changed");
   });
 });
 

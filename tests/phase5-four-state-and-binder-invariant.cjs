@@ -924,13 +924,14 @@ describe("E. The boundaries this batch did not cross", () => {
     /* RE-PINNED (Market Validation Batch 3B): 24 → 29. The five price
        commands joined the door with the Deal Flow and Opportunities controls
        that send them, each named in the allow-list; any other move still fails. */
-    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six — each founder-approved */ eq(EXPOSED_COMMANDS.length, 37, "the production surface is not the size this batch declared");
+    /* P6-F4 B5: + changeCollectingState; M2D.1: + sendDealMessage; M3A A3: + Select Trade's six; M3B B3: + Value Trade's five — each founder-approved */ eq(EXPOSED_COMMANDS.length, 42, "the production surface is not the size this batch declared");
     assert(EXPOSED_COMMANDS.includes("setCollectorCopyKept"), "PC has a control but no door");
     const { COMMAND_NAMES } = require("../domain/metyet-commands.js");
     const known = COMMAND_NAMES.has ? (n) => COMMAND_NAMES.has(n)
       : (n) => [...COMMAND_NAMES].includes(n);
-    for (const shut of ["acceptMarketValue",
-      "proposeMarketValue", "acceptDeal", "setCopyPending", "proposeTradeSelection",
+    /* M3B B3 opened Value Trade's five with the shop's screen (founder-authorized); everything else here stays shut. */
+    for (const shut of [
+      "acceptDeal", "setCopyPending", "proposeTradeSelection",
       "confirmHandoff", "setInterest", "sendMessage"]) {
       assert(known(shut), `${shut} is not a command, so this line asserts nothing`);
       assert(!EXPOSED_COMMANDS.includes(shut), `${shut} was exposed`);

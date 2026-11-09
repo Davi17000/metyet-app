@@ -641,3 +641,38 @@ export function withdrawTradeCard(target) {
   needsStore("withdrawTradeCard", target);
   return (oppId, tradeCardId) => target.execute("withdrawTradeCard", { oppId, tradeCardId });
 }
+
+/* VALUE TRADE (M3B B3). Each held card is valued in two steps — its market
+   value, then the percentage of it the shop credits — and each step is the
+   same conversation: one side proposes, the other accepts or counters. Five
+   doors, each one command, each about ONE card of one deal (`tradeCardId`).
+
+   WHOLE NUMBERS, SENT AS THE SERVER STORES THEM. A market value is whole
+   dollars. A percentage is typed as a whole number (80) and sent as the
+   fraction the domain has always stored (0.8); the server checks it is a whole
+   1–100%. Nothing here rounds or corrects what was typed — the screen refuses
+   anything else before it gets here.
+
+   `declineCard` is the shop's "not for this deal" on one card, with an
+   optional short note both people see. Only a note with words in it is sent. */
+export function proposeMarketValue(target) {
+  needsStore("proposeMarketValue", target);
+  return (oppId, tradeCardId, amount) => target.execute("proposeMarketValue", { oppId, tradeCardId, amount });
+}
+export function acceptMarketValue(target) {
+  needsStore("acceptMarketValue", target);
+  return (oppId, tradeCardId) => target.execute("acceptMarketValue", { oppId, tradeCardId });
+}
+export function proposeTradePercent(target) {
+  needsStore("proposeTradePercent", target);
+  return (oppId, tradeCardId, wholePercent) => target.execute("proposeTradePercent", { oppId, tradeCardId, percent: wholePercent / 100 });
+}
+export function acceptTradePercent(target) {
+  needsStore("acceptTradePercent", target);
+  return (oppId, tradeCardId) => target.execute("acceptTradePercent", { oppId, tradeCardId });
+}
+export function declineCard(target) {
+  needsStore("declineCard", target);
+  return (oppId, tradeCardId, note) => target.execute("declineTradeCard", {
+    oppId, tradeCardId, ...(typeof note === "string" && note.trim() ? { note } : {}) });
+}

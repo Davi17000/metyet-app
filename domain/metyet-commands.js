@@ -98,6 +98,24 @@ const isRelated = (state, partnerId, collectorId) => list(state.relationships)
   .some((r) => r.partnerId === partnerId && r.collectorId === collectorId
     && (r.status == null || r.status === "accepted"));
 
+/* NO NEW COMMITMENT OUTSIDE A TRUSTED RELATIONSHIP (M3B B2.5, founder-approved).
+   Starting a deal and choosing or holding a Collector's cards have always
+   needed a current relationship; every later step that makes or changes a
+   commitment — a price, a trade value, a percentage, cash only, the final
+   balance, final agreement, and a shop marking its card pending for the deal —
+   now asks the same question of the deal's own two parties and refuses with
+   `no-relationship` when the answer is no.
+
+   WAYS OUT STAY OPEN, ON PURPOSE. Withdrawing a card, declining one,
+   deselecting, holding, ending the deal or declining the offer, releasing a
+   pending mark, deal messages and marking a deal viewed are not commitments:
+   they are how either person releases themselves — and the Collector their
+   cards — from a negotiation that can no longer finish. A deal already finally
+   agreed is an obligation made while the trust held, so Fulfillment and
+   handoff are untouched. Nothing here ends a deal or releases a hold by
+   itself. */
+const pairTrusted = (state, o) => isRelated(state, o.partnerId, o.collectorId);
+
 const cardById = (state, id) => list(state.catalog).find((c) => c.id === id) || null;
 const oppById = (state, id) => list(state.opportunities).find((o) => o.id === id) || null;
 const seatOf = (a) => a.seat;
@@ -120,6 +138,15 @@ const sameIdSet = (xs, ys) => {
 const validMoney = (n) => typeof n === "number" && isFinite(n);
 /* A price in MetYet's terms: a whole number of dollars above zero (Batch 2.1). */
 const wholeDollars = (n) => Number.isSafeInteger(n) && n > 0;
+/* A partner's note on a declined card (M3B D7): one short line, optional. */
+const DECLINE_NOTE_MAX = 140;
+/* A trade percentage in MetYet's terms (M3B D1): a fraction whose percentage is
+   a whole number from 1 to 100. */
+const wholePercent = (p) => {
+  if (!validMoney(p)) return false;
+  const pct = Math.round(p * 100);
+  return pct >= 1 && pct <= 100 && Math.abs(p * 100 - pct) < 1e-9;
+};
 
 /* A label a person typed, or nothing. Trimmed to one line and capped, because a
    hint is for recognising an invitation in a list — not a place to put a
@@ -961,6 +988,7 @@ const COMMANDS = {
     if (o.partnerId !== a.partnerId) return refuse(R.notParticipant);
     if (o.invId !== invId) return refuse(R.identityMismatch);
     if (!D.isActive(o)) return refuse(R.terminal);
+    if (!pairTrusted(state, o)) return refuse(R.noRelationship);
     return copy.pendingFor === wanted ? done(state, invId) : set(wanted);
   },
 
@@ -2127,6 +2155,7 @@ const COMMANDS = {
     const at = ctx.at;
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
+    if (!pairTrusted(state, o)) return refuse(R.noRelationship);
     if (o.stage !== "agree-price") return refuse(R.wrongStage);
     /* THE CARD HAS TO STILL BE THERE (Option B, Item 0). Until now two people
        could go on proposing figures for a card that had been sold and handed
@@ -2168,6 +2197,7 @@ const COMMANDS = {
     const at = ctx.at;
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
+    if (!pairTrusted(state, o)) return refuse(R.noRelationship);
     if (o.stage !== "agree-price") return refuse(R.wrongStage);
     /* THE CARD HAS TO STILL BE PURSUABLE BY THIS DEAL — and, since Option B,
        that no longer means "nobody else has agreed a value on it". Two
@@ -2404,6 +2434,57 @@ const COMMANDS = {
     }), tradeCardId);
   },
 
+  /* THE PARTNER DECLINES ONE CARD DURING VALUE TRADE (M3B D2, D7, D8).
+
+     Choosing a card to consider is not an obligation to take it. Having looked
+     at its condition, its value or anything else, the partner may decline it —
+     about the card, never about the Collector. The row is marked "rejected", as
+     a deselect in Select Trade is ("they looked at this one and passed"), with
+     WHEN and AT WHICH STAGE it was declined and an optional short note, so a
+     decline reads apart from a deselect AND from a Collector's withdrawal (which
+     sets `withdrawn`, not `inclusion`). Everything the row recorded — both
+     negotiation threads, any agreed market value or percentage — stays on it as
+     history.
+
+     WHAT FOLLOWS IS DERIVED, NOT WRITTEN. A rejected row is not live, so it
+     holds no reservation (`binderRowState`), owns no turn (`cardOwner`) and
+     earns no credit (`totalTradeValue`): the cash difference is recalculated
+     from the cards that remain, and nothing is written to the copy, its
+     Trade/Sell disposition or the shop's inventory. If no card remains the deal
+     returns to Select Trade, exactly as when the Collector withdraws the last
+     card; otherwise Value Trade closes the moment every remaining card is
+     settled, as it always has.
+
+     At any turn — like a withdrawal, it is a retraction, not a move — and in
+     Value Trade only. A repeat of a decline that landed answers as done and
+     changes nothing, so a lost answer can be retried; a row that is already out
+     of the deal some other way is refused. */
+  declineTradeCard(state, a, { oppId, tradeCardId, note }, ctx) {
+    const at = ctx.at;
+    if (a.seat !== "tp") return refuse(R.notOwner);
+    const { o, refused } = oppGate(state, a, oppId);
+    if (refused) return refuse(refused);
+    const row = (o.trade && o.trade.cards || []).find((c) => c.id === tradeCardId);
+    if (!row) return refuse(R.notFound);
+    if (row.inclusion === "rejected" && row.declinedStage === "value-trade") return done(state, tradeCardId);
+    if (o.stage !== "value-trade") return refuse(R.wrongStage);
+    if (!D.TRADE.liveRow(row)) return refuse(R.nothingToAccept);
+    /* The note is optional: absent or blank is no note. One that is not text
+       says nothing; one over the limit is refused, never cut (as a deal
+       message is, counted in characters a person sees). */
+    if (note != null && typeof note !== "string") return refuse(R.messageEmpty);
+    const said = typeof note === "string" ? note.replace(/\s+/g, " ").trim() : "";
+    if ([...said].length > DECLINE_NOTE_MAX) return refuse(R.messageTooLong);
+    return done(withOpp(state, oppId, (x) => {
+      let next = { ...x, trade: { ...x.trade,
+        cards: x.trade.cards.map((c) => (c.id === tradeCardId
+          ? { ...c, inclusion: "rejected", declinedAt: at || null, declinedStage: x.stage, ...(said ? { declineNote: said } : {}) }
+          : c)) } };
+      next = D.TRADE.liveTradeRows(next).length ? D.TRADE.closeValuation(next) : D.TRADE.reopenSelection(next, at);
+      return stamp(next, at);
+    }), tradeCardId);
+  },
+
   /* ------------------------------------------------------------ value trade */
   proposeMarketValue(state, a, p, ctx) { return valueStep(state, a, p, ctx, "market", "propose"); },
   acceptMarketValue(state, a, p, ctx) { return valueStep(state, a, p, ctx, "market", "accept"); },
@@ -2418,6 +2499,7 @@ const COMMANDS = {
     const at = ctx.at;
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
+    if (!pairTrusted(state, o)) return refuse(R.noRelationship);
     if (o.stage !== "deal") return refuse(R.wrongStage);
     if (termsChanged(o, expect)) return refuse(R.termsChanged);
     /* The FINAL cash figure is the strongest statement either side makes about
@@ -2449,6 +2531,7 @@ const COMMANDS = {
     const at = ctx.at;
     const { o, refused } = oppGate(state, a, oppId);
     if (refused) return refuse(refused);
+    if (!pairTrusted(state, o)) return refuse(R.noRelationship);
     if (o.stage !== "deal") return refuse(R.wrongStage);
     if (!turnFor(a, o, "final")) return refuse(R.notYourTurn);
     /* AGREEMENT IS TO WHAT THE CALLER SAW (M3A A1). A screen that sends
@@ -2607,6 +2690,7 @@ function valueStep(state, a, { oppId, tradeCardId, amount, percent }, ctx, phase
   const at = ctx.at;
   const { o, refused } = oppGate(state, a, oppId);
   if (refused) return refuse(refused);
+  if (!pairTrusted(state, o)) return refuse(R.noRelationship);
   if (o.stage !== "value-trade") return refuse(R.wrongStage);
   /* NO NEW ECONOMIC STATEMENTS ABOUT A CARD THAT IS GONE. The same argument
      `proposePrice` makes: valuing a trade card is valuing it AGAINST the
@@ -2619,12 +2703,21 @@ function valueStep(state, a, { oppId, tradeCardId, amount, percent }, ctx, phase
   if (!turnFor(a, o, "value") || D.cardOwner(row) !== a.seat) return refuse(R.notYourTurn);
   if (phase === "market" && row.agreedMarket != null) return refuse(R.wrongStage);
   if (phase === "percent" && (row.agreedMarket == null || row.agreedPercent != null)) return refuse(R.wrongStage);
+  /* WHOLE DOLLARS AND WHOLE PERCENTAGES (M3B D1, founder-approved), as Agree on
+     Price already is: MetYet does not negotiate in cents or in fractions of a
+     percent. A trade percentage is still STORED as the fraction it always was
+     (0.8 = 80%) — only what may be proposed is narrowed, to 1%–100% in whole
+     steps. The check is on the fraction × 100 within a rounding tolerance, so
+     a value such as 0.29 (28.999999999999996 × 100 in binary) is the whole 29%
+     it means, and 0.295 is refused. Accepting proposes nothing new, so it is
+     untouched: an agreed value is still only ever the other side's standing
+     proposal. */
   let next;
   if (phase === "market") {
-    if (action === "propose" && !(validMoney(amount) && amount > 0)) return refuse(R.invalidAmount);
+    if (action === "propose" && !wholeDollars(amount)) return refuse(R.invalidAmount);
     next = D.TRADE.applyMarket(row, a.seat, action, amount, at);
   } else {
-    if (action === "propose" && !(validMoney(percent) && percent > 0 && percent <= 1)) return refuse(R.invalidAmount);
+    if (action === "propose" && !wholePercent(percent)) return refuse(R.invalidAmount);
     next = D.TRADE.applyPercent(row, a.seat, action, percent, at);
   }
   if (next === row) return refuse(action === "accept" ? R.nothingToAccept : R.notYourTurn);
@@ -2644,6 +2737,7 @@ COMMANDS.chooseCashOnly = (state, a, { oppId }, ctx) => {
   if (a.seat !== "collector") return refuse(R.notOwner);
   const { o, refused } = oppGate(state, a, oppId);
   if (refused) return refuse(refused);
+  if (!pairTrusted(state, o)) return refuse(R.noRelationship);
   if (o.stage !== "select-trade") return refuse(R.wrongStage);
   const gone = copyBlockedFor(state, o, a);
   if (gone) return refuse(gone);
