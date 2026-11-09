@@ -117,6 +117,8 @@ export default function ProductionApp({ state, onSignOut, onSaveProfile = null,
       onWithdrawOffer={onWithdrawOffer} onRefresh={onRefresh} onSendMessage={onSendMessage}
       onHoldSelection={onHoldSelection} onReadyForSelection={onReadyForSelection}
       onWithdrawTradeCard={onWithdrawTradeCard}
+      onProposeMarket={onProposeMarket} onAcceptMarket={onAcceptMarket}
+      onProposePercent={onProposePercent} onAcceptPercent={onAcceptPercent}
       onCreateBinder={onCreateBinder} onRenameBinder={onRenameBinder}
       onArchiveBinder={onArchiveBinder}
       onFileObject={onFileObject} onUnfileObject={onUnfileObject}

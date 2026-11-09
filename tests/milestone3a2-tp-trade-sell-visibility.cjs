@@ -257,8 +257,9 @@ describe("B. Through the whole production path", () => {
     const b = squash(textOf(rowFor(s.root(), k.slabB)));
     const raw = squash(textOf(rowFor(s.root(), k.raw)));
     /* The printing: by canonical id, set · number · finish · print run. */
-    for (const row of [a, b]) assert(/^Charizard Base Set · #4 · Holo · First Edition/.test(row), "printing: " + row);
-    assert(/^Charizard Base Set · #4 · Holo\b/.test(raw) && !/First Edition/.test(raw), "the other printing: " + raw);
+    /* RESTATED (M3B B4 polish): the printed number with its set total. */
+    for (const row of [a, b]) assert(/^Charizard Base Set · 4\/102 · Holo · First Edition/.test(row), "printing: " + row);
+    assert(/^Charizard Base Set · 4\/102 · Holo\b/.test(raw) && !/First Edition/.test(raw), "the other printing: " + raw);
     /* The object: each copy's own grade, cert and photographs — never its twin's. */
     assert(/PSA 9/.test(a) && /Cert CERT-AAA-111/.test(a) && /Photos: front and back/.test(a), "copy A: " + a);
     assert(!/PSA 7|CERT-BBB/.test(a), "copy A borrowed copy B's facts: " + a);

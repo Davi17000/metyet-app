@@ -263,7 +263,9 @@ describe("2. Both on the deal: each sees the other's move within one check, and 
     /* The stage moves: the shop starts valuing; Casey's next check says so. */
     await press(shopPanel(north, ctx.nl), "Start valuing 1 card"); await press(shopPanel(north, ctx.nl), "Start valuing");
     await tick();
-    assert(/held for this deal/.test(flat(area(casey, ctx.nl))), flat(area(casey, ctx.nl)));
+    /* RESTATED (M3B B4): her side is Value Trade now. */
+    const valued = ws(casey, ctx.nl).findAll((n) => n.type === "section" && n.props["data-value"] === ctx.nl)[0];
+    assert(valued && /Valuing your trade cards/.test(flat(valued)), flat(ws(casey, ctx.nl)).slice(0, 300));
     assert(noteOf(ws(casey, ctx.nl)).includes("Updated — the chosen cards are now held for this deal."), json(noteOf(ws(casey, ctx.nl))));
   });
   test("a person's own move is not announced to them as an update", async () => {

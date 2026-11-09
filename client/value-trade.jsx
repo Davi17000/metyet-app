@@ -30,6 +30,7 @@
    negative, the shop pays the Collector. A test holds these to the domain's
    own functions. Nothing here is sent; the server's figures are the record.
    ========================================================================== */
+import React, { useState } from "react";
 import { tradeRows, inDeal } from "./select-trade.jsx";
 
 const text = (v) => (typeof v === "string" && v.trim() ? v.trim() : null);
@@ -100,6 +101,28 @@ export function cardState(deal, row, seat) {
   return { kind: num(mine) != null ? "await" : "await-open", phase, standing: num(mine), now: false, next: false };
 }
 
+/* A CARD'S TAG, AND WHAT A CARD OUT OF THE DEAL MEANS, in the viewer's words
+   (M3B B4) — said here once so neither screen names a row's stored state.
+   `other` is the other person's name. */
+export function cardTag(st, seat, other) {
+  if (st.kind === "agreed") return "Agreed";
+  if (st.kind === "declined") return seat === "tp" ? "Declined by you" : `Declined by ${other}`;
+  if (st.kind === "withdrawn") return seat === "tp" ? `Taken out by ${other}` : "You took this out";
+  if (st.kind === "answer" || st.kind === "open") return st.now ? "Your move" : `You're next, after ${other}`;
+  if (st.kind === "await" || st.kind === "await-open") return `Waiting for ${other}`;
+  return null;
+}
+export const isOut = (st) => st.kind === "declined" || st.kind === "withdrawn";
+export function leftNote(st, row, seat, other) {
+  if (!isOut(st)) return null;
+  const note = st.kind === "declined" && text(row && row.declineNote) ? text(row.declineNote) : null;
+  if (seat === "tp") return { note: note ? `Your note: “${note}”` : null, next: null };
+  return { note: note ? `Note from ${other}: “${note}”` : null,
+    next: st.kind === "declined"
+      ? `It's out of this deal and still in your Trade/Sell cards. You can ask ${other} about it in the conversation below.`
+      : "It's out of this deal and still in your Trade/Sell cards." };
+}
+
 /* Cards waiting on each seat — read from `owner`, for the deal's headline. */
 export const waitingOn = (deal, seat) => valuedRows(deal).filter((r) => ownerOf(r) === seat).length;
 
@@ -141,14 +164,6 @@ export function cashPicture(deal) {
     balance, direction: balance == null ? "unknown" : balance > 0 ? "collector-to-tp" : balance < 0 ? "tp-to-collector" : "even",
     amount: balance == null ? null : Math.abs(balance) };
 }
-/* Who pays whom, from the viewer's side. */
-export function cashLine(picture, seat, other) {
-  if (picture.direction === "unknown") return null;
-  if (picture.direction === "even") return "Even — nobody pays anything.";
-  const toTp = picture.direction === "collector-to-tp";
-  if (seat === "tp") return toTp ? `${other} pays you ${usd(picture.amount)}` : `You pay ${other} ${usd(picture.amount)}`;
-  return toTp ? `You pay ${other} ${usd(picture.amount)}` : `${other} pays you ${usd(picture.amount)}`;
-}
 
 /* ----------------------------------------------------------- ENTRY
    What was typed, read the way the server will check it. Never rounded or
@@ -178,7 +193,7 @@ export const noteLength = (raw) => [...tidyNote(raw)].length;
 export const valueRefusal = (seat, other) => (code) => {
   const them = other || (seat === "tp" ? "the collector" : "your Trusted Partner");
   const TABLE = {
-    "not-your-turn": `It's ${them}'s move on this card right now. The latest is shown.`,
+    "not-your-turn": `This card is waiting on ${them} right now. The latest is shown.`,
     "wrong-stage": "This card has moved on since you looked. The latest is shown.",
     "invalid-amount": "Market values are whole dollars above $0, and percentages whole numbers from 1 to 100.",
     "not-found": "That card isn't in this deal any more. The latest is shown.",
@@ -195,3 +210,35 @@ export const valueRefusal = (seat, other) => (code) => {
   return TABLE[code] || null;
 };
 export { text };
+
+/* ----------------------------------------------------------- THE BOX
+   (Moved here from the shop's Opportunities in M3B B4, unchanged, so both
+   seats type a value into the same box.) One whole number: dollars for a
+   market value, a percentage (1–100) for a trade %. Nothing is filled in. A
+   percentage previews the credit it would give against the agreed market
+   value — the domain's own rounding. `cls` is the seat's class prefix. */
+export function ValueEntry({ cls, mode, market = null, verb, busy = false, onSubmit, onCancel }) {
+  const [raw, setRaw] = useState("");
+  const entry = readValue(mode, raw);
+  const ready = entry.value != null && !busy;
+  const preview = mode === "percent" && entry.value != null ? creditAt(market, entry.value) : null;
+  return (
+    <form className={`${cls}-offer-entry`}
+      onSubmit={(e) => { if (e && e.preventDefault) e.preventDefault(); if (ready) onSubmit(entry.value); }}>
+      <label className={`${cls}-offer-field`}>
+        <span className={`${cls}-offer-unit`}>{mode === "percent" ? "%" : "$"}</span>
+        <input type="text" inputMode="numeric" autoComplete="off" value={raw}
+          aria-label={mode === "percent" ? "Trade percentage, a whole number from 1 to 100" : "Market value, in whole dollars"}
+          onChange={(e) => setRaw(e.target.value)} />
+      </label>
+      {entry.problem ? <p className={`${cls}-offer-problem`} role="status">{entry.problem}</p>
+        : preview != null ? <p className={`${cls}-offer-line`}>{`That's ${usd(preview)} of trade credit on ${usd(market)}.`}</p> : null}
+      <div className={`${cls}-offer-do`}>
+        <button type="submit" className={`${cls}-go${cls === "mcs" ? " mcs-go-primary" : ""}`} disabled={!ready}>
+          {busy ? "Sending…" : entry.value != null ? `${verb} · ${mode === "percent" ? `${entry.value}%` : usd(entry.value)}` : verb}
+        </button>
+        <button type="button" className={`${cls}-go quiet`} disabled={busy} onClick={onCancel}>Cancel</button>
+      </div>
+    </form>
+  );
+}

@@ -186,7 +186,8 @@ describe("A. The door: production stays shut; the test door adds exactly five", 
     }
     eq(await ctx.version(), before, "a refusal wrote the world");
   });
-  test("only client/commands.js sends the five, and only the shop's shell is handed them", () => {
+  /* RESTATED (M3B B4): the Collector's shell is handed the four that are hers. */
+  test("only client/commands.js sends the five; the shop's shell is handed all five, the Collector's never decline", () => {
     const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory()
       ? walk(path.join(dir, e.name)) : /\.(js|jsx)$/.test(e.name) ? [path.join(dir, e.name)] : []));
     for (const f of walk(path.join(ROOT, "client"))) {
@@ -198,7 +199,7 @@ describe("A. The door: production stays shut; the test door adds exactly five", 
       }
     }
     const co = fs.readFileSync(path.join(ROOT, "client/collector/CollectorShell.jsx"), "utf8");
-    assert(!/onProposeMarket|onAcceptMarket|onProposePercent|onAcceptPercent|onDeclineCard/.test(co), "the Collector's shell is handed Value Trade before B4");
+    assert(!/onDeclineCard/.test(co), "the Collector's shell is handed the shop's decline");
   });
 });
 

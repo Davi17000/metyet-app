@@ -22,7 +22,7 @@
    thread or from which fields happen to be filled. A stage this build has
    never seen gets no bar at all — it is shown as itself, as `stageLabel` does.
 
-   WHAT IS AVAILABLE. Production lets a Collector act on step 1 only; every
+   WHAT IS AVAILABLE. Production lets a Collector act on steps 1–4 (M3B B4); every
    later step is planned, never offered. `AVAILABLE_THROUGH` is that fact, and
    a step past it is drawn as "not yet available", never as something to do.
 
@@ -56,13 +56,15 @@ export const STAGE_JOURNEY = Object.freeze({
 });
 
 /* The last journey step production lets a Collector act on. RESTATED
-   (M3A A3): Select Trade, step 2, now has its screen. */
-export const AVAILABLE_THROUGH = 2;
+   (M3A A3): Select Trade, step 2, now has its screen. RESTATED AGAIN (M3B
+   B4): Value Trade, steps 3–4, has both seats' screens. */
+export const AVAILABLE_THROUGH = 4;
 
 /* The stage a deal is waiting in that production does not offer yet, by the
    domain's own name — what a Collector is told comes next. RESTATED (M3A A3):
-   that was Select Trade; it is now Value Trade. */
-export const NEXT_PLANNED_STAGE = Object.freeze({ "value-trade": "Value Trade" });
+   that was Select Trade; it is now Value Trade. RESTATED AGAIN (M3B B4):
+   Value Trade has its screen; a deal waits in Deal for the next one. */
+export const NEXT_PLANNED_STAGE = Object.freeze({ deal: "Deal" });
 
 const own = (o, k) => typeof k === "string" && Object.prototype.hasOwnProperty.call(o, k);
 

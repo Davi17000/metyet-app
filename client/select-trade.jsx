@@ -21,7 +21,7 @@
    ========================================================================== */
 import React from "react";
 import CardArt from "./card-art.jsx";
-import { printingLine } from "./printing.js";
+import { printingLine, rawLine } from "./printing.js";
 
 const text = (v) => (typeof v === "string" && v.trim() ? v.trim() : null);
 const list = (v) => (Array.isArray(v) ? v.filter(Boolean) : []);
@@ -78,13 +78,15 @@ const gradingOf = (copy, row) => {
   const reading = copy && copy.grading;
   if (reading && text(reading.label)) {
     const said = [text(reading.label), text(reading.condition)].filter(Boolean);
-    return { label: reading.label, graded: reading.state === "graded",
+    /* A raw copy is said as every card-identification surface says it
+       (M3B B4): "Moderately Played · Ungraded", never also "Raw · …". */
+    return { label: reading.state === "raw" ? rawLine(reading.condition) : reading.label, graded: reading.state === "graded",
       conflict: reading.problem && said.length === 2 ? `${said[0]} and ${said[1]}` : null };
   }
   const src = copy || row || {};
   const grade = text(src.grade);
   const condition = text(src.condition);
-  if (grade && /^raw$/i.test(grade)) return { label: condition ? `Raw · ${condition}` : "Raw", graded: false, conflict: null };
+  if (grade && /^raw$/i.test(grade)) return { label: rawLine(condition), graded: false, conflict: null };
   return { label: grade || condition || null, graded: !!grade, conflict: null };
 };
 const photosOf = (photos) => {
@@ -140,7 +142,7 @@ export const selectRefusal = (seat, other) => (code) => {
       : "That card isn't available for this deal any more. The latest is shown.",
     "copy-in-use": "That card is already in this deal. The latest is shown.",
     "terms-changed": "This deal changed since you looked. The latest is shown — check the cards and try again.",
-    "not-your-turn": `It's ${them}'s move on this deal right now. The latest is shown.`,
+    "not-your-turn": `This deal is waiting on ${them} right now. The latest is shown.`,
     "wrong-stage": "This deal has moved on. The latest is shown.",
     "nothing-to-accept": seat === "tp"
       ? "Choose at least one card first."

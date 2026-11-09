@@ -67,6 +67,8 @@ const API = load("client/api.js");
 const STORE = load("client/production-store.js");
 const C = load("client/commands.js");
 const VT = load("client/value-trade.jsx");
+const SUM = load("client/deal-summary.jsx");
+const summaryOf = (s) => s.root().findAll((n) => n.type === "section" && n.props["data-summary"] === s.nl)[0] || null;
 const ProductionApp = load("client/production-app.jsx").default;
 const h = React.createElement;
 const json = (v) => JSON.stringify(v);
@@ -375,16 +377,19 @@ describe("B. The door and the bindings: exactly five, sent only by the shop's sc
     for (const m of client.matchAll(/^export const [A-Z_]+ = "([A-Za-z]+)";$/gm)) sent.add(m[1]);
     eq(json([...sent].sort()), json([...EXPOSED_COMMANDS].sort()), "exposed and client-sent disagree");
   });
-  test("only the shop's Opportunities is handed the five; the Collector's shell is handed none until B4", () => {
+  /* RESTATED (M3B B4): the Collector's Deal Workspace is handed four — never decline. */
+  test("only the shop's Opportunities is handed all five; the Collector's screen never the decline", () => {
     const signIn = code("client/sign-in/SignIn.jsx");
     for (const fn of ["proposeMarketValue", "acceptMarketValue", "proposeTradePercent", "acceptTradePercent", "declineCard"]) {
       assert(new RegExp(`\\b${fn}\\(store\\)`).test(signIn), `${fn} is never bound`);
     }
     const tp = code("client/tp/TrustedPartnerShell.jsx");
     assert(/onCloseSelection,\s*onProposeMarket, onAcceptMarket, onProposePercent, onAcceptPercent, onDeclineCard \}/.test(tp), "the shop's Opportunities");
-    for (const f of ["client/collector/CollectorShell.jsx", "client/collector/DealWorkspace.jsx", "client/tp/sections/CollectorNetwork.jsx"]) {
-      assert(!/onProposeMarket|onAcceptMarket|onProposePercent|onAcceptPercent|onDeclineCard/.test(code(f)), `${f} is handed Value Trade`);
+    for (const f of ["client/collector/CollectorShell.jsx", "client/collector/DealWorkspace.jsx", "client/collector/value-trade-area.jsx"]) {
+      assert(!/onDeclineCard|declineCard/.test(code(f)), `${f} is handed the shop's decline`);
     }
+    assert(!/onProposeMarket|onAcceptMarket|onProposePercent|onAcceptPercent|onDeclineCard/.test(code("client/tp/sections/CollectorNetwork.jsx")),
+      "the Collector Network is handed Value Trade");
     assert(!/\.execute\(|store\./.test(code("client/tp/sections/Opportunities.jsx")), "Opportunities reaches for the store");
   });
   test("the screens never work out a turn: no turn engine, no stage comparison, no shop rate in the client", () => {
@@ -439,7 +444,7 @@ describe("D. The shop's Value Trade screen, state by state", () => {
     const v = valuePanel(s);
     assert(v, "no Value Trade: " + flat(s.root()).slice(0, 300));
     eq(selectPanel(s, ctx.nl), null, "Select Trade still drawn");
-    assert(/Waiting for Casey Lin — 2 cards waiting on Casey Lin\./.test(flat(v)), flat(v));
+    /* RESTATED (M3B B4 polish) */ assert(/Waiting for Casey Lin — 2 cards\./.test(flat(v)), flat(v));
     eq(json(rowIds(listIn(v, "Cards in this deal"))), json([r1, r2]), "the held cards, by row");
     const li = rowIn(v, r1);
     assert(/Charizard/.test(flat(li)) && /PSA 9 · Cert CERT-AAA/.test(flat(li)), "identity: " + flat(li));
@@ -449,9 +454,12 @@ describe("D. The shop's Value Trade screen, state by state", () => {
     eq(fact(li, "Trade %"), "After the market value is agreed");
     eq(fact(li, "Trade credit"), "Not agreed yet");
     eq(json(buttons(v).map(label)), json(["Decline this card", "Decline this card"]));
-    const sum = flat(v.findAll((n) => n.props["aria-label"] === "Cash difference")[0]);
-    assert(/Agreed price \$300/.test(sum) && /Agreed trade credit · 0 of 2 cards \$0/.test(sum), sum);
-    assert(/Cash difference so far Casey Lin pays you \$300/.test(sum) && /Provisional — 2 cards still being valued aren't counted yet\./.test(sum), sum);
+    /* RESTATED (M3B B4 refinement): the shop's own cash block became the shared
+       Deal Summary — the same component the Collector sees — beside this panel. */
+    const sum = flat(summaryOf(s));
+    /* RESTATED (M3B B4 polish) */ 
+    assert(/Agreed price \$300/.test(sum) && /Valuing trade-ins · 0 of 2 agreed/.test(sum) && /Agreed trade-in value \$0/.test(sum), sum);
+    assert(/Current amounts These amounts may change until all trade-in values are agreed\. You Owe \$0 You Receive \$300/.test(sum), sum);
     /* The deal waits in In progress, saying whose turn it is. */
     const rec = recordOf(s, v);
     assert(/Value Trade/.test(flat(rec)) && /Waiting for Casey Lin/.test(flat(rec)) && !/Your move/.test(flat(rec)), flat(rec).slice(0, 200));
@@ -463,7 +471,8 @@ describe("D. The shop's Value Trade screen, state by state", () => {
     await ctx.casey.market(r1, 400);
     let s = await at(ctx);
     let v = valuePanel(s);
-    assert(/Casey Lin's move first — 1 card waiting on Casey Lin\. You're next on 1 card\./.test(flat(v)), flat(v));
+    /* RESTATED (M3B B4 polish) */ assert(/Waiting for Casey Lin first — 1 card\. You're next on 1 card\./.test(flat(v)), flat(v));
+    assert(!/'s move/.test(flat(v)), "a possessive turn sentence");
     eq(tagOf(rowIn(v, r1)), "You're next, after Casey Lin");
     eq(fact(rowIn(v, r1), "Market value"), "Casey Lin proposed $400");
     eq(button(rowIn(v, r1), "Accept"), null, "an Accept while it is the Collector's turn");
@@ -565,16 +574,19 @@ describe("D. The shop's Value Trade screen, state by state", () => {
     eq([fact(li, "Market value"), fact(li, "Trade %"), fact(li, "Trade credit")].join(" | "), "$150 agreed | 50% agreed | $75");
     eq(D.tradeValueOf(await ctx.row(r2)), 75, "the server's credit");
     eq(buttons(li).map(label).join(), "Decline this card", "an agreed card offers anything but Decline");
-    let sum = flat(valuePanel(s).findAll((n) => n.props["aria-label"] === "Cash difference")[0]);
-    assert(/Agreed trade credit · 1 of 2 cards \$75/.test(sum) && /Casey Lin pays you \$225/.test(sum), sum);
-    assert(/Provisional — 1 card still being valued isn't counted yet\./.test(sum), sum);
+    /* RESTATED (M3B B4 refinement): the shop's own cash block became the shared
+       Deal Summary — the same component the Collector sees — beside this panel. */
+    let sum = flat(summaryOf(s));
+    /* RESTATED (M3B B4 polish) */ 
+    assert(/Valuing trade-ins · 1 of 2 agreed/.test(sum) && /Agreed trade-in value \$75/.test(sum) && /You Owe \$0 You Receive \$225/.test(sum), sum);
+    assert(/Current amounts These amounts may change until all trade-in values are agreed\./.test(sum), sum);
     /* Now it is Casey's: she counters 88%, and the shop accepts. */
     await ctx.casey.percent(r1, 0.88);
     await s.refresh();
     await press(rowIn(valuePanel(s), r1), "Accept 88%");
     eq(D.tradeValueOf(await ctx.row(r1)), 352);
-    sum = flat(valuePanel(s).findAll((n) => n.props["aria-label"] === "Cash difference")[0]);
-    assert(/Agreed trade credit · 2 of 2 cards \$427/.test(sum) && /You pay Casey Lin \$127/.test(sum), sum);
+    sum = flat(summaryOf(s));
+    assert(/Agreed trade-in value \$427/.test(sum) && /You Owe \$127 You Receive \$0/.test(sum) && !/Current amounts|may change/.test(sum), sum);
   });
   test("a fresh seat at every step draws the same screen from the server alone", async () => {
     const ctx = await world();
@@ -681,13 +693,17 @@ describe("F. The cash difference: agreed credits only, said as who pays whom", (
     }
     eq(VT.creditAt(175, 50), D.tradeValueAt(175, 0.5), "a preview rounds as the domain rounds");
   });
+  /* RESTATED (M3B B4 refinement): `cashLine`'s two sentences became the shared
+     summary's "You Owe" / "You Receive", relative to the seat (deal-summary.jsx
+     `payments`). */
   test("each seat is told the direction in its own words", () => {
     const pic = (b) => ({ direction: b > 0 ? "collector-to-tp" : b < 0 ? "tp-to-collector" : "even", amount: Math.abs(b) });
-    eq(VT.cashLine(pic(120), "tp", "Casey Lin"), "Casey Lin pays you $120");
-    eq(VT.cashLine(pic(-52), "tp", "Casey Lin"), "You pay Casey Lin $52");
-    eq(VT.cashLine(pic(120), "collector", "Northline"), "You pay Northline $120");
-    eq(VT.cashLine(pic(-52), "collector", "Northline"), "Northline pays you $52");
-    eq(VT.cashLine(pic(0), "tp", "Casey Lin"), "Even — nobody pays anything.");
+    const say = (b, seat) => json(SUM.payments(pic(b), seat));
+    eq(say(120, "tp"), json({ owe: 0, receive: 120 }));
+    eq(say(-52, "tp"), json({ owe: 52, receive: 0 }));
+    eq(say(120, "collector"), json({ owe: 120, receive: 0 }));
+    eq(say(-52, "collector"), json({ owe: 0, receive: 52 }));
+    eq(say(0, "tp"), json({ owe: 0, receive: 0 }));
   });
   test("whole-number entry is read as the server checks it, never corrected", () => {
     const ok = (m, raw) => VT.readValue(m, raw).value;
@@ -716,9 +732,11 @@ describe("G. When valuing ends", () => {
     assert(/Values agreed/.test(flat(v)) && /Every card's value is agreed\. Next comes Deal, which isn't available in MetYet yet\./.test(flat(v)), flat(v));
     assert(/Agreed 50% — \$88 trade credit\./.test(flat(v)), flat(v));
     eq(buttons(v).length, 0, "a control once every card is agreed: " + buttons(v).map(label).join("|"));
-    const sum = flat(v.findAll((n) => n.props["aria-label"] === "Cash difference")[0]);
-    assert(/Agreed trade credit · 2 of 2 cards \$408/.test(sum) && /Cash difference You pay Casey Lin \$108/.test(sum)
-      && /From the agreed values\. The final balance is agreed in Deal\./.test(sum), sum);
+    /* RESTATED (M3B B4 refinement): the shop's own cash block became the shared
+       Deal Summary — the same component the Collector sees — beside this panel. */
+    const sum = flat(summaryOf(s));
+    assert(/Every trade-in value is agreed/.test(sum) && /Agreed trade-in value \$408/.test(sum) && /You Owe \$108 You Receive \$0/.test(sum)
+      && !/Current amounts|may change/.test(sum), sum);
     const rec = recordOf(s, v);
     assert(/Values agreed · Deal coming soon/.test(flat(rec)) && !/Your move/.test(flat(rec)), flat(rec).slice(0, 200));
     assert(!panelTitled(s, "Ready to coordinate") || !panelTitled(s, "Ready to coordinate").findAll((n) => n === rec).length, "a Deal with no control is in Ready to coordinate");

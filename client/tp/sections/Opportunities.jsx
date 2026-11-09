@@ -89,10 +89,12 @@ import { rows, indexById, text, day, money, plural, cardTitle, cardSetLine,
   gradeLine, stageLabel, isKnownStage, tierLabel, supplyLine, byRecency } from "../present.js";
 import { DealConversation, dealThread, messagesOf } from "../../deal-conversation.jsx";
 import { useDealFreshness } from "../../deal-freshness.js";
+import { DealSummary } from "../../deal-summary.jsx";
+import { dealGradeLine } from "../../printing.js";
 import { CopyRow, liveRows, choosableCopies, looksUnavailable, myMove, turnOf, isSelectingStage, isValuingStage,
   selectRefusal } from "../../select-trade.jsx";
-import { isDealingStage, valuedRows, leftRows, cardState, waitingOn, historyOf, cashPicture, cashLine,
-  creditOf, creditAt, readValue, tidyNote, noteLength, NOTE_MAX, valueRefusal, usd, pctText } from "../../value-trade.jsx";
+import { isDealingStage, valuedRows, leftRows, cardState, waitingOn, historyOf,
+  creditOf, creditAt, tidyNote, noteLength, NOTE_MAX, valueRefusal, usd, pctText, ValueEntry } from "../../value-trade.jsx";
 
 const COMPLETED = "completed";
 
@@ -252,7 +254,7 @@ export default function Opportunities({ state, onBrowseCards = null,
     /* A deal on a catalogue card names it from the catalogue's description,
        with this copy's own grade; a legacy one keeps the line above. */
     const exact = !card && o.canonicalCardId
-      ? [cardLine(named[o.canonicalCardId] || null), copy ? gradeLine(copy) : null].filter(Boolean).join(" · ") || null
+      ? [cardLine(named[o.canonicalCardId] || null), copy ? dealGradeLine(copy) : null].filter(Boolean).join(" · ") || null
       : null;
 
     return (
@@ -312,6 +314,13 @@ export default function Opportunities({ state, onBrowseCards = null,
             carried={selectUi[o.id] || null}
             onProposeMarket={onProposeMarket} onAcceptMarket={onAcceptMarket}
             onProposePercent={onProposePercent} onAcceptPercent={onAcceptPercent} onDeclineCard={onDeclineCard} />
+        ) : null}
+        {/* THE DEAL SUMMARY (M3B B4): the very component the Collector's Deal
+            Workspace renders, from this seat — the same cards, figures and
+            bottom line, "You Owe" / "You Receive" said from where you sit. */}
+        {valuing || dealing ? (
+          <DealSummary cls="tps" deal={o} seat={me} featured={{ card: named[o.canonicalCardId] || null, copy }}
+            named={named} copies={new Map(rows(state && state.collectorCopies).map((b) => [b.id, b]))} />
         ) : null}
         {said[o.id] && !(isUnresolved(o) || isEndedDeal(o))
           ? <p className="tps-offer-problem tps-offer-said" role="status">{said[o.id]}</p> : null}
@@ -709,15 +718,14 @@ function ValueTradePanel({ deal, state, me, collector, named, ui, setUi, onRefre
   const t = turnOf(deal);
   const mine = waitingOn(deal, "tp");
   const theirs = waitingOn(deal, "collector");
-  const picture = cashPicture(deal);
   const card = (canonicalCardId) => (canonicalCardId ? named[canonicalCardId] || null : null);
   const cards = (n) => plural(n, "card", "cards");
 
   const say = dealing ? "Every card's value is agreed. Next comes Deal, which isn't available in MetYet yet."
     : t.reason === "value" && t.seat === "tp" ? `Your move — ${cards(mine)} waiting on you.`
       : t.reason === "value" && t.seat === "collector"
-        ? (mine ? `${who}'s move first — ${cards(theirs)} waiting on ${who}. You're next on ${cards(mine)}.`
-          : `Waiting for ${who} — ${cards(theirs)} waiting on ${who}.`)
+        ? (mine ? `Waiting for ${who} first — ${cards(theirs)}. You're next on ${cards(mine)}.`
+          : `Waiting for ${who} — ${cards(theirs)}.`)
         : `Waiting for ${who}.`;
 
   const act = async (key, run, done, extra = {}) => {
@@ -799,7 +807,7 @@ function ValueTradePanel({ deal, state, me, collector, named, ui, setUi, onRefre
           </div>
         ) : null}
         {can && entry ? (
-          <ValueEntry mode={entry.mode} market={row.agreedMarket} busy={busy}
+          <ValueEntry cls="tps" mode={entry.mode} market={row.agreedMarket} busy={busy}
             verb={entry.mode === "market" ? "Send counter" : st.kind === "open" ? "Propose" : "Send counter"}
             onCancel={() => { sender.clear(); put({ entry: null }); }}
             onSubmit={(value) => (entry.mode === "market"
@@ -856,23 +864,6 @@ function ValueTradePanel({ deal, state, me, collector, named, ui, setUi, onRefre
         <ul className="tps-sel-list" aria-label="Cards in this deal">{live.map((r) => rowOf(r, false))}</ul>
       ) : null}
 
-      <div className="tps-vt-sum" aria-label="Cash difference">
-        <p className="tps-vt-sum-row"><span>Agreed price</span><strong>{usd(picture.price) || "—"}</strong></p>
-        <p className="tps-vt-sum-row">
-          <span>{`Agreed trade credit · ${picture.agreedCount} of ${cards(picture.cardCount)}`}</span>
-          <strong>{usd(picture.credit)}</strong>
-        </p>
-        <p className="tps-vt-sum-row tps-vt-sum-total">
-          <span>{dealing ? "Cash difference" : "Cash difference so far"}</span>
-          <strong>{cashLine(picture, "tp", who) || "—"}</strong>
-        </p>
-        <p className="tps-vt-sum-note">
-          {picture.pendingCount
-            ? `Provisional — ${cards(picture.pendingCount)} still being valued ${picture.pendingCount === 1 ? "isn't" : "aren't"} counted yet.`
-            : "From the agreed values. The final balance is agreed in Deal."}
-        </p>
-      </div>
-
       {left.length ? (
         <>
           <p className="tps-sel-sub">Out of this deal</p>
@@ -888,34 +879,5 @@ function ValueTradePanel({ deal, state, me, collector, named, ui, setUi, onRefre
           : carried && carried.said ? <p className="tps-offer-problem" role="status">{carried.said}</p>
             : carried && carried.done ? <p className="tps-sel-done" role="status">{carried.done}</p> : null}
     </section>
-  );
-}
-
-/* One whole number: dollars for a market value, a percentage (1–100) for a
-   trade %. Nothing is filled in. A percentage previews the credit it would
-   give against the agreed market value — the domain's own rounding. */
-function ValueEntry({ mode, market = null, verb, busy = false, onSubmit, onCancel }) {
-  const [raw, setRaw] = useState("");
-  const entry = readValue(mode, raw);
-  const ready = entry.value != null && !busy;
-  const preview = mode === "percent" && entry.value != null ? creditAt(market, entry.value) : null;
-  return (
-    <form className="tps-offer-entry"
-      onSubmit={(e) => { if (e && e.preventDefault) e.preventDefault(); if (ready) onSubmit(entry.value); }}>
-      <label className="tps-offer-field">
-        <span className="tps-offer-unit">{mode === "percent" ? "%" : "$"}</span>
-        <input type="text" inputMode="numeric" autoComplete="off" value={raw}
-          aria-label={mode === "percent" ? "Trade percentage, a whole number from 1 to 100" : "Market value, in whole dollars"}
-          onChange={(e) => setRaw(e.target.value)} />
-      </label>
-      {entry.problem ? <p className="tps-offer-problem" role="status">{entry.problem}</p>
-        : preview != null ? <p className="tps-offer-line">{`That's ${usd(preview)} of trade credit on ${usd(market)}.`}</p> : null}
-      <div className="tps-offer-do">
-        <button type="submit" className="tps-go" disabled={!ready}>
-          {busy ? "Sending…" : entry.value != null ? `${verb} · ${mode === "percent" ? `${entry.value}%` : usd(entry.value)}` : verb}
-        </button>
-        <button type="button" className="tps-go quiet" disabled={busy} onClick={onCancel}>Cancel</button>
-      </div>
-    </form>
   );
 }

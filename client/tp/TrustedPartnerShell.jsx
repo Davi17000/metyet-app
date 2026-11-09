@@ -55,6 +55,7 @@ import { rows } from "./present.js";
 import CollectorNetwork from "./sections/CollectorNetwork.jsx";
 import Inventory from "./sections/Inventory.jsx";
 import Opportunities from "./sections/Opportunities.jsx";
+import { summaryCss } from "../deal-summary.jsx";
 
 /* The three sections, in the product's own order: inputs before their
    consequences. Each one is recurring work a Trusted Partner opens MetYet to
@@ -382,13 +383,9 @@ const CSS = `
   border-radius:5px; background:#fff; resize:vertical; min-height:44px; box-sizing:border-box; width:100%; }
 .tps-vt-count { align-self:flex-end; font-variant-numeric:tabular-nums; }
 .tps-vt-count.over { color:var(--amber); font-weight:600; }
-.tps-vt-sum { padding:10px 11px; border:1px solid #CBE0E2; border-radius:6px; background:var(--t1-bg);
-  display:flex; flex-direction:column; gap:4px; }
-.tps-vt-sum-row { margin:0; display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap;
-  font-size:12.5px; color:var(--text); }
-.tps-vt-sum-row strong { font-variant-numeric:tabular-nums; }
-.tps-vt-sum-total { color:var(--t1); font-weight:600; font-size:13.5px; }
-.tps-vt-sum-note { margin:0; font-size:12px; color:var(--muted); }
+/* The Deal Summary (M3B B4): the shared component's own stylesheet, the
+   same as the Collector's, set in line with the panels above it. */
+${summaryCss("tps", { margin: "0 16px 15px", phoneMargin: "0 -10px 12px" })}
 @media (max-width: 520px) { .tps-vt-body { padding-left:0; } }
 
 /* ---- freshness (M3A A3) ----

@@ -233,6 +233,12 @@ async function collectorDeal(s, oppId) {
   await TR.act(async () => { cta.props.onClick(); }); await settle();
   return s.root().findAll((n) => n.type === "div" && n.props.className === "mcs-ws" && n.props["data-opp"] === oppId)[0];
 }
+/* M3B B4: once the cards are held, the Collector's Deal Workspace shows her
+   Value Trade in Select Trade's place — its own section, `data-value`. */
+const collectorValue = async (s, oppId) => {
+  const ws = await collectorDeal(s, oppId);
+  return ws.findAll((n) => n.type === "section" && n.props["data-value"] === oppId)[0] || null;
+};
 const collectorArea = async (s, oppId) => {
   const ws = await collectorDeal(s, oppId);
   return ws.findAll((n) => n.type === "section" && n.props["data-select"] === oppId)[0] || null;
@@ -322,7 +328,7 @@ describe("B. Two copies of one printing stay two copies", () => {
     const pick = listIn(shopPanel(north, ctx.nl), "Casey Lin's Trade/Sell cards");
     const a = flat(copyIn(pick, ctx.k.a)); const b = flat(copyIn(pick, ctx.k.b));
     /* (The picture's placeholder names the card too — CardArt's plate.) */
-    for (const t of [a, b]) assert(/Charizard Base Set · #4 · Holo · First Edition/.test(t), t);
+    /* RESTATED (M3B B4 polish) */ for (const t of [a, b]) assert(/Charizard Base Set · 4\/102 · Holo · First Edition/.test(t), t);
     assert(/PSA 9 · Cert CERT-AAA · Photos: front and back/.test(a) && !/CERT-BBB|PSA 7/.test(a), a);
     assert(/PSA 7 · Cert CERT-BBB/.test(b) && !/CERT-AAA|PSA 9|Photos/.test(b), b);
     await shopSends(north, ctx.nl, [ctx.k.a, ctx.k.b]);
@@ -386,15 +392,19 @@ describe("D. Starting valuation: a confirmation, then every card held at once, t
        a wait — no accept, counter or % control — but it may decline a card. */
     eq(shopPanel(north, ctx.nl), null, "Select Trade is still drawn for a deal in Value Trade");
     const after = valuePanel(north, ctx.nl);
-    assert(/Waiting for Casey Lin — 2 cards waiting on Casey Lin\./.test(flat(after)), flat(after));
+    /* RESTATED (M3B B4 polish) */ assert(/Waiting for Casey Lin — 2 cards\./.test(flat(after)), flat(after));
     assert(/These cards are now held for this deal\./.test(flat(after)), "success said only after the server: " + flat(after));
     eq(json(buttons(after).map(label)), json(["Decline this card", "Decline this card"]), "a control on the Collector's move");
     const rec = north.root().findAll((n) => n.type === "article" && n.findAll((m) => m === after).length)[0];
     assert(/Value Trade/.test(flat(rec)) && /Waiting for Casey Lin/.test(flat(rec)) && !/Your move/.test(flat(rec)), flat(rec).slice(0, 300));
     await casey.refresh();
-    const area = await collectorArea(casey, ctx.nl);
-    assert(/These cards are held for this deal\. Value Trade isn't available in MetYet yet\./.test(flat(area)), flat(area));
-    eq(buttons(area).length, 0, "a Collector control in Value Trade");
+    /* RESTATED (M3B B4): the Collector's side is Value Trade now. She opens
+       every market value, and may take a card out (after a confirmation). */
+    eq(await collectorArea(casey, ctx.nl), null, "Select Trade still drawn for the Collector");
+    const area = await collectorValue(casey, ctx.nl);
+    assert(/Your move — 2 cards waiting on you\./.test(flat(area)), flat(area));
+    eq(json(buttons(area).map(label)), json(["Propose a market value", "Take out of this deal", "Propose a market value", "Take out of this deal"]),
+      "the Collector's controls in Value Trade");
     /* Silver Vale no longer sees either card as something to choose. */
     const silver = await seat(ctx, "silver"); await go(silver, "Opportunities");
     eq(json(idsIn(listIn(shopPanel(silver, ctx.sv), "Casey Lin's Trade/Sell cards"))), json([ctx.k.blas]), "held cards leave other shops' choice");
@@ -471,7 +481,7 @@ describe("F. Leaving and coming back shows exactly where the deal stands", () =>
     n = await fresh("north"); c = await fresh("casey");
     /* M3B B3: the shop's side is Value Trade now; the Collector's is still
        the held-cards stop until B4. */
-    assert(/Waiting for Casey Lin to propose one/.test(flat(valuePanel(n, ctx.nl))) && /held for this deal/.test(flat(await collectorArea(c, ctx.nl))));
+    assert(/Waiting for Casey Lin to propose one/.test(flat(valuePanel(n, ctx.nl))) && /Your move — 1 card waiting on you\./.test(flat(await collectorValue(c, ctx.nl))));
   });
 });
 
@@ -691,7 +701,7 @@ describe("M. A lost answer is never reported as success or failure", () => {
        is still said there rather than a success. */
     const p = valuePanel(north, ctx.nl);
     assert(p && /couldn't confirm/.test(flat(p)) && !/These cards are now held/.test(flat(p)), flat(p));
-    assert(/Waiting for Casey Lin — 1 card waiting on Casey Lin\./.test(flat(p)), "the server's state after the re-read: " + flat(p));
+    /* RESTATED (M3B B4 polish) */ assert(/Waiting for Casey Lin — 1 card\./.test(flat(p)), "the server's state after the re-read: " + flat(p));
     eq(north.posts.filter((c) => c === "closeTradeSelection").length, 1, "sent again by itself");
   });
 });
@@ -726,12 +736,15 @@ describe("N. The Collector takes a card out; the shop may choose it again as a n
     const again = (await ctx.deal(ctx.nl)).trade.cards.filter((r) => r.binderId === ctx.k.a);
     eq(again.length, 2, "a new row"); assert(again[0].id !== again[1].id);
   });
-  test("taking a card out is offered on the Select Trade screen only; the domain's later permission is untouched", async () => {
+  /* RESTATED (M3B B4, founder-authorized): Value Trade now offers taking a
+     card out too, as A3 said it would once it had a screen; Deal still has no
+     screen, so nothing is offered there. */
+  test("taking a card out is offered in Select Trade and Value Trade; the domain's later permission is untouched", async () => {
     const ctx = await world();
     await toClosing(ctx, [ctx.k.a]);
     await ctx.ok("north", "closeTradeSelection", { oppId: ctx.nl });
     const casey = await seat(ctx, "casey");
-    assert(!button(await collectorArea(casey, ctx.nl), "Take out of this deal"), "offered in Value Trade");
+    assert(button(await collectorValue(casey, ctx.nl), "Take out of this deal"), "not offered in Value Trade");
     const row = D.TRADE.liveTradeRows(await ctx.deal(ctx.nl))[0].id;
     eq((await ctx.post("casey", "withdrawTradeCard", { oppId: ctx.nl, tradeCardId: row })).status, 200,
       "the domain still permits it until final agreement (D3)");

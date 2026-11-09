@@ -304,7 +304,8 @@ describe("E. canonical stage → journey (deal-progress.js)", () => {
     eq(at("agree-price"), "0|Step 1 of 10 · Market Validation|true");
     /* RESTATED (M3A A3, founder-authorized): Select Trade has its screens, so step 2 is available. */
     eq(at("select-trade"), "1|Step 2 of 10 · Select Trade|true");
-    eq(at("value-trade"), "2|Steps 3–4 of 10 · Trade Market Validation, Trade %|false");
+    /* RESTATED (M3B B4, founder-authorized): Value Trade has both seats' screens, so steps 3–4 are available. */
+    eq(at("value-trade"), "2|Steps 3–4 of 10 · Trade Market Validation, Trade %|true");
     eq(at("deal"), "4|Steps 5–7 of 10 · Final Cash Difference, Final Adjustment, Review & Confirmation|false");
     eq(at("fulfillment"), "7|Steps 8–9 of 10 · Meetup Coordination, Finalized Deal Summary|false");
     eq(at("completed"), "10|Completed|false");
@@ -312,11 +313,15 @@ describe("E. canonical stage → journey (deal-progress.js)", () => {
   /* RESTATED (M3A A3, founder-authorized): steps 1–2 — Market Validation and
      Select Trade — are available; Value Trade onwards is still never drawn as
      available, which is the half of this test that guards anything. */
-  test("only steps 1–2 are available; a later step is never drawn as available", () => {
-    eq(PG.AVAILABLE_THROUGH, 2);
+  /* RESTATED AGAIN (M3B B4, founder-authorized): steps 1–4 — through Value
+     Trade — are available; Deal onwards is still never drawn as available. */
+  test("only steps 1–4 are available; a later step is never drawn as available", () => {
+    eq(PG.AVAILABLE_THROUGH, 4);
     for (const stage of Object.keys(PG.STAGE_JOURNEY)) {
-      for (const s of PG.dealProgress({ stage }).steps) assert(s.available === (s.n <= 2), `${stage} step ${s.n}`);
+      for (const s of PG.dealProgress({ stage }).steps) assert(s.available === (s.n <= 4), `${stage} step ${s.n}`);
     }
+    eq(PG.dealProgress({ stage: "deal" }).next, "Deal", "a deal waits in Deal for its screen");
+    eq(PG.dealProgress({ stage: "value-trade" }).next, null, "Value Trade is not 'next' any more");
   });
   test("a range is never collapsed to one guessed step", () => {
     const p = PG.dealProgress({ stage: "deal" });

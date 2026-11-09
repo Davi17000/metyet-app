@@ -282,7 +282,8 @@ describe("A. the Collector opens an offer from Deal Flow", () => {
     /* RE-PINNED (Milestone 2C.1): View Matches names the card once, in its
        header, with what was asked for and Primary. */
     const head = textOf(casey.r.root.findAll((n) => n.type === "header" && n.props.className === "mcs-ws-hd")[0]).replace(/\s+/g, " ");
-    for (const part of ["Mudkip", "Ruby & Sapphire · #60", "PSA 9", "Primary Goal"]) {
+    /* RESTATED (M3B B4 polish): the printed number with its set total, where the catalogue holds one. */
+    for (const part of ["Mudkip", "Ruby & Sapphire · 60/109", "PSA 9", "Primary Goal"]) {
       assert(head.includes(part), `the Goal's heading does not say "${part}": ${head}`);
     }
     assert(!/non_holo|not_applicable/.test(flat(casey)), "an internal printing identifier reached the Collector");
@@ -336,7 +337,7 @@ describe("B. the shop answers from Opportunities", () => {
     assert(!/non_holo|not_applicable|· en\b/.test(t), `an internal printing code reached the shop: ${t}`);
     /* RESTATED (Milestone 2D.3 polish): the Collector's words on the shop's
        side — "Asking price", "Casey's offer" — said once each. */
-    for (const part of ["Mudkip", "Ruby & Sapphire · #60 · Normal", "PSA 9", "Asking price $120", "Open to Offers", "Casey's offer is $100. Your move.",
+    for (const part of ["Mudkip", "Ruby & Sapphire · 60/109 · Normal", "PSA 9", "Asking price $120", "Open to Offers", "Casey's offer is $100. Your move.",
       "Casey's offer $100", "Your move"]) assert(t.includes(part), `the shop is not told "${part}": ${t}`);
     for (const b of ["Accept $100", "Counter", "Decline"]) assert(button(rec, b), `no ${b}`);
     assert(!record(panel(north, "In progress") || north.r.root, "Casey") || !panel(north, "In progress")
@@ -703,8 +704,12 @@ describe("I. the door and the client agree", () => {
     assert(!/onOpenOffer|onWithdrawOffer/.test(tpShell), "the shop's shell can reach the Collector's moves");
     const coShell = code("client/collector/CollectorShell.jsx");
     assert(!/onDeclineOffer/.test(coShell), "the Collector's shell can reach the shop's decline");
-    /* M3B B3: nor the shop's decline of a trade card — B4 decides what the Collector's screen is handed. */
-    assert(!/onDeclineCard|onProposeMarket|onAcceptMarket|onProposePercent|onAcceptPercent/.test(coShell), "the Collector's shell is handed Value Trade before B4");
+    /* M3B B3: nor the shop's decline of a trade card. RESTATED (M3B B4): the
+       Collector's shell is handed Value Trade's four that are hers — never decline. */
+    assert(!/onDeclineCard/.test(coShell), "the Collector's shell can reach the shop's decline of a card");
+    for (const b of ["onProposeMarket", "onAcceptMarket", "onProposePercent", "onAcceptPercent"]) {
+      assert(new RegExp(`${b}=\\{${b}\\}`).test(coShell), `the Collector's Deal Workspace is not handed ${b}`);
+    }
     const dealFlow = code("client/collector/sections/DealFlow.jsx");
     assert(!/\.execute\(|store\./.test(dealFlow), "Deal Flow reaches for the store");
     assert(!/\.execute\(|store\./.test(code("client/tp/sections/Opportunities.jsx")), "Opportunities reaches for the store");

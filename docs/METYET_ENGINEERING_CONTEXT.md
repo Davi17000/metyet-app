@@ -425,11 +425,10 @@ allow-list — `selectTradeCards`, `deselectTradeCard` and `closeTradeSelection`
 (sent from the shop's Opportunity) and `holdTradeSelection`,
 `continueTradeSelection` and `withdrawTradeCard` (sent from the Collector's
 Deal Workspace). `withdrawTradeCard` keeps its full domain permission (until
-final agreement); the product offers it on the Select Trade screen only.
-Deal, Fulfillment and `chooseCashOnly` stay closed until the screens that
-send them ship. Value Trade's commands opened in M3B B3 with the shop's
-screen (below); until B4 the Collector's side of a successful close still
-says "Value Trade isn't available in MetYet yet". A refused
+final agreement); the product offers it in Select Trade and, since M3B B4,
+Value Trade. Deal, Fulfillment and `chooseCashOnly` stay closed until the
+screens that send them ship. Value Trade's commands opened in M3B B3 with the
+shop's screen and the Collector's followed in B4 (below). A refused
 close names only the caller's own rows (`detail.tradeCardIds`). The shop's
 Collector Network shows each connected Collector's Trade/Sell copies,
 read-only (A2). An open deal re-reads the server on arrival, on return to the
@@ -479,7 +478,8 @@ deal's moves until one succeeds (A3 freshness).
 ### Value Trade, card by card (M3B, founder-approved)
 
 **Built: domain (B1), server boundary (B2), relationship guard (B2.5), the
-Trusted Partner's screen (B3). Not built: the Collector's screen (B4).**
+Trusted Partner's screen (B3), the Collector's screen and the Deal Summary
+(B4). Not merged or deployed: B3 and B4 ship together, on founder approval.**
 
 - **Two steps per held card.** Its market value — the Collector opens it,
   then whoever is answering a proposal — then the trade percentage of it the
@@ -517,13 +517,46 @@ Trusted Partner's screen (B3). Not built: the Collector's screen (B4).**
   default rate is ever filled in for the shop's percentage. A deal whose
   cards are all agreed shows them read-only, "Deal coming soon": no Deal
   control. Deal, Fulfillment and `chooseCashOnly` stay closed.
-- **B3 ALONE IS NOT RELEASABLE.** The Collector opens every market value, and
-  her screen is B4; without it no card can move. B3 and B4 ship together in
-  one M3B PR, merged and deployed only after both seats' Value Trade is
-  complete and tested, and only with further founder approval. B4 hands the
-  Collector four of the same bindings (open and counter a market value,
-  accept it, counter and accept a %) plus the existing withdraw — no
-  allow-list change.
+- **The Collector's screen (B4).** In the Deal Workspace, with four of the
+  same bindings — open and counter a market value, accept the shop's, counter
+  and accept its % — plus the existing `withdrawTradeCard`, now offered in
+  Value Trade too, after a confirmation (Select Trade and Value Trade only;
+  Deal has no screen). Never the shop's decline; no allow-list change (42).
+  A card the shop declined shows the shop's note and that the card is out of
+  this deal and still Trade/Sell. Steps 1–4 of the journey are available.
+- **The Deal Summary (B4 foundation): one deal, one shared truth, two
+  perspectives.** One component (`client/deal-summary.jsx`) rendered on both
+  seats from Value Trade on — the Collector's Deal Workspace and the Trusted
+  Partner's Opportunity — with one stylesheet. There is no secret view: both
+  see the same card being bought (catalogue picture, name, set, printed number
+  with the release's printed total when the catalogue holds one — "173/165",
+  else "#173", never an invented denominator — exact printing including
+  language, the shop copy's own grade and cert or raw condition, the agreed
+  price), each trade-in still in the deal (the same identification, text only,
+  with grade and cert when graded; `market × % = −credit`, or "Not valued
+  yet"), the deal's valuation status, and the bottom line. The bottom line is
+  **"You Owe" and "You Receive"**, both always shown, relative to the viewer:
+  one signed balance (the domain's `calculatedBalance`), never negative, never
+  both above $0, mirror images across the two seats. Above them, "Agreed
+  trade-in value $X" (a positive subtotal; each trade-in line keeps its
+  `−$credit`). While any trade-in is still being valued the amounts are
+  labelled "Current amounts", preceded by "These amounts may change until all
+  trade-in values are agreed.", and drawn quieter; once every value is agreed
+  the label and note go and the amount due takes its full weight. Both seats
+  give it the same width on a phone; on a wide screen it is a centred,
+  receipt-width card. One wording for one card on every deal surface
+  (`client/printing.js`): the printed number with its set total where the
+  catalogue holds one, a raw copy as "Near Mint · Ungraded". It is a
+  presentation of the projected deal — not a ledger,
+  snapshot, receipt or record of payment. Shared financial truth does not
+  share permissions or private fields (a shop's cost, a Collector's own
+  reference value). The picture is the catalogue's, captioned: a copy's
+  `photos` are typed references, not images MetYet holds, so they are never
+  shown as one. It is meant to grow into the handoff reference and the
+  permanent receipt; those, export, sharing and the Copy Summary (#83) are not
+  built.
+- **B3 and B4 ship together** in one M3B PR, merged and deployed only with
+  further founder approval.
 
 ### Relationship ending: loss of capability, not loss of record (M3B, founder-approved 2026-11-08)
 
