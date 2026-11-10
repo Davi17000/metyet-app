@@ -593,6 +593,58 @@ Fulfillment for finally agreed deals. Nothing is ended or released
 automatically. The guard is not the final lifecycle: the future command
 replaces "Fulfillment continues" with termination as above.
 
+### Accounts and onboarding: open to Collectors, mutual consent for networks (founder-approved 2026-11-09)
+
+**"Account access is open to Collectors. Trusted relationships require mutual
+consent and explicit activation."** This reverses the Phase 5 Batch 3A model
+in which a Collector could exist only by accepting a shop's invitation.
+
+**Built in B1:**
+
+- **Open Collector registration.** Anyone with a provider-confirmed email and
+  no MetYet account may create a Collector account by giving a name (required,
+  1–80 characters, cleaned like a shop name; the name is not identity). Route
+  `POST /api/registration/collector` (body: `name` only), domain
+  `registerCollector` (not a command; not on the allow-list), transaction
+  `server/collector-registration.js` (provider asked before the world lock;
+  account looked up inside it; idempotent per sign-in; disabled sign-ins and
+  Trusted Partner sign-ins are refused; rate limited per caller address —
+  the one Cloudflare overwrites, never `X-Forwarded-For`). A new
+  Collector has one record, one collector account, and nothing else — no
+  relationship, invitation, goal, copy, binder or example data — and is
+  invisible to every Trusted Partner.
+- **Sign-in screens** no longer assume an invitation; a verified sign-in with
+  no account is offered "Create my account" instead of a dead end.
+- **Session persistence (H3).** The production client keeps the sign-in
+  session in this tab's `sessionStorage` (`client/session-storage.js`, the one
+  client file allowed to name browser storage; never `localStorage`). A reload
+  stays signed in; a new tab starts signed out. Closing a tab forgets the
+  session in that browser but does not revoke it at the provider — only
+  sign-out does. A renewal the provider refuses ends the session; one that
+  cannot reach the provider keeps it and reports "could not be reached".
+
+**Unchanged until B2 — the current relationship behaviour.** The invitation
+code / `/join#code` path still works exactly as before: accepting a shop's
+invitation creates the relationship immediately. Trusted Partner accounts stay
+invitation-only through MetYet Admin (`npm run partner:invite`, then
+`POST /api/registration/partner`); there is no public or self-service TP
+signup, role selection or role upgrade.
+
+**Approved for B2+, NOT implemented:**
+
+- Trusted Partners invite Collectors by email, whether or not they have an
+  account; invitations appear in the Collector's Trusted Partners tab, matched
+  only to a provider-confirmed email.
+- The Collector explicitly accepts; the Trusted Partner must then confirm.
+  **No network visibility before confirmation.** Registration never accepts an
+  invitation and acceptance never bypasses confirmation.
+- H2: an accepted invitation awaits confirmation with no automatic expiry; the
+  TP may confirm or decline. H4: the Collector may cancel before confirmation;
+  cancellation is final for that invitation. H5: the TP confirming sees the
+  Collector's chosen name and the acceptance date, never their sign-in email.
+- Membership is independent of billing: no seat counting. If pricing ever
+  depends on active Collectors, the active relationship is the signal.
+
 ## 14. TP inventory ingestion --- deferred
 
 Potential ingestion: manual lookup/add, CSV import from tools, dedicated

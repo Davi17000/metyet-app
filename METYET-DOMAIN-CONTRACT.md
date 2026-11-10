@@ -105,7 +105,11 @@ MetYet is a relationship network, not an open marketplace (§8).
 1. A Trusted Partner creates an **Invitation**, which may be delivered as a link
    or a QR code.
 2. A new Collector uses it to create their account; an existing Collector accepts
-   it from their account.
+   it from their account. **Superseded in part (B1, founder-approved
+   2026-11-09):** a Collector may also create an account with no invitation at
+   all; such an account has no Relationship. Steps 1 and 3 change in B2 (email
+   invitations; the Trusted Partner confirms after the Collector accepts) — see
+   `docs/METYET_ENGINEERING_CONTEXT.md`, "Accounts and onboarding".
 3. Acceptance creates the **Relationship** and adds the Collector to that
    partner's **Collector Network**.
 4. A Collector may belong to any number of Collector Networks. There is one
