@@ -911,8 +911,12 @@ describe("J. boundaries and composition", () => {
        authoring through the domain, and the rule below — author through the
        domain, validate what it produced, save only the version you loaded,
        assemble nothing yourself — applies to both. */
+    /* B1 adds a fifth: server/collector-registration.js, open Collector
+       registration. The same exemption for the same reason — the person has no
+       seat yet, so no command can create them — and held to the same four
+       rules below. */
     const MAY_WRITE_WORLD = ["server/bootstrap.js", "server/registration.js",
-      "server/collector-acceptance.js"];
+      "server/collector-acceptance.js", "server/collector-registration.js"];
     const UNREACHABLE_FROM_ROUTES = ["server/bootstrap.js"];
     const MAY_KNOW_DRIVER = ["server/db-pool.js"];
     for (const [file, text] of serverFiles()) {
@@ -940,6 +944,14 @@ describe("J. boundaries and composition", () => {
     assert(/expectedVersion: version/.test(acceptance), "and saves only the version it loaded");
     assert(!/collectors:\s*\[|\.collectors\s*=|relationships:\s*\[/.test(acceptance),
       "it assembles a Collector or a Relationship itself");
+    /* Open Collector registration (B1), held to the same four rules — and to a
+       fifth: it never touches a Relationship or an invitation at all. */
+    const openRegistration = code(fs.readFileSync(path.join(ROOT, "server", "collector-registration.js"), "utf8"));
+    assert(/registerCollector\(world, \{/.test(openRegistration), "open registration authors through the domain");
+    assert(/validateWorld\(/.test(openRegistration), "and validates what the domain produced");
+    assert(/expectedVersion: version/.test(openRegistration), "and saves only the version it loaded");
+    assert(!/collectors:\s*\[|\.collectors\s*=|relationships|invitations|credentials\./.test(openRegistration),
+      "it assembles a Collector itself, or reaches a Relationship or an invitation");
     const reachable = new Set();
     const follow = (relative) => {
       if (reachable.has(relative)) return;
@@ -990,8 +1002,12 @@ describe("J. boundaries and composition", () => {
 
   test("the runtime dependencies are the server's, and nothing more", () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
-    eq(Object.keys(pkg.dependencies).sort().join(), "esbuild,fastify,jose,pg,react,react-dom,react-test-renderer",
-      "Fastify (server), pg (driver) and jose (token verification) — no SDK, no ORM, no mailer");
+    /* B1 adds @fastify/rate-limit, founder-approved: the one route that creates
+       an account on request is limited per address, and a maintained Fastify
+       plugin was preferred over a hand-written counter. It is a Fastify plugin,
+       not a vendor SDK. */
+    eq(Object.keys(pkg.dependencies).sort().join(), "@fastify/rate-limit,esbuild,fastify,jose,pg,react,react-dom,react-test-renderer",
+      "Fastify (server) and its rate-limit plugin, pg (driver) and jose (token verification) — no SDK, no ORM, no mailer");
     const vendors = ["@supabase/supabase-js", "@supabase/auth-js", "resend", "nodemailer", "@sentry/node", "aws-sdk"];
     vendors.forEach((name) => assert(!pkg.dependencies[name], name + " was added: no vendor SDK belongs in this batch"));
     eq(pkg.scripts.start, "node server/index.js", "one way to start the server");

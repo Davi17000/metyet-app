@@ -696,7 +696,7 @@ describe("E. navigation, session and loading", () => {
     eq(await session.token(), null);
     assert(calls.some((c) => c.url.includes("/logout")), "revoked at the source");
     const shown = flat(r);
-    assert(/Sign in with the address/.test(shown), "and the screen is the entrance again: " + shown);
+    assert(/We'll email you a sign-in code/.test(shown), "and the screen is the entrance again: " + shown);
     assert(!shown.includes("Casey Lin"), "with none of the last person on it: " + shown);
     assert(!looksLikeCollectorShell(r), "nor their navigation");
   });

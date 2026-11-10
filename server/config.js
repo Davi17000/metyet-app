@@ -283,6 +283,12 @@ function loadServerConfig(env = process.env) {
        capabilities, not requirements. */
     appUrl,
     mail: mailSettings(env, problems, appUrl),
+    /* Who is asking, for the registration limit (B1). Render puts Cloudflare
+       in front of every web service and sets RENDER=true; Cloudflare
+       overwrites CF-Connecting-IP with the caller's address, but only appends
+       to X-Forwarded-For. Anywhere else nothing vouches for that header, so
+       the limit keys on the TCP peer instead. */
+    clientAddressHeader: trimmed(env.RENDER) === "true" ? "cf-connecting-ip" : null,
   });
 }
 
@@ -303,6 +309,7 @@ const describeConfig = (config) => ({
      sender and the key are never described beyond existing. */
   mailConfigured: Boolean(config.mail),
   appUrl: config.appUrl || null,
+  clientAddressHeader: config.clientAddressHeader || null,
 });
 
 /* What the server refuses to start without, and therefore what any deployment

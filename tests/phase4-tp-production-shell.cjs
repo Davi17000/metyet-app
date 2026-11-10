@@ -588,7 +588,7 @@ describe("D. the lifecycle still holds around the new shell", () => {
   test("the seven states are unchanged, and lead to the product", async () => {
     const { session, store } = wire();
     const r = render(React.createElement(SIGNIN.default, { session, store }));
-    assert(/Sign in with the address/.test(flat(r)), "signed out");
+    assert(/We'll email you a sign-in code/.test(flat(r)), "signed out");
     const input = (id, value) => {
       const el = r.root.findAll((n) => n.type === "input" && n.props.id === id)[0];
       TR.act(() => { el.props.onChange({ target: { value } }); });
@@ -613,11 +613,14 @@ describe("D. the lifecycle still holds around the new shell", () => {
       "an empty shop was shown instead of a failure: " + flat(r));
   });
 
-  test("a verified sign-in that is nobody in MetYet says so, and shows no product", async () => {
+  /* RESTATED IN B1 (open Collector registration): the unprovisioned screen
+     now offers to create a Collector account rather than pointing at an
+     invitation. The protection is unchanged — no Trusted Partner shell. */
+  test("a verified sign-in that is nobody in MetYet is offered a Collector account, and shows no product", async () => {
     const { r } = await signedIn({ view: { status: 403, body: { error: { code: "account_not_provisioned" } } } });
     assert(!looksLikeTpShell(r), "an unprovisioned account reached the product");
-    assert(/not a MetYet account yet/.test(flat(r)), flat(r));
-    assert(/invitation/i.test(flat(r)), "and is pointed at the one thing that makes one");
+    assert(/Create my account/.test(flat(r)), flat(r));
+    assert(!/Trusted Partner account|your shop/i.test(flat(r)), "nothing offers a Trusted Partner seat: " + flat(r));
   });
 
   test("sign-out from inside the shell clears the session and the screen", async () => {
@@ -628,7 +631,7 @@ describe("D. the lifecycle still holds around the new shell", () => {
     eq(await session.token(), null);
     assert(calls.some((c) => c.url.includes("/logout")), "revoked at the source");
     const shown = flat(r);
-    assert(/Sign in with the address/.test(shown), "and the screen is the entrance again: " + shown);
+    assert(/We'll email you a sign-in code/.test(shown), "and the screen is the entrance again: " + shown);
     assert(!shown.includes("Northline Cards") && !shown.includes("Sarah Mendel"),
       "with none of the last person's shop on it: " + shown);
     assert(!looksLikeTpShell(r), "nor its navigation");

@@ -12,6 +12,7 @@
      invalid_request          400  the request body could not be read
      command_refused          409  the domain refused; `refused` names the rule
      state_changed            409  the world moved while the command was in flight
+     rate_limited             429  too many attempts from one place, too quickly
      service_unavailable      503  the database is unreachable
      not_found                404  no such route
      internal_error           500  anything else — logged in full, never returned
@@ -31,6 +32,7 @@ const API_ERRORS = Object.freeze({
   invalid_request: { status: 400, message: "The request could not be read." },
   command_refused: { status: 409, message: "That is not something you can do right now." },
   state_changed: { status: 409, message: "Something else changed first. Try again." },
+  rate_limited: { status: 429, message: "Too many attempts. Wait a minute and try again." },
   service_unavailable: { status: 503, message: "MetYet is temporarily unavailable." },
   not_found: { status: 404, message: "There is nothing at this address." },
   internal_error: { status: 500, message: "Something went wrong." },

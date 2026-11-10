@@ -54,6 +54,8 @@ export function isSafeApiUrl(value) {
 export const FAILURES = Object.freeze({
   unauthenticated: "unauthenticated",   // no token, or the server would not take it
   notProvisioned: "not-provisioned",    // verified, but nobody in MetYet yet
+  accountDisabled: "account-disabled",  // verified, and their account was switched off (B1)
+  rateLimited: "rate-limited",          // too many attempts from here, too quickly (B1)
   refused: "refused",                   // the domain said no, and said why
   conflict: "conflict",                 // the world moved first; nothing was written
   unavailable: "unavailable",           // unreachable, timed out, or 5xx
@@ -77,7 +79,13 @@ const DEFAULT_TIMEOUT_MS = 15000;
 
 const failureFor = (status, code) => {
   if (status === 401) return FAILURES.unauthenticated;
-  if (code === "account_not_provisioned" || code === "account_disabled") return FAILURES.notProvisioned;
+  /* SWITCHED OFF IS NOT THE SAME AS NEW (B1). Until open registration they
+     led to one sentence, because neither could do anything about it. Now
+     "nobody yet" leads to creating an account, and a switched-off account must
+     never be offered that door — so they are two answers. */
+  if (code === "account_disabled") return FAILURES.accountDisabled;
+  if (code === "account_not_provisioned") return FAILURES.notProvisioned;
+  if (status === 429) return FAILURES.rateLimited;
   if (status === 403) return FAILURES.notProvisioned;
   /* THE WORLD MOVED FIRST. `state_changed` is the server's word for a save
      whose expected version no longer matched, and the transaction that carried
@@ -154,6 +162,15 @@ export function createApiClient({ baseUrl, getToken, timeoutMs = DEFAULT_TIMEOUT
     const code = b && b.error && b.error.code;
     return new ApiError(failureFor(status, code), { status, refused, detail: code || null });
   };
+  /* EVERY NON-200 THAT IS NOT A PLAIN READ ENDS THE SAME WAY: a 409 naming the
+     domain's rule is an ANSWER, returned; anything else throws. One function
+     (B1), so the third and fourth callers cannot drift from the first two. */
+  const refusalOf = (b) => (typeof (b && b.error && b.error.refused) === "string" ? b.error.refused : null);
+  const refusalOrThrow = (status, b) => {
+    const refused = refusalOf(b);
+    if (status === 409 && refused) return { ok: false, refused, version: b && b.version };
+    throw failed(status, b, refused);
+  };
   const withState = (b) => {
     if (!b || !b.state) throw new ApiError(FAILURES.unexpected, { detail: "no state in a 200" });
     return b;
@@ -162,7 +179,19 @@ export function createApiClient({ baseUrl, getToken, timeoutMs = DEFAULT_TIMEOUT
   async function send(path, { method = "GET", body } = {}) {
     /* Asked for each time. A client that captured the token at construction
        would keep using a session after it was replaced or ended. */
-    const token = await getToken();
+    /* A RENEWAL THAT COULD NOT REACH THE PROVIDER IS NOT A SESSION THAT ENDED
+       (B1). The session keeps itself when a refresh fails for want of a
+       network (client/supabase-session.js), and says so by throwing
+       `unavailable`; that must reach the screen as "could not be reached",
+       which is retryable, and never as "your session has ended". Anything
+       else thrown here is treated as no token at all. */
+    let token;
+    try {
+      token = await getToken();
+    } catch (error) {
+      if (error && error.failure === FAILURES.unavailable) throw new ApiError(FAILURES.unavailable, { detail: "token renewal unreachable" });
+      throw new ApiError(FAILURES.unauthenticated, { detail: "no token" });
+    }
     if (typeof token !== "string" || !token) throw new ApiError(FAILURES.unauthenticated, { detail: "no token" });
     return roundTrip(path, { method, body, token });
   }
@@ -200,7 +229,7 @@ export function createApiClient({ baseUrl, getToken, timeoutMs = DEFAULT_TIMEOUT
         withState(body);
         return { ok: true, version: body.version, value: body.value === undefined ? null : body.value, state: body.state };
       }
-      const refused = typeof (body && body.error && body.error.refused) === "string" ? body.error.refused : null;
+      const refused = refusalOf(body);
       if (status === 409 && refused) return { ok: false, refused, version: body && body.version, ...detailOf(body && body.detail && body.detail.tradeCardIds) };
       throw failed(status, body, refused);
     },
@@ -243,9 +272,7 @@ export function createApiClient({ baseUrl, getToken, timeoutMs = DEFAULT_TIMEOUT
           joinUrl: typeof body.joinUrl === "string" && body.joinUrl ? body.joinUrl : null,
           delivery, state: body.state };
       }
-      const refused = typeof (body && body.error && body.error.refused) === "string" ? body.error.refused : null;
-      if (status === 409 && refused) return { ok: false, refused, version: body && body.version };
-      throw failed(status, body, refused);
+      return refusalOrThrow(status, body);
     },
 
     /* WHO INVITED YOU (Phase 5 Batch 3D). Asked before signing in, so it is the
@@ -269,6 +296,25 @@ export function createApiClient({ baseUrl, getToken, timeoutMs = DEFAULT_TIMEOUT
       return { ok: false };
     },
 
+    /* BECOME A COLLECTOR (B1). The second call a person makes before they are
+       anybody in MetYet — and, like accepting an invitation, its 403 is not
+       "you are not provisioned": being unprovisioned is why they are here.
+
+       One field leaves the browser: the name they chose. No role, no id, no
+       address. A refusal comes back as a value; everything else throws. Asking
+       twice is safe — the server answers a second request from the same
+       sign-in with the account the first one made. */
+    async registerCollector({ name } = {}) {
+      if (typeof name !== "string") throw new TypeError("registerCollector: a name is required");
+      const { status, payload: body } = await send("/api/registration/collector",
+        { method: "POST", body: { name } });
+      if (status === 200) {
+        withState(body);
+        return { ok: true, created: body.created === true, version: body.version, state: body.state };
+      }
+      return refusalOrThrow(status, body);
+    },
+
     /* ACCEPT ONE (Phase 5 Batch 3A). The only call in this client a person can
        make before they are anybody in MetYet — so it is the only one whose 403
        does NOT mean "you are not provisioned". Being unprovisioned is the normal
@@ -290,9 +336,7 @@ export function createApiClient({ baseUrl, getToken, timeoutMs = DEFAULT_TIMEOUT
         }
         return { ok: true, version: body.version, state: body.state };
       }
-      const refused = typeof (body && body.error && body.error.refused) === "string" ? body.error.refused : null;
-      if (status === 409 && refused) return { ok: false, refused, version: body && body.version };
-      throw failed(status, body, refused);
+      return refusalOrThrow(status, body);
     },
   };
 }

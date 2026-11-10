@@ -12,9 +12,12 @@
    ({ collectorId } or { partnerId }) or into nothing at all. There is no
    fallback by email, by name, or by anything a request carries.
 
-   Provisioning is invite-only by construction: linkAccount is an
-   administrative call (the founder's tooling, and tests), reachable from no
-   HTTP route in this batch. The database enforces that a subject and an actor
+   Provisioning was invite-only by construction when this was written: linkAccount
+   was an administrative call (the founder's tooling, and tests). Three
+   transactions now call it, each binding exactly one actor it just created or
+   resolved: Trusted Partner registration (MetYet's invitation), Collector
+   invitation acceptance, and open Collector registration (B1), which can only
+   ever bind role "collector". The database enforces that a subject and an actor
    each have at most one ACTIVE account, so "which actor is this?" can never
    have two answers; disabling a row is how an account ends.
 
@@ -83,8 +86,12 @@ function createAccountDirectory(db) {
       return rows.length ? toAccount(rows[0]) : null;
     },
 
-    async findBySubject(subject) {
-      const rows = await one(SELECT_BY_SUBJECT, [subject], { readOnly: true });
+    /* Every account this subject has ever had, disabled ones included. `tx`
+       for the same reason as above: open Collector registration (B1) asks
+       "has this sign-in been switched off before?" inside the locked
+       transaction that would otherwise create an account for it. */
+    async findBySubject(subject, { tx } = {}) {
+      const rows = await one(SELECT_BY_SUBJECT, [subject], { readOnly: !tx, tx });
       return rows.map(toAccount);
     },
 

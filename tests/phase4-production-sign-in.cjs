@@ -213,7 +213,7 @@ describe("B. the seven states, through the real modules", () => {
   test("signed out: an address, and nothing has been asked of anyone", async () => {
     const { session, store, calls } = wire();
     const r = render({ session, store });
-    assert(/Sign in with the address you were invited at/.test(texts(r)));
+    assert(/We'll email you a sign-in code/.test(texts(r)));
     eq(calls.length, 0, "nothing is requested before a person asks for it");
     eq(session.status(), SESSION.ANONYMOUS);
   });
@@ -298,7 +298,7 @@ describe("B. the seven states, through the real modules", () => {
     eq(session.status(), SESSION.ANONYMOUS, "the session is over");
     eq(await session.token(), null);
     assert(authCalls().some((c) => c.url.includes("/logout")), "revoked at the source");
-    assert(/Sign in with the address/.test(texts(r)), "and the screen is the entrance again");
+    assert(/We'll email you a sign-in code/.test(texts(r)), "and the screen is the entrance again");
     assert(!texts(r).includes("Northline Cards"), "with none of the last person's shop still on it");
   });
 
@@ -350,7 +350,7 @@ describe("B. the seven states, through the real modules", () => {
     clickText(r, "Sign out");
     await flush(r);
     eq(session.status(), SESSION.ANONYMOUS, "sign-out is not something the network can refuse");
-    assert(/Sign in with the address/.test(texts(r)));
+    assert(/We'll email you a sign-in code/.test(texts(r)));
   });
 });
 
@@ -430,14 +430,21 @@ describe("C. identity comes only from the server, and failure fails closed", () 
     assert(!shown.includes("Northline Cards") && !shown.includes(PARTNER), "and nobody's shop is rendered");
   });
 
-  test("a verified sign-in that is nobody in MetYet says so, and offers no shop", async () => {
+  /* RESTATED IN B1 (founder decision: open Collector registration). This
+     used to assert the screen said "an invitation is what creates one". The
+     contract changed — a verified person with no account may now create a
+     Collector account themselves — so the screen now offers exactly that.
+     What it protected is kept: no shop, no projection, nothing invented. */
+  test("a verified sign-in that is nobody in MetYet is offered a Collector account, and no shop", async () => {
     const { session, store } = wire({ view: { status: 403, body: { error: { code: "account_not_provisioned" } } } });
     const r = render({ session, store });
     typeInto(r, "metyet-email", EMAIL); submit(r); await flush(r);
     typeInto(r, "metyet-code", OTP); submit(r); await flush(r);
     const shown = texts(r);
-    assert(/not a MetYet account yet/.test(shown), shown);
-    assert(/invitation/.test(shown), "and what makes one");
+    assert(/Welcome to MetYet/.test(shown) && /Create my account/.test(shown), shown);
+    assert(/collector account/.test(shown), "it is a Collector account that is offered, and nothing else");
+    assert(!/invitation is what creates|check with whoever invited/i.test(shown), "the old dead end is gone");
+    assert(!shown.includes("Northline Cards") && !shown.includes(PARTNER), "and nobody's shop is rendered");
     eq(store.get(), null);
   });
 

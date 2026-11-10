@@ -1178,7 +1178,7 @@ describe("H. nothing else moved", () => {
   test("no dependency was added", async () => {
     const pkg = JSON.parse(read("package.json"));
     eq(json(Object.keys(pkg.dependencies || {}).sort()),
-      json(["esbuild", "fastify", "jose", "pg", "react", "react-dom", "react-test-renderer"]),
+      /* B1: + @fastify/rate-limit, founder-approved (open Collector registration is rate limited). */ json(["@fastify/rate-limit", "esbuild", "fastify", "jose", "pg", "react", "react-dom", "react-test-renderer"]),
       "the dependency list moved");
   });
 });

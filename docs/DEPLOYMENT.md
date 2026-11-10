@@ -128,20 +128,40 @@ the legacy `anon`/`service_role` API keys, both are worth migrating before the
 pilot: the server refuses HS256 outright, and refuses a secret key where the
 publishable one belongs.
 
-### 2.3a The sign-in email: one message, a code and a link
+### 2.3a The sign-in email: a code, and no link (B0, verified 2026-11-09)
 
-The locked experience is one email carrying **both** a numeric code and a
-one-click sign-in link. Supabase supports this, and it is template
-configuration — no code change and no product compromise:
+The sign-in email carries **a code and nothing to click**. An earlier version of
+this section recommended adding a one-click link beside the code. That was
+wrong for this client, and is corrected here:
+
+- the production client never reads the session Supabase puts in the address
+  bar after a link is followed — `app-src/main.jsx` strips every fragment and
+  keeps only one shaped like an invitation code — so following the link lands
+  on the sign-in screen, signed out;
+- the link and the code are **the same one-time token**, so following the link
+  (or an email scanner pre-opening it) spends the code in the same email, which
+  then fails with "That code did not work".
 
 | | |
 |---|---|
-| **Provider** | Supabase → Authentication → Email Templates |
-| **Do** | Put both `{{ .Token }}` (the code) and `{{ .ConfirmationURL }}` (the one-click link) in **Magic Link** *and* in **Confirm signup** — see below for why both. |
-| **Why it works** | Email OTPs and Magic Links share one implementation and one underlying token. The client verifies a typed code with `verifyOtp({ email, token, type: 'email' })`, and GoTrue's `email` verification deliberately checks **both** the confirmation and recovery token columns — so a code from either template verifies. Clicking the link and typing the code are two doors to the same token. |
-| **Consequence** | Whichever is used first spends the token and the other stops working. That is correct: one sign-in, one credential. |
-| **Cost** | none |
-| **Check** | Send yourself one. The email contains a code and a link; either signs you in, and the second then fails. |
+| **Provider** | Supabase → Authentication → Emails → Templates |
+| **Do** | Put `{{ .Token }}` in **Magic Link** *and* in **Confirm signup** — see below for why both — and **no** `{{ .ConfirmationURL }}`, `{{ .TokenHash }}` or other sign-in link. Subject: "Your MetYet sign-in code". |
+| **Body** | "Use this code to sign in to MetYet: `{{ .Token }}`. It works once and expires soon. If you didn't ask for it, you can ignore this email — nobody can sign in without the code." |
+| **Why it works** | The client verifies a typed code with `/verify` type `email`, and GoTrue's `email` verification checks **both** the confirmation and recovery token columns — so a code from either template verifies. |
+| **Check** | Send yourself one at an existing address and one at a never-used address: each arrives with a code and no link, and the code signs you in once. |
+
+**Verified in production by the founder (B0, 2026-11-09):** email sign-in and
+new-user signup enabled; both templates code-only; custom SMTP through Resend
+on the verified sending domain `auth.metyet.io`; auth email rate limits
+reviewed; Site URL `https://app.metyet.io`; Email OTP length 8; Email OTP
+expiration 3,600 seconds; existing Trusted Partner and Collector sign-in
+working; a new address authenticates and reaches the no-account screen. Not yet
+separately verified in production: that a used code is refused a second time
+(the client's handling is covered by `tests/b1-collector-registration.cjs`).
+
+Magic-link sign-in is **not supported**. Supporting it would need the client to
+complete a session from the address bar, survive the email app opening a
+different tab or browser, and withstand link scanners — a batch of its own.
 
 **Two templates, not one.** `/auth/v1/otp` routes to GoTrue's magic-link
 handler, and that handler checks whether the address belongs to a **confirmed**
@@ -165,9 +185,11 @@ becomes a lie the moment the setting changes, and the reader trusts the sentence
 over the digits.
 
 `signInWithOtp` must keep creating users (`shouldCreateUser` left at its
-default) — an invited Trusted Partner has no account until their first sign-in.
-That is not a way in: an auth user is not a MetYet actor, and only an invitation
-creates one.
+default) — a new Collector and an invited Trusted Partner both have no
+provider user until their first sign-in. An auth user is still not a MetYet
+actor: since B1 a **Collector** account is created only when that verified
+person asks for one (`POST /api/registration/collector`), and a **Trusted
+Partner** only from MetYet's own invitation.
 
 ### 2.3b Proving one real sign-in, before anyone is invited
 
@@ -552,11 +574,60 @@ and nothing about the request decides the partner's name or id. There is no
 route that creates an invitation, and registration is not a command, so no
 request body can name it.
 
-Still ahead: sending that invitation email from the product rather than from
-you, the sign-in email itself (one message carrying both a numeric code and a
-one-click link), inviting Collectors from a Trusted Partner who has inventory,
-the React clients calling this API instead of their in-process store, and photo
-storage.
+`partner:invite` does **not** send anything: it prints the credential once, and
+you deliver it yourself (step 2). The product's own email sending (Resend,
+Phase 5 Batch 3B-2) is for a Trusted Partner's **Collector** invitations only.
+
+## How a Collector comes into being (B1)
+
+Two ways, and neither creates a Trusted Partner:
+
+1. **On their own.** Anyone signs in with their email; a verified sign-in with
+   no MetYet account is offered "Create my account", which takes a name and
+   calls `POST /api/registration/collector`. In one transaction it creates one
+   Collector and binds the sign-in to it. No invitation, no relationship, no
+   example data, and no Trusted Partner can see them. Asking twice returns the
+   same account. Refused for a Trusted Partner sign-in, a switched-off
+   account, or an address the provider has not confirmed; a provider outage
+   answers 503 and writes nothing. Limited to 10 attempts a minute per
+   address (`registrationRateLimit` in `createApp`).
+2. **From a shop's invitation** (unchanged until B2): accepting a code or
+   `/join#code` link creates the Collector if new — or reuses the one they
+   already registered — and the relationship, immediately. B2 will make that
+   acceptance wait for the Trusted Partner's confirmation.
+
+**Who the limit counts, behind Render's proxy.** Every Render web service sits
+behind Cloudflare. Cloudflare *appends* to `X-Forwarded-For`, so its leftmost
+entry is whatever the caller sent — and with `trustProxy: true` that is exactly
+what Fastify reports as `request.ip`. The registration limit therefore never
+uses `request.ip` or `X-Forwarded-For`. It counts:
+
+- **on Render** (`RENDER=true`, which Render sets on every service — nothing to
+  configure): `CF-Connecting-IP`, which Cloudflare *overwrites* with the
+  connecting address, so a caller cannot choose it;
+- **anywhere else**: the TCP peer address, because nothing there vouches for
+  any header.
+
+A `CF-Connecting-IP` that is missing or is not a single address falls back to
+the peer — on Render, the internal proxy — and is logged as a warning. That
+fails into one shared, stricter bucket, never into a bypass; if those warnings
+appear, registration is being throttled for everyone and Render's header
+behaviour has changed. IPv6 callers are counted per /64.
+
+If MetYet ever moves off Render, or reaches this service by any path that does
+not pass through Cloudflare, `CF-Connecting-IP` is no longer trustworthy and
+`clientAddressHeader` in `server/config.js` must change with it.
+
+**The count lives in the server's memory.** It is per process, and is reset by
+every deploy or restart. That is acceptable for the topology in `render.yaml` —
+one `starter` instance running one Node process — where it gives exactly the
+stated ten a minute, give or take a deploy's brief overlap of old and new
+instances. It stops being exact the moment the service runs more than one
+instance (manual scaling or autoscaling): each instance counts separately, so
+the effective limit becomes ten a minute *per instance*. Before scaling out,
+move the count to a shared store (`@fastify/rate-limit` supports Redis). Either
+way, every successful attempt still needs a mailbox that can receive a code,
+and Supabase's own sign-in email limits apply first.
 
 ---
 

@@ -817,8 +817,12 @@ describe("G. the Collector's journey", () => {
 
       eq(newCollectors(await ctx.world()).length, 0, "declining created somebody");
       const shown = flat(r);
-      assert(/not a MetYet account yet/.test(shown),
+      /* RESTATED IN B1 (open Collector registration): somebody with no
+         account who declines is offered a personal Collector account, which
+         joins no network. Creating nothing on decline is still asserted above. */
+      assert(/Create my account/.test(shown),
         "somebody who declined is not told where they stand: " + shown);
+      assert(!/Collector Network/.test(shown), "and declining still joins nothing: " + shown);
     } finally { await ctx.close(); }
   });
 

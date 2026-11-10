@@ -514,8 +514,12 @@ describe("D. acceptance is still something a person does", () => {
       await signIn(r);
       await press(r, "Not now");
       eq((await newCollectors()).length, 0, "declining created somebody");
-      assert(/not a MetYet account yet/.test(flat(r)),
+      /* RESTATED IN B1: where they stand is now "signed in, no account yet",
+         and the screen offers a personal Collector account — which joins no
+         network and names no shop. */
+      assert(/Create my account/.test(flat(r)),
         "somebody who declined is not told where they stand: " + flat(r));
+      assert(!/Collector Network/.test(flat(r)), "and declining still joins nothing: " + flat(r));
     } finally { await close(); }
   });
 });
@@ -611,7 +615,7 @@ describe("E. arriving is not a state the page keeps handing back", () => {
       await press(r, "Sign out");
 
       const shown = flat(r);
-      assert(/Sign in with the address you were invited at/.test(shown),
+      assert(/We'll email you a sign-in code/.test(shown),
         "not back at the entrance: " + shown);
       assert(!/You have an invitation code ready/.test(shown),
         "THE INVITATION CAME BACK after signing out: " + shown);

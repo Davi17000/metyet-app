@@ -593,7 +593,10 @@ describe("E. the boundary", () => {
     assert(/invitationContext[\s\S]{0,400}?ask\("\/api\/invitations\/collector\/context"/.test(client),
       "the anonymous call is not the context lookup");
     /* And `send` still refuses to leave without one. */
-    assert(/const token = await getToken\(\);[\s\S]{0,200}?throw new ApiError\(FAILURES\.unauthenticated/.test(client),
+    /* B1 wrapped the call so a renewal that could not reach the provider is
+       reported as unreachable rather than as a session that ended; the
+       refusal to leave without a token is unchanged, and is what this holds. */
+    assert(/token = await getToken\(\);[\s\S]{0,700}?if \(typeof token !== "string" \|\| !token\) throw new ApiError\(FAILURES\.unauthenticated/.test(client),
       "send stopped demanding a token");
   });
 
@@ -612,8 +615,14 @@ describe("E. the boundary", () => {
     const readers = files.filter((rel) => /location\s*[.[]|\.hash\b|URLSearchParams|history\s*\./.test(code(rel)));
     eq(readers.sort().join(","), ["app-src/main.jsx", "client/production-config.js"].join(","),
       "the address bar is read somewhere new: " + readers.join(","));
-    /* And no browser storage anywhere on the path. */
+    /* And no browser storage anywhere on the path — with ONE exception since
+       B1 (founder decision H3): client/session-storage.js keeps the sign-in
+       session in this tab's sessionStorage, and nothing else, anywhere else. */
     for (const rel of files) {
+      if (rel === "client/session-storage.js") {
+        assert(!/localStorage|indexedDB|document\.cookie/.test(code(rel)), `${rel} persists beyond the tab`);
+        continue;
+      }
       assert(!/localStorage|sessionStorage|indexedDB|document\.cookie/.test(code(rel)),
         `${rel} persists something`);
     }

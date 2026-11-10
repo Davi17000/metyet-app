@@ -123,6 +123,27 @@ Storage is an injectable adapter defaulting to `NO_STORAGE`, so reversing that
 is one argument and a test rather than a rewrite — and so the decision stays
 visible instead of being inherited.
 
+**Updated in B1 (founder decision H3): the production client now passes that
+argument.** `app-src/main.jsx` gives the session `createTabSessionStorage()`
+from `client/session-storage.js` — the browser's `sessionStorage`, never
+`localStorage`. What changes and what does not:
+
+- a reload keeps you signed in **in that tab**; a new tab starts signed out;
+- only the session's three fields are kept (`accessToken`, `refreshToken`,
+  `expiresAt`) under one key — never an email, a projection, the one-time code
+  or an invitation code;
+- a stored value that is not exactly that shape is cleared, not believed;
+- the session is at rest in the tab's storage until sign-out, a refused
+  renewal or the tab closing. **Closing a tab does not revoke anything at the
+  provider**: the refresh token stays valid until it expires or is used. Only
+  sign-out revokes at the source;
+- it is still not an XSS boundary — nothing in a browser is;
+- storage that is blocked or throws falls back to the old behaviour.
+
+Every other caller of `createSupabaseSession` still defaults to `NO_STORAGE`,
+and `client/session-storage.js` is the only client file allowed to name
+browser storage (`tests/b1-collector-registration.cjs` holds that).
+
 ### Renewal and ending
 
 An access token lasts an hour, and a Trusted Partner should not be stopped
@@ -132,7 +153,10 @@ stated expiry is within a minute, and **concurrent callers share one renewal**,
 because a refresh token rotates and a second request would present one the
 provider has just retired.
 
-A renewal that fails **ends the session**: `token()` answers `null`, and
+A renewal that cannot **reach** the provider (B1) keeps the session and makes
+`token()` throw `unavailable`, which the screen reports as "could not be
+reached" with Try again; nothing is sent without a valid token. A renewal the
+provider **refuses** ends the session: `token()` answers `null`, and
 `api.js` refuses to reach the network without one, so an expired session cannot
 become a request that looks anonymous to the server. Signing out revokes at the
 source first so the refresh token does not outlive it — and clears **whether or

@@ -110,6 +110,20 @@ export function acceptCollectorInvitation(target) {
   return (token) => target.acceptInvitation({ token });
 }
 
+/* ------------------------------------- BECOMING A COLLECTOR (B1)
+
+   NOT A COMMAND, FOR THE SAME REASON ACCEPTING IS NOT: the person has no seat
+   until the server decides who they are. It takes the name they chose and
+   nothing else — there is no argument for a role or an id, so a screen holding
+   this binding can create one Collector account for whoever is signed in, and
+   do nothing more. */
+export function registerCollector(target) {
+  if (!target || typeof target.registerCollector !== "function") {
+    throw new TypeError("registerCollector: the production store is required");
+  }
+  return (name) => target.registerCollector({ name });
+}
+
 /* ------------------------------------------- WHO INVITED YOU (Batch 3D)
 
    NOT A COMMAND EITHER, AND FOR A SECOND REASON. Accepting names no command

@@ -85,6 +85,7 @@ async function main() {
     client,
     logger: { level: config.logLevel },
     trustProxy: true,
+    clientAddressHeader: config.clientAddressHeader,
   });
 
   app.log.info({ ...describeConfig(config), clientBundle: Boolean(client) }, "starting MetYet server");
