@@ -21,6 +21,11 @@
    account that every later request will need. See server/registration.js. There
    is no route that creates an invitation; MetYet invites Trusted Partners.
 
+   (Since Phase 5 Batch 3A and B1, two more routes take that same step for the
+   same reason: accepting a shop's invitation, and open Collector registration
+   — POST /api/registration/collector, which needs no invitation and can only
+   ever create a Collector. See server/collector-registration.js.)
+
    What this file does NOT contain: a product rule, a visibility rule, a copy
    of any domain check, or a second way to write state. execute() decides what
    may happen, projectForActor() decides what may be seen, validateWorld() and
@@ -51,6 +56,9 @@ const { isExposed } = require("./exposed-commands.js");
 const { redeemPartnerInvitation, REFUSALS } = require("./registration.js");
 const { openCollectorInvitation } = require("./collector-invitation.js");
 const { acceptCollectorInvitation } = require("./collector-acceptance.js");
+const { registerCollectorAccount, REFUSALS: COLLECTOR_REFUSALS } = require("./collector-registration.js");
+const rateLimit = require("@fastify/rate-limit");
+const { isIP } = require("node:net");
 const { buildInvitationEmail } = require("./collector-invitation-email.js");
 const { normalizeEmail } = require("./auth/invitations.js");
 /* Which provider outcomes are answers, and which are silence. Named in the
@@ -95,6 +103,33 @@ const LOOKS_LIKE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const INVITATION_BODY_KEYS = ["recipient", "note"];
 const INVITATION_BODY_KEYS_WITH_DELIVERY = [...INVITATION_BODY_KEYS, "email"];
 const DEFAULT_BODY_LIMIT = 256 * 1024;
+/* A person registers once; a retry after a lost reply is a second request.
+   Ten a minute from one address leaves room for both and for a household
+   behind one router, and is nowhere near what scripted account creation
+   needs. */
+const DEFAULT_REGISTRATION_RATE_LIMIT = Object.freeze({ max: 10, timeWindow: 60 * 1000 });
+/* WHO IS ASKING, FOR THE REGISTRATION LIMIT (B1). Never `request.ip`:
+   `trustProxy` is on, so that is the leftmost X-Forwarded-For entry, and on
+   Render the caller writes it — Cloudflare appends to the header rather than
+   replacing it. The key is the address a proxy we sit behind OVERWRITES
+   (`clientAddressHeader`: Cloudflare's CF-Connecting-IP on Render), or, with no
+   such proxy, the TCP peer itself. A header that is missing or is not one
+   address falls back to the peer: on Render that is the proxy, so the
+   failure is one shared, stricter bucket, never a bypass. IPv6 is bucketed by
+   /64, as the plugin does by default, so one host cannot rotate through its
+   own prefix. */
+function registrationClientKey(request, header) {
+  if (header) {
+    const value = request.headers[header];
+    if (typeof value === "string" && isIP(value.trim())) return rateLimit.normalizeIP(value.trim());
+    request.log.warn({ header }, "registration limit: the client address header is missing or malformed");
+  }
+  const peer = request.raw.socket && request.raw.socket.remoteAddress;
+  return peer ? rateLimit.normalizeIP(peer) : "unknown-peer";
+}
+
+/* Registering a Collector takes a name and nothing else (B1). */
+const COLLECTOR_REGISTRATION_BODY_KEYS = ["name"];
 
 const isPlainObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 
@@ -194,6 +229,15 @@ function createApp({
   logger = false,
   bodyLimit = DEFAULT_BODY_LIMIT,
   trustProxy = false,
+  /* How many Collector registrations one address may attempt per window (B1).
+     Configuration rather than a constant so a test can reach the limit in a
+     few requests; production takes the default. */
+  registrationRateLimit = DEFAULT_REGISTRATION_RATE_LIMIT,
+  /* The request header a proxy in front of this server overwrites with the
+     caller's address, or null to use the TCP peer (B1). Production sets it
+     from config (CF-Connecting-IP on Render); it must never name a header the
+     caller can write, which is why it is not X-Forwarded-For. */
+  clientAddressHeader = null,
 } = {}) {
   if (!repository || typeof repository.loadWorld !== "function") throw new TypeError("createApp: a world repository is required");
   if (!accounts || typeof accounts.findActiveBySubject !== "function") throw new TypeError("createApp: an account directory is required");
@@ -864,6 +908,70 @@ function createApp({
     });
   }
 
+  /* ------------------------------------------------ OPEN COLLECTOR REGISTRATION
+     (B1) "Account access is open to Collectors." Somebody with a verified
+     sign-in and no MetYet account names themselves and becomes a Collector
+     with an empty personal workspace. It needs no invitation and creates no
+     relationship; see server/collector-registration.js.
+
+     ONE FIELD: `name`. No role, no account id, no collector id, no email — the
+     seat is always Collector, the id is the runtime's and the account is bound
+     to the verified subject. Anything else in the body is refused, not ignored.
+
+     RATE LIMITED, AND ONLY HERE. It is the one route that creates an account
+     on request, so it is the one an automated sign-up would hammer. The limit
+     runs before the token is even verified, so a flood costs a counter rather
+     than a signature check. It lives in its own encapsulated scope so no other
+     route inherits it. */
+  if (identity) {
+    app.register(async (scope) => {
+      await scope.register(rateLimit, {
+        global: false,
+        /* In our vocabulary, through the one error handler, like every other
+           failure — never the plugin's own body. */
+        errorResponseBuilder: () => apiError("rate_limited"),
+      });
+      scope.post("/api/registration/collector", {
+        config: { rateLimit: { max: registrationRateLimit.max, timeWindow: registrationRateLimit.timeWindow,
+          keyGenerator: (request) => registrationClientKey(request, clientAddressHeader) } },
+        preHandler: verifyOnly,
+      }, async (request, reply) => {
+        const body = request.body;
+        if (!isPlainObject(body)) throw apiError("invalid_request", { detail: "a JSON object is required" });
+        const unknown = Object.keys(body).filter((k) => !COLLECTOR_REGISTRATION_BODY_KEYS.includes(k));
+        if (unknown.length) throw apiError("invalid_request", { detail: `unknown field(s): ${unknown.join(", ")}` });
+        if (typeof body.name !== "string") throw apiError("invalid_request", { detail: "name must be text" });
+
+        const { subject, bearer } = request.metyet;
+        const result = await registerCollectorAccount({ repository, accounts, identity, runtime },
+          { name: body.name, subject, bearer });
+
+        if (!result.ok) {
+          /* The name is never logged: it is what a person typed. */
+          request.log.info({ refused: result.refused, reason: result.reason }, "collector registration refused");
+          if (result.refused === COLLECTOR_REFUSALS.identityUnavailable) {
+            reply.code(503);
+            return errorBody(apiError("service_unavailable"), request.id);
+          }
+          /* The same answer /api/view gives this sign-in, so a client cannot
+             be told two different things about one switched-off account. */
+          if (result.refused === COLLECTOR_REFUSALS.accountDisabled) throw apiError("account_disabled");
+          reply.code(409);
+          return errorBody(apiError("command_refused", { refused: result.refused }), request.id);
+        }
+
+        if (result.created) {
+          request.log.info({ collectorId: result.collectorId }, "collector registered");
+        }
+        /* What /api/view would give them: their own, empty workspace. */
+        const actor = { collectorId: result.collectorId };
+        const state = projectForActor(await repository.loadWorld(), actor);
+        if (!state.actor) throw apiError("actor_unknown");
+        return { ok: true, created: result.created, version: result.version, state };
+      });
+    });
+  }
+
   /* ------------------------------------------------------------ FAILURES */
   /* ------------------------------------------------ THE CLIENT
 
@@ -900,4 +1008,4 @@ function createApp({
   return app;
 }
 
-module.exports = { createApp, FORBIDDEN_PAYLOAD_KEYS, CARD_NAMING_COMMANDS };
+module.exports = { createApp, FORBIDDEN_PAYLOAD_KEYS, CARD_NAMING_COMMANDS, DEFAULT_REGISTRATION_RATE_LIMIT };

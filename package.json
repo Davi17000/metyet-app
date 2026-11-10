@@ -36,6 +36,7 @@
     "review:deal-scenarios": "node harness/phase6-deal-scenarios.cjs"
   },
   "dependencies": {
+    "@fastify/rate-limit": "^11.2.2",
     "esbuild": "^0.28.2",
     "fastify": "^5.12.4",
     "jose": "^6.2.12",

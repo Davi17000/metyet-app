@@ -156,4 +156,49 @@ function acceptCollectorInvitation(state, { invitationId, collectorId = null } =
   };
 }
 
-module.exports = { registerPartner, acceptCollectorInvitation, cleanName, MAX_NAME };
+/* ============================================================================
+   OPEN REGISTRATION — A COLLECTOR WHO ARRIVED ON THEIR OWN (B1)
+
+     registerCollector(state, { name }, ctx)
+       -> { ok, state, value: { collectorId, collector } } | { ok:false, refused }
+
+   The third authoring path whose authority is not an actor, and it is here for
+   the reason the other two are: the person is verified at the identity provider
+   and is nobody in MetYet yet, so resolveActor has no seat to give them and
+   execute() cannot run this. It is not in COMMANDS, so no request body can name
+   it and POST /api/commands cannot reach it.
+
+   ACCOUNT ACCESS IS OPEN; NETWORK MEMBERSHIP IS NOT. A Collector may now come
+   into being without any Trusted Partner's invitation (founder decision, B1).
+   What that grants is a personal collecting workspace and nothing else, which
+   is why this function creates exactly one record: no Relationship, no
+   invitation, no goals, no copies, no binders, no example data. Visibility
+   between a Collector and a shop is still decided by a Relationship alone
+   (metyet-projection.js), and nothing here can create one.
+
+   THE NAME IS THE PERSON'S OWN, AND IT IS NOT IDENTITY. It is what they want
+   to be called, cleaned the way a shop's name is (`cleanName`). Who they ARE is
+   the verified sign-in the server binds to this record in the same transaction
+   (server/collector-registration.js); the name decides nothing.
+
+   `registeredAt` and not `since`: on a Collector row, `since` is
+   partner-authored relationship metadata that is never projected
+   (COLLECTOR_PARTNER_AUTHORED), and a registration date is not a partner's
+   note. A Trusted Partner's projection picks named fields only
+   (COLLECTOR_FOR_PARTNER), so this one never reaches a shop. */
+function registerCollector(state, { name } = {}, ctx) {
+  if (!state || typeof state !== "object") return refuse(R.notFound);
+  const cleaned = cleanName(name);
+  if (!cleaned) return refuse(R.nameRequired);
+  const at = ctx && ctx.at;
+  if (!at || typeof ctx.id !== "function") return refuse(R.notFound);
+
+  const id = ctx.id("c");
+  if (list(state.collectors).some((c) => c.id === id)) return refuse(R.alreadyRegistered);
+
+  const collector = { id, name: cleaned, registeredAt: at };
+  return { ok: true, state: { ...state, collectors: [...list(state.collectors), collector] },
+    value: { collectorId: id, collector } };
+}
+
+module.exports = { registerPartner, acceptCollectorInvitation, registerCollector, cleanName, MAX_NAME };
