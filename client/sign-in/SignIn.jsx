@@ -13,6 +13,8 @@
      codeSent     a code to type; the address is shown so a typo is visible
      verifying    the code is with the provider
      loading      signed in, asking the server who this is
+     create       signed in, nobody in MetYet yet: name yourself, become a
+                  Collector (B1 — open Collector registration)
      ready        the application, handed the server's projection
      failed       something went wrong, said in a way a person can act on
      (signing out returns to signedOut)
@@ -42,10 +44,10 @@
    nothing — at which point api.js refuses to leave the browser at all.
    ========================================================================== */
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ProductionApp from "../production-app.jsx";
 import { savePartnerProfile, openCollectorInvitation, revokeCollectorInvitation,
-  acceptCollectorInvitation, describeCollectorInvitation, addInventoryCopy,
+  acceptCollectorInvitation, describeCollectorInvitation, registerCollector, addInventoryCopy,
   correctInventoryCopy, retireInventoryCopy,
   browseCards, addCollectorGoal, setGoalPriority, removeCollectorGoal,
   setGoalCriteria, addOwnedCopy, updateOwnedCopy, setCopyOffered, removeOwnedCopy,
@@ -76,6 +78,11 @@ export const STATES = Object.freeze({
      be seen. It exists because accepting is a decision, not a side effect of
      arriving. */
   invited: "invited",
+  /* B1. Signed in, no MetYet account, no invitation in hand. Until open
+     registration this was a dead end ("an invitation is what creates one");
+     now it is where a Collector creates their own account. It never creates a
+     Trusted Partner and never joins a network. */
+  create: "create",
 });
 
 /* A person can act on each of these. None of them is the provider's words. */
@@ -86,8 +93,11 @@ const MESSAGES = Object.freeze({
   unavailable: "MetYet could not be reached. Check your connection and try again.",
   unexpected: "Something went wrong that we did not expect. Try again.",
   unauthenticated: "Your session has ended. Sign in again.",
-  "not-provisioned": "You are signed in, but this address is not a MetYet account yet. "
-    + "An invitation is what creates one — check with whoever invited you.",
+  /* Shown only if an account cannot be offered here; ordinarily "not
+     provisioned" leads to the create-account screen instead (B1). */
+  "not-provisioned": "You're signed in, but this address doesn't have a MetYet account yet.",
+  "account-disabled": "This MetYet account has been switched off. If you think that's a mistake, "
+    + "contact MetYet.",
 });
 const say = (failure) => MESSAGES[failure] || MESSAGES.unexpected;
 
@@ -109,6 +119,27 @@ const REFUSALS = Object.freeze({
 });
 const whyRefused = (refused) => REFUSALS[refused]
   || "MetYet could not accept that invitation.";
+
+/* WHY A NEW ACCOUNT WAS NOT CREATED (B1). Each is the server's word, said so a
+   person can act on it. */
+const CREATE_REFUSALS = Object.freeze({
+  "name-required": "Enter your name — up to 80 characters.",
+  "email-unverified": "MetYet couldn't confirm your email address. Sign out, then sign in again "
+    + "with a new code.",
+  "already-a-partner": "This sign-in already belongs to a Trusted Partner account, so it can't also "
+    + "be a collector account. To collect, sign in with a different email.",
+  "already-linked": "This sign-in is already connected to a MetYet account. Try again to open it.",
+});
+const whyNotCreated = (refused) => CREATE_REFUSALS[refused]
+  || "MetYet couldn't create your account. Try again.";
+
+/* LOSING CONTACT WHILE CREATING AN ACCOUNT IS SAFE TO RETRY (B1): the server
+   answers a second request from the same sign-in with the account the first
+   one made, so the honest advice is the same as for accepting an invitation. */
+const CREATE_AMBIGUOUS = "MetYet lost contact, so it can't tell whether your account was created. "
+  + "Try again — it's safe to repeat.";
+const CREATE_RATE_LIMITED = "Too many attempts. Wait a minute and try again.";
+const MAX_NAME = 80;
 
 /* CERTAIN, AND NOT. A refusal and a conflict are answers: the server considered
    it and nothing happened. Losing contact is not — the invitation may have been
@@ -150,12 +181,16 @@ const S = {
   brand: { fontSize: 18, fontWeight: 600, letterSpacing: "-0.01em", marginBottom: 4 },
   lead: { color: "#616B7A", marginBottom: 20 },
   label: { display: "block", fontSize: 12, color: "#616B7A", marginBottom: 6 },
-  input: { width: "100%", padding: "10px 12px", border: "1px solid #DFE4EA", borderRadius: 6,
+  /* border-box (B1): with content-box, 100% width plus padding and border ran
+     every field past the card's right edge — visible at 320 px. */
+  input: { width: "100%", boxSizing: "border-box", padding: "10px 12px", border: "1px solid #DFE4EA", borderRadius: 6,
     fontSize: 15, fontFamily: "inherit", color: "#131922", background: "#FFFFFF" },
-  button: { width: "100%", marginTop: 14, padding: "11px 12px", border: "1px solid #0B5D66",
+  /* 44 px minimum touch target (B1): padding alone measured 41 px, and the
+     quiet button 37. border-box so the minimum is the button's whole height. */
+  button: { width: "100%", minHeight: 44, boxSizing: "border-box", marginTop: 14, padding: "11px 12px", border: "1px solid #0B5D66",
     borderRadius: 6, background: "#0B5D66", color: "#FFFFFF", fontSize: 14, fontWeight: 600,
     fontFamily: "inherit", cursor: "pointer" },
-  quiet: { width: "100%", marginTop: 10, padding: "9px 12px", border: "1px solid #DFE4EA",
+  quiet: { width: "100%", minHeight: 44, boxSizing: "border-box", marginTop: 10, padding: "9px 12px", border: "1px solid #DFE4EA",
     borderRadius: 6, background: "#FFFFFF", color: "#616B7A", fontSize: 13,
     fontFamily: "inherit", cursor: "pointer" },
   problem: { marginTop: 16, padding: "10px 12px", background: "#FBEDEC", border: "1px solid #EBD9B4",
@@ -173,7 +208,17 @@ const S = {
 };
 
 export default function SignIn({ session, store, onConfigProblem = null, arrivedWith = null }) {
-  const [phase, setPhase] = useState(STATES.signedOut);
+  /* A SESSION THAT SURVIVED A RELOAD (B1, founder decision H3). The production
+     entry hands the session a tab-scoped store, so a reload can arrive here
+     already signed in. Nothing about who they are is assumed from that: the
+     next step is the same one a fresh sign-in takes — ask the server — or, for
+     somebody who arrived holding an invitation, the same confirm screen. */
+  /* Read ONCE, at mount: a sign-in that happens later in this component is
+     not a restored session, and must not trigger the resume below. */
+  const [restored] = useState(() => Boolean(session && typeof session.status === "function"
+    && session.status() === "present"));
+  const [phase, setPhase] = useState(() => (restored
+    ? (arrivedWith ? STATES.invited : STATES.loading) : STATES.signedOut));
   const [email, setEmail] = useState("");
   const [codeValue, setCodeValue] = useState("");
   const [problem, setProblem] = useState(null);
@@ -331,6 +376,9 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
   const onAccept = useMemo(() => (store ? acceptCollectorInvitation(store) : null), [store]);
   /* Phase 5 Batch 3D. Also not a command, and bound the same way. */
   const onDescribe = useMemo(() => (store ? describeCollectorInvitation(store) : null), [store]);
+  /* B1. Not a command either — the person has no seat yet — and bound the same
+     way: the create screen receives a function of one argument, the name. */
+  const onRegister = useMemo(() => (store ? registerCollector(store) : null), [store]);
 
   /* THE INVITATION CODE LIVES HERE AND NOWHERE ELSE.
 
@@ -370,11 +418,43 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
   const [codeDraft, setCodeDraft] = useState("");
   const [accepting, setAccepting] = useState(false);
   const [joined, setJoined] = useState(null);
+  /* B1: the name a new Collector is typing, and whether it is being sent. */
+  const [name, setName] = useState("");
+  const [creating, setCreating] = useState(false);
 
   const fail = useCallback((error) => {
     setProblem(say(error && (error.failure || error.code)));
     setPhase(STATES.failed);
   }, []);
+
+  /* ASK THE SERVER WHO THIS IS — the one way into the application, used after
+     a code, after "Not now", on Try again and on a restored session.
+
+     NOT PROVISIONED IS NO LONGER A FAILURE (B1). It means "verified, and
+     nobody here yet", and the answer to that is now the create-account
+     screen. Every other failure is still a failure, said as before. */
+  const enter = useCallback(async () => {
+    setPhase(STATES.loading);
+    try {
+      await store.load();
+      setPhase(STATES.ready);
+    } catch (error) {
+      if (error && error.failure === "not-provisioned") {
+        setProblem(null);
+        setPhase(STATES.create);
+        return;
+      }
+      fail(error);
+    }
+  }, [store, fail]);
+
+  /* Once, for a session restored from this tab. */
+  const resumed = useRef(false);
+  useEffect(() => {
+    if (resumed.current || !restored || arrivedWith) return;
+    resumed.current = true;
+    enter();
+  }, [restored, arrivedWith, enter]);
 
   /* ASK WHO INVITED THEM, AS SOON AS THERE IS SOMETHING TO ASK ABOUT.
 
@@ -439,12 +519,47 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
        fetched. */
     if (invitation) { setPhase(STATES.invited); return; }
     /* Otherwise ask the server who this is — the only source of identity. */
-    setPhase(STATES.loading);
+    await enter();
+  }, [codeValue, email, session, enter, invitation]);
+
+  /* CREATING A COLLECTOR ACCOUNT (B1). Explicit, like accepting: the button is
+     the act, and nothing about signing in did it. The name is checked here only
+     to say something useful sooner; the server decides. */
+  const createAccount = useCallback(async (event) => {
+    if (event && event.preventDefault) event.preventDefault();
+    /* `creating` is belt and braces, and mutation testing cannot tell it is
+       here: two presses in one frame share a closure that still says false,
+       and after the next render the field and button are disabled. What stops
+       a second request is the store (one command in flight), and a second
+       request would only be answered with the same account. */
+    if (creating || !onRegister) return;
+    const cleaned = String(name).replace(/\s+/g, " ").trim();
+    if (!cleaned) { setProblem("Enter your name."); return; }
+    if (cleaned.length > MAX_NAME) { setProblem(`Use ${MAX_NAME} characters or fewer.`); return; }
+    setCreating(true);
+    setProblem(null);
+    let answer;
     try {
-      await store.load();
-      setPhase(STATES.ready);
-    } catch (error) { fail(error); }
-  }, [codeValue, email, session, store, fail, invitation]);
+      answer = await onRegister(cleaned);
+    } catch (error) {
+      setCreating(false);
+      const failure = (error && (error.failure || error.code)) || "unexpected";
+      if (failure === "conflict") {
+        setProblem("Something else changed while that was saving, so nothing happened. Try again.");
+        return;
+      }
+      if (failure === "rate-limited") { setProblem(CREATE_RATE_LIMITED); return; }
+      if (failure === "unauthenticated" || failure === "account-disabled") { fail(error); return; }
+      setProblem(CREATE_AMBIGUOUS);
+      return;
+    }
+    setCreating(false);
+    if (!answer || answer.ok !== true) { setProblem(whyNotCreated(answer && answer.refused)); return; }
+    /* In. The store adopted the server's projection — their own, empty
+       workspace — so the application has what it needs. */
+    setName("");
+    setPhase(STATES.ready);
+  }, [creating, onRegister, name, fail]);
 
   /* ACCEPTING — THE ONE IRREVERSIBLE THING A NEW COLLECTOR DOES.
 
@@ -486,12 +601,8 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
     setInvitation(null);
     setInvitedBy(null);
     setProblem(null);
-    setPhase(STATES.loading);
-    try {
-      await store.load();
-      setPhase(STATES.ready);
-    } catch (error) { fail(error); }
-  }, [store, fail]);
+    await enter();
+  }, [enter]);
 
   const signOut = useCallback(async () => {
     /* The session clears whether or not revocation succeeds, so this cannot
@@ -507,6 +618,8 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
     setCodeDraft("");
     setEntering(false);
     setJoined(null);
+    setName("");
+    setCreating(false);
     setPhase(STATES.signedOut);
   }, [session]);
 
@@ -536,12 +649,8 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
   const retry = useCallback(async () => {
     setProblem(null);
     if (session.status() !== "present") { setPhase(STATES.signedOut); return; }
-    setPhase(STATES.loading);
-    try {
-      await store.load();
-      setPhase(STATES.ready);
-    } catch (error) { fail(error); }
-  }, [session, store, fail]);
+    await enter();
+  }, [session, enter]);
 
   if (onConfigProblem) return onConfigProblem;
 
@@ -605,17 +714,26 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
           React.createElement("div", { style: S.invitedWhy },
             "Join their Collector Network so they can start keeping an eye out for you."))
         : null,
+      /* NO INVITATION IS NEEDED TO GET IN (B1). The entrance used to say "Sign
+         in with the address you were invited at", which was true while an
+         invitation was the only way to become anybody here. Now a Collector can
+         start on their own, and the same code signs a returning person in or
+         lets a new one create an account — the screen does not ask which, and
+         MUST not: telling the two apart before the code is verified would tell
+         anyone typing addresses which ones have accounts. */
       React.createElement("div", { style: S.lead },
         invitedBy
           ? "Enter your email to continue."
           : invitation
             ? "Sign in, then confirm — that's it."
-            : "Sign in with the address you were invited at."),
+            : "Track the cards you're after, and work with the shops you trust."),
       React.createElement("form", { onSubmit: submitEmail },
         React.createElement("label", { style: S.label, htmlFor: "metyet-email" }, "Email address"),
         React.createElement("input", { id: "metyet-email", style: S.input, type: "email",
-          autoComplete: "email", value: email, placeholder: "you@yourshop.com",
+          autoComplete: "email", value: email, placeholder: "you@example.com",
           onChange: (e) => setEmail(e.target.value) }),
+        invitation ? null : React.createElement("div", { style: { ...S.muted, marginTop: 8 } },
+          "We'll email you a sign-in code. New to MetYet? The same code creates your account."),
         React.createElement("button", { style: S.button, type: "submit" }, "Email me a code")),
       /* THE ADDRESS IS NOT THE INVITATION, and this is where the product says
          so out loud. A collector may have been invited at one address and sign
@@ -661,6 +779,34 @@ export default function SignIn({ session, store, onConfigProblem = null, arrived
        is a sentence that is true for either, not a branch on an answer nobody
        has yet. */
     return shell(React.createElement("div", { style: S.muted }, "Signed in. One moment…"));
+  }
+
+  /* CREATE YOUR ACCOUNT — SIGNED IN, NOBODY HERE YET (B1).
+
+     What a Collector gets is their own workspace: Goals, Binders, their cards.
+     It says nothing about shops because nothing about shops happens here — no
+     invitation is read, no network is joined, and nobody else learns this
+     account exists. The address shown is the one they typed into this tab; a
+     restored session does not carry it, so the sentence is true without it. */
+  if (phase === STATES.create) {
+    const who = String(email).trim();
+    return shell(React.createElement(React.Fragment, null,
+      React.createElement("div", { style: { ...S.invitedBy, marginBottom: 6 } }, "Welcome to MetYet"),
+      React.createElement("div", { style: S.lead },
+        who ? `You're signed in as ${who}. ` : "You're signed in. ",
+        "Create your collector account to start tracking your Goals, Binders, and cards."),
+      React.createElement("form", { onSubmit: createAccount },
+        React.createElement("label", { style: S.label, htmlFor: "metyet-name" }, "Your name"),
+        React.createElement("input", { id: "metyet-name", style: S.input, type: "text",
+          autoComplete: "name", value: name, disabled: creating,
+          onChange: (e) => setName(e.target.value) }),
+        React.createElement("div", { style: { ...S.muted, marginTop: 8 } },
+          "This is the name Trusted Partners see if you connect with them."),
+        React.createElement("button", { style: S.button, type: "submit", disabled: creating },
+          creating ? "Creating your account…" : "Create my account")),
+      React.createElement("button", { style: S.quiet, type: "button", disabled: creating, onClick: signOut },
+        "Not you? Sign out"),
+      problemBlock));
   }
 
   /* THE CONFIRM SCREEN — SIGNED IN, HOLDING A CODE, NOT YET IN ANY NETWORK.

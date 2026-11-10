@@ -279,6 +279,18 @@ export function createProductionStore({ api } = {}) {
       return { ok: true, state: answer.state, version: answer.version };
     },
 
+    /* THE FOURTH CALLER, AND THE SECOND THAT RUNS BEFORE THERE IS A WORLD
+       (B1). Creating a Collector account is somebody's first act, so it starts
+       from `state === null` exactly as accepting does, and goes through the
+       same lifecycle. Retrying is safe for the same reason: the server answers
+       a second request from the same sign-in with the account the first made.
+       Nothing here retries on its own. */
+    async registerCollector({ name } = {}) {
+      const answer = await mutate("registerCollector", () => api.registerCollector({ name }));
+      if (!answer.ok) return answer;
+      return { ok: true, created: answer.created === true, state: answer.state, version: answer.version };
+    },
+
     /* WHO INVITED THEM (Batch 3D). A read that touches nothing — no projection,
        no version, no status — so it skips `mutate`, which mutates. */
     async describeInvitation({ token } = {}) {

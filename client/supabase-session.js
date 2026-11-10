@@ -28,6 +28,24 @@
    one argument and a test rather than a rewrite — and so the decision stays
    visible instead of being inherited from a library's default.
 
+   AND THE PRODUCTION CLIENT NOW PASSES THAT ARGUMENT (B1, founder decision H3).
+   A reload signing everybody out was the confusing half of the trade, so the
+   entry point hands this module client/session-storage.js: the browser's
+   sessionStorage, which survives a reload IN THIS TAB and is not shared with
+   other tabs. Never localStorage. What that does and does not change:
+     - a reload keeps you signed in; a new tab starts signed out;
+     - the session is at rest in this tab's storage until sign-out, a failed
+       refresh, or the tab closing clears it;
+     - closing the tab forgets the session in the browser. It does NOT revoke
+       anything at the provider: the refresh token stays valid until it
+       expires or is used. Only signOut() revokes at the source.
+   The default here is still NO_STORAGE, so every other caller — and every test
+   that builds a session without saying otherwise — keeps nothing.
+
+   A RESTORED SESSION IS CHECKED BEFORE IT IS BELIEVED. Whatever storage hands
+   back must have the exact shape this module writes; anything else is cleared
+   and the person starts signed out.
+
    WHY IT REFRESHES. An access token lasts an hour. A Trusted Partner working
    through a trade should not be stopped mid-way, and holding the refresh token
    in memory beside the access token is no worse than holding the access token
@@ -38,9 +56,16 @@
    produce one request, not several: a refresh token rotates, so the second
    request would be presenting one the provider has just retired.
 
-   FAILING CLOSED. A refresh that fails clears the session. `token()` then
-   answers null, and api.js refuses to reach the network at all — so an expired
-   session cannot become a request that looks anonymous to the server.
+   FAILING CLOSED. A refresh the provider REFUSES clears the session. `token()`
+   then answers null, and api.js refuses to reach the network at all — so an
+   expired session cannot become a request that looks anonymous to the server.
+
+   A REFRESH THAT NEVER ARRIVED IS NOT A REFUSAL (B1). If the provider could
+   not be reached at all, the session is kept and `token()` throws the
+   `unavailable` failure instead of answering null: nothing is sent without a
+   valid token, and a person whose train went into a tunnel can press Try again
+   rather than being signed out. The access token is still not used past its
+   expiry — the next request simply tries the renewal again.
    ========================================================================== */
 
 export const ANONYMOUS = "anonymous";
@@ -50,6 +75,21 @@ export const PRESENT = "present";
    cover a request in flight and a slow network; short enough that a session is
    not renewed on every call. */
 const RENEW_WITHIN_SECONDS = 60;
+
+/* The provider's own word for "could not be reached" (client/supabase-auth.js
+   AUTH_FAILURES.unavailable), spelled here so this module stays independent of
+   that one. */
+const UNAVAILABLE = "unavailable";
+
+/* What adopt() saves, and therefore the only thing a restore may believe. */
+export function isStoredSession(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const keys = Object.keys(value).sort().join(",");
+  if (keys !== "accessToken,expiresAt,refreshToken") return false;
+  if (typeof value.accessToken !== "string" || !value.accessToken) return false;
+  if (value.refreshToken !== null && (typeof value.refreshToken !== "string" || !value.refreshToken)) return false;
+  return typeof value.expiresAt === "number" && Number.isFinite(value.expiresAt);
+}
 
 /* No storage. Named rather than absent, so the default is a choice somebody
    made and a test can assert it is still the choice. */
@@ -89,10 +129,17 @@ export function createSupabaseSession({ auth, storage = NO_STORAGE, now = () => 
     if (had) announce();
   };
 
-  /* Restored only if an adapter was supplied; NO_STORAGE answers null. */
+  /* Restored only if an adapter was supplied; NO_STORAGE answers null. Only
+     the exact shape adopt() saves is accepted — anything else in storage is
+     somebody else's data or a damaged write, and is cleared. */
   try {
     const restored = storage.load();
-    if (restored && typeof restored.accessToken === "string" && restored.accessToken) session = restored;
+    if (isStoredSession(restored)) {
+      session = { accessToken: restored.accessToken, refreshToken: restored.refreshToken,
+        expiresAt: restored.expiresAt };
+    } else if (restored !== null && restored !== undefined) {
+      try { storage.clear(); } catch (error) { /* nothing more to do */ }
+    }
   } catch (error) { session = null; }
 
   const due = () => !session || !session.expiresAt
@@ -109,8 +156,12 @@ export function createSupabaseSession({ auth, storage = NO_STORAGE, now = () => 
         adopt(await auth.refresh(token));
         return session.accessToken;
       } catch (error) {
-        /* A refresh that fails is a session that is over. Clearing is what
-           makes the next request refuse to leave the browser. */
+        /* Unreachable is not refused: keep the session and say so (see the
+           header). The token is not handed out — the caller gets a failure it
+           can retry. */
+        if (error && error.failure === UNAVAILABLE) throw error;
+        /* A refresh the provider refused is a session that is over. Clearing
+           is what makes the next request refuse to leave the browser. */
         forget();
         return null;
       } finally {

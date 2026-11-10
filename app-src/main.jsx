@@ -41,6 +41,7 @@ import { createRoot } from "react-dom/client";
 import { readProductionConfig, ProductionConfigError } from "../client/production-config.js";
 import { createSupabaseAuth } from "../client/supabase-auth.js";
 import { createSupabaseSession } from "../client/supabase-session.js";
+import { createTabSessionStorage } from "../client/session-storage.js";
 import { createApiClient } from "../client/api.js";
 import { createProductionStore } from "../client/production-store.js";
 import SignIn from "../client/sign-in/SignIn.jsx";
@@ -107,7 +108,10 @@ function mount() {
   }
 
   const auth = createSupabaseAuth({ supabaseUrl: config.supabaseUrl, publishableKey: config.publishableKey });
-  const session = createSupabaseSession({ auth });
+  /* A reload keeps you signed in, in this tab only (B1, founder decision H3).
+     The adapter is the one file that names browser storage; see it for what
+     it keeps and what it does not promise. */
+  const session = createSupabaseSession({ auth, storage: createTabSessionStorage() });
   const api = createApiClient({ baseUrl: config.apiUrl, getToken: () => session.token() });
   const store = createProductionStore({ api });
 
