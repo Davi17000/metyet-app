@@ -381,7 +381,10 @@ describe("C. what happened, said once", () => {
       .filter((n) => /(^|_)(events?|analytics|discoveries|audit|logs?|metrics)(_|$)/i.test(n));
     eq(json(named), json([]), "an observability table appeared: " + named.join(", "));
     const app = read("server/app.js");
-    assert(!/require\(["'](?!\.|fastify)/.test(app.replace(/\/\*[\s\S]*?\*\//g, "")),
+    /* B1: the one allowed exception is @fastify/rate-limit, founder-approved.
+       `node:` built-ins (node:net, for the limiter's address check) are part of
+       Node, not a dependency, and must be named with the prefix to pass. */
+    assert(!/require\(["'](?!\.|fastify|@fastify\/rate-limit["']|node:)/.test(app.replace(/\/\*[\s\S]*?\*\//g, "")),
       "the server grew a third-party dependency");
     const discovery = read("domain/metyet-discovery.js");
     assert(!/log|emit|event|count\b/i.test(discovery.replace(/\/\*[\s\S]*?\*\//g, "")),

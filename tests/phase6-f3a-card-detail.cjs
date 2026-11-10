@@ -615,7 +615,16 @@ describe("F. the review-only artwork exception", () => {
       "domain/collector-view.js", "domain/metyet-store.js", "domain/README.md",
       /* (M3A A3, founder-authorized: a refusal's `detail` carried through the
          command transaction — neither the importer nor an image rule.) */
-      "persistence/command-transaction.js"];
+      "persistence/command-transaction.js",
+      /* (B1, founder-approved: open Collector registration and the tab-scoped
+         session — the registration transaction, its domain function, the
+         account directory's history lookup, the rate-limited error word and
+         the entry's session storage; neither the importer nor an image rule.
+         collector-registration.js is listed so it still passes once committed.
+         config.js and index.js: the registration limit's client address —
+         CF-Connecting-IP on Render, never X-Forwarded-For.) */
+      "app-src/main.jsx", "domain/metyet-registration.js", "server/auth/accounts.js", "server/errors.js",
+      "server/collector-registration.js", "server/config.js", "server/index.js"];
     eq(changed.split("\n").filter((f) => f && !B5.includes(f)).join("\n"), "", "Stage 1 changed production catalogue, server or domain code");
   });
 });

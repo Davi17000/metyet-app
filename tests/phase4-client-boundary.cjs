@@ -468,8 +468,13 @@ describe("D. what the production client cannot do, by construction", () => {
     boundary.forEach((rel) => {
       const total = src(rel).split("\n").length;
       const lines = code(rel).split("\n").filter((l) => l.trim()).length;
-      assert(lines < 160, `${rel} is ${lines} lines of code — the boundary is meant to stay small`);
-      assert(total < 340, `${rel} is ${total} lines in all — even the prose has a limit`);
+      /* B1 raised this from 160 to 185, deliberately: api.js was at 159 and
+         gained one server call (registerCollector — open Collector
+         registration) and the difference between a renewal that could not
+         reach the provider and a session that ended. The repeated refusal tail
+         was folded into one helper in the same batch. */
+      assert(lines < 185, `${rel} is ${lines} lines of code — the boundary is meant to stay small`);
+      assert(total < 360, `${rel} is ${total} lines in all — even the prose has a limit`);   // B1: was 340
     });
   });
 });

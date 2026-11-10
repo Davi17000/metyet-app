@@ -556,7 +556,7 @@ describe("F. everything that already worked", () => {
   test("no dependency was added", () => {
     const pkg = JSON.parse(read("package.json"));
     eq(Object.keys(pkg.dependencies).sort().join(),
-      "esbuild,fastify,jose,pg,react,react-dom,react-test-renderer",
+      /* B1: + @fastify/rate-limit, founder-approved (open Collector registration is rate limited). */ "@fastify/rate-limit,esbuild,fastify,jose,pg,react,react-dom,react-test-renderer",
       "the runtime dependencies are the server's, and nothing more");
   });
 });

@@ -1107,7 +1107,7 @@ describe("H. no provider, no network, no artwork", () => {
   test("no dependency was added", () => {
     const pkg = JSON.parse(read("package.json"));
     eq(json(Object.keys(pkg.dependencies || {}).sort()),
-      json(["esbuild", "fastify", "jose", "pg", "react", "react-dom", "react-test-renderer"]),
+      /* B1: + @fastify/rate-limit, founder-approved (open Collector registration is rate limited). */ json(["@fastify/rate-limit", "esbuild", "fastify", "jose", "pg", "react", "react-dom", "react-test-renderer"]),
       "a dependency was added: " + json(Object.keys(pkg.dependencies || {})));
     const deps = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
     assert(!deps.some((d) => /csv|papa|xlsx|sheet|collectr|tcgdex|scrydex/i.test(d)),

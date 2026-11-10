@@ -876,6 +876,14 @@ describe("G. the shape of the change", () => {
       return out;
     };
     for (const rel of [...walk("client"), ...walk("app-src")]) {
+      /* B1 (founder decision H3): the one file that keeps anything is the
+         tab-scoped sign-in session adapter, which stores exactly the session's
+         three fields — never an invitation credential (asserted behaviourally
+         in tests/b1-collector-registration.cjs). */
+      if (rel === "client/session-storage.js") {
+        assert(!/localStorage|indexedDB|document\.cookie/.test(code(rel)), `${rel} persists beyond the tab`);
+        continue;
+      }
       assert(!/localStorage|sessionStorage|indexedDB|document\.cookie/.test(code(rel)),
         `${rel} persists something in the browser`);
     }
